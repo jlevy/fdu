@@ -26,20 +26,61 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -61,20 +102,61 @@ cache absent
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -99,20 +181,61 @@ rewrite is for.
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -134,20 +257,61 @@ fixture expanded
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -162,20 +326,61 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cache_only",
-  "freshness": "stale",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cache_only",
+    "freshness": "stale",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -199,20 +404,61 @@ $ fdu --watch --cache only project
 ```console
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": 1,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 82, "allocated": [ALLOCATED], "files": 3, "dirs": 3, "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 82,
+        "allocated": [ALLOCATED],
+        "files": 3,
+        "dirs": 3,
+        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -234,20 +480,61 @@ snapshot corrupted
 ```console
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": 1,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 82, "allocated": [ALLOCATED], "files": 3, "dirs": 3, "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 82,
+        "allocated": [ALLOCATED],
+        "files": 3,
+        "dirs": 3,
+        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -271,20 +558,61 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
-  "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -294,20 +622,56 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
 ```console
 $ fdu --no-gitignore --cache only --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cache_only",
-  "freshness": "stale",
-  "complete": true,
-  "errors": [],
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": false
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cache_only",
+    "freshness": "stale",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
   "ignore_rules": null,
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": null, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": null,
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }
@@ -321,20 +685,56 @@ way out.
 ```console
 $ fdu --no-gitignore --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
-  "scan_started_at": "[RFC3339]",
-  "generated_at": "[RFC3339]",
-  "source": "cold_scan",
-  "freshness": "fresh",
-  "complete": true,
-  "errors": [],
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": false
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
   "ignore_rules": null,
+  "analysis": null,
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 294, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": null, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": null,
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
     }
   ]
 }

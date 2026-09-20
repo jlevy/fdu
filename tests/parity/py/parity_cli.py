@@ -407,7 +407,7 @@ def run_watch(args: Args) -> int:
     with index.watch(options) as watch:
         # Then the initial answer, identical to a run without --watch. A stream that opens
         # with its changes tells a reader nothing about what it is watching.
-        sys.stdout.write(render(args, index.report(query)))
+        sys.stdout.write(render(args, watch.report()))
         sys.stdout.flush()
         # Views that stream per entry are emitted as records; anything aggregate has to be
         # repainted, because a total cannot be expressed as a change. Both come from the

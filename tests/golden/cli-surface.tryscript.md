@@ -327,11 +327,11 @@ re-read a listing after a rule edit if the bit matters.
 
 ## Use Timestamps as a Sync Watermark
 
-Every report carries `scan_started_at`. Feeding it back selects exactly what changed
-after that scan began, which is what makes incremental follow-up sound:
+Every report carries `provenance.scan_started_at`. Feeding it back selects exactly what
+changed after that scan began, which is what makes incremental follow-up sound:
 
 ```bash
-fdu --view summary --format json PATH                       # record scan_started_at
+fdu --view summary --format json PATH              # record provenance.scan_started_at
 fdu --view files --format jsonl --modified-since <that> PATH
 ```
 
@@ -342,17 +342,16 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
-  content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
-  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`. Treat an unrecognized
-  value as a version you cannot parse rather than guessing at the fields.
+- `schema` before parsing anything else: a report carries `fdu.report/7`, a `--watch`
+  stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/2`. Treat an
+  unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript `JSON.parse`
-- `complete` and `errors` before trusting totals
-- `freshness` and `source` before presenting data as current
+- `status.complete`, `status.errors`, and `status.errors_omitted` before trusting totals
+- `provenance.freshness` and `provenance.source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
-- `coverage` before presenting a metric summary as complete
+- Each requested unit in a metric row’s `coverage` before presenting its metrics as
+  complete
 - `ignored` on a row before calling anything ignored or not: an object, or `true` and
   `false` on a file row, where rules were read, and `null` where none were, which never
   means nothing is ignored
@@ -361,9 +360,10 @@ Check the process exit status and these fields:
 - `detection.sources`, `detection.confidence`, and `detection.flags` before treating a
   deep-detected type or origin label as exact
 
-`source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only `--cache only` can
-return `freshness: stale`, and it says so rather than implying currency; it fails
-outright when no usable snapshot exists rather than silently scanning.
+`provenance.source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only
+`--cache only` can return `provenance.freshness: stale`, and it says so rather than
+implying currency; it fails outright when no usable snapshot exists rather than silently
+scanning.
 
 Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or
 invalid usage. Do not discard useful stdout from exit 2; inspect the completeness fields

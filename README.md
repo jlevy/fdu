@@ -199,8 +199,8 @@ Open, scan, and the native reconciliation phase of refresh run with the GIL rele
 building the Python dicts and lists holds it.
 Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
 directory can hold cached descendants.
-Whether a whole answer is complete and current comes from the scan’s `complete` and
-`freshness`, which the example prints.
+Whether a whole answer is complete and current comes from `index.status.complete` and
+`report.provenance.freshness`, which the example prints.
 `fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
 continuations, and a resumable change journal.
 
