@@ -5,7 +5,8 @@ title: Expose list defaults, format aliases, and compatibility through the share
 kind: feature
 status: open
 priority: 1
-version: 4
+version: 6
+spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 labels: []
 dependencies:
   - type: blocks
@@ -14,7 +15,7 @@ dependencies:
     target: is-01m2y7cbprn6w292gjenv0twd7
 parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 created_at: 2026-09-20T04:39:45.634Z
-updated_at: 2026-09-20T04:42:56.791Z
+updated_at: 2026-09-20T05:16:03.198Z
 ---
 Expose the accepted selection/view/format model through shared engine defaults and
 validation. Metadata-only default view is list and its default format is tree.
