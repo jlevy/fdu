@@ -939,9 +939,9 @@ pub struct ReconcileReport {
     /// Directories this pass listed in full, with no error inside them, that the index did
     /// not yet hold as complete.
     ///
-    /// Collected only for an opened root, where completeness is served. The closing commit
-    /// records each one's child set as authoritative, as discovery's own listing commit
-    /// does, whether or not the rest of the pass completed: one transient child error
+    /// The closing commit records each one's child set as authoritative, as discovery's
+    /// own listing commit does, whether or not the rest of the pass completed: one transient
+    /// child error
     /// elsewhere used to keep every directory the pass listed incomplete, and a directory
     /// first listed by such a pass stayed `Unknown { Building }` under a complete root.
     pub(crate) listed_incomplete: Vec<PathBuf>,
@@ -1019,12 +1019,15 @@ impl ReconcileTarget<'_> {
     /// Child baselines for one directory listing, and whether a complete listing of it
     /// would be news to the index's directory completeness.
     ///
-    /// Only an opened root serves completeness, so only it asks; a directory whose upsert
-    /// has not been flushed yet is not held at all, and counts as incomplete.
+    /// A directory whose upsert has not been flushed yet is not held at all and counts as
+    /// incomplete.
     fn listing_baseline(&self, path: &Path) -> Result<(BTreeMap<OsString, PathExpectation>, bool)> {
         match self {
-            Self::Direct(_) | Self::Shared(_) => Ok((self.child_states(path)?, false)),
-            Self::Controlled { handle, .. } => handle.listing_baseline(path),
+            Self::Direct(index) => Ok((
+                collect_child_expectations(index, path),
+                index.directory_complete(path) != Some(true),
+            )),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => handle.listing_baseline(path),
         }
     }
 
@@ -1114,17 +1117,35 @@ impl ReconcileTarget<'_> {
         complete: bool,
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
+        issues: &[crate::Issue],
     ) -> Result<Option<Commit>> {
         match self {
-            Self::Direct(index) => {
-                index.finish_reconcile(path, started_at, complete, &[], failed_paths)
-            }
-            Self::Shared(handle) => {
-                handle.finish_reconcile(path, started_at, complete, &[], failed_paths)
-            }
+            Self::Direct(index) => index.finish_reconcile(
+                path,
+                started_at,
+                complete,
+                listed_incomplete,
+                failed_paths,
+                issues,
+            ),
+            Self::Shared(handle) => handle.finish_reconcile(
+                path,
+                started_at,
+                complete,
+                listed_incomplete,
+                failed_paths,
+                issues,
+            ),
             Self::Controlled { handle, control } => {
                 control.check_active()?;
-                handle.finish_reconcile(path, started_at, complete, listed_incomplete, failed_paths)
+                handle.finish_reconcile(
+                    path,
+                    started_at,
+                    complete,
+                    listed_incomplete,
+                    failed_paths,
+                    issues,
+                )
             }
         }
     }
@@ -4268,7 +4289,19 @@ fn reconcile_paths_target(
     }
 
     let listed_incomplete = std::mem::take(&mut report.reconciliation.listed_incomplete);
+    let root = target.root_path()?;
+    normalize_walk_errors(&root, &mut report.reconciliation.scan.errors);
     let failed_paths = failure_paths(target, &report.reconciliation.scan.errors)?;
+    let mut issues: Vec<crate::Issue> = report
+        .reconciliation
+        .scan
+        .errors
+        .iter()
+        .map(|error| crate::Issue::from_error_under(&root, error))
+        .collect();
+    if let Some(error) = failure.as_ref() {
+        issues.push(crate::Issue::from_error_under(&root, error));
+    }
     for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
         let commit = target.finish_reconcile(
             &subtree,
@@ -4276,6 +4309,7 @@ fn reconcile_paths_target(
             complete,
             &listed_incomplete,
             &failed_paths,
+            &issues,
         )?;
         if let Some(commit) = commit.as_ref() {
             sink(commit);
@@ -4382,14 +4416,23 @@ fn reconcile_target(
     }
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(mut report) => {
+            let root = target.root_path()?;
+            normalize_walk_errors(&root, &mut report.scan.errors);
             let listed_incomplete = report.take_recordable_completeness();
             let failed_paths = failure_paths(target, &report.scan.errors)?;
+            let issues: Vec<crate::Issue> = report
+                .scan
+                .errors
+                .iter()
+                .map(|error| crate::Issue::from_error_under(&root, error))
+                .collect();
             let finished = target.finish_reconcile(
                 &subtree,
                 started_at,
                 report.is_complete(),
                 &listed_incomplete,
                 &failed_paths,
+                &issues,
             )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
@@ -4397,7 +4440,9 @@ fn reconcile_target(
             Ok(report)
         }
         Err(error) => {
-            let finished = target.finish_reconcile(&subtree, started_at, false, &[], &[])?;
+            let issue = crate::Issue::from_error_under(&target.root_path()?, &error);
+            let finished =
+                target.finish_reconcile(&subtree, started_at, false, &[], &[], &[issue])?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
             }
@@ -4498,7 +4543,15 @@ fn reconcile_target_inner(
                         batch.push(ObservationOp::if_state(control, baseline));
                     }
                     Ok(None) => {}
-                    Err(error) => report.scan.errors.push(error),
+                    Err(error) => {
+                        if target.has_control(subtree)? {
+                            batch.push(ObservationOp::if_state(
+                                Op::ControlRemove { path: subtree.to_path_buf() },
+                                baseline,
+                            ));
+                        }
+                        report.scan.errors.push(error);
+                    }
                 }
             }
             flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
@@ -4514,7 +4567,15 @@ fn reconcile_target_inner(
         match read_control_op(config, &root, subtree, kind) {
             Ok(Some(control)) => batch.push(ObservationOp::if_state(control, baseline)),
             Ok(None) => {}
-            Err(error) => report.scan.errors.push(error),
+            Err(error) => {
+                if target.has_control(subtree)? {
+                    batch.push(ObservationOp::if_state(
+                        Op::ControlRemove { path: subtree.to_path_buf() },
+                        baseline,
+                    ));
+                }
+                report.scan.errors.push(error);
+            }
         }
         flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
@@ -4578,7 +4639,15 @@ fn reconcile_target_inner(
                             batch.push(ObservationOp::if_state(control, baseline));
                         }
                         Ok(None) => {}
-                        Err(error) => report.scan.errors.push(error),
+                        Err(error) => {
+                            if target.has_control(&rel_path)? {
+                                batch.push(ObservationOp::if_state(
+                                    Op::ControlRemove { path: rel_path.clone() },
+                                    baseline,
+                                ));
+                            }
+                            report.scan.errors.push(error);
+                        }
                     }
                 }
                 if batch.len() >= config.batch_size.max(1) {
@@ -4599,7 +4668,15 @@ fn reconcile_target_inner(
                     }
                 }
                 Ok(None) => {}
-                Err(error) => report.scan.errors.push(error),
+                Err(error) => {
+                    if target.has_control(&rel_path)? {
+                        batch.push(ObservationOp::if_state(
+                            Op::ControlRemove { path: rel_path.clone() },
+                            baseline,
+                        ));
+                    }
+                    report.scan.errors.push(error);
+                }
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {

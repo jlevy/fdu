@@ -63,6 +63,7 @@ impl TreeStatus {
                 .content()
                 .and_then(|content| content.state())
                 .is_some_and(|tier| tier.freshness == Freshness::Partial);
+        let content_pending = index.content_has_pending(request.basis.content);
         if content_tier_partial && content_failures == 0 {
             detail_count = detail_count.saturating_add(1);
             retain_first_detail(
@@ -79,11 +80,13 @@ impl TreeStatus {
         }
         let retained = u64::try_from(details.len()).unwrap_or(u64::MAX);
         let errors = details.into_iter().map(|(_, issue)| issue).collect();
-        let complete =
-            state.coverage == Coverage::Complete && content_failures == 0 && !content_tier_partial;
+        let complete = state.coverage == Coverage::Complete
+            && content_failures == 0
+            && !content_tier_partial
+            && !content_pending;
         Self {
             complete,
-            coverage: if content_failures == 0 && !content_tier_partial {
+            coverage: if content_failures == 0 && !content_tier_partial && !content_pending {
                 state.coverage
             } else {
                 Coverage::Partial(CoverageReason::Failed)
@@ -186,11 +189,12 @@ impl ReportProvenance {
         let scan_started_at = u64::try_from(index.writing_pass_started_at_ns())
             .ok()
             .map(|nanos| SystemTime::UNIX_EPOCH + Duration::from_nanos(nanos));
+        let content_pending = index.content_has_pending(content_requested);
         let content = if content_requested.is_enabled() {
             index.content().and_then(|content| {
                 content.state().map(|state| TierState {
                     source: state.source,
-                    freshness: state.freshness,
+                    freshness: if content_pending { Freshness::Partial } else { state.freshness },
                     observed_at_ns: state.observed_at_ns,
                 })
             })
