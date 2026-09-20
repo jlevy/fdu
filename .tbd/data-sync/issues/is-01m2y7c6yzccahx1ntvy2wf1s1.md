@@ -3,9 +3,9 @@ type: is
 id: is-01m2y7c6yzccahx1ntvy2wf1s1
 title: Document list formats, directory filters, and stale build inventories
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -16,8 +16,12 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:32.117Z
-updated_at: 2026-09-20T06:16:17.041Z
+updated_at: 2026-09-20T07:12:32.238Z
 started_at: 2026-09-20T06:16:17.039Z
+closed_at: 2026-09-20T07:12:32.238Z
+close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."
+resolution: null
+duplicate_of: null
 ---
 Update README, docs/usage.md (--docs), portable --skill, Rust API docs, Python README,
 models/stubs, machine-schema reference, architecture axes and selection semantics, and

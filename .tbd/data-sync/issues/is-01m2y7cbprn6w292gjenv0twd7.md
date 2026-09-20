@@ -3,9 +3,9 @@ type: is
 id: is-01m2y7cbprn6w292gjenv0twd7
 title: Enhance help examples with README workflows and age/size directory searches
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -16,8 +16,12 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:36.982Z
-updated_at: 2026-09-20T06:16:18.867Z
+updated_at: 2026-09-20T07:12:32.267Z
 started_at: 2026-09-20T06:16:18.862Z
+closed_at: 2026-09-20T07:12:32.267Z
+close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."
+resolution: null
+duplicate_of: null
 ---
 Enhance short and long help with README workflows and stale-directory inventory
 examples. Teach selection (kind/name/path/age/size), view (list and aggregate reports),

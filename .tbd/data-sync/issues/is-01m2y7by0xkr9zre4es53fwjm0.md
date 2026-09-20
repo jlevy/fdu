@@ -3,9 +3,9 @@ type: is
 id: is-01m2y7by0xkr9zre4es53fwjm0
 title: Core list selection with directory subtree metrics and union aggregation
 kind: feature
-status: in_progress
+status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -16,8 +16,12 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:22.965Z
-updated_at: 2026-09-20T05:16:02.318Z
+updated_at: 2026-09-20T07:12:32.202Z
 started_at: 2026-09-20T01:38:32.676Z
+closed_at: 2026-09-20T07:12:32.201Z
+close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."
+resolution: null
+duplicate_of: null
 ---
 Implement the epic’s shared list query in `fdu-core`. Entry kind is a filter; directory
 size, counts, and newest activity are subtree metrics even without `--kind dir`. Apply
