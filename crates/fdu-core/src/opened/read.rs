@@ -236,7 +236,7 @@ fn validate_request(request: &ReadRequest) -> Result<()> {
 fn report_projection(
     index: &crate::Index,
     request: &crate::ReportRequest,
-    state: crate::IndexState,
+    _state: crate::IndexState,
     work: &mut Work,
 ) -> Result<ProjectionResult> {
     validate_report(request)?;
@@ -251,25 +251,12 @@ fn report_projection(
         }));
     }
 
-    let provenance = crate::query::Provenance {
-        scan_started_at: None,
-        generated_at: request.now,
-        source: match state.source {
-            crate::Source::Scanned => crate::query::ReportSource::ColdScan,
-            crate::Source::Revalidated => crate::query::ReportSource::WarmRevalidate,
-            crate::Source::JournalScoped | crate::Source::Cached => {
-                crate::query::ReportSource::CacheOnly
-            }
-        },
-        complete: state.coverage == Coverage::Complete,
-        errors: index.issues().iter().map(|issue| issue.message.clone()).collect(),
-    };
     // The same identity rule as every other projection: a report's selection inside an
     // opened read matches portable names, where a one-shot report matches native ones.
     let report = crate::query::report_in(
         index,
         &read_request(request),
-        &provenance,
+        request.now,
         crate::query::NameIdentity::Portable,
     )?;
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);

@@ -120,6 +120,9 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
     if !request.profile.is_enabled() {
         return AnalysisReport::default();
     }
+    let pass_started_at_ns =
+        crate::query::system_time_to_nanos(std::time::SystemTime::now()).unwrap_or(0);
+    let previous_state = index.content().and_then(super::ContentIndex::state);
     index.prepare_content_analysis(request);
     let candidates = index.pending_analysis_candidates(request);
     let mut report = AnalysisReport {
@@ -129,6 +132,7 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
         ..AnalysisReport::default()
     };
     if candidates.is_empty() {
+        finish_content_tier(index, &report, previous_state, pass_started_at_ns);
         return report;
     }
 
@@ -169,7 +173,38 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
         }
     });
     report.elapsed_ns = elapsed_ns(started);
+    finish_content_tier(index, &report, previous_state, pass_started_at_ns);
     report
+}
+
+fn finish_content_tier(
+    index: &mut Index,
+    report: &AnalysisReport,
+    previous: Option<super::ContentTierState>,
+    pass_started_at_ns: i64,
+) {
+    let entry = index.state();
+    let source = match entry.source {
+        crate::Source::Cached => crate::Source::Cached,
+        _ if previous.is_some_and(|state| state.source == crate::Source::Cached) => {
+            crate::Source::Revalidated
+        }
+        _ => crate::Source::Scanned,
+    };
+    let freshness = if report.is_complete() {
+        match source {
+            crate::Source::Cached => crate::Freshness::Stale,
+            _ => entry.freshness,
+        }
+    } else {
+        crate::Freshness::Partial
+    };
+    let observed_at_ns = if source == crate::Source::Cached {
+        previous.map_or(pass_started_at_ns, |state| state.observed_at_ns)
+    } else {
+        pass_started_at_ns
+    };
+    index.set_content_tier_state(source, freshness, observed_at_ns);
 }
 
 fn elapsed_ns(started: std::time::Instant) -> u64 {
@@ -676,13 +711,7 @@ mod tests {
             let report = crate::query::report(
                 &index,
                 &crate::test_support::read_of(&index, query),
-                &crate::query::Provenance {
-                    scan_started_at: None,
-                    generated_at: std::time::UNIX_EPOCH,
-                    source: crate::query::ReportSource::ColdScan,
-                    complete: true,
-                    errors: Vec::new(),
-                },
+                std::time::UNIX_EPOCH,
             )
             .expect("report");
             let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
@@ -932,13 +961,7 @@ mod tests {
         let report = crate::query::report(
             &index,
             &crate::test_support::read_of(&index, query),
-            &crate::query::Provenance {
-                scan_started_at: None,
-                generated_at: std::time::UNIX_EPOCH,
-                source: crate::query::ReportSource::ColdScan,
-                complete: true,
-                errors: Vec::new(),
-            },
+            std::time::UNIX_EPOCH,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
@@ -997,13 +1020,7 @@ mod tests {
         let rendered = crate::query::report(
             &index,
             &crate::test_support::read_of(&index, query),
-            &crate::query::Provenance {
-                scan_started_at: None,
-                generated_at: std::time::UNIX_EPOCH,
-                source: crate::query::ReportSource::ColdScan,
-                complete: false,
-                errors: Vec::new(),
-            },
+            std::time::UNIX_EPOCH,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
@@ -1111,13 +1128,7 @@ mod tests {
         let rendered = crate::query::report(
             &index,
             &crate::test_support::read_of(&index, query),
-            &crate::query::Provenance {
-                scan_started_at: None,
-                generated_at: std::time::UNIX_EPOCH,
-                source: crate::query::ReportSource::ColdScan,
-                complete: true,
-                errors: Vec::new(),
-            },
+            std::time::UNIX_EPOCH,
         )
         .expect("report");
         let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
@@ -1177,13 +1188,7 @@ mod tests {
                     ..crate::query::Query::default()
                 },
             ),
-            &crate::query::Provenance {
-                scan_started_at: None,
-                generated_at: std::time::UNIX_EPOCH,
-                source: crate::query::ReportSource::ColdScan,
-                complete: true,
-                errors: Vec::new(),
-            },
+            std::time::UNIX_EPOCH,
         )
         .expect("report");
         let json =
@@ -1211,13 +1216,7 @@ mod tests {
                     ..crate::query::Query::default()
                 },
             ),
-            &crate::query::Provenance {
-                scan_started_at: None,
-                generated_at: std::time::UNIX_EPOCH,
-                source: crate::query::ReportSource::ColdScan,
-                complete: false,
-                errors: Vec::new(),
-            },
+            std::time::UNIX_EPOCH,
         )
         .expect("report");
         let text =

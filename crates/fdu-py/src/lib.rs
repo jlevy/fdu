@@ -24,9 +24,9 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, Basis, Delivery, IgnoredTally, MetricRow, MetricSummary, Provenance, ReadSpec,
-    Report, ReportSource, Request, RequestError, RequestSpec, Section, SummaryRow, TreeNode,
-    ViewSpec, WatchDelivery, document_words, parse_cache_policy, parse_kind,
+    AxisNames, Basis, Delivery, IgnoredTally, MetricRow, MetricSummary, ReadSpec, Report, Request,
+    RequestError, RequestSpec, Section, SummaryRow, TreeNode, TreeStatus, ViewSpec, WatchDelivery,
+    document_words, parse_cache_policy, parse_kind,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -64,34 +64,6 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         // it made `--cache only` exit 2 as a usage error where the command line exits 1
         // (fdu-4msv).
         operational => PyRuntimeError::new_err(operational.to_string()),
-    }
-}
-
-#[derive(Clone, Debug)]
-struct ErrorDetail {
-    path: Option<PathBuf>,
-    kind: &'static str,
-    message: String,
-    os_error: Option<i32>,
-}
-
-impl ErrorDetail {
-    fn from_engine(error: &fdu_core::Error) -> Self {
-        match error {
-            fdu_core::Error::Io { path, source } => Self {
-                path: Some(path.clone()),
-                kind: "io",
-                message: error.to_string(),
-                os_error: source.raw_os_error(),
-            },
-            other => {
-                Self { path: None, kind: "operation", message: other.to_string(), os_error: None }
-            }
-        }
-    }
-
-    fn analysis(message: String) -> Self {
-        Self { path: None, kind: "analysis", message, os_error: None }
     }
 }
 
@@ -144,15 +116,6 @@ pub struct PyIndex {
     /// whether it may be watched, and the worker count a later `refresh` re-runs its
     /// analyzers with.
     delivery: Delivery,
-    errors: Vec<ErrorDetail>,
-    operation_complete: bool,
-    scan_started_at: Option<SystemTime>,
-    /// Which cache tier produced this index.
-    ///
-    /// Carried rather than assumed: reporting `warm_revalidate` for an index built by a
-    /// cold scan would be a small lie in exactly the field a caller consults to decide
-    /// whether to trust the answer.
-    source: ReportSource,
 }
 
 #[pymethods]
@@ -172,7 +135,7 @@ impl PyIndex {
     /// Whether every path in this index's configured scope is currently trustworthy.
     #[getter]
     fn complete(&self) -> bool {
-        self.operation_complete
+        self.tree_status().complete
     }
 
     /// Current trust state: fresh, reconciling, stale, or partial.
@@ -184,7 +147,7 @@ impl PyIndex {
     /// Error details from the most recent scan or refresh.
     #[getter]
     fn errors(&self) -> Vec<String> {
-        self.error_messages()
+        self.tree_status().errors
     }
 
     /// Coverage, currency, origin, and structured non-fatal errors.
@@ -470,23 +433,17 @@ impl PyIndex {
     /// This is the revalidation tier: unchanged entries cost a stat and nothing more,
     /// because an upsert whose complete observed state already matches is a no-op.
     fn refresh<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        self.scan_started_at = Some(SystemTime::now());
         let config = self.basis.scope.clone();
         let report = py
             .detach(|| fdu_core::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
-        let mut complete = report.scan.is_complete();
-        self.errors = report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
         if self.basis.content.is_enabled() {
             let request = self.analysis_request();
-            let analysis = py.detach(|| fdu_core::content::analyze_index(&mut self.inner, request));
-            let analysis_complete = analysis.is_complete();
-            append_analysis_error(&mut self.errors, analysis);
-            complete &= analysis_complete;
+            py.detach(|| fdu_core::content::analyze_index(&mut self.inner, request));
         }
-        self.operation_complete = complete;
-        self.source = ReportSource::WarmRevalidate;
         let stats = report.apply;
+        let status = self.tree_status();
+        let provenance = fdu_core::query::ReportProvenance::of(&self.inner, SystemTime::now());
 
         let out = PyDict::new(py);
         out.set_item("inserted", stats.inserted)?;
@@ -494,10 +451,10 @@ impl PyIndex {
         out.set_item("removed", stats.removed)?;
         out.set_item("unchanged", stats.unchanged)?;
         out.set_item("stale", stats.stale)?;
-        out.set_item("error_count", self.errors.len())?;
-        out.set_item("errors", error_list(py, &self.errors)?)?;
-        out.set_item("source", source_label(self.source))?;
-        out.set_item("complete", self.complete())?;
+        out.set_item("error_count", status.errors.len() as u64 + status.errors_omitted)?;
+        out.set_item("errors", status.errors)?;
+        out.set_item("source", source_label(provenance.source))?;
+        out.set_item("complete", status.complete)?;
         out.set_item("ignore_rules", ignore_rules_value(py, &self.inner.control_coverage())?)?;
         out.set_item("freshness", self.freshness())?;
         out.set_item("clock", self.inner.clock().0)?;
@@ -559,8 +516,10 @@ impl PyIndex {
 }
 
 impl PyIndex {
-    fn error_messages(&self) -> Vec<String> {
-        self.errors.iter().map(|error| error.message.clone()).collect()
+    fn tree_status(&self) -> TreeStatus {
+        let request =
+            Request::new(self.basis.clone(), fdu_core::query::Query::default(), SystemTime::now());
+        TreeStatus::of(&self.inner, &request)
     }
 
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -602,14 +561,7 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        let provenance = Provenance {
-            scan_started_at: self.scan_started_at,
-            generated_at: now,
-            source: self.source,
-            complete: self.operation_complete,
-            errors: self.error_messages(),
-        };
-        fdu_core::query::report(&self.inner, &request, &provenance).map_err(to_py_err)
+        fdu_core::query::report(&self.inner, &request, now).map_err(to_py_err)
     }
 
     /// The analysis pass this index's basis asks for, with the worker count it was opened
@@ -685,34 +637,14 @@ fn build_basis(
     Basis::build(&spec, &AxisNames::FIELDS).map_err(|error| value_error(&error))
 }
 
-fn append_analysis_error(
-    errors: &mut Vec<ErrorDetail>,
-    analysis: fdu_core::content::AnalysisReport,
-) {
-    if let Some(message) = analysis.failure_message() {
-        errors.push(ErrorDetail::analysis(message));
-    }
-}
-
-fn error_list<'py>(py: Python<'py>, errors: &[ErrorDetail]) -> PyResult<Bound<'py, PyList>> {
-    let list = PyList::empty(py);
-    for error in errors {
-        let item = PyDict::new(py);
-        item.set_item("path", error.path.as_deref())?;
-        item.set_item("kind", error.kind)?;
-        item.set_item("message", &error.message)?;
-        item.set_item("os_error", error.os_error)?;
-        list.append(item)?;
-    }
-    Ok(list)
-}
-
 fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyDict>> {
+    let tree = index.tree_status();
+    let provenance = fdu_core::query::ReportProvenance::of(&index.inner, SystemTime::now());
     let status = PyDict::new(py);
-    status.set_item("complete", index.operation_complete)?;
-    status.set_item("freshness", freshness_label(index.inner.freshness()))?;
-    status.set_item("source", source_label(index.source))?;
-    status.set_item("errors", error_list(py, &index.errors)?)?;
+    status.set_item("complete", tree.complete)?;
+    status.set_item("freshness", freshness_label(provenance.freshness))?;
+    status.set_item("source", source_label(provenance.source))?;
+    status.set_item("errors", tree.errors)?;
     status.set_item("ignore_rules", ignore_rules_value(py, &index.inner.control_coverage())?)?;
     Ok(status)
 }
@@ -770,13 +702,16 @@ fn source_label(source: fdu_core::query::ReportSource) -> &'static str {
 fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     dict.set_item("root", report.root.as_os_str())?;
-    dict.set_item("complete", report.complete)?;
+    dict.set_item("complete", report.status.complete)?;
     dict.set_item("ignore_rules", ignore_rules_value(py, &report.ignore_rules)?)?;
-    dict.set_item("errors", report.errors.clone())?;
-    dict.set_item("source", source_label(report.source))?;
-    dict.set_item("freshness", freshness_label(report.freshness))?;
-    dict.set_item("generated_at", fdu_core::query::format_rfc3339(report.generated_at))?;
-    dict.set_item("scan_started_at", report.scan_started_at.map(fdu_core::query::format_rfc3339))?;
+    dict.set_item("errors", report.status.errors.clone())?;
+    dict.set_item("source", source_label(report.provenance.source))?;
+    dict.set_item("freshness", freshness_label(report.provenance.freshness))?;
+    dict.set_item("generated_at", fdu_core::query::format_rfc3339(report.provenance.generated_at))?;
+    dict.set_item(
+        "scan_started_at",
+        report.provenance.scan_started_at.map(fdu_core::query::format_rfc3339),
+    )?;
     match report.analysis.as_ref() {
         None => dict.set_item("analysis", py.None())?,
         Some(analysis) => {
@@ -1687,7 +1622,6 @@ fn open(
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
-    let operation_started_at = SystemTime::now();
     let basis = build_basis(
         &root,
         max_depth,
@@ -1710,30 +1644,8 @@ fn open(
     let config = OpenConfig::of(&basis, &delivery);
 
     let opened = py.detach(|| fdu_core::open(&root, &config));
-    let (index, report) = opened.map_err(to_py_err)?;
-    let operation_complete = report.is_complete();
-    let mut errors = report.errors().iter().map(ErrorDetail::from_engine).collect::<Vec<_>>();
-    if let Some(message) =
-        report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
-    {
-        errors.push(ErrorDetail::analysis(message));
-    }
-    let source = match report.path_taken {
-        fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
-        fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-        fdu_core::OpenPath::CacheOnly => ReportSource::CacheOnly,
-    };
-    let scan_started_at =
-        (report.path_taken != fdu_core::OpenPath::CacheOnly).then_some(operation_started_at);
-    Ok(PyIndex {
-        inner: index,
-        basis,
-        delivery,
-        errors,
-        operation_complete,
-        scan_started_at,
-        source,
-    })
+    let (index, _report) = opened.map_err(to_py_err)?;
+    Ok(PyIndex { inner: index, basis, delivery })
 }
 
 /// Walk a tree with no cache at all and return the index.
@@ -1767,8 +1679,6 @@ fn scan(
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
-    let started_at = SystemTime::now();
-    let scan_started_at = Some(started_at);
     let basis = build_basis(
         &root,
         max_depth,
@@ -1788,24 +1698,9 @@ fn scan(
     };
     let config = OpenConfig::of(&basis, &delivery);
     let scanned = py.detach(|| fdu_core::open(&root, &config));
-    let (index, report) = scanned.map_err(to_py_err)?;
-    let operation_complete = report.is_complete();
-    let mut errors = report.errors().iter().map(ErrorDetail::from_engine).collect::<Vec<_>>();
-    if let Some(message) =
-        report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
-    {
-        errors.push(ErrorDetail::analysis(message));
-    }
+    let (index, _report) = scanned.map_err(to_py_err)?;
     // A bare scan never consults the cache, so it is always cold.
-    Ok(PyIndex {
-        inner: index,
-        basis,
-        delivery,
-        errors,
-        operation_complete,
-        scan_started_at,
-        source: ReportSource::ColdScan,
-    })
+    Ok(PyIndex { inner: index, basis, delivery })
 }
 
 /// Run the native CLI using Python's process arguments.
@@ -1934,10 +1829,6 @@ mod tests {
                         watch: None,
                         analysis_workers: 0,
                     },
-                    errors: Vec::new(),
-                    operation_complete: true,
-                    scan_started_at: None,
-                    source: ReportSource::ColdScan,
                 },
             )
             .expect("allocate Python index");

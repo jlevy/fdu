@@ -20,9 +20,7 @@ use std::time::Duration;
 
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{
-    Basis, Delivery, Provenance, Query, Report, Request, Selection, WatchDelivery, report,
-};
+use crate::query::{Basis, Delivery, Query, Report, Request, Selection, WatchDelivery, report};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -208,7 +206,7 @@ impl Session {
     /// makes "watch is the same query repeated" true rather than aspirational.
     pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.request, &Provenance::of(&index, generated_at))
+        report(&index, &self.request, generated_at)
     }
 
     /// A consistent copy of the current index.

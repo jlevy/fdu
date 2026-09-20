@@ -738,11 +738,11 @@ impl Cli {
             }
         }
 
-        if format == report_format::Format::Text && !report.complete {
+        if format == report_format::Format::Text && !report.status.complete {
             let color =
                 ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
                     .enabled();
-            for error in &report.errors {
+            for error in &report.status.errors {
                 let _ = writeln!(
                     diagnostic,
                     "{}",
@@ -751,7 +751,7 @@ impl Cli {
             }
         }
 
-        Ok(if report.complete { RunOutcome::Complete } else { RunOutcome::Partial })
+        Ok(if report.status.complete { RunOutcome::Complete } else { RunOutcome::Partial })
     }
 
     /// Whether the requested format is a machine format, which is never colorized.

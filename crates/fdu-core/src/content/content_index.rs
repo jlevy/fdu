@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::stored_state::ContentTierIdentity;
+use crate::{Freshness, Source};
 
 use super::content_model::{
     AnalysisSet, AnalyzerOutcome, BasicMetrics, CodeMetrics, ContentProvenance, CoverageReason,
@@ -289,8 +290,17 @@ fn path_bytes(path: &Path) -> &[u8] {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ContentIndex {
     identity: Option<ContentTierIdentity>,
+    state: Option<ContentTierState>,
     files: BTreeMap<PathKey, FileAnalysis>,
     rollups: HashMap<PathBuf, ContentRollUp>,
+}
+
+/// Operational provenance of the content tier, separate from its semantic identity.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct ContentTierState {
+    pub source: Source,
+    pub freshness: Freshness,
+    pub observed_at_ns: i64,
 }
 
 impl ContentIndex {
@@ -318,6 +328,14 @@ impl ContentIndex {
     /// Analyzer, rule, and option identity every record in this derived tier carries.
     pub fn provenance(&self) -> Option<ContentProvenance> {
         self.identity.as_ref().map(ContentTierIdentity::record_provenance)
+    }
+
+    pub(crate) const fn state(&self) -> Option<ContentTierState> {
+        self.state
+    }
+
+    pub(crate) fn set_state(&mut self, state: ContentTierState) {
+        self.state = Some(state);
     }
 
     /// Borrow one file's analysis.
@@ -424,6 +442,7 @@ impl ContentIndex {
         }
         self.files.clear();
         self.rollups.clear();
+        self.state = None;
         self.identity = Some(identity);
     }
 

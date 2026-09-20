@@ -184,6 +184,8 @@ pub fn load_content_cache(
     if metadata.len() > MAX_CACHE_BYTES {
         return Ok(ContentCacheLoad::default());
     }
+    let observed_at_ns =
+        metadata.modified().ok().and_then(crate::query::system_time_to_nanos).unwrap_or(0);
     let read_started = crate::counters::enabled().then(std::time::Instant::now);
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
     crate::counters::add_elapsed(read_started, |counts, elapsed| {
@@ -295,6 +297,7 @@ pub fn load_content_cache(
     if let Some(timings) = timings {
         timings.publish();
     }
+    index.set_content_tier_state(crate::Source::Cached, crate::Freshness::Stale, observed_at_ns);
     Ok(loaded)
 }
 

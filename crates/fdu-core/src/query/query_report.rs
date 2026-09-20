@@ -18,18 +18,17 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource};
 use crate::content::{AnalysisSet, ContentProvenance, CoverageReason, LogicalWordStats, MetricDef};
 use crate::control::ControlCoverage;
-use crate::engine_contract::{EntryKind, Freshness, ScanScope};
+use crate::engine_contract::{EntryKind, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
-use crate::query::Rejection;
 use crate::query::query_request::{Basis, Request};
 use crate::query::query_selection::{
     Bound, Candidate, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
 };
+use crate::query::{Rejection, ReportProvenance, TreeStatus};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -490,54 +489,6 @@ pub enum ReportSource {
     CacheOnly,
 }
 
-/// Facts about how a report's index was produced.
-///
-/// Passed in rather than sampled inside [`report`] so the view layer stays a pure
-/// function of its inputs: the same index and query must always produce the same report,
-/// which is what makes the goldens meaningful and the tests deterministic.
-#[derive(Clone, Debug)]
-pub struct Provenance {
-    /// When the walk or revalidation behind this index began.
-    ///
-    /// This, not the finish time, is the sound watermark for an incremental follow-up
-    /// query: a file modified mid-scan may have been observed before the modification,
-    /// so only the start bound is conservative.
-    pub scan_started_at: Option<SystemTime>,
-    /// When the report was rendered.
-    pub generated_at: SystemTime,
-    /// Which cache tier answered.
-    pub source: ReportSource,
-    /// Whether every path in scope was read successfully.
-    pub complete: bool,
-    /// Per-path failures that made this result partial, already rendered.
-    ///
-    /// Rendered strings rather than error values: this crosses into serialization, and a
-    /// report is evidence about a run, not a place to re-handle its errors.
-    pub errors: Vec<String>,
-}
-
-impl Provenance {
-    pub(crate) fn of(index: &Index, generated_at: SystemTime) -> Self {
-        let state = index.state();
-        let scan_started_at = u64::try_from(index.writing_pass_started_at_ns())
-            .ok()
-            .map(|nanos| SystemTime::UNIX_EPOCH + std::time::Duration::from_nanos(nanos));
-        Self {
-            scan_started_at,
-            generated_at,
-            source: match state.source {
-                crate::Source::Scanned => ReportSource::ColdScan,
-                crate::Source::Revalidated | crate::Source::JournalScoped => {
-                    ReportSource::WarmRevalidate
-                }
-                crate::Source::Cached => ReportSource::CacheOnly,
-            },
-            complete: state.coverage == crate::Coverage::Complete,
-            errors: index.issues().iter().map(|issue| issue.message.clone()).collect(),
-        }
-    }
-}
-
 /// One directory's row in a tree view.
 #[derive(Clone, Debug)]
 pub struct TreeNode {
@@ -952,18 +903,10 @@ impl Section {
 /// A rendered answer: provenance, plus one section per requested view.
 #[derive(Clone, Debug)]
 pub struct Report {
-    /// When the walk behind this index began.
-    pub scan_started_at: Option<SystemTime>,
-    /// When this report was rendered.
-    pub generated_at: SystemTime,
-    /// Which cache tier answered.
-    pub source: ReportSource,
-    /// Whether every path in scope was read successfully.
-    pub complete: bool,
-    /// Per-path failures that made this result partial.
-    pub errors: Vec<String>,
-    /// How current the index is.
-    pub freshness: Freshness,
+    /// Completeness and bounded failure detail for this answer.
+    pub status: TreeStatus,
+    /// Source, currency, and timing for this answer and its retained tiers.
+    pub provenance: ReportProvenance,
     /// The semantic scan scope represented by this report.
     ///
     /// A report-only cache projection may consume stronger internal control state that
@@ -1131,8 +1074,12 @@ fn refused_controls_note(ignore_rules: &ControlCoverage, axes: &AxisNames) -> Op
 /// ([`Selection::ignored`]) over an index that read no `.gitignore` -- which can say of no
 /// entry that it is ignored or that it is not, so the request is refused rather than
 /// answered with every entry or none.
-pub fn report(index: &Index, request: &Request, provenance: &Provenance) -> crate::Result<Report> {
-    report_in(index, request, provenance, NameIdentity::Native)
+pub fn report(
+    index: &Index,
+    request: &Request,
+    generated_at: std::time::SystemTime,
+) -> crate::Result<Report> {
+    report_in(index, request, generated_at, NameIdentity::Native)
 }
 
 /// [`report`], with the selection evaluated against the named spelling of each path.
@@ -1142,7 +1089,7 @@ pub fn report(index: &Index, request: &Request, provenance: &Provenance) -> crat
 pub(crate) fn report_in(
     index: &Index,
     request: &Request,
-    provenance: &Provenance,
+    generated_at: std::time::SystemTime,
     identity: NameIdentity,
 ) -> crate::Result<Report> {
     // What this index holds is what it can be read for. Every surface validates before it
@@ -1175,12 +1122,8 @@ pub(crate) fn report_in(
     let ignore_rules = index.control_coverage();
     Ok(Report {
         notes: display_notes(query, &ignore_rules),
-        scan_started_at: provenance.scan_started_at,
-        generated_at: provenance.generated_at,
-        source: provenance.source,
-        complete: provenance.complete,
-        errors: provenance.errors.clone(),
-        freshness: index.state().freshness,
+        status: TreeStatus::of(index, request),
+        provenance: ReportProvenance::of(index, generated_at),
         scope: index.scope(),
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
@@ -1241,18 +1184,14 @@ pub(crate) fn report_summary(
     scope: ScanScope,
     size: SizeMetric,
     summary: SummaryRow,
-    freshness: Freshness,
-    provenance: &Provenance,
+    status: TreeStatus,
+    provenance: ReportProvenance,
 ) -> Report {
     Report {
         // A compact summary resolves one view and drops none.
         notes: Vec::new(),
-        scan_started_at: provenance.scan_started_at,
-        generated_at: provenance.generated_at,
-        source: provenance.source,
-        complete: provenance.complete,
-        errors: provenance.errors.clone(),
-        freshness,
+        status,
+        provenance,
         scope,
         root: root.to_path_buf(),
         size,
@@ -2236,18 +2175,12 @@ mod tests {
         );
     }
 
-    fn provenance() -> Provenance {
-        Provenance {
-            scan_started_at: Some(UNIX_EPOCH + Duration::from_secs(1_000)),
-            generated_at: UNIX_EPOCH + Duration::from_secs(1_001),
-            source: ReportSource::ColdScan,
-            complete: true,
-            errors: Vec::new(),
-        }
+    fn generated_at() -> std::time::SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_001)
     }
 
     fn run(index: &Index, query: &Query) -> Report {
-        report(index, &crate::test_support::read_of(index, query.clone()), &provenance())
+        report(index, &crate::test_support::read_of(index, query.clone()), generated_at())
             .expect("the query is answerable over this index")
     }
 
@@ -2870,13 +2803,13 @@ mod tests {
     }
 
     #[test]
-    fn a_report_carries_the_provenance_it_was_given() {
+    fn a_report_derives_provenance_from_its_index() {
         let index = sample();
         let report = run(&index, &query(&[ViewSpec::Summary], Selection::default()));
-        assert_eq!(report.source, ReportSource::ColdScan);
-        assert!(report.complete);
-        assert_eq!(report.scan_started_at, Some(UNIX_EPOCH + Duration::from_secs(1_000)));
-        assert_eq!(report.generated_at, UNIX_EPOCH + Duration::from_secs(1_001));
+        assert_eq!(report.provenance.source, ReportSource::ColdScan);
+        assert!(report.status.complete);
+        assert!(report.provenance.scan_started_at.is_some());
+        assert_eq!(report.provenance.generated_at, generated_at());
         assert_eq!(report.root, Path::new("/root"));
     }
 

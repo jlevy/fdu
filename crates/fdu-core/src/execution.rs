@@ -10,12 +10,12 @@
 use std::time::SystemTime;
 
 use crate::query::{
-    Delivery, Provenance, Query, Report, ReportSource, Request, SummaryRow, ViewSpec, report,
-    report_summary,
+    Delivery, Query, Report, ReportProvenance, ReportSource, Request, SummaryRow, TreeStatus,
+    ViewSpec, report, report_summary,
 };
 use crate::{
-    CachePolicy, EntryKind, Error, Freshness, OpenConfig, OpenPath, PendingSave, Result,
-    SnapshotUse, open_for_report,
+    CachePolicy, EntryKind, Error, OpenConfig, OpenPath, PendingSave, Result, SnapshotUse,
+    open_for_report,
 };
 
 /// The minimum state a one-shot report plan retains while scanning.
@@ -281,20 +281,14 @@ fn prepare_report_internal(
                 (crate::scan::scan(&root, &config.scan, &mut reduce)?, None)
             };
             let complete = scan.is_complete();
-            let provenance = Provenance {
-                scan_started_at: Some(scan_started_at),
-                generated_at: SystemTime::now(),
-                source: ReportSource::ColdScan,
-                complete,
-                errors: scan.errors.iter().map(ToString::to_string).collect(),
-            };
+            let generated_at = SystemTime::now();
             let report = report_summary(
                 &root,
                 config.scan.scope(),
                 query.selection.size,
                 summary,
-                if complete { Freshness::Fresh } else { Freshness::Partial },
-                &provenance,
+                TreeStatus::of_walk(&scan),
+                ReportProvenance::of_walk(scan_started_at, generated_at, complete),
             );
             let performance = PerformanceSummary {
                 walked_files: scan.files_walked,
@@ -312,21 +306,8 @@ fn prepare_report_internal(
                 SnapshotUse::ReportOnly,
                 collect_scan_diagnostics,
             )?;
-            let provenance = Provenance {
-                scan_started_at: Some(scan_started_at),
-                generated_at: SystemTime::now(),
-                source: match open_report.path_taken {
-                    OpenPath::ColdScan => ReportSource::ColdScan,
-                    OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                    OpenPath::CacheOnly => ReportSource::CacheOnly,
-                },
-                complete: open_report.is_complete(),
-                // error_messages() also surfaces analysis and restored content-cache
-                // diagnostics, which errors() alone would drop on a warm or cache-only open.
-                errors: open_report.error_messages(),
-            };
             let performance = PerformanceSummary::from_open_report(&open_report);
-            let mut answer = report(&index, request, &provenance)?;
+            let mut answer = report(&index, request, SystemTime::now())?;
             // A cache-only report may consume a controls-on snapshot for a controls-off
             // request because reporting reads only the all-entry facts. No Index escapes
             // this boundary, and the projected report must describe the requested scope

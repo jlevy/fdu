@@ -9,9 +9,7 @@ use std::time::UNIX_EPOCH;
 
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
-use fdu_core::query::{
-    Basis, Bound, Provenance, Query, ReportSource, Request, Selection, ViewSpec,
-};
+use fdu_core::query::{Basis, Bound, Query, Request, Selection, ViewSpec};
 use fdu_core::{Attrs, EntryKind, Index, Observation, Op};
 
 #[global_allocator]
@@ -82,20 +80,12 @@ fn bounded_single_file_view_does_not_clone_every_materialized_path() {
         ..Query::default()
     };
     let request = Request::new(Basis::held_by(&index), query, UNIX_EPOCH);
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: UNIX_EPOCH,
-        source: ReportSource::ColdScan,
-        complete: true,
-        errors: Vec::new(),
-    };
-
     let (report, allocations) = {
         let _guard = COUNTER_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
         let _disable = DisableCounters;
         fdu_core::counters::reset();
         fdu_core::counters::enable(true);
-        let report = fdu_core::query::report(&index, &request, &provenance).expect("report");
+        let report = fdu_core::query::report(&index, &request, UNIX_EPOCH).expect("report");
         let allocations = usize::try_from(fdu_core::counters::thread_snapshot().allocs)
             .expect("allocation count fits usize");
         fdu_core::counters::enable(false);

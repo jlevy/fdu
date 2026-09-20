@@ -3504,6 +3504,21 @@ impl Index {
         self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(identity);
     }
 
+    pub(crate) fn set_content_tier_state(
+        &mut self,
+        source: Source,
+        freshness: Freshness,
+        observed_at_ns: i64,
+    ) {
+        if let Some(content) = self.content.as_deref_mut() {
+            content.set_state(crate::content::ContentTierState {
+                source,
+                freshness,
+                observed_at_ns,
+            });
+        }
+    }
+
     /// Capture every regular-file analysis candidate without retaining a lock or entry
     /// borrow across filesystem I/O.
     ///
@@ -4540,6 +4555,10 @@ impl Index {
     /// image.
     pub(crate) const fn writing_pass_started_at_ns(&self) -> i64 {
         self.writing_pass_started_at_ns
+    }
+
+    pub(crate) const fn scanned_at_ns(&self) -> i64 {
+        self.scanned_at_ns
     }
 
     /// Record the pass start a loaded snapshot carried for the facts it restored.

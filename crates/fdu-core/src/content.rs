@@ -17,6 +17,7 @@ pub use content_cache::{
 };
 pub(crate) use content_cache::{content_sidecar_bytes, identify_sidecar};
 pub use content_code_metrics::CodeAccumulator;
+pub(crate) use content_index::ContentTierState;
 pub use content_index::{AnalyzerTally, ContentIndex, ContentRollUp, MetricTally};
 pub(crate) use content_model::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, RestoreCandidate,
