@@ -279,8 +279,9 @@ That is not a rewrite, and not this Darwin host.
 
 - **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
   snapshot rewrite; landed and closed), `fdu-n75m` part 1 (flush the render before the
-  join; landed, with the bead open for parts 2 and 3), `fdu-pdne` (PGO, screen only),
-  `fdu-78q6` (sidecar restore, on the metabrowser clone).
+  join; landed, with the bead open for parts 2 and 3), `fdu-pdne` (PGO screen recorded
+  as H148; pipeline adoption open), `fdu-78q6` (sidecar restore, on the metabrowser
+  clone).
 - **Tier 2, instruments:** `fdu-9hdc` (a `getattrlistbulk` floor, so `fdu-33ri` can ship
   two scoreboards with the regime difference recorded), `fdu-4xtm`, `fdu-5yjk`,
   `fdu-0pzh` (measure only), and promoting `host_regime` into the artifact schema.
@@ -528,7 +529,10 @@ strategy and the record is visible in review.
   recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
   virtualized host; ready to merge onto #92
 - [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
-  H144–H146 plus H84 screen, stacked on #94
+  leftover records, H147/H72 keeps, and H148 PGO screen on
+  [#97](https://github.com/jlevy/fdu/pull/97)
+- [Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md) — H148 / exp-154 folded onto
+  #97
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

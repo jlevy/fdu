@@ -46,6 +46,10 @@ below zero.
 ## Standing
 
 - **Branch:** `cursor/linux-perf-iterate-de1b`
+- **Stack:** GitHub stack #102 — [#91](https://github.com/jlevy/fdu/pull/91) →
+  [#92](https://github.com/jlevy/fdu/pull/92) →
+  [#94](https://github.com/jlevy/fdu/pull/94) →
+  [#97](https://github.com/jlevy/fdu/pull/97)
 - **Base:** `perf/campaign-linux-2026-09-19`
   ([#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`)
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)

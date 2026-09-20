@@ -1268,8 +1268,8 @@ fn walk_hook_covers(path: &Path) -> bool {
 pub(crate) struct ScannerBatch {
     ops: Vec<ObservationOp>,
     /// When set, the consumer must return `ops` through this sender instead of dropping
-    /// them. Workers allocate the `PathBuf`s; glibc's cross-thread free of those buffers
-    /// is H85. The public [`scan`] path leaves this unset.
+    /// them. Workers allocate the `PathBuf`s; returning the drained vec lets glibc free
+    /// those arenas on the producing thread. The public [`scan`] path leaves this unset.
     recycle: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
 }
 
@@ -1360,9 +1360,9 @@ pub fn scan(
 /// Walk `root` for the transient summary tier, folding each op without retaining it.
 ///
 /// The public [`scan`] path hands each batch to the caller as an [`Observation`], so
-/// worker-allocated `PathBuf`s are freed on the consumer thread — the glibc pattern H85
-/// names. This path returns drained batches to the producing worker so each arena is
-/// allocated and freed on one thread. Tallies must match [`scan`].
+/// worker-allocated `PathBuf`s are freed on the consumer thread. This path returns
+/// drained batches to the producing worker so each arena is allocated and freed on one
+/// thread. Tallies must match [`scan`].
 pub(crate) fn scan_summary_fold(
     root: &Path,
     config: &ScanConfig,
@@ -2597,7 +2597,7 @@ impl StreamingEmission {
         }
     }
 
-    /// H85: return drained `PathBuf` arenas to this worker so glibc frees them here.
+    /// Return drained `PathBuf` arenas to this worker so glibc frees them here.
     fn recycling(batch_size: usize) -> Self {
         let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
         Self {
@@ -2837,7 +2837,7 @@ fn walk_worker(
     )
 }
 
-/// Streaming walk that returns drained batches to this worker (H85).
+/// Streaming walk that returns drained batches to this worker.
 fn walk_worker_recycling(
     root: &Path,
     config: &ScanConfig,
