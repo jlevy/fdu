@@ -3,13 +3,17 @@ type: is
 id: is-01m0rk5bvxy8xcbcz6fwarmj4d
 title: Content sidecar path validation uses is_absolute, which is not the guard on Windows
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-08-24T00:36:40.444Z
-updated_at: 2026-08-24T15:22:37.294Z
+updated_at: 2026-09-20T04:46:26.595Z
+closed_at: 2026-09-20T04:46:26.594Z
+close_reason: "Verified at PR92 head 937f9445: content_cache::record_path_stays_inside_root rejects ParentDir, RootDir, and Prefix components; a_record_that_leaves_the_root_is_a_clean_miss rewrites checksummed sidecars for traversal, Unix absolute, Windows rooted-without-drive and drive-relative forms. Existing regression passed in resumed PR91 make check (all-features, no-default-features, MSRV), and PR91/92 required cross-platform CI is green. Original defect is already fixed."
+resolution: null
+duplicate_of: null
 ---
 content_cache.rs rejects an absolute relative_path when parsing a sidecar:
 

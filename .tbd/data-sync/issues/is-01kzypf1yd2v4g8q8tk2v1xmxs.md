@@ -3,16 +3,20 @@ type: is
 id: is-01kzypf1yd2v4g8q8tk2v1xmxs
 title: Implement or explicitly defer content analysis in watch mode
 kind: bug
-status: open
+status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2pmrcrmjrm62bm1x3mxwgvm
 created_at: 2026-08-13T23:14:08.460Z
-updated_at: 2026-09-17T02:57:28.107Z
+updated_at: 2026-09-20T04:46:26.939Z
+closed_at: 2026-09-20T04:46:26.937Z
+close_reason: Verified shared Request validation refuses WatchContent and Session validates held analyzer identity; a_session_refuses_an_analyzed_index and related mismatch tests pass. Python wheel smoke covers analyzed Index.watch refusal; PR91/92 CI passed all required checks. Content analysis remains explicitly one-shot, which satisfies the implement-or-explicitly-defer scope. Live incremental analysis remains future capability, not silently stale metrics.
+resolution: null
+duplicate_of: null
 ---
 The CLI now explicitly rejects enabled content analysis with --watch, the Python watch feed remains metadata-only, and user-facing docs call content analysis one-shot. Implement incremental content reanalysis on metadata deltas before claiming full mode composability.
 
