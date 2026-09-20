@@ -8,7 +8,8 @@
 [#92](https://github.com/jlevy/fdu/pull/92). Darwin measurement on that branch stopped
 at `26480612` (H138 recorded).
 H139 is recorded (exp-138, same, quiet).
-H140–H142 remain reserved here.
+H140 is recorded (exp-139, same leftover identity).
+H141–H142 remain reserved here.
 Do not mint them on the Darwin branch.
 
 ## Overview
@@ -120,11 +121,12 @@ Mint the reserved id when the cell starts, not before.
    Do not retry the cache-hit increments.
    Bead: `fdu-bt6x` (close).
 
-2. **H140 — walk leftover.** `default-tree` / first-run profile on a Linux subject.
-   Determination: is the walk still ≥90% of component, and is the leftover
-   `getdents64`+`statx` (expected) or a userspace stage ≥3% that Darwin did not see?
+2. **H140 — walk leftover.** **Same leftover identity** (exp-139, uncontrolled).
+   Walk 95.7–96.1% of `default-tree` component on `linux-v6.12`. Leftover is the
+   `getdents64`+`statx` floor (one open/dir, one stat/entry).
+   Quiet attempt did not hold.
    Do not compile a walk trim.
-   Do not retry H71. Bead: `fdu-6hjg`.
+   Do not retry H71. Bead: `fdu-6hjg` (close).
 
 3. **H141 — content-query stack, same or different.** Pair #91-equivalent control
    against this branch on `content-query` (H138’s job).
@@ -191,7 +193,7 @@ If #92 moves, rebase this branch onto it and keep H139–H142 meanings.
 ## Open Questions
 
 - H139 closed: cache-hit stack is **same** on Linux (exp-138, quiet, −22.48%)
-- Whether Linux walk leftover is still the syscall floor (H140) or a new userspace stage
+- H140 closed: walk leftover is **same** identity (exp-139; getdents64+statx floor)
 - Whether H138’s shared `every_entry` walk still clears 3% on Linux (H141)
 - Whether H111’s floor/RSS gates pass on the current engine (H111 / `fdu-jekg`)
 

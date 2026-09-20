@@ -67,8 +67,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 2 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
 
@@ -217,6 +217,7 @@ dead end.
 | 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
 | 137 | [Share one every_entry across unfiltered metric views](#exp137--share-one-everyentry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
 | 138 | [Linux cache-hit stack same versus #91 control](#exp138--linux-cachehit-stack-same-versus-91-control) | H139 | `content-cache-hit` | -22.5% | ✅ accepted |
+| 139 | [Linux walk leftover is still the getdents64 plus statx floor](#exp139--linux-walk-leftover-is-still-the-getdents64-plus-statx-floor) | H140 | `default-tree` | +0.6% | ✅ accepted |
 
 ## The experiments
 
@@ -4684,6 +4685,33 @@ reconstructible linux-v6.12; RSS -10.24%; digest identical; no engine patch.
 Full record:
 [`exp-138-linux-cache-hit-stack-same-versus-91-control.md`](../experiments/exp-138-linux-cache-hit-stack-same-versus-91-control.md)
 
+### exp-139 — Linux walk leftover is still the getdents64 plus statx floor
+
+✅ accepted · 2026-09-20 · H140 · commit `a5c98d59`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 433.6 | 439.4 | +0.64% (n.s.) | [-0.45%, +3.58%] |
+| component (ms) | 431.7 | 437.6 | +0.66% (n.s.) | [-0.42%, +3.55%] |
+| cpu (ms) | 548.1 | 555.5 | +1.06% (regression) | [+0.21%, +2.30%] |
+| user (ms) | 444.2 | 449.9 | +3.86% (n.s.) | [-0.91%, +5.69%] |
+| system (ms) | 106.2 | 101.9 | -9.14% (n.s.) | [-14.16%, +6.61%] |
+| peak rss (MiB) | 43.7 | 43.9 | +0.34% (n.s.) | [-0.22%, +0.87%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** walk still 95.7-96.1% of default-tree component; leftover is
+getdents64+statx floor; no userspace cut; do not retry H71.
+
+Full record:
+[`exp-139-linux-walk-leftover-is-still-the-getdents64-plus-statx-floor.md`](../experiments/exp-139-linux-walk-leftover-is-still-the-getdents64-plus-statx-floor.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4894,6 +4922,13 @@ Baselines show one value because they measure a state rather than a change.
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
 
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+
 ### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4975,12 +5010,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 104 | Hash the content roll-up map by path bytes instead of components | `content-cache-hit` | 1,961.3 | 1,973.6 | +0.1% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
