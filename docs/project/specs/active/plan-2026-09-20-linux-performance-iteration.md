@@ -93,12 +93,12 @@ Mint the reserved id when the cell starts, not before.
    No new userspace cut.
    Do not retry H125/H129/H131/H133. Bead: `fdu-5wzu` (close).
 
-2. **H145 — opened-discovery leftover.** H127 analog.
-   Darwin leftover was `read_dir`+`fstatat`, journal clones, and live roll-up merges; no
-   smallest cut. Linux opened-discovery is not `macos_bulk`; name whether a userspace
-   stage ≥3% remains. Do not port `macos_bulk`. Do not apply H115 rebuild to progressive
-   commits unless the leftover names that.
-   Bead: minted with the spec.
+2. **H145 — opened-discovery leftover.** **Same leftover identity** (exp-145,
+   uncontrolled). Journal clones 5,772 / 5,772; 438,021 live roll-up merges; opened
+   component ~2.75× first-pass (both jobs pay `statx`). Quiet start 0.151/core did not
+   hold (3/30 invalid at 0.251). No smallest skippable userspace cut ≥3%. Do not port
+   `macos_bulk`. Do not apply H115 rebuild to progressive commits.
+   Bead: `fdu-40pl` (close).
 
 3. **H84 — adaptive unlock / thread-policy screen (`fdu-tk1b`).** Existing id.
    Predicted: the 30 µs APFS threshold never fires against the Linux warm floor (~1.5
@@ -161,8 +161,8 @@ If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
 
 ## Open Questions
 
-- Whether Linux cache-hit leftover after H125–H133 still has a userspace stage ≥3%
-- Whether Linux opened-discovery leftover names a cut Darwin did not
+- Linux cache-hit leftover after H125–H133: no new ≥3% userspace cut (H144 / exp-144)
+- Linux opened-discovery leftover: same as Darwin H127; no new ≥3% cut (H145 / exp-145)
 - Whether H84’s unlock is silent here and whether a worker screen clears 3%
 - Whether Linux first-run snapshot write is a skippable ≥3% cut
 

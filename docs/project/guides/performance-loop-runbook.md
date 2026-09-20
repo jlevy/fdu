@@ -770,6 +770,12 @@ Uncontrolled 12-pair `content-basic` on `linux-v6.12`. 86,634 opens, 184,057 rea
 Quiet start 0.036/core did not hold.
 Do not retry H124.
 
+**H145 / exp-145** is the standing Linux opened-discovery leftover: **same** identity.
+Uncontrolled 12-pair `opened-discovery` on `linux-v6.12`. 5,772 journal clones; 438,021
+live roll-up merges; opened component ~2.75× first-pass (Darwin H127 was 8.8×). Quiet
+start 0.151/core did not hold.
+Do not port `macos_bulk`.
+
 This host’s nominated set is
 [nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
 `linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
@@ -787,6 +793,9 @@ Further Linux cells are on
    Already-landed restore work.
    Do not retry H125–H133.
 2. **H145** — Linux opened-discovery leftover (H127 analog).
+   **Same leftover identity** (exp-145, uncontrolled).
+   Journal clones plus live roll-ups; 2.75× first-pass.
+   Do not port `macos_bulk`.
 3. **H84** — adaptive unlock / thread-policy screen (`fdu-tk1b`). Screening only on this
    4-core VM. Do not ship a `PORTABLE` constant.
 4. **H146** — Linux first-run leftover after H140 (H136 analog).
@@ -794,7 +803,7 @@ Further Linux cells are on
    That is **H147** if minted.
    Do not restart H86. Do not retry H71.
 
-Next free Linux experiment id is **exp-144**. Next free unused hypothesis id after this
+Next free Linux experiment id is **exp-146**. Next free unused hypothesis id after this
 reservation is **H147**.
 
 ## Before the First Round

@@ -793,6 +793,15 @@
    "subject": "b3459e945151:450001:b77ebb296d34",
    "tool": "dust",
    "wall_ns": 564313578.5
+  },
+  {
+   "entries": 92474,
+   "id": "exp-145",
+   "per_entry_ns": 933.4126294958583,
+   "platform": "Linux",
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "tool": "dust",
+   "wall_ns": 86316399.5
   }
  ],
  "experiments": [
@@ -36729,6 +36738,154 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux cache-hit leftover after landed stack is already-landed restore work",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": -0.231,
+   "commit": "eec14927",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H145"
+   ],
+   "id": "exp-145",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "opened-discovery",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1184382420.5,
+        "control": 1174009001.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.374,
+        "ci95_high_pct": 1.1,
+        "ci95_low_pct": -0.521,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1562332000,
+        "control": 1553772000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.187,
+        "ci95_high_pct": 0.894,
+        "ci95_low_pct": -0.482,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 112205824,
+        "control": 112134144
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.035,
+        "ci95_high_pct": 0.185,
+        "ci95_low_pct": -0.062,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 170345000,
+        "control": 172154000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.762,
+        "ci95_high_pct": 12.521,
+        "ci95_low_pct": -9.374,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1401034000,
+        "control": 1392624500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.35,
+        "ci95_high_pct": 1.651,
+        "ci95_low_pct": -1.251,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1508023276.5,
+        "control": 1496980649
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.231,
+        "ci95_high_pct": 1.097,
+        "ci95_low_pct": -0.579,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 16307.538080974111,
+      "control": 16188.124759391829
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 145,
+   "path": "exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md",
+   "platform": "Linux",
+   "primary_job": "opened-discovery",
+   "primary_metric": "wall_ns",
+   "reason": "same leftover identity as Darwin H127: 5772 journal clones, 438k live roll-up merges, 2.75x first-pass; no smallest cut; do not port macos_bulk",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-s",
+      "-k",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 86316399.5
+    }
+   ],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux opened-discovery leftover is still journal clones plus live roll-ups",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -36902,6 +37059,29 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140",
+    "exp-143",
+    "exp-144",
+    "exp-145"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 179605080,
    "directories": 2240,
    "entries": 11141,
@@ -36966,28 +37146,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138",
-    "exp-139",
-    "exp-140",
-    "exp-143",
-    "exp-144"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -37588,19 +37746,19 @@
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 80,
+   "accepted": 81,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 47,
    "superseded": 3
   },
-  "experiments": 144,
+  "experiments": 145,
   "first_date": "2026-08-10",
-  "hypotheses": 100,
+  "hypotheses": 101,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 18,
+   "Linux": 19,
    "macOS": 126
   }
  },
