@@ -172,17 +172,15 @@ pub fn load_content_cache(
     // identities without classifying (`restore_analysis_candidates`); the sidecar
     // already stores the classification that would have replaced the live result.
     let candidates_started = crate::counters::enabled().then(std::time::Instant::now);
-    let mut candidates = index.restore_analysis_candidates(wanted.analysis);
+    let (mut candidates, visited) = index.restore_analysis_candidates(wanted.analysis);
     crate::counters::add_elapsed(candidates_started, |counts, elapsed| {
         counts.content_sidecar_candidates_us =
             counts.content_sidecar_candidates_us.saturating_add(elapsed);
     });
-    let candidate_count = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
-    let mut loaded = ContentCacheLoad {
-        usable: true,
-        candidates: candidate_count,
-        ..ContentCacheLoad::default()
-    };
+    // Completeness is files visited, not unique `PathBuf` keys. Trailing-separator
+    // aliases collapse in the map and would otherwise shrink the denominator.
+    let mut loaded =
+        ContentCacheLoad { usable: true, candidates: visited, ..ContentCacheLoad::default() };
     for _ in 0..stream.remaining {
         let decode_started = crate::counters::enabled().then(std::time::Instant::now);
         let Some((relative_path, analysis)) = read_record(&mut stream) else {

@@ -593,9 +593,10 @@ pub(crate) fn open_for_report(
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
         let content_cache = load_content(&mut index, config)?;
-        // A sidecar serves only its own identity, so restoring one record per candidate
-        // means the sidecar holds the complete answer to this request. Restore already
-        // walked that set; compare `hits` to the count it stored, not a second walk.
+        // A sidecar serves only its own identity, so restoring one record per visited
+        // regular file means the sidecar holds the complete answer to this request.
+        // Restore already walked that set; compare `hits` to files visited, not a
+        // second walk and not unique `PathBuf` keys.
         if config.analysis.profile.is_enabled()
             && (!content_cache.usable || content_cache.hits != content_cache.candidates)
         {
@@ -1517,6 +1518,57 @@ mod tests {
             matches!(open(dir.path(), &only), Err(Error::Snapshot(_))),
             "a one-record sidecar must not serve a two-file cache-only analysis request"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_only_serves_checksummed_native_non_utf8_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let native = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
+        let mut index = Index::new(&root);
+        index.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from("ok.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs {
+                    size: 1,
+                    allocated: 512,
+                    mtime_ns: 1,
+                    ctime_ns: 1,
+                    inode: 1,
+                    dev: 1,
+                },
+            },
+            Op::Upsert {
+                path: native.clone(),
+                kind: EntryKind::File,
+                attrs: Attrs {
+                    size: 2,
+                    allocated: 512,
+                    mtime_ns: 2,
+                    ctime_ns: 2,
+                    inode: 2,
+                    dev: 1,
+                },
+            },
+        ]));
+        snapshot::save(&index, &snapshot_path).expect("save native names");
+
+        let only = OpenConfig {
+            cache_path: Some(snapshot_path),
+            policy: CachePolicy::Only,
+            ..OpenConfig::default()
+        };
+        let (cached, report) = open(&root, &only).expect("cache-only native name");
+        assert_eq!(cached.total().files, 2);
+        assert!(cached.lookup(&native).is_some());
+        assert!(report.is_complete());
     }
 
     #[test]

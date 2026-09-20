@@ -1013,6 +1013,12 @@ fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> R
     Ok(())
 }
 
+/// A snapshot entry name is one filesystem component, spelled exactly as stored.
+///
+/// `Path::components` treats `a` and `a/` as the same `Normal("a")`. The child map
+/// distinguishes the raw names, but a `PathBuf`-keyed restore map merges them and
+/// shrinks the cache-only completeness denominator. The raw name must equal that
+/// single normal component so a checksummed alias cannot load.
 fn is_snapshot_name(name: &OsStr) -> bool {
     let mut components = Path::new(name).components();
     let Some(Component::Normal(component)) = components.next() else { return false };

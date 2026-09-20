@@ -591,6 +591,8 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));
     }
     let component = started.elapsed();
+    // The historical benchmark digest hashes retained index/content facts after the
+    // reports are discarded. Zero invalid samples do not prove report construction.
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
     summary.content_candidates = analysis.candidates;
