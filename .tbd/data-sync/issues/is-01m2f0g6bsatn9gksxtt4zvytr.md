@@ -5,17 +5,19 @@ title: Ignore matcher reads *** between separators as *, where git reads it as *
 kind: bug
 status: in_progress
 priority: 4
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 delegate: codex@spud10
 labels:
   - stack-followup
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m2yh8kc79nw7bn6k6xw8g3bp
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 hold: null
 hold_until: null
 created_at: 2026-09-14T03:48:46.073Z
-updated_at: 2026-09-20T05:23:44.135Z
+updated_at: 2026-09-20T05:30:29.122Z
 started_at: 2026-09-20T05:23:44.135Z
 ---
 Found while fixing fdu-bqan (escaped slashes) at 777dc6f on codex/opened-root-inventory-rewrite.
