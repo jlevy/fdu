@@ -37261,6 +37261,143 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux first-run leftover is still the walk; snapshot write not skippable",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls --threads 8",
+   "change_pct": -10.064,
+   "commit": "a58f9e30",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "screen only; no engine change"
+   },
+   "control": "HEAD automatic workers --no-controls",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 208411,
+   "family": "Linux:894d731f69bb",
+   "hypotheses": [
+    "H84"
+   ],
+   "id": "exp-148",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 81716499,
+        "control": 92677047.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -10.174,
+        "ci95_high_pct": -8.162,
+        "ci95_low_pct": -14.979,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 313333500,
+        "control": 341497500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -7.746,
+        "ci95_high_pct": -6.035,
+        "ci95_low_pct": -10.05,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 29593600,
+        "control": 29593600
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 212415000,
+        "control": 209222500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.156,
+        "ci95_high_pct": 8.602,
+        "ci95_low_pct": -2.909,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 100240500,
+        "control": 128293000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -25.27,
+        "ci95_high_pct": -17.148,
+        "ci95_low_pct": -30.492,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 82644132,
+        "control": 93484583.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -10.064,
+        "ci95_high_pct": -7.95,
+        "ci95_low_pct": -14.721,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 396.5440019960559,
+      "control": 448.558778087529
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 148,
+   "path": "exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "confirmatory --no-controls sign on nominated /usr: -10.06% quiet; still not a shipped PORTABLE constant; minor_faults inferior",
+   "reference_tools": [],
+   "subject": "894d731f69bb:208411:44de521b2e23",
+   "title": "Linux H84 --no-controls --threads 8 sign transfers to nominated /usr",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -38118,24 +38255,42 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 6019421920,
+   "directories": 14325,
+   "entries": 208411,
+   "experiments": [
+    "exp-148"
+   ],
+   "files": 162440,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "894d731f69bb:208411:44de521b2e23",
+   "labels": [
+    "usr-prefix"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 83,
+   "accepted": 84,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 47,
    "superseded": 3
   },
-  "experiments": 147,
+  "experiments": 148,
   "first_date": "2026-08-10",
   "hypotheses": 103,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 21,
+   "Linux": 22,
    "macOS": 126
   }
  },

@@ -104,10 +104,11 @@ Mint the reserved id when the cell starts, not before.
    (exp-146, uncontrolled named jobs).
    ~2 µs/entry vs 30 µs; expansions 0; start 4 / reserve 8. Named-job `--threads 8` is
    not a 3% win (aggregate +1.75% regression; index +0.25%). `--no-controls` aggregate
-   is a warm sign (−5.42% quiet on `linux-v6.12`) and is not a shipped constant.
+   is a warm sign (−5.42% quiet on `linux-v6.12`; **−10.06% quiet on nominated `/usr`**,
+   exp-148) and is not a shipped constant.
    Do not change `PORTABLE` to `measured`. Do not lower the unlock threshold.
    Bead: `fdu-4cni` (close).
-   `fdu-tk1b` stays open for bare metal.
+   `fdu-zk2r` (close). `fdu-tk1b` stays open for bare metal.
 
 4. **H146 — first-run leftover after H140.** **Same leftover identity** (exp-147,
    quiet). Walk 93% of first-run component.
@@ -164,7 +165,8 @@ If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
 - Linux cache-hit leftover after H125–H133: no new ≥3% userspace cut (H144 / exp-144)
 - Linux opened-discovery leftover: same as Darwin H127; no new ≥3% cut (H145 / exp-145)
 - H84 unlock is silent; named-job `--threads 8` is not a 3% win.
-  `--no-controls` aggregate is a warm sign, not a shipped `PORTABLE` constant (exp-146)
+  `--no-controls` aggregate is a warm sign on `linux-v6.12` (exp-146) and nominated
+  `/usr` (exp-148), not a shipped `PORTABLE` constant
 - Linux first-run leftover is still the walk; snapshot write ~24 ms is ≥3% and not
   skippable (H146 / exp-147)
 - No leftover in this block named a skippable ≥3% userspace cut, so H147 was not minted

@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 10 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -226,6 +226,7 @@ dead end.
 | 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp145--linux-openeddiscovery-leftover-is-still-journal-clones-plus-live-rollups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
 | 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp146--linux-adaptive-unlock-is-silent-namedjob-threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
 | 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp147--linux-firstrun-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
+| 148 | [Linux H84 --no-controls --threads 8 sign transfers to nominated /usr](#exp148--linux-h84-nocontrols-threads-8-sign-transfers-to-nominated-usr) | H84 | `aggregate-summary` | -10.1% | ✅ accepted |
 
 ## The experiments
 
@@ -4957,6 +4958,35 @@ save ~24ms is >=3% and not skippable; do not retry H100.
 Full record:
 [`exp-147-linux-first-run-leftover-is-still-the-walk.md`](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md)
 
+### exp-148 — Linux H84 --no-controls --threads 8 sign transfers to nominated /usr
+
+✅ accepted · 2026-09-20 · H84 · commit `a58f9e30`
+
+Control: HEAD automatic workers --no-controls
+
+Candidate: same probe --no-controls --threads 8
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 93.5 | 82.6 | -10.06% | [-14.72%, -7.95%] |
+| component (ms) | 92.7 | 81.7 | -10.17% | [-14.98%, -8.16%] |
+| cpu (ms) | 341.5 | 313.3 | -7.75% | [-10.05%, -6.04%] |
+| user (ms) | 128.3 | 100.2 | -25.27% | [-30.49%, -17.15%] |
+| system (ms) | 209.2 | 212.4 | +2.16% (n.s.) | [-2.91%, +8.60%] |
+| peak rss (MiB) | 28.2 | 28.2 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+screen only; no engine change
+
+**Accepted:** confirmatory --no-controls sign on nominated /usr: -10.06% quiet; still
+not a shipped PORTABLE constant; minor_faults inferior.
+
+Full record:
+[`exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md`](../experiments/exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5352,6 +5382,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 019 | Adaptive worker threshold at the first crossing scale | `cold-scan-index` | 634.2 | 637.5 | +1.2% | ❌ rejected |
+
+### usr-prefix (208,411 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 148 | Linux H84 --no-controls --threads 8 sign transfers to nominated /usr | `aggregate-summary` | 93.5 | 82.6 | -10.1% | ✅ accepted |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
