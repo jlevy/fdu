@@ -37811,6 +37811,280 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux transient batch recycle clears 3% after H85 misses 20%",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
+   "change_pct": -1.627,
+   "commit": "f841662c",
+   "complexity": {
+    "lines_changed": 123,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "listing file_type skip on RetainedState::Summary only; no dependency; no unsafe; one_filesystem still stats directories"
+   },
+   "control": "H147 --no-controls aggregate (stat every listed child)",
+   "date": "2026-09-20",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H72"
+   ],
+   "id": "exp-152",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 34463047,
+        "control": 35647869
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.521,
+        "ci95_high_pct": -0.603,
+        "ci95_low_pct": -3.257,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 134144500,
+        "control": 137728000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.169,
+        "ci95_high_pct": -0.962,
+        "ci95_low_pct": -2.453,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25657344,
+        "control": 25657344
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 96666000,
+        "control": 98051500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -9.686,
+        "ci95_high_pct": 2.651,
+        "ci95_low_pct": -11.809,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 42555500,
+        "control": 39105500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 12.874,
+        "ci95_high_pct": 33.174,
+        "ci95_low_pct": -7.269,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 35237923,
+        "control": 36464080.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.627,
+        "ci95_high_pct": -0.72,
+        "ci95_low_pct": -3.333,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 381.0576270086727,
+      "control": 394.3171107554556
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 152,
+   "path": "exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet linux-v6.12 --no-controls aggregate -1.63% [-3.33%, -0.72%]; under 3%; stats 92474 to 86644; RSS flat; directory-heavy keep is exp-153",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux H72 d_type skip misses 3% on source-tree v6.12",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
+   "change_pct": -9.01,
+   "commit": "f841662c",
+   "complexity": {
+    "lines_changed": 123,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "same patch as exp-152; private summary-path skip; no dependency; no unsafe; unmeasured on macOS; /usr not reconstructible"
+   },
+   "control": "H147 --no-controls aggregate (stat every listed child)",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 208411,
+   "family": "Linux:894d731f69bb",
+   "hypotheses": [
+    "H72"
+   ],
+   "id": "exp-153",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 77755569.5,
+        "control": 85459327
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -9.072,
+        "ci95_high_pct": -6.373,
+        "ci95_low_pct": -12.629,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 294383000,
+        "control": 323976500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -9.733,
+        "ci95_high_pct": -7.014,
+        "ci95_low_pct": -11.243,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 29458432,
+        "control": 29458432
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 192011000,
+        "control": 222608000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -14.097,
+        "ci95_high_pct": -10.191,
+        "ci95_low_pct": -17.542,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 101575500,
+        "control": 104475500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.773,
+        "ci95_high_pct": 6.516,
+        "ci95_low_pct": -11.183,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 78582763.5,
+        "control": 86302076
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -9.01,
+        "ci95_high_pct": -6.298,
+        "ci95_low_pct": -12.52,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 377.05669806296214,
+      "control": 414.0955899640614
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 153,
+   "path": "exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet nominated /usr --no-controls aggregate -9.01% [-12.52%, -6.30%]; 22% skippable dirs+symlinks; RSS flat; v6.12 companion -1.63% noninferior (exp-152)",
+   "reference_tools": [],
+   "subject": "894d731f69bb:208411:b7e4da004476",
+   "title": "Linux H72 d_type skip clears 3% on symlink-heavy /usr",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -37879,6 +38153,34 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140",
+    "exp-143",
+    "exp-144",
+    "exp-145",
+    "exp-146",
+    "exp-147",
+    "exp-150",
+    "exp-151",
+    "exp-152"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 13021004064,
    "directories": 88201,
    "entries": 720805,
@@ -37904,33 +38206,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138",
-    "exp-139",
-    "exp-140",
-    "exp-143",
-    "exp-144",
-    "exp-145",
-    "exp-146",
-    "exp-147",
-    "exp-150",
-    "exp-151"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -38689,24 +38964,42 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 6019421920,
+   "directories": 14325,
+   "entries": 208411,
+   "experiments": [
+    "exp-153"
+   ],
+   "files": 162440,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "894d731f69bb:208411:b7e4da004476",
+   "labels": [
+    "usr-prefix"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
-  "accepted_lines_changed": 16190,
+  "accepted_lines_changed": 16313,
   "decisions": {
-   "accepted": 86,
+   "accepted": 87,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 48,
+   "rejected": 49,
    "superseded": 3
   },
-  "experiments": 151,
+  "experiments": 153,
   "first_date": "2026-08-10",
-  "hypotheses": 105,
+  "hypotheses": 106,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 25,
+   "Linux": 27,
    "macOS": 126
   }
  },

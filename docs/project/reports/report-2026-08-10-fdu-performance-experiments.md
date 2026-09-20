@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 14 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 16 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -230,6 +230,8 @@ dead end.
 | 149 | [Linux default /usr aggregate --threads 8 regresses; do not lower unlock](#exp149--linux-default-usr-aggregate-threads-8-regresses-do-not-lower-unlock) | H84 | `aggregate-summary` | +7.1% | ✅ accepted |
 | 150 | [Linux H85 recycle misses the 20% mimalloc bar](#exp150--linux-h85-recycle-misses-the-20-mimalloc-bar) | H85 | `aggregate-summary` | -5.0% | ❌ rejected |
 | 151 | [Linux transient batch recycle clears 3% after H85 misses 20%](#exp151--linux-transient-batch-recycle-clears-3-after-h85-misses-20) | H147 | `aggregate-summary` | -5.0% | ✅ accepted |
+| 152 | [Linux H72 d_type skip misses 3% on source-tree v6.12](#exp152--linux-h72-dtype-skip-misses-3-on-sourcetree-v612) | H72 | `aggregate-summary` | -1.6% | ❌ rejected |
+| 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp153--linux-h72-dtype-skip-clears-3-on-symlinkheavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
 
 ## The experiments
 
@@ -5080,6 +5082,66 @@ flat; default gitignore-on placebo +0.91% includes zero; H85 20% missed so this 
 Full record:
 [`exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md`](../experiments/exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md)
 
+### exp-152 — Linux H72 d_type skip misses 3% on source-tree v6.12
+
+❌ rejected · 2026-09-20 · H72 · commit `f841662c`
+
+Control: H147 --no-controls aggregate (stat every listed child)
+
+Candidate: same probe --no-controls, skip directory and symlink statx via file_type
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 36.5 | 35.2 | -1.63% | [-3.33%, -0.72%] |
+| component (ms) | 35.6 | 34.5 | -1.52% | [-3.26%, -0.60%] |
+| cpu (ms) | 137.7 | 134.1 | -1.17% | [-2.45%, -0.96%] |
+| user (ms) | 39.1 | 42.6 | +12.87% (n.s.) | [-7.27%, +33.17%] |
+| system (ms) | 98.1 | 96.7 | -9.69% (n.s.) | [-11.81%, +2.65%] |
+| peak rss (MiB) | 24.5 | 24.5 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 123 lines; no new dependencies.
+
+listing file_type skip on RetainedState::Summary only; no dependency; no unsafe;
+one_filesystem still stats directories
+
+**Rejected:** quiet linux-v6.12 --no-controls aggregate -1.63% [-3.33%, -0.72%]; under
+3%; stats 92474 to 86644; RSS flat; directory-heavy keep is exp-153.
+
+Full record:
+[`exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md`](../experiments/exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md)
+
+### exp-153 — Linux H72 d_type skip clears 3% on symlink-heavy /usr
+
+✅ accepted · 2026-09-20 · H72 · commit `f841662c`
+
+Control: H147 --no-controls aggregate (stat every listed child)
+
+Candidate: same probe --no-controls, skip directory and symlink statx via file_type
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 86.3 | 78.6 | -9.01% | [-12.52%, -6.30%] |
+| component (ms) | 85.5 | 77.8 | -9.07% | [-12.63%, -6.37%] |
+| cpu (ms) | 324.0 | 294.4 | -9.73% | [-11.24%, -7.01%] |
+| user (ms) | 104.5 | 101.6 | -0.77% (n.s.) | [-11.18%, +6.52%] |
+| system (ms) | 222.6 | 192.0 | -14.10% | [-17.54%, -10.19%] |
+| peak rss (MiB) | 28.1 | 28.1 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 123 lines; no new dependencies.
+
+same patch as exp-152; private summary-path skip; no dependency; no unsafe; unmeasured
+on macOS; /usr not reconstructible
+
+**Accepted:** quiet nominated /usr --no-controls aggregate -9.01% [-12.52%, -6.30%]; 22%
+skippable dirs+symlinks; RSS flat; v6.12 companion -1.63% noninferior (exp-152).
+
+Full record:
+[`exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md`](../experiments/exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5142,6 +5204,7 @@ Baselines show one value because they measure a state rather than a change.
 | 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
 | 150 | Linux H85 recycle misses the 20% mimalloc bar | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ❌ rejected |
 | 151 | Linux transient batch recycle clears 3% after H85 misses 20% | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ✅ accepted |
+| 152 | Linux H72 d_type skip misses 3% on source-tree v6.12 | `aggregate-summary` | 36.5 | 35.2 | -1.6% | ❌ rejected |
 
 ### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -5291,6 +5354,14 @@ Baselines show one value because they measure a state rather than a change.
 | 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
 | 068 | Flush the rendered report before joining the snapshot writer | `default-tree` | 353.3 | 361.3 | +1.2% | ✅ accepted |
 
+### usr-prefix (208,411 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 148 | Linux H84 --no-controls --threads 8 sign transfers to nominated /usr | `aggregate-summary` | 93.5 | 82.6 | -10.1% | ✅ accepted |
+| 149 | Linux default /usr aggregate --threads 8 regresses; do not lower unlock | `aggregate-summary` | 464.5 | 484.3 | +7.1% | ✅ accepted |
+| 153 | Linux H72 d_type skip clears 3% on symlink-heavy /usr | `aggregate-summary` | 86.3 | 78.6 | -9.0% | ✅ accepted |
+
 ### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5339,13 +5410,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
-
-### usr-prefix (208,411 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 148 | Linux H84 --no-controls --threads 8 sign transfers to nominated /usr | `aggregate-summary` | 93.5 | 82.6 | -10.1% | ✅ accepted |
-| 149 | Linux default /usr aggregate --threads 8 regresses; do not lower unlock | `aggregate-summary` | 464.5 | 484.3 | +7.1% | ✅ accepted |
 
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 

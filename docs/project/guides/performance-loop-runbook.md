@@ -496,10 +496,10 @@ H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
 Next free unused hypothesis id is **H148** (H144–H146 reserved on the Linux iteration
-stack; H147 used for the Linux transient recycle keep).
-Do not mint another meaning for H91–H106. Next free Darwin experiment id after the Linux
-reservation is assigned on #94; do not take exp-138 here.
-exp-113 remains reserved unused (H113 superseded).
+stack; H147 used for the Linux transient recycle keep; H72 used existing id).
+Next free Linux experiment id is **exp-154**. Do not mint another meaning for H91–H106.
+Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
+take exp-138 here. exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -799,6 +799,16 @@ Do not lower the bar.
 Quiet `linux-v6.12` −4.98% [−5.92%, −4.33%]. Default gitignore-on placebo includes zero.
 Engine kept (`5c6e6394`). Unmeasured on macOS.
 
+**H72 / exp-152** is the standing Linux source-tree `d_type` screen: **rejected**
+against 3%. Quiet `linux-v6.12` `--no-controls` aggregate −1.63% [−3.33%, −0.72%]. Stats
+92,474 → 86,644. RSS flat.
+Same class as the earlier −1.4% on 6.4% directories.
+
+**H72 / exp-153** is the directory-heavy keep of that same patch.
+Quiet nominated `/usr` −9.01% [−12.52%, −6.30%]. 22% dirs+symlinks.
+RSS flat. Fresh baseline (image digest had drifted).
+Engine kept (`f841662c`). Unmeasured on macOS.
+
 This host’s nominated set is
 [nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
 `linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
@@ -834,8 +844,12 @@ Further Linux cells are on
    Default gitignore-on placebo includes zero.
    Do not retry H85’s 20% bar.
    Do not restart H86. Do not retry H71.
+6. **H72** — `d_type` skip on transient summary.
+   **Rejected** on reconstructible `linux-v6.12` (exp-152, −1.63%). **Accepted** on
+   nominated `/usr` (exp-153, −9.01% [−12.52%, −6.30%]). Engine kept (`f841662c`). Do
+   not retry H71. Do not skip directory `statx` when `one_filesystem` is on.
 
-Next free Linux experiment id is **exp-152**. Next free unused hypothesis id is
+Next free Linux experiment id is **exp-154**. Next free unused hypothesis id is
 **H148**.
 
 ## Before the First Round
