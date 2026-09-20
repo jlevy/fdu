@@ -719,9 +719,12 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 ## Linux Standing (2026-09-20)
 
 Stacked [#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`,
-rebased onto [#92](https://github.com/jlevy/fdu/pull/92) `f8a2ed94` (R1–R3). H141’s
-four-view `content-query` still shares one walk (`unfiltered_row_views >= 2`). H139 was
-a well-formed cache-hit tree; R3’s alias reject does not change that cell.
+rebased onto [#92](https://github.com/jlevy/fdu/pull/92) `937f9445` (R1–R3 plus
+`c441edf6` single-view Cow borrow and the #91 restore-evidence repair).
+H141’s four-view `content-query` still shares one walk (`row_consumers > 1`). A
+single-view report now borrows instead of cloning; that does not change the four-view
+cell. H139 was a well-formed cache-hit tree; snapshot alias reject and restore-timing
+evidence do not change that cell.
 4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
 Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
 Darwin-only).
