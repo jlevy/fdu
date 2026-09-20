@@ -296,9 +296,9 @@ That is not a rewrite, and not this Darwin host.
   32% at the floor itself and diskus’s 3×-cores default is the whole remaining
   scalar-class cold gap (~22%). Unblocked since its gate, `fdu-tyjx`, closed; bare metal
   confirms before the constant ships as evidence.
-- [ ] `fdu-pdne` — PGO screen (H93 first meaning; this stack mints H148), one afternoon,
-  release builds only if it clears.
-  See [the Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md).
+- [x] `fdu-pdne` screen — H148 / exp-154, quiet `linux-v6.12`: `cold-scan-index` −8.35%,
+  `warm-revalidate` −8.15%. `[profile.release]` unchanged (profdata is host-specific).
+  The standing bead stays open for release-pipeline adoption, not another screen.
 - [ ] `fdu-6kyn` — hardware CRC32C behind runtime detection, the H88 follow-up.
 
 ### Phase B: The structural experiment (the campaign’s centerpiece)

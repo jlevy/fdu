@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 16 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 17 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -232,6 +232,7 @@ dead end.
 | 151 | [Linux transient batch recycle clears 3% after H85 misses 20%](#exp151--linux-transient-batch-recycle-clears-3-after-h85-misses-20) | H147 | `aggregate-summary` | -5.0% | ✅ accepted |
 | 152 | [Linux H72 d_type skip misses 3% on source-tree v6.12](#exp152--linux-h72-dtype-skip-misses-3-on-sourcetree-v612) | H72 | `aggregate-summary` | -1.6% | ❌ rejected |
 | 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp153--linux-h72-dtype-skip-clears-3-on-symlinkheavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
+| 154 | [Linux PGO screen clears 3% on cold-scan-index and warm-revalidate](#exp154--linux-pgo-screen-clears-3-on-coldscanindex-and-warmrevalidate) | H148 | `cold-scan-index` | -8.3% | ✅ accepted |
 
 ## The experiments
 
@@ -5142,6 +5143,39 @@ skippable dirs+symlinks; RSS flat; v6.12 companion -1.63% noninferior (exp-152).
 Full record:
 [`exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md`](../experiments/exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md)
 
+### exp-154 — Linux PGO screen clears 3% on cold-scan-index and warm-revalidate
+
+✅ accepted · 2026-09-20 · H148 · commit `b46edf65`
+
+Control: HEAD fat-LTO / codegen-units=1 release probe
+
+Candidate: same source rebuilt with -Cprofile-use after linux-v6.12 training
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 504.5 | 460.5 | -8.35% | [-10.35%, -6.92%] |
+| component (ms) | 428.6 | 388.7 | -8.91% | [-11.28%, -7.05%] |
+| cpu (ms) | 625.6 | 581.4 | -6.83% | [-8.29%, -5.45%] |
+| user (ms) | 520.9 | 470.3 | -8.50% | [-10.74%, -6.52%] |
+| system (ms) | 102.7 | 109.5 | +7.41% (n.s.) | [-11.49%, +18.14%] |
+| peak rss (MiB) | 35.2 | 34.2 | -2.78% | [-2.98%, -2.61%] |
+
+Other jobs, wall time: `warm-revalidate` -8.2%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+no engine source change; PGO rebuild only; no dependency; no unsafe; profdata not
+checked in; unmeasured on macOS
+
+**Accepted:** quiet linux-v6.12 cold-scan-index -8.35% [-10.35%, -6.92%] and
+warm-revalidate -8.15% [-8.64%, -7.07%]; RSS no worse; revalidate component flat so that
+wall win is spawn; Cargo.toml unchanged (profdata is host-specific).
+
+Full record:
+[`exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md`](../experiments/exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5173,6 +5207,23 @@ Baselines show one value because they measure a state rather than a change.
 | 136 | Post-H123 content-query leftover | `content-query` | 40,340.5 | 38,623.5 | -3.3% | ✅ accepted |
 | 137 | Share one every_entry across unfiltered metric views | `content-query` | 38,234.2 | 31,475.2 | -18.8% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
+| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
+| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
+| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
+| 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
+| 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
+| 150 | Linux H85 recycle misses the 20% mimalloc bar | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ❌ rejected |
+| 151 | Linux transient batch recycle clears 3% after H85 misses 20% | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ✅ accepted |
+| 152 | Linux H72 d_type skip misses 3% on source-tree v6.12 | `aggregate-summary` | 36.5 | 35.2 | -1.6% | ❌ rejected |
+| 154 | Linux PGO screen clears 3% on cold-scan-index and warm-revalidate | `cold-scan-index` | 504.5 | 460.5 | -8.3% | ✅ accepted |
+
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5189,22 +5240,6 @@ Baselines show one value because they measure a state rather than a change.
 | 009 | Single-pass checksum and parse on snapshot load | `warm-snapshot-load` | 351.6 | 318.3 | -8.0% | ✅ accepted |
 | 010 | Claim-list join and deferred path joins in reconcile | `warm-revalidate` | 698.5 | 695.6 | -0.0% | ❌ rejected |
 | 011 | One ancestor merge per same-parent insert run | `cold-scan-index` | 483.1 | 447.7 | -2.5% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
-| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
-| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
-| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
-| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
-| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
-| 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
-| 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
-| 150 | Linux H85 recycle misses the 20% mimalloc bar | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ❌ rejected |
-| 151 | Linux transient batch recycle clears 3% after H85 misses 20% | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ✅ accepted |
-| 152 | Linux H72 d_type skip misses 3% on source-tree v6.12 | `aggregate-summary` | 36.5 | 35.2 | -1.6% | ❌ rejected |
 
 ### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
