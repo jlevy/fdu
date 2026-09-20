@@ -4271,20 +4271,20 @@ fn reconcile_paths_target(
     // neither marks a verified sibling partial nor withholds the completeness its listing
     // earned.
     let mut failure = None;
-    let mut completed = Vec::with_capacity(opened.len());
+    let mut outcomes = Vec::with_capacity(opened.len());
     for (subtree, _) in &opened {
         if failure.is_some() {
-            completed.push(false);
+            outcomes.push((false, false));
             continue;
         }
         match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
             Ok(mut reconciliation) => {
-                completed.push(reconciliation.is_complete());
+                outcomes.push((reconciliation.is_complete(), true));
                 reconciliation.listed_incomplete = reconciliation.take_recordable_completeness();
                 merge_reconcile_report(&mut report.reconciliation, reconciliation);
             }
             Err(error) => {
-                completed.push(false);
+                outcomes.push((false, false));
                 failure = Some(error);
             }
         }
@@ -4294,7 +4294,7 @@ fn reconcile_paths_target(
     let root = target.root_path()?;
     normalize_walk_errors(&root, &mut report.reconciliation.scan.errors);
     let failed_paths = failure_paths(target, &report.reconciliation.scan.errors)?;
-    for ((subtree, started_at), complete) in opened.into_iter().zip(completed) {
+    for ((subtree, started_at), (complete, disproves_old)) in opened.into_iter().zip(outcomes) {
         let commit = target.finish_reconcile(
             &subtree,
             started_at,
@@ -4304,6 +4304,7 @@ fn reconcile_paths_target(
             ReconcileErrors {
                 errors: &report.reconciliation.scan.errors,
                 terminal: failure.as_ref(),
+                disproves_old,
             },
         )?;
         if let Some(commit) = commit.as_ref() {
@@ -4421,7 +4422,11 @@ fn reconcile_target(
                 report.is_complete(),
                 &listed_incomplete,
                 &failed_paths,
-                ReconcileErrors { errors: &report.scan.errors, terminal: None },
+                ReconcileErrors {
+                    errors: &report.scan.errors,
+                    terminal: None,
+                    disproves_old: true,
+                },
             )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
@@ -4435,7 +4440,7 @@ fn reconcile_target(
                 false,
                 &[],
                 &[],
-                ReconcileErrors { errors: &[], terminal: Some(&error) },
+                ReconcileErrors { errors: &[], terminal: Some(&error), disproves_old: false },
             )?;
             if let Some(commit) = finished.as_ref() {
                 sink(commit);
