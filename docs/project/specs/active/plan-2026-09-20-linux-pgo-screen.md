@@ -4,10 +4,10 @@
 
 **Author:** fdu project
 
-**Status:** Active.
-Stacked on [#97](https://github.com/jlevy/fdu/pull/97) at `937a8917`.
-This block screens profile-guided optimization on the current Linux release probe.
-It is not an engine source change and not a leftover compile.
+**Status:** Recorded.
+Stacked on [#97](https://github.com/jlevy/fdu/pull/97) at `937a8917`. H148 / exp-154
+accepted as a quiet Linux screen.
+`[profile.release]` is unchanged.
 
 ## Overview
 
@@ -82,17 +82,14 @@ Do not redo these as new leftover identities.
 
 ## Next Up
 
-1. **H148 — PGO screen (`fdu-pdne`).** Same source as #97 HEAD. Control is the current
-   fat-LTO / `codegen-units=1` release probe.
-   Candidate is that probe rebuilt with `-Cprofile-use` after training `scan-index`,
-   `revalidate`, `summary`, and `summary --no-controls` on reconstructible
-   `linux-v6.12`. Accept only if **both** `cold-scan-index` and `warm-revalidate` clear
-   3% wall with intervals entirely below zero and peak RSS no worse.
-   A miss on either job rejects the screen.
-   Do not adopt a one-job win into release.
-
-Cold-scan-index is still walk-bound on this host (~95% `getdents64`+`statx`). A miss
-there is the expected leftover, not a reason to lower the bar.
+1. **H148 — PGO screen (`fdu-pdne`).** **Accepted** (exp-154, quiet).
+   Same source as #97 HEAD. Control `35712d10…`; candidate `5ebc8fca…` after three
+   training rounds. `cold-scan-index` wall −8.35% [−10.35%, −6.92%], component −8.91%.
+   `warm-revalidate` wall −8.15% [−8.64%, −7.07%], component −0.43% (reconcile still ~41
+   ms). Peak RSS no worse.
+   Load/core 0.179–0.204 held.
+   `[profile.release]` unchanged.
+   Profdata is host-specific and is not checked in.
 
 ## Subjects
 
@@ -120,10 +117,10 @@ If #97 moves, rebase this branch onto it and keep the H148 meaning.
 
 ## Open Questions
 
-- Whether PGO clears 3% on Linux `cold-scan-index` after the walk leftover (H140)
-- Whether PGO clears 3% on Linux `warm-revalidate`
-- Whether a miss still leaves a userspace-only job (transient `--no-controls` summary)
-  worth a screening row in the same artifact
+- PGO cleared 3% wall on both named Linux jobs (exp-154)
+- `warm-revalidate` component did not move; that wall win is spawn
+- Release-pipeline adoption (`fdu-pdne`) is still open: a checked-in profdata is a
+  non-goal, so shipped `cargo build --release` stays fat-LTO only
 
 ## References
 

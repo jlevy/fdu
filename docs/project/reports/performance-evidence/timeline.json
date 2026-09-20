@@ -38085,6 +38085,244 @@
    "subject": "894d731f69bb:208411:b7e4da004476",
    "title": "Linux H72 d_type skip clears 3% on symlink-heavy /usr",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same source rebuilt with -Cprofile-use after linux-v6.12 training",
+   "change_pct": -8.347,
+   "commit": "b46edf65",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "no engine source change; PGO rebuild only; no dependency; no unsafe; profdata not checked in; unmeasured on macOS"
+   },
+   "control": "HEAD fat-LTO / codegen-units=1 release probe",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H148"
+   ],
+   "id": "exp-154",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 388744045.5,
+        "control": 428622549.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -8.914,
+        "ci95_high_pct": -7.046,
+        "ci95_low_pct": -11.276,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 581448000,
+        "control": 625597500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -6.834,
+        "ci95_high_pct": -5.454,
+        "ci95_low_pct": -8.285,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 35895296,
+        "control": 36929536
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.784,
+        "ci95_high_pct": -2.608,
+        "ci95_low_pct": -2.983,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 109512500,
+        "control": 102660500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 7.408,
+        "ci95_high_pct": 18.14,
+        "ci95_low_pct": -11.487,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 470319000,
+        "control": 520896000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -8.497,
+        "ci95_high_pct": -6.524,
+        "ci95_low_pct": -10.744,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 460536184,
+        "control": 504504068.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.347,
+        "ci95_high_pct": -6.922,
+        "ci95_low_pct": -10.354,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4980.169388152345,
+      "control": 5455.631512641391
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "warm-revalidate",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 40914390.5,
+        "control": 40754147.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.434,
+        "ci95_high_pct": 1.74,
+        "ci95_low_pct": -2.353,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 550613500,
+        "control": 590851500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -6.397,
+        "ci95_high_pct": -5.564,
+        "ci95_low_pct": -7.145,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 40716288,
+        "control": 41564160
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.064,
+        "ci95_high_pct": -1.943,
+        "ci95_low_pct": -2.272,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 115854000,
+        "control": 118129000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -7.268,
+        "ci95_high_pct": 4.775,
+        "ci95_low_pct": -19.404,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 445208500,
+        "control": 472382000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -7.327,
+        "ci95_high_pct": -2.311,
+        "ci95_low_pct": -8.843,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 441839895,
+        "control": 480470994.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.15,
+        "ci95_high_pct": -7.067,
+        "ci95_low_pct": -8.641,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4777.990516253217,
+      "control": 5195.741446244349
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 154,
+   "path": "exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "quiet linux-v6.12 cold-scan-index -8.35% [-10.35%, -6.92%] and warm-revalidate -8.15% [-8.64%, -7.07%]; RSS no worse; revalidate component flat so that wall win is spawn; Cargo.toml unchanged (profdata is host-specific)",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux PGO screen clears 3% on cold-scan-index and warm-revalidate",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -38167,7 +38405,8 @@
     "exp-147",
     "exp-150",
     "exp-151",
-    "exp-152"
+    "exp-152",
+    "exp-154"
    ],
    "files": 86643,
    "filesystem": "ext4",
@@ -38987,19 +39226,19 @@
  "totals": {
   "accepted_lines_changed": 16313,
   "decisions": {
-   "accepted": 87,
+   "accepted": 88,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 49,
    "superseded": 3
   },
-  "experiments": 153,
+  "experiments": 154,
   "first_date": "2026-08-10",
-  "hypotheses": 106,
+  "hypotheses": 107,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 27,
+   "Linux": 28,
    "macOS": 126
   }
  },
