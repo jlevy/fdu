@@ -601,8 +601,9 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    Do not retry a type/size gate or a larger read chunk.
    `F_RDADVISE` is person-gated `unsafe`.
 
-7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Not in this host** (no Linux
-   runner). Still open.
+7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Not in this host.** Still open.
+   Pickup:
+   [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
    Do not restart the rewrite.
    Do not treat a Darwin cell as this claim.
 
@@ -700,7 +701,8 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | Document | Role |
 | --- | --- |
 | This standing section | Pickup: standing best, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue: H107 (no subject), H111 (not this host) |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup: H139–H142 plus H111 (`fdu-jekg`) |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |

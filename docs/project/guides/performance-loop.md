@@ -735,8 +735,10 @@ the floor-anchored strategy, not the live queue.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(H139–H142 reserved for [#94](https://github.com/jlevy/fdu/pull/94) Linux parallel
-validation; next free Darwin id is H143) so no id ever means two things.
+(H139–H142 reserved for
+[Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md)
+on [#94](https://github.com/jlevy/fdu/pull/94); next free Darwin id is H143) so no id
+ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -813,11 +815,17 @@ engine. Revisit a prior result only when that difference touches its mechanism.
 | H136 | After H128, a deciding-scale first-run `default-tree-first` leftover profile names whether snapshot encode/write/render is ≥3% of first-run wall and not already rejected. | Determination: named leftover is or is not a new skippable ≥3% cut | **Confirmed** (exp-135, uncontrolled): first-run leftover is still the walk (83–88% of component). Isolated `snapshot-save` 45.3 ms (~11–16% of first-run). Write is ≥3% and not skippable (H100 identical-rewrite does not apply; H78/H92 format; `fdu-n75m` fsync). No engine patch. Quiet this tick 75.4%; pair initial 46.59% final 88.11%. Do not retry H100. Do not load a snapshot on `fdu PATH`. |
 | H137 | After H123, a deciding-scale `content-query` leftover profile names whether four-view content aggregation is a userspace stage ≥3% of that job that is not already rejected. Not a cache-hit skip. Not `insert_loaded_child` / `rebuild_content_rollups` / opened-root journal (those three named slices have no discardable ≥3% mechanism after H133/H115/H127). | Determination: named leftover is or is not a new skippable ≥3% cut | **Confirmed** (exp-136, uncontrolled): ~278 ms per four-view report. `report_in` 56% of a 20 s sample. Unfiltered Types / Families / Languages / Documents each call `every_entry` independently. Filtered views already share one walk. No engine patch. Quiet this tick 76.8%; pair initial 64.19% final 54.35%. Do not invent a cache-hit skip. Sharing one walk is the leftover cut, not compiled here. |
 | H138 | Unfiltered Types / Families / Languages / Documents (and file views) share one `every_entry` `FileRow` walk. Filtered views already share one traversal. Summary / Tree / Extensions keep roll-ups and must not see a partial `Walked`. | `content-query` wall down at least 3% with the interval below zero on deciding-scale metabrowser; report identity unchanged | **Accepted** (exp-137, uncontrolled): wall −18.76% [−22.86%, −13.69%] on frozen `metabrowser-clone`. Component −24.61% [−29.82%, −20.56%]. User CPU −17.17%. Peak RSS +1.03% non-inferior. Engine kept (`a5c98d59`). Quiet this tick 93.2%; pair initial 69.09% final 70.06%. Do not invent a cache-hit skip. |
+| H139 | The landed H125+H129+H131+H133 cache-hit stack still clears 3% wall on Linux versus the #91 (H115+H120) control. Replication, not a new cut. | Linux `content-cache-hit` wall down at least 3% with the interval below zero on a named reconstructible subject; digest identical | **Reserved.** Linux host only. [Parallel-validation block](../specs/active/plan-2026-09-19-linux-parallel-validation.md). |
+| H140 | After the current engine, a Linux `default-tree` leftover is still the `getdents64`+`statx` floor (H71 / H122 analog), not a new userspace stage ≥3%. | Determination: walk share ≥90% of component, or a named leftover ≥3% Darwin did not see | **Reserved.** Linux host only. Do not compile a walk trim. Do not retry H71. |
+| H141 | The landed H138 shared `every_entry` walk still clears 3% wall on Linux `content-query` versus the #91 control. | Linux `content-query` wall down at least 3% with the interval below zero; report identity unchanged | **Reserved.** Linux host only. |
+| H142 | After H124, a Linux first-pass `content-basic` leftover is still file I/O, not a skippable userspace stage ≥3%. | Determination: named leftover is or is not a new ≥3% userspace cut | **Reserved.** Linux host only. Optional after H139–H141. Do not retry H124. |
 
 The ordered pickup — metric, subject, what would falsify, what not to retry — is
 [the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). The
 remaining unaddressed queue after the H116–H120 overnight lives in
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+Linux replication and H111 live in
+[the Linux parallel-validation block](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
 Do not take `macos-agenda` beads in 2026-08-23 plan order without reading those.
 
 ### Traversal and syscalls

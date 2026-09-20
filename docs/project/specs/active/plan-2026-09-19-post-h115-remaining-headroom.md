@@ -76,7 +76,8 @@ H113 is superseded. Do not retry the file-count shortcut.
   format rewrite
 - Retrying H113 on an uncontrolled cell, H114 alloc trims, H109 Path rewrites, parse
   speed, or H103-shaped instruction cuts
-- Linux H111 on this Darwin host (still open; not in this host)
+- Linux H111 and #92 replication on this Darwin host (open on
+  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md))
 - A capability that exists only on the command line
 - Replacing the overnight macOS-agenda epic (`fdu-d4kg`) or rewriting campaign-2’s
   2026-08-23 Tier 1–3 list
@@ -258,7 +259,8 @@ These were considered against the post-H115 path and not registered:
   accepted)
 - Hardware CRC32C (`fdu-6kyn`) or PGO (`fdu-pdne`) as this increment’s wall hunt
 - `searchfs` (H77): person-gated
-- Linux H111 on this Darwin host (still open; not in this host)
+- Linux H111 and #92 replication on this Darwin host (open on
+  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md))
 - Bounding the observation channel (H91) without a current-engine occupancy trace
 - Directory-only transient tree (H66) as a cache-hit leftover
 
