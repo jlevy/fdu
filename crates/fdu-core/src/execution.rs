@@ -14,8 +14,7 @@ use crate::query::{
     ViewSpec, report, report_summary,
 };
 use crate::{
-    CachePolicy, EntryKind, Error, OpenConfig, OpenPath, PendingSave, Result, SnapshotUse,
-    open_for_report,
+    CachePolicy, EntryKind, Error, OpenConfig, OpenPath, PendingSave, Result, open_for_report,
 };
 
 /// The minimum state a one-shot report plan retains while scanning.
@@ -203,8 +202,8 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 /// limit refused, by the budget or by the line limit. Turned off, no `.gitignore` is
 /// read, every share is `None`, and a selection by ignored state is refused with
 /// [`Error::InvalidRequest`] before anything is scanned. Such a report reads a default
-/// snapshot under [`CachePolicy::Only`], consuming its all-entry facts and describing none
-/// of its classification.
+/// snapshot under every reading policy by constructing a requested-scope index from its
+/// all-entry facts and discarding its classification.
 ///
 /// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
 /// the command line does, so a renderer can run while the snapshot is still being written.
@@ -299,25 +298,11 @@ fn prepare_report_internal(
             Ok((report, PendingSave::none(), performance, scan_diagnostics))
         }
         RetainedState::FullIndex => {
-            let (index, open_report, pending_save, scan_diagnostics) = open_for_report(
-                root,
-                config,
-                plan.read_snapshot,
-                SnapshotUse::ReportOnly,
-                collect_scan_diagnostics,
-            )?;
+            let (index, open_report, pending_save, scan_diagnostics) =
+                open_for_report(root, config, plan.read_snapshot, collect_scan_diagnostics)?;
             let performance = PerformanceSummary::from_open_report(&open_report);
-            let mut answer = report(&index, request, SystemTime::now())?;
-            // A cache-only report may consume a controls-on snapshot for a controls-off
-            // request because reporting reads only the all-entry facts. No Index escapes
-            // this boundary, and the projected report must describe the requested scope
-            // rather than the stronger internal snapshot it consumed, including what it
-            // says about ignore rules and every row's ignored share.
-            answer.scope = config.scan.scope();
-            if !config.scan.control_identity().is_observed() {
-                crate::query::forget_ignore_classification(&mut answer);
-                answer.notes = crate::query::display_notes(query, &answer.ignore_rules);
-            }
+            let answer = report(&index, request, SystemTime::now())?;
+            debug_assert_eq!(answer.scope, config.scan.scope());
             Ok((answer, pending_save, performance, scan_diagnostics))
         }
     }
@@ -636,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn controls_on_snapshot_does_not_serve_controls_off_auto_report() {
+    fn controls_on_snapshot_projects_to_controls_off_auto_report() {
         let root = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
         let cache_path = cache.path().join("cache.fdu");
@@ -650,12 +635,12 @@ mod tests {
             ..controls_config(CachePolicy::Auto, cache_path, false)
         };
         let (report, pending, performance) = prepared(root.path(), &controls_off, &summary_query())
-            .expect("controls-off cold fallback");
-        pending.join().expect("save controls-off snapshot");
+            .expect("controls-off warm projection");
+        pending.join().expect("save content only");
 
-        assert_eq!(report.provenance.source, ReportSource::ColdScan);
+        assert_eq!(report.provenance.source, ReportSource::WarmRevalidate);
         assert_eq!(report.scope, controls_off.scan.scope());
-        assert_eq!(performance.source, ReportSource::ColdScan);
+        assert_eq!(performance.source, ReportSource::WarmRevalidate);
     }
 
     /// Control sources past both limits, so no scan can observe them without saying so.

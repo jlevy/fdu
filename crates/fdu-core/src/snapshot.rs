@@ -35,7 +35,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::engine_contract::{Attrs, EntryKind, Error, Observation, Op, Result, Source};
 use crate::index::{EntryId, Index, IndexHandle};
-use crate::stored_state::{ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, SnapshotIdentity};
+use crate::stored_state::{
+    ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, Serves, SnapshotIdentity, serves_snapshot,
+};
+
+/// Result of loading a snapshot for one requested stored-state identity.
+#[derive(Debug)]
+pub enum LoadOutcome {
+    /// The snapshot supplied an index, either exactly or through a lawful projection.
+    Served(Index, Serves),
+    /// The snapshot was valid, but its identity cannot answer this request.
+    Refused(SnapshotIdentity),
+    /// No valid snapshot was present.
+    Absent,
+}
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -398,7 +411,22 @@ pub fn load_with_types(
     path: &Path,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
 ) -> Result<Option<Index>> {
-    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types)
+    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types, None).map(|outcome| {
+        match outcome {
+            LoadOutcome::Served(index, _) => Some(index),
+            LoadOutcome::Refused(_) | LoadOutcome::Absent => None,
+        }
+    })
+}
+
+/// Load a snapshot that can serve `wanted`, projecting observed control state away when
+/// the entry tier is equal and the request does not observe controls.
+pub fn load_serving(
+    path: &Path,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
+    wanted: SnapshotIdentity,
+) -> Result<LoadOutcome> {
+    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types, Some(wanted))
 }
 
 fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<Index>> {
@@ -406,17 +434,23 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         path,
         max_snapshot_bytes,
         crate::classify::TypeRegistry::compiled_shared(),
+        None,
     )
+    .map(|outcome| match outcome {
+        LoadOutcome::Served(index, _) => Some(index),
+        LoadOutcome::Refused(_) | LoadOutcome::Absent => None,
+    })
 }
 
 fn load_with_types_and_size_limit(
     path: &Path,
     max_snapshot_bytes: u64,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
-) -> Result<Option<Index>> {
+    wanted: Option<SnapshotIdentity>,
+) -> Result<LoadOutcome> {
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(LoadOutcome::Absent),
         Err(e) => return Err(Error::io(path, e)),
     };
     let file_len = file.metadata().map_err(|e| Error::io(path, e))?.len();
@@ -425,7 +459,7 @@ fn load_with_types_and_size_limit(
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| Error::Snapshot("snapshot footer size overflow".into()))?;
     if file_len > max_snapshot_bytes || file_len < footer_bytes {
-        return Ok(None);
+        return Ok(LoadOutcome::Absent);
     }
 
     let footer_offset = i64::try_from(footer_bytes)
@@ -433,14 +467,16 @@ fn load_with_types_and_size_limit(
     file.seek(SeekFrom::End(-footer_offset)).map_err(|e| Error::io(path, e))?;
     let expected_checksum = match read_footer_checksum(&mut file) {
         Ok(checksum) => checksum,
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Ok(LoadOutcome::Absent);
+        }
         Err(error) => return Err(Error::io(path, error)),
     };
     let mut trailer = [0u8; TRAILER.len()];
     match file.read_exact(&mut trailer) {
         Ok(()) if &trailer == TRAILER => {}
-        Ok(()) => return Ok(None),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Ok(()) => return Ok(LoadOutcome::Absent),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(LoadOutcome::Absent),
         Err(e) => return Err(Error::io(path, e)),
     }
     let payload_len = file_len
@@ -457,14 +493,14 @@ fn load_with_types_and_size_limit(
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len, types);
+    let outcome = parse_stream(&mut reader, payload_len, types, wanted);
     match outcome {
-        Ok(index) => {
+        Ok(outcome) => {
             // A successful parse consumed every payload byte (the trailing-byte check
             // proves it), so the running digest covers the whole image.
-            if reader.finish() == expected_checksum { Ok(Some(index)) } else { Ok(None) }
+            if reader.finish() == expected_checksum { Ok(outcome) } else { Ok(LoadOutcome::Absent) }
         }
-        Err(ParseError::Invalid) => Ok(None),
+        Err(ParseError::Invalid) => Ok(LoadOutcome::Absent),
         Err(ParseError::Io(source)) => Err(Error::io(path, source)),
     }
 }
@@ -723,7 +759,8 @@ fn parse_stream(
     reader: &mut impl Read,
     payload_len: u64,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
-) -> ParseResult<Index> {
+    wanted: Option<SnapshotIdentity>,
+) -> ParseResult<LoadOutcome> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
     }
@@ -733,7 +770,11 @@ fn parse_stream(
     }
     let Header { writing_pass_started_at_ns, identity, root: root_path, entries: count } =
         parse_header_fields(reader, engine)?;
-    let scope = identity.scan_scope();
+    let serves = wanted.map_or(Serves::Exact, |wanted| serves_snapshot(identity, wanted));
+    let scope = match (serves, wanted) {
+        (Serves::ProjectControlsOff, Some(wanted)) => wanted.scan_scope(),
+        _ => identity.scan_scope(),
+    };
     if scope.type_rules_fingerprint != types.fingerprint() {
         return Err(ParseError::Invalid);
     }
@@ -800,7 +841,9 @@ fn parse_stream(
     }
 
     let controls = read_controls(reader, identity.controls)?;
-    index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
+    if serves == Serves::Exact {
+        index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
+    }
 
     let mut extra = [0u8; 1];
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
@@ -812,7 +855,11 @@ fn parse_stream(
     // Anything applied after the load is this process checking what the snapshot
     // claimed, which is a revalidation rather than a first sighting.
     index.set_applying_source(Source::Revalidated, 0);
-    Ok(index)
+    Ok(if serves == Serves::Refuse {
+        LoadOutcome::Refused(identity)
+    } else {
+        LoadOutcome::Served(index, serves)
+    })
 }
 
 #[derive(Debug)]
@@ -1905,18 +1952,29 @@ mod tests {
         let saved = fs::read(&path).expect("read snapshot");
         let controls_at = IDENTITY_OFFSET + crate::stored_state::ENTRY_TIER_BYTES;
         let controls = controls_at..controls_at + crate::stored_state::CONTROL_TIER_BYTES;
+        let blind = crate::ScanConfig { read_controls: false, ..lifted.clone() };
         let forge = |tier: ControlTierIdentity| {
             let mut forged = saved.clone();
             forged[controls.clone()].copy_from_slice(&tier.encode());
             rewrite_checksum(&mut forged);
             fs::write(&path, &forged).expect("write forged limits");
-            load(&path).expect("forged equals absent")
+            (
+                load(&path).expect("forged equals absent"),
+                load_serving(&path, blind.types_shared(), blind.snapshot_identity())
+                    .expect("projected forged equals absent"),
+            )
         };
         let tight = crate::control::ControlLimits { line_limit: Some(1), ..lifted.control_limits };
-        assert!(forge(ControlTierIdentity::Observed { limits: tight }).is_none());
-        assert!(forge(ControlTierIdentity::NotObserved).is_none());
+        let (exact, projected) = forge(ControlTierIdentity::Observed { limits: tight });
+        assert!(exact.is_none());
+        assert!(matches!(projected, LoadOutcome::Absent));
+        let (exact, projected) = forge(ControlTierIdentity::NotObserved);
+        assert!(exact.is_none());
+        assert!(matches!(projected, LoadOutcome::Absent));
         // The same splice with the saved tier restores, so the splice is not what failed.
-        assert!(forge(lifted.control_identity()).is_some());
+        let (exact, projected) = forge(lifted.control_identity());
+        assert!(exact.is_some());
+        assert!(matches!(projected, LoadOutcome::Served(_, Serves::ProjectControlsOff)));
     }
 
     /// An index whose control table refused some sources, and its path-ordered tail.
@@ -2742,6 +2800,39 @@ mod tests {
         let control_tier = entry_tier.end..ROOT_OFFSET;
         assert_eq!(on_bytes[entry_tier.clone()], off_bytes[entry_tier]);
         assert_ne!(on_bytes[control_tier.clone()], off_bytes[control_tier]);
+
+        let projected = load_serving(
+            &dir.path().join("on.fdu"),
+            blind.types_shared(),
+            blind.snapshot_identity(),
+        )
+        .expect("load projection");
+        let LoadOutcome::Served(projected, Serves::ProjectControlsOff) = projected else {
+            panic!("an observed snapshot should project to the blind request");
+        };
+        let (cold, _) = crate::scan::scan_into_index(tree.path(), &blind).expect("blind scan");
+        assert_eq!(projected.snapshot_identity(), blind.snapshot_identity());
+        assert_eq!(projected.scope(), blind.scope());
+        assert_eq!(projected.len(), cold.len());
+        assert_eq!(projected.total(), cold.total());
+        assert!(matches!(projected.controls(), Err(Error::ControlStateNotObserved)));
+        assert_eq!(
+            projected.path_state(Path::new("debug.log")),
+            cold.path_state(Path::new("debug.log"))
+        );
+
+        let mut corrupt = on_bytes;
+        corrupt[WRITING_PASS_STARTED_AT_OFFSET] ^= 1;
+        fs::write(dir.path().join("on.fdu"), corrupt).expect("corrupt checksum");
+        assert!(matches!(
+            load_serving(
+                &dir.path().join("on.fdu"),
+                blind.types_shared(),
+                blind.snapshot_identity(),
+            )
+            .expect("corrupt projection is absent"),
+            LoadOutcome::Absent
+        ));
     }
 
     /// A format-4 snapshot, laid out as that format wrote it, is fdu's and stale: the

@@ -248,6 +248,9 @@ pub enum Serves {
     /// The stored identity equals the requested one, so the stored tier holds what a cold
     /// run of the request would build.
     Exact,
+    /// The stored entry tier equals the requested one, and an observed control tier can
+    /// be discarded to produce the controls-off index a cold run would build.
+    ProjectControlsOff,
     /// The stored tier cannot answer the request, which is a miss.
     Refuse,
 }
@@ -258,7 +261,16 @@ pub enum Serves {
 /// its own. Any relation beyond equality arrives with a projection that yields what a cold
 /// run of `wanted` would, and is proven by its own test.
 pub fn serves_snapshot(stored: SnapshotIdentity, wanted: SnapshotIdentity) -> Serves {
-    if stored == wanted { Serves::Exact } else { Serves::Refuse }
+    if stored == wanted {
+        Serves::Exact
+    } else if stored.entries == wanted.entries
+        && stored.controls.is_observed()
+        && wanted.controls == ControlTierIdentity::NotObserved
+    {
+        Serves::ProjectControlsOff
+    } else {
+        Serves::Refuse
+    }
 }
 
 // ---- write rules ----
@@ -550,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn a_snapshot_serves_exactly_the_identity_it_was_taken_under() {
+    fn snapshot_serving_is_equality_plus_observation_on_to_off() {
         let base = ScanConfig::default().snapshot_identity();
         assert_eq!(serves_snapshot(base, base), Serves::Exact);
 
@@ -574,7 +586,6 @@ mod tests {
                 },
                 ..base
             },
-            SnapshotIdentity { controls: ControlTierIdentity::NotObserved, ..base },
             SnapshotIdentity {
                 controls: ControlTierIdentity::Observed { limits: limits(None, None) },
                 ..base
@@ -597,6 +608,9 @@ mod tests {
             assert_eq!(serves_snapshot(base, wanted), Serves::Refuse, "{wanted:?}");
             assert_eq!(serves_snapshot(wanted, base), Serves::Refuse, "{wanted:?}");
         }
+        let blind = SnapshotIdentity { controls: ControlTierIdentity::NotObserved, ..base };
+        assert_eq!(serves_snapshot(base, blind), Serves::ProjectControlsOff);
+        assert_eq!(serves_snapshot(blind, base), Serves::Refuse);
     }
 
     #[test]

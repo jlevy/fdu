@@ -909,8 +909,8 @@ pub struct Report {
     pub provenance: ReportProvenance,
     /// The semantic scan scope represented by this report.
     ///
-    /// A report-only cache projection may consume stronger internal control state that
-    /// no report view exposes; this field still names the weaker requested scope.
+    /// A projected cache load constructs its index directly in the requested controls-off
+    /// scope, so every report route reads this value from the same requested-scope index.
     pub scope: ScanScope,
     /// Analyzer units requested for this answer.
     pub requested_analysis: AnalysisSet,
@@ -1147,40 +1147,6 @@ pub(crate) fn report_in(
         ignore_rules,
         sections,
     })
-}
-
-/// Drop every ignored share from a report, for a request whose scope observes no control
-/// state.
-///
-/// A cache-only report may answer a request that turned observation off from a snapshot
-/// that observed it. Every row of that report must then say what the request did, which
-/// is that nothing was classified: `null`, never the stronger snapshot's split.
-pub(crate) fn forget_ignore_classification(report: &mut Report) {
-    report.ignore_rules = ControlCoverage::NotObserved;
-    for section in &mut report.sections {
-        match section {
-            Section::Tree(root) => {
-                let mut pending: Vec<&mut TreeNode> = vec![root];
-                while let Some(node) = pending.pop() {
-                    node.ignored = None;
-                    pending.extend(node.children.iter_mut());
-                }
-            }
-            Section::Extensions { rows, .. } => {
-                for row in rows {
-                    row.ignored = None;
-                }
-            }
-            Section::Files { rows, .. } => {
-                for row in rows {
-                    row.ignored = None;
-                }
-            }
-            Section::Summary(row) => row.ignored = None,
-            // Grouped metric rows carry no ignored share.
-            Section::Metrics { .. } => {}
-        }
-    }
 }
 
 /// Build a one-section report from an already reduced exact summary.

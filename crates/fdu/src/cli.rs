@@ -803,7 +803,8 @@ impl Cli {
         // here rather than by the caller: the watch path is its only remaining user on
         // this surface.
         let config = &OpenConfig::of(&request.basis, delivery);
-        let (index, _open_report, pending_save) = open_with_pending_save(path, config)?;
+        let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
+        let projected = open_report.projected;
         if let Err(error) = pending_save.join() {
             let _ = writeln!(
                 diagnostic,
@@ -852,6 +853,7 @@ impl Cli {
                 Self::save_if_pending(
                     &session,
                     config,
+                    projected,
                     &mut dirty_since_save,
                     &mut last_save,
                     interval,
@@ -889,6 +891,7 @@ impl Cli {
             Self::save_if_pending(
                 &session,
                 config,
+                projected,
                 &mut dirty_since_save,
                 &mut last_save,
                 interval,
@@ -909,6 +912,7 @@ impl Cli {
     fn save_if_pending(
         session: &fdu_core::watch_session::Session,
         config: &OpenConfig,
+        projected: bool,
         pending: &mut bool,
         last_save: &mut SystemTime,
         interval: Duration,
@@ -918,7 +922,7 @@ impl Cli {
         if !save_is_due(*pending, last_save.elapsed().unwrap_or_default(), interval) {
             return;
         }
-        let outcome = match Self::save_live(session, config) {
+        let outcome = match Self::save_live(session, config, projected) {
             Ok(true) => SaveOutcome::Written,
             Ok(false) => SaveOutcome::Skipped,
             Err(error) => {
@@ -951,7 +955,11 @@ impl Cli {
     fn save_live(
         session: &fdu_core::watch_session::Session,
         config: &OpenConfig,
+        projected: bool,
     ) -> anyhow::Result<bool> {
+        if projected {
+            return Ok(false);
+        }
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
         else {
             return Ok(false);

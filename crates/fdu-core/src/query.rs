@@ -19,9 +19,7 @@ pub use query_report::{
     MetricSummary, Pages, Query, Report, ReportMetricValues, ReportSource, Section, ShareMetric,
     SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, pages, report,
 };
-pub(crate) use query_report::{
-    display_notes, forget_ignore_classification, report_in, report_summary,
-};
+pub(crate) use query_report::{report_in, report_summary};
 pub(crate) use query_request::Rejection;
 pub use query_request::{
     Basis, Delivery, ReadSpec, Request, RequestDefaults, RequestError, RequestSpec, ScopeAxis,
