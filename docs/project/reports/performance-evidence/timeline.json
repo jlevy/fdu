@@ -37398,6 +37398,143 @@
    "subject": "894d731f69bb:208411:44de521b2e23",
    "title": "Linux H84 --no-controls --threads 8 sign transfers to nominated /usr",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --threads 8",
+   "change_pct": 7.123,
+   "commit": "06b12212",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "screen only; no engine change"
+   },
+   "control": "HEAD automatic workers",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 208411,
+   "family": "Linux:894d731f69bb",
+   "hypotheses": [
+    "H84"
+   ],
+   "id": "exp-149",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 481705934.5,
+        "control": 462043587
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 7.144,
+        "ci95_high_pct": 11.313,
+        "ci95_low_pct": 3.707,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 733473000,
+        "control": 740649500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.343,
+        "ci95_high_pct": 3.183,
+        "ci95_low_pct": -2.068,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 72153088,
+        "control": 71561216
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.39,
+        "ci95_high_pct": 0.951,
+        "ci95_low_pct": -0.02,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 251403500,
+        "control": 253552000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.541,
+        "ci95_high_pct": 2.223,
+        "ci95_low_pct": -3.765,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 480299500,
+        "control": 489024500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.019,
+        "ci95_high_pct": 6.268,
+        "ci95_low_pct": -1.79,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 484288142,
+        "control": 464479934
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 7.123,
+        "ci95_high_pct": 11.301,
+        "ci95_low_pct": 3.721,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2323.7167999769686,
+      "control": 2228.672833967497
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 149,
+   "path": "exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "default gitignore-on /usr aggregate --threads 8 is +7.12% [+3.72%, +11.30%] quiet regression; do not lower unlock or ship PORTABLE from this host",
+   "reference_tools": [],
+   "subject": "894d731f69bb:208411:44de521b2e23",
+   "title": "Linux default /usr aggregate --threads 8 regresses; do not lower unlock",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -37987,6 +38124,25 @@
    "synthetic": true
   },
   {
+   "apparent_bytes": 6019421920,
+   "directories": 14325,
+   "entries": 208411,
+   "experiments": [
+    "exp-148",
+    "exp-149"
+   ],
+   "files": 162440,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "894d731f69bb:208411:44de521b2e23",
+   "labels": [
+    "usr-prefix"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 2170167344,
    "directories": 14701,
    "entries": 120135,
@@ -38255,42 +38411,24 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
-  },
-  {
-   "apparent_bytes": 6019421920,
-   "directories": 14325,
-   "entries": 208411,
-   "experiments": [
-    "exp-148"
-   ],
-   "files": 162440,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "894d731f69bb:208411:44de521b2e23",
-   "labels": [
-    "usr-prefix"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 84,
+   "accepted": 85,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 47,
    "superseded": 3
   },
-  "experiments": 148,
+  "experiments": 149,
   "first_date": "2026-08-10",
   "hypotheses": 103,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 22,
+   "Linux": 23,
    "macOS": 126
   }
  },
