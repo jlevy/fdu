@@ -495,9 +495,10 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-Next free Darwin hypothesis id is **H147** (H144–H146 reserved on the Linux iteration
-stack). Do not mint another meaning for H91–H106. Next free Darwin experiment id after
-the Linux reservation is assigned on #94; do not take exp-138 here.
+Next free unused hypothesis id is **H148** (H144–H146 reserved on the Linux iteration
+stack; H147 used for the Linux transient recycle keep).
+Do not mint another meaning for H91–H106. Next free Darwin experiment id after the Linux
+reservation is assigned on #94; do not take exp-138 here.
 exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
@@ -789,6 +790,15 @@ Isolated `snapshot-save` 23.6 ms (~5%) is ≥3% and not skippable.
 Load/core 0.082–0.119 held.
 Do not retry H100.
 
+**H85 / exp-150** is the standing Linux transient-recycle screen: **rejected** against
+its 20% bar. Quiet `linux-v6.12` `--no-controls` aggregate −4.98%. Incomplete quiet
+`linux-450k` −11.31% (n=7). Peak RSS flat.
+Do not lower the bar.
+
+**H147 / exp-151** is the 3% keep of that same patch.
+Quiet `linux-v6.12` −4.98% [−5.92%, −4.33%]. Default gitignore-on placebo includes zero.
+Engine kept (`5c6e6394`). Unmeasured on macOS.
+
 This host’s nominated set is
 [nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
 `linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
@@ -816,11 +826,17 @@ Further Linux cells are on
    **Same leftover identity** (exp-147, quiet).
    Walk 93%; isolated save ~24 ms not skippable.
    Do not retry H100.
-5. A named cut only if a leftover above names one.
-   None did. **H147 was not minted.** Do not restart H86. Do not retry H71.
+5. **H85 / H147** — transient `--no-controls` aggregate recycle.
+   H86 detached arenas did not consume `RetainedState::Summary`. **H85 rejected**
+   against its 20% bar (exp-150, quiet `linux-v6.12` −4.98%). **H147 accepted** as the
+   3% keep (exp-151, same cell).
+   Engine kept (`5c6e6394`). Peak RSS flat.
+   Default gitignore-on placebo includes zero.
+   Do not retry H85’s 20% bar.
+   Do not restart H86. Do not retry H71.
 
-Next free Linux experiment id is **exp-150**. Next free unused hypothesis id after this
-reservation is **H147**.
+Next free Linux experiment id is **exp-152**. Next free unused hypothesis id is
+**H148**.
 
 ## Before the First Round
 

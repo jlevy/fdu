@@ -418,10 +418,10 @@ preparation. A successful Darwin stage may keep the implementation provisionally
 stack, but `fdu-xde5` and the campaign’s Linux floor claim remain open until the Linux
 stage passes.
 
-- [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — expect the arena to have
-  consumed it; screen against −20%, not 3%), `fdu-sk7v` (H66 — the directory-only
-  transient tree may be moot at 1.06×), snapshot economics (below), and the tier
-  scoreboard itself.
+- [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — the arena did **not** consume
+  `RetainedState::Summary`; −20% screen **rejected**, exp-150; 3% keep is H147 /
+  exp-151), `fdu-sk7v` (H66 — the directory-only transient tree may be moot at 1.06×),
+  snapshot economics (below), and the tier scoreboard itself.
 
 ### Phase C: The content tier (independent of B)
 

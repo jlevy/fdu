@@ -58,7 +58,8 @@ Record every cell, including negatives.
 - **Registry:**
   [Current engine (0.1.0)](../../guides/performance-loop.md#current-engine-010)
 - **Beads:** epic `fdu-hi1f`; H144 `fdu-5wzu`; H145 `fdu-40pl`; H84 screen `fdu-4cni`
-  (`fdu-tk1b` remains the standing thread-policy bead); H146 `fdu-jkzd`
+  (`fdu-tk1b` remains the standing thread-policy bead); H146 `fdu-jkzd`; H85 screen
+  `fdu-h967`; H147 keep `fdu-2wyr`
 - **First experiment id:** exp-144
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
@@ -116,9 +117,11 @@ Mint the reserved id when the cell starts, not before.
    Load/core 0.082–0.119 held.
    Do not retry H100. Do not load a snapshot on `fdu PATH`. Bead: `fdu-jkzd` (close).
 
-5. **A named cut only if a leftover above names one.** That cell takes the next free id
-   (H147 / exp-148 if the four determinations use exp-144–147). Accept rule: 3% wall,
-   interval below zero, digest identical.
+5. **H85 / H147 — transient batch recycle.** H86 detached arenas did not consume
+   `RetainedState::Summary`. **H85 rejected** against its 20% bar (exp-150). **H147
+   accepted** (exp-151, quiet `linux-v6.12` `--no-controls` aggregate −4.98%
+   [−5.92%, −4.33%]; RSS flat; default gitignore-on placebo +0.91%). Engine kept
+   (`5c6e6394`). Do not retry H85’s 20% bar.
    Do not restart H86.
 
 ## Subjects
@@ -169,7 +172,8 @@ If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
   `/usr` (exp-148), not a shipped `PORTABLE` constant
 - Linux first-run leftover is still the walk; snapshot write ~24 ms is ≥3% and not
   skippable (H146 / exp-147)
-- No leftover in this block named a skippable ≥3% userspace cut, so H147 was not minted
+- H85 recycle missed its 20% mimalloc bar (exp-150); the same patch cleared 3% as H147
+  (exp-151) on reconstructible `linux-v6.12`
 
 ## References
 
