@@ -1380,6 +1380,7 @@ impl IndexHandle {
         complete: bool,
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
+        issues: &[Issue],
     ) -> crate::Result<Option<Commit>> {
         self.write_index()?.finish_reconcile(
             path,
@@ -1387,6 +1388,7 @@ impl IndexHandle {
             complete,
             listed_incomplete,
             failed_paths,
+            issues,
         )
     }
 
@@ -2819,8 +2821,7 @@ impl Index {
     /// recorded as complete in this commit whether or not the whole pass completed, exactly
     /// as discovery's listing commit records the directories it lists, unless a producer
     /// invalidated or began verifying it after this pass started: that producer's own pass
-    /// owns its listing now. Only an opened root passes any, since only an opened root
-    /// serves completeness, and it passes none when a conditional commit lost a race.
+    /// owns its listing now. A caller passes none when a conditional commit lost a race.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
@@ -2828,6 +2829,7 @@ impl Index {
         complete: bool,
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
+        issues: &[Issue],
     ) -> crate::Result<Option<Commit>> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
@@ -2853,6 +2855,11 @@ impl Index {
         let scoped_failures: Vec<&PathBuf> =
             failed_paths.iter().filter(|failed| failed.starts_with(&path)).collect();
         let mut state = Vec::new();
+        for issue in issues {
+            if issue.path.as_deref().is_none_or(|issue_path| issue_path.starts_with(&path)) {
+                self.retain_issue(issue.clone());
+            }
+        }
         if complete || !scoped_failures.is_empty() {
             // A sweep stat'd every entry beneath `path` except the precise failure paths,
             // which carry stronger `Partial` marks below. Record the successful interval
@@ -3529,6 +3536,23 @@ impl Index {
     /// [`AnalysisSet::NONE`] when it holds no content tier.
     pub fn content_set(&self) -> AnalysisSet {
         self.content().and_then(ContentIndex::profile).unwrap_or(AnalysisSet::NONE)
+    }
+
+    /// Whether the retained content tier lacks a record for any current regular file.
+    ///
+    /// Every requested analyzer records a coverage outcome, including binary, invalid
+    /// UTF-8, and unsupported files. A count mismatch therefore means analysis is still
+    /// pending, while deleting a file removes both its entry and its content record.
+    pub(crate) fn content_has_pending(&self, profile: AnalysisSet) -> bool {
+        if !profile.is_enabled() {
+            return false;
+        }
+        let wanted = self.content_identity(profile);
+        let Some(content) = self.content().filter(|content| content.identity() == Some(&wanted))
+        else {
+            return true;
+        };
+        u64::try_from(content.len()).unwrap_or(u64::MAX) < self.entry(EntryId::ROOT).rollup().files
     }
 
     /// The content tier identity this index gives records of `analysis`: its own entry tier,
@@ -7568,7 +7592,7 @@ mod tests {
         );
 
         let finish = index
-            .finish_reconcile(Path::new("src"), started, true, &[], &[])
+            .finish_reconcile(Path::new("src"), started, true, &[], &[], &[])
             .expect("finish")
             .expect("finish commit");
         assert!(finish.changes.is_empty());
@@ -9037,7 +9061,9 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true, &[], &[]).expect("finish reconciliation");
+        index
+            .finish_reconcile(Path::new(""), 0, true, &[], &[], &[])
+            .expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -9071,7 +9097,9 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true, &[], &[]).expect("finish reconciliation");
+        index
+            .finish_reconcile(Path::new(""), 0, true, &[], &[], &[])
+            .expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -9103,7 +9131,7 @@ mod tests {
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
             index
-                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[], &[])
+                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[], &[], &[])
                 .expect("finish reconciliation");
         }
         assert!(
