@@ -855,7 +855,8 @@ shipped release profile.
 Quiet `linux-v6.12` `cold-scan-index` −8.35% [−10.35%, −6.92%] and `warm-revalidate`
 −8.15% [−8.64%, −7.07%]. Revalidate component is flat.
 `[profile.release]` unchanged.
-See [Linux PGO after #97](../specs/active/plan-2026-09-20-linux-pgo-screen.md).
+See [the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
+(recorded on [#97](https://github.com/jlevy/fdu/pull/97)).
 
 Next free Linux experiment id is **exp-155**. Next free unused hypothesis id is
 **H149**.

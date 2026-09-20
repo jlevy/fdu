@@ -739,9 +739,10 @@ whose backlog owns H12–H46; new hypotheses from any source take the next free 
 [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md)
 on [#94](https://github.com/jlevy/fdu/pull/94); H144–H146 reserved on
 [Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md);
-H147 used for the Linux transient recycle keep; H148 reserved on
-[the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md); next free
-unused id is H149) so no id ever means two things.
+H147 used for the Linux transient recycle keep; H148 recorded on
+[the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
+(folded onto [#97](https://github.com/jlevy/fdu/pull/97)); next free unused id is H149)
+so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 

@@ -5,10 +5,11 @@
 **Author:** fdu project
 
 **Status:** Recorded.
-Stacked on [#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`. Leftover queue and
-the two named Linux cuts (H147 recycle, H72 `d_type` skip) are in the ledger through
-exp-153. Further PGO screening is
-[the Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md), not this file.
+Stacked on [#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`. Leftover queue,
+the two named Linux cuts (H147 recycle, H72 `d_type` skip), and the H148 PGO screen are
+in the ledger through exp-154 on this PR. See
+[the Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md) for the H148 cell.
+Former stacked PR #100 is folded here and closed.
 
 ## Overview
 
@@ -60,7 +61,8 @@ Record every cell, including negatives.
   [Current engine (0.1.0)](../../guides/performance-loop.md#current-engine-010)
 - **Beads:** epic `fdu-hi1f`; H144 `fdu-5wzu`; H145 `fdu-40pl`; H84 screen `fdu-4cni`
   (`fdu-tk1b` remains the standing thread-policy bead); H146 `fdu-jkzd`; H85 screen
-  `fdu-h967`; H147 keep `fdu-2wyr`; H72 screen `fdu-ueab`
+  `fdu-h967`; H147 keep `fdu-2wyr`; H72 screen `fdu-ueab`; H148 screen `fdu-fg0q`
+  (`fdu-pdne` remains the standing PGO pipeline bead)
 - **First experiment id:** exp-144
 - **Quiet:** `PERF_HOST_REGIME=quiet` first.
   Do not lower the 25% busy bar.
@@ -132,6 +134,13 @@ Mint the reserved id when the cell starts, not before.
    Engine kept (`f841662c`). `one_filesystem` still stats directories.
    Do not retry H71.
 
+7. **H148 — PGO screen (`fdu-pdne`).** **Accepted as a screen** (exp-154, quiet).
+   `cold-scan-index` wall −8.35% [−10.35%, −6.92%]; `warm-revalidate` wall −8.15%
+   [−8.64%, −7.07%]; revalidate component includes zero.
+   Peak RSS no worse. `[profile.release]` unchanged.
+   Profdata is host-specific and is not checked in.
+   Adoption into shipped release builds stays on `fdu-pdne`. Bead: `fdu-fg0q` (close).
+
 ## Subjects
 
 - **linux-v6.12**: reconstructible deciding subject (92,474 entries).
@@ -169,10 +178,10 @@ Work only on `cursor/linux-perf-iterate-de1b`, base `#94`. Do not push to #91, #
 #94. No merge unless asked.
 No force-push.
 
-If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
+If #94 moves, rebase this branch onto it and keep H144–H148 meanings.
 The leftover compileable queue on this 4-core VM is recorded; do not retry H71, H85’s
 20% bar, or H72 on another 6% directory source tree.
-PGO is a follow-on stack, not a commit on this branch.
+H148 is recorded here; do not reopen #100.
 
 ## Open Questions
 
@@ -187,6 +196,8 @@ PGO is a follow-on stack, not a commit on this branch.
   (exp-151) on reconstructible `linux-v6.12`
 - H72 `d_type` skip missed 3% on reconstructible `linux-v6.12` (exp-152, −1.63%) and
   cleared it on nominated `/usr` (exp-153, −9.01%). Engine kept (`f841662c`)
+- H148 PGO screen cleared 3% wall on both named Linux jobs (exp-154);
+  `[profile.release]` unchanged; pipeline adoption stays on `fdu-pdne`
 
 ## References
 

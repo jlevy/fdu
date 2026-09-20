@@ -1,20 +1,21 @@
-# Feature: Linux PGO Screen after #97
+# Feature: Linux PGO Screen after leftover recording
 
 **Date:** 2026-09-20
 
 **Author:** fdu project
 
 **Status:** Recorded.
-Stacked on [#97](https://github.com/jlevy/fdu/pull/97) at `937a8917`. H148 / exp-154
-accepted as a quiet Linux screen.
+Folded onto [#97](https://github.com/jlevy/fdu/pull/97)
+(`cursor/linux-perf-iterate-de1b`). H148 / exp-154 accepted as a quiet Linux screen.
 `[profile.release]` is unchanged.
+Former stacked PR #100 is closed; do not reopen it.
 
 ## Overview
 
-[#97](https://github.com/jlevy/fdu/pull/97) recorded the leftover queue after #94 and
-kept two Linux-specific engine cuts: H147 transient batch recycle and H72 `d_type` skip.
-The leftover compileable queue on that 4-core VM is exhausted: H71 stays refuted here,
-H85’s 20% bar is not lowered, and `PORTABLE` thread constants are not shipped.
+[#97](https://github.com/jlevy/fdu/pull/97) records the leftover queue after #94 and
+keeps two Linux-specific engine cuts: H147 transient batch recycle and H72 `d_type`
+skip. The leftover compileable queue on that 4-core VM is exhausted: H71 stays refuted
+here, H85’s 20% bar is not lowered, and `PORTABLE` thread constants are not shipped.
 
 [Campaign-2](plan-2026-08-23-fdu-performance-campaign-2.md) still queues a one-afternoon
 PGO screen (`fdu-pdne`). H93 was the first registry meaning; that id was later reused,
@@ -33,8 +34,8 @@ below zero.
 
 ## Non-Goals
 
-- Pushing to #91, #92, #94, or #97
-- Merging this branch to `main` or onto #97 unless asked
+- Pushing to #91, #92, or #94
+- Merging this branch to `main` or onto #94 unless asked
 - Restarting H86, retrying H71, retrying H85’s 20% bar, or retrying H72 on a 6%
   directory source tree
 - Shipping a `PORTABLE` thread constant
@@ -44,9 +45,9 @@ below zero.
 
 ## Standing
 
-- **Branch:** `cursor/linux-pgo-screen-de1b`
-- **Base:** `cursor/linux-perf-iterate-de1b`
-  ([#97](https://github.com/jlevy/fdu/pull/97) at `937a8917`)
+- **Branch:** `cursor/linux-perf-iterate-de1b`
+- **Base:** `perf/campaign-linux-2026-09-19`
+  ([#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`)
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)
 - **Linux standing:**
   [Linux Standing](../../guides/performance-loop-runbook.md#linux-standing-2026-09-20)
@@ -109,11 +110,11 @@ Exact oracles stay as for the job under test.
 
 ## Rollout Plan
 
-Work only on `cursor/linux-pgo-screen-de1b`, base `#97`. Do not push to #91, #92, #94,
-or #97. No merge unless asked.
+Work only on `cursor/linux-perf-iterate-de1b`, base `#94`. Do not push to #91, #92, or
+#94. No merge unless asked.
 No force-push.
 
-If #97 moves, rebase this branch onto it and keep the H148 meaning.
+If #94 moves, rebase this branch onto it and keep the H148 meaning.
 
 ## Open Questions
 
