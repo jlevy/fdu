@@ -310,11 +310,11 @@ fn publish(path: &Path, mut payload: Vec<u8>) -> Result<()> {
 /// Keep the file at `path` when it is `payload` sealed under any pass's stamp, moving only
 /// its mtime, to the stamp in `payload`.
 ///
-/// The loader reads the mtime as every cached entry's observation time. Moving it to the
-/// start of the pass that would have stamped the image, rather than to now, keeps it from
-/// overstating by that pass's duration. It never moves backwards: a save of an index
-/// loaded under an older stamp leaves a later mtime in place, since that time was already
-/// true of these facts.
+/// The mtime is cache-maintenance metadata, not filesystem-observation provenance: a copy
+/// or a touch must not change when the tree was observed. Moving it to the start of the pass
+/// that would have stamped the image lets the equivalent-image fast path retain its useful
+/// monotonic hint without changing the persisted observation stamp. It never moves backwards:
+/// a save of an index loaded under an older stamp leaves a later mtime in place.
 ///
 /// One read through one handle, comparing every payload byte before computing the
 /// checksum, so a changed tree stops at its first difference and costs no checksum here,
@@ -456,22 +456,8 @@ fn load_with_types_and_size_limit(
     // corruption: the parser may do work before the mismatch is known, and the
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
-    // The file's mtime is the observation time of every cached entry: the end of the pass
-    // that wrote the image, which slightly overstates freshness because the walk began
-    // earlier, or the start of a later pass that kept it (`keep_equivalent_image`). The
-    // header's `writing_pass_started_at_ns` is not read here: it is a lower bound that
-    // can predate many passes that verified the same facts, so it would understate a kept
-    // image by as much. The mtime remains the observation time until P1.4.4 gives
-    // `scan_started_at` one meaning and unifies the two.
-    let captured_at_ns = file
-        .metadata()
-        .ok()
-        .and_then(|metadata| metadata.modified().ok())
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|since| i64::try_from(since.as_nanos()).ok())
-        .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns, types);
+    let outcome = parse_stream(&mut reader, payload_len, types);
     match outcome {
         Ok(index) => {
             // A successful parse consumed every payload byte (the trailing-byte check
@@ -736,7 +722,6 @@ fn parse_header_fields(reader: &mut impl Read, engine: u64) -> ParseResult<Heade
 fn parse_stream(
     reader: &mut impl Read,
     payload_len: u64,
-    captured_at_ns: i64,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
 ) -> ParseResult<Index> {
     if read_array::<_, 8>(reader)? != *MAGIC {
@@ -766,7 +751,7 @@ fn parse_stream(
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
     // index claims to be fresh when nothing has been checked since the file was read.
-    index.set_applying_source(Source::Cached, captured_at_ns);
+    index.set_applying_source(Source::Cached, writing_pass_started_at_ns);
     // The record count is validated against the bytes actually present above, so it is
     // safe to size from: reserving here removes the geometric regrowth of a 450k-element
     // vector without letting a corrupt count drive the allocation.
@@ -1552,6 +1537,36 @@ mod tests {
             provenance.observed_at_ns > 0,
             "a cached total must say as of when, or a UI cannot label it"
         );
+    }
+
+    #[test]
+    fn cached_observation_time_comes_from_the_header_after_touch_or_copy() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        let copied = dir.path().join("copied.fdu");
+        let mut original = sample_index();
+        original.set_writing_pass_started_at_ns(1_000);
+        save(&original, &path).expect("save");
+
+        // Cache files are routinely kept in place or copied between cache locations. Neither
+        // operation observes the tree, so neither file mtime may become value provenance.
+        touch(&path, UNIX_EPOCH + Duration::from_secs(10)).expect("touch cache image");
+        fs::copy(&path, &copied).expect("copy cache image");
+        touch(&copied, UNIX_EPOCH + Duration::from_secs(20)).expect("touch copied image");
+
+        for cache in [&path, &copied] {
+            let restored = load(cache).expect("load").expect("present");
+            for entry in [Path::new(""), Path::new("src/main.rs")] {
+                assert_eq!(
+                    restored.provenance(entry).expect("present").observed_at_ns,
+                    1_000,
+                    "{} uses its persisted pass start, not its cache-file mtime",
+                    cache.display()
+                );
+            }
+        }
     }
 
     #[test]

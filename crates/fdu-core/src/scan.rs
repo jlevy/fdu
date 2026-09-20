@@ -472,6 +472,53 @@ impl ScanReport {
     }
 }
 
+/// Normalize filesystem failures before one of the bounded status collectors retains them.
+///
+/// A walk may encounter the same inaccessible path from several worker paths. The report is
+/// already the full, transient set for this pass, so sorting and deduplicating it here avoids
+/// allocating or formatting a second unbounded set solely to decide which 64 details survive.
+/// I/O causes are keyed by their native root-relative path and the issue category, exactly the
+/// cause identity retained by an index. Other engine failures are left distinct: walker errors
+/// are I/O failures, and treating arbitrary engine errors as equivalent without constructing
+/// their bounded issue representation would lose information.
+pub(crate) fn normalize_walk_errors(root: &Path, errors: &mut Vec<Error>) {
+    errors.sort_by(|left, right| match (left, right) {
+        (
+            Error::Io { path: left_path, source: left_source },
+            Error::Io { path: right_path, source: right_source },
+        ) => left_path
+            .strip_prefix(root)
+            .unwrap_or(left_path)
+            .cmp(right_path.strip_prefix(root).unwrap_or(right_path))
+            .then_with(|| {
+                walk_issue_kind_rank(left_source).cmp(&walk_issue_kind_rank(right_source))
+            }),
+        (Error::Io { .. }, _) => std::cmp::Ordering::Less,
+        (_, Error::Io { .. }) => std::cmp::Ordering::Greater,
+        _ => std::cmp::Ordering::Equal,
+    });
+    errors.dedup_by(|right, left| match (left, right) {
+        (
+            Error::Io { path: left_path, source: left_source },
+            Error::Io { path: right_path, source: right_source },
+        ) => {
+            left_path.strip_prefix(root).unwrap_or(left_path)
+                == right_path.strip_prefix(root).unwrap_or(right_path)
+                && walk_issue_kind_rank(left_source) == walk_issue_kind_rank(right_source)
+        }
+        _ => false,
+    });
+}
+
+fn walk_issue_kind_rank(error: &std::io::Error) -> u8 {
+    match error.kind() {
+        std::io::ErrorKind::PermissionDenied => 0,
+        std::io::ErrorKind::NotFound => 1,
+        std::io::ErrorKind::InvalidData | std::io::ErrorKind::InvalidInput => 2,
+        _ => 5,
+    }
+}
+
 /// Schema carried by [`ScanDiagnostics`].
 ///
 /// Diagnostics are an opt-in measurement contract rather than stable human output.
@@ -1314,8 +1361,15 @@ pub fn scan(
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
     let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
-    scan_internal(root, config, &mut public_sink, false, WorkerPolicyExperiment::ShippedOneShot)
-        .map(|(report, _diagnostics)| report)
+    let (mut report, _diagnostics) = scan_internal(
+        root,
+        config,
+        &mut public_sink,
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+    )?;
+    normalize_walk_errors(root, &mut report.errors);
+    Ok(report)
 }
 
 /// Walk `root`, emitting observations and a bounded run-scoped diagnostic trace.
@@ -1340,7 +1394,8 @@ pub fn scan_with_policy_diagnostics(
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, ScanDiagnostics)> {
     let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
-    let (report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy)?;
+    let (mut report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy)?;
+    normalize_walk_errors(root, &mut report.errors);
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
@@ -3757,7 +3812,7 @@ fn scan_detached_directories(
 }
 
 fn consolidate_detached_index(
-    output: ScanReport,
+    mut output: ScanReport,
     builder: DetachedIndexBuilder,
 ) -> (Index, ScanReport) {
     let entries = output.entries;
@@ -3771,7 +3826,7 @@ fn consolidate_detached_index(
             counts.detached_finish_us = counts.detached_finish_us.saturating_add(elapsed);
         });
     }
-    index.record_walk_errors(&output.errors);
+    index.record_walk_errors(&mut output.errors);
     index.set_initial_freshness(output.is_complete());
     (index, output)
 }
@@ -3790,7 +3845,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
     let mut index = Index::new_with_scope_and_types(root, config.scope(), config.types_shared());
     index.set_control_limits(config.control_limits);
     let mut apply_error: Option<Error> = None;
-    let (report, _diagnostics) = scan_internal(
+    let (mut report, _diagnostics) = scan_internal(
         root,
         config,
         &mut |batch| {
@@ -3806,7 +3861,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
     if let Some(error) = apply_error {
         return Err(error);
     }
-    index.record_walk_errors(&report.errors);
+    index.record_walk_errors(&mut report.errors);
     index.set_initial_freshness(report.is_complete());
     Ok((index, report))
 }
@@ -9140,6 +9195,37 @@ mod tests {
             Err(Error::PathEscapesRoot(_))
         ));
         assert_eq!(index.freshness(), crate::Freshness::Fresh);
+    }
+
+    #[test]
+    fn normalized_walk_errors_keep_index_and_one_shot_status_in_lockstep() {
+        let root = Path::new("/root");
+        let mut order: Vec<_> = (0..66).rev().collect();
+        order.push(65);
+        let mut errors = order
+            .into_iter()
+            .map(|number| {
+                Error::io(
+                    root.join(format!("file-{number:02}")),
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        normalize_walk_errors(root, &mut errors);
+        assert_eq!(errors.len(), 66, "the repeated cause is removed once");
+
+        let mut index = crate::Index::new(root);
+        index.record_walk_errors(&mut errors);
+        let status = crate::query::TreeStatus::of_walk(
+            root,
+            &ScanReport { errors, ..ScanReport::default() },
+        );
+
+        assert_eq!(status.errors, index.issues());
+        assert_eq!(status.errors_omitted, index.state().issues.omitted);
+        assert_eq!(status.errors.len(), crate::MAX_RETAINED_ISSUES);
+        assert_eq!(status.errors_omitted, 2);
     }
 
     #[cfg(target_os = "linux")]

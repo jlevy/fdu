@@ -2765,20 +2765,14 @@ impl Index {
         }
     }
 
-    pub(crate) fn record_walk_errors(&mut self, errors: &[crate::Error]) {
+    pub(crate) fn record_walk_errors(&mut self, errors: &mut Vec<crate::Error>) {
         self.issues.clear();
         self.issue_epochs.clear();
         self.state.issues = crate::IssueSummary::default();
         let root = self.root_path.clone();
-        for (position, error) in errors.iter().enumerate() {
-            let issue = Issue::from_error_under(&root, error);
-            let repeated = errors[..position]
-                .iter()
-                .map(|earlier| Issue::from_error_under(&root, earlier))
-                .any(|earlier| same_issue_cause(&earlier, &issue));
-            if !repeated {
-                self.retain_issue(issue);
-            }
+        crate::scan::normalize_walk_errors(&root, errors);
+        for error in errors {
+            self.retain_issue(Issue::from_error_under(&root, error));
         }
     }
 
@@ -9137,9 +9131,11 @@ mod tests {
         shuffled_order.push(65);
 
         let mut reverse = Index::new("/root");
-        reverse.record_walk_errors(&make(reverse_order));
+        let mut reverse_errors = make(reverse_order);
+        reverse.record_walk_errors(&mut reverse_errors);
         let mut shuffled = Index::new("/root");
-        shuffled.record_walk_errors(&make(shuffled_order));
+        let mut shuffled_errors = make(shuffled_order);
+        shuffled.record_walk_errors(&mut shuffled_errors);
 
         let reverse_paths: Vec<_> =
             reverse.issues().iter().map(|issue| issue.path.clone().expect("path")).collect();
