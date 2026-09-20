@@ -831,6 +831,9 @@ impl Cli {
             complete: open_report.is_complete(),
             errors: open_report.error_messages(),
         };
+        if format == report_format::Format::Yaml {
+            write!(out, "{}", report_format::document_start(format))?;
+        }
         write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
         out.flush()?;
 
@@ -993,6 +996,8 @@ impl Cli {
                 "\n{}",
                 paint(&report_format::watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
             )?;
+        } else if format == report_format::Format::Yaml {
+            write!(out, "{}", report_format::document_start(format))?;
         }
         write!(out, "{}", report_format::render(&report, format, color))?;
         out.flush()?;

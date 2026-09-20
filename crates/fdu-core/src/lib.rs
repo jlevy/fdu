@@ -63,6 +63,7 @@ pub mod classify;
 pub mod content;
 pub mod control;
 pub mod counters;
+mod emit;
 mod engine_contract;
 mod execution;
 mod index;

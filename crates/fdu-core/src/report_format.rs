@@ -17,14 +17,15 @@ use std::path::Path;
 
 use anstyle::{AnsiColor, Style as AnsiStyle};
 
-use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
-use crate::content::CoverageReason;
+use crate::classify::human_language_name;
+use crate::content::{CoverageReason, MetricValues};
 use crate::control::ControlCoverage;
+use crate::emit::{Event, JsonSink, Scalar, Shape, Sink, YamlSink};
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
     FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
-    ReportMetricValues, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TreeNode,
-    TypeRow, ViewSpec, document_words, format_rfc3339, format_rfc3339_nanos,
+    ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
+    document_words, format_rfc3339, format_rfc3339_nanos,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -87,6 +88,14 @@ pub enum Format {
     Yaml,
 }
 
+/// Start one document in a multi-document stream for `format`.
+pub const fn document_start(format: Format) -> &'static str {
+    match format {
+        Format::Yaml => "---\n",
+        Format::Text | Format::Json | Format::Jsonl => "",
+    }
+}
+
 impl Format {
     /// Parse a `--format` value.
     pub fn parse(value: &str) -> Option<Self> {
@@ -110,9 +119,498 @@ impl Format {
 pub fn render(report: &Report, format: Format, color: bool) -> String {
     match format {
         Format::Text => render_text(report, color),
-        Format::Json => render_json(report),
-        Format::Jsonl => render_jsonl(report),
-        Format::Yaml => render_yaml(report),
+        Format::Json => render_report_machine(report, true, JsonSink::pretty()),
+        Format::Jsonl => render_report_jsonl(report),
+        Format::Yaml => render_report_machine(report, true, YamlSink::new()),
+    }
+}
+
+fn render_report_machine(report: &Report, with_sections: bool, mut sink: impl Sink) -> String {
+    emit_report(&mut sink, report, with_sections);
+    sink.finish()
+}
+
+fn render_report_jsonl(report: &Report) -> String {
+    let mut sink = JsonSink::line();
+    emit_report(&mut sink, report, false);
+    let mut out = sink.finish();
+    out.push('\n');
+    for section in &report.sections {
+        let mut sink = JsonSink::line();
+        emit_section(&mut sink, section);
+        out.push_str(&sink.finish());
+        out.push('\n');
+    }
+    out
+}
+
+fn emit_field<S: Sink>(sink: &mut S, field: Field, condition: bool, emit: impl FnOnce(&mut S)) {
+    let present = match field.presence {
+        Presence::Always | Presence::Nullable => true,
+        Presence::WhenAnalyzer(analysis) => condition && analysis.is_enabled(),
+        Presence::WhenLossy | Presence::WhenSet => condition,
+    };
+    if present {
+        sink.event(Event::Key(field.name));
+        emit(sink);
+    }
+}
+
+fn emit_scalar(sink: &mut impl Sink, value: Scalar<'_>) {
+    sink.event(Event::Scalar(value));
+}
+
+fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_field(sink, Field::always("schema"), true, |sink| {
+        emit_scalar(sink, Scalar::Str(report_schema(report)));
+    });
+    let generator = generator();
+    emit_field(sink, Field::always("generator"), true, |sink| {
+        emit_scalar(sink, Scalar::Str(&generator));
+    });
+    let root = report.root.to_string_lossy();
+    emit_field(sink, Field::always("root"), true, |sink| {
+        emit_scalar(sink, Scalar::Str(&root));
+    });
+    emit_raw_identity(sink, "root_raw", &report.root);
+    emit_field(sink, Field::nullable("scan_started_at"), true, |sink| {
+        if let Some(at) = report.scan_started_at {
+            let value = format_rfc3339(at);
+            emit_scalar(sink, Scalar::Str(&value));
+        } else {
+            emit_scalar(sink, Scalar::Null);
+        }
+    });
+    let generated_at = format_rfc3339(report.generated_at);
+    emit_field(sink, Field::always("generated_at"), true, |sink| {
+        emit_scalar(sink, Scalar::Str(&generated_at));
+    });
+    emit_field(sink, Field::always("source"), true, |sink| {
+        emit_scalar(sink, Scalar::Str(source_label(report.source)));
+    });
+    emit_field(sink, Field::always("freshness"), true, |sink| {
+        emit_scalar(sink, Scalar::Str(freshness_label(report.freshness)));
+    });
+    emit_field(sink, Field::always("complete"), true, |sink| {
+        emit_scalar(sink, Scalar::Bool(report.complete));
+    });
+    emit_field(sink, Field::always("errors"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for error in &report.errors {
+            emit_scalar(sink, Scalar::Str(error));
+        }
+        sink.event(Event::EndSeq);
+    });
+    emit_field(sink, Field::always("ignore_rules"), true, |sink| {
+        emit_ignore_rules(sink, &report.ignore_rules);
+    });
+    emit_field(
+        sink,
+        Field::when_analyzer("analysis", crate::content::AnalysisSet::ALL),
+        report_schema(report) == CONTENT_REPORT_SCHEMA,
+        |sink| emit_analysis(sink, report.analysis.as_ref()),
+    );
+    emit_field(sink, Field::when_set("reports"), with_sections, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for section in &report.sections {
+            emit_section(sink, section);
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_ignore_rules(sink: &mut impl Sink, rules: &ControlCoverage) {
+    let ControlCoverage::Observed(observed) = rules else {
+        emit_scalar(sink, Scalar::Null);
+        return;
+    };
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_field(sink, Field::always("limits"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_field(sink, Field::nullable("budget"), true, |sink| {
+            emit_optional_usize(sink, observed.limits.budget);
+        });
+        emit_field(sink, Field::nullable("line_limit"), true, |sink| {
+            emit_optional_usize(sink, observed.limits.line_limit);
+        });
+        sink.event(Event::EndMap);
+    });
+    emit_u64_field(sink, "applied", observed.applied);
+    emit_u64_field(sink, "refused", observed.refused);
+    emit_field(sink, Field::always("refusals"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for refusal in &observed.refusals {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_path_fields(sink, &refusal.path);
+            emit_str_field(sink, "reason", refusal.reason.label());
+            sink.event(Event::EndMap);
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_analysis(sink: &mut impl Sink, analysis: Option<&crate::query::ContentReportMetadata>) {
+    let Some(analysis) = analysis else {
+        emit_scalar(sink, Scalar::Null);
+        return;
+    };
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_field(sink, Field::always("analyze"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Inline));
+        for label in analysis_set_labels(analysis.profile) {
+            emit_scalar(sink, Scalar::Str(label));
+        }
+        sink.event(Event::EndSeq);
+    });
+    emit_u64_field(sink, "type_rules_fingerprint", analysis.provenance.type_rules_fingerprint);
+    emit_u64_field(sink, "options_fingerprint", analysis.provenance.options_fingerprint.0);
+    emit_field(sink, Field::always("analyzers"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for (id, version) in &analysis.provenance.analyzers {
+            sink.event(Event::BeginMap(Shape::Inline));
+            emit_str_field(sink, "id", id.0);
+            emit_u64_field(sink, "version", u64::from(version.0));
+            sink.event(Event::EndMap);
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_optional_usize(sink: &mut impl Sink, value: Option<usize>) {
+    match value {
+        Some(value) => emit_scalar(sink, Scalar::U64(value as u64)),
+        None => emit_scalar(sink, Scalar::Null),
+    }
+}
+
+fn emit_str_field(sink: &mut impl Sink, name: &'static str, value: &str) {
+    emit_field(sink, Field::always(name), true, |sink| {
+        emit_scalar(sink, Scalar::Str(value));
+    });
+}
+
+fn emit_u64_field(sink: &mut impl Sink, name: &'static str, value: u64) {
+    emit_field(sink, Field::always(name), true, |sink| {
+        emit_scalar(sink, Scalar::U64(value));
+    });
+}
+
+fn emit_i64_field(sink: &mut impl Sink, name: &'static str, value: i64) {
+    emit_field(sink, Field::always(name), true, |sink| {
+        emit_scalar(sink, Scalar::I64(value));
+    });
+}
+
+fn emit_raw_identity(sink: &mut impl Sink, name: &'static str, path: &Path) {
+    let raw = raw_os_identity(path.as_os_str());
+    emit_field(sink, Field::when_lossy(name), raw.is_some(), |sink| {
+        let (encoding, hex) = raw.expect("lossy field predicate checked the raw identity");
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_str_field(sink, "encoding", encoding);
+        emit_str_field(sink, "hex", &hex);
+        sink.event(Event::EndMap);
+    });
+}
+
+fn emit_path_fields(sink: &mut impl Sink, path: &Path) {
+    let lossy = path.to_string_lossy();
+    emit_str_field(sink, "path", &lossy);
+    emit_raw_identity(sink, "path_raw", path);
+}
+
+fn emit_section(sink: &mut impl Sink, section: &Section) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(sink, "view", section.view().label());
+    match section {
+        Section::Tree(root) => {
+            emit_field(sink, Field::always("tree"), true, |sink| emit_tree(sink, root));
+        }
+        Section::Extensions { rows, total } => {
+            emit_bound_field(sink, rows.len(), *total);
+            emit_field(sink, Field::always("extensions"), true, |sink| {
+                sink.event(Event::BeginSeq(Shape::Block));
+                for row in rows {
+                    sink.event(Event::BeginMap(Shape::Block));
+                    emit_str_field(sink, "extension", &row.extension);
+                    emit_u64_field(sink, "files", row.files);
+                    emit_u64_field(sink, "bytes", row.bytes);
+                    emit_u64_field(sink, "allocated", row.allocated);
+                    emit_field(sink, Field::nullable("ignored"), true, |sink| {
+                        emit_ignored(sink, row.ignored, false);
+                    });
+                    sink.event(Event::EndMap);
+                }
+                sink.event(Event::EndSeq);
+            });
+        }
+        Section::Metrics { summary, .. } => {
+            emit_field(sink, Field::always("metrics"), true, |sink| {
+                emit_metric_summary(sink, summary);
+            });
+        }
+        Section::Files { rows, total, .. } => {
+            emit_bound_field(sink, rows.len(), *total);
+            emit_field(sink, Field::always("files"), true, |sink| {
+                sink.event(Event::BeginSeq(Shape::Block));
+                for row in rows {
+                    emit_file_row(sink, row);
+                }
+                sink.event(Event::EndSeq);
+            });
+        }
+        Section::Summary(row) => {
+            emit_field(sink, Field::always("summary"), true, |sink| {
+                emit_summary_row(sink, row);
+            });
+        }
+    }
+    sink.event(Event::EndMap);
+}
+
+fn emit_bound_field(sink: &mut impl Sink, shown: usize, total: usize) {
+    emit_field(sink, Field::nullable("bound"), true, |sink| {
+        if shown >= total {
+            emit_scalar(sink, Scalar::Null);
+        } else {
+            sink.event(Event::BeginMap(Shape::Inline));
+            emit_u64_field(sink, "shown", shown as u64);
+            emit_u64_field(sink, "total", total as u64);
+            sink.event(Event::EndMap);
+        }
+    });
+}
+
+fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_path_fields(sink, &row.path);
+    emit_str_field(sink, "kind", kind_label(row.kind));
+    emit_u64_field(sink, "bytes", row.bytes);
+    emit_u64_field(sink, "allocated", row.allocated);
+    emit_i64_field(sink, "mtime_ns", row.mtime_ns);
+    emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
+        Some(value) => emit_scalar(sink, Scalar::Bool(value)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_summary_row(sink: &mut impl Sink, row: &SummaryRow) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_u64_field(sink, "files", row.files);
+    emit_u64_field(sink, "dirs", row.dirs);
+    emit_u64_field(sink, "bytes", row.bytes);
+    emit_u64_field(sink, "allocated", row.allocated);
+    emit_field(sink, Field::nullable("ignored"), true, |sink| {
+        emit_ignored(sink, row.ignored, true);
+    });
+    emit_field(sink, Field::nullable("newest_mtime_ns"), true, |sink| match row.newest_mtime_ns {
+        Some(value) => emit_scalar(sink, Scalar::I64(value)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_ignored(sink: &mut impl Sink, ignored: Option<IgnoredTally>, with_dirs: bool) {
+    let Some(ignored) = ignored else {
+        emit_scalar(sink, Scalar::Null);
+        return;
+    };
+    sink.event(Event::BeginMap(Shape::Inline));
+    emit_u64_field(sink, "files", ignored.files);
+    if with_dirs {
+        emit_u64_field(sink, "dirs", ignored.dirs);
+    }
+    emit_u64_field(sink, "bytes", ignored.bytes);
+    emit_u64_field(sink, "allocated", ignored.allocated);
+    sink.event(Event::EndMap);
+}
+
+fn emit_metric_summary(sink: &mut impl Sink, summary: &MetricSummary) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(sink, "group", metric_group_label(summary.group));
+    emit_str_field(sink, "share_metric", summary.share_metric.as_str());
+    emit_u64_field(sink, "words_per_page", summary.words_per_page);
+    emit_bound_field(sink, summary.rows.len(), summary.total_rows);
+    emit_field(sink, Field::always("total"), true, |sink| {
+        emit_metric_row(sink, &summary.total, summary.words_per_page);
+    });
+    emit_field(sink, Field::always("rows"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for row in &summary.rows {
+            emit_metric_row(sink, row, summary.words_per_page);
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_metric_row(sink: &mut impl Sink, row: &MetricRow, words_per_page: u64) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(sink, "id", &row.id);
+    emit_str_field(sink, "family", row.family.as_str());
+    emit_u64_field(sink, "files", row.files);
+    emit_u64_field(sink, "bytes", row.bytes);
+    emit_u64_field(sink, "allocated", row.allocated);
+    emit_u64_field(sink, "analyzed_files", row.analyzed_files);
+    emit_field(sink, Field::always("share"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_u64_field(sink, "numerator", row.share.numerator);
+        emit_u64_field(sink, "denominator", row.share.denominator);
+        sink.event(Event::EndMap);
+    });
+    emit_field(sink, Field::always("metrics"), true, |sink| {
+        emit_metric_values(sink, row.metrics, document_words(row));
+    });
+    emit_field(sink, Field::always("coverage"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        for (reason, count) in &row.coverage {
+            emit_u64_field(sink, coverage_label(*reason), *count);
+        }
+        sink.event(Event::EndMap);
+    });
+    emit_field(sink, Field::always("detection"), true, |sink| {
+        emit_detection(sink, row);
+    });
+    emit_field(sink, Field::always("pages"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_u64_field(sink, "words", document_words(row));
+        emit_u64_field(sink, "words_per_page", words_per_page);
+        sink.event(Event::EndMap);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_metric_values(sink: &mut impl Sink, metrics: MetricValues, selected_words: u64) {
+    sink.event(Event::BeginMap(Shape::Inline));
+    for (name, value) in [
+        ("physical_lines", metrics.physical_lines),
+        ("blank_lines", metrics.blank_lines),
+        ("nonblank_lines", metrics.nonblank_lines),
+        ("code_lines", metrics.code_lines),
+        ("comment_lines", metrics.comment_lines),
+        ("code_blank_lines", metrics.code_blank_lines),
+        ("raw_words", metrics.raw_words),
+        ("logical_words", metrics.logical_word_stats.logical_words()),
+        ("paragraphs", metrics.paragraphs),
+        ("visible_words", metrics.visible_words),
+        ("visible_logical_words", metrics.visible_logical_word_stats.logical_words()),
+        ("document_words", selected_words),
+    ] {
+        emit_u64_field(sink, name, value);
+    }
+    sink.event(Event::EndMap);
+}
+
+fn emit_detection(sink: &mut impl Sink, row: &MetricRow) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_field(sink, Field::always("sources"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        for (source, count) in &row.detection_sources {
+            emit_u64_field(sink, source.as_str(), *count);
+        }
+        sink.event(Event::EndMap);
+    });
+    emit_field(sink, Field::always("confidence"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        for (level, count) in &row.detection_confidence {
+            emit_u64_field(sink, level.as_str(), *count);
+        }
+        sink.event(Event::EndMap);
+    });
+    emit_field(sink, Field::always("flags"), true, |sink| {
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_u64_field(sink, "generated", row.generated_files);
+        emit_u64_field(sink, "vendored", row.vendored_files);
+        emit_u64_field(sink, "documentation", row.documentation_files);
+        sink.event(Event::EndMap);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
+    enum Step<'a> {
+        Node(&'a TreeNode),
+        EndMap,
+        EndSeq,
+    }
+    let mut stack = vec![Step::Node(root)];
+    while let Some(step) = stack.pop() {
+        match step {
+            Step::Node(node) => {
+                sink.event(Event::BeginMap(Shape::Block));
+                emit_str_field(sink, "name", &node.name);
+                emit_path_fields(sink, &node.path);
+                emit_str_field(sink, "kind", kind_label(node.kind));
+                emit_u64_field(sink, "bytes", node.bytes);
+                emit_u64_field(sink, "allocated", node.allocated);
+                emit_u64_field(sink, "files", node.files);
+                emit_u64_field(sink, "dirs", node.dirs);
+                emit_field(sink, Field::nullable("ignored"), true, |sink| {
+                    emit_ignored(sink, node.ignored, true);
+                });
+                emit_field(sink, Field::nullable("newest_mtime_ns"), true, |sink| {
+                    match node.newest_mtime_ns {
+                        Some(value) => emit_scalar(sink, Scalar::I64(value)),
+                        None => emit_scalar(sink, Scalar::Null),
+                    }
+                });
+                emit_field(sink, Field::always("truncated"), true, |sink| {
+                    emit_scalar(sink, Scalar::Bool(node.truncated));
+                });
+                sink.event(Event::Key("children"));
+                sink.event(Event::BeginSeq(Shape::Block));
+                stack.push(Step::EndMap);
+                stack.push(Step::EndSeq);
+                for child in node.children.iter().rev() {
+                    stack.push(Step::Node(child));
+                }
+            }
+            Step::EndMap => sink.event(Event::EndMap),
+            Step::EndSeq => sink.event(Event::EndSeq),
+        }
+    }
+}
+
+/// Why a field is present in a wire document.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Presence {
+    Always,
+    Nullable,
+    WhenLossy,
+    WhenAnalyzer(crate::content::AnalysisSet),
+    WhenSet,
+}
+
+/// One declared field in a machine-output schema.
+#[derive(Clone, Copy, Debug)]
+struct Field {
+    name: &'static str,
+    presence: Presence,
+}
+
+impl Field {
+    const fn always(name: &'static str) -> Self {
+        Self { name, presence: Presence::Always }
+    }
+
+    const fn nullable(name: &'static str) -> Self {
+        Self { name, presence: Presence::Nullable }
+    }
+
+    const fn when_lossy(name: &'static str) -> Self {
+        Self { name, presence: Presence::WhenLossy }
+    }
+
+    const fn when_analyzer(name: &'static str, analysis: crate::content::AnalysisSet) -> Self {
+        Self { name, presence: Presence::WhenAnalyzer(analysis) }
+    }
+
+    const fn when_set(name: &'static str) -> Self {
+        Self { name, presence: Presence::WhenSet }
     }
 }
 
@@ -261,28 +759,26 @@ fn render_text_metrics(
             format!("{:.1}%", ratio(row.share.numerator, row.share.denominator) * 100.0)
         };
         let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
-        if row.metrics.physical_lines.unwrap_or(0) > 0 {
-            if row.metrics.code_lines.unwrap_or(0) > 0 || row.metrics.comment_lines.unwrap_or(0) > 0
-            {
+        if row.metrics.physical_lines > 0 {
+            if row.metrics.code_lines > 0 || row.metrics.comment_lines > 0 {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} code, {} comment, {} blank)",
-                    row.metrics.physical_lines.unwrap_or(0),
-                    row.metrics.code_lines.unwrap_or(0),
-                    row.metrics.comment_lines.unwrap_or(0),
-                    row.metrics.code_blank_lines.unwrap_or(0)
+                    row.metrics.physical_lines,
+                    row.metrics.code_lines,
+                    row.metrics.comment_lines,
+                    row.metrics.code_blank_lines
                 );
             } else {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} nonblank, {} blank)",
-                    row.metrics.physical_lines.unwrap_or(0),
-                    row.metrics.nonblank_lines.unwrap_or(0),
-                    row.metrics.blank_lines.unwrap_or(0)
+                    row.metrics.physical_lines, row.metrics.nonblank_lines, row.metrics.blank_lines
                 );
             }
         }
-        if let Some(words) = document_words(row).filter(|words| *words > 0) {
+        let words = document_words(row);
+        if words > 0 {
             let page_tenths = words.saturating_mul(10) / summary.words_per_page;
             let _ = write!(
                 suffix,
@@ -326,7 +822,6 @@ fn share_metric_note(metric: ShareMetric) -> Option<&'static str> {
     match metric {
         ShareMetric::CodeLines => Some("Percentage column: code lines"),
         ShareMetric::DocumentWords => Some("Percentage column: document words"),
-        ShareMetric::RawWords => Some("Percentage column: raw words"),
         ShareMetric::ApparentBytes | ShareMetric::AllocatedBytes => None,
     }
 }
@@ -450,34 +945,6 @@ fn render_text_types(
     }
 }
 
-/// Render a summary section as one line.
-/// The YAML form of the bound, matching the JSON field.
-///
-/// Emitted at section level so a consumer reads it the same way in either format; the
-/// truncation contract does not vary by serialization.
-fn yaml_bound(out: &mut String, shown: usize, total: usize) {
-    if shown >= total {
-        out.push_str("    bound: null\n");
-    } else {
-        out.push_str("    bound:\n");
-        let _ = writeln!(out, "      shown: {shown}");
-        let _ = writeln!(out, "      total: {total}");
-    }
-}
-
-/// The bound a section applied, as a machine field.
-///
-/// `null` when nothing was dropped, so a consumer can branch on presence rather than
-/// comparing counts it would have to know to compare. The truncation contract is not a
-/// human-format courtesy: a script that reads twenty rows and believes it has the tree is
-/// the worse failure, because nothing in its output looks wrong.
-fn bound_json(shown: usize, total: usize) -> String {
-    if shown >= total {
-        return "null".to_string();
-    }
-    format!("{{\"shown\": {shown}, \"total\": {total}}}")
-}
-
 /// What a section dropped, or nothing when it dropped nothing.
 ///
 /// Lives in the header rather than after the rows because a footer is lost to `head`,
@@ -540,764 +1007,22 @@ fn render_text_summary(
     );
 }
 
-// ---- json ----
-
-/// Render one JSON document carrying every section.
-fn render_json(report: &Report) -> String {
-    let mut out = String::new();
-    out.push_str("{\n");
-    write_envelope_json(&mut out, report);
-    out.push_str(",\n  \"reports\": [\n");
-    for (index, section) in report.sections.iter().enumerate() {
-        if index > 0 {
-            out.push_str(",\n");
-        }
-        let body = section_json(section, 4);
-        out.push_str(&indent(&body, 4));
-    }
-    out.push_str("\n  ]\n}\n");
-    out
-}
-
-/// Render one JSON document per line: the envelope, then one line per section.
-///
-/// The streaming shape, so a consumer can process sections as they arrive rather than
-/// buffering a whole document.
-fn render_jsonl(report: &Report) -> String {
-    let mut out = String::new();
-    let mut envelope = String::new();
-    envelope.push('{');
-    let mut fields = String::new();
-    write_envelope_json(&mut fields, report);
-    envelope.push_str(&collapse(&fields));
-    envelope.push_str("}\n");
-    out.push_str(&envelope);
-
-    for section in &report.sections {
-        out.push_str(&collapse(&section_json(section, 0)));
-        out.push('\n');
-    }
-    out
-}
-
-/// The provenance fields every machine format carries.
-fn write_envelope_json(out: &mut String, report: &Report) {
-    let _ = write!(out, "  \"schema\": {}", quote(report_schema(report)));
-    let _ = write!(out, ",\n  \"generator\": {}", quote(&generator()));
-    let _ = write!(out, ",\n  \"root\": {}", quote(&report.root.to_string_lossy()));
-    if let Some(raw) = raw_identity_object(&report.root) {
-        let _ = write!(out, ",\n  \"root_raw\": {raw}");
-    }
-    let _ = write!(
-        out,
-        ",\n  \"scan_started_at\": {}",
-        report.scan_started_at.map_or_else(|| "null".to_string(), |at| quote(&format_rfc3339(at)))
-    );
-    let _ = write!(out, ",\n  \"generated_at\": {}", quote(&format_rfc3339(report.generated_at)));
-    let _ = write!(out, ",\n  \"source\": {}", quote(source_label(report.source)));
-    let _ = write!(out, ",\n  \"freshness\": {}", quote(freshness_label(report.freshness)));
-    let _ = write!(out, ",\n  \"complete\": {}", report.complete);
-    let _ = write!(out, ",\n  \"errors\": [");
-    for (index, error) in report.errors.iter().enumerate() {
-        let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, quote(error));
-    }
-    out.push_str(if report.errors.is_empty() { "]" } else { "\n  ]" });
-    let _ = write!(out, ",\n  \"ignore_rules\": {}", ignore_rules_json(&report.ignore_rules));
-    if report_schema(report) == CONTENT_REPORT_SCHEMA {
-        let _ = write!(out, ",\n  \"analysis\": {}", analysis_json(report.analysis.as_ref()));
-    }
-}
-
-/// The `ignore_rules` field: `null` when no control file was read, otherwise the `limits`
-/// the rules were applied under, the applied and refused counts, and at most
-/// `MAX_RETAINED_ISSUES` refused files.
-///
-/// `null` rather than a zero object, because a report that read no rule must not say that
-/// every rule applied. Each limit is a byte count, or `null` when unbounded, and a
-/// refusal's `reason` is the key of the limit that refused it.
-fn ignore_rules_json(ignore_rules: &ControlCoverage) -> String {
-    let ControlCoverage::Observed(observed) = ignore_rules else {
-        return "null".to_string();
-    };
-    let mut refusals = String::from("[");
-    for (index, refusal) in observed.refusals.iter().enumerate() {
-        let _ = write!(
-            refusals,
-            "{}{{\"path\": {}{}, \"reason\": {}}}",
-            if index > 0 { ", " } else { "" },
-            quote(&refusal.path.to_string_lossy()),
-            path_raw_field(&refusal.path),
-            quote(refusal.reason.label())
-        );
-    }
-    refusals.push(']');
-    format!(
-        "{{\"limits\": {{\"budget\": {}, \"line_limit\": {}}}, \"applied\": {}, \"refused\": {}, \
-         \"refusals\": {refusals}}}",
-        limit_value(observed.limits.budget),
-        limit_value(observed.limits.line_limit),
-        observed.applied,
-        observed.refused,
-    )
-}
-
-/// One control limit as JSON and YAML write it: its bytes, or `null` when unbounded.
-fn limit_value(limit: Option<usize>) -> String {
-    limit.map_or_else(|| "null".to_string(), |bytes| bytes.to_string())
-}
-
-/// The `ignore_rules` field in YAML, as [`ignore_rules_json`] describes it.
-fn write_ignore_rules_yaml(out: &mut String, ignore_rules: &ControlCoverage) {
-    let ControlCoverage::Observed(observed) = ignore_rules else {
-        out.push_str("ignore_rules: null\n");
-        return;
-    };
-    out.push_str("ignore_rules:\n");
-    out.push_str("  limits:\n");
-    let _ = writeln!(out, "    budget: {}", limit_value(observed.limits.budget));
-    let _ = writeln!(out, "    line_limit: {}", limit_value(observed.limits.line_limit));
-    let _ = writeln!(out, "  applied: {}", observed.applied);
-    let _ = writeln!(out, "  refused: {}", observed.refused);
-    if observed.refusals.is_empty() {
-        out.push_str("  refusals: []\n");
-        return;
-    }
-    out.push_str("  refusals:\n");
-    for refusal in &observed.refusals {
-        let _ = writeln!(out, "    - path: {}", yaml_scalar(&refusal.path.to_string_lossy()));
-        let _ = writeln!(out, "      reason: {}", refusal.reason.label());
-    }
-}
-
-fn analysis_json(analysis: Option<&crate::query::ContentReportMetadata>) -> String {
-    let Some(analysis) = analysis else { return "null".to_string() };
-    let mut analyzers = String::from("[");
-    for (index, (id, version)) in analysis.provenance.analyzers.iter().enumerate() {
-        let _ = write!(
-            analyzers,
-            "{}{{\"id\": {}, \"version\": {}}}",
-            if index > 0 { ", " } else { "" },
-            quote(id.0),
-            version.0
-        );
-    }
-    analyzers.push(']');
-    let mut requested = String::from("[");
-    for (index, label) in analysis_set_labels(analysis.profile).into_iter().enumerate() {
-        let _ = write!(requested, "{}{}", if index > 0 { ", " } else { "" }, quote(label));
-    }
-    requested.push(']');
-    format!(
-        "{{\"analyze\": {requested}, \"type_rules_fingerprint\": {}, \"options_fingerprint\": {}, \"analyzers\": {analyzers}}}",
-        analysis.provenance.type_rules_fingerprint, analysis.provenance.options_fingerprint.0,
-    )
-}
-
-/// One section as a JSON object.
-fn section_json(section: &Section, _indent: usize) -> String {
-    let mut out = String::new();
-    let _ = write!(out, "{{\n  \"view\": {},\n  ", quote(section.view().label()));
-    match section {
-        Section::Tree(root) => {
-            let _ = write!(out, "\"tree\": {}", indent(&tree_json(root), 2).trim_start());
-        }
-        Section::Extensions { rows, total } => {
-            let _ = write!(out, "\"bound\": {}, \"extensions\": [", bound_json(rows.len(), *total));
-            for (index, row) in rows.iter().enumerate() {
-                let _ = write!(
-                    out,
-                    "{}\n    {{\"extension\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"ignored\": {}}}",
-                    if index > 0 { "," } else { "" },
-                    quote(&row.extension),
-                    row.files,
-                    row.bytes,
-                    row.allocated,
-                    ignored_files_json(row.ignored),
-                );
-            }
-            out.push_str(if rows.is_empty() { "]" } else { "\n  ]" });
-        }
-        Section::Metrics { summary, .. } => {
-            let _ = write!(out, "\"metrics\": {}", metric_summary_json(summary));
-        }
-        Section::Files { rows, total, .. } => {
-            let _ = write!(out, "\"bound\": {}, \"files\": [", bound_json(rows.len(), *total));
-            for (index, row) in rows.iter().enumerate() {
-                let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, file_json(row));
-            }
-            out.push_str(if rows.is_empty() { "]" } else { "\n  ]" });
-        }
-        Section::Summary(row) => {
-            let _ = write!(out, "\"summary\": {}", summary_json(row));
-        }
-    }
-    out.push_str("\n}");
-    out
-}
-
-fn metric_summary_json(summary: &MetricSummary) -> String {
-    let mut out = String::new();
-    let _ = write!(
-        out,
-        "{{\"group\": {}, \"share_metric\": {}, \"words_per_page\": {}, \"bound\": {}, \"total\": {}, \"rows\": [",
-        quote(metric_group_label(summary.group)),
-        quote(summary.share_metric.as_str()),
-        summary.words_per_page,
-        bound_json(summary.rows.len(), summary.total_rows),
-        metric_row_json(&summary.total, summary.words_per_page)
-    );
-    for (index, row) in summary.rows.iter().enumerate() {
-        let _ = write!(
-            out,
-            "{}\n  {}",
-            if index > 0 { "," } else { "" },
-            metric_row_json(row, summary.words_per_page)
-        );
-    }
-    out.push_str(if summary.rows.is_empty() { "]}" } else { "\n]}" });
-    out
-}
-
-fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
-    format!(
-        "{{\"id\": {}, \"family\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"analyzed_files\": {}, \"share\": {{\"numerator\": {}, \"denominator\": {}}}, \"metrics\": {}, \"coverage\": {}, \"detection\": {}, \"pages\": {{\"words\": {}, \"words_per_page\": {}}}}}",
-        quote(&row.id),
-        quote(row.family.as_str()),
-        row.files,
-        row.bytes,
-        row.allocated,
-        row.analyzed_files,
-        row.share.numerator,
-        row.share.denominator,
-        metric_values_json(row.metrics, document_words(row).unwrap_or(0)),
-        coverage_json(&row.coverage),
-        detection_json(row),
-        document_words(row).unwrap_or(0),
-        words_per_page,
-    )
-}
-
-fn detection_json(row: &MetricRow) -> String {
-    let mut sources = String::from("{");
-    for (index, (source, count)) in row.detection_sources.iter().enumerate() {
-        let _ = write!(
-            sources,
-            "{}{}: {}",
-            if index > 0 { ", " } else { "" },
-            quote(source.as_str()),
-            count
-        );
-    }
-    sources.push('}');
-    let mut confidence = String::from("{");
-    for (index, (level, count)) in row.detection_confidence.iter().enumerate() {
-        let _ = write!(
-            confidence,
-            "{}{}: {}",
-            if index > 0 { ", " } else { "" },
-            quote(level.as_str()),
-            count
-        );
-    }
-    confidence.push('}');
-    format!(
-        "{{\"sources\": {sources}, \"confidence\": {confidence}, \"flags\": {{\"generated\": {}, \"vendored\": {}, \"documentation\": {}}}}}",
-        row.generated_files, row.vendored_files, row.documentation_files
-    )
-}
-
-fn metric_values_json(metrics: ReportMetricValues, document_words: u64) -> String {
-    format!(
-        "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"code_blank_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}, \"document_words\": {}}}",
-        metrics.physical_lines.unwrap_or(0),
-        metrics.blank_lines.unwrap_or(0),
-        metrics.nonblank_lines.unwrap_or(0),
-        metrics.code_lines.unwrap_or(0),
-        metrics.comment_lines.unwrap_or(0),
-        metrics.code_blank_lines.unwrap_or(0),
-        metrics.raw_words.unwrap_or(0),
-        metrics.logical_words.unwrap_or(0),
-        metrics.paragraphs.unwrap_or(0),
-        metrics.visible_words.unwrap_or(0),
-        metrics.visible_logical_words.unwrap_or(0),
-        document_words,
-    )
-}
-
-fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> String {
-    let mut out = String::from("{");
-    for (index, (reason, count)) in coverage.iter().enumerate() {
-        let _ = write!(
-            out,
-            "{}{}: {}",
-            if index > 0 { ", " } else { "" },
-            quote(coverage_label(*reason)),
-            count
-        );
-    }
-    out.push('}');
-    out
-}
-
-/// One file row as a JSON object.
-fn file_json(row: &FileRow) -> String {
-    format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"ignored\": {}}}",
-        quote(&row.path.to_string_lossy()),
-        path_raw_field(&row.path),
-        quote(kind_label(row.kind)),
-        row.bytes,
-        row.allocated,
-        row.mtime_ns,
-        row.ignored.map_or_else(|| "null".to_string(), |ignored| ignored.to_string()),
-    )
-}
-
-/// A row's ignored share: `null` when the index observed no control state, and an object
-/// otherwise, zero when nothing is ignored.
-///
-/// `null` rather than a zero object, for the reason `ignore_rules` is `null`: a report that
-/// read no rule must not say that nothing is ignored.
-fn ignored_json(ignored: Option<IgnoredTally>) -> String {
-    ignored.map_or_else(
-        || "null".to_string(),
-        |share| {
-            format!(
-                "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}}}",
-                share.files, share.dirs, share.bytes, share.allocated
-            )
-        },
-    )
-}
-
-/// [`ignored_json`] for an extension row, which counts files and so carries no `dirs`.
-fn ignored_files_json(ignored: Option<IgnoredTally>) -> String {
-    ignored.map_or_else(
-        || "null".to_string(),
-        |share| {
-            format!(
-                "{{\"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
-                share.files, share.bytes, share.allocated
-            )
-        },
-    )
-}
-
-/// A row's ignored share in YAML at `pad`, as [`ignored_json`] describes it; `dirs` only
-/// where the row counts directories.
-fn yaml_ignored(out: &mut String, ignored: Option<IgnoredTally>, pad: &str, with_dirs: bool) {
-    let Some(share) = ignored else {
-        let _ = writeln!(out, "{pad}ignored: null");
-        return;
-    };
-    let _ = writeln!(out, "{pad}ignored:");
-    let _ = writeln!(out, "{pad}  files: {}", share.files);
-    if with_dirs {
-        let _ = writeln!(out, "{pad}  dirs: {}", share.dirs);
-    }
-    let _ = writeln!(out, "{pad}  bytes: {}", share.bytes);
-    let _ = writeln!(out, "{pad}  allocated: {}", share.allocated);
-}
-
-/// The `path_raw` field for a path that cannot survive `to_string_lossy`, or nothing.
-///
-/// Two names differing only in bytes that are not valid Unicode render as the same
-/// string, so without this a machine consumer cannot tell them apart -- and this is the
-/// output that drives tooling. Absent for the overwhelmingly common case, so a
-/// well-behaved tree pays nothing for the guarantee.
-fn path_raw_field(path: &Path) -> String {
-    raw_identity_object(path).map_or_else(String::new, |raw| format!(", \"path_raw\": {raw}"))
-}
-
-/// A summary row as a JSON object.
-fn summary_json(row: &SummaryRow) -> String {
-    format!(
-        "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}, \"ignored\": {}, \"newest_mtime_ns\": {}}}",
-        row.files,
-        row.dirs,
-        row.bytes,
-        row.allocated,
-        ignored_json(row.ignored),
-        row.newest_mtime_ns.map_or_else(|| "null".to_string(), |value| value.to_string())
-    )
-}
-
-/// A tree node as a nested JSON object.
-///
-/// Built with an explicit work stack rather than recursion, so nesting depth costs heap
-/// rather than stack and a deep tree serializes instead of aborting.
-fn tree_json(node: &TreeNode) -> String {
-    /// One step of the serialization.
-    enum Step<'a> {
-        /// Open a node and queue its children.
-        Open(&'a TreeNode),
-        /// Emit literal text, for separators and closers.
-        Text(&'static str),
-    }
-
-    let mut out = String::new();
-    let mut stack: Vec<Step<'_>> = vec![Step::Open(node)];
-    while let Some(step) = stack.pop() {
-        match step {
-            Step::Text(text) => out.push_str(text),
-            Step::Open(node) => {
-                let _ = write!(
-                    out,
-                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"ignored\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
-                    quote(&node.name),
-                    quote(&node.path.to_string_lossy()),
-                    path_raw_field(&node.path),
-                    quote(kind_label(node.kind)),
-                    node.bytes,
-                    node.allocated,
-                    node.files,
-                    node.dirs,
-                    ignored_json(node.ignored),
-                    node.newest_mtime_ns
-                        .map_or_else(|| "null".to_string(), |value| value.to_string()),
-                    node.truncated
-                );
-                if node.children.is_empty() {
-                    out.push_str(", \"children\": []}");
-                    continue;
-                }
-                out.push_str(", \"children\": [");
-                // The stack pops in reverse, so pushes run last-to-first: closer, then
-                // each child followed by the separator that precedes it. Getting this
-                // backwards emits `[{a}{b},]` — balanced, and not valid JSON.
-                stack.push(Step::Text("]}"));
-                for (index, child) in node.children.iter().enumerate().rev() {
-                    stack.push(Step::Open(child));
-                    if index > 0 {
-                        stack.push(Step::Text(","));
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
-// ---- yaml ----
-
-/// Render the report as YAML.
-fn render_yaml(report: &Report) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "schema: {}", yaml_scalar(report_schema(report)));
-    let _ = writeln!(out, "generator: {}", yaml_scalar(&generator()));
-    let _ = writeln!(out, "root: {}", yaml_scalar(&report.root.to_string_lossy()));
-    match report.scan_started_at {
-        Some(at) => {
-            let _ = writeln!(out, "scan_started_at: {}", yaml_scalar(&format_rfc3339(at)));
-        }
-        None => out.push_str("scan_started_at: null\n"),
-    }
-    let _ = writeln!(out, "generated_at: {}", yaml_scalar(&format_rfc3339(report.generated_at)));
-    let _ = writeln!(out, "source: {}", yaml_scalar(source_label(report.source)));
-    let _ = writeln!(out, "freshness: {}", yaml_scalar(freshness_label(report.freshness)));
-    let _ = writeln!(out, "complete: {}", report.complete);
-    if report.errors.is_empty() {
-        out.push_str("errors: []\n");
-    } else {
-        out.push_str("errors:\n");
-        for error in &report.errors {
-            let _ = writeln!(out, "  - {}", yaml_scalar(error));
-        }
-    }
-    write_ignore_rules_yaml(&mut out, &report.ignore_rules);
-    if report_schema(report) == CONTENT_REPORT_SCHEMA {
-        match report.analysis.as_ref() {
-            None => out.push_str("analysis: null\n"),
-            Some(analysis) => {
-                out.push_str("analysis:\n");
-                let requested = analysis_set_labels(analysis.profile);
-                if requested.is_empty() {
-                    out.push_str("  analyze: []\n");
-                } else {
-                    out.push_str("  analyze:\n");
-                    for label in requested {
-                        let _ = writeln!(out, "    - {label}");
-                    }
-                }
-                let _ = writeln!(
-                    out,
-                    "  type_rules_fingerprint: {}",
-                    analysis.provenance.type_rules_fingerprint
-                );
-                let _ = writeln!(
-                    out,
-                    "  options_fingerprint: {}",
-                    analysis.provenance.options_fingerprint.0
-                );
-                if analysis.provenance.analyzers.is_empty() {
-                    out.push_str("  analyzers: []\n");
-                } else {
-                    out.push_str("  analyzers:\n");
-                    for (id, version) in &analysis.provenance.analyzers {
-                        let _ = writeln!(out, "    - id: {}", id.0);
-                        let _ = writeln!(out, "      version: {}", version.0);
-                    }
-                }
-            }
-        }
-    }
-    out.push_str("reports:\n");
-
-    for section in &report.sections {
-        let _ = writeln!(out, "  - view: {}", yaml_scalar(section.view().label()));
-        match section {
-            Section::Tree(root) => {
-                out.push_str("    tree:\n");
-                yaml_tree(&mut out, root, 6);
-            }
-            Section::Extensions { rows, total } => {
-                yaml_bound(&mut out, rows.len(), *total);
-                if rows.is_empty() {
-                    out.push_str("    extensions: []\n");
-                } else {
-                    out.push_str("    extensions:\n");
-                    for row in rows {
-                        let _ = writeln!(out, "      - extension: {}", yaml_scalar(&row.extension));
-                        let _ = writeln!(out, "        files: {}", row.files);
-                        let _ = writeln!(out, "        bytes: {}", row.bytes);
-                        let _ = writeln!(out, "        allocated: {}", row.allocated);
-                        yaml_ignored(&mut out, row.ignored, "        ", false);
-                    }
-                }
-            }
-            Section::Metrics { summary, .. } => yaml_metrics(&mut out, summary),
-            Section::Files { rows, total, .. } => {
-                yaml_bound(&mut out, rows.len(), *total);
-                if rows.is_empty() {
-                    out.push_str("    files: []\n");
-                } else {
-                    out.push_str("    files:\n");
-                    for row in rows {
-                        let _ = writeln!(
-                            out,
-                            "      - path: {}",
-                            yaml_scalar(&row.path.to_string_lossy())
-                        );
-                        let _ =
-                            writeln!(out, "        kind: {}", yaml_scalar(kind_label(row.kind)));
-                        let _ = writeln!(out, "        bytes: {}", row.bytes);
-                        let _ = writeln!(out, "        allocated: {}", row.allocated);
-                        let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
-                        match row.ignored {
-                            Some(ignored) => {
-                                let _ = writeln!(out, "        ignored: {ignored}");
-                            }
-                            None => out.push_str("        ignored: null\n"),
-                        }
-                    }
-                }
-            }
-            Section::Summary(row) => {
-                out.push_str("    summary:\n");
-                let _ = writeln!(out, "      files: {}", row.files);
-                let _ = writeln!(out, "      dirs: {}", row.dirs);
-                let _ = writeln!(out, "      bytes: {}", row.bytes);
-                let _ = writeln!(out, "      allocated: {}", row.allocated);
-                yaml_ignored(&mut out, row.ignored, "      ", true);
-                let _ =
-                    writeln!(out, "      newest_mtime_ns: {}", yaml_option(row.newest_mtime_ns));
-            }
-        }
-    }
-    out
-}
-
-fn yaml_metrics(out: &mut String, summary: &MetricSummary) {
-    out.push_str("    metrics:\n");
-    let _ = writeln!(out, "      group: {}", metric_group_label(summary.group));
-    let _ = writeln!(out, "      share_metric: {}", summary.share_metric.as_str());
-    let _ = writeln!(out, "      words_per_page: {}", summary.words_per_page);
-    if summary.rows.len() < summary.total_rows {
-        out.push_str("      bound:\n");
-        let _ = writeln!(out, "        shown: {}", summary.rows.len());
-        let _ = writeln!(out, "        total: {}", summary.total_rows);
-    } else {
-        out.push_str("      bound: null\n");
-    }
-    out.push_str("      total:\n");
-    yaml_metric_row(out, &summary.total, summary.words_per_page, 8, false);
-    if summary.rows.is_empty() {
-        out.push_str("      rows: []\n");
-    } else {
-        out.push_str("      rows:\n");
-        for row in &summary.rows {
-            yaml_metric_row(out, row, summary.words_per_page, 8, true);
-        }
-    }
-}
-
-fn yaml_metric_row(out: &mut String, row: &MetricRow, words_per_page: u64, pad: usize, item: bool) {
-    let indent = " ".repeat(pad);
-    let lead = if item { format!("{indent}- ") } else { indent.clone() };
-    let rest = if item { format!("{indent}  ") } else { indent };
-    let _ = writeln!(out, "{lead}id: {}", yaml_scalar(&row.id));
-    let _ = writeln!(out, "{rest}family: {}", row.family.as_str());
-    let _ = writeln!(out, "{rest}files: {}", row.files);
-    let _ = writeln!(out, "{rest}bytes: {}", row.bytes);
-    let _ = writeln!(out, "{rest}allocated: {}", row.allocated);
-    let _ = writeln!(out, "{rest}analyzed_files: {}", row.analyzed_files);
-    let _ = writeln!(out, "{rest}share_numerator: {}", row.share.numerator);
-    let _ = writeln!(out, "{rest}share_denominator: {}", row.share.denominator);
-    let _ = writeln!(out, "{rest}physical_lines: {}", row.metrics.physical_lines.unwrap_or(0));
-    let _ = writeln!(out, "{rest}blank_lines: {}", row.metrics.blank_lines.unwrap_or(0));
-    let _ = writeln!(out, "{rest}nonblank_lines: {}", row.metrics.nonblank_lines.unwrap_or(0));
-    let _ = writeln!(out, "{rest}code_lines: {}", row.metrics.code_lines.unwrap_or(0));
-    let _ = writeln!(out, "{rest}comment_lines: {}", row.metrics.comment_lines.unwrap_or(0));
-    let _ = writeln!(out, "{rest}code_blank_lines: {}", row.metrics.code_blank_lines.unwrap_or(0));
-    let _ = writeln!(out, "{rest}raw_words: {}", row.metrics.raw_words.unwrap_or(0));
-    let _ = writeln!(out, "{rest}logical_words: {}", row.metrics.logical_words.unwrap_or(0));
-    let _ = writeln!(out, "{rest}paragraphs: {}", row.metrics.paragraphs.unwrap_or(0));
-    let _ = writeln!(out, "{rest}visible_words: {}", row.metrics.visible_words.unwrap_or(0));
-    let _ = writeln!(
-        out,
-        "{rest}visible_logical_words: {}",
-        row.metrics.visible_logical_words.unwrap_or(0)
-    );
-    let _ = writeln!(out, "{rest}document_words: {}", document_words(row).unwrap_or(0));
-    let _ = writeln!(out, "{rest}page_words: {}", document_words(row).unwrap_or(0));
-    let _ = writeln!(out, "{rest}words_per_page: {words_per_page}");
-    if row.coverage.is_empty() {
-        let _ = writeln!(out, "{rest}coverage: {{}}");
-    } else {
-        let _ = writeln!(out, "{rest}coverage:");
-        for (reason, count) in &row.coverage {
-            let _ = writeln!(out, "{rest}  {}: {count}", coverage_label(*reason));
-        }
-    }
-    let _ = writeln!(out, "{rest}detection:");
-    yaml_detection_map(out, "sources", &row.detection_sources, &rest, DetectionSource::as_str);
-    yaml_detection_map(
-        out,
-        "confidence",
-        &row.detection_confidence,
-        &rest,
-        DetectionConfidence::as_str,
-    );
-    let _ = writeln!(out, "{rest}  flags:");
-    let _ = writeln!(out, "{rest}    generated: {}", row.generated_files);
-    let _ = writeln!(out, "{rest}    vendored: {}", row.vendored_files);
-    let _ = writeln!(out, "{rest}    documentation: {}", row.documentation_files);
-}
-
-fn yaml_detection_map<K: Ord + Copy>(
-    out: &mut String,
-    name: &str,
-    values: &std::collections::BTreeMap<K, u64>,
-    indent: &str,
-    label: impl Fn(K) -> &'static str,
-) {
-    if values.is_empty() {
-        let _ = writeln!(out, "{indent}  {name}: {{}}");
-        return;
-    }
-    let _ = writeln!(out, "{indent}  {name}:");
-    for (key, count) in values {
-        let _ = writeln!(out, "{indent}    {}: {count}", label(*key));
-    }
-}
-
-/// Render a tree node as YAML at a given indent.
-///
-/// Iterative, matching the other two renderers: nesting lives on the heap.
-fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
-    let mut stack: Vec<(&TreeNode, usize, bool)> = vec![(root, pad, false)];
-    while let Some((node, indent_width, as_item)) = stack.pop() {
-        let indent = " ".repeat(indent_width);
-        let (lead, rest) = if as_item {
-            (format!("{indent}- "), format!("{indent}  "))
-        } else {
-            (indent.clone(), indent.clone())
-        };
-        let _ = writeln!(out, "{lead}name: {}", yaml_scalar(&node.name));
-        let _ = writeln!(out, "{rest}path: {}", yaml_scalar(&node.path.to_string_lossy()));
-        let _ = writeln!(out, "{rest}kind: {}", yaml_scalar(kind_label(node.kind)));
-        let _ = writeln!(out, "{rest}bytes: {}", node.bytes);
-        let _ = writeln!(out, "{rest}allocated: {}", node.allocated);
-        let _ = writeln!(out, "{rest}files: {}", node.files);
-        let _ = writeln!(out, "{rest}dirs: {}", node.dirs);
-        yaml_ignored(out, node.ignored, &rest, true);
-        let _ = writeln!(out, "{rest}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
-        let _ = writeln!(out, "{rest}truncated: {}", node.truncated);
-        if node.children.is_empty() {
-            let _ = writeln!(out, "{rest}children: []");
-            continue;
-        }
-        let _ = writeln!(out, "{rest}children:");
-        let child_indent = rest.len() + 2;
-        for child in node.children.iter().rev() {
-            stack.push((child, child_indent, true));
-        }
-    }
-}
-
-/// An optional integer as a YAML scalar.
-fn yaml_option(value: Option<i64>) -> String {
-    value.map_or_else(|| "null".to_string(), |value| value.to_string())
-}
-
 /// Quote a YAML scalar whenever a bare word would be ambiguous.
 ///
 /// Always quoting would be simpler and uglier; quoting only what needs it keeps the
 /// output readable, which is the reason to offer YAML at all.
+#[cfg(test)]
 fn yaml_scalar(value: &str) -> String {
-    let safe = !value.is_empty()
-        && value
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '-' | '+'))
-        && !value.starts_with('-')
-        && value.parse::<f64>().is_err()
-        && !matches!(
-            value.to_ascii_lowercase().as_str(),
-            "true" | "false" | "null" | "yes" | "no" | "on" | "off" | "~"
-        );
-    if safe { value.to_string() } else { quote(value) }
-}
-
-// ---- shared helpers ----
-
-/// Indent every line of a block.
-fn indent(block: &str, pad: usize) -> String {
-    let padding = " ".repeat(pad);
-    block
-        .lines()
-        .map(|line| if line.is_empty() { line.to_string() } else { format!("{padding}{line}") })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Collapse a pretty-printed JSON fragment onto one line.
-///
-/// Joining with a space and then tidying is what keeps the one-line form readable, but
-/// the tidying has to cover both bracket kinds: `[ {` in a JSONL record is the kind of
-/// cosmetic difference that makes two equivalent documents fail a byte-exact golden.
-fn collapse(block: &str) -> String {
-    let joined = block.lines().map(str::trim).collect::<Vec<_>>().join(" ");
-    joined.replace("{ ", "{").replace(" }", "}").replace("[ ", "[").replace(" ]", "]")
+    let mut out = String::new();
+    crate::emit::write_yaml_scalar(&mut out, value);
+    out
 }
 
 /// Quote and escape a string as a JSON scalar.
+#[cfg(test)]
 fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for ch in text.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
+    crate::emit::write_json_string(&mut out, text);
     out
 }
 
@@ -1486,7 +1211,7 @@ pub fn is_lossy(path: &Path) -> bool {
 /// Distinct from the one-shot schema on purpose: a stream is a sequence of tagged
 /// records over time, not one document, and a consumer should not have to discover which
 /// it is holding.
-pub const STREAM_SCHEMA: &str = "fdu.stream/1";
+pub const STREAM_SCHEMA: &str = "fdu.stream/2";
 
 /// The rule drawn above a watch repaint, carrying the instant it was rendered.
 ///
@@ -1526,34 +1251,44 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
         return format!("{}\t{kind}", change.path.display());
     }
 
-    let mut out = String::new();
-    let _ = write!(
-        out,
-        "{{\"schema\": {}, \"record\": \"change\", \"op\": {}, \"path\": {}, \"clock\": {}",
-        quote(STREAM_SCHEMA),
-        quote(kind),
-        quote(&change.path.to_string_lossy()),
-        change.clock
-    );
-    if let Some(entry_kind) = change.entry_kind {
-        let _ = write!(out, ", \"kind\": {}", quote(kind_label(entry_kind)));
+    match format {
+        Format::Json | Format::Jsonl => render_change_machine(change, kind, JsonSink::line()),
+        Format::Yaml => {
+            format!(
+                "{}{}",
+                document_start(format),
+                render_change_machine(change, kind, YamlSink::new())
+            )
+        }
+        Format::Text => unreachable!("text returned above"),
     }
-    if let Some(bytes) = change.bytes {
-        let _ = write!(out, ", \"bytes\": {bytes}");
-    }
-    if let Some(allocated) = change.allocated {
-        let _ = write!(out, ", \"allocated\": {allocated}");
-    }
-    if let Some(mtime) = change.mtime_ns {
-        let _ = write!(out, ", \"mtime_ns\": {mtime}");
-    }
-    // Absent, never false, when the run observed no ignore rules: the same distinction a
-    // report's rows draw between an unclassified entry and one no rule ignores.
-    if let Some(ignored) = change.ignored {
-        let _ = write!(out, ", \"ignored\": {ignored}");
-    }
-    out.push('}');
-    out
+}
+
+#[cfg(feature = "watch")]
+fn render_change_machine(change: &crate::Change, kind: &str, mut sink: impl Sink) -> String {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(&mut sink, "schema", STREAM_SCHEMA);
+    emit_str_field(&mut sink, "record", "change");
+    emit_str_field(&mut sink, "op", kind);
+    emit_path_fields(&mut sink, &change.path);
+    emit_u64_field(&mut sink, "clock", change.clock);
+    emit_field(&mut sink, Field::when_set("kind"), change.entry_kind.is_some(), |sink| {
+        emit_scalar(sink, Scalar::Str(kind_label(change.entry_kind.expect("presence checked"))));
+    });
+    emit_field(&mut sink, Field::when_set("bytes"), change.bytes.is_some(), |sink| {
+        emit_scalar(sink, Scalar::U64(change.bytes.expect("presence checked")));
+    });
+    emit_field(&mut sink, Field::when_set("allocated"), change.allocated.is_some(), |sink| {
+        emit_scalar(sink, Scalar::U64(change.allocated.expect("presence checked")))
+    });
+    emit_field(&mut sink, Field::when_set("mtime_ns"), change.mtime_ns.is_some(), |sink| {
+        emit_scalar(sink, Scalar::I64(change.mtime_ns.expect("presence checked")));
+    });
+    emit_field(&mut sink, Field::when_set("ignored"), change.ignored.is_some(), |sink| {
+        emit_scalar(sink, Scalar::Bool(change.ignored.expect("presence checked")));
+    });
+    sink.event(Event::EndMap);
+    sink.finish()
 }
 
 /// Lossless identity for a path that does not render as UTF-8.
@@ -1596,12 +1331,6 @@ fn hex_bytes(bytes: impl IntoIterator<Item = u8>) -> String {
     out
 }
 
-/// Render the raw-identity companion for a path, when one is needed.
-fn raw_identity_object(path: &Path) -> Option<String> {
-    let (encoding, hex) = raw_os_identity(path.as_os_str())?;
-    Some(format!("{{\"encoding\": {}, \"hex\": {}}}", quote(encoding), quote(&hex)))
-}
-
 /// Render cache status in any format.
 ///
 /// A separate entry point rather than a `Report` section: cache status is a fact about
@@ -1622,39 +1351,65 @@ pub fn render_cache_status(
 ) -> String {
     match format {
         Format::Jsonl => {
-            let mut out = format!("{{\"schema\": {}}}", quote(CACHE_SCHEMA));
+            let mut sink = JsonSink::line();
+            sink.event(Event::BeginMap(Shape::Inline));
+            emit_str_field(&mut sink, "schema", CACHE_SCHEMA);
+            sink.event(Event::EndMap);
+            let mut out = sink.finish();
             for status in statuses {
-                let _ = write!(out, "\n{}", cache_row(status).json());
+                out.push('\n');
+                let row = cache_row(status);
+                let mut sink = JsonSink::line();
+                emit_cache_field(&mut sink, &row);
+                out.push_str(&sink.finish());
             }
             out
         }
-        Format::Yaml => {
-            if statuses.is_empty() {
-                // A bare `caches:` is YAML null, where JSON says `[]`. The two formats
-                // carry one schema, so an empty listing has to be an empty sequence in
-                // both, and a parser reading either gets a list it can iterate.
-                return format!("schema: {}\ncaches: []", yaml_scalar(CACHE_SCHEMA));
-            }
-            let mut out = format!("schema: {}\ncaches:", yaml_scalar(CACHE_SCHEMA));
-            for status in statuses {
-                cache_row(status).write_yaml_item(&mut out, 2);
-            }
-            out
-        }
+        Format::Yaml => render_cache_machine(statuses, YamlSink::new()),
         // The human layout lives here beside every other human layout. It used to live in
         // the CLI, which meant the only way to print cache status the way fdu prints it
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
         Format::Text => render_cache_status_text(statuses, scope),
-        Format::Json => {
-            let schema = format!("{{\n  \"schema\": {},\n", quote(CACHE_SCHEMA));
-            let rows = statuses.iter().map(|status| cache_row(status).json());
-            let rows = rows.collect::<Vec<_>>().join(",\n    ");
-            if statuses.is_empty() {
-                format!("{schema}  \"caches\": []\n}}")
-            } else {
-                format!("{schema}  \"caches\": [\n    {rows}\n  ]\n}}")
+        Format::Json => render_cache_machine(statuses, JsonSink::pretty()),
+    }
+}
+
+fn render_cache_machine(statuses: &[crate::CacheStatus], mut sink: impl Sink) -> String {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(&mut sink, "schema", CACHE_SCHEMA);
+    emit_field(&mut sink, Field::always("caches"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for status in statuses {
+            let row = cache_row(status);
+            emit_cache_field(sink, &row);
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+    sink.finish()
+}
+
+fn emit_cache_field(sink: &mut impl Sink, field: &CacheField) {
+    match field {
+        CacheField::Null => emit_scalar(sink, Scalar::Null),
+        CacheField::Bool(value) => emit_scalar(sink, Scalar::Bool(*value)),
+        CacheField::Count(value) => emit_scalar(sink, Scalar::U64(*value)),
+        CacheField::Text(value) => emit_scalar(sink, Scalar::Str(value)),
+        CacheField::List(values) => {
+            sink.event(Event::BeginSeq(Shape::Block));
+            for value in values {
+                emit_cache_field(sink, value);
             }
+            sink.event(Event::EndSeq);
+        }
+        CacheField::Map(fields) => {
+            sink.event(Event::BeginMap(Shape::Block));
+            for (name, value) in fields {
+                sink.event(Event::Key(name));
+                emit_cache_field(sink, value);
+            }
+            sink.event(Event::EndMap);
         }
     }
 }
@@ -1676,90 +1431,6 @@ impl CacheField {
     fn count(value: Option<u64>) -> Self {
         value.map_or(Self::Null, Self::Count)
     }
-
-    /// The value as a one-line JSON fragment.
-    fn json(&self) -> String {
-        match self {
-            Self::List(items) => {
-                format!("[{}]", items.iter().map(Self::json).collect::<Vec<_>>().join(", "))
-            }
-            Self::Map(fields) => {
-                let fields = fields
-                    .iter()
-                    .map(|(key, value)| format!("{}: {}", quote(key), value.json()))
-                    .collect::<Vec<_>>();
-                format!("{{{}}}", fields.join(", "))
-            }
-            Self::Text(text) => quote(text),
-            scalar => scalar.plain(),
-        }
-    }
-
-    /// The value on one line, as both formats spell it.
-    ///
-    /// The invariant: every caller reaches this with a scalar or an empty collection,
-    /// because the YAML writers expand a non-empty list or map into an indented block and
-    /// `json` recurses into one itself. Only the shapes `fdu.cache/2` has today keep that
-    /// true — no list of lists, and no list whose items are not maps other than
-    /// `analyze`'s strings — so a field added later can reach here with something to say.
-    /// It is spelled as its one-line JSON form rather than as `[]` or `{}`, because that
-    /// is valid YAML flow style and holds everything the value holds: a walker that has
-    /// not learned to indent a shape must not answer by dropping it.
-    fn plain(&self) -> String {
-        match self {
-            Self::Null => "null".to_string(),
-            Self::Bool(value) => value.to_string(),
-            Self::Count(value) => value.to_string(),
-            Self::Text(text) => yaml_scalar(text),
-            Self::List(items) if items.is_empty() => "[]".to_string(),
-            Self::Map(fields) if fields.is_empty() => "{}".to_string(),
-            collection => collection.json(),
-        }
-    }
-
-    /// Write `key: value` as a YAML block at `pad` spaces.
-    fn write_yaml_field(&self, out: &mut String, pad: usize, key: &str) {
-        let spaces = " ".repeat(pad);
-        match self {
-            Self::Map(fields) if !fields.is_empty() => {
-                let _ = write!(out, "\n{spaces}{key}:");
-                for (key, value) in fields {
-                    value.write_yaml_field(out, pad + 2, key);
-                }
-            }
-            Self::List(items) if !items.is_empty() => {
-                let _ = write!(out, "\n{spaces}{key}:");
-                for item in items {
-                    item.write_yaml_item(out, pad + 2);
-                }
-            }
-            _ => {
-                let _ = write!(out, "\n{spaces}{key}: {}", self.plain());
-            }
-        }
-    }
-
-    /// Write the value as a YAML sequence item whose dash sits at `pad` spaces.
-    fn write_yaml_item(&self, out: &mut String, pad: usize) {
-        let Self::Map(fields) = self else {
-            let _ = write!(out, "\n{}- {}", " ".repeat(pad), self.plain());
-            return;
-        };
-        let mut block = String::new();
-        for (key, value) in fields {
-            value.write_yaml_field(&mut block, pad + 2, key);
-        }
-        // The first key shares the dash's line: its indent becomes the dash.
-        let first_key_at = 1 + pad + 2;
-        match block.get(first_key_at..) {
-            Some(rest) if !fields.is_empty() => {
-                let _ = write!(out, "\n{}- {rest}", " ".repeat(pad));
-            }
-            _ => {
-                let _ = write!(out, "\n{}- {{}}", " ".repeat(pad));
-            }
-        }
-    }
 }
 
 /// One cache-status row as fields: what every row carries, what its state adds, and the
@@ -1767,14 +1438,32 @@ impl CacheField {
 fn cache_row(status: &crate::CacheStatus) -> CacheField {
     use crate::CacheState;
 
-    let mut fields = vec![
-        ("path", CacheField::Text(status.path.to_string_lossy().into_owned())),
+    let mut fields = vec![("path", CacheField::Text(status.path.to_string_lossy().into_owned()))];
+    if let Some((encoding, hex)) = raw_os_identity(status.path.as_os_str()) {
+        fields.push((
+            "path_raw",
+            CacheField::Map(vec![
+                ("encoding", CacheField::Text(encoding.to_string())),
+                ("hex", CacheField::Text(hex)),
+            ]),
+        ));
+    }
+    fields.extend([
         ("bytes", CacheField::Count(status.bytes)),
         ("state", CacheField::Text(status.state.label().to_string())),
-    ];
+    ]);
     match &status.state {
         CacheState::Current(info) => {
             fields.push(("root", CacheField::Text(info.root.to_string_lossy().into_owned())));
+            if let Some((encoding, hex)) = raw_os_identity(info.root.as_os_str()) {
+                fields.push((
+                    "root_raw",
+                    CacheField::Map(vec![
+                        ("encoding", CacheField::Text(encoding.to_string())),
+                        ("hex", CacheField::Text(hex)),
+                    ]),
+                ));
+            }
             fields.push(("entries", CacheField::Count(info.entries)));
             fields.push(("identity", snapshot_identity_field(info.identity)));
         }
@@ -2183,13 +1872,13 @@ mod tests {
         );
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Json),
-            "{\n  \"schema\": \"fdu.cache/2\",\n  \"caches\": []\n}"
+            "{\n  \"schema\": \"fdu.cache/2\",\n  \"caches\": []\n}\n"
         );
         // An empty sequence in both formats: a bare `caches:` is YAML null, and a reader
         // of one schema should not have to tell null from a list it can iterate.
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Yaml),
-            "schema: fdu.cache/2\ncaches: []"
+            "schema: fdu.cache/2\ncaches: []\n"
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Json)
@@ -2197,42 +1886,18 @@ mod tests {
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml)
-                .starts_with("schema: fdu.cache/2\ncaches:\n  - path: c.fdu")
+                .starts_with("schema: fdu.cache/2\ncaches:\n  -\n    path: c.fdu")
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml).ends_with(
                 "state: stale\n    stale_reason: other_engine\n    format_version: null\n    \
                  content:\n      bytes: 5\n      state: stale\n      stale_reason: older_format\n      \
-                 format_version: 4"
+                 format_version: 4\n"
             )
         );
-        assert!(
-            render_cache_status(&leftovers[1..], CacheScope::All, Format::Yaml).ends_with(
-                "state: leftover\n    leftover_kind: orphaned_content\n    content: null"
-            )
-        );
-    }
-
-    /// A field shape the YAML writers have no block form for is still rendered whole.
-    ///
-    /// No `fdu.cache/2` field is a list of collections, so nothing reaches `plain` with
-    /// anything to say today; this pins what happens when the answer model adds one, since
-    /// the alternative this replaces printed the item as `[]` and dropped what it held.
-    #[test]
-    fn a_collection_with_no_yaml_block_form_is_rendered_whole() {
-        let nested = CacheField::List(vec![CacheField::List(vec![
-            CacheField::Count(7),
-            CacheField::Text("lines".to_string()),
-        ])]);
-        assert_eq!(nested.json(), "[[7, \"lines\"]]");
-        let mut yaml = String::new();
-        nested.write_yaml_field(&mut yaml, 2, "nested");
-        assert_eq!(yaml, "\n  nested:\n    - [7, \"lines\"]");
-
-        let map = CacheField::Map(vec![("records", CacheField::Count(3))]);
-        assert_eq!(CacheField::List(vec![map]).json(), "[{\"records\": 3}]");
-        assert_eq!(CacheField::List(Vec::new()).plain(), "[]");
-        assert_eq!(CacheField::Map(Vec::new()).plain(), "{}");
+        assert!(render_cache_status(&leftovers[1..], CacheScope::All, Format::Yaml).ends_with(
+            "state: leftover\n    leftover_kind: orphaned_content\n    content: null\n"
+        ));
     }
 
     /// A current snapshot carries the identity of every tier it holds, and the sidecar
@@ -2291,13 +1956,13 @@ mod tests {
         assert_eq!(
             render_cache_status(std::slice::from_ref(&status), CacheScope::Root, Format::Yaml),
             format!(
-                "schema: fdu.cache/2\ncaches:\n  - path: e.fdu\n    bytes: 50\n    state: current\n    \
+                "schema: fdu.cache/2\ncaches:\n  -\n    path: e.fdu\n    bytes: 50\n    state: current\n    \
                  root: /tree\n    entries: 3\n    identity:\n      entries:{}\n      \
                  ignore_rules:\n        limits:\n          budget: 10\n          line_limit: null\n    \
                  content:\n      bytes: 9\n      state: current\n      records: 2\n      identity:\n        \
                  entries:{entries}\n        analyze:\n          - lines\n        \
-                 options_fingerprint: 5\n        analyzers:\n          - id: content-basic-v1\n            \
-                 version: 1",
+                 options_fingerprint: 5\n        analyzers:\n          -\n            id: content-basic-v1\n            \
+                 version: 1\n",
                 entries.replace("\n  ", "\n")
             )
         );
@@ -2325,6 +1990,43 @@ mod tests {
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
             let rendered = render_cache_status(&[], crate::CacheScope::All, format);
             assert!(rendered.contains(CACHE_SCHEMA), "{format:?} carries no schema: {rendered}");
+        }
+    }
+
+    #[cfg(all(unix, feature = "watch"))]
+    #[test]
+    fn cache_and_change_rows_preserve_non_unicode_raw_paths() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let path = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
+        let status = crate::CacheStatus {
+            path: path.clone(),
+            bytes: 3,
+            content: None,
+            state: crate::CacheState::Unrecognized,
+        };
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let rendered =
+                render_cache_status(std::slice::from_ref(&status), crate::CacheScope::All, format);
+            assert!(rendered.contains("path_raw"), "{format:?}: {rendered}");
+            assert!(rendered.contains("6e80"), "{format:?}: {rendered}");
+        }
+
+        let change = crate::Change {
+            path,
+            kind: crate::ChangeKind::Remove,
+            entry_kind: None,
+            bytes: None,
+            allocated: None,
+            mtime_ns: None,
+            ignored: None,
+            clock: 1,
+        };
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let rendered = render_change(&change, format);
+            assert!(rendered.contains("path_raw"), "{format:?}: {rendered}");
+            assert!(rendered.contains("6e80"), "{format:?}: {rendered}");
         }
     }
 
@@ -2529,6 +2231,32 @@ mod tests {
             }
         }
         depth == 0 && !in_string
+    }
+
+    /// Remove insignificant JSON whitespace without touching string contents.
+    ///
+    /// Exact layout is intentionally allowed to change when the structural sink changes;
+    /// field names, values, and ordering remain part of the wire promise.
+    fn compact_json(text: &str) -> String {
+        let mut compact = String::with_capacity(text.len());
+        let (mut in_string, mut escaped) = (false, false);
+        for ch in text.chars() {
+            if in_string {
+                compact.push(ch);
+                match ch {
+                    _ if escaped => escaped = false,
+                    '\\' => escaped = true,
+                    '"' => in_string = false,
+                    _ => {}
+                }
+            } else if ch == '"' {
+                in_string = true;
+                compact.push(ch);
+            } else if !ch.is_ascii_whitespace() {
+                compact.push(ch);
+            }
+        }
+        compact
     }
 
     /// Formats are serializations, not features: no view may lack one.
@@ -2855,7 +2583,7 @@ mod tests {
              \"line_limit\"}}]}}",
             quote(&refused)
         );
-        assert!(json.contains(&expected), "{json}");
+        assert!(compact_json(&json).contains(&compact_json(&expected)), "{json}");
         assert!(json.contains("\"complete\": true"), "a refusal is not an operational partial");
         let yaml = render(
             &report(
@@ -2868,8 +2596,8 @@ mod tests {
             false,
         );
         let expected = format!(
-            "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
-             refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
+            "ignore_rules:\n  limits: {{budget: 4194304, line_limit: 16384}}\n  applied: 1\n  \
+             refused: 1\n  refusals:\n    -\n      path: {}\n      reason: line_limit\n",
             yaml_scalar(&refused)
         );
         assert!(yaml.contains(&expected), "{yaml}");
@@ -3019,6 +2747,7 @@ mod tests {
             false,
         );
         assert!(is_valid_json(&json), "{json}");
+        let compact = compact_json(&json);
         for expected in [
             "\"summary\": {\"files\": 2, \"dirs\": 2, \"bytes\": 164, \"allocated\": 1024, \
              \"ignored\": {\"files\": 1, \"dirs\": 1, \"bytes\": 128, \"allocated\": 512}, ",
@@ -3029,7 +2758,7 @@ mod tests {
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
             "\"kind\": \"dir\", \"bytes\": 0, \"allocated\": 0, \"mtime_ns\": 0, \"ignored\": true}",
         ] {
-            assert!(json.contains(expected), "missing {expected}\nin {json}");
+            assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
         let yaml = render(
             &report(
@@ -3043,8 +2772,8 @@ mod tests {
         );
         assert!(
             yaml.contains(
-                "      allocated: 1024\n      ignored:\n        files: 1\n        dirs: 1\n        \
-                 bytes: 128\n        allocated: 512\n      newest_mtime_ns: 20\n"
+                "      allocated: 1024\n      ignored: {files: 1, dirs: 1, bytes: 128, \
+                 allocated: 512}\n      newest_mtime_ns: 20\n"
             ),
             "{yaml}"
         );
@@ -3083,7 +2812,7 @@ mod tests {
     /// exists to prevent. This pins the whole record, so adding, renaming, or reordering
     /// a field fails here and forces a deliberate version bump.
     ///
-    /// `ignored` was added to `fdu.stream/1` in place rather than by a bump, for the same
+    /// `ignored` was added to `fdu.stream/2` in place rather than by a bump, for the same
     /// reason `fdu.report/6` took the ignored share in place: 0.1.0 is the first release,
     /// so no consumer has ever read the shape it extends.
     #[cfg(feature = "watch")]
@@ -3091,7 +2820,7 @@ mod tests {
     fn a_stream_record_is_pinned_field_by_field() {
         use crate::{Change, ChangeKind};
 
-        assert_eq!(STREAM_SCHEMA, "fdu.stream/1");
+        assert_eq!(STREAM_SCHEMA, "fdu.stream/2");
 
         let upsert = Change {
             path: ["src", "main.rs"].iter().collect(),
@@ -3109,7 +2838,7 @@ mod tests {
         assert_eq!(
             render_change(&upsert, Format::Json),
             format!(
-                "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
+                "{{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
                  \"allocated\": 4096, \"mtime_ns\": 1700000000000000000, \"ignored\": false}}"
             )
@@ -3121,7 +2850,7 @@ mod tests {
         assert_eq!(
             render_change(&unclassified, Format::Json),
             format!(
-                "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
+                "{{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"upsert\", \
                  \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
                  \"allocated\": 4096, \"mtime_ns\": 1700000000000000000}}"
             )
@@ -3142,7 +2871,7 @@ mod tests {
         };
         assert_eq!(
             render_change(&removed, Format::Json),
-            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
+            "{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"remove\", \
              \"path\": \"gone.txt\", \"clock\": 8}"
         );
 
@@ -3152,7 +2881,7 @@ mod tests {
             Change { path: PathBuf::from("debug.log"), ignored: Some(true), ..removed.clone() };
         assert_eq!(
             render_change(&reclassified, Format::Json),
-            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
+            "{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"remove\", \
              \"path\": \"debug.log\", \"clock\": 8, \"ignored\": true}"
         );
 
@@ -3170,7 +2899,7 @@ mod tests {
         };
         assert_eq!(
             render_change(&invalidated, Format::Json),
-            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"invalidate\", \
+            "{\"schema\": \"fdu.stream/2\", \"record\": \"change\", \"op\": \"invalidate\", \
              \"path\": \"subtree\", \"clock\": 9}"
         );
 
@@ -3509,7 +3238,7 @@ mod tests {
                  \"ignored\": false}}"
             );
             assert!(
-                rendered.contains(&row),
+                compact_json(&rendered).contains(&compact_json(&row)),
                 "a name that is not valid Unicode must carry its raw bytes in a well-formed \
                  row.\nexpected: {row}\nrendered: {rendered}"
             );
@@ -3557,9 +3286,9 @@ mod tests {
         .expect("report");
         let tree_rendered = render(&tree, Format::Json, false);
         assert!(
-            tree_rendered.contains(&format!(
+            compact_json(&tree_rendered).contains(&compact_json(&format!(
                 ", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{first_hex}\"}}, \"kind\":"
-            )),
+            ))),
             "the tree view must carry raw identity in a well-formed node: {tree_rendered}"
         );
         assert!(
