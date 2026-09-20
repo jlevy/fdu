@@ -5,7 +5,7 @@ title: Review PRs 91 and 92 for v0.1 stability, performance evidence, and docume
 kind: task
 status: in_progress
 priority: 1
-version: 11
+version: 12
 labels: []
 dependencies: []
 child_order_hints:
@@ -19,5 +19,9 @@ child_order_hints:
   - is-01m2y5y7pk2w0xf3yw7hfjjsp7
   - is-01m2y63j1zr2ybptec39sgwe9r
 created_at: 2026-09-20T01:00:31.288Z
-updated_at: 2026-09-20T01:15:19.997Z
+updated_at: 2026-09-20T01:50:26.808Z
 ---
+
+## Notes
+
+Senior reviews and dispositions posted on PR91/92. Fixes integrated with concurrent Cursor commits, pushed normally at 870bdcfb / 937f9445, and all 19 required CI checks pass on each exact head. All eight fix beads closed. Remaining handoff: final local make check and PR92 cross-lint need disk space; full gate hit 18 StorageFull failures after main Rust/harness suites passed. Host subsequently removed some review build outputs externally and has under 0.5 GiB free. Cleanup approval requested for disposable review outputs, not received; no such deletion performed by root. Recovered abandoned tbd lock after confirming PID53514 gone, staging only lock directory to Trash. No merge/release performed. Broader release blockers fdu-bqb7/fdu-c2ml/fdu-tyvq remain separate; future report-oracle harness tracked fdu-2moo.
