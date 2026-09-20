@@ -225,7 +225,8 @@ No RAM disk.
 
 Control: leftover HEAD probe (`8765aa6f…` / 2,553,504 bytes).
 Candidate: H138 probe (`79668087…` / 2,553,504 bytes).
-0 invalid samples.
+0 invalid samples. The benchmark oracle checks that the retained index and content facts
+remain unchanged; it does not digest the reports produced inside the timed loop.
 
 | Arm | Wall median | Component | Peak RSS |
 | --- | ---: | ---: | ---: |
@@ -239,10 +240,16 @@ Minor faults −63.01%. Interval on wall excludes zero and is entirely below −
 ## What the determination said
 
 Sharing one unfiltered `every_entry` walk is a real ≥3% wall cut on `content-query`.
-Report identity is the same (together matches each view alone).
-Engine kept.
+Focused [report tests](../../../crates/fdu-core/src/query/query_report.rs) establish the
+output semantics with independent expected totals and rows, then compare combined and
+individual views. The benchmark digest establishes only that retained facts are
+unchanged. A general report-digest harness remains tracked on `fdu-2moo`. Engine kept.
 
 Do not invent a cache-hit skip.
 Do not persist ignored bits.
 Do not load a snapshot on `fdu PATH`. Do not raise the README 200K files/s or 4M cached
 lines/s.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

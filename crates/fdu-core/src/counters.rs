@@ -26,13 +26,14 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 pub struct Counts {
     /// Logical directory-open operations.
     pub dir_opens: u64,
-    /// Enumeration syscalls issued by the macOS bulk backend, including the empty
-    /// terminator.
+    /// Enumeration syscalls in complete successful macOS bulk listings, including the
+    /// empty terminator.
     ///
     /// One successful directory is typically two calls (one data, one EOF), the same
     /// multiplicity the Linux portable path pays in `getdents64`. The portable `read_dir`
-    /// path leaves this at 0 because the standard library hides that split. A later
-    /// Linux or `openat` campaign can compare this to `dir_opens` without another sample.
+    /// path leaves this at 0 because the standard library hides that split. Abandoned
+    /// bulk attempts before portable fallback are not counted. A later Linux or `openat`
+    /// campaign can compare this to `dir_opens` without another sample.
     pub dir_enumeration_calls: u64,
     /// Directory entries yielded by enumeration.
     pub dir_entries: u64,
