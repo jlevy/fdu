@@ -1233,6 +1233,11 @@ fn walk_hook_covers(path: &Path) -> bool {
     walk_hook(path).is_some()
 }
 
+#[cfg(all(not(test), target_os = "macos"))]
+const fn walk_hook_covers(_path: &Path) -> bool {
+    false
+}
+
 /// Owned output from the filesystem walker before it crosses a public mutation boundary.
 ///
 /// Only the scan and opened-discovery producers construct this type. Their admission,
@@ -2720,7 +2725,9 @@ fn walk_worker_with<E: WalkEmission>(
                 if let Some(diagnostics) = diagnostics {
                     diagnostics.macos_bulk_attempted();
                 }
-                if let Some(entries) = bulk_reader.read(&abs_dir) {
+                if let Some(entries) =
+                    (!walk_hook_covers(&abs_dir)).then(|| bulk_reader.read(&abs_dir)).flatten()
+                {
                     if let Some(diagnostics) = diagnostics {
                         diagnostics.macos_bulk_succeeded();
                     }
@@ -3759,6 +3766,7 @@ fn consolidate_detached_index(
             counts.detached_finish_us = counts.detached_finish_us.saturating_add(elapsed);
         });
     }
+    index.record_walk_errors(&output.errors);
     index.set_initial_freshness(output.is_complete());
     (index, output)
 }
@@ -3793,6 +3801,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
     if let Some(error) = apply_error {
         return Err(error);
     }
+    index.record_walk_errors(&report.errors);
     index.set_initial_freshness(report.is_complete());
     Ok((index, report))
 }
@@ -4357,7 +4366,20 @@ fn reconcile_target_inner(
                 return Ok(report);
             }
             Err(error) => {
-                report.scan.errors.push(Error::io(absolute, error));
+                report.scan.errors.push(Error::io(&absolute, error));
+                if baseline.state != PathState::Absent {
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: subtree.to_path_buf() },
+                        baseline,
+                    ));
+                }
+                if target.has_control(subtree)? {
+                    batch.push(ObservationOp::if_state(
+                        Op::ControlRemove { path: subtree.to_path_buf() },
+                        baseline,
+                    ));
+                }
+                flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 return Ok(report);
             }
         };
@@ -4496,7 +4518,7 @@ fn reconcile_target_inner(
         };
 
         #[cfg(target_os = "macos")]
-        let used_bulk =
+        let used_bulk = if !walk_hook_covers(&abs_dir) {
             if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
                 report.scan.dirs_read += 1;
                 for entry in entries {
@@ -4520,7 +4542,10 @@ fn reconcile_target_inner(
                 true
             } else {
                 false
-            };
+            }
+        } else {
+            false
+        };
         #[cfg(not(target_os = "macos"))]
         let used_bulk = false;
 
@@ -4529,7 +4554,16 @@ fn reconcile_target_inner(
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(error) => {
-                    report.scan.errors.push(Error::io(abs_dir, error));
+                    report.scan.errors.push(Error::io(&abs_dir, error));
+                    remove_known_children(target, &rel_dir, config, &mut batch, sink, &mut report)?;
+                    if had_control {
+                        let baseline = target.expectation(&control_path)?;
+                        batch.push(ObservationOp::if_state(
+                            Op::ControlRemove { path: control_path },
+                            baseline,
+                        ));
+                        flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+                    }
                     continue;
                 }
             };
@@ -4570,10 +4604,24 @@ fn reconcile_target_inner(
                         continue;
                     }
                     Err(error) => {
-                        // Present but unreadable: its rules, if it is the control file,
-                        // stay until a read says otherwise.
                         control_seen |= name == crate::control::CONTROL_FILE_NAME;
                         report.scan.errors.push(Error::io(item.path(), error));
+                        if baseline.state != PathState::Absent {
+                            batch.push(ObservationOp::if_state(
+                                Op::Remove { path: rel_dir.join(&name) },
+                                baseline,
+                            ));
+                        }
+                        if name == crate::control::CONTROL_FILE_NAME && had_control {
+                            batch.push(ObservationOp::if_state(
+                                Op::ControlRemove { path: rel_dir.join(&name) },
+                                baseline,
+                            ));
+                            had_control = false;
+                        }
+                        if batch.len() >= config.batch_size.max(1) {
+                            flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+                        }
                         continue;
                     }
                 };
@@ -4592,23 +4640,17 @@ fn reconcile_target_inner(
             }
         }
 
+        for (name, baseline) in known {
+            batch.push(ObservationOp::if_state(Op::Remove { path: rel_dir.join(name) }, baseline));
+            if batch.len() >= config.batch_size.max(1) {
+                flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+            }
+        }
+        if had_control && !control_seen {
+            let baseline = target.expectation(&control_path)?;
+            batch.push(ObservationOp::if_state(Op::ControlRemove { path: control_path }, baseline));
+        }
         if listing_complete {
-            for (name, baseline) in known {
-                batch.push(ObservationOp::if_state(
-                    Op::Remove { path: rel_dir.join(name) },
-                    baseline,
-                ));
-                if batch.len() >= config.batch_size.max(1) {
-                    flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
-                }
-            }
-            if had_control && !control_seen {
-                let baseline = target.expectation(&control_path)?;
-                batch.push(ObservationOp::if_state(
-                    Op::ControlRemove { path: control_path },
-                    baseline,
-                ));
-            }
             // Only a directory with no error inside its own processing vouches for its
             // child set; an error under a sibling or a descendant is that directory's
             // to answer for, as discovery decides completeness per directory.
@@ -4821,9 +4863,11 @@ fn reconcile_wave_worker(
             let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
             let mut had_control = index.control_table().contains(&control_path);
             let mut control_seen = false;
-            let mut listing_complete = true;
             let mut control_errors = Vec::new();
             let mut vanished = Vec::new();
+            let mut unverified = Vec::new();
+            let mut control_read_failed = false;
+            let mut listing_open_failed = false;
 
             {
                 let mut process_entry =
@@ -4877,7 +4921,10 @@ fn reconcile_wave_worker(
                                     }
                                 }
                                 Ok(Some(_) | None) => {}
-                                Err(error) => control_errors.push(error),
+                                Err(error) => {
+                                    control_errors.push(error);
+                                    control_read_failed = true;
+                                }
                             }
                             return;
                         }
@@ -4910,7 +4957,10 @@ fn reconcile_wave_worker(
                                 }
                             }
                             Ok(Some(_) | None) => {}
-                            Err(error) => control_errors.push(error),
+                            Err(error) => {
+                                control_errors.push(error);
+                                control_read_failed |= name == crate::control::CONTROL_FILE_NAME;
+                            }
                         }
 
                         if should_descend(kind, attrs, *depth, root_dev, config) {
@@ -4931,7 +4981,9 @@ fn reconcile_wave_worker(
                     };
 
                 #[cfg(target_os = "macos")]
-                let used_bulk = if let Some(entries) = bulk_reader.read(&abs_dir) {
+                let used_bulk = if let Some(entries) =
+                    (!walk_hook_covers(&abs_dir)).then(|| bulk_reader.read(&abs_dir)).flatten()
+                {
                     result.scan.dirs_read += 1;
                     for entry in entries {
                         let baseline = known
@@ -4955,46 +5007,50 @@ fn reconcile_wave_worker(
                 if !used_bulk {
                     crate::counters::bump(|c| c.dir_opens += 1);
                     let listing = match fs::read_dir(&abs_dir) {
-                        Ok(listing) => listing,
+                        Ok(listing) => Some(listing),
                         Err(error) => {
-                            result.scan.errors.push(Error::io(abs_dir, error));
-                            continue;
+                            result.scan.errors.push(Error::io(&abs_dir, error));
+                            listing_open_failed = true;
+                            None
                         }
                     };
-                    result.scan.dirs_read += 1;
-                    let listing = reconcile_listing(listing, &abs_dir);
-                    for item in listing {
-                        let item = match item {
-                            Ok(item) => item,
-                            Err(error) => {
-                                listing_complete = false;
-                                result.scan.errors.push(Error::io(&abs_dir, error));
-                                continue;
-                            }
-                        };
-                        let name = item.file_name();
-                        // Match the serial path: an entry whose name was enumerated is
-                        // not missing merely because its metadata could not be read.
-                        let baseline = known
-                            .remove(&name)
-                            .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                        let (kind, attrs) = match observe_dir_entry(&item) {
-                            Ok(Some(observed)) => observed,
-                            Ok(None) => {
-                                // Removed once this directory's listing is done.
-                                vanished.push((name, baseline.state != PathState::Absent));
-                                continue;
-                            }
-                            Err(error) => {
-                                control_seen |= name == crate::control::CONTROL_FILE_NAME;
-                                result.scan.errors.push(Error::io(item.path(), error));
-                                continue;
-                            }
-                        };
-                        process_entry(name, kind, attrs, baseline, &mut control_seen);
+                    if let Some(listing) = listing {
+                        result.scan.dirs_read += 1;
+                        let listing = reconcile_listing(listing, &abs_dir);
+                        for item in listing {
+                            let item = match item {
+                                Ok(item) => item,
+                                Err(error) => {
+                                    result.scan.errors.push(Error::io(&abs_dir, error));
+                                    continue;
+                                }
+                            };
+                            let name = item.file_name();
+                            // Match the serial path: an entry whose name was enumerated is
+                            // not missing merely because its metadata could not be read.
+                            let baseline = known
+                                .remove(&name)
+                                .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
+                            let (kind, attrs) = match observe_dir_entry(&item) {
+                                Ok(Some(observed)) => observed,
+                                Ok(None) => {
+                                    // Removed once this directory's listing is done.
+                                    vanished.push((name, baseline.state != PathState::Absent));
+                                    continue;
+                                }
+                                Err(error) => {
+                                    control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                                    result.scan.errors.push(Error::io(item.path(), error));
+                                    unverified.push((name, baseline.state != PathState::Absent));
+                                    continue;
+                                }
+                            };
+                            process_entry(name, kind, attrs, baseline, &mut control_seen);
+                        }
                     }
                 }
             }
+            control_read_failed |= listing_open_failed && had_control;
             result.scan.errors.append(&mut control_errors);
             for (name, entry_held) in vanished {
                 for removal in vanished_child_removals(rel_dir, &name, entry_held, &mut had_control)
@@ -5010,25 +5066,37 @@ fn reconcile_wave_worker(
                     );
                 }
             }
-            if listing_complete {
-                for (name, _) in known {
+            for (name, entry_held) in unverified {
+                if entry_held {
                     defer_reconcile_op(
-                        Op::Remove { path: rel_dir.join(name) },
+                        Op::Remove { path: rel_dir.join(&name) },
                         &mut result.operations,
                         deferred_count,
                         overflowed,
                         max_deferred_ops,
                     );
                 }
-                if had_control && !control_seen {
-                    defer_reconcile_op(
-                        Op::ControlRemove { path: control_path },
-                        &mut result.operations,
-                        deferred_count,
-                        overflowed,
-                        max_deferred_ops,
-                    );
+                if name == crate::control::CONTROL_FILE_NAME {
+                    control_read_failed = true;
                 }
+            }
+            for (name, _) in known {
+                defer_reconcile_op(
+                    Op::Remove { path: rel_dir.join(name) },
+                    &mut result.operations,
+                    deferred_count,
+                    overflowed,
+                    max_deferred_ops,
+                );
+            }
+            if had_control && (!control_seen || control_read_failed) {
+                defer_reconcile_op(
+                    Op::ControlRemove { path: control_path },
+                    &mut result.operations,
+                    deferred_count,
+                    overflowed,
+                    max_deferred_ops,
+                );
             }
         }
     }
@@ -8171,6 +8239,34 @@ mod tests {
     }
 
     #[test]
+    fn unreadable_directory_warm_answer_matches_cold_verified_tree() {
+        for workers in [1, 2] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write_file(&dir.path().join("blocked/old.txt"), b"old");
+            write_file(&dir.path().join("verified.txt"), b"verified");
+            let config = ScanConfig { threads: Some(workers), ..ScanConfig::default() };
+            let (mut warm, baseline) = scan_into_index(dir.path(), &config).expect("baseline");
+            assert!(baseline.is_complete());
+
+            let blocked = dir.path().join("blocked").canonicalize().expect("blocked path");
+            let hook = install_child_metadata_hook(dir.path(), move |path| {
+                (path == blocked)
+                    .then(|| std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            });
+            let warm_report = reconcile(&mut warm, &config, &mut |_| {}).expect("warm partial");
+            let (cold, cold_report) = scan_into_index(dir.path(), &config).expect("cold partial");
+            drop(hook);
+
+            assert!(!warm_report.is_complete(), "workers={workers}");
+            assert!(!cold_report.is_complete(), "workers={workers}");
+            assert!(warm.lookup(Path::new("blocked")).is_none(), "workers={workers}");
+            assert!(warm.lookup(Path::new("blocked/old.txt")).is_none(), "workers={workers}");
+            assert_eq!(index_fingerprint(&warm), index_fingerprint(&cold), "workers={workers}");
+            assert!(warm.lookup(Path::new("verified.txt")).is_some(), "workers={workers}");
+        }
+    }
+
+    #[test]
     fn deferred_change_overflow_retries_without_applying_a_partial_wave() {
         let dir = sample_tree();
         let config = ScanConfig { threads: Some(2), batch_size: 2, ..ScanConfig::default() };
@@ -8388,11 +8484,10 @@ mod tests {
         );
     }
 
-    /// The same walk over a control file it cannot read keeps the old rules and does not
-    /// claim the path fresh.
+    /// A control file the pass cannot verify contributes neither stale rules nor an entry.
     #[cfg(unix)]
     #[test]
-    fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
+    fn reconciling_an_unreadable_control_file_root_drops_its_rules_and_stays_partial() {
         use std::os::unix::fs::PermissionsExt;
 
         if !crate::test_support::require_permission_bits() {
@@ -8419,9 +8514,12 @@ mod tests {
         assert!(!report.is_complete());
         assert_eq!(report.scan.errors.len(), 1, "{:?}", report.scan.errors);
         assert_eq!(index.freshness_at(Path::new(".gitignore")), crate::Freshness::Partial);
+        assert!(
+            !index.controls().expect("control state observed").contains(Path::new(".gitignore"))
+        );
         assert_eq!(
             index.is_ignored(Path::new("a.log")).expect("control state observed"),
-            Some(true)
+            Some(false)
         );
     }
 

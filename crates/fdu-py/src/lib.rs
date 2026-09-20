@@ -385,10 +385,9 @@ impl PyIndex {
         // Refused here, in this API's own names, rather than as the session's typed error:
         // an index that holds analyzers, or one opened from a snapshot nothing verified,
         // cannot be watched, exactly as `--watch` refuses both.
-        let delivery = Delivery {
-            watch: Some(WatchDelivery { interval: Duration::from_secs_f64(interval) }),
-            ..self.delivery.clone()
-        };
+        let interval = watch_duration(interval)?;
+        let delivery =
+            Delivery { watch: Some(WatchDelivery { interval }), ..self.delivery.clone() };
         request.validate_delivery(&delivery).map_err(|error| value_error(&error))?;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
@@ -397,7 +396,7 @@ impl PyIndex {
         let session =
             Session::new(handle, request, &delivery, WatchConfig::default()).map_err(to_py_err)?;
 
-        Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
+        Ok(PyWatch { session: Some(session), timeout: interval })
     }
 
     /// Roll-up totals for the whole tree.
@@ -626,6 +625,18 @@ impl PyIndex {
 /// the grammar does not allow.
 fn value_error(error: &RequestError) -> PyErr {
     PyValueError::new_err(error.message(&AxisNames::FIELDS))
+}
+
+fn watch_duration(interval: f64) -> PyResult<Duration> {
+    let duration = Duration::try_from_secs_f64(interval).map_err(|_| {
+        PyValueError::new_err("interval must be finite, positive, and within the supported range")
+    })?;
+    if duration.is_zero() || interval < 1e-9 {
+        return Err(PyValueError::new_err(
+            "interval must be finite, positive, and within the supported range",
+        ));
+    }
+    Ok(duration)
 }
 
 /// The default analyzer set, as the grammar spells it.
@@ -1070,8 +1081,7 @@ impl PyWatch {
     fn report(&self) -> PyResult<PyOneShot> {
         let session =
             self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
-        let provenance = session.live_provenance(SystemTime::now());
-        let report = session.report(&provenance).map_err(to_py_err)?;
+        let report = session.report(SystemTime::now()).map_err(to_py_err)?;
         Ok(PyOneShot { report })
     }
 
@@ -1838,6 +1848,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("DEFAULT_WORDS_PER_PAGE", Request::DEFAULTS.words_per_page)?;
     m.add("DEFAULT_SIZE", Request::DEFAULTS.size.label())?;
     m.add("DEFAULT_READ_CONTROLS", Request::DEFAULTS.read_controls)?;
+    m.add("MAX_WATCH_INTERVAL_SECONDS", Duration::MAX.as_secs_f64())?;
+    m.add("MIN_WATCH_INTERVAL_SECONDS", 1e-9_f64)?;
     m.add_class::<PyIndex>()?;
     m.add_class::<PyWatch>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
@@ -1881,6 +1893,16 @@ mod tests {
             refused.message(&AxisNames::FIELDS),
             "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, only, off"
         );
+    }
+
+    #[test]
+    fn native_watch_interval_conversion_refuses_values_that_would_panic() {
+        for interval in
+            [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0, 1e-300, 0.1e-9, f64::MAX]
+        {
+            assert!(watch_duration(interval).is_err(), "{interval:?}");
+        }
+        assert_eq!(watch_duration(0.25).expect("valid interval"), Duration::from_millis(250));
     }
 
     #[test]

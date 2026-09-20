@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+import math
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -503,8 +504,12 @@ class WatchOptions:
     query: Query = field(default_factory=Query)
 
     def __post_init__(self) -> None:
-        if self.interval <= 0:
-            raise ValueError("interval must be positive")
+        if (
+            not math.isfinite(self.interval)
+            or self.interval < _native.MIN_WATCH_INTERVAL_SECONDS
+            or self.interval > _native.MAX_WATCH_INTERVAL_SECONDS
+        ):
+            raise ValueError("interval must be finite, positive, and within the supported range")
 
 
 @dataclass(frozen=True, slots=True)

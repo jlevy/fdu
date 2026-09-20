@@ -516,6 +516,28 @@ pub struct Provenance {
     pub errors: Vec<String>,
 }
 
+impl Provenance {
+    pub(crate) fn of(index: &Index, generated_at: SystemTime) -> Self {
+        let state = index.state();
+        let scan_started_at = u64::try_from(index.writing_pass_started_at_ns())
+            .ok()
+            .map(|nanos| SystemTime::UNIX_EPOCH + std::time::Duration::from_nanos(nanos));
+        Self {
+            scan_started_at,
+            generated_at,
+            source: match state.source {
+                crate::Source::Scanned => ReportSource::ColdScan,
+                crate::Source::Revalidated | crate::Source::JournalScoped => {
+                    ReportSource::WarmRevalidate
+                }
+                crate::Source::Cached => ReportSource::CacheOnly,
+            },
+            complete: state.coverage == crate::Coverage::Complete,
+            errors: index.issues().iter().map(|issue| issue.message.clone()).collect(),
+        }
+    }
+}
+
 /// One directory's row in a tree view.
 #[derive(Clone, Debug)]
 pub struct TreeNode {
@@ -1158,7 +1180,7 @@ pub(crate) fn report_in(
         source: provenance.source,
         complete: provenance.complete,
         errors: provenance.errors.clone(),
-        freshness: index.freshness(),
+        freshness: index.state().freshness,
         scope: index.scope(),
         root: index.root_path().to_path_buf(),
         size: query.selection.size,

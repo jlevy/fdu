@@ -779,7 +779,7 @@ impl Cli {
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::open_with_pending_save;
-        use fdu_core::query::{Provenance, ViewSpec};
+        use fdu_core::query::ViewSpec;
         use fdu_core::watch::WatchConfig;
         use fdu_core::watch_session::{ChangeKind, Session};
 
@@ -792,12 +792,11 @@ impl Cli {
             .expect("run() builds a watch delivery before it takes the watch path")
             .interval;
 
-        let scan_started_at = SystemTime::now();
         // The one splice of the two models back into today's open configuration, made
         // here rather than by the caller: the watch path is its only remaining user on
         // this surface.
         let config = &OpenConfig::of(&request.basis, delivery);
-        let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
+        let (index, _open_report, pending_save) = open_with_pending_save(path, config)?;
         if let Err(error) = pending_save.join() {
             let _ = writeln!(
                 diagnostic,
@@ -820,21 +819,14 @@ impl Cli {
         let mut session = Session::new(handle, request.clone(), delivery, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
-        let provenance = Provenance {
-            scan_started_at: Some(scan_started_at),
-            generated_at: SystemTime::now(),
-            source: match open_report.path_taken {
-                fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
-                fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                fdu_core::OpenPath::CacheOnly => ReportSource::CacheOnly,
-            },
-            complete: open_report.is_complete(),
-            errors: open_report.error_messages(),
-        };
         if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;
         }
-        write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
+        write!(
+            out,
+            "{}",
+            report_format::render(&session.report(SystemTime::now())?, format, color)
+        )?;
         out.flush()?;
 
         let mut dirty_since_render = false;
@@ -984,8 +976,8 @@ impl Cli {
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {
-        let provenance = session.live_provenance(SystemTime::now());
-        let report = session.report(&provenance)?;
+        let generated_at = SystemTime::now();
+        let report = session.report(generated_at)?;
         // A watch run has no final answer and so no performance footer, which left text
         // repaints with nothing between them: the last row of one and the first row of
         // the next were adjacent lines. A blank line alone would not do, because that is
@@ -994,7 +986,7 @@ impl Cli {
             writeln!(
                 out,
                 "\n{}",
-                paint(&report_format::watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
+                paint(&report_format::watch_rule(generated_at), STYLE_WATCH_RULE, color)
             )?;
         } else if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;

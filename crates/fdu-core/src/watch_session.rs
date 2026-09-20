@@ -21,8 +21,7 @@ use std::time::Duration;
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
 use crate::query::{
-    Basis, Delivery, IgnoredEntries, Provenance, Query, Report, ReportSource, Request, Selection,
-    WatchDelivery, report,
+    Basis, Delivery, Provenance, Query, Report, Request, Selection, WatchDelivery, report,
 };
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
@@ -174,7 +173,22 @@ impl Session {
             content: index.read_with(crate::Index::content_set)?,
         };
         request.validate_read(&held).map_err(Error::InvalidRequest)?;
+        // Bind observation before closing the gap from the scan that produced `index`.
+        // The full reconciliation catches a mutation that completed before registration;
+        // the barrier and bounded drain then apply every hint captured while that pass ran.
         let watcher = Watcher::new(&root, watch)?;
+        crate::scan::reconcile_handle(&index, &scan, &mut |_| {})?;
+        watcher.flush_capture()?;
+        let mut handoff_complete = false;
+        for _ in 0..=watcher.capture_backlog_bound() {
+            if watcher.apply_next(&index, &scan, Duration::ZERO, &mut |_| {})?.is_none() {
+                handoff_complete = true;
+                break;
+            }
+        }
+        if !handoff_complete {
+            return Err(Error::ObservationHandoffIncomplete);
+        }
         Ok(Self { index, watcher, scan, request })
     }
 
@@ -192,9 +206,9 @@ impl Session {
     ///
     /// The same `report` a one-shot run produces, from the same index, which is what
     /// makes "watch is the same query repeated" true rather than aspirational.
-    pub fn report(&self, provenance: &Provenance) -> Result<Report> {
+    pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.request, provenance)
+        report(&index, &self.request, &Provenance::of(&index, generated_at))
     }
 
     /// A consistent copy of the current index.
@@ -245,7 +259,6 @@ impl Session {
     /// every reclassified entry, which is what lets a rule edit that moves an entry into
     /// the selection be streamed as the upsert a consumer needs to draw the row.
     fn batch_facts(&self, commits: &[Commit]) -> Result<BatchFacts> {
-        let filters_by_ignored = self.selection().ignored != IgnoredEntries::Include;
         let mut touched: Vec<&PathBuf> = Vec::new();
         let mut reclassified: Vec<&PathBuf> = Vec::new();
         for effective in commits.iter().flat_map(|commit| &commit.changes) {
@@ -253,18 +266,10 @@ impl Session {
                 EffectiveChange::Inserted { path, .. } | EffectiveChange::Updated { path, .. } => {
                     touched.push(path);
                 }
-                // A reclassified entry is read only when the selection can move it.
-                // Under `Include` its membership cannot change, and membership is what
-                // this stream maintains; its `ignored` bit did change, and the record that
-                // would say so is not emitted, so a consumer's row keeps the stale bit
-                // until the next listing. Deliberate for 0.1.0: a directory rule flips
-                // thousands of entries at once, and paying a lookup each to restate a bit
-                // no selection reads is the wrong default. `fdu-4239` carries the fix.
-                EffectiveChange::Reclassified { path, .. } if filters_by_ignored => {
+                EffectiveChange::Reclassified { path, .. } => {
                     reclassified.push(path);
                 }
-                EffectiveChange::Reclassified { .. }
-                | EffectiveChange::Removed { .. }
+                EffectiveChange::Removed { .. }
                 | EffectiveChange::Invalidated { .. }
                 | EffectiveChange::ControlUpdated { .. }
                 | EffectiveChange::ControlRefusalUpdated { .. } => {}
@@ -314,8 +319,7 @@ impl Session {
         facts: &BatchFacts,
     ) -> Option<Change> {
         match effective {
-            EffectiveChange::Inserted { path, kind, attrs }
-            | EffectiveChange::Updated { path, kind, current: attrs, .. } => {
+            EffectiveChange::Inserted { path, kind, attrs } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 let candidate = crate::query::Candidate {
                     relative: path,
@@ -336,6 +340,44 @@ impl Session {
                     ignored: facts.is_ignored(path),
                     clock,
                 })
+            }
+            EffectiveChange::Updated { path, kind, previous: _, current } => {
+                let name = path.file_name()?.to_string_lossy().into_owned();
+                let ignored = facts.is_ignored(path).unwrap_or(false);
+                let candidate = crate::query::Candidate {
+                    relative: path,
+                    name: &name,
+                    kind: *kind,
+                    bytes: current.size,
+                    allocated: current.allocated,
+                    mtime_ns: current.mtime_ns,
+                    ignored,
+                };
+                if self.selection().admits(&candidate) {
+                    Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Upsert,
+                        entry_kind: Some(*kind),
+                        bytes: Some(current.size),
+                        allocated: Some(current.allocated),
+                        mtime_ns: Some(current.mtime_ns),
+                        ignored: facts.is_ignored(path),
+                        clock,
+                    })
+                } else if self.admits_by_path(path, &name) {
+                    Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Remove,
+                        entry_kind: None,
+                        bytes: None,
+                        allocated: None,
+                        mtime_ns: None,
+                        ignored: None,
+                        clock,
+                    })
+                } else {
+                    None
+                }
             }
             // A removal carries no attributes to filter on, so only the path-shaped parts
             // of a selection can apply. Filtering it out entirely on a size, time, or
@@ -399,7 +441,7 @@ impl Session {
                         ignored: Some(*current_ignored),
                         clock,
                     }),
-                    (false, true) => Some(Change {
+                    (false, true) | (true, true) => Some(Change {
                         path: path.clone(),
                         kind: ChangeKind::Upsert,
                         entry_kind: Some(entry.kind),
@@ -433,22 +475,59 @@ impl Session {
     fn selection(&self) -> &Selection {
         &self.request.query.selection
     }
-
-    /// Provenance for a live report, which is always warm by construction.
-    pub fn live_provenance(&self, generated_at: std::time::SystemTime) -> Provenance {
-        Provenance {
-            scan_started_at: None,
-            generated_at,
-            source: ReportSource::WarmRevalidate,
-            complete: true,
-            errors: Vec::new(),
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_update_that_leaves_attribute_selection_emits_remove() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("file.txt"), b"12345678").expect("fixture");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query {
+                selection: Selection { min_size: Some(4), ..Selection::default() },
+                ..Query::default()
+            },
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            analysis_workers: 0,
+        };
+        let session =
+            Session::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())
+                .expect("session");
+        let path = PathBuf::from("file.txt");
+        let change = session
+            .change_for(
+                &EffectiveChange::Updated {
+                    path: path.clone(),
+                    kind: EntryKind::File,
+                    previous: crate::Attrs { size: 8, allocated: 8, ..crate::Attrs::default() },
+                    current: crate::Attrs { size: 1, allocated: 1, ..crate::Attrs::default() },
+                },
+                1,
+                &BatchFacts {
+                    ignored: Some(BTreeMap::from([(path, false)])),
+                    reclassified: BTreeMap::new(),
+                },
+            )
+            .expect("membership transition");
+        assert_eq!(change.kind, ChangeKind::Remove);
+    }
 
     /// A record says what the index can be asked, and nothing more.
     ///

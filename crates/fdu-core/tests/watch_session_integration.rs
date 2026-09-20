@@ -188,6 +188,41 @@ fn a_created_file_arrives_as_an_upsert() {
 }
 
 #[test]
+fn session_reconciles_a_mutation_that_precedes_watcher_binding() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("before-bind.txt");
+    fs::write(&path, b"old").expect("seed");
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _) = open(dir.path(), &config).expect("open baseline");
+
+    fs::write(&path, b"changed before binding").expect("mutate before session");
+    let session = Session::new(
+        IndexHandle::new(index),
+        request(
+            dir.path(),
+            AnalysisSet::NONE,
+            Query { views: vec![ViewSpec::Files], ..Query::default() },
+        ),
+        &watching(&config),
+        WatchConfig::default(),
+    )
+    .expect("session closes scan-to-bind gap");
+
+    let report = session.report(SystemTime::now()).expect("initial report");
+    let row = report
+        .sections
+        .iter()
+        .find_map(|section| match section {
+            fdu_core::query::Section::Files { rows, .. } => {
+                rows.iter().find(|row| row.path == Path::new("before-bind.txt"))
+            }
+            _ => None,
+        })
+        .expect("file row");
+    assert_eq!(row.bytes, 22);
+}
+
+#[test]
 fn a_deleted_file_arrives_as_a_remove() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("doomed.txt"), b"hello").expect("seed");
@@ -203,6 +238,37 @@ fn a_deleted_file_arrives_as_a_remove() {
     });
     assert_eq!(change.kind, ChangeKind::Remove);
     assert_eq!(change.bytes, None, "a removed entry has no attributes to report");
+}
+
+#[test]
+fn a_file_that_leaves_attribute_selection_arrives_as_a_remove() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("shrinking.txt");
+    fs::write(&path, b"12345678").expect("seed");
+    let selection = Selection { min_size: Some(4), ..Selection::default() };
+    let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
+    establish_watch(&mut session, &path, b"abcdefgh");
+
+    fs::write(&path, b"x").expect("shrink below selection");
+
+    let Some(change) = wait_for(
+        &mut session,
+        "a_file_that_leaves_attribute_selection_arrives_as_a_remove",
+        |change| change.path.ends_with("shrinking.txt"),
+    ) else {
+        return;
+    };
+    assert_eq!(change.kind, ChangeKind::Remove);
+    let report = session.report(SystemTime::now()).expect("report after shrink");
+    let files = report
+        .sections
+        .iter()
+        .find_map(|section| match section {
+            fdu_core::query::Section::Files { rows, .. } => Some(rows),
+            _ => None,
+        })
+        .expect("files section");
+    assert!(files.iter().all(|row| row.path != Path::new("shrinking.txt")));
 }
 
 #[test]
@@ -296,9 +362,7 @@ fn a_live_report_is_the_same_query_re_evaluated() {
         return;
     }
 
-    let before = session
-        .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
-        .expect("report");
+    let before = session.report(std::time::SystemTime::UNIX_EPOCH).expect("report");
     let first = match &before.sections[0] {
         fdu_core::query::Section::Summary(row) => *row,
         other => panic!("expected a summary, got {other:?}"),
@@ -310,9 +374,7 @@ fn a_live_report_is_the_same_query_re_evaluated() {
         change.path.ends_with("b.txt")
     });
 
-    let after = session
-        .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
-        .expect("report");
+    let after = session.report(std::time::SystemTime::UNIX_EPOCH).expect("report");
     let second = match &after.sections[0] {
         fdu_core::query::Section::Summary(row) => *row,
         other => panic!("expected a summary, got {other:?}"),
@@ -454,9 +516,9 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     assert_eq!(session.request().now, started, "the session keeps the instant it was built at");
 
     // Two repaints, separated by a change the session applies.
-    let first = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    let first = session.report(SystemTime::now()).expect("report");
     fs::write(dir.path().join("b.txt"), b"two\n").expect("write");
-    let second = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    let second = session.report(SystemTime::now()).expect("report");
     assert!(!first.sections.is_empty() && !second.sections.is_empty());
 
     assert_eq!(session.request().now, started, "a repaint does not re-read the clock");

@@ -91,6 +91,9 @@ def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
         AnalysisOptions(workers=-1)
     with pytest.raises(ValueError, match="max_size"):
         opened.EntrySelection(max_size=-1)
+    for interval in (float("nan"), float("inf"), float("-inf"), 0.0, -1.0, 1e-300, 0.1e-9):
+        with pytest.raises(ValueError, match="interval"):
+            WatchOptions(interval=interval)
 
 
 def test_opened_entry_selection_composes_the_stable_query_selection() -> None:

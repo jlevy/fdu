@@ -860,6 +860,8 @@ pub struct Index {
     /// stamp, so the value can predate many verifying passes until P1.4.4 stamps completed
     /// passes.
     writing_pass_started_at_ns: i64,
+    /// Wall-clock starts of in-flight full-root passes, keyed by their freshness epoch.
+    active_root_reconciles: BTreeMap<u64, i64>,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -1714,6 +1716,7 @@ impl Index {
             scanned_at_ns: constructed_at_ns,
             captured_at_ns: 0,
             writing_pass_started_at_ns: constructed_at_ns,
+            active_root_reconciles: BTreeMap::new(),
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -2700,6 +2703,8 @@ impl Index {
     pub(crate) fn mark_unverified(&mut self) {
         self.freshness_marks.clear();
         self.mark_unfresh(Path::new(""), Freshness::Stale);
+        self.state.source = Source::Cached;
+        self.state.freshness = Freshness::Stale;
     }
 
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
@@ -2723,12 +2728,25 @@ impl Index {
         }
     }
 
+    pub(crate) fn record_walk_errors(&mut self, errors: &[crate::Error]) {
+        self.issues.clear();
+        self.issue_epochs.clear();
+        self.state.issues = crate::IssueSummary::default();
+        let root = self.root_path.clone();
+        for error in errors {
+            self.retain_issue(Issue::from_error_under(&root, error));
+        }
+    }
+
     pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<(u64, Option<Commit>)> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
         let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
+        if path.as_os_str().is_empty() {
+            self.active_root_reconciles.insert(epoch, Self::now_unix_nanos());
+        }
         let current = self.freshness_at(&path);
         self.state.freshness = self.published_freshness();
         let commit = if previous == current && previous_index_state == self.state {
@@ -2806,8 +2824,27 @@ impl Index {
             if self.state.phase != LifecyclePhase::Failed {
                 self.drop_disproven_issues(&path, started_at);
             }
+            if path.as_os_str().is_empty() {
+                if let Some(started) = self.active_root_reconciles.remove(&started_at) {
+                    self.writing_pass_started_at_ns = started;
+                }
+                self.state.source = self.applying_source;
+                self.state.issues.omitted = 0;
+                if self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible)
+                    && self.issues.is_empty()
+                    && self.state.issues.omitted == 0
+                {
+                    self.state.coverage = Coverage::Complete;
+                }
+            }
         } else {
             self.mark_unfresh(&path, Freshness::Partial);
+            if path.as_os_str().is_empty() {
+                if let Some(started) = self.active_root_reconciles.remove(&started_at) {
+                    self.writing_pass_started_at_ns = started;
+                }
+                self.state.source = self.applying_source;
+            }
         }
         for directory in recordable {
             let Some(id) = self.lookup(directory) else {
@@ -2825,6 +2862,9 @@ impl Index {
 
         let current = self.freshness_at(&path);
         self.state.freshness = self.published_freshness();
+        if self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible) {
+            self.state.freshness = Freshness::Partial;
+        }
         if previous != current {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }
@@ -4506,6 +4546,9 @@ impl Index {
     pub(crate) fn set_applying_source(&mut self, source: Source, captured_at_ns: i64) -> Source {
         let previous = self.applying_source;
         self.applying_source = source;
+        if source == Source::Cached {
+            self.state.source = Source::Cached;
+        }
         if captured_at_ns != 0 {
             self.captured_at_ns = captured_at_ns;
         }
