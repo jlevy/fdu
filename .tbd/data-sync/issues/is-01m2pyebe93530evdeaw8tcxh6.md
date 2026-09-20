@@ -3,18 +3,22 @@ type: is
 id: is-01m2pyebe93530evdeaw8tcxh6
 title: "P2.2.7: Text over the answer model; Report carries status, provenance, and the request echo"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pyebrt6j2ghh4c4vcdvyxg
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:44.040Z
-updated_at: 2026-09-17T05:46:58.320Z
+updated_at: 2026-09-20T05:13:36.244Z
+started_at: 2026-09-20T05:13:36.242Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 7. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
