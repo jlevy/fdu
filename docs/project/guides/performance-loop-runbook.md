@@ -490,9 +490,12 @@ Source of truth:
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
 H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
-is recorded there as exp-139. H141 is recorded there as exp-140. H142 remains reserved
-there. Do not mint it on this Darwin branch.
-Next free Darwin hypothesis id is **H143**. Do not mint another meaning for H91–H106.
+is recorded there as exp-139. H141 is recorded there as exp-140. H111 is recorded there
+as exp-141 (floor/RSS fail).
+H142 remains reserved there.
+H143 is the leftover after that fail.
+Do not mint those ids on this Darwin branch.
+Next free Darwin hypothesis id is **H144**. Do not mint another meaning for H91–H106.
 Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
 take exp-138 here. exp-113 remains reserved unused (H113 superseded).
 
@@ -702,7 +705,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | --- | --- |
 | This standing section | Pickup: standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup: H111 (`fdu-jekg`) plus optional H142; H139–H141 are exp-138–140 |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup done through H111 (exp-141 fail); H139–H141 same; H142 optional; H143 leftover |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -741,17 +744,26 @@ Peak RSS +0.24% non-inferior.
 Digest identical. Quiet start 0.185/core did not hold.
 Do not retry H138.
 
-`linux-450k` is generated and ready (semantic digest `0c523088…`, same as exp-103) for
-H111. Do not treat it as a nominated real subject.
+**H111 / exp-141** is the standing Linux floor/RSS stage: **failed** on this virtualized
+host. 450k index 1.78× `parfloor` vs 1.4×; RSS 5.20× `arena_spike` vs 3×. Aggregate on
+nominated reals 1.59× / 1.86× vs 1.25×. p95/median passes.
+Quiet requested; table uncontrolled.
+Do not restart H86. Leftover named as H143.
+
+This host’s nominated set is
+[nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
+`linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries). Two deciding
+characters, so the set cannot yet carry a ranking or transfer claim.
 
 ### Next Up (Linux)
 
-1. **H111** (`fdu-jekg`). 450k floor/RSS gates.
-   Record `host_virtualization`.
+1. **H143** (new). Leftover after the H111 fail: walk floor + retained-index RSS. Do not
+   restart H86. Do not retry H71.
 2. **H142** (`fdu-2003`) only if time remains.
    Do not retry H124.
 
-Next free Linux experiment id is **exp-141**.
+Next free Linux experiment id is **exp-142**. Next free Linux hypothesis id after this
+mint is **H144**.
 
 ## Before the First Round
 

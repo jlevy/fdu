@@ -10,8 +10,9 @@ at `26480612` (H138 recorded).
 H139 is recorded (exp-138, same, quiet).
 H140 is recorded (exp-139, same leftover identity).
 H141 is recorded (exp-140, same, uncontrolled).
-H142 remains reserved here.
-Do not mint it on the Darwin branch.
+H111 is recorded (exp-141, floor/RSS gates failed on this VM). H142 remains reserved
+here. H143 is the leftover after the H111 fail.
+Do not mint these on the Darwin branch.
 
 ## Overview
 
@@ -134,19 +135,20 @@ Mint the reserved id when the cell starts, not before.
    Quiet start did not hold.
    Do not retry H138. Bead: `fdu-rmo2` (close).
 
-4. **H111 — Linux floor (`fdu-jekg`).** On the 450k Linux subject: index ≤1.4× floor,
-   aggregate ≤1.25× on nominated real subjects, RSS ≤3× `arena_spike`, p95/median ≤1.5×,
-   as already registered.
-   exp-103 on a 4-core virtualized host passed relative gates and failed those floor/RSS
-   gates. Prefer bare metal if you have it; if you only have a VM, say so in the record
-   (`host_virtualization`). A pass closes H111. A fail that names leftover the Darwin
-   composite left on the table gets a *new* id after H142, not a rewrite of H19–H22 /
-   H60 / H7. Do not treat this cell as a license to restart H86.
+4. **H111 — Linux floor (`fdu-jekg`).** **Failed** (exp-141, uncontrolled, virtualized).
+   450k index 1.78× vs 1.4×; RSS 5.20× vs 3×; aggregate on nominated reals 1.59× and
+   1.86× vs 1.25×. p95/median passes.
+   `arena_spike` on 450k spread 1.11 (ratios may reject).
+   Leftover is the Darwin composite; minted as H143. Do not restart H86. Bead:
+   `fdu-jekg` (close).
 
-5. **H142 — first-pass analyze leftover (only if H139–H141 left time).** `content-basic`
-   leftover on Linux after H124’s reject.
+5. **H142 — first-pass analyze leftover (only if H139–H141 left time).** Not run this
+   session. `content-basic` leftover on Linux after H124’s reject.
    Determination only. Do not retry type/size or read-ahead.
    Bead: `fdu-2003`.
+
+6. **H143 — leftover after H111 fail.** Walk floor plus retained-index RSS. Do not
+   restart H86. Do not retry H71.
 
 ## Subjects
 
@@ -195,7 +197,8 @@ If #92 moves, rebase this branch onto it and keep H139–H142 meanings.
 - H139 closed: cache-hit stack is **same** on Linux (exp-138, quiet, −22.48%)
 - H140 closed: walk leftover is **same** identity (exp-139; getdents64+statx floor)
 - H141 closed: content-query stack is **same** on Linux (exp-140, uncontrolled, −17.60%)
-- Whether H111’s floor/RSS gates pass on the current engine (H111 / `fdu-jekg`)
+- H111 closed: floor/RSS gates **fail** on this virtualized host (exp-141)
+- H143 open: leftover after that fail (walk floor + retained-index RSS)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

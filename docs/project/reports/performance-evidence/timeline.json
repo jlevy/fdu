@@ -36144,6 +36144,145 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux content-query stack same versus #91 control",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe; floor scoreboard is the verdict",
+   "change_pct": 1.986,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "absolute floor ratio, not paired regression"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "No engine change. Floor scoreboard is the verdict; this run JSON is a same-binary default-tree companion so perf-record can lift a measured pair."
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "rejected",
+   "entries": 450001,
+   "family": "Linux:b3459e945151",
+   "hypotheses": [
+    "H111"
+   ],
+   "id": "exp-141",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 425597944,
+        "control": 415012948.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.887,
+        "ci95_high_pct": 2.397,
+        "ci95_low_pct": -0.355,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1195340000,
+        "control": 1196932000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.151,
+        "ci95_high_pct": 0.895,
+        "ci95_low_pct": -0.463,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 321736704,
+        "control": 321736704
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 793661000,
+        "control": 786420000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.751,
+        "ci95_high_pct": 4.262,
+        "ci95_low_pct": -2.606,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 401468500,
+        "control": 400796500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.355,
+        "ci95_high_pct": 2.473,
+        "ci95_low_pct": -2.751,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 429808792,
+        "control": 419114022.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.986,
+        "ci95_high_pct": 2.385,
+        "ci95_low_pct": -0.356,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 955.1285263810524,
+      "control": 931.3624247501672
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 141,
+   "path": "exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "H111 floor/RSS gates fail: 450k index 1.78x parfloor vs 1.4x; RSS 5.20x arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x",
+   "reference_tools": [],
+   "subject": "b3459e945151:450001:b77ebb296d34",
+   "title": "H111 Linux floor and RSS gates fail on current engine",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -36977,6 +37116,24 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 358665192,
+   "directories": 56251,
+   "entries": 450001,
+   "experiments": [
+    "exp-141"
+   ],
+   "files": 393750,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "b3459e945151:450001:b77ebb296d34",
+   "labels": [
+    "linux-450k"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": true
   }
  ],
  "totals": {
@@ -36986,15 +37143,15 @@
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 46,
+   "rejected": 47,
    "superseded": 3
   },
-  "experiments": 140,
+  "experiments": 141,
   "first_date": "2026-08-10",
-  "hypotheses": 96,
+  "hypotheses": 97,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 14,
+   "Linux": 15,
    "macOS": 126
   }
  },

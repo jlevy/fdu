@@ -67,7 +67,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 3 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 4 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -219,6 +219,7 @@ dead end.
 | 138 | [Linux cache-hit stack same versus #91 control](#exp138--linux-cachehit-stack-same-versus-91-control) | H139 | `content-cache-hit` | -22.5% | ✅ accepted |
 | 139 | [Linux walk leftover is still the getdents64 plus statx floor](#exp139--linux-walk-leftover-is-still-the-getdents64-plus-statx-floor) | H140 | `default-tree` | +0.6% | ✅ accepted |
 | 140 | [Linux content-query stack same versus #91 control](#exp140--linux-contentquery-stack-same-versus-91-control) | H141 | `content-query` | -17.6% | ✅ accepted |
+| 141 | [H111 Linux floor and RSS gates fail on current engine](#exp141--h111-linux-floor-and-rss-gates-fail-on-current-engine) | H111 | `default-tree` | +2.0% | ❌ rejected |
 
 ## The experiments
 
@@ -4740,6 +4741,37 @@ on reconstructible linux-v6.12; digest identical; no engine patch.
 Full record:
 [`exp-140-linux-content-query-stack-same-versus-91-control.md`](../experiments/exp-140-linux-content-query-stack-same-versus-91-control.md)
 
+### exp-141 — H111 Linux floor and RSS gates fail on current engine
+
+❌ rejected · 2026-09-20 · H111
+
+Control: HEAD release probe both arms
+
+Candidate: same probe; floor scoreboard is the verdict
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 419.1 | 429.8 | +1.99% (n.s.) | [-0.36%, +2.38%] |
+| component (ms) | 415.0 | 425.6 | +1.89% (n.s.) | [-0.35%, +2.40%] |
+| cpu (ms) | 1196.9 | 1195.3 | +0.15% (n.s.) | [-0.46%, +0.90%] |
+| user (ms) | 400.8 | 401.5 | -0.35% (n.s.) | [-2.75%, +2.47%] |
+| system (ms) | 786.4 | 793.7 | +0.75% (n.s.) | [-2.61%, +4.26%] |
+| peak rss (MiB) | 306.8 | 306.8 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: absolute floor ratio, not
+paired regression.
+
+No engine change. Floor scoreboard is the verdict; this run JSON is a same-binary
+default-tree companion so perf-record can lift a measured pair.
+
+**Rejected:** H111 floor/RSS gates fail: 450k index 1.78x parfloor vs 1.4x; RSS 5.20x
+arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x.
+
+Full record:
+[`exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md`](../experiments/exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5033,6 +5065,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 103 | H86 Linux evidence stage: relative gates pass, floor gates fail | `default-tree` | 1,189.7 | 821.7 | -31.7% | ❌ rejected |
+
+### linux-450k (450,001 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 141 | H111 Linux floor and RSS gates fail on current engine | `default-tree` | 419.1 | 429.8 | +2.0% | ❌ rejected |
 
 ### linux-kernel-7043 (102,318 entries) — Linux 6.18.44-fc-v24, ext4, virtualized, warm-steady
 
