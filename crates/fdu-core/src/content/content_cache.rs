@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::classify::{
     Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
@@ -53,6 +54,39 @@ pub struct ContentCacheLoad {
     pub coverage_exclusions: u64,
     /// Records that no longer matched a live candidate.
     pub stale: u64,
+}
+
+#[derive(Default)]
+struct RestoreTimings {
+    parse: Duration,
+    apply: Duration,
+}
+
+impl RestoreTimings {
+    fn add_parse(&mut self, started: Instant) {
+        add_duration(&mut self.parse, started.elapsed());
+    }
+
+    fn add_apply(&mut self, started: Instant) {
+        add_duration(&mut self.apply, started.elapsed());
+    }
+
+    fn publish(self) {
+        crate::counters::bump(|counts| {
+            counts.content_sidecar_parse_us =
+                counts.content_sidecar_parse_us.saturating_add(duration_micros(self.parse));
+            counts.content_sidecar_apply_us =
+                counts.content_sidecar_apply_us.saturating_add(duration_micros(self.apply));
+        });
+    }
+}
+
+fn add_duration(total: &mut Duration, elapsed: Duration) {
+    *total = total.saturating_add(elapsed);
+}
+
+fn duration_micros(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 /// Derive the content-sidecar path without changing the metadata snapshot name.
@@ -143,17 +177,20 @@ pub fn load_content_cache(
     crate::counters::add_elapsed(read_started, |counts, elapsed| {
         counts.content_sidecar_read_us = counts.content_sidecar_read_us.saturating_add(elapsed);
     });
-    let parse_started = crate::counters::enabled().then(std::time::Instant::now);
+    let mut timings = crate::counters::enabled().then(RestoreTimings::default);
+    let parse_started = timings.as_ref().map(|_| Instant::now());
     let Some(mut stream) = parse_header(&image, index.root_path(), wanted) else {
-        crate::counters::add_elapsed(parse_started, |counts, elapsed| {
-            counts.content_sidecar_parse_us =
-                counts.content_sidecar_parse_us.saturating_add(elapsed);
-        });
+        if let (Some(timings), Some(started)) = (&mut timings, parse_started) {
+            timings.add_parse(started);
+        }
+        if let Some(timings) = timings {
+            timings.publish();
+        }
         return Ok(ContentCacheLoad::default());
     };
-    crate::counters::add_elapsed(parse_started, |counts, elapsed| {
-        counts.content_sidecar_parse_us = counts.content_sidecar_parse_us.saturating_add(elapsed);
-    });
+    if let (Some(timings), Some(started)) = (&mut timings, parse_started) {
+        timings.add_parse(started);
+    }
     index.prepare_content_analysis(AnalysisRequest {
         profile: wanted.analysis,
         ..AnalysisRequest::default()
@@ -183,19 +220,20 @@ pub fn load_content_cache(
     });
     let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
     for _ in 0..stream.remaining {
-        let decode_started = crate::counters::enabled().then(std::time::Instant::now);
+        let decode_started = timings.as_ref().map(|_| Instant::now());
         let Some((relative_path, analysis)) = read_record(&mut stream) else {
-            crate::counters::add_elapsed(decode_started, |counts, elapsed| {
-                counts.content_sidecar_parse_us =
-                    counts.content_sidecar_parse_us.saturating_add(elapsed);
-            });
+            if let (Some(timings), Some(started)) = (&mut timings, decode_started) {
+                timings.add_parse(started);
+            }
             index.clear_content();
+            if let Some(timings) = timings {
+                timings.publish();
+            }
             return Ok(ContentCacheLoad::default());
         };
-        crate::counters::add_elapsed(decode_started, |counts, elapsed| {
-            counts.content_sidecar_parse_us =
-                counts.content_sidecar_parse_us.saturating_add(elapsed);
-        });
+        if let (Some(timings), Some(started)) = (&mut timings, decode_started) {
+            timings.add_parse(started);
+        }
         let Some(candidate) = candidates.remove(&relative_path) else {
             loaded.stale = loaded.stale.saturating_add(1);
             continue;
@@ -207,12 +245,11 @@ pub fn load_content_cache(
         let coverage_exclusion =
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         let bytes = analysis.bytes;
-        let apply_started = crate::counters::enabled().then(std::time::Instant::now);
+        let apply_started = timings.as_ref().map(|_| Instant::now());
         let outcome = index.apply_restored_analysis(AnalysisObservation { candidate, analysis });
-        crate::counters::add_elapsed(apply_started, |counts, elapsed| {
-            counts.content_sidecar_apply_us =
-                counts.content_sidecar_apply_us.saturating_add(elapsed);
-        });
+        if let (Some(timings), Some(started)) = (&mut timings, apply_started) {
+            timings.add_apply(started);
+        }
         match outcome {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
@@ -225,13 +262,19 @@ pub fn load_content_cache(
     }
     if !stream.reader.is_empty() {
         index.clear_content();
+        if let Some(timings) = timings {
+            timings.publish();
+        }
         return Ok(ContentCacheLoad::default());
     }
-    let rebuild_started = crate::counters::enabled().then(std::time::Instant::now);
+    let rebuild_started = timings.as_ref().map(|_| Instant::now());
     index.rebuild_content_rollups();
-    crate::counters::add_elapsed(rebuild_started, |counts, elapsed| {
-        counts.content_sidecar_apply_us = counts.content_sidecar_apply_us.saturating_add(elapsed);
-    });
+    if let (Some(timings), Some(started)) = (&mut timings, rebuild_started) {
+        timings.add_apply(started);
+    }
+    if let Some(timings) = timings {
+        timings.publish();
+    }
     Ok(loaded)
 }
 
@@ -899,6 +942,17 @@ mod tests {
         load_content_cache(index, &wanted, cache).expect("load")
     }
 
+    #[test]
+    fn fractional_record_durations_are_converted_after_accumulation() {
+        let mut total = Duration::ZERO;
+        for _ in 0..1_000 {
+            add_duration(&mut total, Duration::from_nanos(900));
+        }
+
+        assert_eq!(duration_micros(total), 900);
+        assert_eq!(duration_micros(Duration::from_nanos(900)), 0);
+    }
+
     /// Restore rebuilds nested directory roll-ups, not only the root.
     ///
     /// The probe content digest hashes the root roll-up; the `ContentIndex` unit test is
@@ -1221,6 +1275,67 @@ mod tests {
         rewritten.extend_from_slice(&checksum.to_le_bytes());
         rewritten.extend_from_slice(TRAILER);
         rewritten
+    }
+
+    fn two_record_sidecar() -> (tempfile::TempDir, tempfile::TempDir, AnalysisRequest, PathBuf) {
+        let root = tempfile::tempdir().expect("root");
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        fs::write(root.path().join("a.md"), "one\n").expect("write first");
+        fs::write(root.path().join("z.md"), "two\n").expect("write second");
+        let request = request_for(AnalysisSet::NONE.with_lines());
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        super::super::analyze_index(&mut index, request);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, &cache).expect("save");
+        (root, cache_dir, request, cache)
+    }
+
+    fn assert_late_stream_miss_recovers(
+        root: &tempfile::TempDir,
+        request: AnalysisRequest,
+        cache: &Path,
+    ) {
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        assert_eq!(load(&mut restored, request, cache), ContentCacheLoad::default());
+        assert!(restored.content().is_none(), "a late miss exposes no accepted prefix");
+        assert!(
+            restored.content_rollup(Path::new("")).is_none(),
+            "a late miss exposes no roll-up from the accepted prefix"
+        );
+
+        let analyzed = super::super::analyze_index(&mut restored, request);
+        assert_eq!(analyzed.applied, 2, "both files are reanalyzed after the miss");
+        assert_eq!(restored.content().expect("reanalyzed content").len(), 2);
+        assert_eq!(
+            restored.content_rollup(Path::new("")).expect("rebuilt root roll-up").total.files,
+            2
+        );
+    }
+
+    #[test]
+    fn malformed_second_record_rolls_back_the_valid_prefix() {
+        let (root, _cache_dir, request, cache) = two_record_sidecar();
+        let image = fs::read(&cache).expect("read");
+        let malformed = readdress_record(&image, Path::new("z.md"), Path::new("../outside.md"));
+        fs::write(&cache, malformed).expect("rewrite");
+
+        assert_late_stream_miss_recovers(&root, request, &cache);
+    }
+
+    #[test]
+    fn checksummed_trailing_bytes_roll_back_all_records() {
+        let (root, _cache_dir, request, cache) = two_record_sidecar();
+        let image = fs::read(&cache).expect("read");
+        let mut payload = integrity_payload(&image).expect("valid sidecar").to_vec();
+        payload.extend_from_slice(b"trailing");
+        let checksum = crate::snapshot::crc32c(&payload);
+        payload.extend_from_slice(&checksum.to_le_bytes());
+        payload.extend_from_slice(TRAILER);
+        fs::write(&cache, payload).expect("rewrite");
+
+        assert_late_stream_miss_recovers(&root, request, &cache);
     }
 
     /// A sidecar is untrusted, and each record names a path under the root it claims.
