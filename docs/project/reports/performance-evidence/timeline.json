@@ -37124,6 +37124,143 @@
    "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
    "title": "Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 1.484,
+   "commit": "f0126084",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H146"
+   ],
+   "id": "exp-147",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 454787711.5,
+        "control": 446874119
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.486,
+        "ci95_high_pct": 3.586,
+        "ci95_low_pct": -2.088,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 561999000,
+        "control": 553849500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.84,
+        "ci95_high_pct": 2.624,
+        "ci95_low_pct": -1.624,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 45836288,
+        "control": 45895680
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.13,
+        "ci95_high_pct": 0.308,
+        "ci95_low_pct": -0.433,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 113846500,
+        "control": 110995500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.775,
+        "ci95_high_pct": 13.178,
+        "ci95_low_pct": -10.833,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 450516500,
+        "control": 445889000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.437,
+        "ci95_high_pct": 4.275,
+        "ci95_low_pct": -2.648,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 456591794.5,
+        "control": 448576649
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.484,
+        "ci95_high_pct": 3.567,
+        "ci95_low_pct": -2.102,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4937.515350260614,
+      "control": 4850.840766053161
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 147,
+   "path": "exp-147-linux-first-run-leftover-is-still-the-walk.md",
+   "platform": "Linux",
+   "primary_job": "default-tree-first",
+   "primary_metric": "wall_ns",
+   "reason": "same leftover identity as Darwin H136: walk 93% of first-run; isolated save ~24ms is >=3% and not skippable; do not retry H100",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux first-run leftover is still the walk; snapshot write not skippable",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-20",
@@ -37273,6 +37410,31 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140",
+    "exp-143",
+    "exp-144",
+    "exp-145",
+    "exp-146",
+    "exp-147"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1724995969,
    "directories": 11512,
    "entries": 145931,
@@ -37294,30 +37456,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293224,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-138",
-    "exp-139",
-    "exp-140",
-    "exp-143",
-    "exp-144",
-    "exp-145",
-    "exp-146"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor",
-   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -37985,19 +38123,19 @@
  "totals": {
   "accepted_lines_changed": 16004,
   "decisions": {
-   "accepted": 82,
+   "accepted": 83,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
    "rejected": 47,
    "superseded": 3
   },
-  "experiments": 146,
+  "experiments": 147,
   "first_date": "2026-08-10",
-  "hypotheses": 102,
+  "hypotheses": 103,
   "last_date": "2026-09-20",
   "platforms": {
-   "Linux": 20,
+   "Linux": 21,
    "macOS": 126
   }
  },

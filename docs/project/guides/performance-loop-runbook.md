@@ -782,6 +782,12 @@ Do not port `macos_bulk`.
 `--no-controls` aggregate is a warm sign (−5.42% quiet on `linux-v6.12`). Do not ship
 `PORTABLE`. `fdu-tk1b` stays open.
 
+**H146 / exp-147** is the standing Linux first-run leftover: **same** identity.
+Quiet 12-pair `default-tree-first` on `linux-v6.12`. Walk 93% of component.
+Isolated `snapshot-save` 23.6 ms (~5%) is ≥3% and not skippable.
+Load/core 0.082–0.119 held.
+Do not retry H100.
+
 This host’s nominated set is
 [nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
 `linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
@@ -806,11 +812,13 @@ Further Linux cells are on
    (exp-146). Named-job `--threads 8` is not a 3% win.
    `--no-controls` is a warm sign, not a shipped `PORTABLE` constant.
 4. **H146** — Linux first-run leftover after H140 (H136 analog).
+   **Same leftover identity** (exp-147, quiet).
+   Walk 93%; isolated save ~24 ms not skippable.
+   Do not retry H100.
 5. A named cut only if a leftover above names one.
-   That is **H147** if minted.
-   Do not restart H86. Do not retry H71.
+   None did. **H147 was not minted.** Do not restart H86. Do not retry H71.
 
-Next free Linux experiment id is **exp-147**. Next free unused hypothesis id after this
+Next free Linux experiment id is **exp-148**. Next free unused hypothesis id after this
 reservation is **H147**.
 
 ## Before the First Round
