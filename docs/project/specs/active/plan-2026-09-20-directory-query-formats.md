@@ -462,6 +462,163 @@ Run make docs-format and make check; run cross-lint if platform-gated code chang
 Review and commit the implementation separately, stack its PR above this plan layer, and
 watch CI pass. Close finished beads and tbd sync after successful delivery.
 
+## File and Function Implementation Map
+
+This map is tracked by `fdu-iwt8`. The refreshed parent remains PR #94 at `c234da2b`;
+other open PRs based on that branch are siblings, not prerequisites for this change.
+The implementation branch starts from this plan branch after this map is committed.
+The six runtime beads above own the changes below.
+
+### Request, view, and projection resolution
+
+In `crates/fdu-core/src/query/query_request.rs`, add an optional presentation format to
+`ReadSpec`, parse it in `build_query`, and retain the resolved format in `Query`.
+`Request::validate_against` owns the view/format compatibility matrix so invalid
+requests fail before scans, cache access, or opened-report work.
+Add the format axis to `AxisNames` and render the same rejection with CLI flag or Python
+field spelling. Typed requests receive the same validation as parsed requests.
+
+In `query/query_report.rs`, add `ViewSpec::List`, make `default_for` choose it for
+metadata, and update `parse`, `vocabulary`, `label`, `resolve_rejecting`, and defaults.
+Preserve the bounded `full` expansion rather than mechanically adding List to its
+sections. Retain legacy `Tree` and `Files` presets: omitted/text formatting preserves
+those presentations, while an explicit list format overrides their presentation choice.
+Largest/recent still select regular files and retain their existing ranking and
+automatic human rendering.
+
+`Query` resolves whether a list request needs a tree or flat projection before
+`report_in` reads the index.
+Tree shaping uses the current two-level depth and ten-child limit; flat shaping defaults
+to all rows and size order.
+Legacy Files retains name order.
+Keep `tree_node`, `expand`, and `child_rows` as the tree implementation rather than
+reconstructing a tree from a globally truncated flat result.
+Carry the originating view on tree sections so machine output can identify List without
+changing Full’s legacy tree section.
+
+The requested format is part of the read, not the cached scan basis.
+In Python this is `Query(format=Format.LONG)` or `Query(format=Format.JSON)` before
+requesting a report.
+A detached Report owns only its requested projection.
+Rendering it again preserves its selection, bounds, and reference clock; changing
+serialization within that projection requires no query.
+Converting a bounded tree report to a complete flat inventory requires another
+retained-index report request.
+Reject incompatible re-rendering with an actionable error instead of returning folded
+tree rows as a complete list.
+Do not retain or clone an Index inside Report and do not eagerly build a flat inventory
+for an ordinary unfiltered tree.
+
+### Subtree measurement and selected-content union
+
+Add `query/query_subtrees.rs` and register it in `query.rs`. Its iterative `measure`
+reader computes directory apparent/allocated bytes, descendant file/directory counts,
+and newest eligible mtime.
+Its candidate helper preserves native versus portable name identity, and its pruning
+helper applies exclusions before positive selection.
+Apply ignored policy while traversing structural ancestors; empty eligible roots retain
+their own timestamp.
+Keep the index reducers and snapshot schema unchanged.
+
+In `query_report::walk`, compute directory measurements before applying kind, name,
+size, and age predicates.
+Keep three distinct products: matching rows for flat output, regular-file members of the
+selected-subtree union for grouped metrics, and visible directories/ancestors for tree
+context. Propagate coverage from a matching directory, prune excluded descendants even
+under coverage, and add each regular file once.
+`metric_summary` consumes union members; `file_rows` consumes matches.
+`child_rows` omits unrelated branches, and `expand` only reports depth folding when an
+eligible directory child is hidden.
+
+Extend `FileRow` with subtree counts where applicable and signed optional age, derived
+from `Request::now`, not a renderer clock.
+Keep inode attributes in native raw-entry projections.
+Add a report-level reference instant for exact machine interpretation.
+A future timestamp has negative age; a pre-epoch mtime remains valid; an unrepresentable
+reference produces unknown age.
+All directory bytes exclude symlink and directory-inode sizes, including mixed-kind
+listings.
+
+In `opened/read.rs`, update `report_work` and maintained-tree cost accounting for List’s
+resolved projection and the extra subtree measurement traversal.
+Preserve rejection before work when the budget cannot cover the read.
+No producer, journal, continuation, cache identity, observer, or shutdown changes are
+needed.
+
+### Rendering and surface adapters
+
+In `crates/fdu-core/src/report_format.rs`, extend `Format::parse` and `ALL` with Tree,
+Paths, and Long and expose shared human/machine classification.
+Tree reuses `render_text_tree` unchanged.
+Paths emits escaped paths only, with no report headings or notes on stdout.
+Long renders size, signed modification age, and path with consistent columns.
+Use a checked rendering entry point to reject incompatible projections.
+
+Update `section_json`, `file_json`, JSONL records, and YAML writers together with the
+schema constants. List rows expose kind, both sizes, subtree counts, mtime, optional
+signed age, and ignored classification; the envelope exposes the reference instant.
+Keep completeness, freshness, provenance, and bounds.
+Update `render_change` and `render_cache_status` dispatch for the added human formats,
+with documented watch behavior rather than treating new human formats as machine output
+by accident.
+
+In `crates/fdu/src/cli.rs`, pass format through `ReadSpec` in request construction.
+Add `--tree` and `--long` aliases with explicit conflict checks.
+Use core format classification in `machine_format`, normal output, cache-status, and
+watch dispatch. Send path-only completeness/bound notices to diagnostics.
+Update short and long help constants and clap field descriptions together.
+CLI owns argument spelling and output streams; core owns selection, defaults,
+compatibility, and rendering.
+
+In `crates/fdu-py/src/lib.rs`, pass format through `build_read`/`build_request`, native
+one-shot and retained report entry points, and watch report construction.
+Use the core format parser instead of a separate vocabulary.
+Update `PyOneShot::render` to use checked rendering and map rejection into the existing
+Python error boundary.
+In `python/fdu/_models.py`, extend Format, Query, and typed report/entry models; in
+`_api.py`, forward Query’s format through `_query_kwargs` and preserve the report’s
+chosen human presentation when rendering without an override.
+Update native stubs and public exports as required.
+Machine decoding must accept both tree and flat List sections rather than assuming the
+view label alone determines shape.
+
+### Tests and documentation inventory
+
+Core tests in `query_report.rs`, `query_request.rs`, `query_subtrees.rs`, and
+`report_format.rs` cover the metric/selection boundaries and presentation matrix.
+Include all-kind selection, empty/nested matches, eligible directory/symlink activity,
+ignored/excluded descendants, overlapping roots, both sizes, age edge cases, ordering,
+bounds, mixed views, and detached-report re-render validation.
+Retain iterative deep-tree tests.
+Extend opened-read tests to prove budget rejection and portable matching; repeat queries
+over one retained index after removing the backing fixture to establish no I/O.
+
+Extend CLI integration/golden tests and `tests/parity/py/parity_cli.py` so both surfaces
+send the same format at request time.
+Add Python tests for typed List rows, age/reference values, repeated retained queries,
+legacy presets, and incompatible combinations.
+Run real cold, warm, and cache-only commands over a deterministic stale-build fixture.
+Compare Paths, Long, JSON, JSONL, and YAML membership and metrics.
+Keep the pre-change default tree golden unchanged; update only deliberate vocabulary and
+schema changes. Never expand named golden patterns into local literals.
+
+Documentation bead `fdu-2v7o` covers `README.md`, `docs/usage.md`, the portable CLI
+skill, `crates/fdu-py/README.md`, Rust module/API docs, Python models/stubs, the
+machine-output schema reference, design/surface architecture axes, and release notes.
+Find every active reference to Files as the default inventory, Tree as the default view,
+and the old four-format vocabulary; update or explicitly label compatibility usage.
+Historical reports/specs remain historical.
+Help bead `fdu-ia8p` executes the README and help examples against the same fixture and
+covers individual and combined stale `.venv`, `venv`, `node_modules`, and Cargo `target`
+searches.
+
+Delivery bead `fdu-arv8` records reviewed golden differences, `make docs-format`,
+`make check`, any required cross-lint, and CLI/Python end-to-end evidence in the
+implementation PR. Update this plan PR with the map, then open the runtime PR above it
+in stack #95 and wait for both PRs’ current heads to pass CI. The implementation PR
+contains the final behavior, test evidence, remaining limitations, and links to this
+complete spec; no implementation context is stored only in temporary files.
+
 ## Rollout and Review
 
 Publish this plan as a documentation-only stack layer, link it from `TODO.md`, and
