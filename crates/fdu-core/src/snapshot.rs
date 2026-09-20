@@ -1406,9 +1406,10 @@ mod tests {
         save(&index, &path).expect("save");
         let saved = fs::read(&path).expect("read");
 
-        let mut names = vec!["a/", "a//", "a/.", "./a"];
         #[cfg(windows)]
-        names.extend([r"a\", r"a\\", r"a\."]);
+        let names = ["a/", "a//", "a/.", "./a", r"a\", r"a\\", r"a\."];
+        #[cfg(not(windows))]
+        let names = ["a/", "a//", "a/.", "./a"];
         for name in names {
             let forged = replace_entry_name(&saved, 1, OsStr::new(name));
             fs::write(&path, forged).expect("write forged snapshot");
