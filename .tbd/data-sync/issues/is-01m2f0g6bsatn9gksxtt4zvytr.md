@@ -5,14 +5,14 @@ title: Ignore matcher reads *** between separators as *, where git reads it as *
 kind: bug
 status: open
 priority: 4
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 created_at: 2026-09-14T03:48:46.073Z
-updated_at: 2026-09-14T03:48:46.073Z
+updated_at: 2026-09-20T05:03:00.364Z
 ---
 Found while fixing fdu-bqan (escaped slashes) at 777dc6f on codex/opened-root-inventory-rewrite.
 
@@ -27,3 +27,7 @@ Verdicts from `git -c core.ignorecase=false check-ignore --no-index -z --stdin` 
 | `a/***/b` | `a/q/r/b` | ignored | not ignored |
 
 Fix: treat a segment of two or more stars as `**` (and, before an escaped separator, as `DoubleStarOneOrMore`), and add the rows to a recorded-verdict table with the live oracle. Check the leading and trailing forms (`***/x`, `x/***`) against git too. Low priority.
+
+## Notes
+
+2026-09-20 correctness review: independently confirmed against PR91 head 870bdcfb. With a/b and a/q/r/b present, pattern a/***/b produces no --only-ignored file rows, while isolated git check-ignore marks both ignored. Oracle also confirms ***/x matches x and x/*** matches x/a/b. Include these leading/trailing forms in the recorded table for the eventual coherent matcher fix.

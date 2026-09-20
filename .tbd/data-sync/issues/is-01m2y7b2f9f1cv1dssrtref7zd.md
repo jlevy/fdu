@@ -5,11 +5,12 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 12
+version: 14
 delegate: claude-code@spud10
 labels: []
 dependencies: []
 child_order_hints:
+  - is-01m2ykpygq70t4j60rw8tnjm22
   - is-01m2y7by0xkr9zre4es53fwjm0
   - is-01m2y7c1v3etw9wkzz87vgm6ke
   - is-01m2yhsw73csne6aef665mmp4n
@@ -19,7 +20,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T04:42:57.238Z
+updated_at: 2026-09-20T05:15:32.829Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Implement [issue #93](https://github.com/jlevy/fdu/issues/93) on

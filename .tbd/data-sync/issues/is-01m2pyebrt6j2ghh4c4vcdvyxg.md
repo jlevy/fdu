@@ -3,16 +3,20 @@ type: is
 id: is-01m2pyebrt6j2ghh4c4vcdvyxg
 title: "P2.2.8: Python models from the wire schema; migrate smoke.py; delete the native dict; writer-equality test; docs"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies: []
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:44.377Z
-updated_at: 2026-09-17T05:46:44.377Z
+updated_at: 2026-09-20T05:13:36.256Z
+started_at: 2026-09-20T05:13:36.256Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 8. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

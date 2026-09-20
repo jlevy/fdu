@@ -3,18 +3,22 @@ type: is
 id: is-01m2pyeeppbcbq3hfepwjcthyw
 title: "P2.4.1: ProjectControlsOff in serves_snapshot, and snapshot::load_serving"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pyef13ts4hgtt92bfeftfb
 parent_id: is-01m2pmrcb8he4a8a54zt957vcs
+hold: null
+hold_until: null
 created_at: 2026-09-17T05:46:47.381Z
-updated_at: 2026-09-17T05:47:01.370Z
+updated_at: 2026-09-20T05:15:46.598Z
+started_at: 2026-09-20T05:15:46.596Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 4: The `.gitignore` Observation Projection on Every Route", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
