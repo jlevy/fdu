@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 9 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 10 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -225,6 +225,7 @@ dead end.
 | 144 | [Linux cache-hit leftover after landed stack is already-landed restore work](#exp144--linux-cachehit-leftover-after-landed-stack-is-alreadylanded-restore-work) | H144 | `content-cache-hit` | -0.1% | ✅ accepted |
 | 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp145--linux-openeddiscovery-leftover-is-still-journal-clones-plus-live-rollups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
 | 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp146--linux-adaptive-unlock-is-silent-namedjob-threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
+| 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp147--linux-firstrun-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
 
 ## The experiments
 
@@ -4927,6 +4928,35 @@ constant.
 Full record:
 [`exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md`](../experiments/exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md)
 
+### exp-147 — Linux first-run leftover is still the walk; snapshot write not skippable
+
+✅ accepted · 2026-09-20 · H146 · commit `f0126084`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`default-tree-first`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 448.6 | 456.6 | +1.48% (n.s.) | [-2.10%, +3.57%] |
+| component (ms) | 446.9 | 454.8 | +1.49% (n.s.) | [-2.09%, +3.59%] |
+| cpu (ms) | 553.8 | 562.0 | +0.84% (n.s.) | [-1.62%, +2.62%] |
+| user (ms) | 445.9 | 450.5 | +0.44% (n.s.) | [-2.65%, +4.28%] |
+| system (ms) | 111.0 | 113.8 | +1.77% (n.s.) | [-10.83%, +13.18%] |
+| peak rss (MiB) | 43.8 | 43.7 | -0.13% (n.s.) | [-0.43%, +0.31%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** same leftover identity as Darwin H136: walk 93% of first-run; isolated
+save ~24ms is >=3% and not skippable; do not retry H100.
+
+Full record:
+[`exp-147-linux-first-run-leftover-is-still-the-walk.md`](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5014,6 +5044,7 @@ Baselines show one value because they measure a state rather than a change.
 | 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
 | 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
 | 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
+| 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

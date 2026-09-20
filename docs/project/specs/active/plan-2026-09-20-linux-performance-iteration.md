@@ -109,11 +109,11 @@ Mint the reserved id when the cell starts, not before.
    Bead: `fdu-4cni` (close).
    `fdu-tk1b` stays open for bare metal.
 
-4. **H146 — first-run leftover after H140.** H136 analog.
-   `default-tree-first` on `linux-v6.12`. Darwin leftover was still the walk; snapshot
-   write ~45 ms and not skippable.
-   Linux write cost may move; skippability is the question.
-   Do not retry H100. Do not load a snapshot on `fdu PATH`.
+4. **H146 — first-run leftover after H140.** **Same leftover identity** (exp-147,
+   quiet). Walk 93% of first-run component.
+   Isolated save ~24 ms (~5%) is ≥3% and not skippable.
+   Load/core 0.082–0.119 held.
+   Do not retry H100. Do not load a snapshot on `fdu PATH`. Bead: `fdu-jkzd` (close).
 
 5. **A named cut only if a leftover above names one.** That cell takes the next free id
    (H147 / exp-148 if the four determinations use exp-144–147). Accept rule: 3% wall,
@@ -165,7 +165,9 @@ If #94 moves, rebase this branch onto it and keep H144–H146 meanings.
 - Linux opened-discovery leftover: same as Darwin H127; no new ≥3% cut (H145 / exp-145)
 - H84 unlock is silent; named-job `--threads 8` is not a 3% win.
   `--no-controls` aggregate is a warm sign, not a shipped `PORTABLE` constant (exp-146)
-- Whether Linux first-run snapshot write is a skippable ≥3% cut
+- Linux first-run leftover is still the walk; snapshot write ~24 ms is ≥3% and not
+  skippable (H146 / exp-147)
+- No leftover in this block named a skippable ≥3% userspace cut, so H147 was not minted
 
 ## References
 
