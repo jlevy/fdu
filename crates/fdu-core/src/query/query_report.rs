@@ -15,6 +15,7 @@
 //! Optional content I/O happens before this pure reader boundary and is retained in the
 //! index's separate derived tier.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -31,6 +32,12 @@ use crate::query::query_request::{Basis, Request};
 use crate::query::query_selection::{
     Bound, Candidate, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
 };
+
+#[cfg(test)]
+thread_local! {
+    static EVERY_ENTRY_BUILDS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static SHARED_ROW_CLONES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1018,12 +1025,14 @@ pub(crate) fn report_in(
     // costs one pass rather than three.
     let walked =
         (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection, identity));
-    // Unfiltered metric and file views used to call `every_entry` independently.
-    // Sharing one `FileRow` walk is the same model as `walked` above. Summary, Tree,
-    // and Extensions keep roll-ups when unfiltered and must not see a partial `Walked`.
-    let unfiltered_rows = (walked.is_none()
-        && query.views.iter().copied().any(needs_unfiltered_entry_rows))
-    .then(|| every_entry(index));
+    // Share one owned `every_entry` walk only when two or more unfiltered views reuse
+    // it. A single Files / Largest / Recent / metric view takes that owned traversal
+    // itself, so `largest --limit 1` does not clone the whole tree. Summary, Tree, and
+    // Extensions keep roll-ups when unfiltered and must not see a partial `Walked`.
+    let unfiltered_row_views =
+        query.views.iter().copied().filter(|view| needs_unfiltered_entry_rows(*view)).count();
+    let unfiltered_rows =
+        (walked.is_none() && unfiltered_row_views >= 2).then(|| every_entry(index));
 
     let sections = query
         .views
@@ -1335,15 +1344,34 @@ fn needs_unfiltered_entry_rows(view: ViewSpec) -> bool {
 
 /// The entry rows a view aggregates: the filtered walk, a shared unfiltered walk, or a
 /// fresh [`every_entry`] when this is the only consumer.
-fn entry_rows(
+fn entry_rows<'a>(
+    index: &Index,
+    walked: Option<&'a Walked>,
+    unfiltered_rows: Option<&'a [FileRow]>,
+) -> Cow<'a, [FileRow]> {
+    match (walked, unfiltered_rows) {
+        (Some(walked), _) => Cow::Owned(walked.rows.clone()),
+        (None, Some(rows)) => Cow::Borrowed(rows),
+        (None, None) => Cow::Owned(every_entry(index)),
+    }
+}
+
+/// Owned rows for a consumer that sorts, filters, or truncates them.
+fn owned_entry_rows(
     index: &Index,
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
 ) -> Vec<FileRow> {
-    match (walked, unfiltered_rows) {
-        (Some(walked), _) => walked.rows.clone(),
-        (None, Some(rows)) => rows.to_vec(),
-        (None, None) => every_entry(index),
+    match entry_rows(index, walked, unfiltered_rows) {
+        Cow::Borrowed(rows) => {
+            #[cfg(test)]
+            SHARED_ROW_CLONES.with(|count| {
+                count
+                    .set(count.get().saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX)));
+            });
+            rows.to_vec()
+        }
+        Cow::Owned(rows) => rows,
     }
 }
 
@@ -1480,7 +1508,7 @@ fn metric_summary(
     let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
     let files = entry_rows(index, walked, unfiltered_rows);
     let mut grouped = BTreeMap::<String, MetricRow>::new();
-    for file in files.into_iter().filter(|row| row.kind == EntryKind::File) {
+    for file in files.iter().filter(|row| row.kind == EntryKind::File) {
         let cached = index.content().and_then(|content| content.file(&file.path));
         let classification = cached
             .map_or_else(|| index.classify(&file.path), |record| record.classification.clone());
@@ -1679,7 +1707,7 @@ fn file_rows(
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
 ) -> (Vec<FileRow>, usize) {
-    let mut rows = entry_rows(index, walked, unfiltered_rows);
+    let mut rows = owned_entry_rows(index, walked, unfiltered_rows);
     if view.files_only() {
         rows.retain(|row| row.kind == EntryKind::File);
     }
@@ -1702,6 +1730,8 @@ fn file_rows(
 
 /// Every entry in the index, for an unfiltered files view.
 fn every_entry(index: &Index) -> Vec<FileRow> {
+    #[cfg(test)]
+    EVERY_ENTRY_BUILDS.with(|count| count.set(count.get().saturating_add(1)));
     let observed = index.observes_controls();
     let mut rows = Vec::new();
     let mut stack: Vec<(EntryId, PathBuf)> = vec![(EntryId::ROOT, PathBuf::new())];
@@ -2544,6 +2574,155 @@ mod tests {
                 format!("{:?}", together.sections[i]),
                 format!("{:?}", alone.sections[0]),
                 "{view:?} changed when requested with the other metric views"
+            );
+        }
+    }
+
+    fn reset_report_allocs() {
+        EVERY_ENTRY_BUILDS.with(|count| count.set(0));
+        SHARED_ROW_CLONES.with(|count| count.set(0));
+    }
+
+    fn many_files(count: usize) -> Index {
+        let mut index = Index::new("/root");
+        let ops = (0..count)
+            .map(|i| {
+                upsert(
+                    &format!("f{i:04}.txt"),
+                    EntryKind::File,
+                    attrs(
+                        u64::try_from(i).expect("file index fits u64") + 1,
+                        i64::try_from(i).expect("file index fits i64"),
+                    ),
+                )
+            })
+            .collect();
+        index.apply(&Observation::new(ops)).expect("apply");
+        index
+    }
+
+    #[test]
+    fn a_bounded_single_view_does_not_clone_a_shared_every_entry() {
+        let index = many_files(200);
+        let selection = Selection { limit: Some(Bound::Limit(1)), ..Selection::default() };
+        reset_report_allocs();
+        let report = run(&index, &query(&[ViewSpec::Largest], selection));
+        let rows = files_of(&report);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(EVERY_ENTRY_BUILDS.with(std::cell::Cell::get), 1);
+        assert_eq!(
+            SHARED_ROW_CLONES.with(std::cell::Cell::get),
+            0,
+            "a single bounded view must own its walk, not clone a shared full-tree buffer"
+        );
+    }
+
+    #[test]
+    fn unfiltered_multi_view_sharing_builds_every_entry_once() {
+        let index = many_files(40);
+        reset_report_allocs();
+        let together = run(
+            &index,
+            &query(
+                &[ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages],
+                Selection::default(),
+            ),
+        );
+        assert_eq!(together.sections.len(), 3);
+        assert_eq!(EVERY_ENTRY_BUILDS.with(std::cell::Cell::get), 1);
+        assert_eq!(
+            SHARED_ROW_CLONES.with(std::cell::Cell::get),
+            0,
+            "metric views borrow the shared walk"
+        );
+    }
+
+    #[test]
+    fn analyzed_mixed_views_keep_independent_semantics() {
+        let root = tempfile::tempdir().expect("analyzed report root");
+        std::fs::create_dir_all(root.path().join("src")).expect("src");
+        std::fs::create_dir_all(root.path().join("docs")).expect("docs");
+        std::fs::write(root.path().join("src/main.rs"), b"fn main() {}\n").expect("rust");
+        std::fs::write(root.path().join("docs/guide.md"), b"hello world\n").expect("markdown");
+        std::fs::write(root.path().join("notes.txt"), b"plain text\n").expect("text");
+
+        let (mut index, scan) = crate::scan::scan_into_index(
+            root.path(),
+            &crate::ScanConfig {
+                read_controls: false,
+                threads: Some(1),
+                ..crate::ScanConfig::default()
+            },
+        )
+        .expect("scan");
+        assert!(scan.is_complete());
+        crate::content::analyze_index(
+            &mut index,
+            crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::ALL,
+                ..crate::content::AnalysisRequest::default()
+            },
+        );
+
+        let views = [
+            ViewSpec::Summary,
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+            ViewSpec::Types,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+            ViewSpec::Files,
+            ViewSpec::Largest,
+            ViewSpec::Recent,
+        ];
+        let selection = Selection::default();
+        let together = run(&index, &query(&views, selection.clone()));
+        assert_eq!(together.sections.len(), views.len());
+
+        let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
+        assert_eq!((summary.files, summary.dirs), (3, 2));
+
+        let files = files_of(&run(&index, &query(&[ViewSpec::Files], selection.clone())));
+        assert_eq!(files.len(), 5);
+
+        let largest = files_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Largest],
+                Selection { limit: Some(Bound::Limit(1)), ..selection.clone() },
+            ),
+        ));
+        assert_eq!(largest.len(), 1);
+
+        let types = match &run(&index, &query(&[ViewSpec::Types], selection.clone())).sections[0] {
+            Section::Metrics { summary, .. } => summary.clone(),
+            other => panic!("expected types, got {other:?}"),
+        };
+        assert_eq!(types.total.files, 3);
+        assert!(types.total.analyzed_files >= 1);
+
+        let documents =
+            match &run(&index, &query(&[ViewSpec::Documents], selection.clone())).sections[0] {
+                Section::Metrics { summary, .. } => summary.clone(),
+                other => panic!("expected documents, got {other:?}"),
+            };
+        assert!(documents.rows.iter().any(|row| row.id == "markdown"));
+        assert!(documents.total.analyzed_files >= 1);
+
+        let languages =
+            match &run(&index, &query(&[ViewSpec::Languages], selection.clone())).sections[0] {
+                Section::Metrics { summary, .. } => summary.clone(),
+                other => panic!("expected languages, got {other:?}"),
+            };
+        assert!(languages.rows.iter().any(|row| row.id == "rust"));
+
+        for (i, view) in views.iter().enumerate() {
+            let alone = run(&index, &query(&[*view], selection.clone()));
+            assert_eq!(
+                format!("{:?}", together.sections[i]),
+                format!("{:?}", alone.sections[0]),
+                "{view:?} changed when requested with the mixed analyzed views"
             );
         }
     }

@@ -1013,9 +1013,18 @@ fn put_controls(buf: &mut Vec<u8>, controls: &crate::control::ControlTable) -> R
     Ok(())
 }
 
+/// A snapshot entry name is one filesystem component, spelled exactly as stored.
+///
+/// `Path::components` treats `a` and `a/` as the same `Normal("a")`. The child map
+/// distinguishes the raw names, but a `PathBuf`-keyed restore map merges them and
+/// shrinks the cache-only completeness denominator. The raw name must equal that
+/// single normal component so a checksummed alias cannot load.
 fn is_snapshot_name(name: &OsStr) -> bool {
     let mut components = Path::new(name).components();
-    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+    match components.next() {
+        Some(Component::Normal(component)) => component == name && components.next().is_none(),
+        _ => false,
+    }
 }
 
 #[cfg(unix)]
@@ -2090,6 +2099,52 @@ mod tests {
         // integrity check.
         let root_size_at = records_at + 4 + 1 + 4;
         bytes[root_size_at] ^= 1;
+        fs::write(&path, &bytes).expect("write");
+
+        assert!(load(&path).expect("load must not error").is_none());
+    }
+
+    #[test]
+    fn snapshot_names_must_equal_their_single_normal_component() {
+        assert!(is_snapshot_name(OsStr::new("notes.md")));
+        assert!(!is_snapshot_name(OsStr::new("notes.md/")));
+        assert!(!is_snapshot_name(OsStr::new("a/b")));
+        assert!(!is_snapshot_name(OsStr::new("../bad")));
+        assert!(!is_snapshot_name(OsStr::new("")));
+        assert!(!is_snapshot_name(OsStr::new(".")));
+        assert!(!is_snapshot_name(OsStr::new("..")));
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let native = OsString::from_vec(vec![b'n', 0x80]);
+            assert!(is_snapshot_name(&native), "canonical validation is OsStr identity");
+            let aliased = OsString::from_vec(vec![b'n', 0x80, b'/']);
+            assert!(!is_snapshot_name(&aliased));
+        }
+    }
+
+    #[test]
+    fn trailing_separator_entry_names_are_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let mut bytes = fs::read(&path).expect("read");
+        let count_at = entry_count_offset(&bytes);
+        let records_at = count_at + 8;
+        let first_child_name_len_at = records_at + MIN_RECORD_BYTES + 4 + 1;
+        let old_name_len = u32::from_le_bytes(
+            bytes[first_child_name_len_at..first_child_name_len_at + 4]
+                .try_into()
+                .expect("saved snapshot has a child name length"),
+        );
+        let old_name_end = first_child_name_len_at
+            + 4
+            + usize::try_from(old_name_len).expect("name length fits usize");
+        let mut invalid_name = Vec::new();
+        put_os_str(&mut invalid_name, OsStr::new("notes.md/")).expect("encode aliased name");
+        bytes.splice(first_child_name_len_at..old_name_end, invalid_name);
+        rewrite_checksum(&mut bytes);
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());

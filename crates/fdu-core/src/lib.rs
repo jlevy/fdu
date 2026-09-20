@@ -593,9 +593,10 @@ pub(crate) fn open_for_report(
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
         let content_cache = load_content(&mut index, config)?;
-        // A sidecar serves only its own identity, so restoring one record per candidate
-        // means the sidecar holds the complete answer to this request. Restore already
-        // walked that set; compare `hits` to the count it stored, not a second walk.
+        // A sidecar serves only its own identity, so restoring one record per visited
+        // regular file means the sidecar holds the complete answer to this request.
+        // Restore already walked that set; compare `hits` to files visited, not a
+        // second walk and not unique `PathBuf` keys.
         if config.analysis.profile.is_enabled()
             && (!content_cache.usable || content_cache.hits != content_cache.candidates)
         {
@@ -1517,6 +1518,116 @@ mod tests {
             matches!(open(dir.path(), &only), Err(Error::Snapshot(_))),
             "a one-record sidecar must not serve a two-file cache-only analysis request"
         );
+    }
+
+    #[test]
+    fn cache_only_rejects_a_checksummed_path_alias_snapshot() {
+        use std::ffi::OsStr;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("a"), b"alpha\n");
+        write_file(&dir.path().join("b"), b"beta\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+        let (seeded, seed_report) = open(dir.path(), &auto).expect("seed analyzed snapshot");
+        assert_eq!(seeded.total().files, 2);
+        assert!(seed_report.is_complete());
+
+        let only = OpenConfig { policy: CachePolicy::Only, ..auto.clone() };
+        let (cached, cached_report) = open(dir.path(), &only).expect("well-formed cache-only");
+        assert_eq!(cached.total().files, seeded.total().files);
+        assert_eq!(cached_report.content_cache.hits, cached_report.content_cache.candidates);
+        assert!(cached_report.is_complete());
+
+        let mut bytes = fs::read(&snapshot_path).expect("read snapshot");
+        replace_encoded_os_str(&mut bytes, OsStr::new("b"), OsStr::new("a/"));
+        reseal_snapshot(&mut bytes);
+        fs::write(&snapshot_path, &bytes).expect("write aliased snapshot");
+
+        assert!(
+            matches!(open(dir.path(), &only), Err(Error::Snapshot(_))),
+            "a checksummed a/ alias must fail closed through public cache-only open"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_only_serves_checksummed_native_non_utf8_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let native = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
+        let mut index = Index::new(&root);
+        index.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from("ok.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs {
+                    size: 1,
+                    allocated: 512,
+                    mtime_ns: 1,
+                    ctime_ns: 1,
+                    inode: 1,
+                    dev: 1,
+                },
+            },
+            Op::Upsert {
+                path: native.clone(),
+                kind: EntryKind::File,
+                attrs: Attrs {
+                    size: 2,
+                    allocated: 512,
+                    mtime_ns: 2,
+                    ctime_ns: 2,
+                    inode: 2,
+                    dev: 1,
+                },
+            },
+        ]));
+        snapshot::save(&index, &snapshot_path).expect("save native names");
+
+        let only = OpenConfig {
+            cache_path: Some(snapshot_path),
+            policy: CachePolicy::Only,
+            ..OpenConfig::default()
+        };
+        let (cached, report) = open(&root, &only).expect("cache-only native name");
+        assert_eq!(cached.total().files, 2);
+        assert!(cached.lookup(&native).is_some());
+        assert!(report.is_complete());
+    }
+
+    fn replace_encoded_os_str(bytes: &mut Vec<u8>, from: &std::ffi::OsStr, to: &std::ffi::OsStr) {
+        let mut from_enc = Vec::new();
+        crate::snapshot::put_os_str(&mut from_enc, from).expect("encode from");
+        let mut to_enc = Vec::new();
+        crate::snapshot::put_os_str(&mut to_enc, to).expect("encode to");
+        let at = bytes
+            .windows(from_enc.len())
+            .position(|window| window == from_enc.as_slice())
+            .expect("encoded source name is present");
+        bytes.splice(at..at + from_enc.len(), to_enc);
+    }
+
+    fn reseal_snapshot(bytes: &mut [u8]) {
+        const FOOTER_BYTES: usize = 4 + 8;
+        let payload_len = bytes.len().checked_sub(FOOTER_BYTES).expect("snapshot has a footer");
+        let checksum = crate::snapshot::crc32c(&bytes[..payload_len]);
+        bytes[payload_len..payload_len + 4].copy_from_slice(&checksum.to_le_bytes());
     }
 
     #[test]

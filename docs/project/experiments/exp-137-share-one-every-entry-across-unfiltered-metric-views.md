@@ -242,7 +242,15 @@ Sharing one unfiltered `every_entry` walk is a real ≥3% wall cut on `content-q
 Report identity is the same (together matches each view alone).
 Engine kept.
 
+The historical benchmark digest hashes retained index and content facts after each
+report is discarded.
+It does not cover the constructed reports.
+
 Do not invent a cache-hit skip.
 Do not persist ignored bits.
 Do not load a snapshot on `fdu PATH`. Do not raise the README 200K files/s or 4M cached
 lines/s.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
