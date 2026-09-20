@@ -490,8 +490,8 @@ Source of truth:
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
 H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
-is recorded there as exp-139. H141–H142 remain reserved there.
-Do not mint them on this Darwin branch.
+is recorded there as exp-139. H141 is recorded there as exp-140. H142 remains reserved
+there. Do not mint it on this Darwin branch.
 Next free Darwin hypothesis id is **H143**. Do not mint another meaning for H91–H106.
 Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
 take exp-138 here. exp-113 remains reserved unused (H113 superseded).
@@ -702,7 +702,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | --- | --- |
 | This standing section | Pickup: standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup: H141–H142 plus H111 (`fdu-jekg`); H139/H140 are exp-138/139 |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux pickup: H111 (`fdu-jekg`) plus optional H142; H139–H141 are exp-138–140 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -734,18 +734,24 @@ Quiet attempt invalidated 23/24 timed samples.
 Do not compile a walk trim.
 Do not retry H71.
 
+**H141 / exp-140** is the standing Linux content-query replication: **same**.
+Uncontrolled 12-pair `content-query` of the same #91 control versus this engine (H138
+share-one-walk) on `linux-v6.12`. Wall −17.60% [−18.07%, −17.17%]. Component −21.32%.
+Peak RSS +0.24% non-inferior.
+Digest identical. Quiet start 0.185/core did not hold.
+Do not retry H138.
+
 `linux-450k` is generated and ready (semantic digest `0c523088…`, same as exp-103) for
 H111. Do not treat it as a nominated real subject.
 
 ### Next Up (Linux)
 
-1. **H141** (`fdu-rmo2`). Content-query stack versus the same #91 control.
-2. **H111** (`fdu-jekg`). 450k floor/RSS gates.
+1. **H111** (`fdu-jekg`). 450k floor/RSS gates.
    Record `host_virtualization`.
-3. **H142** (`fdu-2003`) only if time remains.
+2. **H142** (`fdu-2003`) only if time remains.
    Do not retry H124.
 
-Next free Linux experiment id is **exp-140**.
+Next free Linux experiment id is **exp-141**.
 
 ## Before the First Round
 
