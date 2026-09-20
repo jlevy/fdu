@@ -678,6 +678,132 @@ $ fdu --no-gitignore --cache only --format json --size apparent --depth 0 --limi
 ? 0
 ```
 
+A read-only projected open revalidates the same entries without installing control
+state. The stronger snapshot remains usable by a subsequent default cache-only request.
+
+```console
+$ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/7",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": false
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "warm_revalidate",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "revalidated", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": null,
+  "analysis": null,
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": null,
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
+    }
+  ]
+}
+? 0
+```
+
+```console
+$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/7",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true
+    },
+    "analyze": [],
+    "size": "apparent",
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cache_only",
+    "freshness": "stale",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {
+        "name": ".",
+        "path": "",
+        "kind": "dir",
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "files": 7,
+        "dirs": 3,
+        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+        "newest_mtime_ns": [MTIME_NS],
+        "truncated": true,
+        "children": []
+      }
+    }
+  ]
+}
+? 0
+```
+
 The reverse cannot work: a snapshot written without the rules has no classification for
 a default request to report, so a cache-only default request refuses it and names the
 way out.

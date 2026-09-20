@@ -374,8 +374,6 @@ tracks them.
   behaves as `off` for a one-shot metadata report, and `auto` reads for `open` but not
   for that report. Write rules differ by path as listed above, so whether a later
   `--cache only` succeeds depends on which command ran last.
-- **Live provenance and content decay** are session gaps, listed in
-  [the engine architecture’s Known Gaps](../architecture/fdu-engine-architecture.md#known-gaps).
 - **A type-rules mismatch is silent.** A snapshot taken under another type registry
   parses as absent, so a `--cache only` failure cannot name the registry as the cause.
 

@@ -133,9 +133,10 @@ Under
 [Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics),
 a cache hit, miss, eviction, cache policy, or execution path may change how fast an
 answer arrives and what its provenance fields report, never what the answer says.
-Metadata-only requests meet that today; content analysis, live repaints, and several
-provenance fields do not ([Known Gaps](#known-gaps), and
-[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)).
+The path-independence harness compares request, status, and answer content across
+histories and public routes.
+Per-tier provenance describes how the answer was obtained;
+[the cache design](../guides/cache-design.md) specifies policy and persistence.
 
 #### One opened root has one authority
 
@@ -413,11 +414,10 @@ retained state has no consumer.
 It observes control state as `ScanConfig::read_controls` says, on by default as for
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
-Metadata-only requests do; content-analysis requests do not
-([the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)). `query::report`
-and `report_in` take `&Request` and, after `validate_read`, use `request.basis.content`
-for metric sections, the `analysis` metadata, and the schema version: the report echoes
-the request, never the store.
+`query::report` and `report_in` take `&Request` and, after `validate_read`, use
+`request.basis.content` for metric sections and the `analysis` metadata.
+The report echoes the request, never the store; every report uses the same schema
+version.
 
 Live paths refuse what they cannot keep current.
 `watch_session::Session::new` refuses analyzed content rather than reporting the metrics

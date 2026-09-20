@@ -41,6 +41,7 @@ use crate::stored_state::{
 
 /// Result of loading a snapshot for one requested stored-state identity.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)] // One transient load result; avoid boxing the returned index.
 pub enum LoadOutcome {
     /// The snapshot supplied an index, either exactly or through a lawful projection.
     Served(Index, Serves),
