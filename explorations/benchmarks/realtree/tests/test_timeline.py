@@ -129,8 +129,16 @@ class KeptVariantTests(unittest.TestCase):
         # stack, so reading `control` off its decision named the pre-H86 binary as the
         # product. Neither arm is the shipped binary, so it names none.
         self.assertIn("exp-103", CLAIM_ONLY_EXPERIMENTS)
+        self.assertIn("exp-141", CLAIM_ONLY_EXPERIMENTS)
         self.assertIsNone(kept_variant("rejected", "exp-103"))
+        self.assertIsNone(kept_variant("rejected", "exp-141"))
         self.assertEqual(kept_variant("rejected", "exp-100"), "control")
+
+        # exp-141 is the same shape one campaign later: a same-binary H111 floor stage
+        # whose engine ships either way. It was minted without being added here, so the
+        # page drew its control as Linux's current cost for the length of one review.
+        self.assertIn("exp-141", CLAIM_ONLY_EXPERIMENTS)
+        self.assertIsNone(kept_variant("rejected", "exp-141"))
 
 
 class SubjectIdentityTests(unittest.TestCase):
