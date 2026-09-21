@@ -5,12 +5,12 @@ title: "PR #94 review R6: exp-138/140 not re-paired on the merged engine"
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h6bvgxbks1d5t5q5p0k44
 created_at: 2026-09-21T18:15:07.567Z
-updated_at: 2026-09-21T18:15:07.567Z
+updated_at: 2026-09-21T18:35:06.829Z
 ---
 Senior review of PR #94 (https://github.com/jlevy/fdu/pull/94#issuecomment-5765270106), R6 (Low).
 

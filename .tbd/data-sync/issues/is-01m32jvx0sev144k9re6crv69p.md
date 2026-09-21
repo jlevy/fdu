@@ -3,14 +3,18 @@ type: is
 id: is-01m32jvx0sev144k9re6crv69p
 title: "PR #94 review S2: add a 'determination' decision value to the experiment contract"
 kind: feature
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h6bvgxbks1d5t5q5p0k44
 created_at: 2026-09-21T18:15:18.296Z
-updated_at: 2026-09-21T18:15:18.296Z
+updated_at: 2026-09-21T18:35:06.354Z
+closed_at: 2026-09-21T18:35:06.353Z
+close_reason: "Duplicate of fdu-6xfq (replace the hand-maintained CLAIM_ONLY_EXPERIMENTS list with a decision value), which already tracks the S2 suggestion from the #94 review."
+resolution: null
+duplicate_of: null
 ---
 Senior review of PR #94, suggestion S2 (non-blocking, separate PR).
 

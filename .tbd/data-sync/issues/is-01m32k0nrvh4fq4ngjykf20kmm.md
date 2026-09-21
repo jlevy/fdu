@@ -3,13 +3,17 @@ type: is
 id: is-01m32k0nrvh4fq4ngjykf20kmm
 title: "PR #97 review R3: one bool drives H147 recycle and H72 d_type skip"
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h6d4szbwm3n1sgxqyfn9x
 created_at: 2026-09-21T18:17:54.715Z
-updated_at: 2026-09-21T18:17:54.715Z
+updated_at: 2026-09-21T18:38:10.352Z
+closed_at: 2026-09-21T18:38:10.352Z
+close_reason: "Fixed: recycle_batches bool replaced by SinkMode { Retained, TransientFold } with recycles_batches() and skips_dir_symlink_stat(); StreamingEmission::for_sink reads both; serial walker reads the named property."
+resolution: null
+duplicate_of: null
 ---
 crates/fdu-core/src/scan.rs:1430 recycle_batches: bool is passed at :1510 as skip_dir_symlink_stat and at :2292 selects walk_worker_recycling; StreamingEmission::recycling sets skip_dir_symlink_stat true. Two independently measured keeps on one flag named for one of them. Fix: a two-variant enum (SinkMode) whose named properties both sites read. PR #97 senior review, Medium.
