@@ -5,11 +5,12 @@ title: Restore timers must cover the whole sidecar load before H121 is judged; d
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies: []
+parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
 created_at: 2026-09-20T15:23:08.879Z
-updated_at: 2026-09-21T07:57:03.032Z
+updated_at: 2026-09-21T08:30:24.058Z
 ---
 From the independent pre-merge verification of PR #91 (2026-09-20). Do this BEFORE judging H121, whose rule is "a named restore stage >= 50% of restore phase time".
 

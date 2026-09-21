@@ -5,7 +5,7 @@ title: Verify unchanged defaults, directory formats, surface parity, and stacked
 kind: task
 status: in_progress
 priority: 1
-version: 9
+version: 11
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -14,7 +14,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-21T08:06:48.525Z
+updated_at: 2026-09-21T08:30:47.097Z
 started_at: 2026-09-20T06:16:21.022Z
 ---
 Validate the epic end to end with portable product goldens, engine tests, and Python

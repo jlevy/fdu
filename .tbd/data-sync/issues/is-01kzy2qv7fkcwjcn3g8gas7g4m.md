@@ -5,7 +5,7 @@ title: Linux cold-regime worker sweep and adaptive-calibration retune
 kind: task
 status: open
 priority: 1
-version: 10
+version: 12
 spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - perf
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-13T17:29:24.975Z
-updated_at: 2026-09-20T05:33:11.711Z
+updated_at: 2026-09-21T08:30:48.511Z
 ---
 Linux cold thread policy (H76/H84). Was gated on fdu-tyjx, which PR #45 closed: the aggregate-summary job now exists, so this is unblocked. Linux only -- the adaptive unlock calibrated against APFS regimes never fires on Linux; guest-cold, sixteen workers beat four by 32% at the floor itself and diskus's 3x-cores default is the whole remaining scalar-class cold gap (~22%). Bare metal (fdu-lf3v) confirms before the constant ships as evidence. Not runnable on the macOS agenda.
 

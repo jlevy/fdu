@@ -5,11 +5,12 @@ title: "Restore test guards dropped by the #91/#92 fix-consolidation merges (R3 
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies: []
+parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
 created_at: 2026-09-20T15:23:07.575Z
-updated_at: 2026-09-21T07:57:02.646Z
+updated_at: 2026-09-21T08:30:26.198Z
 ---
 From the independent pre-merge verification of PRs #91 and #92 (2026-09-20). The merges that consolidated two concurrent fix lines (870bdcfb, 3cc94898/937f9445) kept one side's tree; nothing incorrect shipped, but some guards were lost.
 

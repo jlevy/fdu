@@ -5,11 +5,12 @@ title: "Correct PR #91/#92 experiment records: exp-116 headline, digest claim, r
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies: []
+parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
 created_at: 2026-09-20T15:23:06.434Z
-updated_at: 2026-09-21T07:57:02.222Z
+updated_at: 2026-09-21T08:30:24.757Z
 ---
 From the independent pre-merge verification of PRs #91 and #92 (2026-09-20). Evidence-only; no product behavior, README, CHANGELOG, or golden is affected. Fix once on main after the stack merges, then `make perf-ledger` and `make perf-report` in the same commit.
 
