@@ -5,7 +5,7 @@ title: Verify unchanged defaults, directory formats, surface parity, and stacked
 kind: task
 status: in_progress
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -14,7 +14,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-21T07:57:01.422Z
+updated_at: 2026-09-21T08:06:48.525Z
 started_at: 2026-09-20T06:16:21.022Z
 ---
 Validate the epic end to end with portable product goldens, engine tests, and Python
@@ -45,4 +45,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-Implementation committed and pushed 2026-09-21 as PR #103 (branch codex/directory-rollup-query, commit 31e271ec) stacked on the #96 plan. Local macOS status: 757 tests pass, 0 failed; all nine golden tryscripts pass with no diff, which satisfies this bead's retained-default-goldens condition; 18 suites green. NOT done: full make check (blocked by fdu-vjf2, a supply-chain scanner bug unrelated to the diff), make cross-lint, and any Linux/Windows verification beyond PR CI. Parity artifacts still to be recorded by CI on Linux per AGENTS.md. PR is draft until the full gate passes.
+CI on PR #103 found two real defects on the first push (31e271ec), both fixed in c41805e0 and both invisible locally because make check dies at supply-chain on the authoring host (fdu-vjf2): (1) crates/fdu-py/src/lib.rs listed formats as a hand-written literal, so adding tree/paths/long to Format left contract['formats'] stale and the Rust and Python surfaces disagreed on every platform; now derived from Format::ALL, matching the fix already applied to views after fdu-ggux. (2) The new subtree_predicates test compared against the literal 'src/empty'; a one-shot report matches native names and the report joins parent and name, so Windows produced 'src\\empty' and the test held only on Unix; expectation now joined the same way. Product was correct in both cases. This is direct evidence for fdu-vjf2's severity: the local gate cannot reach the Python or cross-platform targets, so PR CI is currently the only gate.
