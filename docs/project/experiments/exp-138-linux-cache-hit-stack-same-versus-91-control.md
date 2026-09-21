@@ -274,7 +274,7 @@ The mechanism is the same: the landed stack still clears the 3% wall rule.
 
 ## Judgment
 
-**Same** on Linux. Quiet confirmatory.
+**Same** on Linux. Quiet, exploratory-stage replication.
 No engine patch. Do not revert.
 Do not retry the individual cache-hit increments.
 Do not raise the README 200K files/s or 4M cached lines/s from this cell.

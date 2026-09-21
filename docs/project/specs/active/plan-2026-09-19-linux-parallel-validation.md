@@ -5,12 +5,12 @@
 **Author:** fdu project
 
 **Status:** Recorded.
-Ready to merge onto [#92](https://github.com/jlevy/fdu/pull/92) at `937f9445`. This is
-not a Linux floor pass: H111 failed on this virtualized host (exp-141). Darwin
-measurement on #92 had stopped at `26480612` when this block started; the stack later
-landed R1–R3 and `c441edf6` at that tip.
-H139 is recorded (exp-138, same, quiet).
-H140 is recorded (exp-139, same leftover identity).
+Base `main` (`c7babf76`);
+[#91](https://github.com/jlevy/fdu/pull/91)/[#92](https://github.com/jlevy/fdu/pull/92)
+merged 2026-09-20. This is not a Linux floor pass: H111 failed on this virtualized host
+(exp-141). Darwin measurement on #92 had stopped at `26480612` when this block started;
+the stack later landed R1–R3 and `c441edf6` at `937f9445`. H139 is recorded (exp-138,
+same, quiet). H140 is recorded (exp-139, same leftover identity).
 H141 is recorded (exp-140, same, uncontrolled).
 H143 is recorded (exp-142, same leftover identity).
 H142 is recorded (exp-143, same leftover identity).
@@ -38,8 +38,8 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 
 ## Non-Goals
 
-- Pushing to #91 or to `perf/campaign-next-2026-09-19`
-- Merging this branch to `main` ahead of #91 and #92
+- Pushing to the deleted Darwin branches (#91 or `perf/campaign-next-2026-09-19`)
+- Merging this branch to `main` unless asked (merge onto `main`, then #97)
 - Force-pushing, or restarting the H86 structural rewrite (`fdu-xde5`)
 - Retrying H113 file-count, H109 Path rewrite, H116, H118, H119, H124, H71 raw
   `getdents64` / io_uring, or a `macos_bulk` port
@@ -52,8 +52,8 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 
 - **Branch:** `perf/campaign-linux-2026-09-19`
   ([#94](https://github.com/jlevy/fdu/pull/94))
-- **Base:** `perf/campaign-next-2026-09-19` ([#92](https://github.com/jlevy/fdu/pull/92)
-  at `937f9445`, including `c441edf6` single-view Cow borrow)
+- **Base:** `main` (`c7babf76`); #91/#92 merged 2026-09-20 (`6e3d2937` / `a290aedc`).
+  Engine tip of those merges is `937f9445` (including `c441edf6` single-view Cow borrow)
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)
 - **Darwin standing:**
   [Current Standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
@@ -128,6 +128,7 @@ Minted ids stay reserved; do not reuse them on Darwin.
    (92,474 entries). Peak RSS −10.24%. Digest identical.
    A clean metabrowser clone on this host is 916 entries (Darwin’s 146k tree was
    workspace state) and was not the subject.
+   Paired at `a5c98d59`; not re-paired after R1–R3/`c441edf6`; expected below noise.
    Do not retry the cache-hit increments.
    Bead: `fdu-bt6x` (close).
 
@@ -141,6 +142,7 @@ Minted ids stay reserved; do not reuse them on Darwin.
 3. **H141 — content-query stack, same or different.** **Same** (exp-140, uncontrolled).
    `content-query` wall −17.60% [−18.07%, −17.17%] on `linux-v6.12`. Digest identical.
    Quiet start did not hold.
+   Paired at `a5c98d59`; not re-paired after R1–R3/`c441edf6`; expected below noise.
    Do not retry H138. Bead: `fdu-rmo2` (close).
 
 4. **H111 — Linux floor (`fdu-jekg`).** **Failed** (exp-141, uncontrolled, virtualized).
@@ -201,12 +203,14 @@ H108 still requires one-shot `fdu PATH` to stay `cold scan`.
 
 ## Rollout Plan
 
-Ready to merge onto [#92](https://github.com/jlevy/fdu/pull/92)
-(`perf/campaign-next-2026-09-19` at `937f9445`). Do not merge this branch to `main`
-ahead of #91 and #92. Do not push to #91 or to the Darwin stacked branch.
+Merge onto `main`, then [#97](https://github.com/jlevy/fdu/pull/97).
+[#91](https://github.com/jlevy/fdu/pull/91) and
+[#92](https://github.com/jlevy/fdu/pull/92) merged 2026-09-20. Do not push to the
+deleted Darwin stacked branches.
 No force-push.
 
-If #92 moves before merge, rebase this branch onto it and keep H139–H143 meanings.
+H139–H143 meanings stay: leftover identity or accept-rule hold, not matching Darwin
+percentages.
 
 ## Open Questions
 
