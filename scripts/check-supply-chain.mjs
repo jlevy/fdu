@@ -534,21 +534,40 @@ async function workflowFiles(root) {
   );
 }
 
-async function shellFilesUnder(root, relativeDirectory) {
-  const files = [];
-  async function walk(absoluteDirectory, relativePath) {
-    for (const entry of await readdir(absoluteDirectory, { withFileTypes: true })) {
-      const entryRelativePath = path.posix.join(relativePath, entry.name);
-      const entryAbsolutePath = path.join(absoluteDirectory, entry.name);
-      if (entry.isDirectory()) {
-        await walk(entryAbsolutePath, entryRelativePath);
-      } else if (entry.isFile() && entry.name.endsWith(".sh")) {
-        files.push({ path: entryRelativePath, text: await readFile(entryAbsolutePath, "utf8") });
-      }
-    }
-  }
-  await walk(path.join(root, relativeDirectory), relativeDirectory);
-  return files;
+//: Select the shell scripts from one NUL-separated `git ls-files` listing.
+//
+// Split out from the git call so the selection rule is testable without a repository.
+export function selectShellFiles(lsFilesOutput) {
+  return lsFilesOutput.split("\0").filter((entry) => entry.endsWith(".sh"));
+}
+
+/**
+ * Every shell script the repository tracks under `relativeDirectories`.
+ *
+ * This reads the git index rather than walking the filesystem. A walk scanned whatever
+ * happened to be on disk, which on an agent host includes git worktrees under
+ * `.claude/worktrees/`: files belonging to a different checkout, untracked here, and so
+ * impossible to list in the bootstrap inventory. The gate then failed naming a hook this
+ * repository does not own, which reads like a real supply-chain violation rather than a
+ * scanning bug, and left no working local gate at all.
+ *
+ * The index is also the more faithful set to audit. The policy governs what is committed,
+ * and a fresh checkout — what CI and a consumer actually get — contains exactly the
+ * tracked files. `--cached` includes staged entries, so a new downloader is caught before
+ * it lands rather than after.
+ */
+export async function shellFilesUnder(root, relativeDirectories) {
+  const listing = execFileSync("git", ["ls-files", "-z", "--cached", "--", ...relativeDirectories], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return Promise.all(
+    selectShellFiles(listing).map(async (relativePath) => ({
+      path: relativePath,
+      text: await readFile(path.join(root, relativePath), "utf8"),
+    })),
+  );
 }
 
 export function validateDownloadScripts(files, inventoriedFiles) {
@@ -689,9 +708,7 @@ async function verifyBootstrap(policy, root, context) {
   const inventoriedFiles = new Set(
     [...policy.bootstrap.npm, ...policy.bootstrap.githubReleases].flatMap((item) => item.files),
   );
-  const shellFiles = (
-    await Promise.all([".claude", ".codex", "scripts"].map((directory) => shellFilesUnder(root, directory)))
-  ).flat();
+  const shellFiles = await shellFilesUnder(root, [".claude", ".codex", "scripts"]);
   validateDownloadScripts(shellFiles, inventoriedFiles);
 
   for (const item of policy.bootstrap.npm) {
