@@ -529,7 +529,7 @@ strategy and the record is visible in review.
   remaining Darwin queue after the H116–H120 overnight
 - [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
   recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
-  virtualized host; ready to merge onto #92
+  virtualized host; base `main`, merges onto `main` then #97
 - [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
   leftover records, H147/H72 keeps, and H148 PGO screen on
   [#97](https://github.com/jlevy/fdu/pull/97)

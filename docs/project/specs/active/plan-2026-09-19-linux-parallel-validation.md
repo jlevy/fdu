@@ -5,16 +5,20 @@
 **Author:** fdu project
 
 **Status:** Recorded.
-Base `main` (`c7babf76`);
-[#91](https://github.com/jlevy/fdu/pull/91)/[#92](https://github.com/jlevy/fdu/pull/92)
-merged 2026-09-20. This is not a Linux floor pass: H111 failed on this virtualized host
-(exp-141). Darwin measurement on #92 had stopped at `26480612` when this block started;
-the stack later landed R1–R3 and `c441edf6` at `937f9445`. H139 is recorded (exp-138,
-same, quiet). H140 is recorded (exp-139, same leftover identity).
+Base is `main` (`c7babf76`); [#91](https://github.com/jlevy/fdu/pull/91) and
+[#92](https://github.com/jlevy/fdu/pull/92) merged 2026-09-20 (`6e3d2937` / `a290aedc`),
+and the Darwin branches were deleted.
+This is not a Linux floor pass: H111 failed on this virtualized host (exp-141). Darwin
+measurement on #92 had stopped at `26480612` when this block started; the stack later
+landed R1–R3 and `c441edf6` at `937f9445`. H139 is recorded (exp-138, same, quiet).
+H140 is recorded (exp-139, same leftover identity).
 H141 is recorded (exp-140, same, uncontrolled).
 H143 is recorded (exp-142, same leftover identity).
 H142 is recorded (exp-143, same leftover identity).
 Do not mint those ids on the Darwin branch.
+exp-138 and exp-140 are paired at `a5c98d59` and were not re-paired after `f8a2ed94`
+(R1–R3) and `c441edf6`; the difference is expected below the 3% wall rule but is argued
+from the diff rather than measured.
 
 ## Overview
 
@@ -38,9 +42,11 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 
 ## Non-Goals
 
-- Pushing to the deleted Darwin branches (#91 or `perf/campaign-next-2026-09-19`)
+- Pushing to the deleted Darwin branches (#91 or `perf/campaign-next-2026-09-19`; both
+  merged 2026-09-20)
 - Merging this branch to `main` unless asked (merge onto `main`, then #97)
-- Force-pushing, or restarting the H86 structural rewrite (`fdu-xde5`)
+- Rebasing or force-pushing this branch: the committed evidence cites SHAs on it
+- Restarting the H86 structural rewrite (`fdu-xde5`)
 - Retrying H113 file-count, H109 Path rewrite, H116, H118, H119, H124, H71 raw
   `getdents64` / io_uring, or a `macos_bulk` port
 - Loading a snapshot on one-shot `fdu PATH` (H108)
@@ -53,7 +59,8 @@ It does not raise the README 200K files/s or 4M cached lines/s.
 - **Branch:** `perf/campaign-linux-2026-09-19`
   ([#94](https://github.com/jlevy/fdu/pull/94))
 - **Base:** `main` (`c7babf76`); #91/#92 merged 2026-09-20 (`6e3d2937` / `a290aedc`).
-  Engine tip of those merges is `937f9445` (including `c441edf6` single-view Cow borrow)
+  The engine measured here is the tip of those merges, `937f9445`, including `c441edf6`
+  single-view Cow borrow
 - **Protocol:** [performance-loop.md](../../guides/performance-loop.md)
 - **Darwin standing:**
   [Current Standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
@@ -203,12 +210,13 @@ H108 still requires one-shot `fdu PATH` to stay `cold scan`.
 
 ## Rollout Plan
 
-Merge onto `main`, then [#97](https://github.com/jlevy/fdu/pull/97).
-[#91](https://github.com/jlevy/fdu/pull/91) and
-[#92](https://github.com/jlevy/fdu/pull/92) merged 2026-09-20. Do not push to the
-deleted Darwin stacked branches.
-No force-push.
+Merge onto `main`, then [#97](https://github.com/jlevy/fdu/pull/97). The ordering
+constraint this section used to carry is discharged: #91 and #92 merged on 2026-09-20
+(`6e3d2937` / `a290aedc`) and their branches are gone, so there is nothing left to merge
+behind. Do not push to the deleted Darwin branches.
+Do not force-push: the committed evidence cites SHAs on this branch.
 
+If `main` moves before merge, merge it up rather than rebasing.
 H139–H143 meanings stay: leftover identity or accept-rule hold, not matching Darwin
 percentages.
 
@@ -221,6 +229,10 @@ percentages.
 - H143 closed: leftover identity **same** (exp-142, quiet; walk floor + retained-index
   RSS). Bare-metal H111 remeasure remains possible and is not this cell.
 - H142 closed: first-pass leftover is **same** identity (exp-143; file I/O)
+- Open: no Linux `content-cache-hit` or `content-query` pair exists on the merged
+  `937f9445` engine. exp-138 and exp-140 stand at `a5c98d59` and are inherited across
+  that bump. One quiet 12-pair `content-cache-hit` on the `main` probe would settle it;
+  it needs a quiet host (load/core ≤ 0.25) and was not run here.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
