@@ -163,6 +163,13 @@ jobs:
     name: MSRV (1.85)
     needs: supply-chain
     runs-on: ubuntu-latest
+    env:
+      # rust-toolchain.toml pins the workspace to the current release, and a directory
+      # override outranks the default the toolchain action sets, so without this every
+      # cargo step below ran on that release and the job checked nothing at the MSRV;
+      # rustup said as much in its output. The variable outranks the file, as
+      # `cargo +1.85.0` does in `make msrv`.
+      RUSTUP_TOOLCHAIN: 1.85.0
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
