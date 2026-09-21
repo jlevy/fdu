@@ -5768,9 +5768,9 @@ mod tests {
         // Four workers and a batch of three force StreamingEmission to send more than
         // once per worker on this tree. Without `recycled.clear()`, the next send
         // re-folds the previous ops and files/bytes/dirs double-count.
-        let dir = tempfile::tempdir().expect("tempdir");
         const DIRS: usize = 16;
         const FILES_PER_DIR: usize = 40;
+        let dir = tempfile::tempdir().expect("tempdir");
         let mut expected_bytes = 0u64;
         for directory in 0..DIRS {
             let child = dir.path().join(format!("d{directory:02}"));
