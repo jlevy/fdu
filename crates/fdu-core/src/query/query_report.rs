@@ -2193,23 +2193,28 @@ mod tests {
             size: SizeMetric::Apparent,
             ..Selection::default()
         };
+        // A one-shot report matches native names, so the nested spelling is joined rather
+        // than written with a literal separator: `src/empty` holds only on Unix.
+        let nested = PathBuf::from("src").join("empty").to_string_lossy().into_owned();
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], base.clone())));
         assert_eq!(
             rows.iter()
                 .map(|r| (r.path.to_string_lossy().into_owned(), r.bytes, r.mtime_ns))
                 .collect::<Vec<_>>(),
-            [("empty".into(), 0, -10), ("src".into(), 350, 70), ("src/empty".into(), 0, 60)]
+            [("empty".into(), 0, -10), ("src".into(), 350, 70), (nested.clone(), 0, 60)]
         );
-        for (before, since, expected) in
-            [(70, 0, vec!["src/empty"]), (71, 70, vec!["src"]), (0, -10, vec!["empty"])]
-        {
+        for (before, since, expected) in [
+            (70, 0, vec![nested.clone()]),
+            (71, 70, vec!["src".to_owned()]),
+            (0, -10, vec!["empty".to_owned()]),
+        ] {
             let selection = Selection {
                 modified: ModifiedWindow { before: Some(before), since: Some(since) },
                 ..base.clone()
             };
             let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
             assert_eq!(
-                rows.iter().map(|r| r.path.to_str().expect("fixture")).collect::<Vec<_>>(),
+                rows.iter().map(|r| r.path.to_string_lossy().into_owned()).collect::<Vec<_>>(),
                 expected
             );
         }

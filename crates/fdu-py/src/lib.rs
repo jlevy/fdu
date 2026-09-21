@@ -1840,7 +1840,7 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let mut views: Vec<&str> = ViewSpec::ALL.iter().map(|view| view.label()).collect();
     views.push("full");
     contract.set_item("views", views)?;
-    contract.set_item("formats", ["text", "json", "jsonl", "yaml"])?;
+    contract.set_item("formats", fdu_core::report_format::Format::ALL)?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
