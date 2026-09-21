@@ -1,18 +1,18 @@
 ---
 type: is
 id: is-01m32f649ymyw0htpyrs3b1rhw
-title: Opened-route allocation ceiling tolerates the per-entry regression it exists to catch
+title: Measure the opened allocation slope on macOS and Windows, then assert the tightness rule
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 2
+version: 4
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:10:59.134Z
-updated_at: 2026-09-21T17:22:34.680Z
-closed_at: 2026-09-21T17:22:34.680Z
-close_reason: "Fixed in 784638be on claude/gate-integrity. Measured the slopes directly: opened 24.331/entry against a ceiling of 26 (1.669 headroom), detached 6.146 against 7 (0.854, correctly tight). Linux opened ceiling tightened to 25, leaving 0.669. The one-allocation-per-entry mutation in prepare_walk_entry now fails at 52,693 over 2,080 entries against a limit of 52,000. The implied rule -- a ceiling stays within one allocation per entry of a slope measured on its own platform -- is documented but deliberately not asserted: the macOS and Windows figures in that comment are demonstrably stale (Linux's implied 25.29 against an actual 24.331 is the proof), so asserting from unverifiable numbers would trade a silent hole for a red build on two platforms."
+updated_at: 2026-09-21T17:59:22.417Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -25,3 +25,17 @@ Mutation: `std::hint::black_box(Box::new(0u8))` in `prepare_walk_entry` (`scan.r
 The detached counterpart is correctly calibrated: slope 6.15 against a ceiling of 7; the same mutation in `record_detached_entry` (`scan.rs:2896`) gives 7.15 and fails as intended.
 
 Fix: derive the ceiling from the measured baseline plus a stated margin rather than a hand-set constant, and assert the margin is smaller than one allocation per entry so the self-check and the live bound agree. Same recipe as the H138 guard fix on PR #104: compare against a measured quantity, not a round number.
+
+## Notes
+
+The Linux half is fixed (PR #108): the ceiling is 25 against a measured 24.331, and the one-allocation-per-entry mutation now fails at 52,676 over 2,080 entries against a limit of 52,000. Reopened because the rule this implies is still only prose.
+
+A senior review corrected an over-claim in the original fix. The remaining scope is narrower than "the other platforms are unknown":
+
+- macOS 24.24 was MEASURED, at f9722505, and against its ceiling of 25 it is already tight at 0.76. Nothing is owed there beyond confirmation.
+- Windows is the derived one: 34 comes from a predicted 33.43. Linux is the precedent for a derived ceiling drifting loose once the route got faster than the prediction, so the same hole may well be open on Windows.
+- The measurement is available: CI runs this exact test on macos-latest and windows-latest (ci.yml:68, :94), so both slopes are an eprintln plus --nocapture away in a CI log.
+
+Do: take both slopes from CI, tighten the Windows ceiling if it has drifted, then assert the rule in `assert_allocation_slope` — a ceiling must sit within one allocation per entry of a slope measured on its own platform, so `growth > limit - added_entries`. Six instrumented Linux runs give 24.314-24.333, a range of about 40 allocations against 1,391 of headroom, so the assertion will not flake there.
+
+Not in scope: the `not(any(...))` fallback stays at 26. No CI platform reaches it, and tightening a ceiling on a platform nobody has measured would fail a port for the wrong reason.
