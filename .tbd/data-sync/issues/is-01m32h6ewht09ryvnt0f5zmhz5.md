@@ -5,12 +5,19 @@ title: "PR #103 review pass: directory filters and list presentation formats"
 kind: task
 status: in_progress
 priority: 1
-version: 3
+version: 9
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
+child_order_hints:
+  - is-01m32v0em569fgg48tz5k2dsvn
+  - is-01m32v0few2vetn21t6z7zy7vw
+  - is-01m32v0g8sf256v5yemte84bqq
+  - is-01m32v0h01hfevps9e2zgtzcjb
+  - is-01m32v0hm3x4eh2ymxae4c5bz5
+  - is-01m32v0j7x7wve5fqn1t1dkvq4
 created_at: 2026-09-21T17:46:07.120Z
-updated_at: 2026-09-21T17:50:21.873Z
+updated_at: 2026-09-21T20:37:39.708Z
 ---
 Branch `codex/directory-rollup-query`, based on #96. Reviewer model: Fable.
 

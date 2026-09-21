@@ -5,12 +5,15 @@ title: "PR #99 review pass: match Git ignore edges and enforce test precondition
 kind: task
 status: in_progress
 priority: 1
-version: 3
+version: 5
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
+child_order_hints:
+  - is-01m32twy03j76e8cndxy0bftd2
+  - is-01m32twymg6h17854zjfpjnq4v
 created_at: 2026-09-21T17:46:06.533Z
-updated_at: 2026-09-21T17:50:21.386Z
+updated_at: 2026-09-21T20:35:41.327Z
 ---
 Branch `codex/release-ignore-correctness`, based on main. Reviewer model: Fable.
 
