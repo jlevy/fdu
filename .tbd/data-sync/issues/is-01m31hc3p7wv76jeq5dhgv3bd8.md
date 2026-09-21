@@ -5,7 +5,7 @@ title: "HANDOFF: stabilization state, owed work, and order of operations (2026-0
 kind: epic
 status: open
 priority: 0
-version: 10
+version: 11
 labels: []
 dependencies: []
 child_order_hints:
@@ -16,8 +16,9 @@ child_order_hints:
   - is-01m2zpkwa48ecgw720rkgrs9wb
   - is-01m2zpkzxm97et6bdxeac7eh6w
   - is-01m2zpkxdtb9twaj4bxhegejc5
+  - is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T08:29:57.830Z
-updated_at: 2026-09-21T08:32:10.447Z
+updated_at: 2026-09-21T08:38:23.483Z
 ---
 Single entry point for the next agent. Read this first; it says what is true, what is owed, and what to do in what order.
 
