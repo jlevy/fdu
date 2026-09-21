@@ -37113,7 +37113,7 @@
      "start_state": "cold"
     }
    ],
-   "kept": "candidate",
+   "kept": null,
    "number": 146,
    "path": "exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md",
    "platform": "Linux",
@@ -37387,7 +37387,7 @@
      "start_state": "cold"
     }
    ],
-   "kept": "candidate",
+   "kept": null,
    "number": 148,
    "path": "exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md",
    "platform": "Linux",
@@ -37524,7 +37524,7 @@
      "start_state": "cold"
     }
    ],
-   "kept": "candidate",
+   "kept": null,
    "number": 149,
    "path": "exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md",
    "platform": "Linux",
@@ -37663,7 +37663,7 @@
      "start_state": "cold"
     }
    ],
-   "kept": "control",
+   "kept": null,
    "number": 150,
    "path": "exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md",
    "platform": "Linux",
@@ -37937,7 +37937,7 @@
      "start_state": "cold"
     }
    ],
-   "kept": "control",
+   "kept": null,
    "number": 152,
    "path": "exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md",
    "platform": "Linux",
@@ -38312,7 +38312,7 @@
      "start_state": "warm"
     }
    ],
-   "kept": "candidate",
+   "kept": null,
    "number": 154,
    "path": "exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md",
    "platform": "Linux",

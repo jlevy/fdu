@@ -130,6 +130,16 @@ class KeptVariantTests(unittest.TestCase):
         # product. Neither arm is the shipped binary, so it names none.
         self.assertIn("exp-103", CLAIM_ONLY_EXPERIMENTS)
         self.assertIsNone(kept_variant("rejected", "exp-103"))
+        for identifier in (
+            "exp-146",
+            "exp-148",
+            "exp-149",
+            "exp-150",
+            "exp-152",
+            "exp-154",
+        ):
+            self.assertIn(identifier, CLAIM_ONLY_EXPERIMENTS, identifier)
+            self.assertIsNone(kept_variant("accepted", identifier), identifier)
         self.assertEqual(kept_variant("rejected", "exp-100"), "control")
 
 

@@ -299,6 +299,8 @@ That is not a rewrite, and not this Darwin host.
   confirms before the constant ships as evidence.
 - [x] `fdu-pdne` screen — H148 / exp-154, quiet `linux-v6.12`: `cold-scan-index` −8.35%,
   `warm-revalidate` −8.15%. `[profile.release]` unchanged (profdata is host-specific).
+  Training and measurement used the same tree, so −8.35% is the ceiling a shipped
+  profile could reach on other trees, not an estimate — inherited, not proven.
   The standing bead stays open for release-pipeline adoption, not another screen.
 - [ ] `fdu-6kyn` — hardware CRC32C behind runtime detection, the H88 follow-up.
 
