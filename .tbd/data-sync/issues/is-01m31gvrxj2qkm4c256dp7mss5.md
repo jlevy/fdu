@@ -3,14 +3,16 @@ type: is
 id: is-01m31gvrxj2qkm4c256dp7mss5
 title: After leftover apply-timer expansion, re-profile Linux content-cache-hit restore mix (H149)
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01kzysa79temyc45zjn2v98kpw
 created_at: 2026-09-21T08:21:02.513Z
-updated_at: 2026-09-21T08:21:17.054Z
+updated_at: 2026-09-21T08:39:26.736Z
+closed_at: 2026-09-21T08:39:26.736Z
+close_reason: "H149 / exp-155 recorded on #105 (c7251d26). Quiet linux-v6.12 content-cache-hit: apply 60-62% of restore after leftover timer expansion is H116 HashMap now in-bucket; same leftover identity as H144; no new compileable cut. Do not retry H116. fdu-78q6 stays open for H78/H92 format."
 ---
 H144 (exp-144) named the Linux cache-hit leftover under the post-H112 apply bucket: apply ~80–84 ms, parse and candidates ~27 ms, read ~9 ms; no new ≥3% userspace cut.
 
