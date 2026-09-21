@@ -24,12 +24,12 @@ serving, watch, `.gitignore` default-on, and a content sidecar.
 Campaign 1 and campaign 2 remain the history; this standing is a registry and
 measurement layer on top of them, not a rewrite of H86.
 
-Branch `perf/campaign-next-2026-09-19`, stacked on
+This standing was measured on `perf/campaign-next-2026-09-19`, stacked on
 [#91](https://github.com/jlevy/fdu/pull/91) (`perf/campaign-quiet-2026-09-18` at
 `e667b739`, which holds H115, H120, and the R1–R2 / S1–S3 review fixes).
-Continue on the stacked branch.
-Do not push to #91. Never merge.
-Never force-push.
+Both merged to `main` on 2026-09-20 (`6e3d2937` / `a290aedc`) and both branches were
+deleted, so a new Darwin round starts from `main`, not from either of them.
+Never force-push: the committed evidence cites SHAs.
 
 ### Standing Best and Regime
 
@@ -496,8 +496,9 @@ H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
 Next free Darwin hypothesis id is **H144**. Do not mint another meaning for H91–H106.
-Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
-take exp-138 here. exp-113 remains reserved unused (H113 superseded).
+Next free experiment id is **exp-144**; numbering is shared with Linux, so do not take
+exp-138–143 here — they are minted on #94. exp-113 remains reserved unused (H113
+superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -706,7 +707,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | --- | --- |
 | This standing section | Standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Ready to merge onto #92 |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -719,14 +720,28 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 
 ## Linux Standing (2026-09-20)
 
-Stacked [#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`,
-rebased onto [#92](https://github.com/jlevy/fdu/pull/92) `937f9445` (R1–R3 plus
-`c441edf6` single-view Cow borrow and the #91 restore-evidence repair).
-Ready to merge onto #92. This is not a Linux floor pass.
-H141’s four-view `content-query` still shares one walk (`row_consumers > 1`). A
-single-view report now borrows instead of cloning; that does not change the four-view
-cell. H139 was a well-formed cache-hit tree; snapshot alias reject and restore-timing
-evidence do not change that cell.
+[#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`, base
+`main` (`c7babf76`). [#91](https://github.com/jlevy/fdu/pull/91) and
+[#92](https://github.com/jlevy/fdu/pull/92) merged 2026-09-20 (`6e3d2937` / `a290aedc`)
+and their branches were deleted, so the engine measured here — `937f9445`, R1–R3 plus
+`c441edf6` single-view Cow borrow and the #91 restore-evidence repair — is on `main`.
+Merge onto `main`, then #97. This is not a Linux floor pass.
+**exp-138 and exp-140 were paired at `a5c98d59`, not at the merged `937f9445`, and have
+not been re-paired since.** `f8a2ed94` (the #92 R1–R3 fixes) and `c441edf6` landed after
+those two pairs ran; only exp-142 and exp-143 used the `937f9445` probe, so no Linux
+`content-cache-hit` or `content-query` pair exists on the merged engine.
+The expectation that the difference sits below the 3% wall rule is **argued from the
+diff, not measured**: `f8a2ed94` adds a per-name `component == name` check inside
+validation that already walked the same names, swaps a completeness denominator from
+`len()` to `visited`, and rewrites `query_report.rs`; `c441edf6` makes a single-view
+report borrow instead of cloning, and H141’s four-view `content-query` still shares one
+walk (`row_consumers > 1`), so the four-view cell has no single-view path to change.
+H139 was a well-formed cache-hit tree, so the snapshot alias reject and the
+restore-timing evidence have nothing to bite on there.
+Treat both cells as inherited across that engine bump until one quiet 12-pair
+`content-cache-hit` runs on the `main` probe.
+That remeasure is open and needs a quiet Linux host (load/core ≤ 0.25); it was not run
+here because this host would not hold the gate.
 4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
 Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
 Darwin-only).
@@ -776,7 +791,8 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 
 ### After #94 (Linux)
 
-This PR is recorded and ready to merge onto #92. The next Linux cell is not this branch.
+This PR is recorded and merges onto `main`, then #97. The next Linux cell is not this
+branch.
 
 1. A new named mechanism that can close the 1.4× index or 3× RSS gate, or a bare-metal
    H111 remeasure. That is **H144** if minted.
