@@ -110,18 +110,29 @@ fn bounded_single_file_view_does_not_clone_every_materialized_path() {
     let types = report_allocations(&index, vec![ViewSpec::Types], Selection::default());
     assert!(
         allocations < types,
-        "a bounded Largest view must not exceed one measured full-tree walk: \
+        "a bounded Largest view must cost less than a view that aggregates every file: \
          {allocations} allocations versus {types} for Types"
     );
-    // This ceiling is also what detects the opposite H138 fault. Sharing a walk when only
-    // one view consumes it is invisible to the sibling guard, which compares a pair
-    // against two singles; it shows up here, and only by about eight allocations. Raising
-    // the bound to quiet a flake would silently retire that detection — fix the cause, or
-    // move the detection somewhere with a stated margin, but do not widen this.
+
+    // This bound is also what detects the opposite H138 fault: sharing a walk when only
+    // one view consumes it, which the sibling guard cannot see because it compares a pair
+    // against two singles.
+    //
+    // The margin is stated rather than inherited. One walk of this fixture is about
+    // `FILES * 2` — `every_entry` joins and clones once per entry — and the bounded view
+    // adds only shaping on top, measuring 2,055. Sharing a walk that nothing else
+    // consumes adds a second full-tree pass, measuring 3,080. Half a walk sits between
+    // them with roughly five hundred allocations of clearance on each side.
+    //
+    // An earlier bound of `FILES * 3` separated those two numbers by eight. That is not a
+    // margin, it is a coincidence, and the natural response to a flake there — widening
+    // it — would have retired the detection silently. If this ever needs widening,
+    // re-measure both numbers and restate the margin; do not round the bound up.
     assert!(
-        allocations < FILES * 3,
-        "a second full-tree FileRow/PathBuf clone adds at least one allocation per file: \
-         {allocations} allocations for {FILES} files"
+        allocations < FILES * 2 + FILES / 2,
+        "sharing a full-tree walk that only one view consumes adds a second pass: \
+         {allocations} allocations for {FILES} files, against a bound of {}",
+        FILES * 2 + FILES / 2
     );
 }
 
@@ -160,6 +171,13 @@ fn unfiltered_metric_views_share_one_every_entry_walk() {
     // which is the only thing sharing saves. Without the subtraction a build that never
     // shares but allocates FILES more fixed bytes passes, because the difference
     // degenerates to exactly that overhead.
+    //
+    // `fixed` is a zero-view report, so this closes a cost paid by every report and not
+    // one paid only by reports that carry a view: a never-share build that also spent
+    // FILES more per viewed report would still pass, measuring a saving of 1,102. Closing
+    // that would need a per-view baseline, or a walk counter rather than an allocation
+    // count. Stated rather than implied, so the next reader knows what this does not
+    // cover.
     assert!(
         fixed < FILES,
         "fixed per-report overhead is {fixed}, not small against a {FILES}-entry walk; \

@@ -241,7 +241,10 @@ pub fn load_content_cache(
         }
         // Apply includes the HashMap remove and fingerprint compare so the restore
         // timers cover the whole load. Decode stays in parse. exp-109's apply 63.3%
-        // wrapped the whole loop; exp-120 used the narrower post-H112 bucket.
+        // wrapped the whole loop; exp-120 used the narrower apply-only bucket that
+        // arrived with e667b739, which left the remove and fingerprint compare between
+        // decode and apply. "post-H112" named the wrong change: H112 is exp-109, the
+        // measurement with the wide bucket.
         let apply_started = timings.as_ref().map(|_| Instant::now());
         match candidates.remove(&relative_path) {
             Some(candidate) if candidate.attrs.fingerprint() == analysis.fingerprint => {
