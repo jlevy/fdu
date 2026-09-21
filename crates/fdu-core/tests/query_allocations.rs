@@ -1,6 +1,13 @@
 //! Allocation regression guard for query row sharing.
+//!
+//! The counting allocator is process-global. These tests take a mutex around
+//! enable/reset/snapshot so a parallel sibling cannot tear the count. CI on the
+//! leftover cherry-pick saw Types at 966 against a two-view 8,214 for that reason.
 
+use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
+
+static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
 use fdu_core::query::{
     Basis, Bound, Provenance, Query, ReportSource, Request, Selection, ViewSpec,
@@ -54,6 +61,7 @@ fn report_allocations(index: &Index, views: Vec<ViewSpec>, selection: Selection)
         errors: Vec::new(),
     };
 
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let _disable = DisableCounters;
     fdu_core::counters::reset();
     fdu_core::counters::enable(true);
@@ -82,13 +90,17 @@ fn bounded_single_file_view_does_not_clone_every_materialized_path() {
         errors: Vec::new(),
     };
 
-    let _disable = DisableCounters;
-    fdu_core::counters::reset();
-    fdu_core::counters::enable(true);
-    let report = fdu_core::query::report(&index, &request, &provenance).expect("report");
-    let allocations = usize::try_from(fdu_core::counters::thread_snapshot().allocs)
-        .expect("allocation count fits usize");
-    fdu_core::counters::enable(false);
+    let (report, allocations) = {
+        let _guard = COUNTER_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _disable = DisableCounters;
+        fdu_core::counters::reset();
+        fdu_core::counters::enable(true);
+        let report = fdu_core::query::report(&index, &request, &provenance).expect("report");
+        let allocations = usize::try_from(fdu_core::counters::thread_snapshot().allocs)
+            .expect("allocation count fits usize");
+        fdu_core::counters::enable(false);
+        (report, allocations)
+    };
 
     let fdu_core::query::Section::Files { rows, total, .. } = &report.sections[0] else {
         panic!("largest files section")
@@ -115,6 +127,11 @@ fn unfiltered_metric_views_share_one_every_entry_walk() {
     let types = report_allocations(&index, vec![ViewSpec::Types], Selection::default());
     let both =
         report_allocations(&index, vec![ViewSpec::Types, ViewSpec::Families], Selection::default());
+    assert!(
+        types >= FILES,
+        "a single Types view still walks every file into a FileRow: \
+         {types} allocations for {FILES} files"
+    );
     assert!(
         both < types.saturating_mul(2),
         "H138 shares one every_entry walk: [Types, Families] allocated {both}, \
