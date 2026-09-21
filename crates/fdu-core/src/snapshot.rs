@@ -1409,6 +1409,44 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_names_must_equal_their_single_normal_component() {
+        assert!(is_snapshot_name(OsStr::new("notes.md")));
+        assert!(!is_snapshot_name(OsStr::new("notes.md/")));
+        assert!(!is_snapshot_name(OsStr::new("a/b")));
+        assert!(!is_snapshot_name(OsStr::new("../bad")));
+        assert!(!is_snapshot_name(OsStr::new("")));
+        assert!(!is_snapshot_name(OsStr::new(".")));
+        assert!(!is_snapshot_name(OsStr::new("..")));
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let native = OsString::from_vec(vec![b'n', 0x80]);
+            assert!(is_snapshot_name(&native), "canonical validation is OsStr identity");
+            let aliased = OsString::from_vec(vec![b'n', 0x80, b'/']);
+            assert!(!is_snapshot_name(&aliased));
+        }
+    }
+
+    #[test]
+    fn a_valid_forged_rename_loads_and_is_found_by_lookup() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        let mut index = Index::new("/some/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("valid"),
+            kind: EntryKind::File,
+            attrs: attrs(1, 1),
+        }]));
+        save(&index, &path).expect("save");
+        let saved = fs::read(&path).expect("read");
+        let forged = replace_entry_name(&saved, 1, OsStr::new("renamed"));
+        fs::write(&path, forged).expect("write valid rename");
+        let restored = load(&path).expect("load").expect("a valid rename is a snapshot");
+        assert!(restored.lookup(Path::new("renamed")).is_some());
+        assert!(restored.lookup(Path::new("valid")).is_none());
+    }
+
+    #[test]
     fn noncanonical_entry_names_are_rejected_after_integrity_checks() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("snapshot.fdu");

@@ -155,6 +155,12 @@ pub fn save_content_cache(index: &Index, path: &Path) -> Result<()> {
 /// request did not ask for, and one produced under other analyzer versions, options, type
 /// rules, entries, or engine counts differently. An identity this index cannot hold,
 /// because it names another entry tier or type rules, restores nothing into it.
+///
+/// A header that fails to parse leaves `index` untouched. A failure later in the record
+/// stream calls [`Index::clear_content`]: every mutation after `prepare_content_analysis`
+/// is confined to the content tier, and a late miss must not leave a partial one. An
+/// outside caller that already holds content and then passes a corrupt sidecar therefore
+/// sees that tier wiped. In-crate loads start with `content: None`.
 pub fn load_content_cache(
     index: &mut Index,
     wanted: &ContentTierIdentity,
@@ -233,30 +239,35 @@ pub fn load_content_cache(
         if let (Some(timings), Some(started)) = (&mut timings, decode_started) {
             timings.add_parse(started);
         }
-        let Some(candidate) = candidates.remove(&relative_path) else {
-            loaded.stale = loaded.stale.saturating_add(1);
-            continue;
-        };
-        if candidate.attrs.fingerprint() != analysis.fingerprint {
-            loaded.stale = loaded.stale.saturating_add(1);
-            continue;
-        }
-        let coverage_exclusion =
-            !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
-        let bytes = analysis.bytes;
+        // Apply includes the HashMap remove and fingerprint compare so the restore
+        // timers cover the whole load. Decode stays in parse. exp-109's apply 63.3%
+        // wrapped the whole loop; exp-120 used the narrower apply-only bucket that
+        // arrived with e667b739, which left the remove and fingerprint compare between
+        // decode and apply. "post-H112" named the wrong change: H112 is exp-109, the
+        // measurement with the wide bucket.
         let apply_started = timings.as_ref().map(|_| Instant::now());
-        let outcome = index.apply_restored_analysis(candidate, analysis);
+        match candidates.remove(&relative_path) {
+            Some(candidate) if candidate.attrs.fingerprint() == analysis.fingerprint => {
+                let coverage_exclusion =
+                    !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
+                let bytes = analysis.bytes;
+                match index.apply_restored_analysis(candidate, analysis) {
+                    AnalysisApplyOutcome::Applied => {
+                        loaded.hits = loaded.hits.saturating_add(1);
+                        loaded.bytes = loaded.bytes.saturating_add(bytes);
+                        loaded.coverage_exclusions = loaded
+                            .coverage_exclusions
+                            .saturating_add(u64::from(coverage_exclusion));
+                    }
+                    AnalysisApplyOutcome::Stale => {
+                        loaded.stale = loaded.stale.saturating_add(1);
+                    }
+                }
+            }
+            Some(_) | None => loaded.stale = loaded.stale.saturating_add(1),
+        }
         if let (Some(timings), Some(started)) = (&mut timings, apply_started) {
             timings.add_apply(started);
-        }
-        match outcome {
-            AnalysisApplyOutcome::Applied => {
-                loaded.hits = loaded.hits.saturating_add(1);
-                loaded.bytes = loaded.bytes.saturating_add(bytes);
-                loaded.coverage_exclusions =
-                    loaded.coverage_exclusions.saturating_add(u64::from(coverage_exclusion));
-            }
-            AnalysisApplyOutcome::Stale => loaded.stale = loaded.stale.saturating_add(1),
         }
     }
     if !stream.reader.is_empty() {

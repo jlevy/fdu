@@ -292,3 +292,17 @@ Do not raise the README 200K files/s or 4M cached lines/s from this cell.
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->
+
+## Errata (2026-09-21)
+
+The recorded cell’s apply figure is measured with the narrower apply-only timer
+introduced in `e667b739`, which left the HashMap remove and the fingerprint compare
+between decode and apply.
+It is therefore not comparable with exp-109’s apply 63.3%, whose timer wrapped the whole
+loop, and the phrase “post-H112” used elsewhere named the wrong change: H112 is exp-109
+itself.
+
+Since 2026-09-21 the apply timer starts at `candidates.remove`, so the four restore rows
+sum to the sidecar load.
+Neither figure is wrong for the bucket it was measured in; re-profile before comparing
+them or before another apply cut.

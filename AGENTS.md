@@ -75,6 +75,11 @@ If it passes, CI should.
 It runs the same build-feature combinations CI does, notably `--no-default-features`,
 which is how library consumers build and is otherwise never exercised locally.
 
+Neither covers what caching does to an answer over file kinds a fixture does not
+contain. [The correctness runbook](docs/project/guides/correctness-runbook.md) is the
+manual pass for that: run it before tagging a release, and after any change to cache
+identity, serving, or reconciliation.
+
 ### Terminology
 
 Compile-time Cargo features are **build features** in prose (comments, docs, commits,
