@@ -3,14 +3,14 @@ type: is
 id: is-01m32h6d4szbwm3n1sgxqyfn9x
 title: "PR #97 review pass: Linux leftover records, H147/H72 keeps, H148 PGO screen"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
 created_at: 2026-09-21T17:46:05.337Z
-updated_at: 2026-09-21T17:46:05.337Z
+updated_at: 2026-09-21T17:50:22.364Z
 ---
 Branch `cursor/linux-perf-iterate-de1b`, based on #94. Reviewer model: Fable.
 

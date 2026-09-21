@@ -3,14 +3,14 @@ type: is
 id: is-01m32h6fe9mfa8b5exwsdcb62h
 title: "PR #104 review pass: restore #91/#92 review leftover guards and evidence honesty"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
 created_at: 2026-09-21T17:46:07.689Z
-updated_at: 2026-09-21T17:46:07.689Z
+updated_at: 2026-09-21T17:50:22.857Z
 ---
 Branch `cursor/review-leftovers-de1b`, based on main. Reviewer model: Fable.
 
