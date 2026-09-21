@@ -82,15 +82,23 @@ Directories are an entry-kind filter, not a separate view.
 
 With metadata-only defaults, `fdu PATH`, `fdu PATH --view list`,
 `fdu PATH --format tree`, and `fdu PATH --view list --format tree` are equivalent.
-The default view is `list`; its default format is `tree`. Explicit `--format tree` is
-the explicit form of that default, not a different query.
+The default view is `list`; its default format is `tree`. For a single `list` view,
+explicit `--format tree` is the explicit form of that default, not a different query.
+The equivalence is scoped to one list view on purpose: with several views, or with
+`full`, the omitted format is automatic text, which lays out one section per view, while
+`--format tree` names one presentation of one list section and is a usage error there.
+The explicit spelling is narrower than the automatic one because a tree beside a table
+is a text report, not a tree.
 Analyzer-driven default views remain available so requested content analysis is shown.
 An explicit view always wins and does not enable an analyzer.
 
-**Default output must remain unchanged.** Compare against the pre-change behavior on the
-same fixture: the directory hierarchy, allocated sizes, ordering, columns, bars, ignored
-annotations, two-level depth, ten children per directory, omission notices, and
+**Default text output must remain unchanged.** Compare against the pre-change behavior
+on the same fixture: the directory hierarchy, allocated sizes, ordering, columns, bars,
+ignored annotations, two-level depth, ten children per directory, omission notices, and
 diagnostics remain the same.
+The claim covers the default text tree and only that: the machine form of the default
+report, and the answers to several existing filtered requests, do change, and “Requests
+Whose Answers Change” below lists each one.
 This is an interface clarification and an additional set of formats, not a redesign of
 the default report. Directory-filter corrections requested by issue #93 are tested
 separately from unchanged ordinary default output.
@@ -101,11 +109,23 @@ The formats for `list` are:
   Regular files contribute to directory totals rather than gaining individual leaf rows.
   Ancestors provide context for selected subtrees.
   Preserve this behavior for omitted format and explicit `--format tree` alike.
-- `paths`: flat matching paths only, one per line, with the project’s existing safe
-  path-escaping rules.
+- `paths`: flat matching paths only, one per line.
+  The listing is line-oriented and lossy, not a byte-exact identity: each path is
+  rendered with `to_string_lossy`, so undecodable bytes become U+FFFD; control
+  characters, newline included, are rendered as backslash escapes so one row stays one
+  line; every other character, the platform separator and a literal backslash among
+  them, is written verbatim.
+  Escaping the backslash would double the Windows separator and print paths that do not
+  exist. A consumer that needs byte identity reads JSON, whose rows carry `path_raw` for
+  exactly the paths this rendering cannot represent.
   No size/age columns or report headings on stdout.
 - `long`: one flat row per match with the selected size metric, actual modification age,
-  and path. Display columns are consistent for files and directories.
+  and path. The columns are the same for files and directories: size, age, path.
+  Subtree counts are not a column, and a regular file’s row carries none in machine
+  formats either: `files` and `dirs` are `null`, never `0`, because a value nobody
+  measured is absent rather than zero.
+  An unknown age renders as `unknown` and is `null` in machine formats, matching the
+  existing `Option` treatment of `ignored` and `newest_mtime_ns`.
 - JSON, JSONL, and YAML: structured representations of the same selected entries and
   metrics, including exact timestamps and the reference instant for age.
 
@@ -122,9 +142,17 @@ views, while `paths` cannot silently discard non-list sections.
 | Requested view | Omitted format / `text` | `tree` | `paths` / `long` | JSON / JSONL / YAML |
 | --- | --- | --- | --- | --- |
 | `list` | Existing directory tree | Same directory tree | Flat matching entries | Structured list and metrics |
+| `largest` / `recent` | Existing ranked regular-file list | Usage error: a directory hierarchy cannot show a ranked file selection | The ranked regular files, as paths or size/age rows | Structured ranked files |
+| Legacy `files` | Complete name-ordered listing, unchanged | The directory tree, tree-ordered | The same rows in name order | Structured rows in name order |
+| Legacy `tree` | Existing directory tree | Same directory tree | Flat matching entries | Structured `tree` hierarchy, unchanged for existing consumers |
 | Aggregate view (`summary`, `extensions`, and others) | Existing report/table | Usage error | Usage error | Structured aggregate |
 | Mixed list and aggregate views | Tree plus existing reports/tables | Usage error | Usage error | All requested sections |
 | `full` | Existing bounded digest | Usage error | Usage error | Existing bounded digest contract |
+
+`--depth` bounds tree rendering only.
+Under `paths`, `long`, and the machine formats it has no effect, as it already had none
+under `--view files`; a usage error would break those existing invocations, so the flag
+stays accepted and is documented as tree-only.
 
 Largest/recent retain their documented regular-file selection and ranking presets.
 Their automatic human presentation remains compatible; explicit Paths and Long render
@@ -136,8 +164,69 @@ tree ordering. Legacy `--view tree` retains its structured hierarchy with machin
 formats; explicit Paths and Long override it.
 This preserves existing tree JSON consumers while new List machine requests return a
 complete flat inventory.
+Both spellings stay in the view vocabulary and its diagnostics, labelled as
+compatibility spellings in help and usage text: `--view tree` is the old name for the
+default presentation, `--tree` is the format alias, and the two never disagree.
+
+### Requests Whose Answers Change
+
+The unchanged-output claim covers the default text tree.
+These pre-existing requests answer differently after this plan, and each change is
+deliberate:
+
+- Directory rows under `--min-size`, `--modified-since`, or `--modified-before` with no
+  `--kind`. They used to test the directory inode; they now test the eligible subtree,
+  so `fdu PATH --min-size 1G` returns a different set of directory rows, and a
+  time-bounded request without `--kind` matches directories by subtree activity, which
+  then cover their eligible contents in aggregate views.
+  `fdu PATH --modified-since 7d --view summary` therefore counts every eligible file
+  under a directory with activity this week, not only the files modified this week;
+  `--kind file` asks the narrower question.
+  The usage guide and README state this rule beside every time-bounded example, and a
+  golden covers a time bound with no kind.
+- Directory rows in the legacy `files` preset carry subtree bytes, counts, and newest
+  activity rather than inode metadata.
+- The machine `view` label on the default report.
+  `fdu PATH --format json` says `"view": "list"` where it said `"tree"`, and the default
+  section body is a flat `files` array with `bound`. `view: "list"` may carry either a
+  `tree` object (a List requested in tree format, as Python can) or a `files` array;
+  `full` and legacy `--view tree` keep `"view": "tree"` with a `tree` object.
+  A consumer branching on `view == "tree"` stops matching the default report, which is
+  why `REPORT_SCHEMA` moves from `fdu.report/5` to `fdu.report/7` and
+  `CONTENT_REPORT_SCHEMA` from `/6` to `/8`, and why the release notes name the label
+  change.
+- List rows gain `files`, `dirs`, `complete`, and `age_ns`, and the envelope gains
+  `age_reference_ns`; the same schema bump covers them.
+- `summary.newest_mtime_ns` does not change: it remains the newest mtime over admitted
+  regular files, while a directory row’s `mtime_ns` is the newest activity of the root
+  and its eligible descendants, directories and symlinks included.
+  The two are different metrics with different names, and the summary field keeps its
+  released meaning under the same schema.
 
 ## Selection and Directory Metrics
+
+### Pruning, Selecting, and Eligibility
+
+Every flag on the selection axis is one of two kinds, and “eligible” is defined by the
+first:
+
+- **Pruning** flags remove entries, and everything beneath them, from measurement as
+  well as from the result: `--exclude`, `--exclude-ignored`, and the scope bounds the
+  index already carries, `--scan-depth`, `--one-filesystem`, and unfollowed symlink
+  ancestors. `--only-ignored` prunes nothing structurally, since unignored ancestors must
+  stay traversable to reach ignored matches, but it admits only ignored contents into
+  measurements and results.
+- **Selecting** flags choose which eligible entries become rows: `--include`, `--kind`,
+  `--min-size`, `--modified-since`, and `--modified-before`.
+
+An entry is *eligible* when it is retained and no pruning flag removes it or an
+ancestor. Directory metrics are computed over eligible contents first; the selecting
+predicates are then evaluated against those metrics.
+One consequence is stated here so nobody discovers it in a test: because `--min-size`
+and the modification bounds select rather than prune, a directory that matches them
+covers all of its eligible contents in aggregate views, so
+`fdu PATH --min-size 1M --view summary` counts files under 1 MiB whenever they sit
+inside a matched directory.
 
 Name/path and kind constraints remain ordinary filters.
 Existing include syntax keeps its documented basename-versus-relative-path meaning; this
@@ -145,10 +234,10 @@ work does not introduce an expression language.
 `--kind dir` restricts the result to directories.
 A directory’s metrics have the same meaning when that kind filter is omitted.
 
-Before positive include, kind, size, and age predicates are evaluated, compute directory
-metrics over eligible retained contents.
-Apparent and allocated sizes sum regular-file bytes using existing accounting, excluding
-directory-inode and symlink bytes.
+### Directory Metrics
+
+Apparent and allocated sizes sum eligible regular-file bytes using existing accounting,
+excluding directory-inode and symlink bytes.
 Counts exclude the matched root.
 Modification time is the maximum observed mtime of the root and eligible descendants,
 including directories and symlinks.
@@ -164,24 +253,124 @@ Preserve documented `--only-ignored` traversal through structural ancestors and 
 only eligible contents.
 Explain that directory size and recency reflect the remaining contents after exclusion.
 
+`read_controls=false` (`--no-gitignore`) changes none of this and is a separate snapshot
+scope, so no stored tier crosses between an observing and an unobserving index.
+Over an index that observed no control state, a selection by ignored state is refused
+before the walk, exactly as today, and every row’s `ignored` stays `null` rather than
+`false`, in aggregates as on list rows: a report that read no rule must not say that
+nothing is ignored.
+
+### Incomplete Subtrees
+
+A directory’s subtree is *incomplete* when any eligible directory within it, itself
+included, has no authoritative child listing.
+That happens at the `--scan-depth` boundary, where a directory at the depth limit was
+retained but never listed; in an opened root, for every directory discovery has not
+listed yet; and in a one-shot scan that finished with errors, where the index records
+that the walk was partial but not which directory the error fell in, so every directory
+row is incomplete until scan errors are attributed per directory (a follow-up, tracked
+as a bead).
+A cache-only result is stale, not incomplete: a snapshot is only ever written
+from a complete index, so its rows are complete as of the snapshot, and the report-level
+`source` and `freshness` carry the staleness.
+
+Over an incomplete subtree the measured values are lower bounds, and the row must say so
+rather than present them as exact, which follows from the partial-friendly rule that
+absence below an incomplete boundary is unknown:
+
+- The typed row and every machine format carry `complete`: `true`, `false`, or `null`
+  for an entry that is not a directory.
+- `bytes`, `allocated`, `files`, and `dirs` are lower bounds when `complete` is false.
+  `mtime_ns` is the newest activity observed, also a lower bound.
+- `age_ns` is `null`, and `long` prints `unknown`: a lower-bound maximum is not an age,
+  because the activity that would make the directory younger may sit in the part that
+  was never listed.
+- No modification-time bound matches an unknown age, in either direction.
+  A directory whose subtree is incomplete is therefore never returned by
+  `--modified-before`, which cannot be decided from a lower bound, nor by
+  `--modified-since`, which a lower bound could prove but is held to the same rule so
+  that a row’s presence under a time filter always means the filter was decided on a
+  complete measurement.
+  `--min-size` may match on the lower bound, since a lower bound at or above the minimum
+  proves the true size is too.
+- Aggregate views count the covered contents that were observed; the report-level
+  `complete`, `freshness`, and scope diagnostics label the whole, as they already do for
+  the tree.
+
+### Coverage and Aggregates
+
 Positive matching of a directory includes its eligible contents in aggregate views;
 descendant names need not independently match.
 Flat list formats emit only matching roots/entries, not every covered descendant.
 Nested matching directories are all listed.
 Their row sizes may overlap, while summary and grouped views aggregate the union of
 covered regular files exactly once.
+
+Under coverage, `summary.files`, `bytes`, and `allocated` count the union of covered
+eligible regular files once; `summary.dirs` counts every matched directory, itself
+included, plus the eligible directories beneath covered roots; `ignored` shares follow
+the same union. A summary therefore no longer equals a tally of the list rows whenever a
+directory match covers descendants: `--kind dir --include node_modules` lists one row
+per match beside a summary of everything inside them, and that is the answer the request
+asks for. The earlier fix that tallied directories at the selection site, so that
+`--kind file` stopped answering “6 files, 3 directories”, is preserved for what it
+guarded: a directory that neither matches nor sits under a covering match is still never
+counted. The next reader should not “fix” the summary back to a row tally.
+
 Symlinks are not followed.
 The scan root remains structural context under the existing descendant-selection
 contract. Hard links and shared extents retain existing accounting; reported size is not
 a promise of uniquely reclaimable disk space.
 
+### Worked Example
+
+One fixture makes the contracts above concrete.
+Under the scan root `projects`, `app/node_modules` holds `pkg/index.js` (100 bytes), a
+nested `pkg/node_modules/inner/index.js` (40 bytes, the newest file, modified six days
+before the request), and `cache/blob` (500 bytes); `app/src/main.rs` is 10 bytes;
+everything else was last modified 51 days before the request.
+
+```console
+$ fdu projects --size apparent --kind dir --include node_modules --exclude cache --format long
+     140 B       6d app/node_modules
+      40 B       6d app/node_modules/pkg/node_modules
+$ fdu projects --size apparent --kind dir --include node_modules --exclude cache --view summary
+     140 B  2 files, 4 directories
+$ fdu projects --size apparent --kind dir --include node_modules --exclude cache --format tree
+     140 B  ██████████   100%  . (2 files)
+     140 B  ██████████   100%    app (2 files)
+     140 B  ██████████   100%      node_modules (2 files)
+```
+
+Both matches are rows, and the nested one’s 40 bytes appear in both rows; the excluded
+`cache` contributes nothing to either, so the outer row is 140 bytes rather than 640.
+The outer row’s age is the nested file’s, because subtree activity is a maximum over
+eligible descendants.
+The summary counts the 40 bytes once, counts four directories (both matches, `pkg`, and
+`inner`; `cache` is pruned), and disagrees with a tally of the two rows on purpose.
+The tree shows the outer match and its ancestor as roll-ups and folds the nested match
+beneath the default depth, which is presentation rather than a different selection.
+
 ## Ordering, Bounds, and Honesty
 
 Keep the existing tree’s size-descending order and tie-breaking behavior unchanged.
-The new flat presentations use size-descending order with deterministic path ties;
-legacy files presets retain their documented name ordering where needed.
+The new flat presentations use size-descending order with deterministic path ties.
+The question that order answers for a complete listing is “which matching entries are
+present, and which are largest”: a stale-environment inventory is read from the top, and
+a complete list ranked by size still has an interesting end.
+The derivation recorded in the code for `files`, that name order is right because the
+list is complete and a diff-stable inventory is what an enumeration is for, still holds
+for `--view files`, which keeps name order; the disagreement is written down here rather
+than inherited. `--view files --format long` and `--view list --format long` return the
+same rows in different default orders, and that difference is why both spellings exist:
+`files` is a compatibility preset whose order is part of its contract, `list` is the
+default whose order answers the size question.
+`--sort name` makes `list` a stable complete inventory.
 Explicit sort/reverse options use the same metrics across formats.
-`--sort name` gives a stable complete inventory.
+Every sort key breaks ties on the relative path, ascending, and `--reverse` reverses the
+whole order, ties included, so no ordering ever falls through to index iteration.
+`--sort count` on flat rows ranks a directory by its eligible descendant file count and
+counts a regular file as one.
 Largest/recent remain named regular-file list presets, with their documented ranking and
 bounds. Selection and directory metrics must not depend on the chosen format.
 
@@ -201,8 +390,15 @@ and tests.
 `full` retains its existing bounded digest output, including its directory-tree section.
 It must not acquire an unbounded flat listing or a different preview through the rename.
 Retain source, freshness, partial results, scan-depth coverage, and cache-only labels.
-Path-only output keeps its stdout contract; any necessary truncation/completeness notice
-goes to the documented diagnostic channel with the normal exit status.
+Path-only output keeps its stdout contract; any truncation or completeness notice is
+modelled in the engine, not invented by a front end.
+`Report.notes` carries the report’s remarks, and
+`report_format::flat_diagnostics(&report)` returns those plus the bound, cache-only,
+freshness, and scope notices a flat rendering must not print on stdout.
+The CLI writes them to stderr with the normal exit status; Python exposes them as
+`Report.notes`, which takes the flat diagnostics whenever the report’s format is `paths`
+or `long`; a Rust caller rendering `Format::Paths` reads `flat_diagnostics`. Every
+surface presents the same strings, and parity covers them.
 
 ## Engine and Surface Work
 
@@ -305,8 +501,6 @@ The plan-publication task is `fdu-79n0` and does not close the implementation ep
 
 ### fdu-hw5k: Core list selection with directory subtree metrics and union aggregation
 
-- [x] Complete and validate this delivery step.
-
 Implement the epic’s shared list query in `fdu-core`. Entry kind is a filter; directory
 size, counts, and newest activity are subtree metrics even without `--kind dir`. Apply
 exclusions throughout eligible contents before aggregate bounds; positive directory
@@ -329,10 +523,14 @@ Acceptance: deterministic size/count/mtime and boundary tests, empty/nested/fres
 file/directory/symlink recency, future/pre-epoch/unknown age, descendant exclusion and
 ignored policies, all-kind matching, union totals, repeat queries without I/O, stable
 sort and limit, deep-tree safety, and default/explicit-format-independent metrics.
+Incomplete subtrees: a directory at the `--scan-depth` boundary reports
+`complete: false`, lower-bound size, and unknown age, and neither modification bound
+matches it while `--min-size` still can; a one-shot index that finished with errors
+(`--allow-partial`) marks its directory rows incomplete; an opened root marks a
+directory complete only once discovery has listed it; a cache-only read keeps rows
+complete and labels staleness at the report level.
 
 ### fdu-ywh0: Add tree, paths, and long list formats across core and Python
-
-- [x] Complete and validate this delivery step.
 
 Implement core-owned `tree`, `paths`, and `long` presentations of the shared list
 report, alongside JSON, JSONL, and YAML. Tree preserves the existing directory roll-up
@@ -359,10 +557,12 @@ Version changed report meanings/shapes.
 Test unchanged default-output goldens and omitted/explicit tree equivalence, flat-format
 membership equivalence, tree aggregate consistency, aliases, multi-view validation,
 truncation/folding, machine decoding, and Python/Rust parity.
+Paths: a name holding a newline stays one row, an undecodable name renders lossy while
+its JSON row carries `path_raw`, a literal backslash is written verbatim, and the golden
+that covers nested paths uses the plain separator pattern so a doubled Windows separator
+fails it.
 
 ### fdu-y5ya: Expose list defaults, format aliases, and compatibility through the shared request model
-
-- [x] Complete and validate this delivery step.
 
 Expose the accepted selection/view/format model through shared engine defaults and
 validation. Metadata-only default view is list and its default format is tree.
@@ -394,11 +594,11 @@ CLI must not invent filtering, aggregation, or format semantics.
 
 ### fdu-2v7o: Document list formats, directory filters, and stale build inventories
 
-- [x] Complete and validate this delivery step.
-
 Update README, docs/usage.md (--docs), portable --skill, Rust API docs, Python README,
 models/stubs, machine-schema reference, architecture axes and selection semantics, and
 appropriate release notes to the accepted list-view and format model.
+The release notes name every entry of “Requests Whose Answers Change”, the `view` label
+of the default machine report among them, and the schema bump that carries them.
 
 Explain unchanged default output, default list/tree equivalence, formats
 tree/paths/long/json/jsonl/yaml, automatic grouped tables, format aliases, compatibility
@@ -423,8 +623,6 @@ terminology aligned.
 
 ### fdu-ia8p: Enhance help examples with README workflows and age/size directory searches
 
-- [x] Complete and validate this delivery step.
-
 Enhance short and long help with README workflows and stale-directory inventory
 examples. Teach selection (kind/name/path/age/size), view (list and aggregate reports),
 and format (tree default for list, paths, long, machine formats).
@@ -443,8 +641,6 @@ Review help goldens and execute every example’s syntax against a deterministic
 
 ### fdu-arv8: Verify unchanged defaults, directory formats, surface parity, and stacked PR CI
 
-- [ ] Complete and validate this delivery step.
-
 Validate the epic end to end with portable product goldens, engine tests, and Python
 parity. Cover metadata default list/tree equivalence, explicit formats and aliases,
 incompatible combinations, grouped/mixed views, legacy names, existing directory
@@ -461,6 +657,13 @@ verify tree roll-ups agree with selected contents without requiring flat file le
 Validate JSON/JSONL/YAML schema changes and age reference consistency.
 
 Review expected golden diffs and preserve named portability patterns.
+The goldens that must not change are `cli-overview`, `cli-human`, `cli-lifecycle`, and
+`cli-watch`, which hold the default text tree; the ones expected to change are
+`cli-json`, `cli-axes`, `cli-cache`, and `cli-content`, for the machine `view` label,
+the schema strings, and the new list-row fields, and `cli-surface` for help text.
+A change outside that list is a finding, not a golden to regenerate.
+Parity covers the flat diagnostics: the bound and coverage notices a `paths` or `long`
+rendering sends to stderr are the same strings the Python `Report.notes` carries.
 Record parity artifacts on Linux per repository policy.
 Run make docs-format and make check; run cross-lint if platform-gated code changes.
 Review and commit the implementation separately, stack its PR above this plan layer, and
@@ -501,6 +704,9 @@ Keep `tree_node`, `expand`, and `child_rows` as the tree implementation rather t
 reconstructing a tree from a globally truncated flat result.
 Carry the originating view on tree sections so machine output can identify List without
 changing Full’s legacy tree section.
+This is the deliberate `view` label change listed under “Requests Whose Answers Change”:
+the default report’s sections say `list`, Full’s tree section and legacy `--view tree`
+say `tree`, and `REPORT_SCHEMA` moves with it.
 
 The requested format is part of the read, not the cached scan basis.
 In Python this is `Query(format=Format.LONG)` or `Query(format=Format.JSON)` before
@@ -518,26 +724,34 @@ for an ordinary unfiltered tree.
 ### Subtree measurement and selected-content union
 
 Add `query/query_subtrees.rs` and register it in `query.rs`. Its iterative `measure`
-reader computes directory apparent/allocated bytes, descendant file/directory counts,
-and newest eligible mtime.
-Its `with_candidate` helper preserves native versus portable name identity, and `pruned`
-applies exclusions before positive selection.
+reader is the one owner of the directory-metric definition: one post-order pass over the
+retained index computes every directory’s apparent/allocated bytes, descendant
+file/directory counts, newest eligible mtime, and completeness, before any positive
+predicate runs. Its `with_candidate` helper preserves native versus portable name identity, and
+`pruned` applies exclusions before positive selection.
 Apply ignored policy while traversing structural ancestors; empty eligible roots retain
 their own timestamp.
 Keep the index reducers and snapshot schema unchanged.
 
-In `query_report::walk`, compute directory measurements before applying kind, name,
-size, and age predicates.
-Keep three distinct products: matching rows for flat output, regular-file members of the
-selected-subtree union for grouped metrics, and visible directories/ancestors for tree
-context. Propagate coverage from a matching directory, prune excluded descendants even
-under coverage, and add each regular file once.
+`query_report::walk` is a consumer of those values: it runs once after `measure`, looks
+each directory candidate’s measurement up by id, and never measures a subtree itself.
+The cost of a report is therefore bounded by one measurement pass plus one selection
+walk over the retained index, independent of how many directories match; a per-match
+measurement, which would go quadratic on nested `node_modules` or any broad `--include`,
+is ruled out by construction.
+A file-only selection skips the measurement pass and keeps its existing single-walk
+cost. Keep three distinct products: matching rows for flat output, regular-file members
+of the selected-subtree union for grouped metrics, and visible directories/ancestors for
+tree context. Propagate coverage from a matching directory, prune excluded descendants
+even under coverage, and add each regular file once.
 `metric_summary` consumes union members; `file_rows` consumes matches.
 `child_rows` omits unrelated branches, and `expand` only reports depth folding when an
 eligible directory child is hidden.
 
-Extend `FileRow` with subtree counts where applicable and signed optional age, derived
-from `Request::now`, not a renderer clock.
+Extend `FileRow` with subtree counts where applicable, subtree completeness, and signed
+optional age, derived from `Request::now`, not a renderer clock.
+Counts and completeness are `Option`s that are `None` for anything but a directory, and
+age is `None` when the reference is unrepresentable or the subtree is incomplete.
 Keep inode attributes in native raw-entry projections.
 Add a report-level reference instant for exact machine interpretation.
 A future timestamp has negative age; a pre-epoch mtime remains valid; an unrepresentable
@@ -556,7 +770,8 @@ needed.
 In `crates/fdu-core/src/report_format.rs`, extend `Format::parse` and `ALL` with Tree,
 Paths, and Long and expose shared human/machine classification.
 Tree reuses `render_text_tree` unchanged.
-Paths emits escaped paths only, with no report headings or notes on stdout.
+Paths emits one lossy, control-escaped path per line with no report headings or notes on
+stdout, and never escapes the separator or a backslash.
 Long renders size, signed modification age, and path with consistent columns.
 Use a checked rendering entry point to reject incompatible projections.
 
@@ -564,16 +779,18 @@ Update `section_json`, `file_json`, JSONL records, and YAML writers together wit
 schema constants. List rows expose kind, both sizes, subtree counts, mtime, optional
 signed age, and ignored classification; the envelope exposes the reference instant.
 Keep completeness, freshness, provenance, and bounds.
-Update `render_change` and `render_cache_status` dispatch for the added human formats,
-with documented watch behavior rather than treating new human formats as machine output
-by accident.
+Update `render_change` and `render_cache_status` dispatch for the added human formats.
+Under `--watch`, a List request in `paths` or `long` repaints the snapshot on each
+change, as `tree` does; only the legacy `files` view with text or a machine format keeps
+the raw per-change stream, and its invalidations go to the diagnostic stream.
+Cache status in a human format renders its existing table.
 
 In `crates/fdu/src/cli.rs`, pass format through `ReadSpec` in request construction.
 `Cli::render_watch_changes` keeps invalidations on stderr for Paths/Long; `render_live`
 and the initial watch report preserve flat bounds and coverage notices on the same
 diagnostic stream. Add `--tree` and `--long` aliases with explicit conflict checks.
 Use core format classification in `machine_format`, normal output, cache-status, and
-watch dispatch. Send path-only completeness/bound notices to diagnostics.
+watch dispatch. Send the engine’s flat diagnostics to stderr.
 Update short and long help constants and clap field descriptions together.
 CLI owns argument spelling and output streams; core owns selection, defaults,
 compatibility, and rendering.
@@ -598,6 +815,8 @@ Include all-kind selection, empty/nested matches, eligible directory/symlink act
 ignored/excluded descendants, overlapping roots, both sizes, age edge cases, ordering,
 bounds, mixed views, and detached-report re-render validation.
 Retain iterative deep-tree tests.
+Cover incomplete subtrees under a depth-bounded scope, a partial one-shot index, and an
+opened root mid-discovery.
 Extend opened-read tests to prove budget rejection and portable matching; repeat queries
 over one retained index after removing the backing fixture to establish no I/O.
 
