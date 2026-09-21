@@ -125,17 +125,33 @@ fn unfiltered_metric_views_share_one_every_entry_walk() {
     const FILES: usize = 1_024;
     let index = allocation_fixture(FILES);
     let types = report_allocations(&index, vec![ViewSpec::Types], Selection::default());
+    let families = report_allocations(&index, vec![ViewSpec::Families], Selection::default());
     let both =
         report_allocations(&index, vec![ViewSpec::Types, ViewSpec::Families], Selection::default());
+
+    // `every_entry` joins a path and clones it once per entry, so no complete measurement
+    // of this fixture can come in under two allocations per file. Anything below that is a
+    // torn reading rather than a cheap one, and has to fail as itself instead of quietly
+    // satisfying the comparison below.
     assert!(
-        types >= FILES,
-        "a single Types view still walks every file into a FileRow: \
-         {types} allocations for {FILES} files"
+        types >= FILES * 2 && families >= FILES * 2 && both >= FILES * 2,
+        "torn measurement: {types} for Types, {families} for Families, {both} for both, \
+         against a floor of {} for {FILES} files",
+        FILES * 2
     );
+
+    // Compare the pair against the two views measured separately. That cancels the fixed
+    // per-report overhead and the per-view aggregation cost, which are both larger than a
+    // walk and so hid it: a `both < types * 2` bound expands to `F + 2W + 2A < 2F + 2W +
+    // 2A`, true whenever the fixed overhead F is positive, no matter how many walks ran.
+    // A never-share build measured 10,265 against that bound of 10,268 and passed. What
+    // sharing saves is exactly one `every_entry` walk, so measure that, with a 2x margin.
+    let saved = (types + families).saturating_sub(both);
     assert!(
-        both < types.saturating_mul(2),
-        "H138 shares one every_entry walk: [Types, Families] allocated {both}, \
-         [Types] allocated {types}; flipping row_consumers > 1 to never share \
-         would cost at least two independent walks"
+        saved >= FILES,
+        "H138 must save one every_entry walk: [Types, Families] allocated {both} against \
+         {types} + {families} measured separately, a saving of {saved}; flipping \
+         row_consumers > 1 to never share costs a second walk, which allocates at least \
+         one PathBuf per entry"
     );
 }

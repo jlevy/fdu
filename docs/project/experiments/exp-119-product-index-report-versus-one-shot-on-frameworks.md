@@ -304,8 +304,8 @@ experiment:
     decision: accepted
     primary_job: default-tree
     primary_metric: wall_ns
-    change_pct: -99.919
-    reason: product second report 1.7ms versus default-tree 2078ms (1222x); determination kept; not a snapshot load
+    change_pct: 1.5
+    reason: product second report 1.7ms versus default-tree 2078ms (1222x); paired default-tree wall +1.5% (does not pass acceptance); determination kept; not a snapshot load
     commit: ee014340
 ---
 ## What was predicted

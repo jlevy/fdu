@@ -32743,7 +32743,7 @@
   {
    "anchored": false,
    "candidate": "index-second-report second query::report",
-   "change_pct": -99.919,
+   "change_pct": 1.5,
    "commit": "ee014340",
    "complexity": {
     "lines_changed": 98,
@@ -32972,7 +32972,7 @@
    "platform": "macOS",
    "primary_job": "default-tree",
    "primary_metric": "wall_ns",
-   "reason": "product second report 1.7ms versus default-tree 2078ms (1222x); determination kept; not a snapshot load",
+   "reason": "product second report 1.7ms versus default-tree 2078ms (1222x); paired default-tree wall +1.5% (does not pass acceptance); determination kept; not a snapshot load",
    "reference_tools": [
     {
      "argv": [

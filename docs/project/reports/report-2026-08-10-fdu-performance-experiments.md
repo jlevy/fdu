@@ -196,7 +196,7 @@ dead end.
 | 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -2.2% | ✅ accepted |
 | 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
 | 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
-| 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | -99.9% | ✅ accepted |
+| 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | +1.5% | ✅ accepted |
 | 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
 | 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp121--firstpass-analyze-io-typesize-gate-or-readahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
 | 122 | [Tighter metadata walk leftover after H122](#exp122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
@@ -4096,8 +4096,9 @@ Cost to carry: 98 lines; no new dependencies.
 
 probe mode index-second-report plus harness job; no engine serving change; no CLI flag
 
-**Accepted:** product second report 1.7ms versus default-tree 2078ms (1222x);
-determination kept; not a snapshot load.
+**Accepted:** product second report 1.7ms versus default-tree 2078ms (1222x); paired
+default-tree wall +1.5% (does not pass acceptance); determination kept; not a snapshot
+load.
 
 Full record:
 [`exp-119-product-index-report-versus-one-shot-on-frameworks.md`](../experiments/exp-119-product-index-report-versus-one-shot-on-frameworks.md)
