@@ -5,12 +5,12 @@ title: "PR #94 review S1: no gate catches a wrong verdict.change_pct once regene
 kind: bug
 status: open
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h6bvgxbks1d5t5q5p0k44
 created_at: 2026-09-21T18:15:17.476Z
-updated_at: 2026-09-21T18:15:17.476Z
+updated_at: 2026-09-21T18:43:11.466Z
 ---
 Senior review of PR #94, suggestion S1 (non-blocking, separate PR).
 
@@ -19,3 +19,7 @@ The reviewer broke exp-138's verdict.change_pct to -99.9, left the paired result
 Fix: add a model_validator on Experiment (explorations/benchmarks/realtree/experiment.py) asserting verdict.change_pct equals results[primary_job].metrics[primary_metric].paired.change_pct within 0.01 for accepted/rejected decisions. It will flag exp-116/119 until #104 merges, which is the right outcome.
 
 Out of scope for #94 (no harness changes in that layer beyond R1).
+
+## Notes
+
+Raised as S1 in the #94 senior review and deferred there: https://github.com/jlevy/fdu/pull/94#issuecomment-5765667327
