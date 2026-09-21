@@ -5,7 +5,7 @@ title: "Linux parallel validation of Darwin #92"
 kind: epic
 status: closed
 priority: 1
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - linux
@@ -19,8 +19,9 @@ child_order_hints:
   - is-01m2y762f58jb3kx6nhn0hr31g
   - is-01m2yh3xty3by52m58k26g1c7m
   - is-01m2ykq9k7edrmfct2a96ghxqb
+  - is-01m32jv4eg76xt21gkexf9a2ns
 created_at: 2026-09-20T00:46:42.178Z
-updated_at: 2026-09-20T05:16:21.417Z
+updated_at: 2026-09-21T18:14:53.136Z
 closed_at: 2026-09-20T05:16:21.417Z
 close_reason: "Linux parallel validation recorded on #94: H139–H142 same, H111 fail, H143 leftover. Docs marked ready to merge onto #92. Next cut is H144 if minted."
 ---
