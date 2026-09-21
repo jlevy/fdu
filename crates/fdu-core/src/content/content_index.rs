@@ -637,10 +637,14 @@ mod tests {
     #[test]
     fn bottom_up_rebuild_matches_incremental_nested_rollups() {
         let paths = ["README.md", "a/keep.rs", "a/b/nested.rs", "a/b/c/deep.rs", "a/b/c/other.py"];
+        let mut binary = analysis("a/b/c/image.png", 0);
+        binary.coverage = CoverageReason::Binary;
+        binary.metrics = MetricValues::default();
         let mut incremental = prepared();
         for path in paths {
             commit(&mut incremental, path, analysis(path, 3));
         }
+        commit(&mut incremental, "a/b/c/image.png", binary.clone());
 
         let mut rebuilt = prepared();
         for path in paths {
@@ -649,6 +653,10 @@ mod tests {
                 "{path} must commit"
             );
         }
+        assert!(
+            rebuilt.commit_without_rollup(PathBuf::from("a/b/c/image.png"), binary),
+            "binary coverage must commit"
+        );
         assert!(rebuilt.rollup(Path::new("")).is_none(), "deferred inserts leave roll-ups empty");
         rebuilt.rebuild_rollups();
 

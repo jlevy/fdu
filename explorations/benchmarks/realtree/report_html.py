@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.realtree.timeline import METRICS
+
 #: Jobs shown in the absolute figure, in the order the work happens: build the index
 #: from a cold tree, persist it, then bring a saved one back up to date.
 ANCHOR_JOBS = (
@@ -61,6 +63,27 @@ def fmt_ms(nanoseconds: Optional[float]) -> str:
     if value >= 1000:
         return f"{value / 1000:,.2f} s"
     return f"{value:,.0f} ms"
+
+
+def fmt_bytes(value: Optional[float]) -> str:
+    if value is None:
+        return "—"
+    mib = value / (1024 * 1024)
+    if mib >= 1024:
+        return f"{mib / 1024:,.2f} GiB"
+    return f"{mib:,.1f} MiB"
+
+
+def fmt_primary(value: Optional[float], metric: Optional[str]) -> str:
+    """Format the verdict's primary metric in that metric's unit.
+
+    The table used to run every primary through [`fmt_ms`], so exp-117's peak RSS
+    (395,886,592 → 355,868,672 bytes) printed as `396 ms → 356 ms`.
+    """
+    unit = METRICS.get(metric or "wall_ns", "ns")
+    if unit == "bytes":
+        return fmt_bytes(value)
+    return fmt_ms(value)
 
 
 def fmt_pct(value: Optional[float]) -> str:
@@ -1256,9 +1279,11 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
         change = (
             fmt_pct(paired["change_pct"]) if paired and record["decision"] != "baseline" else "—"
         )
-        before = fmt_ms(absolute["control"]) if absolute else "—"
+        before = (
+            fmt_primary(absolute["control"], record["primary_metric"]) if absolute else "—"
+        )
         after = (
-            fmt_ms(absolute["candidate"])
+            fmt_primary(absolute["candidate"], record["primary_metric"])
             if absolute and record["decision"] != "baseline"
             else "—"
         )

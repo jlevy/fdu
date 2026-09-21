@@ -183,7 +183,7 @@ experiment:
     primary_job: content-query
     primary_metric: wall_ns
     change_pct: -18.764
-    reason: "content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone; component -24.61%; report identity unchanged; engine kept"
+    reason: "content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone; component -24.61%; engine kept; report identity is from crate tests, not the benchmark digest"
     commit: a5c98d59
 ---
 ## What was predicted
@@ -205,11 +205,16 @@ Uncontrolled. Do not lower the 25% bar.
 
 ## What was changed
 
-`report_in` computes `every_entry` once when the selection is unfiltered and any view
-needs entry rows. `metric_summary` and `file_rows` take that shared slice.
+`report_in` computes `every_entry` once when the selection is unfiltered and more than
+one view needs entry rows.
+A single row-consuming view owns its walk.
+`metric_summary` and `file_rows` take that shared slice when it exists.
 
 No cache change. No format change.
 No snapshot load on `fdu PATH`.
+
+The first draft of this section said “any view” and predated the R1 single-view
+ownership fix. The measured candidate already shared on two or more consumers.
 
 ## What was measured
 
@@ -249,6 +254,13 @@ Do not invent a cache-hit skip.
 Do not persist ignored bits.
 Do not load a snapshot on `fdu PATH`. Do not raise the README 200K files/s or 4M cached
 lines/s.
+
+## Errata (2026-09-21)
+
+The verdict reason said “report identity unchanged”.
+The benchmark digested retained index and content facts, not the reports produced inside
+the timed loop. Report identity is established by crate tests.
+Timing claims are unchanged.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

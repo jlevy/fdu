@@ -220,8 +220,10 @@ default load.
 ## What was measured
 
 Subject: nominated `metabrowser-clone` (145,931 entries / 133,597 files / 11,512
-directories, max depth 19). Same shape and engine digest as exp-108 through exp-115
-(`3fbfed48…`). The tree did not mutate during the pair.
+directories, max depth 19). Same shape as exp-108 through exp-115. The tree engine
+digest here is `3fbfed48…` (exp-109+); exp-108 is `aaf1e17d…` and exp-106 is
+`41a1e845…`. The content digest is what is actually constant across that series.
+The tree did not mutate during the pair.
 
 Job: harness `content-cache-hit` after one `content-seed` per variant.
 3 warmups, 12 timed pairs, interleaved.
