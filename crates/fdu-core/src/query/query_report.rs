@@ -874,7 +874,12 @@ pub struct FileRow {
     pub files: Option<u64>,
     /// Descendant directories, excluding the matching root; absent for other kinds.
     pub dirs: Option<u64>,
-    /// Signed nanoseconds since modification at the request's reference instant.
+    /// Whether a directory's eligible subtree was listed in full, so its bytes, counts,
+    /// and modification time are exact; `Some(false)` makes them lower bounds and its age
+    /// unknown. Absent for other kinds.
+    pub complete: Option<bool>,
+    /// Signed nanoseconds since modification at the request's reference instant, or
+    /// `None` when the reference is unrepresentable or the subtree is incomplete.
     pub age_ns: Option<i128>,
     /// Whether `.gitignore` rules ignore this entry, or `None` when the index observed no
     /// control state.
@@ -1188,7 +1193,15 @@ pub(crate) fn report_in(
     for section in &mut sections {
         if let Section::Files { rows, .. } = section {
             for row in rows {
-                row.age_ns = age_reference_ns.map(|now| i128::from(now) - i128::from(row.mtime_ns));
+                // An incomplete subtree's mtime is a lower bound, and a lower-bound
+                // maximum is not an age: the activity that would make the directory
+                // younger may sit in the part that was never listed.
+                row.age_ns = match row.complete {
+                    Some(false) => None,
+                    Some(true) | None => {
+                        age_reference_ns.map(|now| i128::from(now) - i128::from(row.mtime_ns))
+                    }
+                };
             }
         }
     }
@@ -1369,7 +1382,8 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
             let file_name = child_path.file_name().unwrap_or_default();
             let ignored = index.ignored_bit_of(child).unwrap_or(false);
             let mut measured = *attrs;
-            if let Some(subtree) = directories.as_ref().and_then(|values| values.get(&child)) {
+            let subtree = directories.as_ref().and_then(|values| values.get(&child)).copied();
+            if let Some(subtree) = subtree {
                 measured.size = subtree.bytes;
                 measured.allocated = subtree.allocated;
                 measured.mtime_ns = subtree.mtime_ns;
@@ -1387,14 +1401,24 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
             if pruned {
                 continue;
             }
+            // An incomplete subtree's newest activity is a lower bound, not an age, so no
+            // modification bound can be shown to hold for it: `before` could be disproved
+            // by any unlisted descendant, and `since`, which a lower bound could prove, is
+            // held to the same rule so that a row's presence under a time filter always
+            // means the filter was decided on a complete measurement. A size bound still
+            // matches, since a lower bound at or above the minimum proves the true size is.
+            let matches = matches
+                && (selection.modified.is_unbounded()
+                    || subtree.is_none_or(|subtree| subtree.complete));
             let row = FileRow {
                 path: child_path.clone(),
                 kind,
                 bytes: measured.size,
                 allocated: measured.allocated,
                 mtime_ns: measured.mtime_ns,
-                files: directories.as_ref().and_then(|values| values.get(&child)).map(|v| v.files),
-                dirs: directories.as_ref().and_then(|values| values.get(&child)).map(|v| v.dirs),
+                files: subtree.map(|subtree| subtree.files),
+                dirs: subtree.map(|subtree| subtree.dirs),
+                complete: subtree.map(|subtree| subtree.complete),
                 age_ns: None,
                 ignored: observed.then_some(ignored),
             };
@@ -1968,6 +1992,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 mtime_ns: attrs.mtime_ns,
                 files: None,
                 dirs: None,
+                complete: None,
                 age_ns: None,
                 ignored: observed.then(|| index.ignored_bit_of(child).unwrap_or(false)),
             });
@@ -2416,6 +2441,138 @@ mod tests {
         assert_eq!(files_of(&run(&index, &query(&[ViewSpec::Files], only)))[0].bytes, 1000);
     }
 
+    /// A directory whose subtree was not listed in full says so, and its lower-bound
+    /// activity is not an age: it matches no modification bound, in either direction,
+    /// while a size bound still holds on the lower bound it can prove.
+    #[test]
+    fn an_incomplete_subtree_reports_lower_bounds_and_matches_no_time_bound() {
+        // `--scan-depth 2`: `env/lib` sits at the boundary, retained and never listed, so
+        // `env` is incomplete; `docs` holds only files at that depth and is complete.
+        let mut index = Index::new_with_scope(
+            "/root",
+            crate::ScanScope { max_depth: Some(2), ..crate::ScanScope::default() },
+        );
+        index.apply_ok(&Observation::new(vec![
+            upsert("env", EntryKind::Dir, attrs(0, 5)),
+            upsert("env/lib", EntryKind::Dir, attrs(0, 7)),
+            upsert("env/a.bin", EntryKind::File, attrs(100, 40)),
+            upsert("docs", EntryKind::Dir, attrs(0, 5)),
+            upsert("docs/guide.md", EntryKind::File, attrs(30, 50)),
+        ]));
+        let directories = |selection: Selection| {
+            let selection =
+                Selection { kinds: vec![EntryKind::Dir], size: SizeMetric::Apparent, ..selection };
+            files_of(&run(&index, &flat(selection)))
+                .into_iter()
+                .map(|row| {
+                    (row.path.to_string_lossy().into_owned(), row.complete, row.bytes, row.age_ns)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            directories(Selection::default()),
+            vec![
+                ("env".to_string(), Some(false), 100, None),
+                ("docs".to_string(), Some(true), 30, Some(-50)),
+                ("env/lib".to_string(), Some(false), 0, None),
+            ],
+            "sizes are lower bounds and the age is unknown below the boundary"
+        );
+        for modified in [
+            ModifiedWindow { since: None, before: Some(100) },
+            ModifiedWindow { since: Some(0), before: None },
+        ] {
+            assert_eq!(
+                directories(Selection { modified, ..Selection::default() }),
+                vec![("docs".to_string(), Some(true), 30, Some(-50))],
+                "an unknown age satisfies no bound, not even one its lower bound would prove"
+            );
+        }
+        assert_eq!(
+            directories(Selection { min_size: Some(100), ..Selection::default() }),
+            vec![("env".to_string(), Some(false), 100, None)],
+            "a lower bound at or above the minimum proves the true size is too"
+        );
+        assert!(directories(Selection { min_size: Some(101), ..Selection::default() }).is_empty());
+        // A regular file has no subtree to be incomplete, and its own age stands.
+        let files = files_of(&run(
+            &index,
+            &flat(Selection {
+                kinds: vec![EntryKind::File],
+                modified: ModifiedWindow { since: Some(45), before: None },
+                ..Selection::default()
+            }),
+        ));
+        assert_eq!(files.len(), 1);
+        assert_eq!((files[0].complete, files[0].age_ns), (None, Some(-50)));
+    }
+
+    /// A one-shot walk that finished with errors records that it was partial, not where,
+    /// so no directory row can claim a complete subtree; a walk that finished records
+    /// every directory as listed.
+    #[test]
+    fn a_partial_one_shot_index_marks_every_directory_row_incomplete() {
+        let directories = |index: &Index| {
+            files_of(&run(
+                index,
+                &flat(Selection { kinds: vec![EntryKind::Dir], ..Selection::default() }),
+            ))
+        };
+        let mut partial = sample();
+        partial.set_initial_freshness(false);
+        let rows = directories(&partial);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.complete == Some(false) && row.age_ns.is_none()));
+        let mut complete = sample();
+        complete.set_initial_freshness(true);
+        let rows = directories(&complete);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.complete == Some(true) && row.age_ns.is_some()));
+    }
+
+    /// While an opened root is discovering, a directory is complete exactly when
+    /// discovery has listed it, so a report served mid-discovery marks the rest.
+    #[test]
+    fn an_opened_root_marks_a_directory_complete_only_once_discovery_listed_it() {
+        let handle = crate::index::IndexHandle::new(Index::new("/root"));
+        handle
+            .transition_discovery(crate::index::DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        handle
+            .apply(&Observation::new(vec![
+                upsert("known", EntryKind::Dir, attrs(0, 5)),
+                upsert("pending", EntryKind::Dir, attrs(0, 5)),
+            ]))
+            .expect("seed directories");
+        handle
+            .apply_discovery(
+                &Observation::new(Vec::new()),
+                crate::index::DiscoveryCommit {
+                    directory_complete: Some(PathBuf::from("known")),
+                    transition: None,
+                },
+            )
+            .expect("list one directory");
+        let completeness = handle
+            .read_with(|index| {
+                files_of(&run(
+                    index,
+                    &flat(Selection { kinds: vec![EntryKind::Dir], ..Selection::default() }),
+                ))
+                .into_iter()
+                .map(|row| (row.path.to_string_lossy().into_owned(), row.complete))
+                .collect::<BTreeMap<_, _>>()
+            })
+            .expect("read");
+        assert_eq!(
+            completeness,
+            BTreeMap::from([
+                ("known".to_string(), Some(true)),
+                ("pending".to_string(), Some(false))
+            ])
+        );
+    }
+
     #[test]
     fn a_filtered_tree_keeps_empty_matches_and_only_folds_visible_directories() {
         let mut index = sample();
@@ -2464,6 +2621,16 @@ mod tests {
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
         Query { selection, views: views.to_vec(), ..Query::default() }
+    }
+
+    /// A flat List: the projection whose rows carry subtree metrics and completeness.
+    fn flat(selection: Selection) -> Query {
+        Query {
+            selection,
+            views: vec![ViewSpec::List],
+            format: crate::report_format::Format::Paths,
+            ..Query::default()
+        }
     }
 
     fn pattern(source: &str) -> Pattern {

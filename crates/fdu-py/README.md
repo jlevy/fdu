@@ -132,9 +132,11 @@ directory output. Largest/recent remain regular-file presets, with optional Path
 output.
 
 Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
-`mtime_ns`, and `age_ns`; non-directory counts are `None`. The fixed
-`Report.age_reference_ns` explains age, including negative future ages and pre-epoch
-mtime. An unrepresentable reference yields `None` age.
+`complete`, `mtime_ns`, and `age_ns`; non-directory counts are `None`. A directory whose
+subtree was not listed in full has `complete=False`, lower-bound sizes, and
+`age_ns=None`. The fixed `Report.age_reference_ns` explains age, including negative
+future ages and pre-epoch mtime.
+An unrepresentable reference yields `None` age.
 Exclusions win throughout the subtree; nested roots may overlap, while grouped totals
 count their union once.
 Age describes modification, not access or last use.

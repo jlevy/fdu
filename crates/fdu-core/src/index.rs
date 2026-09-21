@@ -3775,6 +3775,14 @@ impl Index {
         Some(self.try_entry(id)?.ignored)
     }
 
+    /// Whether a live directory's in-scope child set is authoritative: the id form of
+    /// [`Self::directory_complete`], for a reader that already holds the id. `None` for a
+    /// stale handle or an entry that is not a directory.
+    pub(crate) fn directory_complete_of(&self, id: EntryId) -> Option<bool> {
+        let entry = self.try_entry(id)?;
+        (entry.kind == EntryKind::Dir).then(|| entry.directory().children_complete)
+    }
+
     /// Attributes for an entry id, or `None` when the handle is stale.
     pub fn attrs_of(&self, id: EntryId) -> Option<&Attrs> {
         Some(&self.try_entry(id)?.attrs)

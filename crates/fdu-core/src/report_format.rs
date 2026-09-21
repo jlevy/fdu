@@ -703,6 +703,10 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
             None => emit_scalar(sink, Scalar::Null),
         });
     }
+    emit_field(sink, Field::nullable("complete"), true, |sink| match row.complete {
+        Some(value) => emit_scalar(sink, Scalar::Bool(value)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
     emit_field(sink, Field::nullable("age_ns"), true, |sink| match row.age_ns {
         Some(value) => emit_scalar(sink, Scalar::I128(value)),
         None => emit_scalar(sink, Scalar::Null),
@@ -2715,6 +2719,10 @@ mod tests {
         assert!(super::render(&flat, Format::Tree, false).is_err());
         let Section::Files { rows, .. } = &flat.sections[0] else { panic!("flat list") };
         assert_eq!((rows[0].files, rows[0].dirs, rows[0].mtime_ns), (Some(1), Some(0), 10));
+        assert_eq!(rows[0].complete, Some(true));
+        assert!(
+            super::render(&flat, Format::Json, false).expect("json").contains("\"complete\": true")
+        );
         assert_eq!(
             rows[0].age_ns,
             flat.age_reference_ns.map(|reference| i128::from(reference) - 10)
@@ -3418,7 +3426,7 @@ mod tests {
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 0, \"allocated\": 0, \"mtime_ns\": 0, \"ignored\": true}",
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \"ignored\": true}",
         ] {
             assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
@@ -3901,7 +3909,7 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"ignored\": false}}"
+                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \"ignored\": false}}"
             );
             assert!(
                 compact_json(&rendered).contains(&compact_json(&row)),

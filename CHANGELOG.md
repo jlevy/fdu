@@ -11,7 +11,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Directory filters measure eligible subtree bytes and modification activity, including
   nested directories. Exclusions win throughout a subtree; aggregate totals count covered
-  contents once.
+  contents once. Without an explicit kind filter, size and modification bounds now test
+  directory subtrees rather than only the directory inode.
 - Explicit tree, paths, and long presentation formats expose directory and file
   inventories on the command line and Python surface.
   Flat rows include subtree counts and signed modification ages measured against one

@@ -28,8 +28,9 @@ A Python List requested in Tree format also serializes its stored tree projectio
 | `bytes` | Apparent bytes; a directory sums eligible regular-file contents |
 | `allocated` | Allocated bytes under the same accounting |
 | `files`, `dirs` | Directory descendant counts, excluding the matching root; null for other kinds |
+| `complete` | Whether a directory’s eligible subtree was listed in full; false makes `bytes`, `allocated`, `files`, `dirs`, and `mtime_ns` lower bounds and `age_ns` null; null for other kinds |
 | `mtime_ns` | Signed epoch nanoseconds; a directory uses the newest eligible root/descendant timestamp |
-| `age_ns` | Signed age at `age_reference_ns`; negative for a future timestamp, null if the reference cannot be represented |
+| `age_ns` | Signed age at `age_reference_ns`; negative for a future timestamp, null if the reference cannot be represented or the subtree is incomplete |
 | `ignored` | Boolean classification, or null when `.gitignore` was not observed |
 
 The envelope’s `age_reference_ns` is the fixed request instant in epoch nanoseconds.
@@ -55,8 +56,16 @@ Inspect `complete`, `errors`, `freshness`, `source`, ignore-rule coverage, and s
 bounds independently.
 Display folding is not incomplete scanning; an incomplete scan cannot establish a whole
 subtree’s absence or size.
-Cache-only data remains explicitly stale.
-Content metric coverage remains separate from metadata completeness.
+A directory row says so itself: `complete` is false at a `--scan-depth` boundary, for a
+directory an opened root has not listed yet, and throughout a scan that finished with
+errors, which records that the walk was partial but not where.
+Such a row’s sizes and counts are lower bounds, its `age_ns` is null, and no
+`modified_since`/`modified_before` bound matches it, because a lower-bound maximum is
+not an age; `min_size` still can, since a lower bound at or above the minimum proves the
+true size is too.
+A cache-only result is stale rather than incomplete: a snapshot is only
+written from a complete index, so its rows stay complete and `source`/`freshness` carry
+the staleness. Content metric coverage remains separate from metadata completeness.
 
 Tree and flat List are different report projections over the same selection.
 Set format on `ReadSpec`/`Query` before reading.

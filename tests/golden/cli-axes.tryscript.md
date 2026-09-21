@@ -730,3 +730,54 @@ $ fdu --cache off --size apparent --kind dir --include .venv --include node_modu
        0 B [AGE_DAYS]d empty[SEP].venv
 ? 0
 ```
+
+### A Time Bound Without a Kind Covers Directory Contents
+
+Size and time bounds test a directory’s eligible subtree, and a directory they match
+covers its contents in aggregate views.
+The fixture created the top-level directories moments ago, so each of them has recent
+activity of its own and covers everything beneath it: the summary counts every file in
+the tree, where `--kind file` counts only the one file modified recently.
+
+```console
+$ fdu --cache off --size apparent --modified-since 30d --view summary builds
+     240 B  4 files, 10 directories
+Performance: walked 4 files / 240 B; ignore rules 0 files; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --modified-since 30d --kind file --view summary builds
+      90 B  1 file, 0 directories
+Performance: walked 4 files / 240 B; ignore rules 0 files; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### A Directory at the Scan-Depth Boundary Has an Unknown Age
+
+With `--scan-depth 2`, each `.venv` is retained but never listed.
+Its size is a lower bound and its age is unknown, so it matches no modification bound,
+and the row says so rather than reading as empty and old; the scope note goes to the
+diagnostic stream, where a path listing keeps stdout to paths.
+
+```console
+$ fdu --cache off --size apparent --scan-depth 2 --kind dir --include .venv --sort name --long builds
+       0 B  unknown a[SEP].venv
+       0 B  unknown d[SEP].venv
+       0 B  unknown empty[SEP].venv
+! scan scope limited to depth 2; subtree metrics cover this scope
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --scan-depth 2 --kind dir --include .venv --modified-before 30d --format paths builds
+! scan scope limited to depth 2; subtree metrics cover this scope
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --scan-depth 2 --kind dir --include .venv --sort name --format jsonl builds
+{"schema": "fdu.report/7", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "age_reference_ns": [AGE_NS], "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "refused": 0, "refusals": []}}
+{"view": "list", "bound": null, "files": [{"path": "a[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false}, {"path": "d[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false}, {"path": "empty[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false}]}
+? 0
+```

@@ -58,7 +58,7 @@ def test_retained_directory_metrics_and_formats_need_no_filesystem(builds: Path)
     assert [row.bytes for row in section.files] == [31, 47, 59]
     assert report.age_reference_ns is not None
     for row in section.files:
-        assert (row.files, row.dirs) == (1, 0)
+        assert (row.files, row.dirs, row.complete) == (1, 0, True)
         assert row.age_ns == report.age_reference_ns - row.mtime_ns
     paths = report.render(fdu.Format.PATHS).splitlines()
     assert len(paths) == 3
@@ -78,6 +78,33 @@ def test_retained_directory_metrics_and_formats_need_no_filesystem(builds: Path)
     assert isinstance(tree.sections[0], fdu.TreeSection)
     with pytest.raises(fdu.InvalidArgumentError, match="complete flat list"):
         tree.render(fdu.Format.PATHS)
+
+
+def test_a_directory_at_the_scan_depth_boundary_has_an_unknown_age(builds: Path) -> None:
+    # `max_depth=2` retains `a/.venv` and its siblings but never lists them, so their
+    # sizes are lower bounds and their age is unknown: no modification bound matches
+    # them, and the rows say why rather than reading as old and empty.
+    index = fdu.scan(builds, scan=fdu.ScanOptions(max_depth=2))
+    bounded = index.report(inventory())
+    assert isinstance(bounded.sections[0], fdu.FilesSection)
+    assert bounded.sections[0].files == ()
+    query = inventory()
+    unbounded = index.report(
+        replace(query, selection=replace(query.selection, modified_before=None))
+    )
+    section = unbounded.sections[0]
+    assert isinstance(section, fdu.FilesSection)
+    assert [row.path.as_posix() for row in section.files] == [
+        "a/.venv",
+        "a/node_modules",
+        "b/target",
+    ]
+    for row in section.files:
+        assert (row.complete, row.bytes, row.age_ns) == (False, 0, None)
+    assert "unknown" in unbounded.render()
+    wire = json.loads(unbounded.render(fdu.Format.JSON))
+    assert wire["reports"][0]["files"][0]["complete"] is False
+    assert wire["reports"][0]["files"][0]["age_ns"] is None
 
 
 def test_cold_warm_and_cache_only_directory_membership_agree(builds: Path) -> None:

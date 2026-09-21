@@ -221,6 +221,11 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 
 ## Scan Depth Is an Explicit Complete Scope
 
+The report is complete for the scope it was asked for, and says so at the top.
+The directories retained at the depth limit were never listed, so each of their rows
+says `complete: false`: their sizes and counts are lower bounds and their age is null,
+where a lower-bound maximum would have read as an old directory.
+
 ```console
 $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
