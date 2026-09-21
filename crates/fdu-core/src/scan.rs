@@ -1221,6 +1221,10 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
 /// size, allocated bytes, and mtime. `one_filesystem` still stats directories because
 /// descent compares `attrs.dev` to the root device, and `dev == 0` would otherwise
 /// cross a mount.
+///
+/// Where `d_type` is `DT_UNKNOWN` (XFS without `ftype`, some FUSE/NFS mounts, older
+/// ext3), std's `file_type` performs the non-following stat itself. The skip is a
+/// no-op there, and the `stats` counter does not see that fallback.
 fn listed_child_kind_and_attrs(
     entry: &fs::DirEntry,
     skip_dir_symlink_stat: bool,
@@ -2710,7 +2714,11 @@ impl WalkEmission for StreamingEmission {
             return;
         }
         let send_started = std::time::Instant::now();
-        let _ = self.send_full(sender, diagnostics);
+        // The walk is over: do not ask `send_full` for a replacement vec that no
+        // later `record_entry` would use.
+        let ops = std::mem::take(&mut self.batch);
+        let _ = send_scanner_batch(sender, self.wrap(ops), diagnostics);
+        self.batch = Vec::new();
         report.attribution.send_ns += elapsed_ns(send_started);
     }
 
@@ -5734,7 +5742,6 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::create_dir(dir.path().join("src")).expect("directory");
         write_file(&dir.path().join("a.txt"), b"hi");
-        #[cfg(unix)]
         std::os::unix::fs::symlink("a.txt", dir.path().join("link")).expect("symlink");
         let config = ScanConfig {
             threads: Some(1),
@@ -5754,6 +5761,61 @@ mod tests {
 
         assert_eq!(fold_report.entries, scan_report.entries);
         assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+    }
+
+    #[test]
+    fn summary_fold_reuses_cleared_recycled_batches() {
+        // Four workers and a batch of three force StreamingEmission to send more than
+        // once per worker on this tree. Without `recycled.clear()`, the next send
+        // re-folds the previous ops and files/bytes/dirs double-count.
+        let dir = tempfile::tempdir().expect("tempdir");
+        const DIRS: usize = 16;
+        const FILES_PER_DIR: usize = 40;
+        let mut expected_bytes = 0u64;
+        for directory in 0..DIRS {
+            let child = dir.path().join(format!("d{directory:02}"));
+            fs::create_dir(&child).expect("directory");
+            for file in 0..FILES_PER_DIR {
+                let size = directory * FILES_PER_DIR + file + 1;
+                expected_bytes += size as u64;
+                write_file(&child.join(format!("f{file:02}.dat")), &vec![b'x'; size]);
+            }
+        }
+        let expected_files = (DIRS * FILES_PER_DIR) as u64;
+        let expected_dirs = DIRS as u64;
+        let expected_entries = expected_files + expected_dirs;
+        let config = ScanConfig {
+            threads: Some(4),
+            batch_size: 3,
+            read_controls: false,
+            ..ScanConfig::default()
+        };
+        let mut files = 0u64;
+        let mut bytes = 0u64;
+        let mut dirs = 0u64;
+        let mut ops = 0u64;
+        let report = scan_summary_fold(dir.path(), &config, &mut |observed| {
+            ops += 1;
+            let Op::Upsert { kind, attrs, .. } = &observed.op else {
+                return;
+            };
+            match kind {
+                EntryKind::File => {
+                    files += 1;
+                    bytes += attrs.size;
+                }
+                EntryKind::Dir => dirs += 1,
+                EntryKind::Symlink | EntryKind::Other => {}
+            }
+        })
+        .expect("fold");
+        assert_eq!(files, expected_files);
+        assert_eq!(bytes, expected_bytes);
+        assert_eq!(dirs, expected_dirs);
+        assert_eq!(ops, report.entries);
+        assert_eq!(report.entries, expected_entries);
+        assert_eq!(report.files_walked, expected_files);
+        assert_eq!(report.bytes_walked, expected_bytes);
     }
 
     /// An automatic walk too short to fill its calibration window must say so.

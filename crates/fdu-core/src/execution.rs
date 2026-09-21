@@ -930,7 +930,12 @@ mod tests {
         std::os::unix::fs::symlink("README.md", root.path().join("readme-link")).expect("symlink");
 
         let query = summary_query();
-        let off = blind(CachePolicy::Off, None);
+        // Two workers so the compact fold exercises StreamingEmission recycle even on
+        // a one-vCPU runner (`threads: None` would take the serial walker there).
+        let off = OpenConfig {
+            scan: ScanConfig { read_controls: false, threads: Some(2), ..ScanConfig::default() },
+            ..OpenConfig::default()
+        };
         let (compact, pending, performance) =
             prepared(root.path(), &off, &query).expect("compact report");
         pending.join().expect("no pending compact save");

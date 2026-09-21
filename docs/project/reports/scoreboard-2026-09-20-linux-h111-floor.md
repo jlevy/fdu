@@ -6,7 +6,9 @@ Do not quote these milliseconds as a product claim.
 
 Host: Linux x86_64, 4 logical CPUs.
 Every instrument ran a fixed pool of 4 workers.
-Recorded 2026-09-20T01:29:34Z from commit bf260c74.
+Recorded 2026-09-20T01:29:34Z from commit bf260c74. `bf260c74` was the pre-rebase branch
+tip; engine `a5c98d59`, probe sha256 `86083632…`, tree-identical to the rebased
+`9d38c39c`.
 
 Regime: **uncontrolled** (quiet was requested, and 121 measured trials breached it:
 quiet-host load/core exceeded 0.250 after the sample; quiet-host load/core exceeded

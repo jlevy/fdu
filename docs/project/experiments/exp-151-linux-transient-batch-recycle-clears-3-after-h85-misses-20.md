@@ -222,6 +222,12 @@ Engine kept (`5c6e6394`). ~186 lines, no dependency, no `unsafe`. Do not retry H
 bar. Do not claim this on Darwin.
 Do not treat `--no-controls` as the shipped default.
 
+The public `scan` path now starts every batch after the first at `batch_size` capacity
+(`send_full` → `next_vec`). That allocation shape is inherited, not measured: this cell
+drove the fold path.
+The worker’s final flush leaves an empty vec rather than a replacement that would never
+be used.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

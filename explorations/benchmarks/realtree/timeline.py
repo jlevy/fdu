@@ -108,11 +108,27 @@ SYNTHETIC_SUBJECTS = {
 #: Linux's current cost. The candidate is not the shipped binary either, so these name
 #: no kept arm at all.
 #:
+#: exp-141 is the same class: H111's current-engine floor scoreboard, both arms the same
+#: binary (`86083632…`), so a rejected decision must not name the control as kept.
+#:
+#: exp-146, exp-148, and exp-149 accepted a `--threads 8` screen, not a shipped constant
+#: (exp-149's candidate is a +7.12% regression).
+#: exp-150 rejected H85's 20% bar; the same patch ships as H147 / exp-151.
+#: exp-152 rejected H72 on reconstructible v6.12; the same patch ships via exp-153.
+#: exp-154 accepted a `-Cprofile-use` build while `[profile.release]` is unchanged.
+#:
 #: Hand-maintained, like the list above, so the same warning applies: a new evidence
 #: stage recorded against code that ships regardless of its verdict belongs here. A
 #: decision value for that case is the durable fix, and belongs to the contract.
 CLAIM_ONLY_EXPERIMENTS = {
     "exp-103",
+    "exp-141",
+    "exp-146",
+    "exp-148",
+    "exp-149",
+    "exp-150",
+    "exp-152",
+    "exp-154",
 }
 
 
