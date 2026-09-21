@@ -1,0 +1,25 @@
+---
+type: is
+id: is-01m32ewmqkv1v71f5pjtc3djmx
+title: "Path-independence is one-sided: a cache that never serves passes every case"
+kind: bug
+status: open
+priority: 1
+version: 1
+labels: []
+dependencies: []
+parent_id: is-01m31hvhfvefh5ka5z4fsymdta
+created_at: 2026-09-21T17:05:48.275Z
+updated_at: 2026-09-21T17:05:48.275Z
+---
+Verified by execution, 2026-09-21. The harness compares warm answers against cold ones, so a cache that simply stops serving is indistinguishable from a correct one.
+
+`runner.py:265-267`: under `only`, any failure whose stderr starts with `snapshot is not usable` is recorded `refused` and always allowed; under `auto`/`read-only` a miss just scans cold and compares `same`.
+
+Mutant (`serves_snapshot` always `Refuse`): the subset ran 884 cases with ZERO failures — `refused 248, same 615, stale 21` against a baseline of `refused 158, same 668, stale 58`. Only the cross-route outcome check (`runner.py:590-600`, Python surface only) notices over-refusal, and only when routes disagree with each other.
+
+What actually catches a dead cache is the ~12 unit tests in `lib.rs`, `execution.rs` and `stored_state.rs` asserting `OpenPath::CacheOnly`, hit counts, and `a_snapshot_serves_exactly_the_identity...` — that is, the "mechanism" tests.
+
+Consequence for policy: mechanism tests and answer tests guard opposite directions and both are necessary. An earlier framing in this session disparaged mechanism tests; taken seriously that would have deleted the only guard against a cache that never serves. Correct the framing wherever it was written down.
+
+Fix direction: give the harness a serve-rate expectation per policy, so a run where cache-only refuses far more than the recording fails rather than passing quietly.

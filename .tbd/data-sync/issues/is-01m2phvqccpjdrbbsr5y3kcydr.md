@@ -3,9 +3,9 @@ type: is
 id: is-01m2phvqccpjdrbbsr5y3kcydr
 title: "Content analysis answers depend on cache history: narrower --analyze served from a wider sidecar"
 kind: bug
-status: open
+status: closed
 priority: 0
-version: 4
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
@@ -15,7 +15,11 @@ dependencies:
     target: is-01m2phzegm4b3scda7d1xq3gnm
 parent_id: is-01m2phzn814exmf4ty5vw6zha0
 created_at: 2026-09-17T02:06:50.763Z
-updated_at: 2026-09-17T02:57:32.502Z
+updated_at: 2026-09-21T17:06:21.345Z
+closed_at: 2026-09-21T16:50:49.507Z
+close_reason: "Already fixed and the bead was stale. stored_state.rs serves by equality (Serves::{Exact, Refuse}); commit 7b5ecaa8 records the full matrix on Linux, macOS and Windows emptying content-containment (900 entries) and mixed-records (56), 1243 registry entries down to 260. Decision recorded in notes: exact-match reuse, correctness by construction. Residual risk tracked as fdu-ed43 (subset projection must not un-defer before Query carries the analyzer set)."
+resolution: null
+duplicate_of: null
 ---
 The same `--analyze` request gives different answers depending on which request warmed the content sidecar. Reproduced on the 0.1.0 release candidate (5f2d36d) through the CLI and the Python API.
 
@@ -32,6 +36,10 @@ Either way: a warm-versus-cold equivalence test over every analyzer-set pair (CL
 
 ## Notes
 
-2026-09-17: Not to be point-patched (maintainer). Resolved by the explicit core models plan: per-analyzer
-records and one definition per metric (this epic), the request model giving the reader the requested analyzers,
-and the path-independence test. The Unsupported-record rule on branch claude/release-e2e-fixes is superseded.
+CORRECTION 2026-09-21, after adversarial review: this bead is fixed by EQUALITY, not "correct by construction". The earlier note overstated it.
+
+The construction does not yet hold. `Serves` has one call site, which collapses it to a bool (fdu-qsos), and the content tier — where this bug happened — never touches `Serves` at all, deciding reuse at five inline `==` sites (fdu-4vbi). A re-widening mutant needed three edits and touched none of `stored_state.rs`. So the enum would not have prevented #37 and does not prevent a recurrence.
+
+What is true: serving is equality today, and commit 7b5ecaa8 records the full three-platform matrix emptying content-containment (900 entries) and mixed-records (56). The answers are right. The guarantee that they stay right is still procedural rather than structural.
+
+Closing stays correct; the claim in the previous note does not. Residual work: fdu-qsos, fdu-4vbi, fdu-ed43.
