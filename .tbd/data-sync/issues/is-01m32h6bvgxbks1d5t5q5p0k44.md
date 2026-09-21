@@ -3,14 +3,14 @@ type: is
 id: is-01m32h6bvgxbks1d5t5q5p0k44
 title: "PR #94 review pass: Linux parallel validation of the Darwin #92 stack"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
 created_at: 2026-09-21T17:46:04.016Z
-updated_at: 2026-09-21T17:46:04.016Z
+updated_at: 2026-09-21T17:47:14.568Z
 ---
 Branch `perf/campaign-linux-2026-09-19`, based on main. Reviewer model: Fable.
 

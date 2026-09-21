@@ -3,14 +3,14 @@ type: is
 id: is-01m32h6gjn35c13axesr7bp753
 title: "PR #108 review pass: close two gates that pass the regressions they catch"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
 created_at: 2026-09-21T17:46:08.853Z
-updated_at: 2026-09-21T17:46:08.853Z
+updated_at: 2026-09-21T17:47:15.469Z
 ---
 Branch `claude/gate-integrity`, based on main. Reviewer model: Fable.
 

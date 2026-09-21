@@ -3,14 +3,14 @@ type: is
 id: is-01m32h6cjrkz58ce2t05m3n2v7
 title: "PR #96 review pass: plan: directory filters and list presentation formats"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
 created_at: 2026-09-21T17:46:04.759Z
-updated_at: 2026-09-21T17:46:04.759Z
+updated_at: 2026-09-21T17:47:15.016Z
 ---
 Branch `codex/directory-query-plan`, based on #94. Reviewer model: Opus.
 
