@@ -25,14 +25,33 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CONTRACT = "fdu.performance:Experiment/v1"
+
+#: How far ``verdict.change_pct`` may sit from the measurement it names, in percentage
+#: points, before the record is rejected.
+#:
+#: One unit in the last digit the ledger prints (two decimals), so a verdict copied at
+#: the precision a reader sees still validates and anything coarser does not: a headline
+#: that would print differently from its measurement is a different number, not a
+#: rounding. Every committed record was written by ``from_run`` from the same run field,
+#: so the corpus matches exactly; the tolerance exists for a figure retyped from prose.
+#: It is far below any figure that belongs to another job or metric, which is the defect
+#: this guards: exp-116 once carried ``-99.9`` for a paired ``-2.158``, and exp-119
+#: ``-99.919`` for ``+1.5``, both cross-job ratios that shipped because nothing compared
+#: a verdict with its own results.
+VERDICT_TOLERANCE_PCT = 0.01
 
 #: ``baseline`` is a ledger entry with no candidate: it establishes the numbers later
 #: experiments are measured against. ``blocked`` is a hypothesis we cannot test yet and
 #: the reason why, which is worth recording so nobody re-derives the obstacle.
 Decision = Literal["accepted", "rejected", "superseded", "blocked", "in-progress", "baseline"]
+
+#: Which measured arm describes the product after the verdict. ``neither`` is for an
+#: experiment whose verdict decided a claim about code that ships regardless of it, so
+#: no arm it measured is the product's state.
+Kept = Literal["candidate", "control", "neither"]
 
 
 class Strict(BaseModel):
@@ -171,6 +190,41 @@ class Verdict(Strict):
     commit: Optional[str] = Field(
         default=None, description="Commit that landed it, or reverted it."
     )
+    kept: Optional[Kept] = Field(
+        default=None,
+        description=(
+            "Which measured arm is in the product after this verdict, which is what "
+            "anything plotting the product's current cost must read. Omitted means "
+            "what the decision implies: an accepted candidate is kept and every other "
+            "decision leaves the control in place. State it when that is wrong: "
+            "'control' for an accepted arm that never shipped, such as a build-profile "
+            "screen the release profile did not adopt; 'candidate' for a rejected "
+            "change that shipped anyway; 'neither' for an evidence stage whose verdict "
+            "decided a claim about code that stays in the stack regardless, as exp-103 "
+            "did for H86 on Linux. perf-record writes it explicitly on every new "
+            "artifact so the claim is in the diff rather than implied."
+        ),
+    )
+
+
+def kept_arm(verdict: Mapping[str, Any]) -> Optional[str]:
+    """The arm that describes the product after a verdict, or ``None`` for no arm.
+
+    One derivation for every reader. The projection, the recorder, and the validator
+    all ask this rather than reading the decision themselves, so a record's stated
+    ``kept`` cannot be honoured by one and ignored by another.
+
+    Absent, an accepted candidate is kept and everything else leaves the control in
+    place. ``superseded`` resolves to the control deliberately: a superseded candidate
+    did ship briefly, but a later experiment replaced it, so the arm that describes
+    the product's lasting state is the one it started from.
+    """
+    stated = verdict.get("kept")
+    if stated == "neither":
+        return None
+    if stated in ("candidate", "control"):
+        return str(stated)
+    return "candidate" if verdict.get("decision") == "accepted" else "control"
 
 
 class Subject(Strict):
@@ -332,6 +386,65 @@ class Experiment(Strict):
     reference_tools: List[ReferenceTool] = Field(default_factory=list)
     complexity: Complexity
     verdict: Verdict
+
+    @model_validator(mode="after")
+    def _verdict_rests_on_its_own_measurement(self) -> "Experiment":
+        """Refuse a headline the record's own results do not support.
+
+        ``verdict.change_pct`` is the paired effect of ``primary_metric`` in the
+        results entry for ``primary_job``; the ledger and the chart both print it as
+        that. Nothing checked it. Twice a cross-job ratio was written there instead
+        and shipped green, because the drift gates only prove the generated views
+        match the record: regenerate and a wrong figure is laundered into every view
+        at once. This check is the one that regeneration cannot satisfy, because it
+        compares the record with itself.
+
+        A verdict may decline to state a headline -- a baseline has no comparison --
+        and ``None`` is never a wrong number. But a stated figure has to name a
+        measured job and metric and agree with them within
+        :data:`VERDICT_TOLERANCE_PCT`.
+        """
+        verdict = self.verdict
+        if not self.results:
+            if verdict.change_pct is not None:
+                raise ValueError(
+                    f"verdict.change_pct {verdict.change_pct} rests on no measurement: "
+                    "results is empty"
+                )
+            return self
+        by_job = {result.job: result for result in self.results}
+        job = by_job.get(verdict.primary_job)
+        if job is None:
+            raise ValueError(
+                f"verdict.primary_job {verdict.primary_job!r} is not a job this record "
+                f"measured; results hold {', '.join(sorted(by_job)) or 'none'}"
+            )
+        measured = job.metrics.get(verdict.primary_metric)
+        if measured is None:
+            raise ValueError(
+                f"verdict.primary_metric {verdict.primary_metric!r} was not measured for "
+                f"{verdict.primary_job!r}; it holds {', '.join(sorted(job.metrics)) or 'none'}"
+            )
+        if verdict.change_pct is None:
+            return self
+        if abs(verdict.change_pct - measured.change_pct) > VERDICT_TOLERANCE_PCT:
+            raise ValueError(
+                f"verdict.change_pct {verdict.change_pct} is not the paired "
+                f"{verdict.primary_metric} change for {verdict.primary_job!r}, which is "
+                f"{measured.change_pct} (tolerance {VERDICT_TOLERANCE_PCT} points): the "
+                "headline belongs to a different job, metric, or arithmetic"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _kept_arm_is_one_the_verdict_can_name(self) -> "Experiment":
+        """A baseline has no candidate distinct from its control, so it cannot keep one."""
+        if self.verdict.decision == "baseline" and self.verdict.kept == "candidate":
+            raise ValueError(
+                "verdict.kept 'candidate' on a baseline: a baseline measures one binary "
+                "against itself and has no candidate arm to keep"
+            )
+        return self
 
 
 # --------------------------------------------------------------------------------

@@ -19,7 +19,6 @@ from benchmarks.realtree.report_html import (
 )
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
-    CLAIM_ONLY_EXPERIMENTS,
     SYNTHETIC_SUBJECTS,
     is_synthetic,
     kept_variant,
@@ -62,6 +61,7 @@ def experiment(
     hypotheses: List[str] | None = None,
     primary_metric: str = "wall_ns",
     extra_metrics: Dict[str, Any] | None = None,
+    kept: str | None = None,
 ) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {"wall_ns": wall or metric(200e6, 100e6, -50.0, -55.0, -45.0)}
     if extra_metrics:
@@ -101,6 +101,7 @@ def experiment(
             "change_pct": -50.0,
             "reason": "because",
             "commit": None,
+            "kept": kept,
         },
         "reference_tools": [],
         "_path": f"docs/project/experiments/{identifier}.md",
@@ -126,17 +127,26 @@ class AxisTests(unittest.TestCase):
 
 class KeptVariantTests(unittest.TestCase):
     def test_only_an_accepted_candidate_stays_in_the_product(self) -> None:
-        self.assertEqual(kept_variant("accepted"), "candidate")
+        self.assertEqual(kept_variant({"decision": "accepted"}), "candidate")
         for decision in ("rejected", "superseded", "in-progress", "baseline"):
-            self.assertEqual(kept_variant(decision), "control", decision)
+            self.assertEqual(kept_variant({"decision": decision}), "control", decision)
 
-    def test_a_claim_only_experiment_keeps_no_arm(self) -> None:
+    def test_a_record_that_keeps_neither_arm_names_none(self) -> None:
         # exp-103 rejected H86's Linux floor claim about a candidate that stays in the
         # stack, so reading `control` off its decision named the pre-H86 binary as the
-        # product. Neither arm is the shipped binary, so it names none.
-        self.assertIn("exp-103", CLAIM_ONLY_EXPERIMENTS)
-        self.assertIsNone(kept_variant("rejected", "exp-103"))
-        self.assertEqual(kept_variant("rejected", "exp-100"), "control")
+        # product. Neither arm is the shipped binary, and the record says so.
+        self.assertIsNone(kept_variant({"decision": "rejected", "kept": "neither"}))
+        self.assertEqual(kept_variant({"decision": "rejected"}), "control")
+
+    def test_the_record_decides_which_arm_shipped_not_the_decision(self) -> None:
+        # An accepted build-profile screen the release profile never adopted projected
+        # the candidate as the product's cost; a rejected change that shipped anyway
+        # projected the control. Both are wrong the same way, and both are the
+        # record's to state.
+        self.assertEqual(kept_variant({"decision": "accepted", "kept": "control"}), "control")
+        self.assertEqual(
+            kept_variant({"decision": "rejected", "kept": "candidate"}), "candidate"
+        )
 
 
 class SubjectIdentityTests(unittest.TestCase):
@@ -366,18 +376,19 @@ class RenderTests(unittest.TestCase):
         figure = figure_absolute(dataset)
         self.assertIn("exp-006", figure)
 
-    def test_a_claim_only_experiment_is_not_drawn_as_the_trees_current_cost(self) -> None:
+    def test_a_record_keeping_neither_arm_is_not_drawn_as_the_trees_current_cost(self) -> None:
         # The per-entry figure plots the arm that stayed in the product. exp-103 is
         # recorded `rejected` because H86's Linux floor claim failed, but the candidate it
         # measured stays in the stack, so drawing its control put the pre-H86 binary on
         # the page as Linux's current cost: 4.23 us per entry where the candidate
-        # measured 3.42.
+        # measured 3.42. The record carries `kept: neither`; nothing else marks it.
         dataset = project(
             [
                 experiment("exp-101"),
                 experiment(
                     "exp-103",
                     decision="rejected",
+                    kept="neither",
                     system="Linux 6.18.44-fc-v22",
                     root="c" * 64,
                     entries=450001,
@@ -390,6 +401,28 @@ class RenderTests(unittest.TestCase):
         figure = figure_per_entry(dataset)
         self.assertIn("exp-101", figure)
         self.assertNotIn("exp-103", figure)
+
+    def test_an_accepted_arm_that_never_shipped_is_drawn_as_its_control(self) -> None:
+        # A PGO screen was accepted with `[profile.release]` unchanged, and the page
+        # reported the candidate's 4.98 us/entry as the product's latest cost where the
+        # shipped probe measured 5.46. The record states `kept: control`; the figure
+        # draws that arm.
+        dataset = project(
+            [
+                experiment("exp-101", wall=metric(100e6, 90e6, -10.0, -12.0, -8.0)),
+                experiment(
+                    "exp-154",
+                    kept="control",
+                    wall=metric(5460e3, 4980e3, -8.3, -9.0, -7.5),
+                ),
+            ]
+        )
+        record = next(item for item in dataset["experiments"] if item["id"] == "exp-154")
+        self.assertEqual(record["kept"], "control")
+        last = record["jobs"][0]["per_entry_ns"]["control"]
+        self.assertEqual(last, 5460e3 / 1000)
+        self.assertIn("5.46", figure_per_entry(dataset))
+        self.assertNotIn("4.98", figure_per_entry(dataset))
 
     def test_a_bytes_primary_metric_is_not_printed_as_milliseconds(self) -> None:
         # exp-117 is the first accept whose primary metric is peak RSS. The table used

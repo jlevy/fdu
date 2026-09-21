@@ -42,7 +42,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from benchmarks.realtree.summary import BASELINE_COMMIT, EXPERIMENTS_DIR, load_experiments
+from benchmarks.realtree.experiment import kept_arm
+from benchmarks.realtree.summary import (
+    BASELINE_COMMIT,
+    EXPERIMENTS_DIR,
+    SummaryError,
+    load_experiments,
+)
 
 #: Emitted alongside the data so a consumer can tell which projection it holds.
 DATASET_VERSION = "fdu.performance.timeline/1"
@@ -98,24 +104,6 @@ SYNTHETIC_SUBJECTS = {
     "vm450k",
 }
 
-#: Experiments whose verdict decides a claim about code they did not propose.
-#:
-#: :func:`kept_variant` reads the kept arm off the decision, which is right whenever the
-#: candidate is a proposed change: rejecting it leaves the control in the product.
-#: exp-103 proposed nothing. It tested H86's pre-registered Linux floor claim against a
-#: candidate that stays in the stack on its Darwin acceptance, so its rejection retired
-#: the claim and left the code, and reading `control` off it drew the pre-H86 binary as
-#: Linux's current cost. The candidate is not the shipped binary either, so these name
-#: no kept arm at all.
-#:
-#: Hand-maintained, like the list above, so the same warning applies: a new evidence
-#: stage recorded against code that ships regardless of its verdict belongs here. A
-#: decision value for that case is the durable fix, and belongs to the contract.
-CLAIM_ONLY_EXPERIMENTS = {
-    "exp-103",
-}
-
-
 class TimelineError(RuntimeError):
     """The artifacts could not be projected into a coherent dataset."""
 
@@ -145,25 +133,22 @@ def platform_of(subject: Mapping[str, Any]) -> str:
     return system.split()[0] if system else "unknown"
 
 
-def kept_variant(decision: str, identifier: str = "") -> Optional[str]:
+def kept_variant(verdict: Mapping[str, Any]) -> Optional[str]:
     """Which measured arm remained in the product after the verdict.
 
-    Derived rather than stored. The abandoned white-paper branch added a `kept_variant`
-    field to the contract for this, which would have meant editing sixty-four artifacts
-    and re-validating the schema to record something the verdict already determines: an
-    accepted candidate is kept and everything else leaves the control in place. Deriving
-    it keeps the contract as small as the evidence requires.
+    Read from the record, through the one derivation the contract owns
+    (:func:`benchmarks.realtree.experiment.kept_arm`). It used to be derived here from
+    the decision alone, with a hand-maintained `CLAIM_ONLY_EXPERIMENTS` set for the
+    experiments the derivation got wrong -- and that set had to be remembered every time
+    an accepted arm did not ship or a rejected one did. Seven such experiments were
+    mislabelled across two branches before the page drew a build-profile screen the
+    release never adopted as the product's current cost. Now `verdict.kept` states it,
+    the model validates it, and this reads it.
 
-    `superseded` resolves to the control deliberately. A superseded candidate did ship
-    briefly, but a later experiment replaced it, so the arm that describes the product's
-    lasting state is the one it started from.
-
-    `None` for an experiment in :data:`CLAIM_ONLY_EXPERIMENTS`, whose verdict decided a
-    claim and neither kept nor dropped the code it measured.
+    `None` when the record says `neither`: a verdict that decided a claim about code
+    which ships regardless has no arm on the product's axis.
     """
-    if identifier in CLAIM_ONLY_EXPERIMENTS:
-        return None
-    return "candidate" if decision == "accepted" else "control"
+    return kept_arm(verdict)
 
 
 def subject_family(subject: Mapping[str, Any]) -> str:
@@ -303,7 +288,7 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "title": experiment["title"],
                 "hypotheses": experiment.get("hypotheses") or [],
                 "decision": decision,
-                "kept": kept_variant(decision, str(experiment["id"])),
+                "kept": kept_variant(verdict),
                 "primary_job": verdict.get("primary_job"),
                 "primary_metric": verdict.get("primary_metric"),
                 "change_pct": verdict.get("change_pct"),
@@ -485,7 +470,11 @@ def main(argv: Sequence[str]) -> int:
     )
     arguments = parser.parse_args(list(argv))
 
-    experiments = load_experiments(arguments.experiments)
+    try:
+        experiments = load_experiments(arguments.experiments)
+    except SummaryError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if not experiments:
         print("no experiment artifacts found", file=sys.stderr)
         return 1

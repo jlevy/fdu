@@ -51,6 +51,7 @@ help:
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 	@echo "make perf-report    Regenerate the charted performance report from the same artifacts"
 	@echo "make perf-report-check  Fail if the committed report has drifted from the artifacts"
+	@echo "make perf-evidence-check  Fail if any experiment record disagrees with its own measurements"
 
 build:
 	$(CARGO) build --locked -p fdu --all-features
@@ -112,7 +113,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test
+check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -164,7 +165,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -376,7 +377,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness
+PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
@@ -505,7 +506,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
@@ -710,6 +711,15 @@ perf-ledger-check:
 			echo "Run \`make perf-ledger\` and commit the result." >&2; \
 			exit 1; \
 		fi
+
+# The drift gates above prove the generated views match the records. This one proves the
+# records agree with themselves: the verdict's headline is the figure its own results
+# hold, and the kept arm is one the verdict can name. Regeneration cannot satisfy it,
+# which is the point -- a wrong headline was twice regenerated into every view and
+# shipped green. It also refuses to pass over zero records, or over records none of
+# which stated a headline, so an empty or mis-pointed run cannot look clean.
+perf-evidence-check:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.validate --experiments docs/project/experiments
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in explorations/benchmarks/pyproject.toml, not `@latest`: this validator is the

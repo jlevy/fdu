@@ -528,8 +528,8 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
         # candidate unconditionally made a subject's last point a *rejected* build: the
         # 1.01M row read "7.7 → 8.0 µs" and appeared to have got slower, when what it
         # actually recorded was a buffer change that was measured, disliked, and dropped.
-        # A claim-only experiment names no kept arm, because its verdict neither kept nor
-        # dropped the code it measured, so it has no point on this figure.
+        # A record whose verdict says `kept: neither` names no arm, because its verdict
+        # decided a claim about code that ships regardless, so it has no point here.
         if record["kept"] is None:
             continue
         kept = job["per_entry_ns"][record["kept"]]

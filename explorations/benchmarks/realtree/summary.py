@@ -10,6 +10,11 @@ Reading them goes through the softschema CLI rather than a YAML parser. That kee
 the harness free of a YAML dependency, and more usefully it means the report is built
 from *validated* payloads: an artifact that no longer matches the contract fails here
 instead of quietly contributing a wrong row.
+
+The compiled contract checks shape. The model behind it also checks that the record
+agrees with itself -- that the verdict's headline is the figure its own results hold --
+and every payload is passed through the model here, on the way in, so a regenerated
+ledger or chart cannot launder a verdict the record does not support.
 """
 
 from __future__ import annotations
@@ -22,6 +27,10 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
+
+from pydantic import ValidationError
+
+from benchmarks.realtree import experiment as experiment_model
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 DEFAULT_OUT = Path("docs/project/reports/report-2026-08-10-fdu-performance-experiments.md")
@@ -192,7 +201,28 @@ def _read(path: Path) -> Dict[str, Any]:
     payload = document.get("values")
     if not isinstance(payload, dict) or "verdict" not in payload:
         raise SummaryError(f"{path}: no experiment payload")
+    # Shape is settled; now the record has to agree with itself. This is the check the
+    # drift gates cannot make: they prove the generated views match the record, and
+    # regenerating makes them match whatever the record says. Only a comparison of the
+    # record against its own measurements refuses a laundered headline.
+    try:
+        experiment_model.Experiment.model_validate(payload)
+    except ValidationError as error:
+        raise SummaryError(f"{path}: {model_error(error)}") from error
     return payload
+
+
+def model_error(error: ValidationError) -> str:
+    """One line per failure, without pydantic's framing, for a person to read."""
+    messages: List[str] = []
+    for item in error.errors():
+        message = str(item.get("msg", ""))
+        # A model validator's ValueError arrives as "Value error, <text>"; the text is
+        # the part that says what is wrong.
+        message = message.removeprefix("Value error, ")
+        location = ".".join(str(part) for part in item.get("loc", ()))
+        messages.append(f"{location}: {message}" if location else message)
+    return "; ".join(messages) or "artifact does not satisfy its model"
 
 
 def render(experiments: Sequence[Mapping[str, Any]]) -> str:
@@ -771,7 +801,11 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     arguments = parser.parse_args(list(argv))
 
-    experiments = load_experiments(arguments.experiments)
+    try:
+        experiments = load_experiments(arguments.experiments)
+    except SummaryError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     if not experiments:
         print("no experiment artifacts found", file=sys.stderr)
         return 1

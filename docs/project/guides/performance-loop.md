@@ -653,6 +653,18 @@ That is what lets the ledger lead with its failures.
   stopped matching the contract fails the build instead of quietly contributing a wrong
   row. Even the regime-coverage table is counted from artifacts rather than maintained by
   hand.
+- **The record has to agree with itself.** The compiled schema checks shape; the model
+  also checks that `verdict.change_pct` is the paired `primary_metric` change in the
+  results entry for `primary_job`, within 0.01 points (one unit in the last digit the
+  ledger prints), and that `verdict.kept` names an arm the decision can keep.
+  It runs on every read — recording, the ledger, the projection, and
+  `make perf-evidence-check` — because the drift gates cannot see this defect: they
+  prove the generated views match the record, and regenerating makes them match a wrong
+  record just as well.
+  exp-116 and exp-119 each shipped a cross-job ratio as their headline and were green
+  through every gate until a person read them.
+  The gate also refuses to pass over zero records, or over records none of which stated
+  a headline, so an empty or mis-pointed run cannot look clean.
 
 Structure earns its place here only because something reads it: the accept rule and the
 ledger tables. Any loop that proposes something, measures it, and decides can keep its
@@ -680,6 +692,9 @@ Adding an experiment is therefore three commands and one judgement.
    `make check` runs `perf-report-check`, which re-derives both generated files and
    fails if the committed copies no longer match the artifacts, so a new experiment that
    is not published is caught before it is merged rather than after.
+   It also runs `perf-evidence-check`, which is the gate regeneration cannot satisfy: a
+   record whose headline is not its own measurement fails there whether or not the views
+   were regenerated from it.
 
 The judgement is the preparation date.
 It lives in the projection rather than being read from the clock, so regenerating
@@ -708,13 +723,18 @@ wrong once and each fails silently.
   hand-maintained set; a new adversarial tree must be added to it or it will be averaged
   in with ordinary work.
 - **A rejected candidate is not the product’s state.** Anything plotting “where we are
-  now” must read the kept arm, which is the candidate only for an accepted experiment.
-  An experiment that decides a claim about code it did not propose has no kept arm:
-  exp-103 rejected H86’s Linux floor claim while the candidate stayed in the stack.
-  `CLAIM_ONLY_EXPERIMENTS` in
-  [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py) lists these by
-  hand, so a new one must be added or the page will draw its control as the current
-  cost.
+  now” must read the kept arm, and the record says which that is: `verdict.kept` is
+  `candidate`, `control`, or `neither`, and when it is omitted the decision implies it —
+  an accepted candidate is kept, anything else leaves the control.
+  `perf-record` writes it on every new artifact so the claim sits in the diff under the
+  decision. State it whenever the decision implies the wrong arm: an accepted
+  build-profile screen the release profile never adopted is `control` (the page once
+  reported its candidate as the product’s latest cost), a rejected change that shipped
+  anyway is `candidate`, and an evidence stage that decided a claim about code which
+  ships regardless is `neither` — exp-103 rejected H86’s Linux floor claim while the
+  candidate stayed in the stack, and neither arm it measured is the shipped binary.
+  This used to be a hand-maintained list in `timeline.py`, and seven experiments were
+  mislabelled across two branches while it was.
 
 A new figure belongs in `report_html.py` beside the others, drawn as inline SVG from the
 projection.
