@@ -319,7 +319,7 @@ Aggregate views count the covered union once.
 The default directory tree stays unchanged; `--tree` makes its format explicit.
 Flat lists are complete, size-ranked by default, with global row limits; tree limits
 remain per-directory and depth only folds the tree.
-Paths escapes controls/backslashes and keeps stdout to paths; bound and rule notices go
+Paths escapes control characters only and keeps stdout to paths; bound and rule notices go
 to stderr. Long adds size and signed age.
 Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
 report’s `age_reference_ns`; unknown ages are null.

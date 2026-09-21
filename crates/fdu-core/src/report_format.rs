@@ -166,16 +166,20 @@ pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<Str
     })
 }
 
-/// Escape delimiters and terminal controls while preserving ordinary Unicode paths.
+/// One path for a line-oriented listing: control characters become escapes so a row stays
+/// one row, and everything else, the separator included, is written as it is.
+///
+/// Only control characters. This once escaped `\` as well, and on Windows the separator
+/// *is* `\`, so `--format paths` printed `c\\target`, a path that does not exist, and the
+/// golden that covered it matched the doubled separator instead of failing on it. The
+/// price of not escaping it is that a name holding a literal backslash followed by a
+/// letter is ambiguous with an escape; the listing is lossy by contract, and a consumer
+/// that needs byte identity reads JSON's `path_raw`.
 fn flat_path(path: &Path) -> String {
     path.to_string_lossy()
         .chars()
         .flat_map(|c| {
-            if c.is_control() || c == '\\' {
-                c.escape_default().collect::<Vec<_>>()
-            } else {
-                vec![c]
-            }
+            if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] }
         })
         .collect()
 }
@@ -2631,6 +2635,9 @@ mod tests {
         assert_eq!(human_age(Some(30 * 86400 * 1_000_000_000)), "30d");
         assert_eq!(human_age(None), "unknown");
         assert_eq!(flat_path(Path::new("a\nb\tc")), "a\\nb\\tc");
+        // A backslash is the Windows separator; escaping it would print a path that
+        // does not exist, so it is written as it is on every platform.
+        assert_eq!(flat_path(Path::new("d/a\\b")), "d/a\\b");
         let mut stale = flat.clone();
         stale.source = ReportSource::CacheOnly;
         stale.freshness = Freshness::Stale;

@@ -637,18 +637,18 @@ $ node bin/directory-builds.cjs
 
 ```console
 $ fdu --cache off --size apparent --kind dir --include .venv --include node_modules --include target --modified-before 30d --format paths builds
-c[JSON_SEP]target
-b[JSON_SEP]node_modules
-a[JSON_SEP].venv
-empty[JSON_SEP].venv
+c[SEP]target
+b[SEP]node_modules
+a[SEP].venv
+empty[SEP].venv
 ? 0
 ```
 
 ```console
 $ fdu --cache off --size apparent --kind dir --include .venv --include node_modules --include target --modified-before 30d --long builds
-      70 B [AGE_DAYS]d c[JSON_SEP]target
-      50 B [AGE_DAYS]d b[JSON_SEP]node_modules
-      30 B [AGE_DAYS]d a[JSON_SEP].venv
-       0 B [AGE_DAYS]d empty[JSON_SEP].venv
+      70 B [AGE_DAYS]d c[SEP]target
+      50 B [AGE_DAYS]d b[SEP]node_modules
+      30 B [AGE_DAYS]d a[SEP].venv
+       0 B [AGE_DAYS]d empty[SEP].venv
 ? 0
 ```

@@ -96,7 +96,9 @@ Flat `--limit N` caps the whole list; in a tree it caps each directory’s child
 Depth has no effect on flat rows or subtree measurements.
 Paths and Long omit the performance footer; bounds, rule coverage, cache-only status,
 and watch invalidations are reported on stderr.
-Paths escapes control characters and backslashes.
+Paths is a lossy line-oriented listing: control characters are escaped so one row stays
+one line, undecodable bytes become U+FFFD, and every other character, the platform
+separator and a literal backslash included, is written verbatim.
 Use machine output for exact native path identity when names contain undecodable bytes.
 
 Tree, Paths, and Long require one compatible list view; grouped/mixed views and Full
