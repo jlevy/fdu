@@ -108,11 +108,11 @@ SYNTHETIC_SUBJECTS = {
 #: Linux's current cost. The candidate is not the shipped binary either, so these name
 #: no kept arm at all.
 #:
-#: exp-141 is the same shape one campaign later: both arms are the same probe binary,
-#: the verdict is the H111 floor scoreboard, and the engine it measured ships whether
-#: the gates pass or fail. Its companion pair exists only so `perf-record` has a measured
-#: pair to lift, so `control` there names the very binary under test as the alternative
-#: to itself.
+#: exp-141 is the same class one campaign later: H111's current-engine floor scoreboard,
+#: both arms the same probe binary (`86083632…`), and the engine it measured ships
+#: whether the gates pass or fail. Its companion pair exists only so `perf-record` has a
+#: measured pair to lift, so `control` there names the very binary under test as the
+#: alternative to itself.
 #:
 #: Hand-maintained, like the list above, so the same warning applies: a new evidence
 #: stage recorded against code that ships regardless of its verdict belongs here. A
