@@ -167,7 +167,15 @@ pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<Str
     })
 }
 
-/// Escape delimiters and terminal controls while preserving ordinary Unicode paths.
+/// One path for a line-oriented listing: control characters become escapes so a row stays
+/// one row, and everything else, the separator included, is written as it is.
+///
+/// Only control characters. This once escaped `\` as well, and on Windows the separator
+/// *is* `\`, so `--format paths` printed `c\\target`, a path that does not exist, and the
+/// golden that covered it matched the doubled separator instead of failing on it. The
+/// price of not escaping it is that a name holding a literal backslash followed by a
+/// letter is ambiguous with an escape; the listing is lossy by contract, and a consumer
+/// that needs byte identity reads JSON's `path_raw`.
 fn flat_path(path: &Path) -> String {
     path.to_string_lossy()
         .chars()
@@ -2678,6 +2686,60 @@ mod tests {
         check.event(Event::BeginMap(Shape::Inline));
         check.event(Event::EndMap);
         check.finish();
+    }
+
+    #[test]
+    fn list_formats_preserve_the_default_tree_and_expose_flat_subtree_metrics() {
+        let legacy = fixture(&[ViewSpec::Tree]);
+        let list = fixture(&[ViewSpec::List]);
+        assert_eq!(
+            super::render(&legacy, Format::Text, false).expect("tree"),
+            super::render(&list, Format::Tree, false).expect("list tree")
+        );
+        assert!(
+            super::render(&list, Format::Paths, false).is_err(),
+            "folding cannot silently become an inventory"
+        );
+        let flat = fixture_for(&Query {
+            views: vec![ViewSpec::List],
+            format: Format::Paths,
+            selection: Selection {
+                kinds: vec![EntryKind::Dir],
+                size: SizeMetric::Apparent,
+                ..Selection::default()
+            },
+            ..Query::default()
+        });
+        assert_eq!(super::render(&flat, Format::Paths, false).expect("paths"), "src\n");
+        assert!(super::render(&flat, Format::Long, false).expect("long").contains("100 B"));
+        assert!(super::render(&flat, Format::Tree, false).is_err());
+        let Section::Files { rows, .. } = &flat.sections[0] else { panic!("flat list") };
+        assert_eq!((rows[0].files, rows[0].dirs, rows[0].mtime_ns), (Some(1), Some(0), 10));
+        assert_eq!(
+            rows[0].age_ns,
+            flat.age_reference_ns.map(|reference| i128::from(reference) - 10)
+        );
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let wire = super::render(&flat, format, false).expect("serialization");
+            assert!(wire.contains("age_reference_ns"));
+            assert!(wire.contains("age_ns"));
+        }
+        assert_eq!(human_age(Some(-1)), "-0s");
+        assert_eq!(human_age(Some(30 * 86400 * 1_000_000_000)), "30d");
+        assert_eq!(human_age(None), "unknown");
+        assert_eq!(flat_path(Path::new("a\nb\tc")), "a\\nb\\tc");
+        // A backslash is the Windows separator; escaping it would print a path that
+        // does not exist, so it is written as it is on every platform.
+        assert_eq!(flat_path(Path::new("d/a\\b")), "d/a\\b");
+        let mut stale = flat.clone();
+        stale.provenance.source = ReportSource::CacheOnly;
+        stale.provenance.freshness = Freshness::Stale;
+        stale.scope.max_depth = Some(2);
+        let notes = flat_diagnostics(&stale).join("\n");
+        assert!(notes.contains("not been revalidated"));
+        assert!(notes.contains("freshness: stale"));
+        assert!(notes.contains("scan scope limited to depth 2"));
+        assert_eq!(super::render(&stale, Format::Paths, false).expect("paths"), "src\n");
     }
 
     fn fixture(views: &[ViewSpec]) -> Report {

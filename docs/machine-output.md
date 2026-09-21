@@ -65,7 +65,9 @@ Changing a folded tree into a complete flat inventory requires another report fr
 retained index. Rust rendering returns a Result; Python raises InvalidArgumentError for
 incompatible conversion.
 
-Paths contains safely escaped paths only.
+Paths contains one path per line, control characters escaped and everything else, the
+separator and a literal backslash included, verbatim; it is lossy, so byte identity
+lives in `path_raw` here.
 Long contains size, signed human age, and path.
 They omit the performance footer; CLI bound, rule, coverage, cache-only, and watch
 invalidation notices go to stderr.
