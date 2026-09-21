@@ -934,7 +934,7 @@ mod tests {
         // a one-vCPU runner (`threads: None` would take the serial walker there).
         let off = OpenConfig {
             scan: ScanConfig { read_controls: false, threads: Some(2), ..ScanConfig::default() },
-            ..OpenConfig::default()
+            ..blind(CachePolicy::Off, None)
         };
         let (compact, pending, performance) =
             prepared(root.path(), &off, &query).expect("compact report");

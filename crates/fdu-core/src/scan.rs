@@ -1356,7 +1356,7 @@ pub fn scan(
         &mut public_sink,
         false,
         WorkerPolicyExperiment::ShippedOneShot,
-        false,
+        SinkMode::Retained,
     )
     .map(|(report, _diagnostics)| report)
 }
@@ -1378,8 +1378,15 @@ pub(crate) fn scan_summary_fold(
         }
         batch.recycle();
     };
-    scan_internal(root, config, &mut sink, false, WorkerPolicyExperiment::ShippedOneShot, true)
-        .map(|(report, _diagnostics)| report)
+    scan_internal(
+        root,
+        config,
+        &mut sink,
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+        SinkMode::TransientFold,
+    )
+    .map(|(report, _diagnostics)| report)
 }
 
 /// [`scan_summary_fold`] plus the diagnostic trace [`scan_with_diagnostics`] collects.
@@ -1394,8 +1401,14 @@ pub(crate) fn scan_summary_fold_with_diagnostics(
         }
         batch.recycle();
     };
-    let (report, diagnostics) =
-        scan_internal(root, config, &mut sink, true, WorkerPolicyExperiment::ShippedOneShot, true)?;
+    let (report, diagnostics) = scan_internal(
+        root,
+        config,
+        &mut sink,
+        true,
+        WorkerPolicyExperiment::ShippedOneShot,
+        SinkMode::TransientFold,
+    )?;
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
@@ -1421,8 +1434,37 @@ pub fn scan_with_policy_diagnostics(
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, ScanDiagnostics)> {
     let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
-    let (report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy, false)?;
+    let (report, diagnostics) =
+        scan_internal(root, config, &mut public_sink, true, policy, SinkMode::Retained)?;
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
+}
+
+/// What the caller does with each batch of observations.
+///
+/// Two measured keeps hang off this one concept, and both were measured on the
+/// transient fold alone: returning drained batches to the producing worker (H147,
+/// exp-151) and taking directory and symlink kind from the listing without a stat
+/// (H72, exp-153). They are named here as properties of the mode rather than passed as
+/// one flag under one of their names, so a measurement on another platform can move
+/// one without silently moving the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SinkMode {
+    /// The consumer keeps the observations: the public [`scan`] and the index.
+    Retained,
+    /// The consumer folds each batch and drops it: the transient summary tier.
+    TransientFold,
+}
+
+impl SinkMode {
+    /// Drained batches go back to the worker that allocated them (H147).
+    fn recycles_batches(self) -> bool {
+        self == Self::TransientFold
+    }
+
+    /// Directory and symlink kind come from the listing without a stat (H72).
+    fn skips_dir_symlink_stat(self) -> bool {
+        self == Self::TransientFold
+    }
 }
 
 fn scan_internal(
@@ -1431,7 +1473,7 @@ fn scan_internal(
     sink: &mut dyn FnMut(ScannerBatch),
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
-    recycle_batches: bool,
+    sink_mode: SinkMode,
 ) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
     config.validate()?;
     let root_meta = {
@@ -1461,7 +1503,7 @@ fn scan_internal(
             pool,
             diagnostics.as_ref(),
             policy,
-            recycle_batches,
+            sink_mode,
         );
         return Ok((report, diagnostics.as_ref().map(|value| value.finish())));
     }
@@ -1510,15 +1552,18 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let (kind, attrs) =
-                match listed_child_kind_and_attrs(&item, recycle_batches, config.one_filesystem) {
-                    Ok(Some(observed)) => observed,
-                    Ok(None) => continue,
-                    Err(e) => {
-                        report.errors.push(Error::io(item.path(), e));
-                        continue;
-                    }
-                };
+            let (kind, attrs) = match listed_child_kind_and_attrs(
+                &item,
+                sink_mode.skips_dir_symlink_stat(),
+                config.one_filesystem,
+            ) {
+                Ok(Some(observed)) => observed,
+                Ok(None) => continue,
+                Err(e) => {
+                    report.errors.push(Error::io(item.path(), e));
+                    continue;
+                }
+            };
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             if disposition == crate::admission::Disposition::Reject {
@@ -2270,7 +2315,7 @@ fn scan_concurrent(
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
-    recycle_batches: bool,
+    sink_mode: SinkMode,
 ) -> ScanReport {
     let mut consume = |message| match message {
         WalkMessage::Batch(batch) => {
@@ -2293,7 +2338,10 @@ fn scan_concurrent(
         pool,
         diagnostics,
         policy,
-        if recycle_batches { walk_worker_recycling } else { walk_worker },
+        match sink_mode {
+            SinkMode::Retained => walk_worker,
+            SinkMode::TransientFold => walk_worker_transient_fold,
+        },
         &mut consume,
     )
 }
@@ -2591,25 +2639,23 @@ struct StreamingEmission {
 }
 
 impl StreamingEmission {
-    fn new(batch_size: usize) -> Self {
+    /// An emission with the properties [`SinkMode`] names for `mode`.
+    ///
+    /// The recycle channel returns drained `PathBuf` arenas to this worker so glibc
+    /// frees them on the thread that allocated them.
+    fn for_sink(batch_size: usize, mode: SinkMode) -> Self {
+        let (recycle_tx, recycle_rx) = if mode.recycles_batches() {
+            let (tx, rx) = std::sync::mpsc::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
         Self {
             batch: Vec::with_capacity(batch_size),
             batch_size,
-            recycle_tx: None,
-            recycle_rx: None,
-            skip_dir_symlink_stat: false,
-        }
-    }
-
-    /// Return drained `PathBuf` arenas to this worker so glibc frees them here.
-    fn recycling(batch_size: usize) -> Self {
-        let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
-        Self {
-            batch: Vec::with_capacity(batch_size),
-            batch_size,
-            recycle_tx: Some(recycle_tx),
-            recycle_rx: Some(recycle_rx),
-            skip_dir_symlink_stat: true,
+            recycle_tx,
+            recycle_rx,
+            skip_dir_symlink_stat: mode.skips_dir_symlink_stat(),
         }
     }
 
@@ -2621,12 +2667,16 @@ impl StreamingEmission {
     }
 
     fn next_vec(&self) -> Vec<ObservationOp> {
+        // The retained path keeps its pre-H147 shape: an empty vec that grows by
+        // doubling. Pre-sizing every batch there was never measured, and the public
+        // `scan` is what a library caller pays for.
+        let Some(recycle_rx) = &self.recycle_rx else {
+            return Vec::new();
+        };
         let mut kept = None;
-        if let Some(recycle_rx) = &self.recycle_rx {
-            while let Ok(mut recycled) = recycle_rx.try_recv() {
-                recycled.clear();
-                kept = Some(recycled);
-            }
+        while let Ok(mut recycled) = recycle_rx.try_recv() {
+            recycled.clear();
+            kept = Some(recycled);
         }
         kept.unwrap_or_else(|| Vec::with_capacity(self.batch_size))
     }
@@ -2841,12 +2891,12 @@ fn walk_worker(
         queue,
         sender,
         diagnostics,
-        StreamingEmission::new(config.batch_size),
+        StreamingEmission::for_sink(config.batch_size, SinkMode::Retained),
     )
 }
 
-/// Streaming walk that returns drained batches to this worker.
-fn walk_worker_recycling(
+/// One worker's share of the transient summary walk.
+fn walk_worker_transient_fold(
     root: &Path,
     config: &ScanConfig,
     root_dev: u64,
@@ -2861,7 +2911,7 @@ fn walk_worker_recycling(
         queue,
         sender,
         diagnostics,
-        StreamingEmission::recycling(config.batch_size),
+        StreamingEmission::for_sink(config.batch_size, SinkMode::TransientFold),
     )
 }
 
@@ -3966,7 +4016,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
         },
         false,
         WorkerPolicyExperiment::ShippedOneShot,
-        false,
+        SinkMode::Retained,
     )?;
     if let Some(error) = apply_error {
         return Err(error);

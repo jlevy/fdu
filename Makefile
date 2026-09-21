@@ -245,11 +245,13 @@ SMOKE_PYTHON := crates/fdu-py/.venv-smoke/bin/python
 # Replay the golden corpus against the Python surface. The committed deviation file is
 # non-empty by construction, so an empty result means the shim never ran (fdu-9h2w).
 test-parity: build parity-venv $(NODE_INSTALL_STAMP)
+	$(NPM) run test:parity-classes
 	FDU_PARITY_PYTHON=$(PARITY_PYTHON) $(NODE) scripts/run-parity.mjs
 
 # Used by the gate, where python-smoke has already installed the wheel into
 # .venv-smoke; standalone runs want test-parity, which builds its own.
 parity-check: build $(NODE_INSTALL_STAMP)
+	$(NPM) run test:parity-classes
 	FDU_PARITY_PYTHON=$(SMOKE_PYTHON) $(NODE) scripts/run-parity.mjs
 
 parity-update: build parity-venv $(NODE_INSTALL_STAMP)
@@ -374,7 +376,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence
+PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness
 
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \

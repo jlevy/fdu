@@ -14,6 +14,7 @@ from benchmarks.realtree.report_html import (
     axis_ticks,
     figure_absolute,
     figure_per_entry,
+    fmt_primary,
     render,
 )
 from benchmarks.realtree.timeline import (
@@ -59,7 +60,12 @@ def experiment(
     wall: Dict[str, Any] | None = None,
     lines: int = 10,
     hypotheses: List[str] | None = None,
+    primary_metric: str = "wall_ns",
+    extra_metrics: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    metrics: Dict[str, Any] = {"wall_ns": wall or metric(200e6, 100e6, -50.0, -55.0, -45.0)}
+    if extra_metrics:
+        metrics.update(extra_metrics)
     return {
         "id": identifier,
         "date": "2026-08-10",
@@ -84,14 +90,14 @@ def experiment(
                 "job": "cold-scan-index",
                 "start_state": "cold",
                 "invalid_samples": 0,
-                "metrics": {"wall_ns": wall or metric(200e6, 100e6, -50.0, -55.0, -45.0)},
+                "metrics": metrics,
             }
         ],
         "complexity": {"lines_changed": lines},
         "verdict": {
             "decision": decision,
             "primary_job": "cold-scan-index",
-            "primary_metric": "wall_ns",
+            "primary_metric": primary_metric,
             "change_pct": -50.0,
             "reason": "because",
             "commit": None,
@@ -396,6 +402,31 @@ class RenderTests(unittest.TestCase):
         figure = figure_per_entry(dataset)
         self.assertIn("exp-101", figure)
         self.assertNotIn("exp-103", figure)
+
+    def test_a_bytes_primary_metric_is_not_printed_as_milliseconds(self) -> None:
+        # exp-117 is the first accept whose primary metric is peak RSS. The table used
+        # to format every primary as milliseconds, so 395,886,592 → 355,868,672 bytes
+        # read as 396 ms → 356 ms.
+        dataset = project(
+            [
+                experiment(
+                    "exp-117",
+                    primary_metric="peak_rss_bytes",
+                    extra_metrics={
+                        "peak_rss_bytes": metric(
+                            395_886_592, 355_868_672, -10.127, -10.49, -10.03
+                        )
+                    },
+                )
+            ]
+        )
+        page = render(dataset)
+        self.assertEqual(fmt_primary(395_886_592, "peak_rss_bytes"), "377.5 MiB")
+        self.assertEqual(fmt_primary(355_868_672, "peak_rss_bytes"), "339.4 MiB")
+        self.assertNotIn("396 ms", page)
+        self.assertNotIn("356 ms", page)
+        self.assertIn("377.5 MiB", page)
+        self.assertIn("339.4 MiB", page)
 
     def test_no_figure_overflows_its_plot(self) -> None:
         # A bar drawn past the plot lands in the value column and reads as a number
