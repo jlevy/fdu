@@ -5,16 +5,18 @@ title: Content sidecar load is the layer-3 warm cost on Linux
 kind: task
 status: in_progress
 priority: 1
-version: 21
+version: 22
+spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - campaign-2
   - macos-agenda
 dependencies: []
+parent_id: is-01kzy554jjg27mz97mryenftym
 child_order_hints:
   - is-01m2w9fjprg6vnzee5686g93j6
   - is-01m31gvrxj2qkm4c256dp7mss5
 created_at: 2026-08-14T00:03:55.833Z
-updated_at: 2026-09-21T08:39:38.623Z
+updated_at: 2026-09-21T08:39:39.586Z
 delegate: unknown@spud10
 hold: null
 hold_until: null

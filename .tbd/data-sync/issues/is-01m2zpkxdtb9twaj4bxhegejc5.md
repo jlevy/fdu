@@ -5,11 +5,12 @@ title: "Restore test guards dropped by the #91/#92 fix-consolidation merges (R3 
 kind: task
 status: closed
 priority: 2
-version: 4
+version: 5
 labels: []
 dependencies: []
+parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
 created_at: 2026-09-20T15:23:07.575Z
-updated_at: 2026-09-21T08:20:31.393Z
+updated_at: 2026-09-21T08:30:59.534Z
 closed_at: 2026-09-21T08:20:31.393Z
 close_reason: "Shipped on #104 (https://github.com/jlevy/fdu/pull/104) at 743d2b9c / 4d78558e vs main a290aedc. CI run 35576573158 green on ubuntu/macos/windows including Performance evidence. exp-116 change_pct is the paired −2.158%; commit quoted as 984e4618; digest/regime/errata corrected; ledger+report regenerated. R3 name negatives, valid-rename load control, and H138 sharing guard restored; apply timer starts at candidates.remove. peak_rss_bytes prints as bytes (exp-117 377.5→339.4 MiB). Local rust-test passed except the known parallel_equivalence flake (not fixed)."
 ---
