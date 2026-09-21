@@ -5,12 +5,16 @@ title: "PR #94 review pass: Linux parallel validation of the Darwin #92 stack"
 kind: task
 status: in_progress
 priority: 1
-version: 2
+version: 5
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
+child_order_hints:
+  - is-01m32jvjhgtrsdxbqsm54h8bdk
+  - is-01m32jvw75kh2v2b8kp6r3se4v
+  - is-01m32jvx0sev144k9re6crv69p
 created_at: 2026-09-21T17:46:04.016Z
-updated_at: 2026-09-21T17:47:14.568Z
+updated_at: 2026-09-21T18:15:18.296Z
 ---
 Branch `perf/campaign-linux-2026-09-19`, based on main. Reviewer model: Fable.
 

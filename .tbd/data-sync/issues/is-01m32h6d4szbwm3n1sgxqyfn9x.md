@@ -5,12 +5,20 @@ title: "PR #97 review pass: Linux leftover records, H147/H72 keeps, H148 PGO scr
 kind: task
 status: in_progress
 priority: 1
-version: 2
+version: 9
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
+child_order_hints:
+  - is-01m32k0mjek79ygqhjk44q3tq7
+  - is-01m32k0n64ggazv88j5j85pc04
+  - is-01m32k0nrvh4fq4ngjykf20kmm
+  - is-01m32k0pcemcwmbka07n7t6ncr
+  - is-01m32k0pzxny6wp90q82wfz9ta
+  - is-01m32k0qk5mdfh3vbby8zhaab7
+  - is-01m32k0r5ranxnzq9ya6s6d202
 created_at: 2026-09-21T17:46:05.337Z
-updated_at: 2026-09-21T17:50:22.364Z
+updated_at: 2026-09-21T18:17:57.176Z
 ---
 Branch `cursor/linux-perf-iterate-de1b`, based on #94. Reviewer model: Fable.
 

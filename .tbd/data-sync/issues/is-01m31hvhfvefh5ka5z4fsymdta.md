@@ -5,7 +5,7 @@ title: "Linux stabilization session: gate, PR review, and stack readiness (2026-
 kind: epic
 status: open
 priority: 0
-version: 17
+version: 18
 labels: []
 dependencies: []
 parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
@@ -26,8 +26,9 @@ child_order_hints:
   - is-01m32f64vwaa0thyrc4sg5h1cm
   - is-01m32f6qyw26btzdt7de1m4hrs
   - is-01m32h5emeefrv7vx5yrx70fga
+  - is-01m32jqdbwhh12ekwymn8h6r1y
 created_at: 2026-09-21T08:38:23.483Z
-updated_at: 2026-09-21T17:45:34.093Z
+updated_at: 2026-09-21T18:12:51.196Z
 ---
 Work carried out from a Linux host with no nested `.claude/worktrees/` checkout — the first host able to run the handoff gate since `fdu-vjf2` was found.
 

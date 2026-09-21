@@ -3,14 +3,18 @@ type: is
 id: is-01m32h6gjn35c13axesr7bp753
 title: "PR #108 review pass: close two gates that pass the regressions they catch"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 3
+version: 4
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
 created_at: 2026-09-21T17:46:08.853Z
-updated_at: 2026-09-21T18:01:43.771Z
+updated_at: 2026-09-21T18:18:05.806Z
+closed_at: 2026-09-21T18:18:05.806Z
+close_reason: Merged as 32c39a14. Senior review (9 findings, 3 blocking) and disposition both posted; all nine addressed in 07a3cd42; make check passed on Linux and CI 19/19 green before merge.
+resolution: null
+duplicate_of: null
 ---
 Branch `claude/gate-integrity`, based on main. Reviewer model: Fable.
 
