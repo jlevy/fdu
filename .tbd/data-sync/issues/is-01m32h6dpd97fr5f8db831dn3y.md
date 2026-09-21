@@ -3,9 +3,9 @@ type: is
 id: is-01m32h6dpd97fr5f8db831dn3y
 title: "PR #98 review pass: validate Windows caches with change time and file identity"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 11
+version: 12
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
@@ -19,7 +19,11 @@ child_order_hints:
   - is-01m32wbcf7yb2afmpdrs2t3d9h
   - is-01m32wbd25xjxnmqp90nx64hys
 created_at: 2026-09-21T17:46:05.901Z
-updated_at: 2026-09-21T21:01:03.428Z
+updated_at: 2026-09-21T21:19:13.341Z
+closed_at: 2026-09-21T21:19:13.341Z
+close_reason: "Both comments are on the PR: senior review at https://github.com/jlevy/fdu/pull/98#issuecomment-5764966314 and the per-finding disposition at https://github.com/jlevy/fdu/pull/98#issuecomment-5767664651. R1, R2 (Blockers), R3 and R4 fixed in 650b6b08 + edd6625e + b04c957c on codex/release-windows-validity; the four suggestions deferred as fdu-1zrz, fdu-m3x5, fdu-hrjz, fdu-twry (still open under this bead). CI 19/19 green on b04c957c. FAT/exFAT, locked-file and ReFS behaviour remain unverified on a real Windows host, as the comment states."
+resolution: null
+duplicate_of: null
 ---
 Branch `codex/release-windows-validity`, based on main. Reviewer model: Fable.
 
