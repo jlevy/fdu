@@ -261,7 +261,8 @@ The mechanism is the same: the shared `every_entry` walk still clears the 3% wal
 
 **Same** on Linux.
 Uncontrolled, exploratory-stage replication after a quiet attempt that
-did not hold. No engine patch.
+did not hold; an uncontrolled cell is exploration and discovery only, and this record is
+`campaign_stage: exploratory`, `confirmable: false`. No engine patch.
 Do not revert. Do not retry H138. Do not invent a cache-hit skip.
 Do not raise the README 200K files/s or 4M cached lines/s from this cell.
 

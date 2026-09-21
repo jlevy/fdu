@@ -108,8 +108,11 @@ SYNTHETIC_SUBJECTS = {
 #: Linux's current cost. The candidate is not the shipped binary either, so these name
 #: no kept arm at all.
 #:
-#: exp-141 is the same class: H111's current-engine floor scoreboard, both arms the same
-#: binary (`86083632…`), so a rejected decision must not name the control as kept.
+#: exp-141 is the same class one campaign later: H111's current-engine floor scoreboard,
+#: both arms the same probe binary (`86083632…`), and the engine it measured ships
+#: whether the gates pass or fail. Its companion pair exists only so `perf-record` has a
+#: measured pair to lift, so `control` there names the very binary under test as the
+#: alternative to itself.
 #:
 #: exp-146, exp-148, and exp-149 accepted a `--threads 8` screen, not a shipped constant
 #: (exp-149's candidate is a +7.12% regression).
