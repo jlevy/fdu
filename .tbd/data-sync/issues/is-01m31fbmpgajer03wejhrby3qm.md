@@ -5,11 +5,11 @@ title: make check supply-chain scan walks nested .claude/worktrees and fails on 
 kind: bug
 status: open
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-09-21T07:54:45.326Z
-updated_at: 2026-09-21T07:57:03.756Z
+updated_at: 2026-09-21T08:06:48.863Z
 ---
 `make check` fails at the `supply-chain` target on any clone that has a git worktree under `.claude/worktrees/`, which is where Claude Code places worktrees by default. Observed 2026-09-21:
 
@@ -29,4 +29,4 @@ Note for whoever fixes it: do not "fix" this by adding the nested paths to the i
 
 ## Notes
 
-Context posted for Linux handoff on PR #94: https://github.com/jlevy/fdu/pull/94#issuecomment-5757234985
+Severity evidence: because the gate stops at supply-chain, two real defects in PR #103 reached CI undetected (stale Python format contract on all platforms, and a Windows-only path-separator test failure). Any agent on a host with a Claude Code worktree under .claude/worktrees/ has no working local gate.
