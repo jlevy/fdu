@@ -92,13 +92,18 @@ export const CLASSES = [
     // and still be explained, because one removed line was matched by one added line
     // whatever the two said. That is the opposite of what a class is for -- the header
     // above requires a class to say what the difference IS.
+    //
+    // Compared through sameSeparator for the reason given where it is defined: a golden
+    // writes the separator as [SEP] and the package prints the literal, so a hunk that
+    // merely contains a path would otherwise read as a changed answer and this class
+    // would stop explaining the sessions it exists for.
     matches: ({ removed, added }) => {
       const telemetry = (line) => /^note:|^Performance:/.test(line);
       const rest = removed.filter((line) => !telemetry(line));
       return (
         removed.some(telemetry) &&
         rest.length === added.length &&
-        rest.every((line, index) => line === added[index])
+        rest.every((line, index) => sameSeparator(line) === sameSeparator(added[index]))
       );
     },
   },

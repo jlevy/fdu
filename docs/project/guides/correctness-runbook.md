@@ -29,7 +29,7 @@ by request:
 
 | Request | Second run reports | Why |
 | --- | --- | --- |
-| Metadata only | `cold_scan` | A metadata walk is cheap, so it re-walks by design. Its proof that the snapshot serves is the cache-only run. |
+| Metadata only | `cold_scan` | A metadata walk is cheap, so it re-walks by design. Its proof that the snapshot serves is the cache-only run, which must exit 0, report `cache_only`, and label the answer `stale`. |
 | `--analyze …` | `warm_revalidate` | The content sidecar is the expensive tier and is the one that must serve. |
 | `--cache only` | `cache_only` | Serves without verifying, and labels the answer stale. |
 
@@ -37,6 +37,15 @@ A run whose answers all match but whose mechanism column is wrong has proved not
 The first time this procedure ran, every invocation was failing on an unknown flag and
 the answer comparison still reported zero mismatches; the mechanism column is what
 caught it.
+
+**Every clause of that check has to be reachable**, which is not automatic.
+An earlier version guarded the cache-only check with `only_rc == 0`, and the engine
+either serves `cache_only` or exits 1 — so against a build that never wrote a snapshot,
+cache-only exited 1, the check was skipped, and seventeen of the twenty-three cases
+printed `ok` against a cache that never served.
+Verify the check by breaking the thing it watches: run the comparison against a wrapper
+that rewrites `--cache auto` to `--cache off` and confirm every case reports
+`NO-SNAPSHOT` and the script exits 1.
 
 ## Running It
 
@@ -50,9 +59,25 @@ FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py /tmp/fdu-correc
 `build_tree.py` prints which kinds it managed to create.
 A kind the platform refuses is reported absent rather than skipped silently, because a
 run that quietly built fewer kinds looks exactly like a run that passed.
+It removes and rebuilds the target directory, chmod-ing its way past the 0o000 entry
+first: re-running into an existing tree made every `link`, `symlink`, `mkfifo` and
+`mknod` raise `FileExistsError`, which is an `OSError`, so a second run reported six
+kinds as “platform refused” and printed a truthful-looking eleven of seventeen.
 
-Nothing here belongs in `make check`: it needs a built binary, a constructed tree, and
-minutes rather than seconds.
+**No single run can honestly report every kind, and the script says which one you are
+in.** Device nodes need `CAP_MKNOD`, so they need root; mode bits are ignored by root,
+so as root the unreadable file and unlistable directory exercise nothing and
+`permission-denied-effective` reports absent.
+Build the tree as root for the device nodes, then run the comparison as an unprivileged
+user for the refusal paths.
+
+## When It Runs
+
+Before tagging a release, and after any change to cache identity, serving, or
+reconciliation. It is not on a timer and not in `make check`: it needs a built binary, a
+constructed tree, privilege on both sides of the root boundary, and minutes rather than
+seconds. Record each run per *Recording a Result* below, so that “when did anyone last
+actually check this” has an answer.
 
 ## What the Tree Holds
 

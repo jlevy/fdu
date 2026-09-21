@@ -52,11 +52,17 @@ const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 7;
 // past the value the ceiling was derived from, and nothing said so. Re-measure and
 // re-tighten when a route gets faster, because the slack is where a regression hides.
 //
-// The rule is not asserted yet. Asserting it means each platform's ceiling must sit
-// within one allocation per entry of a slope measured on that platform, and the figures
-// quoted above are demonstrably stale: Linux's implied 25.29 against an actual 24.331 is
-// how this slack appeared. Deriving an assertion from numbers that cannot be checked
-// here would trade a silent hole for a red build on macOS and Windows (fdu-hb2t).
+// The rule is not asserted yet, and the reason is narrower than "the other platforms
+// are unknown". macOS 24.24 was measured, and against its ceiling of 25 it is already
+// tight at 0.76. Windows is the derived one: 34 comes from a predicted 33.43, and Linux
+// is the precedent for a derived ceiling drifting loose once the route got faster than
+// the prediction, so the same hole may well be open there. What is missing is a
+// measurement on Windows, not an argument: CI runs this exact test on macos-latest and
+// windows-latest, so both slopes are an eprintln and --nocapture away. fdu-hb2t tracks
+// taking them and then asserting the rule here.
+//
+// The fallback below stays at 26 deliberately. No CI platform reaches it, and tightening
+// a ceiling on a platform nobody has measured would fail a port for the wrong reason.
 #[cfg(target_os = "macos")]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 25;
 #[cfg(target_os = "linux")]

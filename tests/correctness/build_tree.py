@@ -10,9 +10,11 @@ identical to a run that passed.
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import stat
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 made: dict[str, bool] = {}
@@ -23,7 +25,18 @@ def note(kind: str, ok: bool) -> None:
 
 
 def build(root: Path) -> dict[str, bool]:
-    root.mkdir(parents=True, exist_ok=True)
+    # A fresh directory, always. Re-running into an existing tree raises FileExistsError
+    # from every `os.link`/`os.symlink`/`os.mkfifo`/`os.mknod`, which is an OSError, so a
+    # second run used to report six kinds as "platform refused" and print a truthful-
+    # looking 11-of-17. A report that degrades on rerun is worse than no report.
+    if root.exists():
+        # `denied-dir` is 0o000, so make the tree traversable before removing it.
+        for path in root.rglob("*"):
+            if path.is_dir() and not path.is_symlink():
+                with suppress(OSError):
+                    os.chmod(path, 0o755)
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
 
     # --- regular files across sizes -------------------------------------------------
     (root / "empty.txt").write_bytes(b"")
@@ -112,6 +125,9 @@ def build(root: Path) -> dict[str, bool]:
 
     # Unreadable as a non-root user. Root ignores these, so the run that exercises them
     # has to drop privileges; recorded here either way.
+    # Root ignores mode bits, so these entries exist but exercise nothing. Recorded as a
+    # fact about the run rather than printed as a plain "yes".
+    note("permission-denied-effective", os.geteuid() != 0)
     denied = root / "denied"
     denied.mkdir(exist_ok=True)
     (denied / "secret.txt").write_text("hidden\n")
@@ -121,7 +137,6 @@ def build(root: Path) -> dict[str, bool]:
     nolist.mkdir(exist_ok=True)
     (nolist / "inside.txt").write_text("unreachable\n")
     os.chmod(nolist, 0o000)
-    note("permission-denied", True)
 
     # --- awkward names ---------------------------------------------------------------
     names = root / "names"
@@ -208,12 +223,18 @@ def build(root: Path) -> dict[str, bool]:
 if __name__ == "__main__":
     target = Path(sys.argv[1])
     facts = build(target)
+    print(f"running as uid {os.geteuid()}\n")
     width = max(len(k) for k in facts)
     for kind, ok in facts.items():
         if isinstance(ok, bool):
             print(f"{kind.ljust(width)}  {'yes' if ok else 'NO (platform refused)'}")
         else:
             print(f"{kind.ljust(width)}  {ok}")
+    if os.geteuid() == 0:
+        print("\nNote: running as root. Device nodes need CAP_MKNOD and so need root,")
+        print("but mode bits are ignored by root, so the unreadable file and unlistable")
+        print("directory exercise nothing. No single run can honestly report all kinds:")
+        print("build as root for devices, then run the comparison as an unprivileged user.")
     absent = [k for k, v in facts.items() if v is False]
     print(f"\nkinds present: {sum(1 for v in facts.values() if v is True)}, absent: {len(absent)}")
     if absent:

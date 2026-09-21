@@ -17,7 +17,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-FDU = os.environ.get("FDU_BIN", "/home/user/fdu/target/debug/fdu")
+# Repository-relative so the runbook is not tied to one checkout.
+DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
+FDU = os.environ.get("FDU_BIN") or str(DEFAULT_FDU)
 
 # Each case is a request, named by what makes it interesting.
 CASES: list[tuple[str, list[str]]] = [
@@ -49,9 +51,7 @@ CASES: list[tuple[str, list[str]]] = [
 
 def run(args: list[str], cache_home: Path) -> tuple[int, str, str]:
     env = dict(os.environ, XDG_CACHE_HOME=str(cache_home), NO_COLOR="1")
-    proc = subprocess.run(
-        [FDU, *args], capture_output=True, text=True, env=env, timeout=300
-    )
+    proc = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -62,6 +62,13 @@ def source_of(stdout: str) -> str | None:
     except json.JSONDecodeError:
         return None
     return doc.get("source")
+
+
+def freshness_of(stdout: str) -> str | None:
+    try:
+        return json.loads(stdout).get("freshness")
+    except json.JSONDecodeError:
+        return None
 
 
 def normalise(doc: str) -> object:
@@ -78,7 +85,10 @@ def normalise(doc: str) -> object:
                 for k, v in node.items()
                 # Provenance describes the delivery, not the answer; timings and source
                 # are expected to differ between a cold and a warm run of one request.
-                if k not in {"generated_at", "scan_started_at", "source", "freshness", "elapsed_ns"}
+                # `freshness` is deliberately NOT dropped here; it is compared
+                # separately below, because cache-only promises a `stale` label and an
+                # unasserted promise is not a check.
+                if k not in {"generated_at", "scan_started_at", "source", "freshness"}
             }
         if isinstance(node, list):
             return [scrub(item) for item in node]
@@ -94,20 +104,20 @@ def main() -> int:
 
     print(
         f"{'case':<22} {'cold':>6} {'warm':>6} {'only':>6}  "
-        f"{'warm source':<16} {'only source':<12} verdict"
+        f"{'warm source':<16} {'only source':<12} {'fresh':<7} verdict"
     )
-    print("-" * 96)
+    print("-" * 104)
 
     for name, extra in CASES:
         cache_home = Path(tempfile.mkdtemp(prefix="fdu-cache-"))
         try:
             base = [str(root), "--format", "json", *extra]
 
-            cold_rc, cold_out, cold_err = run([*base, "--cache", "off"], cache_home)
+            cold_rc, cold_out, _ = run([*base, "--cache", "off"], cache_home)
             # Warm the cache with the same request, then ask again.
             run([*base, "--cache", "auto"], cache_home)
-            warm_rc, warm_out, warm_err = run([*base, "--cache", "auto"], cache_home)
-            only_rc, only_out, only_err = run([*base, "--cache", "only"], cache_home)
+            warm_rc, warm_out, _ = run([*base, "--cache", "auto"], cache_home)
+            only_rc, only_out, _ = run([*base, "--cache", "only"], cache_home)
 
             warm_source = source_of(warm_out) or "-"
             verdict = []
@@ -126,19 +136,35 @@ def main() -> int:
             # is cheap, so a metadata-only request re-walks and reports `cold_scan` by
             # design, and its proof that the snapshot serves is the cache-only run. Only
             # a content request is expected to be served warm.
+            #
+            # Every clause here must be reachable. An earlier version guarded the
+            # cache-only check with `only_rc == 0`, which can never be false in the
+            # failure it was written for: the engine either serves `cache_only` or exits
+            # 1, so a build that never writes a snapshot exited 1 and skipped the check
+            # entirely. Seventeen of these cases then printed `ok` against a cache that
+            # was never written or served -- the exact failure this file exists to catch.
             analyses = "--analyze" in extra
             only_source = source_of(only_out) or "-"
-            if analyses:
-                if warm_source != "warm_revalidate":
-                    verdict.append(f"NOT-WARM({warm_source})")
-                    never_warm.append(f"{name}: warm source {warm_source}")
-            elif only_rc == 0 and only_source != "cache_only":
+            only_freshness = freshness_of(only_out) or "-"
+
+            if only_rc != 0:
+                verdict.append(f"NO-SNAPSHOT(rc={only_rc})")
+                never_warm.append(f"{name}: cache-only exited {only_rc}, so nothing was stored")
+            elif only_source != "cache_only":
                 verdict.append(f"NO-SNAPSHOT({only_source})")
                 never_warm.append(f"{name}: cache-only source {only_source}")
+            elif only_freshness != "stale":
+                # Cache-only serves without verifying, so it must label the answer stale.
+                verdict.append(f"NOT-STALE({only_freshness})")
+                never_warm.append(f"{name}: cache-only freshness {only_freshness}")
+
+            if analyses and warm_source != "warm_revalidate":
+                verdict.append(f"NOT-WARM({warm_source})")
+                never_warm.append(f"{name}: warm source {warm_source}")
 
             print(
                 f"{name:<22} {cold_rc:>6} {warm_rc:>6} {only_rc:>6}  "
-                f"{warm_source:<16} {only_source:<12} "
+                f"{warm_source:<16} {only_source:<12} {only_freshness:<7} "
                 f"{' '.join(verdict) if verdict else 'ok'}"
             )
         finally:
@@ -149,8 +175,8 @@ def main() -> int:
     for line in failures:
         print(f"  - {line}")
     print(f"mechanism failures (cache did not serve): {len(never_warm)}")
-    if never_warm:
-        print("  " + ", ".join(never_warm))
+    for line in never_warm:
+        print(f"  - {line}")
     return 1 if (failures or never_warm) else 0
 
 

@@ -6,45 +6,61 @@ document_words; `--analyze lines` after `--analyze code` read an Unsupported rec
 line counts had been discarded. Both matched their own tests. The oracle here is the cold
 answer to the asked request, never the warmer's.
 """
+
 from __future__ import annotations
-import json, os, shutil, subprocess, sys, tempfile
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
-FDU = os.environ.get("FDU_BIN", "/home/user/fdu/target/debug/fdu")
+# Repository-relative so the runbook is not tied to one checkout.
+DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
+FDU = os.environ.get("FDU_BIN") or str(DEFAULT_FDU)
 WARMERS = {
-    "W_none":  [],
+    "W_none": [],
     "W_lines": ["--analyze", "lines"],
-    "W_code":  ["--analyze", "code"],
+    "W_code": ["--analyze", "code"],
     "W_words": ["--analyze", "words"],
-    "W_all":   ["--analyze", "all"],
+    "W_all": ["--analyze", "all"],
 }
 ASKS = {
     "a_lines": ["--analyze", "lines"],
-    "a_code":  ["--analyze", "code"],
+    "a_code": ["--analyze", "code"],
     "a_words": ["--analyze", "words"],
-    "a_all":   ["--analyze", "all"],
+    "a_all": ["--analyze", "all"],
     "a_lines_documents": ["--analyze", "lines", "--view", "documents"],
-    "a_code_languages":  ["--analyze", "code", "--view", "languages"],
+    "a_code_languages": ["--analyze", "code", "--view", "languages"],
 }
+
 
 def run(args, cache):
     env = dict(os.environ, XDG_CACHE_HOME=str(cache), NO_COLOR="1")
     p = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
     return p.returncode, p.stdout, p.stderr
 
+
 def scrub(node):
     if isinstance(node, dict):
-        return {k: scrub(v) for k, v in node.items()
-                if k not in {"generated_at", "scan_started_at", "source", "freshness", "elapsed_ns"}}
+        return {
+            k: scrub(v)
+            for k, v in node.items()
+            if k not in {"generated_at", "scan_started_at", "source", "freshness", "elapsed_ns"}
+        }
     if isinstance(node, list):
         return [scrub(v) for v in node]
     return node
+
 
 def body(out):
     try:
         return scrub(json.loads(out))
     except json.JSONDecodeError:
         return out
+
 
 def analyze_field(out):
     try:
@@ -59,6 +75,7 @@ def analyze_field(out):
         "analyzers": analysis.get("analyzers"),
         "options_fingerprint": analysis.get("options_fingerprint"),
     }
+
 
 def main():
     root = Path(sys.argv[1])
@@ -102,6 +119,7 @@ def main():
     for b in bad:
         print(f"  - {b}")
     return 1 if bad else 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
