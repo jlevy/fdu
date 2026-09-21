@@ -86,9 +86,21 @@ export const CLASSES = [
       'note is NOT this: that one is a fact about the report, travels on it, and every',
       'surface states it in its own vocabulary.',
     ],
-    matches: ({ removed, added }) =>
-      removed.some((line) => /^note:|^Performance:/.test(line)) &&
-      removed.filter((line) => !/^note:|^Performance:/.test(line)).length === added.length,
+    // Everything that is not telemetry has to be unchanged, line for line. Counting the
+    // remainder instead let this class absorb a genuinely different answer: a session
+    // whose command-line output lost a `note:` line could also report a different tally
+    // and still be explained, because one removed line was matched by one added line
+    // whatever the two said. That is the opposite of what a class is for -- the header
+    // above requires a class to say what the difference IS.
+    matches: ({ removed, added }) => {
+      const telemetry = (line) => /^note:|^Performance:/.test(line);
+      const rest = removed.filter((line) => !telemetry(line));
+      return (
+        removed.some(telemetry) &&
+        rest.length === added.length &&
+        rest.every((line, index) => line === added[index])
+      );
+    },
   },
   {
     id: 'discovery-surface',

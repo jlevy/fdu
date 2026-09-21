@@ -44,10 +44,23 @@ const DETACHED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 7;
 // entries: macOS falls from 25.x to 24.24 allocations per added entry. The Linux and
 // Windows ceilings remove the same one arena allocation from their last measured 26.29
 // and 34.43 slopes. Lower allocation counts remain valid here too.
+//
+// A ceiling has to stay within one allocation per entry of the measured slope, or it
+// stops rejecting the regression it exists to reject. Linux sat at 26 against a measured
+// 24.331 — 1.669 of headroom — so inserting one heap allocation per admitted entry in
+// `prepare_walk_entry` moved the slope to 25.33 and still passed. The slope had improved
+// past the value the ceiling was derived from, and nothing said so. Re-measure and
+// re-tighten when a route gets faster, because the slack is where a regression hides.
+//
+// The rule is not asserted yet. Asserting it means each platform's ceiling must sit
+// within one allocation per entry of a slope measured on that platform, and the figures
+// quoted above are demonstrably stale: Linux's implied 25.29 against an actual 24.331 is
+// how this slack appeared. Deriving an assertion from numbers that cannot be checked
+// here would trade a silent hole for a red build on macOS and Windows (fdu-hb2t).
 #[cfg(target_os = "macos")]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 25;
 #[cfg(target_os = "linux")]
-const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 26;
+const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 25;
 #[cfg(target_os = "windows")]
 const OPENED_ALLOCATIONS_PER_ADDED_ENTRY: u64 = 34;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
