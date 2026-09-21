@@ -122,11 +122,16 @@ Useful selections include:
 fdu . --include='*.{rs,toml}'
 fdu . --exclude='target/**'
 fdu . --min-size=10MiB
-fdu . --modified-since=1h --view=files --sort=mtime
+fdu . --kind=file --modified-since=1h --view=files --sort=mtime
 fdu . --kind=file --view=largest
 ```
 
 Quote glob patterns so the shell does not expand them before fdu sees them.
+Size and time bounds test a directory’s eligible subtree, not its inode, and a directory
+they match covers its contents in aggregate views.
+Without `--kind`, `fdu . --modified-since 7d` therefore lists every directory with
+activity this week at its full size beside the files that changed, and `--view summary`
+counts everything inside those directories; `--kind file` asks only for the files.
 
 ### Find Old Environments and Build Directories
 
@@ -168,6 +173,9 @@ Hard links and shared extents keep fdu’s existing accounting; sizes do not pro
 uniquely reclaimable space.
 Symlinks are never followed.
 
+A directory whose subtree was not listed in full, at a `--scan-depth` boundary or in a
+scan that finished with errors, reports a lower-bound size and an `unknown` age in
+`long`, carries `complete: false` in machine output, and matches no modification bound.
 See the [machine-output reference](machine-output.md) for exact size, age, timestamp,
 and completeness fields.
 Changing selection or format reuses a retained index and does not change scan/cache

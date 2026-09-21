@@ -159,7 +159,7 @@ Common shapes are compositions rather than dedicated flags:
 
 ```bash
 fdu --view largest -n 100 PATH                        # the 100 largest files
-fdu --view files --modified-since 2h PATH             # changed in the last two hours
+fdu --kind file --modified-since 2h PATH              # files changed in the last two hours
 fdu --view files --include '*.{rs,toml}' PATH         # by pattern
 fdu --view tree --sort mtime PATH                     # an activity map
 ```
@@ -193,8 +193,8 @@ Aggregate views count the covered union once.
 The default directory tree stays unchanged; `--tree` makes its format explicit.
 Flat lists are complete, size-ranked by default, with global row limits; tree limits
 remain per-directory and depth only folds the tree.
-Paths escapes control characters only and keeps stdout to paths; bound and rule notices go
-to stderr. Long adds size and signed age.
+Paths escapes control characters only and keeps stdout to paths; bound and rule notices
+go to stderr. Long adds size and signed age.
 Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
 report’s `age_reference_ns`; unknown ages are null.
 

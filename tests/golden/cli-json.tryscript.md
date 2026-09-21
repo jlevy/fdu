@@ -40,16 +40,16 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
     {
       "view": "list",
       "bound": null, "files": [
-        {"path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "age_ns": [AGE_NS], "ignored": true},
-        {"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": true},
-        {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 2, "dirs": 0, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false}
+        {"path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "complete": true, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 2, "dirs": 0, "complete": true, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "complete": true, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false}
       ]
     }
   ]
@@ -77,8 +77,8 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
     {
       "view": "list",
       "bound": {"shown": 2, "total": 10}, "files": [
-        {"path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "age_ns": [AGE_NS], "ignored": true},
-        {"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": true}
+        {"path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "complete": true, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": true}
       ]
     }
   ]
@@ -87,6 +87,11 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 ```
 
 ## Scan Depth Is an Explicit Complete Scope
+
+The report is complete for the scope it was asked for, and says so at the top.
+The directories retained at the depth limit were never listed, so each of their rows
+says `complete: false`: their sizes and counts are lower bounds and their age is null,
+where a lower-bound maximum would have read as an old directory.
 
 ```console
 $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
@@ -106,12 +111,12 @@ $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit
     {
       "view": "list",
       "bound": null, "files": [
-        {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "dist", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "age_ns": [AGE_NS], "ignored": true},
-        {"path": "docs", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "age_ns": [AGE_NS], "ignored": false},
-        {"path": "src", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "age_ns": [AGE_NS], "ignored": false}
+        {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "dist", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": true},
+        {"path": "docs", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false},
+        {"path": "src", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false}
       ]
     }
   ]

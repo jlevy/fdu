@@ -583,7 +583,13 @@ class FileRow:
     #: Directory subtree counts, excluding its root; absent for other entry kinds.
     files: int | None = None
     dirs: int | None = None
-    #: Signed modification age relative to Report.age_reference_ns; future is negative.
+    #: Whether a directory's eligible subtree was listed in full. ``False`` makes its
+    #: bytes, counts, and ``mtime_ns`` lower bounds and its ``age_ns`` ``None``: a
+    #: scan-depth boundary, a partial scan, or a directory discovery has not listed yet.
+    #: Absent for other entry kinds.
+    complete: bool | None = None
+    #: Signed modification age relative to Report.age_reference_ns; future is negative,
+    #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
     age_ns: int | None = None
 
 
@@ -1273,6 +1279,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             mtime_ns=int(row["mtime_ns"]),
                             files=_optional_int(row["files"]) if "files" in row else None,
                             dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
+                            complete=_optional_bool(row["complete"]) if "complete" in row else None,
                             age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
                             ignored=_ignored_flag(row["ignored"]),
                         )
@@ -1351,3 +1358,12 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
 def _optional_int(value: Any) -> int | None:
     """Decode a nullable exact integer from the native wire report."""
     return None if value is None else int(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    """Decode a nullable boolean, refusing anything that merely looks true or false."""
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError("a file row's complete flag must be a boolean or null")
+    return value

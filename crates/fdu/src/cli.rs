@@ -156,7 +156,7 @@ MORE COMPOSITIONS
   fdu . --view=types,families --format=json
   fdu . --analyze=words --view=documents
   fdu PATH --view=largest --limit=100                        the 100 largest files
-  fdu PATH --view=files --modified-since=1h --sort=mtime     recent changes
+  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
   fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
 ",
             $watch_composition,

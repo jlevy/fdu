@@ -727,8 +727,8 @@ Add `query/query_subtrees.rs` and register it in `query.rs`. Its iterative `meas
 reader is the one owner of the directory-metric definition: one post-order pass over the
 retained index computes every directory’s apparent/allocated bytes, descendant
 file/directory counts, newest eligible mtime, and completeness, before any positive
-predicate runs. Its `with_candidate` helper preserves native versus portable name identity, and
-`pruned` applies exclusions before positive selection.
+predicate runs. Its `with_candidate` helper preserves native versus portable name
+identity, and `pruned` applies exclusions before positive selection.
 Apply ignored policy while traversing structural ancestors; empty eligible roots retain
 their own timestamp.
 Keep the index reducers and snapshot schema unchanged.

@@ -834,6 +834,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("mtime_ns", row.mtime_ns)?;
                     item.set_item("files", row.files)?;
                     item.set_item("dirs", row.dirs)?;
+                    item.set_item("complete", row.complete)?;
                     item.set_item("age_ns", row.age_ns)?;
                     item.set_item("ignored", row.ignored)?;
                     list.append(item)?;

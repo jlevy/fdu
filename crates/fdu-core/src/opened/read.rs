@@ -1157,6 +1157,11 @@ mod tests {
             ..crate::query::Query::default()
         };
         let charge = report_work(&index, &query).total();
+        // Pinned, not merely bracketed: asserting only that `charge - 1` is refused and
+        // `charge` accepted would pass under any pricing formula at all. A directory
+        // selection over two entries pays two passes, the measurement and the selection
+        // walk, plus one shaping pass for its one view: 2 * 2 + 2.
+        assert_eq!(charge, 6, "two passes over two entries, plus one shaping pass");
         let mut request =
             crate::ReportRequest { query, now: std::time::UNIX_EPOCH, max_work: charge - 1 };
         let state = crate::IndexState {
@@ -1173,11 +1178,14 @@ mod tests {
             ProjectionResult::Limit(_)
         ));
         request.max_work = charge;
+        let mut work = Work::default();
         let ProjectionResult::Report(report) =
-            report_projection(&index, &request, state, &mut Work::default()).expect("exact read")
+            report_projection(&index, &request, state, &mut work).expect("exact read")
         else {
             panic!("report")
         };
+        // And the charge is what the read records having done, so the two cannot drift.
+        assert_eq!(work.rows_visited, charge);
         let crate::query::Section::Files { rows, .. } = &report.sections[0] else { panic!("flat") };
         assert_eq!((rows.len(), rows[0].bytes, rows[0].files), (1, 50, Some(1)));
     }

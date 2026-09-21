@@ -13,13 +13,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enabling stale `.venv`, `node_modules`, and Cargo `target` inventories.
   Exclusions win throughout the subtree; nested rows may overlap while aggregate totals
   count covered contents once.
+  This changes existing requests: `--min-size`, `--modified-since`, and
+  `--modified-before` without `--kind` now test a directory’s subtree rather than its
+  inode, and a directory they match covers its contents in aggregate views, so
+  `--modified-since 7d --view summary` counts every file under a directory with recent
+  activity; add `--kind file` for the files alone.
+  A directory whose subtree was not listed in full, at a `--scan-depth` boundary or in a
+  scan that finished with errors, reports `complete: false`, lower-bound sizes, an
+  unknown age, and matches no modification bound.
 - Metadata defaults to the `list` view with the existing tree output unchanged.
   `--format tree|paths|long` and `--tree`/`--long` expose tree, flat paths, and size/age
   columns. Flat lists are complete by default.
   Legacy Files/Tree presets remain.
 - Core and Python queries select presentation before projection.
-  Flat rows include subtree counts and signed `age_ns`, with a fixed `age_reference_ns`
-  in the report. Report schemas advance to `fdu.report/7` and `/8`; snapshots are
+  Flat rows include subtree counts, `complete`, and signed `age_ns`, with a fixed
+  `age_reference_ns` in the report.
+  The default report’s machine `view` label is now `list` rather than `tree`, and its
+  default section is a flat `files` array; `full` and `--view tree` keep `view: tree`.
+  Report schemas advance to `fdu.report/7` and `/8` for these changes; snapshots are
   unchanged. Rust `report_format::render` now returns a Result to reject incompatible
   conversion between a folded tree and flat inventory.
   Python maps this to InvalidArgumentError.

@@ -178,9 +178,7 @@ pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<Str
 fn flat_path(path: &Path) -> String {
     path.to_string_lossy()
         .chars()
-        .flat_map(|c| {
-            if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] }
-        })
+        .flat_map(|c| if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] })
         .collect()
 }
 
@@ -975,7 +973,7 @@ fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> 
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"files\": {}, \"dirs\": {}, \"age_ns\": {}, \"ignored\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"files\": {}, \"dirs\": {}, \"complete\": {}, \"age_ns\": {}, \"ignored\": {}}}",
         quote(&row.path.to_string_lossy()),
         path_raw_field(&row.path),
         quote(kind_label(row.kind)),
@@ -984,6 +982,7 @@ fn file_json(row: &FileRow) -> String {
         row.mtime_ns,
         row.files.map_or_else(|| "null".to_string(), |v| v.to_string()),
         row.dirs.map_or_else(|| "null".to_string(), |v| v.to_string()),
+        row.complete.map_or_else(|| "null".to_string(), |v| v.to_string()),
         row.age_ns.map_or_else(|| "null".to_string(), |v| v.to_string()),
         row.ignored.map_or_else(|| "null".to_string(), |ignored| ignored.to_string()),
     )
@@ -1222,6 +1221,7 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
                         let _ = writeln!(out, "        files: {}", yaml_option(row.files));
                         let _ = writeln!(out, "        dirs: {}", yaml_option(row.dirs));
+                        let _ = writeln!(out, "        complete: {}", yaml_option(row.complete));
                         let _ = writeln!(out, "        age_ns: {}", yaml_option(row.age_ns));
                         match row.ignored {
                             Some(ignored) => {
@@ -2622,6 +2622,8 @@ mod tests {
         assert!(render(&flat, Format::Tree, false).is_err());
         let Section::Files { rows, .. } = &flat.sections[0] else { panic!("flat list") };
         assert_eq!((rows[0].files, rows[0].dirs, rows[0].mtime_ns), (Some(1), Some(0), 10));
+        assert_eq!(rows[0].complete, Some(true));
+        assert!(render(&flat, Format::Json, false).expect("json").contains("\"complete\": true"));
         assert_eq!(
             rows[0].age_ns,
             flat.age_reference_ns.map(|reference| i128::from(reference) - 10)
@@ -3252,7 +3254,7 @@ mod tests {
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"age_ns\": -10, \"ignored\": true}",
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \"ignored\": true}",
         ] {
             assert!(json.contains(expected), "missing {expected}\nin {json}");
         }
@@ -3749,7 +3751,7 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"files\": null, \"dirs\": null, \"age_ns\": 0, \"ignored\": false}}"
+                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \"ignored\": false}}"
             );
             assert!(
                 rendered.contains(&row),
