@@ -5,7 +5,7 @@ title: "Linux follow-ups after the Darwin #91/#92 campaign"
 kind: epic
 status: open
 priority: 1
-version: 5
+version: 6
 labels: []
 dependencies: []
 parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
@@ -15,7 +15,7 @@ child_order_hints:
   - is-01m00ktvaqdprr245qetsacwbr
   - is-01kzy2qt789svdbes8g3656788
 created_at: 2026-09-21T08:30:15.204Z
-updated_at: 2026-09-21T08:30:29.033Z
+updated_at: 2026-09-21T08:32:10.780Z
 ---
 Parent handoff: fdu-82h4. Recent verification has been macOS-heavy; this is the Linux half.
 
@@ -43,3 +43,7 @@ A constant tuned in one regime is inherited, not proven, in the others. Record p
 
 - Parity artifacts are recorded by CI on Linux per `AGENTS.md`; a genuine Linux host is the right place to confirm them rather than trust a local recording.
 - PR #103 (directory filters) is green on all 19 CI checks but has had no full `make check` anywhere. A Linux host without a nested `.claude/worktrees/` checkout can run the gate that macOS currently cannot (`fdu-vjf2`).
+
+## Notes
+
+Same-day update: PR #105 already starts fdu-78q6 (content sidecar load as the layer-3 warm cost on Linux), stacked on cursor/linux-perf-iterate-de1b, and depends on the apply-timer expansion in PR #104. Review those before opening new Linux measurement work on the sidecar path. fdu-tk1b, fdu-c65j and fdu-cckr remain untouched.

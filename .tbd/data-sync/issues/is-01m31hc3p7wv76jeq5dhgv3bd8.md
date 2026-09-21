@@ -5,7 +5,7 @@ title: "HANDOFF: stabilization state, owed work, and order of operations (2026-0
 kind: epic
 status: open
 priority: 0
-version: 9
+version: 10
 labels: []
 dependencies: []
 child_order_hints:
@@ -17,7 +17,7 @@ child_order_hints:
   - is-01m2zpkzxm97et6bdxeac7eh6w
   - is-01m2zpkxdtb9twaj4bxhegejc5
 created_at: 2026-09-21T08:29:57.830Z
-updated_at: 2026-09-21T08:30:57.258Z
+updated_at: 2026-09-21T08:32:10.447Z
 ---
 Single entry point for the next agent. Read this first; it says what is true, what is owed, and what to do in what order.
 
@@ -68,4 +68,10 @@ Decided, not open: the metadata default changed shape (`reports[0].tree` became 
 
 ## Notes
 
-Cross-references rather than ownership: fdu-arv8 stays under fdu-65x1 (directory-query epic) and the Linux tasks fdu-78q6/fdu-tk1b/fdu-c65j/fdu-cckr stay under fdu-0myw (Linux performance validation). This epic names them in priority order; it does not own them. Directly owned: fdu-vjf2, fdu-2pct, fdu-y050, fdu-e8u0, fdu-iajs. GitHub: issue #106 mirrors fdu-vjf2; issue #93 is the directory-query feature, implemented in PR #103.
+IMPORTANT UPDATE, same day: parallel agents opened PRs covering most of the 'owed' list, so re-read before starting anything.
+
+PR #104 (cursor/review-leftovers-de1b -> main) addresses ALL FOUR review follow-ups: fdu-2pct (apply timer starts at candidates.remove so the four restore rows sum to the sidecar load; clear_content documented; notes H121's exp-120 used the narrower post-H112 bucket while exp-109's 63.3% wrapped the whole loop), fdu-iajs (R3 name negatives restored, a valid-rename load control added, an H138 sharing allocation guard added so flipping row_consumers > 1 now fails, dead update_rollups = false branch removed), fdu-e8u0 (evidence table formats peak_rss_bytes as MiB; exp-117 reads 377.5 -> 339.4 MiB), and fdu-y050 (exp-116 change_pct is the paired -2.158% with the 1,630x figure kept in reason; commit corrected to 984e4618 and quoted so YAML does not read it as infinity; digest claims reduced to 'same shape'; uncontrolled labels aligned; dated errata added).
+
+PR #105 (cursor/linux-sidecar-load-de1b -> cursor/linux-perf-iterate-de1b) covers fdu-2pct, fdu-78q6 and fdu-nszx: Linux sidecar restore mix after the leftover apply-timer expansion.
+
+So the order of work in this bead's body is stale for items 3, 4 and 5. Review #104 and #105 rather than reimplementing them. Item 1 (fdu-vjf2, GitHub #106) and item 2 (fdu-arv8, the full gate on PR #103) remain untouched and are still the first things to do.
