@@ -193,7 +193,7 @@ dead end.
 | 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
 | 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
 | 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
-| 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -99.9% | ✅ accepted |
+| 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -2.2% | ✅ accepted |
 | 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
 | 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
 | 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | -99.9% | ✅ accepted |
@@ -3984,7 +3984,7 @@ Full record:
 
 ### exp-116 — Opened-root second report versus one-shot on frameworks
 
-✅ accepted · 2026-09-19 · H117 · commit `2c6535c8`
+✅ accepted · 2026-09-19 · H117 · commit `984e4618`
 
 Control: same probe default-tree one-shot
 
@@ -4007,8 +4007,9 @@ Cost to carry: 120 lines; no new dependencies.
 
 probe mode opened-second-report plus harness job; no engine serving change; no CLI flag
 
-**Accepted:** opened second report 1.6ms versus default-tree 2612ms (1630x);
-determination kept; not a snapshot load.
+**Accepted:** opened second report 1.6ms versus default-tree 2612ms (1630x); paired
+default-tree wall -2.158% (does not pass acceptance); determination kept; not a snapshot
+load.
 
 Full record:
 [`exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md`](../experiments/exp-116-opened-root-second-report-versus-one-shot-on-frameworks.md)
@@ -4249,8 +4250,9 @@ Candidate: restore candidate count instead of a second analysis_candidates walk
 
 Cost to carry: 16 lines; no new dependencies.
 
-crate-private candidates count on ContentCacheLoad; incomplete-sidecar fail-closed kept;
-not the file-count heuristic
+crate-private candidates count on ContentCacheLoad; shipped denominator is files
+visited, not HashMap length; incomplete-sidecar fail-closed kept; not the file-count
+heuristic
 
 **Accepted:** wall -8.03 percent [-10.79%, -7.79%]; restore-count completeness kept;
 H113 superseded.
@@ -4649,7 +4651,8 @@ Cost to carry: 68 lines; no new dependencies.
 share one every_entry walk; Summary/Tree/Extensions keep unfiltered roll-ups
 
 **Accepted:** content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone;
-component -24.61%; report identity unchanged; engine kept.
+component -24.61%; engine kept; report identity is from crate tests, not the benchmark
+digest.
 
 Full record:
 [`exp-137-share-one-every-entry-across-unfiltered-metric-views.md`](../experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)
