@@ -11,6 +11,8 @@ env:
   NO_COLOR: "1"
   TZ: UTC
 patterns:
+  JSON_SEP: '(?:/|\\\\)'
+  AGE_NS: '-?\d+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   ALLOCATED: '\d+'
   MTIME_NS: '-?\d+'
@@ -23,11 +25,12 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
+  "age_reference_ns": [AGE_NS],
   "source": "cold_scan",
   "freshness": "fresh",
   "complete": true,
@@ -35,8 +38,19 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
-      "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}
+      "view": "list",
+      "bound": null, "files": [
+        {"path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 2, "dirs": 0, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false}
+      ]
     }
   ]
 }
@@ -48,11 +62,12 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 ```console
 $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
+  "age_reference_ns": [AGE_NS],
   "source": "cold_scan",
   "freshness": "fresh",
   "complete": true,
@@ -60,8 +75,11 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
   "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
-      "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}
+      "view": "list",
+      "bound": {"shown": 2, "total": 10}, "files": [
+        {"path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": 1, "dirs": 0, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": true}
+      ]
     }
   ]
 }
@@ -73,11 +91,12 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 ```console
 $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/5",
+  "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
+  "age_reference_ns": [AGE_NS],
   "source": "cold_scan",
   "freshness": "fresh",
   "complete": true,
@@ -85,8 +104,15 @@ $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit
   "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "refused": 0, "refusals": []},
   "reports": [
     {
-      "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 82, "allocated": [ALLOCATED], "files": 3, "dirs": 3, "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": null, "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": null, "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": null, "truncated": false, "children": []}]}
+      "view": "list",
+      "bound": null, "files": [
+        {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "dist", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "age_ns": [AGE_NS], "ignored": true},
+        {"path": "docs", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "age_ns": [AGE_NS], "ignored": false},
+        {"path": "src", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "age_ns": [AGE_NS], "ignored": false}
+      ]
     }
   ]
 }
@@ -103,11 +129,12 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/6",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
+  "age_reference_ns": [AGE_NS],
   "source": "cold_scan",
   "freshness": "fresh",
   "complete": true,

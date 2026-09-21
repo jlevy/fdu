@@ -40,7 +40,7 @@ import matrix  # noqa: E402
 import registry  # noqa: E402
 from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
 
-PROVENANCE_KEYS = ("source", "freshness", "scan_started_at", "generated_at")
+PROVENANCE_KEYS = ("source", "freshness", "scan_started_at", "generated_at", "age_reference_ns")
 
 Outcome = Literal["complete", "partial", "failure"]
 
@@ -128,8 +128,20 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if isinstance(root, str) and root:
         encoded = json.dumps(answer).replace(json.dumps(root)[1:-1], ROOT_PLACEHOLDER)
         answer = json.loads(encoded)
-    content = dict(answer)
+    # Normalization must not mutate the invocation retained as evidence.
+    content = json.loads(json.dumps(answer))
     provenance = {key: content.pop(key, None) for key in PROVENANCE_KEYS}
+    reference = answer.get("age_reference_ns")
+    for section in content.get("reports", []):
+        for row in section.get("files", []):
+            if "age_ns" in row and reference is not None:
+                # Exact zero means the age agrees with its clock and mtime. Comparing
+                # this residual preserves age bugs while allowing different read times.
+                row["age_ns"] = (
+                    row["age_ns"] - (reference - row["mtime_ns"])
+                    if row["age_ns"] is not None
+                    else None
+                )
     return content, provenance
 
 

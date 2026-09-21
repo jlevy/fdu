@@ -165,13 +165,13 @@ surface emits the same string.
 
 | Schema | Document | Constant |
 | --- | --- | --- |
-| `fdu.report/5` | A report, one-shot or each one a watch run prints, over an index with no content tier and with no metric section | `REPORT_SCHEMA` |
-| `fdu.report/6` | A report over an index that holds a content tier, or with a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
+| `fdu.report/7` | A report, one-shot or each one a watch run prints, over an index with no content tier and with no metric section | `REPORT_SCHEMA` |
+| `fdu.report/8` | A report over an index that holds a content tier, or with a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
 | `fdu.stream/1` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
 | `fdu.cache/2` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
 The report version follows the content tier the index holds, not the request, so a
-Python `Index` opened with analysis emits `fdu.report/6` even for a tree view.
+Python `Index` opened with analysis emits `fdu.report/8` even for a tree view.
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.
 
@@ -276,6 +276,32 @@ tracks them. Engine-side gaps are in
   harness and what it found
 - [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)
   — the crate split, and why a test-only Rust shim was the wrong instrument
+
+## List Selection and Presentation
+
+The metadata default view is List, whose automatic human format is the existing bounded
+directory tree. Core `ReadSpec.format` and `Query.format` resolve projection before
+reading; CLI and Python forward the choice.
+Flat Paths/Long and machine List requests materialize matching rows; ordinary unfiltered
+Tree keeps its maintained roll-up path.
+Full keeps its bounded digest.
+Legacy Files preserves name ordering and legacy Tree preserves structured hierarchy
+output. Explicit Paths/Long overrides Tree presentation.
+
+Directory report rows measure eligible subtrees before name/kind/size/age selection.
+Exclusions win across covered contents; nested matches remain separate rows while
+aggregate totals count their union once.
+Raw native entries continue to expose inode attributes.
+Every flat row carries signed optional age relative to one request instant.
+A detached Report owns only its requested projection: serialization cannot recover rows
+folded out of a tree, so incompatible re-rendering fails instead of returning a partial
+inventory as complete.
+The core renderer returns a Result; Python maps it to its existing invalid-argument
+boundary.
+
+The [machine-output reference](../../machine-output.md) owns field definitions, formats,
+and coverage interpretation.
+The [usage guide](../../usage.md) owns command examples.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

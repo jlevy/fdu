@@ -39,16 +39,12 @@ pub(crate) fn not_observing_controls() -> crate::ScanScope {
 }
 
 /// The request a test makes of an index it just built: the index's own basis, the query,
-/// and this instant.
+/// and a fixed instant, so repeated pure reads have the same age reference.
 ///
 /// A test names the query it is about, which is the axis it varies; the basis is whatever
 /// the fixture index holds, so [`Request::validate_read`](crate::query::Request::validate_read)
 /// admits it and the test is about the report rather than about composing a request. A test
 /// *about* a refusal builds its own mismatched basis instead.
 pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate::query::Request {
-    crate::query::Request::new(
-        crate::query::Basis::held_by(index),
-        query,
-        std::time::SystemTime::now(),
-    )
+    crate::query::Request::new(crate::query::Basis::held_by(index), query, std::time::UNIX_EPOCH)
 }

@@ -7,6 +7,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Directory filters now measure eligible subtree bytes and modification activity,
+  enabling stale `.venv`, `node_modules`, and Cargo `target` inventories.
+  Exclusions win throughout the subtree; nested rows may overlap while aggregate totals
+  count covered contents once.
+- Metadata defaults to the `list` view with the existing tree output unchanged.
+  `--format tree|paths|long` and `--tree`/`--long` expose tree, flat paths, and size/age
+  columns. Flat lists are complete by default.
+  Legacy Files/Tree presets remain.
+- Core and Python queries select presentation before projection.
+  Flat rows include subtree counts and signed `age_ns`, with a fixed `age_reference_ns`
+  in the report. Report schemas advance to `fdu.report/7` and `/8`; snapshots are
+  unchanged. Rust `report_format::render` now returns a Result to reject incompatible
+  conversion between a folded tree and flat inventory.
+  Python maps this to InvalidArgumentError.
+  See [usage](docs/usage.md) and the [machine schema](docs/machine-output.md).
+
 ## [0.1.0] - 2026-09-16
 
 <!-- Release date: 2026-09-16 is a placeholder. Set it to the tag date if v0.1.0 is cut

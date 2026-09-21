@@ -97,6 +97,9 @@ const DOCS_POINTER: &str = r"Examples:
   fdu . --exclude-ignored   omit entries covered by .gitignore
   fdu . --view=summary      one total for the tree
   fdu . --analyze=code      standard lines of code by language
+  fdu . --kind dir --include .venv --modified-before 7d --long
+  fdu . --kind dir --include node_modules --modified-before 30d --long
+  fdu . --kind dir --include target --modified-before 30d --format paths
 
 Run `fdu --docs` for more commands, cache behavior, and the full usage guide.";
 
@@ -162,7 +165,38 @@ MORE COMPOSITIONS
     largest = files --sort size --limit 20, regular files only
     recent  = files --sort mtime --limit 20, regular files only
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full is every view except files.
+  matching entry, in name order. full keeps its bounded digest, without list/files.
+
+LIST FORMATS AND OLD BUILD DIRECTORIES
+  The metadata default view is list; its default format is tree. These agree:
+    fdu PATH
+    fdu PATH --view list --format tree
+  Tree keeps the current directory roll-ups, depth 2, ten children per directory.
+  Files contribute to totals without new leaf rows. --depth all expands levels;
+  --limit all removes row caps. Flat list limits apply to the whole result.
+
+  --format paths gives matching paths only; --long adds size, age, and path.
+  Flat lists are complete and size-ranked by default; --sort name lists by name.
+  JSON, JSONL, and YAML give exact metrics. text keeps automatic human tables.
+  Tree/paths/long require a single list view; use text or machine formats for
+  grouped/mixed views and full. largest/recent accept paths/long, keeping file ranks.
+  Legacy files keeps name order; legacy tree keeps structured tree output.
+  Explicit paths/long overrides the legacy tree presentation. Format flags conflict.
+
+  fdu PATH --kind dir --include .venv --modified-before 7d --long
+  fdu PATH --kind dir --include node_modules --modified-before 30d --format long
+  fdu PATH --kind dir --include target --modified-before 30d --format paths
+  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
+  fdu PATH --kind dir --include .venv --modified-before 30d --format json
+
+  Kind, name/path, size, and age are filters. Repeated includes form a union.
+  Directory sizes sum eligible regular-file contents, excluding inode/symlink bytes.
+  Age uses the newest modification of the root or an eligible descendant, including
+  directories and symlinks. Empty directories use their own time; future age is negative.
+  This is modification activity, not access or last use. target is a naming convention.
+  Exclusions win throughout the subtree before size/age filtering. Nested matching
+  roots can overlap; aggregate views count the covered contents once. --size apparent
+  selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
@@ -170,9 +204,9 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --exclude-ignored, --only-ignored
-  View       summary,tree,families,types,extensions,languages,documents,
+  View       list,summary,tree,families,types,extensions,languages,documents,
              largest,recent,files,full
-  Format     --format text|json|jsonl|yaml, --color
+  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
   Mode       ",
             $mode_flags,
             r"
@@ -224,7 +258,7 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+  Metadata-only machine output remains fdu.report/7; metric summaries use fdu.report/8.
   Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -501,8 +535,8 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, largest, recent,
-    /// files, summary, or full. Defaults to tree with no analysis, otherwise to a view
+    /// Views: list, extensions, types, families, languages, documents, largest, recent,
+    /// summary, or full; tree/files are compatibility presets. Defaults to list with no analysis, otherwise to a view
     /// that displays the requested analysis.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
@@ -532,9 +566,17 @@ pub struct Cli {
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
-    /// Output format: text, json, jsonl, or yaml.
+    /// Format: tree (list default), paths, long (size/age/path), json, jsonl, yaml, or automatic text.
     #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "OUTPUT")]
     pub format: String,
+
+    /// Display the list as the default directory tree.
+    #[arg(long, conflicts_with_all = ["format", "long"], help_heading = "OUTPUT")]
+    pub tree: bool,
+
+    /// Display flat matching paths with size and modification age.
+    #[arg(long, conflicts_with_all = ["format", "tree"], help_heading = "OUTPUT")]
+    pub long: bool,
 
     /// Colorize human output: auto, always, or never.
     #[arg(
@@ -699,7 +741,7 @@ impl Cli {
         // that buffer, and the user would see nothing until the snapshot's fsync and the
         // index teardown had finished (fdu-n75m). Same bytes in the same order; only
         // when they arrive changes.
-        let rendered = report_format::render(&report, format, color);
+        let rendered = report_format::render(&report, format, color)?;
         let render_result = write!(out, "{rendered}").and_then(|()| out.flush());
 
         // Joined before returning, and before the render error is raised: a broken pipe
@@ -714,7 +756,7 @@ impl Cli {
         }
         render_result?;
 
-        if format == report_format::Format::Text {
+        if matches!(format, report_format::Format::Text | report_format::Format::Tree) {
             if !rendered.is_empty() && !rendered.ends_with('\n') {
                 writeln!(out)?;
             }
@@ -738,7 +780,12 @@ impl Cli {
             }
         }
 
-        if format == report_format::Format::Text && !report.complete {
+        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+            for note in report_format::flat_diagnostics(&report) {
+                writeln!(diagnostic, "{note}")?;
+            }
+        }
+        if !format.is_machine() && !report.complete {
             let color =
                 ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
                     .enabled();
@@ -756,10 +803,7 @@ impl Cli {
 
     /// Whether the requested format is a machine format, which is never colorized.
     fn machine_format(&self) -> bool {
-        !matches!(
-            report_format::Format::parse(&self.format),
-            None | Some(report_format::Format::Text)
-        )
+        self.parse_format().is_ok_and(report_format::Format::is_machine)
     }
 
     /// Run the query continuously, streaming changes as they arrive.
@@ -781,7 +825,7 @@ impl Cli {
         use fdu_core::open_with_pending_save;
         use fdu_core::query::{Provenance, ViewSpec};
         use fdu_core::watch::WatchConfig;
-        use fdu_core::watch_session::{ChangeKind, Session};
+        use fdu_core::watch_session::Session;
 
         let path = self.path.as_deref().expect("run() validates the report path first");
         // The repaint interval the delivery already carries, rather than a second reading
@@ -809,8 +853,15 @@ impl Cli {
         // A streaming run keeps only the views it can render incrementally plus the
         // aggregates it repaints; both come from the same query, so nothing here is a
         // second grammar.
-        let streams_changes = request.query.views.contains(&ViewSpec::Files);
-        let has_aggregates = request.query.views.iter().any(|view| *view != ViewSpec::Files);
+        let streams_changes = request.query.views.contains(&ViewSpec::Files)
+            && !matches!(
+                format,
+                report_format::Format::Tree
+                    | report_format::Format::Paths
+                    | report_format::Format::Long
+            );
+        let has_aggregates =
+            !streams_changes || request.query.views.iter().any(|view| *view != ViewSpec::Files);
 
         // The save above was joined, so the writer has dropped its reference and this
         // is the only one left; the watch session needs the index by value.
@@ -831,7 +882,13 @@ impl Cli {
             complete: open_report.is_complete(),
             errors: open_report.error_messages(),
         };
-        write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
+        let initial = session.report(&provenance)?;
+        write!(out, "{}", report_format::render(&initial, format, color)?)?;
+        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+            for note in report_format::flat_diagnostics(&initial) {
+                writeln!(diagnostic, "{note}")?;
+            }
+        }
         out.flush()?;
 
         let mut dirty_since_render = false;
@@ -843,7 +900,7 @@ impl Cli {
                 // Nothing arrived in the window. Repaint only if something is pending,
                 // so a quiet tree produces no output and no work at all.
                 if has_aggregates && dirty_since_render {
-                    Self::render_live(out, &session, format, color)?;
+                    Self::render_live(out, diagnostic, &session, format, color)?;
                     dirty_since_render = false;
                     last_render = SystemTime::now();
                 }
@@ -863,20 +920,13 @@ impl Cli {
                 continue;
             };
 
-            for change in &batch.changes {
-                if change.kind == ChangeKind::Invalidate {
-                    // Never dropped: an escalation says the consumer's view may have gaps.
-                    writeln!(out, "{}", report_format::render_change(change, format))?;
-                } else if streams_changes {
-                    writeln!(out, "{}", report_format::render_change(change, format))?;
-                }
-            }
+            Self::render_watch_changes(out, diagnostic, &batch.changes, format, streams_changes)?;
             out.flush()?;
 
             dirty_since_render |= batch.dirty;
             let elapsed = last_render.elapsed().unwrap_or_default();
             if has_aggregates && dirty_since_render && elapsed >= interval {
-                Self::render_live(out, &session, format, color)?;
+                Self::render_live(out, diagnostic, &session, format, color)?;
                 dirty_since_render = false;
                 last_render = SystemTime::now();
             }
@@ -969,7 +1019,29 @@ impl Cli {
         Ok(true)
     }
 
-    /// Re-render the aggregate views of a live session.
+    /// Preserve invalidation notices without putting diagnostic text in flat rows.
+    #[cfg(feature = "watch")]
+    fn render_watch_changes(
+        out: &mut dyn Write,
+        diagnostic: &mut dyn Write,
+        changes: &[fdu_core::watch_session::Change],
+        format: report_format::Format,
+        streams_changes: bool,
+    ) -> std::io::Result<()> {
+        for change in changes {
+            if change.kind == fdu_core::watch_session::ChangeKind::Invalidate
+                && matches!(format, report_format::Format::Paths | report_format::Format::Long)
+            {
+                writeln!(diagnostic, "{}", report_format::render_change(change, format))?;
+            } else if streams_changes
+                || change.kind == fdu_core::watch_session::ChangeKind::Invalidate
+            {
+                writeln!(out, "{}", report_format::render_change(change, format))?;
+            }
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "watch")]
     /// Repaint the aggregate views after a change.
     ///
@@ -977,6 +1049,7 @@ impl Cli {
     /// the loop — so the rule below can be unconditional.
     fn render_live(
         out: &mut dyn Write,
+        diagnostic: &mut dyn Write,
         session: &fdu_core::watch_session::Session,
         format: report_format::Format,
         color: bool,
@@ -987,14 +1060,19 @@ impl Cli {
         // repaints with nothing between them: the last row of one and the first row of
         // the next were adjacent lines. A blank line alone would not do, because that is
         // already what separates two views inside a single report.
-        if format == report_format::Format::Text {
+        if matches!(format, report_format::Format::Text | report_format::Format::Tree) {
             writeln!(
                 out,
                 "\n{}",
                 paint(&report_format::watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
             )?;
         }
-        write!(out, "{}", report_format::render(&report, format, color))?;
+        write!(out, "{}", report_format::render(&report, format, color)?)?;
+        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+            for note in report_format::flat_diagnostics(&report) {
+                writeln!(diagnostic, "{note}")?;
+            }
+        }
         out.flush()?;
         Ok(())
     }
@@ -1172,6 +1250,7 @@ impl Cli {
             analyze: Some(&self.analyze),
             read: ReadSpec {
                 views: self.view.as_deref(),
+                format: Some(self.parse_format()?.label()),
                 words_per_page: Some(&typed.words_per_page),
                 include: &self.include,
                 exclude: &self.exclude,
@@ -1231,6 +1310,12 @@ impl Cli {
 
     /// Translate the format flag, naming every accepted value on a miss.
     fn parse_format(&self) -> anyhow::Result<report_format::Format> {
+        if self.tree {
+            return Ok(report_format::Format::Tree);
+        }
+        if self.long {
+            return Ok(report_format::Format::Long);
+        }
         report_format::Format::parse(&self.format).ok_or_else(|| {
             anyhow::anyhow!(
                 "invalid --format {:?}: expected one of {}",
@@ -1941,6 +2026,32 @@ mod tests {
 
     #[cfg(feature = "watch")]
     #[test]
+    fn flat_watch_invalidations_are_visible_without_becoming_path_rows() {
+        use fdu_core::watch_session::{Change, ChangeKind};
+        let changes = [Change {
+            path: "builds".into(),
+            kind: ChangeKind::Invalidate,
+            clock: 1,
+            entry_kind: None,
+            bytes: None,
+            allocated: None,
+            mtime_ns: None,
+            ignored: None,
+        }];
+        for format in [report_format::Format::Paths, report_format::Format::Long] {
+            let (mut out, mut diagnostic) = (Vec::new(), Vec::new());
+            Cli::render_watch_changes(&mut out, &mut diagnostic, &changes, format, false)
+                .expect("invalidation");
+            assert!(out.is_empty(), "stdout is reserved for flat data rows");
+            assert_eq!(
+                String::from_utf8(diagnostic).expect("diagnostic"),
+                format!("{}\n", report_format::render_change(&changes[0], format))
+            );
+        }
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
     fn an_interval_parses_without_overflowing_any_platforms_clock() {
         assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));
         assert_eq!(parse_duration("1h30m").expect("compound"), Duration::from_secs(5_400));
@@ -2053,6 +2164,8 @@ mod tests {
             analysis_workers: 0,
             words_per_page: Request::DEFAULTS.words_per_page,
             format: "text".to_string(),
+            tree: false,
+            long: false,
             color: ColorWhen::Auto,
             cache: "off".to_string(),
             cache_status: None,
@@ -2430,7 +2543,7 @@ mod tests {
     #[test]
     fn requesting_analysis_selects_a_view_that_displays_it() {
         let cases = [
-            (AnalysisSet::NONE, ViewSpec::Tree),
+            (AnalysisSet::NONE, ViewSpec::List),
             (AnalysisSet::NONE.with_lines(), ViewSpec::Families),
             (AnalysisSet::NONE.with_code(), ViewSpec::Languages),
             (AnalysisSet::NONE.with_words(), ViewSpec::Documents),
@@ -2583,7 +2696,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/6\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/8\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -2687,19 +2800,22 @@ mod tests {
     fn formats_parse_and_machine_formats_are_never_colorized() {
         for (value, expected) in [
             ("text", report_format::Format::Text),
+            ("tree", report_format::Format::Tree),
+            ("paths", report_format::Format::Paths),
+            ("long", report_format::Format::Long),
             ("json", report_format::Format::Json),
             ("jsonl", report_format::Format::Jsonl),
             ("yaml", report_format::Format::Yaml),
         ] {
             let cli = Cli { format: value.to_string(), ..cli() };
             assert_eq!(cli.parse_format().expect("format parses"), expected);
-            assert_eq!(cli.machine_format(), value != "text");
+            assert_eq!(cli.machine_format(), expected.is_machine());
         }
         let message = Cli { format: "xml".to_string(), ..cli() }
             .parse_format()
             .expect_err("rejected")
             .to_string();
-        assert!(message.contains("text, json, jsonl, yaml"), "{message}");
+        assert!(message.contains("text, tree, paths, long, json, jsonl, yaml"), "{message}");
     }
 
     #[test]

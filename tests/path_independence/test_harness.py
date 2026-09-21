@@ -21,7 +21,7 @@ from runner import Invocation, case_key, compare, normalize
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/6",
+        "schema": "fdu.report/8",
         "source": "cold_scan",
         "freshness": "fresh",
         "scan_started_at": "2026-01-01T00:00:00Z",
@@ -44,7 +44,8 @@ class CompareTests(unittest.TestCase):
     def test_provenance_is_excluded_and_nothing_else(self) -> None:
         content, provenance = normalize(answer())
         self.assertEqual(
-            set(provenance), {"source", "freshness", "scan_started_at", "generated_at"}
+            set(provenance),
+            {"source", "freshness", "scan_started_at", "generated_at", "age_reference_ns"},
         )
         self.assertIn("complete", content)
         self.assertIn("errors", content)
@@ -56,6 +57,22 @@ class CompareTests(unittest.TestCase):
         verdict = compare(cli(answer()), cli(partial), policy="auto")
         self.assertEqual(verdict.kind, "differs")
         self.assertEqual(verdict.paths, ("complete", "errors[]"))
+
+    def test_age_normalization_keeps_metric_errors_and_does_not_mutate_evidence(self) -> None:
+        def timed(reference: int, age: int) -> dict[str, Any]:
+            return answer(
+                age_reference_ns=reference,
+                reports=[{"files": [{"path": "env", "mtime_ns": -10, "age_ns": age}]}],
+            )
+
+        earlier = timed(100, 110)
+        later = timed(200, 210)
+        self.assertEqual(compare(cli(earlier), cli(later), policy="auto").kind, "same")
+        self.assertEqual(earlier["reports"][0]["files"][0]["age_ns"], 110)
+        wrong = timed(200, 209)
+        self.assertEqual(
+            compare(cli(earlier), cli(wrong), policy="auto").paths, ("reports[].files[].age_ns",)
+        )
 
     def test_list_indices_are_generalized(self) -> None:
         swapped = answer(reports=[{"rows": [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 3}]}])

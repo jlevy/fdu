@@ -812,8 +812,9 @@ mod tests {
         )
         .expect("report");
         let json =
-            crate::report_format::render(&summary, crate::report_format::Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/6\""), "{json}");
+            crate::report_format::render(&summary, crate::report_format::Format::Json, false)
+                .expect("compatible report format");
+        assert!(json.contains("\"schema\": \"fdu.report/8\""), "{json}");
         assert!(json.contains("\"analyze\": [\"lines\"]"), "{json}");
 
         let unsupported = tempfile::tempdir().expect("unsupported tempdir");
@@ -846,7 +847,8 @@ mod tests {
         )
         .expect("report");
         let text =
-            crate::report_format::render(&languages, crate::report_format::Format::Text, false);
+            crate::report_format::render(&languages, crate::report_format::Format::Text, false)
+                .expect("compatible report format");
         assert!(text.contains("—"), "an unavailable 0/0 share needs a distinct marker: {text}");
         assert!(text.contains("1 unsupported"), "coverage must remain visible: {text}");
         assert!(!text.contains("0.0%"), "unmeasured is not a zero percentage: {text}");

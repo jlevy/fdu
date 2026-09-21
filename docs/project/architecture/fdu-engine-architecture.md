@@ -359,7 +359,17 @@ The associated constructor preserves the existing blocking free `open()` contrac
 
 `Query` values are immutable requests over retained facts.
 `Report` values are immutable, provenance-carrying answers.
-Formatting serializes a report and never changes query semantics.
+The request’s format resolves tree versus flat projection before the reader runs;
+formatting serializes that owned projection and never re-queries the index.
+Directory report filters use eligible subtree bytes and activity; raw entry projections
+retain inode attributes.
+Matching directories cover contents once for aggregate views, while flat rows retain
+every matching root, including overlapping ones.
+Opened report budgets charge the subtree-measurement pass as well as selection and
+shaping.
+The default unfiltered tree still reads maintained roll-ups without constructing
+a flat inventory. See [machine output](../../machine-output.md) for age/reference fields
+and conversion rules.
 
 A derived report plan is transient execution state for a provably one-shot request.
 It produces the same `Report` shape and values as indexed execution.

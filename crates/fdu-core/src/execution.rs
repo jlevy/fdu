@@ -291,7 +291,7 @@ fn prepare_report_internal(
             let report = report_summary(
                 &root,
                 config.scan.scope(),
-                query.selection.size,
+                request,
                 summary,
                 if complete { Freshness::Fresh } else { Freshness::Partial },
                 &provenance,
@@ -357,9 +357,10 @@ mod tests {
 
     /// The request and the delivery a test's `OpenConfig` spells, split the way the two
     /// models now divide it: what the answer says, and how it is carried out.
+    /// Fixture reads share a fixed age reference so separate cache paths are comparable.
     fn split(root: &Path, config: &OpenConfig, query: &Query) -> (Request, Delivery) {
         let (basis, delivery) = config.split(root);
-        (Request::new(basis, query.clone(), SystemTime::now()), delivery)
+        (Request::new(basis, query.clone(), std::time::UNIX_EPOCH), delivery)
     }
 
     /// [`prepare_report`] as these tests ask for it: one configuration, one query.
@@ -652,8 +653,10 @@ mod tests {
         assert_eq!(projected.scope, cold.scan.scope());
         assert_eq!(projected.ignore_rules, crate::control::ControlCoverage::NotObserved);
         assert_eq!(
-            crate::report_format::render(&projected, crate::report_format::Format::Json, false,),
-            crate::report_format::render(&expected, crate::report_format::Format::Json, false,),
+            crate::report_format::render(&projected, crate::report_format::Format::Json, false,)
+                .expect("compatible report format"),
+            crate::report_format::render(&expected, crate::report_format::Format::Json, false,)
+                .expect("compatible report format"),
         );
     }
 

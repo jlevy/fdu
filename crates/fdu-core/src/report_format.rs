@@ -1,7 +1,8 @@
 //! Serializing a [`Report`] to text, JSON, JSONL, and YAML.
 //!
-//! Formats are serializations, not features: every view renders in every format, so a
-//! caller picks the shape of the answer and the shape of the bytes independently.
+//! Query format chooses a bounded tree or flat list before the report is built. Machine
+//! formats serialize either projection; Tree/Paths/Long validate that the owned projection
+//! can answer them. Rendering never queries the index or samples another age clock.
 //!
 //! # Why these are hand-written
 //!
@@ -58,9 +59,9 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/5";
+pub const REPORT_SCHEMA: &str = "fdu.report/7";
 /// Machine schema used when a generic metric-summary section is present.
-pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/6";
+pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/8";
 /// Machine-output schema identity for cache status.
 ///
 /// Its own identity because cache status is its own document: a fact about the cache
@@ -79,6 +80,12 @@ pub enum Format {
     /// Human-readable text.
     #[default]
     Text,
+    /// The existing bounded directory hierarchy for a list.
+    Tree,
+    /// Matching paths, one safely escaped path per line.
+    Paths,
+    /// Flat size, signed modification age, and path columns.
+    Long,
     /// One JSON document.
     Json,
     /// One JSON document per line, one line per section.
@@ -88,10 +95,31 @@ pub enum Format {
 }
 
 impl Format {
+    /// Stable spelling used by request adapters and diagnostics.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Tree => "tree",
+            Self::Paths => "paths",
+            Self::Long => "long",
+            Self::Json => "json",
+            Self::Jsonl => "jsonl",
+            Self::Yaml => "yaml",
+        }
+    }
+
+    /// Whether this format is a structured serialization.
+    pub const fn is_machine(self) -> bool {
+        matches!(self, Self::Json | Self::Jsonl | Self::Yaml)
+    }
+
     /// Parse a `--format` value.
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "text" => Some(Self::Text),
+            "tree" => Some(Self::Tree),
+            "paths" => Some(Self::Paths),
+            "long" => Some(Self::Long),
             "json" => Some(Self::Json),
             "jsonl" => Some(Self::Jsonl),
             "yaml" => Some(Self::Yaml),
@@ -100,20 +128,120 @@ impl Format {
     }
 
     /// Every accepted spelling, for help text and error messages.
-    pub const ALL: &'static [&'static str] = &["text", "json", "jsonl", "yaml"];
+    pub const ALL: &'static [&'static str] =
+        &["text", "tree", "paths", "long", "json", "jsonl", "yaml"];
 }
 
 /// Render a report in the requested format.
 ///
 /// `color` applies to the text form only: machine output is never colourized, because a
 /// consumer parsing JSON should never have to strip escape sequences first.
-pub fn render(report: &Report, format: Format, color: bool) -> String {
-    match format {
-        Format::Text => render_text(report, color),
+///
+/// # Errors
+///
+/// Returns an invalid-request error when Tree/Paths/Long cannot represent the stored
+/// projection. Request the desired format on the query before reading: a detached,
+/// folded tree does not retain the complete flat inventory.
+pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<String> {
+    let format = if format == Format::Text { report.format } else { format };
+    let valid = match format {
+        Format::Paths | Format::Long => {
+            report.sections.len() == 1 && matches!(report.sections[0], Section::Files { .. })
+        }
+        Format::Tree => {
+            report.sections.len() == 1 && matches!(report.sections[0], Section::Tree { .. })
+        }
+        Format::Text | Format::Json | Format::Jsonl | Format::Yaml => true,
+    };
+    if !valid {
+        return Err(crate::Error::InvalidRequest(crate::query::Rejection::new(format.label(),
+            "incompatible with this report projection; request the desired format when building the query (a folded tree cannot become a complete flat list)").on("format")));
+    }
+    Ok(match format {
+        Format::Text | Format::Tree => render_text(report, color),
+        Format::Paths | Format::Long => render_flat(report, format),
         Format::Json => render_json(report),
         Format::Jsonl => render_jsonl(report),
         Format::Yaml => render_yaml(report),
+    })
+}
+
+/// Escape delimiters and terminal controls while preserving ordinary Unicode paths.
+fn flat_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .chars()
+        .flat_map(|c| {
+            if c.is_control() || c == '\\' {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
+/// A compact signed duration. Exact nanoseconds remain available in machine output.
+fn human_age(age: Option<i128>) -> String {
+    let Some(age) = age else { return "unknown".to_string() };
+    let seconds = age.unsigned_abs() / 1_000_000_000;
+    let (amount, unit) = if seconds >= 86400 {
+        (seconds / 86400, "d")
+    } else if seconds >= 3600 {
+        (seconds / 3600, "h")
+    } else if seconds >= 60 {
+        (seconds / 60, "m")
+    } else {
+        (seconds, "s")
+    };
+    format!("{}{amount}{unit}", if age < 0 { "-" } else { "" })
+}
+
+/// Notes excluded from flat stdout, for a frontend's diagnostic stream.
+pub fn flat_diagnostics(report: &Report) -> Vec<String> {
+    let mut notes = report.notes.clone();
+    if report.source == ReportSource::CacheOnly {
+        notes.push("cache-only result: retained contents have not been revalidated".into());
     }
+    if !report.complete || report.freshness != Freshness::Fresh {
+        notes.push(format!(
+            "result freshness: {}; complete: {}",
+            freshness_label(report.freshness),
+            report.complete
+        ));
+    }
+    if let Some(depth) = report.scope.max_depth {
+        notes
+            .push(format!("scan scope limited to depth {depth}; subtree metrics cover this scope"));
+    }
+    for section in &report.sections {
+        let bound = bound_note(section);
+        if !bound.is_empty() {
+            notes.push(bound.trim().to_string());
+        }
+    }
+    notes
+}
+
+fn render_flat(report: &Report, format: Format) -> String {
+    let mut out = String::new();
+    for section in &report.sections {
+        if let Section::Files { rows, .. } = section {
+            for row in rows {
+                if format == Format::Long {
+                    let _ = writeln!(
+                        out,
+                        "{:>10} {:>8} {}",
+                        human_bytes(pick(report.size, row.bytes, row.allocated)),
+                        human_age(row.age_ns),
+                        flat_path(&row.path)
+                    );
+                } else {
+                    let _ = writeln!(out, "{}", flat_path(&row.path));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Wrap text in a style when colour is on.
@@ -157,7 +285,7 @@ fn render_text(report: &Report, color: bool) -> String {
             let _ = writeln!(out, "{}", paint(bound.trim_start(), STYLE_TELEMETRY, color));
         }
         match section {
-            Section::Tree(root) => {
+            Section::Tree { root, .. } => {
                 render_text_tree(&mut out, root, report.size, report.ignored_entries, color);
             }
             Section::Extensions { rows, .. } => {
@@ -490,7 +618,7 @@ fn bound_note(section: &Section) -> String {
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
         // A tree marks its dropped children in place, at the depth they were dropped; a
         // summary is one row and cannot be bounded.
-        Section::Tree(_) | Section::Summary(_) => (0, 0),
+        Section::Tree { .. } | Section::Summary(_) => (0, 0),
     };
     if shown >= total {
         return String::new();
@@ -590,6 +718,11 @@ fn write_envelope_json(out: &mut String, report: &Report) {
         report.scan_started_at.map_or_else(|| "null".to_string(), |at| quote(&format_rfc3339(at)))
     );
     let _ = write!(out, ",\n  \"generated_at\": {}", quote(&format_rfc3339(report.generated_at)));
+    let _ = write!(
+        out,
+        ",\n  \"age_reference_ns\": {}",
+        report.age_reference_ns.map_or_else(|| "null".to_string(), |n| n.to_string())
+    );
     let _ = write!(out, ",\n  \"source\": {}", quote(source_label(report.source)));
     let _ = write!(out, ",\n  \"freshness\": {}", quote(freshness_label(report.freshness)));
     let _ = write!(out, ",\n  \"complete\": {}", report.complete);
@@ -694,7 +827,7 @@ fn section_json(section: &Section, _indent: usize) -> String {
     let mut out = String::new();
     let _ = write!(out, "{{\n  \"view\": {},\n  ", quote(section.view().label()));
     match section {
-        Section::Tree(root) => {
+        Section::Tree { root, .. } => {
             let _ = write!(out, "\"tree\": {}", indent(&tree_json(root), 2).trim_start());
         }
         Section::Extensions { rows, total } => {
@@ -838,13 +971,16 @@ fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> 
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"ignored\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"files\": {}, \"dirs\": {}, \"age_ns\": {}, \"ignored\": {}}}",
         quote(&row.path.to_string_lossy()),
         path_raw_field(&row.path),
         quote(kind_label(row.kind)),
         row.bytes,
         row.allocated,
         row.mtime_ns,
+        row.files.map_or_else(|| "null".to_string(), |v| v.to_string()),
+        row.dirs.map_or_else(|| "null".to_string(), |v| v.to_string()),
+        row.age_ns.map_or_else(|| "null".to_string(), |v| v.to_string()),
         row.ignored.map_or_else(|| "null".to_string(), |ignored| ignored.to_string()),
     )
 }
@@ -989,6 +1125,7 @@ fn render_yaml(report: &Report) -> String {
         None => out.push_str("scan_started_at: null\n"),
     }
     let _ = writeln!(out, "generated_at: {}", yaml_scalar(&format_rfc3339(report.generated_at)));
+    let _ = writeln!(out, "age_reference_ns: {}", yaml_option(report.age_reference_ns));
     let _ = writeln!(out, "source: {}", yaml_scalar(source_label(report.source)));
     let _ = writeln!(out, "freshness: {}", yaml_scalar(freshness_label(report.freshness)));
     let _ = writeln!(out, "complete: {}", report.complete);
@@ -1042,7 +1179,7 @@ fn render_yaml(report: &Report) -> String {
     for section in &report.sections {
         let _ = writeln!(out, "  - view: {}", yaml_scalar(section.view().label()));
         match section {
-            Section::Tree(root) => {
+            Section::Tree { root, .. } => {
                 out.push_str("    tree:\n");
                 yaml_tree(&mut out, root, 6);
             }
@@ -1079,6 +1216,9 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
                         let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
+                        let _ = writeln!(out, "        files: {}", yaml_option(row.files));
+                        let _ = writeln!(out, "        dirs: {}", yaml_option(row.dirs));
+                        let _ = writeln!(out, "        age_ns: {}", yaml_option(row.age_ns));
                         match row.ignored {
                             Some(ignored) => {
                                 let _ = writeln!(out, "        ignored: {ignored}");
@@ -1233,7 +1373,7 @@ fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
 }
 
 /// An optional integer as a YAML scalar.
-fn yaml_option(value: Option<i64>) -> String {
+fn yaml_option(value: Option<impl std::fmt::Display>) -> String {
     value.map_or_else(|| "null".to_string(), |value| value.to_string())
 }
 
@@ -1312,6 +1452,7 @@ fn generator() -> String {
 /// and a test holds them in step rather than a shared expression.
 fn view_header(view: ViewSpec) -> &'static str {
     match view {
+        ViewSpec::List => "LIST",
         ViewSpec::Tree => "TREE",
         ViewSpec::Types => "TYPES",
         ViewSpec::Extensions => "EXTENSIONS",
@@ -1516,7 +1657,7 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
         crate::ChangeKind::Invalidate => "invalidate",
     };
 
-    if format == Format::Text {
+    if !format.is_machine() {
         // Path first, so the stream stays greppable and cuts the same way a one-shot
         // listing does; the operation follows on the same line.
         return format!("{}\t{kind}", change.path.display());
@@ -1641,7 +1782,9 @@ pub fn render_cache_status(
         // the CLI, which meant the only way to print cache status the way fdu prints it
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
-        Format::Text => render_cache_status_text(statuses, scope),
+        Format::Text | Format::Tree | Format::Paths | Format::Long => {
+            render_cache_status_text(statuses, scope)
+        }
         Format::Json => {
             let schema = format!("{{\n  \"schema\": {},\n", quote(CACHE_SCHEMA));
             let rows = statuses.iter().map(|status| cache_row(status).json());
@@ -2337,8 +2480,17 @@ mod tests {
         };
         let full = rows.len();
         assert_eq!(*total, full, "an unbounded view drops nothing");
-        assert!(!render(&report, Format::Text, false).contains("--limit all"), "and says nothing");
-        assert!(render(&report, Format::Json, false).contains("\"bound\": null"));
+        assert!(
+            !render(&report, Format::Text, false)
+                .expect("compatible report format")
+                .contains("--limit all"),
+            "and says nothing"
+        );
+        assert!(
+            render(&report, Format::Json, false)
+                .expect("compatible report format")
+                .contains("\"bound\": null")
+        );
 
         // Now bound it to one row and check the report agrees with reality.
         let mut query = Query { views: vec![ViewSpec::Files], ..Query::default() };
@@ -2350,12 +2502,12 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(*total, full, "the total is what there was, not what was kept");
 
-        let text = render(&bounded, Format::Text, false);
+        let text = render(&bounded, Format::Text, false).expect("compatible report format");
         assert!(text.contains(&format!("(1 of {full}")), "the header states the bound: {text}");
         assert!(text.contains("--limit all"), "and names the flag that lifts it: {text}");
-        let json = render(&bounded, Format::Json, false);
+        let json = render(&bounded, Format::Json, false).expect("compatible report format");
         assert!(json.contains(&format!("\"shown\": 1, \"total\": {full}")), "{json:.200}");
-        let yaml = render(&bounded, Format::Yaml, false);
+        let yaml = render(&bounded, Format::Yaml, false).expect("compatible report format");
         assert!(yaml.contains("shown: 1"), "{yaml:.200}");
     }
 
@@ -2394,8 +2546,8 @@ mod tests {
             ViewSpec::Summary,
         ] {
             let report = fixture(&[view]);
-            let plain = render(&report, Format::Text, false);
-            let coloured = render(&report, Format::Text, true);
+            let plain = render(&report, Format::Text, false).expect("compatible report format");
+            let coloured = render(&report, Format::Text, true).expect("compatible report format");
             // Two views carry no label to style: `files` is a bare listing of paths meant
             // for piping, and `summary` is one aggregate line. Everything that draws a
             // label draws it styled, and this catches a view that quietly stops.
@@ -2438,6 +2590,57 @@ mod tests {
         ViewSpec::Recent,
         ViewSpec::Summary,
     ];
+
+    #[test]
+    fn list_formats_preserve_the_default_tree_and_expose_flat_subtree_metrics() {
+        let legacy = fixture(&[ViewSpec::Tree]);
+        let list = fixture(&[ViewSpec::List]);
+        assert_eq!(
+            render(&legacy, Format::Text, false).expect("tree"),
+            render(&list, Format::Tree, false).expect("list tree")
+        );
+        assert!(
+            render(&list, Format::Paths, false).is_err(),
+            "folding cannot silently become an inventory"
+        );
+        let flat = fixture_for(&Query {
+            views: vec![ViewSpec::List],
+            format: Format::Paths,
+            selection: Selection {
+                kinds: vec![EntryKind::Dir],
+                size: SizeMetric::Apparent,
+                ..Selection::default()
+            },
+            ..Query::default()
+        });
+        assert_eq!(render(&flat, Format::Paths, false).expect("paths"), "src\n");
+        assert!(render(&flat, Format::Long, false).expect("long").contains("100 B"));
+        assert!(render(&flat, Format::Tree, false).is_err());
+        let Section::Files { rows, .. } = &flat.sections[0] else { panic!("flat list") };
+        assert_eq!((rows[0].files, rows[0].dirs, rows[0].mtime_ns), (Some(1), Some(0), 10));
+        assert_eq!(
+            rows[0].age_ns,
+            flat.age_reference_ns.map(|reference| i128::from(reference) - 10)
+        );
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let wire = render(&flat, format, false).expect("serialization");
+            assert!(wire.contains("age_reference_ns"));
+            assert!(wire.contains("age_ns"));
+        }
+        assert_eq!(human_age(Some(-1)), "-0s");
+        assert_eq!(human_age(Some(30 * 86400 * 1_000_000_000)), "30d");
+        assert_eq!(human_age(None), "unknown");
+        assert_eq!(flat_path(Path::new("a\nb\tc")), "a\\nb\\tc");
+        let mut stale = flat.clone();
+        stale.source = ReportSource::CacheOnly;
+        stale.freshness = Freshness::Stale;
+        stale.scope.max_depth = Some(2);
+        let notes = flat_diagnostics(&stale).join("\n");
+        assert!(notes.contains("not been revalidated"));
+        assert!(notes.contains("freshness: stale"));
+        assert!(notes.contains("scan scope limited to depth 2"));
+        assert_eq!(render(&stale, Format::Paths, false).expect("paths"), "src\n");
+    }
 
     fn fixture(views: &[ViewSpec]) -> Report {
         fixture_for(&Query { views: views.to_vec(), ..Query::default() })
@@ -2536,7 +2739,7 @@ mod tests {
         for view in ALL_TEST_VIEWS {
             let report = fixture(&[view]);
             for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
-                let rendered = render(&report, format, false);
+                let rendered = render(&report, format, false).expect("compatible report format");
                 assert!(!rendered.trim().is_empty(), "{view:?} in {format:?} rendered nothing");
                 if format != Format::Text {
                     assert!(
@@ -2560,7 +2763,8 @@ mod tests {
             },
             ..Query::default()
         };
-        let text = render(&fixture_for(&apparent), Format::Text, false);
+        let text =
+            render(&fixture_for(&apparent), Format::Text, false).expect("compatible report format");
         assert_eq!(
             text,
             concat!(
@@ -2607,7 +2811,7 @@ mod tests {
         )
         .expect("report");
 
-        let plain = render(&report, Format::Text, false);
+        let plain = render(&report, Format::Text, false).expect("compatible report format");
         assert!(plain.contains("C++"), "{plain}");
         assert!(plain.contains("JavaScript"), "{plain}");
         let plain_suffixes = plain
@@ -2616,14 +2820,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(plain_suffixes[0], plain_suffixes[1], "{plain}");
 
-        let colored = render(&report, Format::Text, true);
+        let colored = render(&report, Format::Text, true).expect("compatible report format");
         let colored_suffixes = colored
             .lines()
             .map(|line| line.find("1 file").expect("colored file count suffix"))
             .collect::<Vec<_>>();
         assert_eq!(colored_suffixes[0], colored_suffixes[1], "{colored:?}");
 
-        let json = render(&report, Format::Json, false);
+        let json = render(&report, Format::Json, false).expect("compatible report format");
         assert!(json.contains("\"id\": \"cpp\""), "{json}");
         assert!(json.contains("\"id\": \"javascript\""), "{json}");
         assert!(!json.contains("\"id\": \"C++\""), "{json}");
@@ -2638,14 +2842,14 @@ mod tests {
         } else {
             panic!("languages should be a metric section");
         }
-        let text = render(&languages, Format::Text, false);
+        let text = render(&languages, Format::Text, false).expect("compatible report format");
         assert!(text.starts_with("Percentage column: code lines\n"), "{text}");
 
         let Section::Metrics { summary, .. } = &mut languages.sections[0] else {
             unreachable!("languages should stay a metric section");
         };
         summary.share_metric = ShareMetric::AllocatedBytes;
-        let text = render(&languages, Format::Text, false);
+        let text = render(&languages, Format::Text, false).expect("compatible report format");
         assert!(!text.contains("Percentage column:"), "{text}");
 
         let mut documents = fixture(&[ViewSpec::Documents]);
@@ -2653,7 +2857,7 @@ mod tests {
             panic!("documents should be a metric section");
         };
         summary.share_metric = ShareMetric::DocumentWords;
-        let text = render(&documents, Format::Text, false);
+        let text = render(&documents, Format::Text, false).expect("compatible report format");
         assert!(text.starts_with("Percentage column: document words\n"), "{text}");
     }
 
@@ -2669,7 +2873,8 @@ mod tests {
             ViewSpec::Files,
             ViewSpec::Summary,
         ] {
-            let json = render(&fixture(&[view]), Format::Json, false);
+            let json =
+                render(&fixture(&[view]), Format::Json, false).expect("compatible report format");
             assert!(is_valid_json(&json), "unbalanced JSON for {view:?}:\n{json}");
         }
         let all = render(
@@ -2682,7 +2887,8 @@ mod tests {
             ]),
             Format::Json,
             false,
-        );
+        )
+        .expect("compatible report format");
         assert!(is_valid_json(&all), "unbalanced JSON for a multi-view report:\n{all}");
     }
 
@@ -2741,7 +2947,7 @@ mod tests {
         )
         .expect("report");
 
-        let json = render(&report, Format::Json, false);
+        let json = render(&report, Format::Json, false).expect("compatible report format");
         assert!(is_valid_json(&json), "{json}");
         assert!(!json.contains("}{"), "siblings must be separated:\n{json}");
         assert!(!json.contains(",]"), "no trailing comma before a close:\n{json}");
@@ -2755,7 +2961,8 @@ mod tests {
     #[test]
     fn jsonl_emits_one_document_per_line() {
         let rendered =
-            render(&fixture(&[ViewSpec::Extensions, ViewSpec::Summary]), Format::Jsonl, false);
+            render(&fixture(&[ViewSpec::Extensions, ViewSpec::Summary]), Format::Jsonl, false)
+                .expect("compatible report format");
         let lines: Vec<&str> = rendered.lines().collect();
         assert_eq!(lines.len(), 3, "one envelope plus one line per section");
         for line in &lines {
@@ -2766,8 +2973,9 @@ mod tests {
 
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
-        let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/5\""));
+        let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false)
+            .expect("compatible report format");
+        assert!(json.contains("\"schema\": \"fdu.report/7\""));
         assert!(json.contains("\"source\": \"cold_scan\""));
         assert!(json.contains("\"complete\": true"));
         // Timestamps render in the same grammar the CLI accepts back as a watermark.
@@ -2779,11 +2987,11 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/5");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/7");
         // /5 and /6 add the envelope's `ignore_rules`, which says whether ignore
         // classification applied every `.gitignore`. Both lines move because every report
         // carries the envelope.
-        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/6");
+        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/8");
     }
 
     /// Every format says whether ignore rules were read and which files were refused, and
@@ -2810,8 +3018,16 @@ mod tests {
         let blind_report =
             report(&blind, &crate::test_support::read_of(&blind, query.clone()), &provenance)
                 .expect("report");
-        assert!(render(&blind_report, Format::Json, false).contains("\"ignore_rules\": null"));
-        assert!(render(&blind_report, Format::Yaml, false).contains("\nignore_rules: null\n"));
+        assert!(
+            render(&blind_report, Format::Json, false)
+                .expect("compatible report format")
+                .contains("\"ignore_rules\": null")
+        );
+        assert!(
+            render(&blind_report, Format::Yaml, false)
+                .expect("compatible report format")
+                .contains("\nignore_rules: null\n")
+        );
         assert!(blind_report.notes.is_empty());
 
         let mut observed =
@@ -2844,7 +3060,8 @@ mod tests {
             .expect("report"),
             Format::Json,
             false,
-        );
+        )
+        .expect("compatible report format");
         let expected = format!(
             "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
              \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
@@ -2862,7 +3079,8 @@ mod tests {
             .expect("report"),
             Format::Yaml,
             false,
-        );
+        )
+        .expect("compatible report format");
         let expected = format!(
             "ignore_rules:\n  limits:\n    budget: 4194304\n    line_limit: 16384\n  applied: 1\n  \
              refused: 1\n  refusals:\n    - path: {}\n      reason: line_limit\n",
@@ -2883,7 +3101,8 @@ mod tests {
             .expect("report"),
             Format::Text,
             false,
-        );
+        )
+        .expect("compatible report format");
         assert!(text.ends_with(&format!("{note}\n")), "{text}");
         let fields =
             report(&observed, &crate::test_support::read_of(&observed, query.clone()), &provenance)
@@ -2961,7 +3180,8 @@ mod tests {
             .expect("report"),
             Format::Text,
             false,
-        );
+        )
+        .expect("compatible report format");
         assert_eq!(
             text,
             concat!(
@@ -3000,7 +3220,8 @@ mod tests {
             .expect("report"),
             Format::Text,
             false,
-        );
+        )
+        .expect("compatible report format");
         assert!(only.contains("     128 B  1 file, 1 directory\n"), "{only}");
         assert!(!only.contains("ignored"), "every row is ignored, so none repeats it: {only}");
 
@@ -3013,7 +3234,8 @@ mod tests {
             .expect("report"),
             Format::Json,
             false,
-        );
+        )
+        .expect("compatible report format");
         assert!(is_valid_json(&json), "{json}");
         for expected in [
             "\"summary\": {\"files\": 2, \"dirs\": 2, \"bytes\": 164, \"allocated\": 1024, \
@@ -3023,7 +3245,7 @@ mod tests {
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 0, \"allocated\": 0, \"mtime_ns\": 0, \"ignored\": true}",
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"age_ns\": -10, \"ignored\": true}",
         ] {
             assert!(json.contains(expected), "missing {expected}\nin {json}");
         }
@@ -3036,7 +3258,8 @@ mod tests {
             .expect("report"),
             Format::Yaml,
             false,
-        );
+        )
+        .expect("compatible report format");
         assert!(
             yaml.contains(
                 "      allocated: 1024\n      ignored:\n        files: 1\n        dirs: 1\n        \
@@ -3053,21 +3276,31 @@ mod tests {
             &provenance,
         )
         .expect("report");
-        assert!(!render(&blind_report, Format::Text, false).contains("ignored"));
-        let json = render(&blind_report, Format::Json, false);
+        assert!(
+            !render(&blind_report, Format::Text, false)
+                .expect("compatible report format")
+                .contains("ignored")
+        );
+        let json = render(&blind_report, Format::Json, false).expect("compatible report format");
         assert!(!json.contains("\"ignored\": {"), "never a zero share for an unread rule: {json}");
         assert!(json.contains("\"ignored\": null"), "{json}");
-        assert!(render(&blind_report, Format::Yaml, false).contains("ignored: null\n"));
+        assert!(
+            render(&blind_report, Format::Yaml, false)
+                .expect("compatible report format")
+                .contains("ignored: null\n")
+        );
     }
 
     #[test]
     fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
-        let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/5\""));
+        let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false)
+            .expect("compatible report format");
+        assert!(metadata.contains("\"schema\": \"fdu.report/7\""));
         assert!(!metadata.contains("\"analysis\""));
 
-        let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/6\""));
+        let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false)
+            .expect("compatible report format");
+        assert!(metrics.contains("\"schema\": \"fdu.report/8\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -3080,7 +3313,7 @@ mod tests {
     /// a field fails here and forces a deliberate version bump.
     ///
     /// `ignored` was added to `fdu.stream/1` in place rather than by a bump, for the same
-    /// reason `fdu.report/6` took the ignored share in place: 0.1.0 is the first release,
+    /// reason `fdu.report/8` took the ignored share in place: 0.1.0 is the first release,
     /// so no consumer has ever read the shape it extends.
     #[cfg(feature = "watch")]
     #[test]
@@ -3179,7 +3412,8 @@ mod tests {
         // The property that makes `fdu --view files | xargs` work. It is why the view
         // header is conditional: a lone files view is a path listing, not a table that
         // needs labelling, so nothing is prepended to it.
-        let text = render(&fixture(&[ViewSpec::Files]), Format::Text, false);
+        let text = render(&fixture(&[ViewSpec::Files]), Format::Text, false)
+            .expect("compatible report format");
         for line in text.lines() {
             assert!(!line.contains(' '), "text files output must be bare paths, got {line:?}");
         }
@@ -3196,7 +3430,8 @@ mod tests {
             &fixture(&[ViewSpec::Tree, ViewSpec::Types, ViewSpec::Summary]),
             Format::Text,
             false,
-        );
+        )
+        .expect("compatible report format");
         let headers: Vec<&str> = text.lines().filter(|line| is_view_header_line(line)).collect();
         assert_eq!(headers, ["TREE", "TYPES", "SUMMARY"], "{text}");
 
@@ -3220,7 +3455,8 @@ mod tests {
 
         // The same views alone keep the pre-header layout exactly.
         for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Summary] {
-            let lone = render(&fixture(&[view]), Format::Text, false);
+            let lone =
+                render(&fixture(&[view]), Format::Text, false).expect("compatible report format");
             assert!(
                 !lone.lines().any(is_view_header_line),
                 "{view:?} alone must not be labelled:\n{lone}"
@@ -3231,11 +3467,13 @@ mod tests {
     #[test]
     fn view_headers_are_colorized_only_when_color_is_on() {
         let views = [ViewSpec::Tree, ViewSpec::Summary];
-        let plain = render(&fixture(&views), Format::Text, false);
+        let plain =
+            render(&fixture(&views), Format::Text, false).expect("compatible report format");
         assert!(plain.starts_with("TREE\n"), "{plain}");
         assert!(!plain.contains('\u{1b}'), "uncolored text carries no escapes: {plain:?}");
 
-        let colored = render(&fixture(&views), Format::Text, true);
+        let colored =
+            render(&fixture(&views), Format::Text, true).expect("compatible report format");
         assert!(colored.contains(&paint("TREE", STYLE_VIEW_HEADER, true)), "{colored:?}");
         assert!(colored.contains(&paint("SUMMARY", STYLE_VIEW_HEADER, true)), "{colored:?}");
     }
@@ -3246,7 +3484,8 @@ mod tests {
         // layer over the same report and must not leak into the versioned schemas.
         let views = [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary];
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
-            let rendered = render(&fixture(&views), format, false);
+            let rendered =
+                render(&fixture(&views), format, false).expect("compatible report format");
             for header in ["TREE", "TYPES", "FILES", "SUMMARY"] {
                 assert!(!rendered.contains(header), "{format:?} leaked {header}:\n{rendered}");
             }
@@ -3303,7 +3542,7 @@ mod tests {
         assert_eq!(Format::parse("json"), Some(Format::Json));
         assert_eq!(Format::parse("  YAML "), Some(Format::Yaml));
         assert_eq!(Format::parse("xml"), None);
-        assert_eq!(Format::ALL.len(), 4);
+        assert_eq!(Format::ALL.len(), 7);
     }
 
     #[test]
@@ -3408,7 +3647,8 @@ mod tests {
                 )
                 .expect("report");
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
-                    let rendered = render(&report, format, false);
+                    let rendered =
+                        render(&report, format, false).expect("compatible report format");
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
                 }
             })
@@ -3478,7 +3718,7 @@ mod tests {
             &provenance,
         )
         .expect("report");
-        let rendered = render(&report, Format::Json, false);
+        let rendered = render(&report, Format::Json, false).expect("compatible report format");
 
         let lossy = first.to_string_lossy();
         assert_eq!(
@@ -3502,7 +3742,7 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"ignored\": false}}"
+                 \"files\": null, \"dirs\": null, \"age_ns\": 0, \"ignored\": false}}"
             );
             assert!(
                 rendered.contains(&row),
@@ -3551,7 +3791,7 @@ mod tests {
             &provenance,
         )
         .expect("report");
-        let tree_rendered = render(&tree, Format::Json, false);
+        let tree_rendered = render(&tree, Format::Json, false).expect("compatible report format");
         assert!(
             tree_rendered.contains(&format!(
                 ", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{first_hex}\"}}, \"kind\":"

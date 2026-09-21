@@ -45,7 +45,7 @@ fdu is pre-1.0, so compatibility follows the `0.x` minor rule: a minor release (
 `0.2`) may change the Rust or Python API incompatibly, and its CHANGELOG entry names
 each such change; a patch release (`0.1.0` to `0.1.1`) never does.
 A machine-output field change requires a version bump of the schema that carries it: the
-report (`fdu.report/5`, or `fdu.report/6` with content analysis or a metric summary),
+report (`fdu.report/7`, or `fdu.report/8` with content analysis or a metric summary),
 the watch stream (`fdu.stream/1`), and cache status (`fdu.cache/2`) each version
 independently, as
 [the surface architecture](../architecture/fdu-surface-architecture.md#machine-output-schemas)

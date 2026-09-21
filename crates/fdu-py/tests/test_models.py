@@ -228,7 +228,7 @@ def test_malformed_wire_reports_fail_loudly() -> None:
 
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/5",
+        "schema": "fdu.report/7",
         "generator": "fdu 0.1.0",
         "root": "/root",
         "scan_started_at": None,

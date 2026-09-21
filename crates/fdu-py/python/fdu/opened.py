@@ -1293,6 +1293,7 @@ def _selection_wire(selection: Selection) -> dict[str, object]:
     values = _query_kwargs(Query(selection=selection))
     values.pop("views")
     values.pop("words_per_page")
+    values.pop("format")
     return values
 
 
@@ -1344,12 +1345,14 @@ def _projection_wire(projection: Projection) -> dict[str, object]:
         query = _query_kwargs(projection.query)
         views = query.pop("views")
         words_per_page = query.pop("words_per_page")
+        format = query.pop("format")
         return {
             "kind": "report",
             "request": {
                 "selection": query,
                 "views": views,
                 "words_per_page": words_per_page,
+                "format": format,
                 "generated_at_ns": _epoch_nanos(projection.generated_at),
                 "max_work": projection.max_work,
             },

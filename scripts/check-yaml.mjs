@@ -30,7 +30,7 @@ writeFileSync(join(tree, 'docs', 'guide.md'), '# T\n\nsome prose words here\n');
 writeFileSync(join(tree, 'data.json'), '{"k": 1}\n');
 
 const views = [
-  'tree', 'types', 'extensions', 'families', 'languages',
+  'list', 'tree', 'types', 'extensions', 'families', 'languages', 'documents',
   'files', 'largest', 'recent', 'summary',
 ];
 
@@ -69,5 +69,16 @@ const unbounded = parse(execFileSync(
 ));
 assert.ok('bound' in unbounded.reports[0], 'bound key missing when nothing was dropped');
 assert.equal(unbounded.reports[0].bound, null, 'an unbounded view must say null');
+
+// Nanosecond ages exceed Number's exact integer range. A real integer-preserving parser
+// must recover the exact signed relationship, not just accept the document's syntax.
+const directories = parse(execFileSync(
+  fdu, ['--cache', 'off', '--format', 'yaml', '--kind', 'dir', '--include', 'src', tree],
+  { encoding: 'utf8' },
+), { intAsBigInt: true });
+const [directory] = directories.reports[0].files;
+assert.equal(directory.files, 2n);
+assert.equal(directory.dirs, 0n);
+assert.equal(directory.age_ns, directories.age_reference_ns - directory.mtime_ns);
 
 console.log(`yaml self-check passed: ${checked} views parsed, bound round-trips both ways`);

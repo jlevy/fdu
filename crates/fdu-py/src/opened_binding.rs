@@ -165,6 +165,7 @@ impl SelectionValues {
 fn opened_read(
     selection: Option<&Bound<'_, PyDict>>,
     views: Option<Vec<String>>,
+    format: Option<&str>,
     words_per_page: u64,
     now: SystemTime,
 ) -> PyResult<Query> {
@@ -173,6 +174,7 @@ fn opened_read(
         now,
         &fdu_core::OpenedIndex::basis(),
         views,
+        format,
         values.include,
         values.exclude,
         values.min_size.as_deref(),
@@ -194,7 +196,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
     let Some(dict) = dict else {
         return Ok(Selection::default());
     };
-    Ok(opened_read(Some(dict), None, fdu_core::query::Request::DEFAULTS.words_per_page, now)?
+    Ok(opened_read(Some(dict), None, None, fdu_core::query::Request::DEFAULTS.words_per_page, now)?
         .selection)
 }
 
@@ -328,7 +330,9 @@ fn parse_report(dict: &Bound<'_, PyDict>) -> PyResult<fdu_core::ReportRequest> {
     // rather than resolved and refused here: a second copy of a rule agrees today and
     // drifts tomorrow, and this one already said `words_per_page must be positive` where
     // every other route said `invalid words_per_page "0"`.
-    let query = opened_read(selection.as_ref(), views, words_per_page, generated_at)?;
+    let format: Option<String> = optional_string(dict, "format")?;
+    let query =
+        opened_read(selection.as_ref(), views, format.as_deref(), words_per_page, generated_at)?;
     Ok(fdu_core::ReportRequest {
         query,
         // The instant this read resolves against, which is also what it reports as its
@@ -989,7 +993,8 @@ fn projection_result_dict<'py>(
                 value,
                 fdu_core::report_format::Format::Json,
                 false,
-            );
+            )
+            .map_err(super::to_py_err)?;
             let wire = py.import("json")?.call_method1("loads", (rendered,))?;
             let report = PyDict::new(py);
             report.set_item("wire", wire)?;

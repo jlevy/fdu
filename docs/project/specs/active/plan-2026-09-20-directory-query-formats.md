@@ -4,8 +4,8 @@
 
 **Author:** fdu project
 
-**Status:** In Review.
-This PR publishes the plan only; implementation remains open.
+**Status:** Implemented; final validation and stacked PR delivery in progress.
+The plan is PR #96. The implementation layer builds directly on its file/function map.
 
 **Tracking:** Epic `fdu-65x1`; plan publication `fdu-79n0`;
 [issue #93](https://github.com/jlevy/fdu/issues/93).
@@ -127,11 +127,15 @@ views, while `paths` cannot silently discard non-list sections.
 | `full` | Existing bounded digest | Usage error | Usage error | Existing bounded digest contract |
 
 Largest/recent retain their documented regular-file selection and ranking presets.
-Their automatic human presentation remains compatible; explicit list formats render that
-preset’s selected contents with the same metric definitions.
-Legacy `--view files` and `--view tree` compatibility is resolved before format
-validation, and documented explicit formats take precedence over a legacy presentation
-default.
+Their automatic human presentation remains compatible; explicit Paths and Long render
+the ranked regular files.
+Tree is rejected because a directory-only hierarchy cannot faithfully display that
+ranked file selection.
+Legacy `--view files` keeps name order in flat formats and accepts explicit Tree with
+tree ordering. Legacy `--view tree` retains its structured hierarchy with machine
+formats; explicit Paths and Long override it.
+This preserves existing tree JSON consumers while new List machine requests return a
+complete flat inventory.
 
 ## Selection and Directory Metrics
 
@@ -301,7 +305,7 @@ The plan-publication task is `fdu-79n0` and does not close the implementation ep
 
 ### fdu-hw5k: Core list selection with directory subtree metrics and union aggregation
 
-- [ ] Complete and validate this delivery step.
+- [x] Complete and validate this delivery step.
 
 Implement the epic’s shared list query in `fdu-core`. Entry kind is a filter; directory
 size, counts, and newest activity are subtree metrics even without `--kind dir`. Apply
@@ -328,7 +332,7 @@ sort and limit, deep-tree safety, and default/explicit-format-independent metric
 
 ### fdu-ywh0: Add tree, paths, and long list formats across core and Python
 
-- [ ] Complete and validate this delivery step.
+- [x] Complete and validate this delivery step.
 
 Implement core-owned `tree`, `paths`, and `long` presentations of the shared list
 report, alongside JSON, JSONL, and YAML. Tree preserves the existing directory roll-up
@@ -358,7 +362,7 @@ truncation/folding, machine decoding, and Python/Rust parity.
 
 ### fdu-y5ya: Expose list defaults, format aliases, and compatibility through the shared request model
 
-- [ ] Complete and validate this delivery step.
+- [x] Complete and validate this delivery step.
 
 Expose the accepted selection/view/format model through shared engine defaults and
 validation. Metadata-only default view is list and its default format is tree.
@@ -390,7 +394,7 @@ CLI must not invent filtering, aggregation, or format semantics.
 
 ### fdu-2v7o: Document list formats, directory filters, and stale build inventories
 
-- [ ] Complete and validate this delivery step.
+- [x] Complete and validate this delivery step.
 
 Update README, docs/usage.md (--docs), portable --skill, Rust API docs, Python README,
 models/stubs, machine-schema reference, architecture axes and selection semantics, and
@@ -419,7 +423,7 @@ terminology aligned.
 
 ### fdu-ia8p: Enhance help examples with README workflows and age/size directory searches
 
-- [ ] Complete and validate this delivery step.
+- [x] Complete and validate this delivery step.
 
 Enhance short and long help with README workflows and stale-directory inventory
 examples. Teach selection (kind/name/path/age/size), view (list and aggregate reports),
@@ -482,7 +486,9 @@ In `query/query_report.rs`, add `ViewSpec::List`, make `default_for` choose it f
 metadata, and update `parse`, `vocabulary`, `label`, `resolve_rejecting`, and defaults.
 Preserve the bounded `full` expansion rather than mechanically adding List to its
 sections. Retain legacy `Tree` and `Files` presets: omitted/text formatting preserves
-those presentations, while an explicit list format overrides their presentation choice.
+those presentations.
+Paths and Long override Tree; machine serialization preserves the legacy Tree hierarchy.
+Files also accepts explicit Tree.
 Largest/recent still select regular files and retain their existing ranking and
 automatic human rendering.
 
@@ -514,8 +520,8 @@ for an ordinary unfiltered tree.
 Add `query/query_subtrees.rs` and register it in `query.rs`. Its iterative `measure`
 reader computes directory apparent/allocated bytes, descendant file/directory counts,
 and newest eligible mtime.
-Its candidate helper preserves native versus portable name identity, and its pruning
-helper applies exclusions before positive selection.
+Its `with_candidate` helper preserves native versus portable name identity, and `pruned`
+applies exclusions before positive selection.
 Apply ignored policy while traversing structural ancestors; empty eligible roots retain
 their own timestamp.
 Keep the index reducers and snapshot schema unchanged.
@@ -563,7 +569,9 @@ with documented watch behavior rather than treating new human formats as machine
 by accident.
 
 In `crates/fdu/src/cli.rs`, pass format through `ReadSpec` in request construction.
-Add `--tree` and `--long` aliases with explicit conflict checks.
+`Cli::render_watch_changes` keeps invalidations on stderr for Paths/Long; `render_live`
+and the initial watch report preserve flat bounds and coverage notices on the same
+diagnostic stream. Add `--tree` and `--long` aliases with explicit conflict checks.
 Use core format classification in `machine_format`, normal output, cache-status, and
 watch dispatch. Send path-only completeness/bound notices to diagnostics.
 Update short and long help constants and clap field descriptions together.
@@ -584,8 +592,8 @@ view label alone determines shape.
 
 ### Tests and documentation inventory
 
-Core tests in `query_report.rs`, `query_request.rs`, `query_subtrees.rs`, and
-`report_format.rs` cover the metric/selection boundaries and presentation matrix.
+Core tests in `query_report.rs`, `query_request.rs`, and `report_format.rs` cover the
+metric/selection boundaries and presentation matrix.
 Include all-kind selection, empty/nested matches, eligible directory/symlink activity,
 ignored/excluded descendants, overlapping roots, both sizes, age edge cases, ordering,
 bounds, mixed views, and detached-report re-render validation.
@@ -639,6 +647,34 @@ The settled requirements are the unchanged default output, default list/tree
 equivalence, independent entry-kind filters, and explicit flat formats.
 Exact schema version numbers and age-column formatting are implementation choices to
 record with their tests; they must not weaken these requirements.
+
+## Implementation Review and Validation
+
+The implementation keeps query semantics and format validation in `fdu-core`. The CLI
+and Python package pass the same request and use the same renderers.
+Directory metrics are computed by an iterative post-order pass before positive
+predicates; grouped totals consume the covered regular-file union once.
+Default Tree continues to use maintained roll-ups without materializing a flat
+inventory. A complete flat read pays for its measurement/selection work in the
+opened-root budget. No cache identity, snapshot encoding, retained owner, dependency, or
+content-read policy changes are required.
+
+Precommit review covered the implementation layer above PR #96, including Rust request,
+selection, formatting, Python models/bindings, golden updates, and current
+documentation. Verdict: implementation ready for the full validation gate; no unresolved
+code findings. Review fixes include deterministic clocks confined to test helpers,
+retaining legacy Tree JSON, rejecting incompatible detached re-rendering, non-mutating
+age normalization that still detects incorrect ages, and exposing cache/scope notices
+separately from flat stdout.
+There are no deferred correctness findings.
+
+The default overview golden is unchanged.
+Focused validation passed all Rust workspace tests (757 core tests passed, one existing
+ignored test), CLI integration tests, and the existing 165 CLI golden sessions.
+Python validation caught and fixed compatibility with hand-built rows lacking the new
+optional fields. New shared golden sessions exercise old `.venv`, `node_modules`, and
+`target` roots, a recent descendant, and empty matches.
+Final gate and CI evidence will be recorded on the implementation PR before completion.
 
 ## References
 

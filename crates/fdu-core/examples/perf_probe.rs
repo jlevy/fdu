@@ -811,7 +811,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // are not printed because stdout carries this probe's JSON, and `black_box` keeps the
     // render from being optimised away as an unused value.
     let rendered =
-        fdu_core::report_format::render(&report, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(&report, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
     pending.join()?;
     let component = started.elapsed();
@@ -821,7 +821,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         .sections
         .iter()
         .find_map(|section| match section {
-            fdu_core::query::Section::Tree(node) => Some(node),
+            fdu_core::query::Section::Tree { root: node, .. } => Some(node),
             _ => None,
         })
         .ok_or_else(|| ProbeError("default tree returned no tree section".to_string()))?;
@@ -1218,7 +1218,7 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         }
     };
     let rendered =
-        fdu_core::report_format::render(report, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(report, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
     let component = started.elapsed();
 
@@ -1268,13 +1268,13 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
     let first = fdu_core::query::report(&index, &request, &provenance)?;
     let first_rendered =
-        fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false)?;
     black_box(first_rendered.len());
 
     let started = Instant::now();
     let second = fdu_core::query::report(&index, &request, &provenance)?;
     let rendered =
-        fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
     let component = started.elapsed();
 

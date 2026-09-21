@@ -193,6 +193,8 @@ pub struct RequestSpec<'a> {
 pub struct ReadSpec<'a> {
     /// Views: a comma list, or `full`.
     pub views: Option<&'a str>,
+    /// Presentation format; omitted means automatic human output.
+    pub format: Option<&'a str>,
     /// Logical words per document page: a positive integer.
     pub words_per_page: Option<&'a str>,
     /// Patterns an entry must match one of.
@@ -226,6 +228,7 @@ impl ReadSpec<'_> {
     pub const fn new() -> Self {
         Self {
             views: None,
+            format: None,
             words_per_page: None,
             include: &[],
             exclude: &[],
@@ -456,6 +459,27 @@ impl Request {
                 limit: crate::MAX_REPORT_VIEWS,
             });
         }
+        let format = self.query.format;
+        if matches!(
+            format,
+            crate::report_format::Format::Tree
+                | crate::report_format::Format::Paths
+                | crate::report_format::Format::Long
+        ) {
+            let compatible = self.query.views.len() == 1
+                && self.query.views.iter().all(|view| {
+                    matches!(view, ViewSpec::List | ViewSpec::Tree | ViewSpec::Files)
+                        || (format != crate::report_format::Format::Tree
+                            && matches!(view, ViewSpec::Largest | ViewSpec::Recent))
+                });
+            if !compatible {
+                return Err(invalid(
+                    self.query.axes.format,
+                    format.label(),
+                    "requires a single list view; use text or a machine format for aggregate/mixed views (largest/recent support paths and long)",
+                ));
+            }
+        }
         check_views(&self.query.views, basis.content)?;
         check_observation(self.query.selection.ignored, basis.scope.read_controls)
     }
@@ -567,7 +591,16 @@ fn build_query(
                 .ok_or_else(|| invalid(axes.words_per_page, value, "expected a positive integer"))
         })?;
 
-    Ok(Query { selection, views, omitted_views, axes, words_per_page })
+    let format = spec.format.map_or(Ok(crate::report_format::Format::Text), |value| {
+        crate::report_format::Format::parse(value).ok_or_else(|| {
+            invalid(
+                axes.format,
+                value,
+                format!("expected one of {}", crate::report_format::Format::ALL.join(", ")),
+            )
+        })
+    })?;
+    Ok(Query { selection, views, format, omitted_views, axes, words_per_page })
 }
 
 /// A scan-scope axis a build may be unable to honour at all.
@@ -771,7 +804,8 @@ pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<()
             ViewSpec::Documents if !content.is_enabled() => {
                 return Err(RequestError::ViewNeedsContent(*view));
             }
-            ViewSpec::Tree
+            ViewSpec::List
+            | ViewSpec::Tree
             | ViewSpec::Types
             | ViewSpec::Extensions
             | ViewSpec::Families
@@ -1256,6 +1290,49 @@ mod tests {
     /// A spec that names nothing builds the table, and every type that also declares a
     /// default for one of these axes agrees with it.
     #[test]
+    fn list_formats_are_resolved_and_validated_in_the_shared_request() {
+        use crate::report_format::Format;
+        for (view, format, valid, tree) in [
+            (None, None, true, true),
+            (Some("list"), Some("tree"), true, true),
+            (Some("list"), Some("paths"), true, false),
+            (None, Some("json"), true, false),
+            (Some("files"), None, true, false),
+            (Some("files"), Some("tree"), true, true),
+            (Some("tree"), Some("long"), true, false),
+            (Some("largest"), Some("long"), true, false),
+            (Some("summary"), Some("long"), false, false),
+            (Some("full"), Some("paths"), false, false),
+            (Some("list,summary"), Some("tree"), false, false),
+            (Some("list,summary"), Some("json"), true, false),
+        ] {
+            let spec = RequestSpec {
+                read: ReadSpec { views: view, format, ..ReadSpec::new() },
+                ..RequestSpec::new(Path::new("/absent"))
+            };
+            let request =
+                Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FIELDS).expect("grammar");
+            assert_eq!(request.validate().is_ok(), valid, "{view:?} {format:?}");
+            if valid {
+                assert_eq!(request.query.tree_for(request.query.views[0]), tree);
+            }
+        }
+        let spec = RequestSpec::new(Path::new("/absent"));
+        let request =
+            Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FIELDS).expect("default");
+        assert_eq!(request.query.views, [ViewSpec::List]);
+        assert!(
+            !request.query.needs_selection_walk(),
+            "an ordinary tree must retain its bounded projection cost"
+        );
+        let mut flat = request.clone();
+        flat.query.format = Format::Paths;
+        assert!(flat.query.needs_selection_walk());
+        assert_eq!(flat.query.limit_for(ViewSpec::List), Bound::All);
+        assert_eq!(request.query.limit_for(ViewSpec::List), Bound::Limit(10));
+    }
+
+    #[test]
     fn an_empty_spec_builds_the_defaults_table() {
         let defaults = Request::DEFAULTS;
         assert_eq!(defaults.size, SizeMetric::Allocated);
@@ -1265,7 +1342,7 @@ mod tests {
         assert_eq!(defaults.control_limits, ControlLimits::default());
         // A watch serves no content -- `WatchContent` refuses one that names an analyzer
         // -- so its view is the report default for none, derived rather than declared.
-        assert_eq!(defaults.report_view(AnalysisSet::NONE), ViewSpec::Tree);
+        assert_eq!(defaults.report_view(AnalysisSet::NONE), ViewSpec::List);
         for content in [
             AnalysisSet::NONE,
             AnalysisSet::NONE.with_lines(),
@@ -1318,6 +1395,7 @@ mod tests {
             analyze: Some("code"),
             read: ReadSpec {
                 views: Some("languages,tree"),
+                format: None,
                 words_per_page: Some("300"),
                 include: &include,
                 exclude: &exclude,
@@ -1500,6 +1578,7 @@ mod tests {
                     analyze: None,
                     read: ReadSpec {
                         views: None,
+                        format: None,
                         depth: None,
                         words_per_page: None,
                         ..everything.read
