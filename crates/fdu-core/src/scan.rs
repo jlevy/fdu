@@ -7872,7 +7872,17 @@ mod tests {
             scan_into_index(root.path(), &ScanConfig::default()).expect("initial scan");
         let before = *index.attrs(Path::new("same.txt")).expect("initial attrs");
 
-        std::thread::sleep(std::time::Duration::from_millis(2));
+        // NTFS stamps change time from the system clock, which advances in ticks of up to
+        // 15.625 ms, so a rewrite stamped in the same tick as the first write is
+        // indistinguishable from it. Wait for the clock to leave that tick rather than for
+        // a fixed interval; the precise clock `SystemTime` reads runs at most one tick ahead.
+        let stamped = std::time::UNIX_EPOCH
+            + std::time::Duration::from_nanos(
+                u64::try_from(before.ctime_ns).expect("change time after the epoch"),
+            );
+        while std::time::SystemTime::now() <= stamped + std::time::Duration::from_millis(20) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         write_file(&path, b"other");
         File::options()
             .write(true)

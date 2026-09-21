@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,13 @@ class CorpusGenerationTests(unittest.TestCase):
             os.utime(path, ns=(fixed_mtime, fixed_mtime))
             before_attrs = _windows_engine_attrs(path)
             before, _capability = _observe_corpus(root, capture_records=False)
+
+            # NTFS stamps change time from the system clock, which advances in ticks of up
+            # to 15.625 ms, so a rewrite stamped in the same tick as the first write is
+            # indistinguishable from it. Wait for the clock to leave that tick rather than
+            # for a fixed interval; the precise clock runs at most one tick ahead.
+            while time.time_ns() <= before_attrs[3] + 20_000_000:
+                time.sleep(0.005)
 
             path.write_bytes(b"bbbb")
             os.utime(path, ns=(fixed_mtime, fixed_mtime))
