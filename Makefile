@@ -356,9 +356,19 @@ lib-only:
 		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
 
+# The Windows target is checked on the MSRV as well, because platform-gated code is
+# invisible to a check on the host target and CI's MSRV job runs on ubuntu; the job
+# installs the target, and locally this skips it when the MSRV toolchain lacks it, as
+# cross-lint does, rather than failing a machine that has not added it.
 msrv:
 	$(CARGO) +$(MSRV) check --locked --all-features
 	$(CARGO) +$(MSRV) test --locked -p fdu-core --no-default-features
+	@if rustup +$(MSRV) target list --installed 2>/dev/null | grep -qx x86_64-pc-windows-msvc; then \
+		echo "== msrv check: x86_64-pc-windows-msvc"; \
+		$(CARGO) +$(MSRV) check --locked --all-features --all-targets --target x86_64-pc-windows-msvc || exit 1; \
+	else \
+		echo "== skipping x86_64-pc-windows-msvc on $(MSRV) (rustup +$(MSRV) target add x86_64-pc-windows-msvc)"; \
+	fi
 
 fix:
 	$(CARGO) fmt --all

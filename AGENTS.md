@@ -126,6 +126,7 @@ curl -LsSf https://astral.sh/uv/0.12.1/install.sh | sh       # match UV_MIN_VERS
 cargo install cargo-deny --locked --version 0.20.2            # make audit
 rustup toolchain install 1.85.0 --profile minimal             # match MSRV
 rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc  # make cross-lint
+rustup +1.85.0 target add x86_64-pc-windows-msvc              # make msrv, Windows leg
 ```
 
 The uv and Rust versions must match `UV_MIN_VERSION` and `MSRV` in the Makefile, which

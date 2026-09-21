@@ -170,9 +170,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.85.0
         with:
           toolchain: 1.85.0
+          targets: x86_64-pc-windows-msvc
       - run: cargo check --locked --all-features
       # Compile success alone misses behavioral and test-only MSRV regressions.
       - run: cargo test --locked -p fdu-core --no-default-features
+      # Platform-gated code is invisible to a check on the host target, and this job
+      # runs on ubuntu, so the Windows-only metadata module was MSRV-checked by nothing
+      # required: two of its paths once used an API stable since 1.87 against an MSRV
+      # of 1.85. Checking rather than building needs no linker, and `--all-targets`
+      # covers the Windows-only tests too.
+      - run: cargo check --locked --all-features --all-targets --target x86_64-pc-windows-msvc
 
   docs:
     name: Documentation

@@ -5363,11 +5363,15 @@ fn resolve_subtree_root(
 /// Exposed so the watch layer verifies entries exactly the way the walker records them —
 /// two stat interpretations that could drift would show up as an index that disagrees
 /// with itself depending on which producer last touched a path.
+///
+/// On Windows the observation comes from a fresh non-following handle, and `meta` is
+/// what answers for an entry whose handle cannot be opened because it is locked or
+/// access is denied — the same fallback std's `metadata` makes, with identity and change
+/// time unavailable for that entry.
 pub fn observe(path: &Path, meta: &fs::Metadata) -> std::io::Result<(EntryKind, Attrs)> {
     #[cfg(windows)]
     {
-        let _ = meta;
-        windows_metadata::observe(path)
+        windows_metadata::observe(path, || Ok(meta.clone()))
     }
     #[cfg(not(windows))]
     {
@@ -5390,7 +5394,9 @@ pub(crate) fn observe_dir_entry(
                 return missing_as_none(Err(error));
             }
         }
-        missing_as_none(windows_metadata::observe(&entry.path()))
+        // The listing already holds the entry's enumeration data; it is read only when
+        // the handle cannot be opened, so the ordinary path allocates nothing more.
+        missing_as_none(windows_metadata::observe(&entry.path(), || entry.metadata()))
     }
     #[cfg(not(windows))]
     {
@@ -5437,8 +5443,8 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
 }
 
 #[cfg(windows)]
-pub(crate) fn attrs_from(path: &Path, _meta: &fs::Metadata) -> std::io::Result<Attrs> {
-    windows_metadata::observe(path).map(|(_, attrs)| attrs)
+pub(crate) fn attrs_from(path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
+    windows_metadata::observe(path, || Ok(meta.clone())).map(|(_, attrs)| attrs)
 }
 
 #[cfg(not(any(unix, windows)))]
