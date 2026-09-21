@@ -858,8 +858,17 @@ Quiet `linux-v6.12` `cold-scan-index` −8.35% [−10.35%, −6.92%] and `warm-r
 See [the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
 (recorded on [#97](https://github.com/jlevy/fdu/pull/97)).
 
-Next free Linux experiment id is **exp-155**. Next free unused hypothesis id is
-**H149**.
+**H149 / exp-155** is the standing Linux cache-hit mix after leftover apply-timer
+expansion: **same** leftover identity.
+Quiet 12-pair `content-cache-hit` on `linux-v6.12`. Apply 60–62% of restore (89–99 ms)
+because HashMap remove + fingerprint now sit in apply.
+Parse and candidates ~24–26 ms.
+Read ~8–9 ms. Digest identical.
+Load/core 0.059–0.102 held.
+Do not retry H116. H83 remains format.
+
+Next free Linux experiment id is **exp-156**. Next free unused hypothesis id is
+**H150**.
 
 ## Before the First Round
 
