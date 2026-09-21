@@ -32201,8 +32201,8 @@
   {
    "anchored": false,
    "candidate": "opened-second-report second retained tree read",
-   "change_pct": -99.939,
-   "commit": "2c6535c8",
+   "change_pct": -2.158,
+   "commit": "984e4618",
    "complexity": {
     "lines_changed": 120,
     "new_dependencies": [],
@@ -32430,7 +32430,7 @@
    "platform": "macOS",
    "primary_job": "default-tree",
    "primary_metric": "wall_ns",
-   "reason": "opened second report 1.6ms versus default-tree 2612ms (1630x); determination kept; not a snapshot load",
+   "reason": "opened second report 1.6ms versus default-tree 2612ms (1630x); paired default-tree wall -2.158% (does not pass acceptance); determination kept; not a snapshot load",
    "reference_tools": [
     {
      "argv": [
@@ -32752,7 +32752,7 @@
   {
    "anchored": false,
    "candidate": "index-second-report second query::report",
-   "change_pct": -99.919,
+   "change_pct": 1.5,
    "commit": "ee014340",
    "complexity": {
     "lines_changed": 98,
@@ -32981,7 +32981,7 @@
    "platform": "macOS",
    "primary_job": "default-tree",
    "primary_metric": "wall_ns",
-   "reason": "product second report 1.7ms versus default-tree 2078ms (1222x); determination kept; not a snapshot load",
+   "reason": "product second report 1.7ms versus default-tree 2078ms (1222x); paired default-tree wall +1.5% (does not pass acceptance); determination kept; not a snapshot load",
    "reference_tools": [
     {
      "argv": [
@@ -33599,7 +33599,7 @@
     "new_dependencies": [],
     "new_failure_modes": [],
     "new_unsafe_blocks": 0,
-    "notes": "crate-private candidates count on ContentCacheLoad; incomplete-sidecar fail-closed kept; not the file-count heuristic"
+    "notes": "crate-private candidates count on ContentCacheLoad; shipped denominator is files visited, not HashMap length; incomplete-sidecar fail-closed kept; not the file-count heuristic"
    },
    "control": "HEAD at af306146 with H115 and H120",
    "date": "2026-09-19",
@@ -35722,7 +35722,7 @@
    "platform": "macOS",
    "primary_job": "content-query",
    "primary_metric": "wall_ns",
-   "reason": "content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone; component -24.61%; report identity unchanged; engine kept",
+   "reason": "content-query wall -18.76% [-22.86%, -13.69%] on frozen metabrowser-clone; component -24.61%; engine kept; report identity is from crate tests, not the benchmark digest",
    "reference_tools": [],
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Share one every_entry across unfiltered metric views",
