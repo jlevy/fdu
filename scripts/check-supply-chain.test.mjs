@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import {
   assertAged,
@@ -14,6 +18,8 @@ import {
   validateExceptions,
   validateFirstParty,
   validateRustToolchainPins,
+  selectShellFiles,
+  shellFilesUnder,
   validateWorkflowSecurity,
 } from "./check-supply-chain.mjs";
 
@@ -129,6 +135,52 @@ test("every shell downloader is explicitly inventoried", () => {
   ];
   assert.doesNotThrow(() => validateDownloadScripts(files, new Set(["scripts/reviewed.sh"])));
   assert.throws(() => validateDownloadScripts(files, new Set()), /absent from the bootstrap inventory/);
+});
+
+test("only shell scripts are selected from a git listing", () => {
+  assert.deepEqual(selectShellFiles("scripts/a.sh\0scripts/b.mjs\0.claude/hooks/c.sh\0"), [
+    "scripts/a.sh",
+    ".claude/hooks/c.sh",
+  ]);
+  assert.deepEqual(selectShellFiles(""), []);
+});
+
+// A git worktree under `.claude/worktrees/` is where Claude Code puts one by default, so
+// this is the ordinary state of an agent host rather than an exotic layout. Its files are
+// untracked here and belong to another checkout, so they can never be inventoried: a
+// filesystem walk made the gate permanently unrunnable and blamed a hook for it. Build a
+// real nested worktree rather than a fake `.git` entry, because the bug was git's own
+// notion of tracking, not a name.
+test("a nested worktree's untracked downloader is outside the scanned set", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fdu-supply-chain-"));
+  const git = (...args) =>
+    execFileSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=T", ...args], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  try {
+    git("init", "-b", "main");
+    await mkdir(path.join(root, "scripts"), { recursive: true });
+    await writeFile(path.join(root, "scripts", "reviewed.sh"), "curl https://example.invalid/tool\n");
+    git("add", "scripts/reviewed.sh");
+    git("commit", "-m", "seed");
+
+    git("worktree", "add", "--detach", path.join(".claude", "worktrees", "agent-a0cd8952"), "HEAD");
+    const nestedHooks = path.join(root, ".claude", "worktrees", "agent-a0cd8952", ".claude", "hooks");
+    await mkdir(nestedHooks, { recursive: true });
+    await writeFile(path.join(nestedHooks, "tbd-closing-reminder.sh"), "npx some-tool\n");
+
+    const files = await shellFilesUnder(root, [".claude", ".codex", "scripts"]);
+    const paths = files.map((file) => file.path);
+
+    assert.deepEqual(paths, ["scripts/reviewed.sh"]);
+    // The inventory can only ever name tracked files, so the real assertion is that this
+    // does not fail — which is what `make check` could not get past.
+    assert.doesNotThrow(() => validateDownloadScripts(files, new Set(["scripts/reviewed.sh"])));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("GitHub actions must use an exact commit", () => {
