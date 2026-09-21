@@ -830,8 +830,8 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 
 ### After #94 (Linux)
 
-[#94](https://github.com/jlevy/fdu/pull/94) is recorded and merges onto `main`, then #97.
-Further Linux cells are on
+[#94](https://github.com/jlevy/fdu/pull/94) is recorded and merges onto `main`, then
+#97. Further Linux cells are on
 [Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md)
 (`cursor/linux-perf-iterate-de1b`).
 
