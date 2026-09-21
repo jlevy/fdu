@@ -36281,7 +36281,7 @@
      "start_state": "warm"
     }
    ],
-   "kept": "control",
+   "kept": null,
    "number": 141,
    "path": "exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md",
    "platform": "Linux",

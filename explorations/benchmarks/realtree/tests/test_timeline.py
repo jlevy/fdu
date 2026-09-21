@@ -132,6 +132,12 @@ class KeptVariantTests(unittest.TestCase):
         self.assertIsNone(kept_variant("rejected", "exp-103"))
         self.assertEqual(kept_variant("rejected", "exp-100"), "control")
 
+        # exp-141 is the same shape one campaign later: a same-binary H111 floor stage
+        # whose engine ships either way. It was minted without being added here, so the
+        # page drew its control as Linux's current cost for the length of one review.
+        self.assertIn("exp-141", CLAIM_ONLY_EXPERIMENTS)
+        self.assertIsNone(kept_variant("rejected", "exp-141"))
+
 
 class SubjectIdentityTests(unittest.TestCase):
     def test_two_trees_sharing_a_path_are_not_one_subject(self) -> None:
