@@ -3,9 +3,9 @@ type: is
 id: is-01m32h6cjrkz58ce2t05m3n2v7
 title: "PR #96 review pass: plan: directory filters and list presentation formats"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 17
+version: 18
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
@@ -26,7 +26,11 @@ child_order_hints:
   - is-01m32v0bvkn58f8hj9bdc5w1vp
   - is-01m32v0cfprv2rfws4kggqbx4a
 created_at: 2026-09-21T17:46:04.759Z
-updated_at: 2026-09-21T20:37:33.814Z
+updated_at: 2026-09-21T21:12:08.839Z
+closed_at: 2026-09-21T21:12:08.839Z
+close_reason: "Disposition posted: https://github.com/jlevy/fdu/pull/96#issuecomment-5767571111 (spec revision c3aeed8a; R1 implemented on #103 in 5d6e56a2). Follow-ups fdu-f9fv and fdu-2udc under the epic."
+resolution: null
+duplicate_of: null
 ---
 Branch `codex/directory-query-plan`, based on #94. Reviewer model: Opus.
 

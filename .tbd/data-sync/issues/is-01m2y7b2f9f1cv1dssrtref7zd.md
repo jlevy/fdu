@@ -5,7 +5,7 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 20
+version: 24
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -19,10 +19,14 @@ child_order_hints:
   - is-01m2y7cbprn6w292gjenv0twd7
   - is-01m2y7cf9fsawdtq8p5grnr3nq
   - is-01m2yp2y2dvhqfynz0h5xahegm
+  - is-01m32wje089vk2cwd9ds2sms2d
+  - is-01m32wjeren9zr84kerpgy386y
+  - is-01m32wjfbf8mphk5kf7ew664kd
+  - is-01m32wjg03cnq2dzqcxen3rb6w
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-21T07:57:01.839Z
+updated_at: 2026-09-21T21:04:55.811Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-20-directory-query-formats.md`. Publish the plan separately on `codex/directory-query-plan`, stacked on the latest branch, PR #94 (`perf/campaign-linux-2026-09-19`) above #92. Implementation follows in a separate PR above the reviewed plan. The tracked spec owns the complete design and implementation breakdown.

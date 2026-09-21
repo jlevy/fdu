@@ -3,9 +3,9 @@ type: is
 id: is-01m32h6ewht09ryvnt0f5zmhz5
 title: "PR #103 review pass: directory filters and list presentation formats"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 9
+version: 10
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
@@ -17,7 +17,11 @@ child_order_hints:
   - is-01m32v0hm3x4eh2ymxae4c5bz5
   - is-01m32v0j7x7wve5fqn1t1dkvq4
 created_at: 2026-09-21T17:46:07.120Z
-updated_at: 2026-09-21T20:37:39.708Z
+updated_at: 2026-09-21T21:12:09.343Z
+closed_at: 2026-09-21T21:12:09.342Z
+close_reason: "Disposition posted: https://github.com/jlevy/fdu/pull/103#issuecomment-5767577873 (9c22e8aa, 5d6e56a2). Deferred R4 and the benchmark job as fdu-uea9 and fdu-afc4 under the epic."
+resolution: null
+duplicate_of: null
 ---
 Branch `codex/directory-rollup-query`, based on #96. Reviewer model: Fable.
 
