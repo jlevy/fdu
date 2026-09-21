@@ -3563,7 +3563,7 @@ impl Index {
         &mut self,
         observation: AnalysisObservation,
     ) -> AnalysisApplyOutcome {
-        self.apply_analysis_record(observation, true)
+        self.apply_analysis_record(observation)
     }
 
     /// Restore-path apply: insert the record and leave roll-ups for one rebuild.
@@ -3600,11 +3600,7 @@ impl Index {
         }
     }
 
-    fn apply_analysis_record(
-        &mut self,
-        observation: AnalysisObservation,
-        update_rollups: bool,
-    ) -> AnalysisApplyOutcome {
+    fn apply_analysis_record(&mut self, observation: AnalysisObservation) -> AnalysisApplyOutcome {
         let candidate = &observation.candidate;
         let Some(entry) = self.try_entry(candidate.entry_id) else {
             return AnalysisApplyOutcome::Stale;
@@ -3619,12 +3615,11 @@ impl Index {
         let Some(content) = self.content.as_mut() else {
             return AnalysisApplyOutcome::Stale;
         };
-        let committed = if update_rollups {
-            content.commit(candidate.relative_path.clone(), observation.analysis)
+        if content.commit(candidate.relative_path.clone(), observation.analysis) {
+            AnalysisApplyOutcome::Applied
         } else {
-            content.commit_without_rollup(candidate.relative_path.clone(), observation.analysis)
-        };
-        if committed { AnalysisApplyOutcome::Applied } else { AnalysisApplyOutcome::Stale }
+            AnalysisApplyOutcome::Stale
+        }
     }
 
     /// Drop all derived content while preserving metadata and snapshot compatibility.

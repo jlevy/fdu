@@ -191,7 +191,7 @@ experiment:
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
-    notes: crate-private candidates count on ContentCacheLoad; incomplete-sidecar fail-closed kept; not the file-count heuristic
+    notes: crate-private candidates count on ContentCacheLoad; shipped denominator is files visited, not HashMap length; incomplete-sidecar fail-closed kept; not the file-count heuristic
   verdict:
     decision: accepted
     primary_job: content-cache-hit
@@ -286,6 +286,13 @@ The file-count shortcut is not compiled and is not retried.
 exp-113 unused. H113 is superseded.
 
 Do not raise the README 200K files/s or 4M cached lines/s from this cell.
+
+## Errata (2026-09-21)
+
+The recorded candidate described completeness as comparing hits to the HashMap length,
+with `new_failure_modes: []`. The measured cell still had the R3 fail-open (map-length
+denominator). Shipped code counts visited files.
+Timing claims are unchanged.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
