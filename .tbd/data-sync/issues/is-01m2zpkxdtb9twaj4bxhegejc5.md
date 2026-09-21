@@ -5,11 +5,11 @@ title: "Restore test guards dropped by the #91/#92 fix-consolidation merges (R3 
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 created_at: 2026-09-20T15:23:07.575Z
-updated_at: 2026-09-20T15:23:07.575Z
+updated_at: 2026-09-21T07:57:02.646Z
 ---
 From the independent pre-merge verification of PRs #91 and #92 (2026-09-20). The merges that consolidated two concurrent fix lines (870bdcfb, 3cc94898/937f9445) kept one side's tree; nothing incorrect shipped, but some guards were lost.
 
@@ -18,3 +18,7 @@ From the independent pre-merge verification of PRs #91 and #92 (2026-09-20). The
 - V92-4: the allocation guard's `FILES * 3` threshold assumes two walk allocations per file; if the walk gets cheaper a reintroduced clone passes. Tie the bound to a measured single-view baseline instead.
 - V91-8: `bottom_up_rebuild_matches_incremental_nested_rollups` uses only `CoverageReason::Analyzed` records, so `by_type`/`by_family` merging for non-analyzed records at nested directories is proven only by reading. The R1 timer test exercises the helpers, not `load_content_cache`'s use of them. The kept rollback tests use the lines analyzer only rather than `AnalysisSet::ALL`.
 - Dead code: `apply_analysis_record`'s `update_rollups = false` branch (index.rs ~:3622).
+
+## Notes
+
+Context posted for Linux handoff on PR #94: https://github.com/jlevy/fdu/pull/94#issuecomment-5757234985

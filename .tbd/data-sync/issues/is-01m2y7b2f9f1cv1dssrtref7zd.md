@@ -5,7 +5,7 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -22,7 +22,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-20T06:48:50.853Z
+updated_at: 2026-09-21T07:57:01.839Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-20-directory-query-formats.md`. Publish the plan separately on `codex/directory-query-plan`, stacked on the latest branch, PR #94 (`perf/campaign-linux-2026-09-19`) above #92. Implementation follows in a separate PR above the reviewed plan. The tracked spec owns the complete design and implementation breakdown.
@@ -234,4 +234,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-Implementation is complete on codex/directory-rollup-query above plan PR #96 (258e6fb0). All five implementation/docs/help sub-beads are implemented; final validation and PR/CI work remains in fdu-arv8. Existing 165 golden sessions and the full Rust workspace passed. The spec contains the file/function map, final format compatibility decisions, architecture review, and validation plan. Full make check runs in an isolated worktree to avoid unrelated nested agent hooks in the checkout inventory.
+Plan PR #96; implementation PR #103 (draft, 2026-09-21). See fdu-arv8 for verification status.

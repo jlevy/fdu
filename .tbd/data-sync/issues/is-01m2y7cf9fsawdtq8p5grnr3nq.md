@@ -5,7 +5,7 @@ title: Verify unchanged defaults, directory formats, surface parity, and stacked
 kind: task
 status: in_progress
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -14,7 +14,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-20T06:47:55.537Z
+updated_at: 2026-09-21T07:57:01.422Z
 started_at: 2026-09-20T06:16:21.022Z
 ---
 Validate the epic end to end with portable product goldens, engine tests, and Python
@@ -45,4 +45,4 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Notes
 
-Running full make check in isolated directory-query-verify worktree because the main checkout supply-chain inventory scans unrelated nested agent hooks. This keeps the same tracked implementation and does not bypass the check. New stale-build golden and opened Python tests included. Linux-authoritative parity artifact may require CI regeneration and download after first implementation push.
+Implementation committed and pushed 2026-09-21 as PR #103 (branch codex/directory-rollup-query, commit 31e271ec) stacked on the #96 plan. Local macOS status: 757 tests pass, 0 failed; all nine golden tryscripts pass with no diff, which satisfies this bead's retained-default-goldens condition; 18 suites green. NOT done: full make check (blocked by fdu-vjf2, a supply-chain scanner bug unrelated to the diff), make cross-lint, and any Linux/Windows verification beyond PR CI. Parity artifacts still to be recorded by CI on Linux per AGENTS.md. PR is draft until the full gate passes.
