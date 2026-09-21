@@ -114,7 +114,7 @@ Candidates 25%; parse 8.5%. Every sample 133,597 cache hits / 0 applied; content
 unchanged from exp-108.
 
 **exp-110 / H113** tests the leftover completeness walk on the same `metabrowser-clone`
-tree (engine digest unchanged).
+tree (same shape; content digest unchanged).
 12-pair current-best (timers in the binary, off) versus a file-count completeness check
 instead of walking `analysis_candidates` for `len()`. Quiet start gate failed (27.8%
 busy); pair ran **uncontrolled**. Initial busy 40.0%; final 63.65%. The 25% bar was not
@@ -132,7 +132,7 @@ Every sample 133,597 cache hits / 0 applied; content digest unchanged from exp-1
 exp-109.
 
 **exp-111 / H114** tests the leftover apply-path type-id `String` alloc on the same
-`metabrowser-clone` tree (engine digest unchanged).
+`metabrowser-clone` tree (same shape; content digest unchanged).
 12-pair current-best at `c06d09e7` (timers in the binary, off) versus `get_mut` before
 `entry` in `ContentRollUp::add`. Quiet start gate failed (49.5% busy); pair ran
 **uncontrolled**. Initial busy 49.25%; final 25.78%. The 25% bar was not lowered.
@@ -148,7 +148,7 @@ Every sample 133,597 cache hits / 0 applied; content digest unchanged from exp-1
 exp-109 / exp-110.
 
 **exp-112 / H115** tests one bottom-up content roll-up after sidecar restore inserts on
-the same `metabrowser-clone` tree (engine digest unchanged).
+the same `metabrowser-clone` tree (same shape; content digest unchanged).
 12-pair current-best at `2736ec16` (timers in the binary, off) versus
 `commit_without_rollup` plus `ContentIndex::rebuild_rollups` after the apply loop.
 Quiet start gate failed (28.9% busy); pair ran **uncontrolled**. Initial busy 28.71%;
@@ -188,7 +188,7 @@ exp-113 remains reserved.
 The leftover is still 16.0% of `content_open` after H115+H120 (exp-123). Next is H122.
 
 **exp-114 / H116** tests restore without a full `analysis_candidates` Vec+HashMap on the
-same `metabrowser-clone` tree (engine digest unchanged).
+same `metabrowser-clone` tree (same shape; content digest unchanged).
 12-pair current-best at `7f289d5f` versus `Index::lookup` plus restore-only classify
 skip. Quiet start gate refused (85.6% busy); pair ran **uncontrolled**. Initial busy
 76.31%; final 72.15%. The 25% bar was not lowered.
