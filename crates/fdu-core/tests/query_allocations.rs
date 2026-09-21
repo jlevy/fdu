@@ -113,6 +113,11 @@ fn bounded_single_file_view_does_not_clone_every_materialized_path() {
         "a bounded Largest view must not exceed one measured full-tree walk: \
          {allocations} allocations versus {types} for Types"
     );
+    // This ceiling is also what detects the opposite H138 fault. Sharing a walk when only
+    // one view consumes it is invisible to the sibling guard, which compares a pair
+    // against two singles; it shows up here, and only by about eight allocations. Raising
+    // the bound to quiet a flake would silently retire that detection — fix the cause, or
+    // move the detection somewhere with a stated margin, but do not widen this.
     assert!(
         allocations < FILES * 3,
         "a second full-tree FileRow/PathBuf clone adds at least one allocation per file: \
@@ -124,6 +129,10 @@ fn bounded_single_file_view_does_not_clone_every_materialized_path() {
 fn unfiltered_metric_views_share_one_every_entry_walk() {
     const FILES: usize = 1_024;
     let index = allocation_fixture(FILES);
+    // Measure the fixed per-report overhead rather than assuming it negligible. A report
+    // with no views walks nothing and aggregates nothing, so this is exactly the constant
+    // that appears in every other reading here.
+    let fixed = report_allocations(&index, Vec::new(), Selection::default());
     let types = report_allocations(&index, vec![ViewSpec::Types], Selection::default());
     let families = report_allocations(&index, vec![ViewSpec::Families], Selection::default());
     let both =
@@ -140,18 +149,28 @@ fn unfiltered_metric_views_share_one_every_entry_walk() {
         FILES * 2
     );
 
-    // Compare the pair against the two views measured separately. That cancels the fixed
-    // per-report overhead and the per-view aggregation cost, which are both larger than a
-    // walk and so hid it: a `both < types * 2` bound expands to `F + 2W + 2A < 2F + 2W +
-    // 2A`, true whenever the fixed overhead F is positive, no matter how many walks ran.
-    // A never-share build measured 10,265 against that bound of 10,268 and passed. What
-    // sharing saves is exactly one `every_entry` walk, so measure that, with a 2x margin.
-    let saved = (types + families).saturating_sub(both);
+    // Comparing the pair against the two views measured separately cancels the per-view
+    // aggregation cost, which is larger than a walk and so hid it: a `both < types * 2`
+    // bound expands to `F + 2W + 2A < 2F + 2W + 2A`, true whenever the fixed overhead F is
+    // positive however many walks ran. A never-share build measured 10,265 against that
+    // bound of 10,268 and passed.
+    //
+    // That difference is `F + W` when the walk is shared and `F` when it is not, so it
+    // still carries the constant. Subtracting the measured F isolates the walk itself,
+    // which is the only thing sharing saves. Without the subtraction a build that never
+    // shares but allocates FILES more fixed bytes passes, because the difference
+    // degenerates to exactly that overhead.
+    assert!(
+        fixed < FILES,
+        "fixed per-report overhead is {fixed}, not small against a {FILES}-entry walk; \
+         the subtraction below no longer isolates the walk"
+    );
+    let saved = (types + families).saturating_sub(both).saturating_sub(fixed);
     assert!(
         saved >= FILES,
         "H138 must save one every_entry walk: [Types, Families] allocated {both} against \
-         {types} + {families} measured separately, a saving of {saved}; flipping \
-         row_consumers > 1 to never share costs a second walk, which allocates at least \
-         one PathBuf per entry"
+         {types} + {families} measured separately and {fixed} of fixed overhead, leaving a \
+         saving of {saved}; flipping row_consumers > 1 to never share costs a second walk, \
+         which allocates at least one PathBuf per entry"
     );
 }
