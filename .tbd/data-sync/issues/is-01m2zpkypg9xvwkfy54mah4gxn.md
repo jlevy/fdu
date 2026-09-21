@@ -3,13 +3,15 @@ type: is
 id: is-01m2zpkypg9xvwkfy54mah4gxn
 title: Restore timers must cover the whole sidecar load before H121 is judged; document load_content_cache rollback
 kind: task
-status: open
+status: closed
 priority: 2
-version: 2
+version: 4
 labels: []
 dependencies: []
 created_at: 2026-09-20T15:23:08.879Z
-updated_at: 2026-09-21T07:57:03.032Z
+updated_at: 2026-09-21T08:20:31.397Z
+closed_at: 2026-09-21T08:20:31.397Z
+close_reason: "Shipped on #104 (https://github.com/jlevy/fdu/pull/104) at 743d2b9c / 4d78558e vs main a290aedc. CI run 35576573158 green on ubuntu/macos/windows including Performance evidence. exp-116 change_pct is the paired −2.158%; commit quoted as 984e4618; digest/regime/errata corrected; ledger+report regenerated. R3 name negatives, valid-rename load control, and H138 sharing guard restored; apply timer starts at candidates.remove. peak_rss_bytes prints as bytes (exp-117 377.5→339.4 MiB). Local rust-test passed except the known parallel_equivalence flake (not fixed)."
 ---
 From the independent pre-merge verification of PR #91 (2026-09-20). Do this BEFORE judging H121, whose rule is "a named restore stage >= 50% of restore phase time".
 
