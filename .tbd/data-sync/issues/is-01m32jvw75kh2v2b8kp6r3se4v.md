@@ -3,14 +3,18 @@ type: is
 id: is-01m32jvw75kh2v2b8kp6r3se4v
 title: "PR #94 review S1: no gate catches a wrong verdict.change_pct once regenerated"
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01m32h6bvgxbks1d5t5q5p0k44
 created_at: 2026-09-21T18:15:17.476Z
-updated_at: 2026-09-21T18:43:11.466Z
+updated_at: 2026-09-21T21:01:22.897Z
+closed_at: 2026-09-21T21:01:22.897Z
+close_reason: "Duplicate of fdu-1wyf (same S1 finding from the PR #94 review). Fixed by https://github.com/jlevy/fdu/pull/109: Experiment model validator on verdict.change_pct, run in summary._read, perf-record, and make perf-evidence-check."
+resolution: duplicate
+duplicate_of: is-01m32jqdbwhh12ekwymn8h6r1y
 ---
 Senior review of PR #94, suggestion S1 (non-blocking, separate PR).
 

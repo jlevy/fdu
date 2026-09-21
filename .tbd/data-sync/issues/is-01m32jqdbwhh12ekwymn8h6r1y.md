@@ -3,14 +3,18 @@ type: is
 id: is-01m32jqdbwhh12ekwymn8h6r1y
 title: The evidence gates go green on a bogus verdict once it is regenerated
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T18:12:51.196Z
-updated_at: 2026-09-21T18:12:51.196Z
+updated_at: 2026-09-21T21:01:24.120Z
+closed_at: 2026-09-21T21:01:24.120Z
+close_reason: "Fixed by https://github.com/jlevy/fdu/pull/109 (commit 36048330). Experiment carries a model validator: verdict.change_pct must be the paired primary_metric change for primary_job within 0.01 points; unmeasured job/metric and figures over empty results are refused; runs in summary._read (ledger, projection, page), perf-record before writing, and make perf-evidence-check in make check, which also fails on zero records or zero compared headlines. All 137 committed records pass; a scratch corpus with -99.919 reintroduced into exp-116 is refused by the gate and by both regeneration paths. fdu-k9h0 closed as duplicate; fdu-6xfq (kept arm as a record field) resolved in the same PR."
+resolution: null
+duplicate_of: null
 ---
 Found during the PR #94 senior review, verified by execution.
 

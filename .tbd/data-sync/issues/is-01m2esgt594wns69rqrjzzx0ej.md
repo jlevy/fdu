@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgt594wns69rqrjzzx0ej
 title: Replace the hand-maintained CLAIM_ONLY_EXPERIMENTS list with a decision value
 kind: task
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m2eb1cnhke030h15e79fyzvc
 created_at: 2026-09-14T01:46:46.312Z
-updated_at: 2026-09-14T01:46:46.312Z
+updated_at: 2026-09-21T21:01:23.469Z
+closed_at: 2026-09-21T21:01:23.468Z
+close_reason: "Resolved by https://github.com/jlevy/fdu/pull/109: Verdict gains an optional kept field (candidate/control/neither) with one derivation, experiment.kept_arm; exp-103 records kept: neither; CLAIM_ONLY_EXPERIMENTS and its guide paragraph removed; schema recompiled; H86-5 tests re-expressed against the field. Chosen as a separate field rather than a decision value so the contract stays v1 and the 136 pre-field records read unchanged."
+resolution: null
+duplicate_of: null
 ---
 Follow-up on PR #54 review H86-5 (fdu-gq2r, fixed in 4dccad8 with the minimum option), recorded by the fixer.
 

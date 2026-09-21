@@ -5,7 +5,7 @@ title: "PR #98 review pass: validate Windows caches with change time and file id
 kind: task
 status: in_progress
 priority: 1
-version: 7
+version: 11
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
@@ -14,8 +14,12 @@ child_order_hints:
   - is-01m32tww1snf1n9w7dnqkv98s5
   - is-01m32twwnydz2mzfcr2aggmq7p
   - is-01m32twxbcecbbxabqwq19dz44
+  - is-01m32wbb44bq2n90767gz6yn4n
+  - is-01m32wbbwban5x8k14zwshwr9f
+  - is-01m32wbcf7yb2afmpdrs2t3d9h
+  - is-01m32wbd25xjxnmqp90nx64hys
 created_at: 2026-09-21T17:46:05.901Z
-updated_at: 2026-09-21T20:35:40.012Z
+updated_at: 2026-09-21T21:01:03.428Z
 ---
 Branch `codex/release-windows-validity`, based on main. Reviewer model: Fable.
 
