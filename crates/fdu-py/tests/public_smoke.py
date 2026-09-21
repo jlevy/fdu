@@ -27,6 +27,15 @@ def _stable(text: str) -> str:
     """Blank the fields that differ between any two runs, and only those."""
 
     text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
+    # Long's age column uses each read's own instant too. Keep size and path exact;
+    # signed age arithmetic is checked on typed rows and the path-independence oracle.
+    text = re.sub(
+        r"^(\s*[\d.]+ (?:B|KiB|MiB|GiB|TiB|PiB) +)-?\d+[smhd](?= )",
+        r"\1[AGE]",
+        text,
+        flags=re.MULTILINE,
+    )
+    text = re.sub(r'(age_reference_ns|age_ns)("?:\s*)-?\d+', r"\1\2[TIME]", text)
     return re.sub(r'(observed_at_ns"?:\s*)\d+', r"\1[TIME]", text)
 
 
@@ -126,9 +135,17 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
     # Both surfaces read `.gitignore` by default, and a report's `ignore_rules` field and
     # every row's `ignored` share say so, so the default index is the one to compare.
     index = fdu.scan(str(root))
-    for view in (fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
-        report = index.report(fdu.Query(views=(view,)))
+    for view in (fdu.View.LIST, fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
         for fmt in fdu.Format:
+            if fmt in (fdu.Format.TREE, fdu.Format.PATHS, fdu.Format.LONG) and (
+                view is fdu.View.SUMMARY or (view is fdu.View.LARGEST and fmt is fdu.Format.TREE)
+            ):
+                try:
+                    index.report(fdu.Query(views=(view,), format=fmt))
+                except fdu.InvalidArgumentError:
+                    continue
+                raise AssertionError("incompatible view/format must be rejected")
+            report = index.report(fdu.Query(views=(view,), format=fmt))
             rendered = report.render(fmt)
             # Rust writes UTF-8 when stdout is a pipe. Windows' locale codec can decode
             # those bytes into different code points that round-trip to the same log
@@ -312,7 +329,7 @@ def check_every_view(root: Path) -> None:
     # a directory tree containing none of the results -- the defect the content axis
     # removed from the CLI, still live here because nothing tested the two together.
     for analyze, expected in (
-        (fdu.Analysis.NONE, fdu.View.TREE),
+        (fdu.Analysis.NONE, fdu.View.LIST),
         (fdu.Analysis.LINES, fdu.View.FAMILIES),
         (fdu.Analysis.CODE, fdu.View.LANGUAGES),
         (fdu.Analysis.WORDS, fdu.View.DOCUMENTS),
@@ -816,6 +833,7 @@ def main() -> None:
         for tier in provenance["tiers"].values():
             if tier is not None:
                 tier.pop("observed_at_ns")
+        value.pop("age_reference_ns", None)
     # Both surfaces read `.gitignore` control state by default, under the same limits, so
     # the envelopes agree on it as they agree on every row's ignored share.
     assert wire["ignore_rules"] == {
@@ -824,7 +842,9 @@ def main() -> None:
         "refused": 0,
         "refusals": [],
     }, wire
-    assert wire == cli_wire, (wire, cli_wire)
+    assert _stable(json.dumps(wire, sort_keys=True)) == _stable(
+        json.dumps(cli_wire, sort_keys=True)
+    ), (wire, cli_wire)
 
     print(f"fdu {fdu.__version__} public API ok")
 

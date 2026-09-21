@@ -11,6 +11,7 @@ mod query_report;
 mod query_request;
 mod query_selection;
 mod query_status;
+mod query_subtrees;
 mod query_values;
 
 pub use query_glob::Pattern;

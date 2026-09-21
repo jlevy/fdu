@@ -170,6 +170,7 @@ impl PyIndex {
     #[pyo3(signature = (
         *,
         views = None,
+        format = None,
         include = None,
         exclude = None,
         min_size = None,
@@ -188,6 +189,7 @@ impl PyIndex {
     fn report_handle(
         &self,
         views: Option<Vec<String>>,
+        format: Option<&str>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
         min_size: Option<&str>,
@@ -204,6 +206,7 @@ impl PyIndex {
     ) -> PyResult<PyOneShot> {
         let report = self.build_report(
             views,
+            format,
             include,
             exclude,
             min_size,
@@ -229,6 +232,7 @@ impl PyIndex {
         *,
         interval = WatchDelivery::DEFAULT_INTERVAL.as_secs_f64(),
         views = None,
+        format = None,
         include = None,
         exclude = None,
         min_size = None,
@@ -248,6 +252,7 @@ impl PyIndex {
         &self,
         interval: f64,
         views: Option<Vec<String>>,
+        format: Option<&str>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
         min_size: Option<&str>,
@@ -269,6 +274,7 @@ impl PyIndex {
             SystemTime::now(),
             &self.basis,
             views,
+            format,
             include,
             exclude,
             min_size,
@@ -454,6 +460,7 @@ impl PyIndex {
     fn build_report(
         &self,
         views: Option<Vec<String>>,
+        format: Option<&str>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
         min_size: Option<&str>,
@@ -475,6 +482,7 @@ impl PyIndex {
             now,
             &self.basis,
             views,
+            format,
             include,
             exclude,
             min_size,
@@ -667,15 +675,12 @@ fn provenance_dict(
 /// The package can render fdu's own output, not only structured values: a caller who wants
 /// what the command line prints should not have to shell out to the binary to get it.
 fn parse_format(value: &str) -> PyResult<fdu_core::report_format::Format> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "text" => Ok(fdu_core::report_format::Format::Text),
-        "json" => Ok(fdu_core::report_format::Format::Json),
-        "jsonl" => Ok(fdu_core::report_format::Format::Jsonl),
-        "yaml" => Ok(fdu_core::report_format::Format::Yaml),
-        other => Err(PyValueError::new_err(format!(
-            "invalid format {other:?}: expected one of text, json, jsonl, yaml"
-        ))),
-    }
+    fdu_core::report_format::Format::parse(value).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "invalid format {value:?}: expected one of {}",
+            fdu_core::report_format::Format::ALL.join(", ")
+        ))
+    })
 }
 
 /// Parse the `control_budget` and `control_line_limit` tokens with the engine's grammar,
@@ -802,6 +807,7 @@ fn build_request(
     now: SystemTime,
     basis: &Basis,
     views: Option<Vec<String>>,
+    format: Option<&str>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     min_size: Option<&str>,
@@ -831,6 +837,7 @@ fn build_request(
     let words_per_page = words_per_page.to_string();
     let spec = ReadSpec {
         views: views.as_deref(),
+        format,
         words_per_page: Some(&words_per_page),
         include: &include,
         exclude: &exclude,
@@ -867,7 +874,8 @@ struct PyOneShot {
 #[pymethods]
 impl PyOneShot {
     fn render(&self, format: &str, color: bool) -> PyResult<String> {
-        Ok(fdu_core::report_format::render(&self.report, parse_format(format)?, color))
+        fdu_core::report_format::render(&self.report, parse_format(format)?, color)
+            .map_err(to_py_err)
     }
 
     /// What the report says about itself, as values rather than as rendered text.
@@ -877,7 +885,12 @@ impl PyOneShot {
     /// was dropped -- which is the gap on the library side that carrying them on `Report`
     /// closed in the first place (fdu-7wd1).
     fn notes(&self) -> Vec<String> {
-        self.report.notes.clone()
+        use fdu_core::report_format::{self, Format};
+        if matches!(self.report.format, Format::Paths | Format::Long) {
+            report_format::flat_diagnostics(&self.report)
+        } else {
+            self.report.notes.clone()
+        }
     }
 }
 
@@ -906,6 +919,7 @@ impl PyOneShot {
     analyze = ANALYZE_DEFAULT,
     analysis_workers = 0,
     views = None,
+    format = None,
     include = None,
     exclude = None,
     min_size = None,
@@ -937,6 +951,7 @@ fn report_once(
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
+    format: Option<&str>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     min_size: Option<&str>,
@@ -981,6 +996,7 @@ fn report_once(
         now,
         &basis,
         views,
+        format,
         include,
         exclude,
         min_size,

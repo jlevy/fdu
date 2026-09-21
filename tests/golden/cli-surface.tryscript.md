@@ -70,9 +70,10 @@ SELECTION
                                 allocated]
 
 VIEWS
-      --view <LIST>         Views: tree, extensions, types, families, languages, documents, largest,
-                            recent, files, summary, or full. Defaults to tree with no analysis,
-                            otherwise to a view that displays the requested analysis
+      --view <LIST>         Views: list, extensions, types, families, languages, documents, largest,
+                            recent, summary, or full; tree/files are compatibility presets. Defaults
+                            to list with no analysis, otherwise to a view that displays the
+                            requested analysis
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
@@ -81,7 +82,10 @@ CONTENT ANALYSIS
                               0]
 
 OUTPUT
-      --format <FORMAT>  Output format: text, json, jsonl, or yaml [default: text]
+      --format <FORMAT>  Format: tree (list default), paths, long (size/age/path), json, jsonl,
+                         yaml, or automatic text [default: text]
+      --tree             Display the list as the default directory tree
+      --long             Display flat matching paths with size and modification age
       --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
 
 EXECUTION
@@ -108,6 +112,9 @@ Examples:
   fdu . --exclude-ignored   omit entries covered by .gitignore
   fdu . --view=summary      one total for the tree
   fdu . --analyze=code      standard lines of code by language
+  fdu . --kind dir --include .venv --modified-before 7d --long
+  fdu . --kind dir --include node_modules --modified-before 30d --long
+  fdu . --kind dir --include target --modified-before 30d --format paths
 
 Run `fdu --docs` for more commands, cache behavior, and the full usage guide.
 ? 0
@@ -151,8 +158,8 @@ fdu . --analyze=code                       # standard LOC by language
 fdu . --analyze=words                      # prose volume by document type
 ```
 
-The default is `tree` in allocated bytes, largest first, to depth 2, with at most ten
-children per directory.
+The default is `list` in `tree` format, in allocated bytes, largest first, to depth 2,
+with at most ten children per directory.
 Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
 
@@ -186,8 +193,8 @@ There are no subcommands: the grammar is always “report on a path”.
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore` |
 | Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
-| Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
+| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
+| Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
@@ -213,7 +220,10 @@ metadata visible but does not retain a separate lower-level metric record for th
 
 ## Pick the View, Then Shape It
 
-- `--view tree` (default) for per-directory roll-ups.
+- `--view list` (default), with `--format tree` for current directory roll-ups,
+  `--format paths` for complete flat matching paths, or `--long` for size, age, and
+  path.
+- `--view tree` is the compatibility preset for the hierarchy, including machine output.
 - `--view extensions` for the original raw-extension breakdown.
   Rows partition the tree and so sum to its total; a derived extension always carries a
   leading dot, and names having none are tallied under the literal `(none)`.
@@ -229,7 +239,7 @@ metadata visible but does not retain a separate lower-level metric record for th
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
-- `--view full` for every view except `files`.
+- `--view full` for the existing bounded digest, excluding unbounded List/Files.
 - Several views in one run share one scan: `--view summary,types,families`. Text then
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
@@ -268,7 +278,8 @@ from cache, the metadata cache tier, and total report time.
 Known binary files can contribute walked bytes but zero read bytes.
 Cache-only runs report zero walked files because they never consult the tree.
 The line is gray only when color is active and has no ANSI escapes otherwise.
-JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit it.
+Paths, Long, JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit
+it.
 
 Common shapes are compositions rather than dedicated flags:
 
@@ -281,6 +292,46 @@ fdu --view tree --sort mtime PATH                     # an activity map
 
 `--depth` and `--limit` bound only the rendered view; `--scan-depth` bounds what is
 scanned and retained, so do not reach for it merely to shorten output.
+
+## Find Stale Environments and Build Outputs
+
+```bash
+fdu PATH --kind dir --include .venv --modified-before 7d --long
+fdu PATH --kind dir --include node_modules --modified-before 30d --long
+fdu PATH --kind dir --include target --modified-before 30d --format paths
+fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
+fdu PATH --kind dir --include .venv --modified-before 30d --format json
+```
+
+Kind, basename/relative-path patterns, size, and modification age are filters.
+Repeated includes form a union.
+Directory bytes sum eligible regular-file contents; recency is the newest root or
+eligible descendant mtime, including directories and symlinks.
+Empty directories use their own mtime.
+This is modification activity, not access or last use.
+Directory names such as Cargo’s `target` are conventions, not proof of ownership.
+Reported bytes need not be uniquely reclaimable.
+
+Exclusions win throughout selected subtrees before size/age bounds; ignored-only queries
+traverse structural ancestors.
+Flat output lists matching entries, including nested roots whose sizes overlap.
+Aggregate views count the covered union once.
+The default directory tree stays unchanged; `--tree` makes its format explicit.
+Flat lists are complete, size-ranked by default, with global row limits; tree limits
+remain per-directory and depth only folds the tree.
+Paths escapes controls/backslashes and keeps stdout to paths; bound and rule notices go
+to stderr. Long adds size and signed age.
+Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
+report’s `age_reference_ns`; unknown ages are null.
+
+Tree/Paths/Long require one compatible list view.
+Use automatic Text or machine output for grouped/mixed views and Full.
+Largest/recent retain regular-file ranks with Paths or Long.
+Explicit Paths/Long overrides legacy Tree presentation.
+Format flags conflict.
+Rust/Python callers select format on the query before reading; a detached Report cannot
+turn a folded tree into a complete flat inventory.
+Request another report from the retained index for that change, without scanning again.
 
 ## Read What `.gitignore` Covers
 
@@ -483,7 +534,38 @@ MORE COMPOSITIONS
     largest = files --sort size --limit 20, regular files only
     recent  = files --sort mtime --limit 20, regular files only
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full is every view except files.
+  matching entry, in name order. full keeps its bounded digest, without list/files.
+
+LIST FORMATS AND OLD BUILD DIRECTORIES
+  The metadata default view is list; its default format is tree. These agree:
+    fdu PATH
+    fdu PATH --view list --format tree
+  Tree keeps the current directory roll-ups, depth 2, ten children per directory.
+  Files contribute to totals without new leaf rows. --depth all expands levels;
+  --limit all removes row caps. Flat list limits apply to the whole result.
+
+  --format paths gives matching paths only; --long adds size, age, and path.
+  Flat lists are complete and size-ranked by default; --sort name lists by name.
+  JSON, JSONL, and YAML give exact metrics. text keeps automatic human tables.
+  Tree/paths/long require a single list view; use text or machine formats for
+  grouped/mixed views and full. largest/recent accept paths/long, keeping file ranks.
+  Legacy files keeps name order; legacy tree keeps structured tree output.
+  Explicit paths/long overrides the legacy tree presentation. Format flags conflict.
+
+  fdu PATH --kind dir --include .venv --modified-before 7d --long
+  fdu PATH --kind dir --include node_modules --modified-before 30d --format long
+  fdu PATH --kind dir --include target --modified-before 30d --format paths
+  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
+  fdu PATH --kind dir --include .venv --modified-before 30d --format json
+
+  Kind, name/path, size, and age are filters. Repeated includes form a union.
+  Directory sizes sum eligible regular-file contents, excluding inode/symlink bytes.
+  Age uses the newest modification of the root or an eligible descendant, including
+  directories and symlinks. Empty directories use their own time; future age is negative.
+  This is modification activity, not access or last use. target is a naming convention.
+  Exclusions win throughout the subtree before size/age filtering. Nested matching
+  roots can overlap; aggregate views count the covered contents once. --size apparent
+  selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
@@ -491,9 +573,9 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --exclude-ignored, --only-ignored
-  View       summary,tree,families,types,extensions,languages,documents,
+  View       list,summary,tree,families,types,extensions,languages,documents,
              largest,recent,files,full
-  Format     --format text|json|jsonl|yaml, --color
+  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
   Mode       --cache, --watch, --analysis-workers
 
 CONTENT ANALYSIS

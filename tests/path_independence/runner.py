@@ -134,10 +134,22 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if isinstance(root, str) and root:
         encoded = json.dumps(answer).replace(json.dumps(root)[1:-1], ROOT_PLACEHOLDER)
         answer = json.loads(encoded)
-    content = dict(answer)
+    # Keep the invocation intact for evidence while removing delivery-only facts.
+    content = json.loads(json.dumps(answer))
     provenance = content.pop("provenance", {})
     if not isinstance(provenance, dict):
         raise TypeError("report provenance must be an object")
+    reference = content.pop("age_reference_ns", None)
+    for section in content.get("reports", []):
+        for row in section.get("files", []):
+            if "age_ns" in row and reference is not None:
+                # Exact zero means the age agrees with its clock and mtime. Comparing
+                # this residual preserves age bugs while allowing different read times.
+                row["age_ns"] = (
+                    row["age_ns"] - (reference - row["mtime_ns"])
+                    if row["age_ns"] is not None
+                    else None
+                )
     return content, provenance
 
 

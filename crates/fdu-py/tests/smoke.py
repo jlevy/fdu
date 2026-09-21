@@ -162,6 +162,12 @@ def main() -> None:
     cli_scan = subprocess.run(
         [
             entrypoint,
+            # The metadata default is now the flat list, whose sections carry `files`
+            # and `bound`. This case is about tree truncation, so it asks for the tree
+            # projection by name: `--view tree --format json` retains the hierarchy and
+            # its per-node `truncated` flags (docs/machine-output.md).
+            "--view",
+            "tree",
             "--cache",
             "off",
             "--format",

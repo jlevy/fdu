@@ -286,6 +286,7 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "size": selection.size.value,
         "ignored": selection.ignored.value,
         "words_per_page": query.words_per_page,
+        "format": query.format.value,
     }
 
 

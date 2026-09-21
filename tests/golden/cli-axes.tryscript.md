@@ -3,6 +3,7 @@ sandbox: true
 path:
   - $FDU_BIN
 fixtures:
+  - bin
   - fixtures/project
   - fixtures/extension-levels
 env:
@@ -13,6 +14,8 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  AGE_DAYS: '\s*\d+'
+  AGE_NS: '-?\d+'
   ALLOCATED: '\d+'
   # Paths are reported with the platform's own separator, so the separator is matched
   # rather than asserted. Every other character of the path still has to be exact.
@@ -219,7 +222,7 @@ Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; anal
 
 ```console
 $ fdu --cache off --view summary --kind dir --size apparent project
-       0 B  0 files, 3 directories
+     187 B  4 files, 3 directories (128 B ignored)
 Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -310,7 +313,6 @@ TREE
      141 B  ██████████   100%  . (6 files)
       36 B  ███░░░░░░░    26%    src (2 files)
       23 B  ██░░░░░░░░    16%    docs (1 file)
-       0 B  ░░░░░░░░░░     0%    dist (0 files)
 Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -323,8 +325,6 @@ SUMMARY
 TREE
      128 B  ██████████   100%  . (1 file)
      128 B  ██████████   100%    dist (1 file)
-       0 B  ░░░░░░░░░░     0%    docs (0 files)
-       0 B  ░░░░░░░░░░     0%    src (0 files)
 Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -554,7 +554,7 @@ An agent should be able to correct a command from its rejection alone.
 
 ```console
 $ fdu --cache off --view bogus project
-fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -562,7 +562,7 @@ fdu: invalid --view "bogus": expected one of summary, tree, families, types, ext
 
 ```console
 $ fdu --cache off --view docs project
-fdu: invalid --view "docs": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -586,7 +586,7 @@ fdu: invalid --view "tree,,types": empty entry in the list
 
 ```console
 $ fdu --cache off --format xml project
-fdu: invalid --format "xml": expected one of text, json, jsonl, yaml
+fdu: invalid --format "xml": expected one of text, tree, paths, long, json, jsonl, yaml
 ? 2
 ```
 
@@ -700,4 +700,33 @@ fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only
 $ fdu --cache readonly project
 fdu: invalid --cache "readonly": expected one of auto, refresh, read-only, only, off
 ? 2
+```
+
+## Old Build Directories Use Subtree Size and Latest Activity
+
+An old directory containing a recently modified file is excluded.
+Empty old directories still match.
+The paths are complete and size-ranked; long adds the same size and age.
+
+```console
+$ node bin/directory-builds.cjs
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --kind dir --include .venv --include node_modules --include target --modified-before 30d --format paths builds
+c[JSON_SEP]target
+b[JSON_SEP]node_modules
+a[JSON_SEP].venv
+empty[JSON_SEP].venv
+? 0
+```
+
+```console
+$ fdu --cache off --size apparent --kind dir --include .venv --include node_modules --include target --modified-before 30d --long builds
+      70 B [AGE_DAYS]d c[JSON_SEP]target
+      50 B [AGE_DAYS]d b[JSON_SEP]node_modules
+      30 B [AGE_DAYS]d a[JSON_SEP].venv
+       0 B [AGE_DAYS]d empty[JSON_SEP].venv
+? 0
 ```

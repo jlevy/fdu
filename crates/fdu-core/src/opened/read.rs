@@ -308,14 +308,15 @@ impl ReportWork {
 
 fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork {
     let entries = index.len().saturating_sub(1);
-    if !query.selection.is_unfiltered() {
+    if query.needs_selection_walk() {
         // The report implementation performs one shared filtered walk, then shapes each
         // requested view from that retained result. Charging one full pass for each
         // shaping step is conservative and keeps the bound independent of heap layout.
         let shaping = query.views.iter().fold(0_u64, |total, view| {
             let rows = match view {
                 crate::query::ViewSpec::Summary => 1,
-                crate::query::ViewSpec::Tree
+                crate::query::ViewSpec::List
+                | crate::query::ViewSpec::Tree
                 | crate::query::ViewSpec::Types
                 | crate::query::ViewSpec::Extensions
                 | crate::query::ViewSpec::Families
@@ -327,7 +328,17 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
             };
             total.saturating_add(rows)
         });
-        return ReportWork { rows: entries.saturating_add(shaping), maintained: 0 };
+        let passes = if query.selection.kinds.is_empty()
+            || query.selection.kinds.contains(&crate::EntryKind::Dir)
+        {
+            2
+        } else {
+            1
+        };
+        return ReportWork {
+            rows: entries.saturating_mul(passes).saturating_add(shaping),
+            maintained: 0,
+        };
     }
 
     query.views.iter().fold(ReportWork::default(), |mut work, view| {
@@ -341,7 +352,8 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 // second time merely to price the query.
                 work.maintained = work.maintained.saturating_add(entries);
             }
-            crate::query::ViewSpec::Tree
+            crate::query::ViewSpec::List
+            | crate::query::ViewSpec::Tree
             | crate::query::ViewSpec::Types
             | crate::query::ViewSpec::Families
             | crate::query::ViewSpec::Languages
@@ -359,7 +371,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
 fn report_rows(report: &crate::query::Report) -> u64 {
     report.sections.iter().fold(0_u64, |total, section| {
         let rows = match section {
-            crate::query::Section::Tree(root) => tree_rows(root),
+            crate::query::Section::Tree { root, .. } => tree_rows(root),
             crate::query::Section::Extensions { rows, .. } => rows.len() as u64,
             crate::query::Section::Metrics { summary, .. } => summary.rows.len() as u64,
             crate::query::Section::Files { rows, .. } => rows.len() as u64,
@@ -1106,6 +1118,56 @@ fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_reports_charge_measurement_before_returning_exact_results() {
+        let mut index = crate::Index::new("/root");
+        index.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: "env".into(),
+                kind: crate::EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            },
+            crate::Op::Upsert {
+                path: "env/file".into(),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs { size: 50, allocated: 512, ..crate::Attrs::default() },
+            },
+        ]));
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::List],
+            format: crate::report_format::Format::Paths,
+            selection: crate::query::Selection {
+                kinds: vec![crate::EntryKind::Dir],
+                ..crate::query::Selection::default()
+            },
+            ..crate::query::Query::default()
+        };
+        let charge = report_work(&index, &query).total();
+        let mut request =
+            crate::ReportRequest { query, now: std::time::UNIX_EPOCH, max_work: charge - 1 };
+        let state = crate::IndexState {
+            phase: crate::LifecyclePhase::Ready,
+            coverage: crate::Coverage::Complete,
+            freshness: crate::Freshness::Fresh,
+            source: crate::Source::Scanned,
+            progress: crate::DiscoveryProgress::default(),
+            issues: crate::IssueSummary::default(),
+        };
+        let mut work = Work::default();
+        assert!(matches!(
+            report_projection(&index, &request, state, &mut work).expect("bounded read"),
+            ProjectionResult::Limit(_)
+        ));
+        request.max_work = charge;
+        let ProjectionResult::Report(report) =
+            report_projection(&index, &request, state, &mut Work::default()).expect("exact read")
+        else {
+            panic!("report")
+        };
+        let crate::query::Section::Files { rows, .. } = &report.sections[0] else { panic!("flat") };
+        assert_eq!((rows.len(), rows[0].bytes, rows[0].files), (1, 50, Some(1)));
+    }
 
     /// Ending a level far below the root takes no stack per level climbed.
     ///

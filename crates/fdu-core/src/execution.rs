@@ -707,7 +707,7 @@ mod tests {
     /// models now divide it: what the answer says, and how it is carried out.
     fn split(root: &Path, config: &OpenFixture, query: &Query) -> (Request, Delivery) {
         let (basis, delivery) = config.split(root);
-        (Request::new(basis, query.clone(), SystemTime::now()), delivery)
+        (Request::new(basis, query.clone(), std::time::UNIX_EPOCH), delivery)
     }
 
     /// [`prepare_report`] as these tests ask for it: one configuration, one query.
@@ -991,8 +991,10 @@ mod tests {
         assert_eq!(projected.scope, cold.scan.scope());
         assert_eq!(projected.ignore_rules, crate::control::ControlCoverage::NotObserved);
         assert_eq!(
-            crate::report_format::render(&projected, crate::report_format::Format::Json, false,),
-            crate::report_format::render(&expected, crate::report_format::Format::Json, false,),
+            crate::report_format::render(&projected, crate::report_format::Format::Json, false,)
+                .expect("compatible report format"),
+            crate::report_format::render(&expected, crate::report_format::Format::Json, false,)
+                .expect("compatible report format"),
         );
     }
 

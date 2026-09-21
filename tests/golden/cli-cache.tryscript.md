@@ -12,6 +12,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  AGE_NS: '-?\d+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   ALLOCATED: '\d+'
   MTIME_NS: '-?\d+'
@@ -24,7 +25,7 @@ patterns:
 ### Scan Without a Cache
 
 ```console
-$ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -100,7 +101,7 @@ cache absent
 ### Create the Snapshot
 
 ```console
-$ fdu --format json --size apparent --depth 0 --limit 0 project
+$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -179,7 +180,7 @@ The report scans fresh and rewrites the snapshot, and the tier below shows what 
 rewrite is for.
 
 ```console
-$ fdu --format json --size apparent --depth 0 --limit 0 project
+$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -255,7 +256,7 @@ fixture expanded
 ### Report the Changed Tree
 
 ```console
-$ fdu --format json --size apparent --depth 0 --limit 0 project
+$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -324,7 +325,7 @@ Every one-shot report rewrites the snapshot it skipped reading, so the no-scan t
 answers with the changed total rather than the one the first run recorded.
 
 ```console
-$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -402,7 +403,7 @@ $ fdu --watch --cache only project
 ## A Different Semantic Scan Scope Misses the Snapshot
 
 ```console
-$ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
+$ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -478,7 +479,7 @@ snapshot corrupted
 ### Recover with a Cold Scan
 
 ```console
-$ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
+$ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -556,7 +557,7 @@ A cache-only report that also turns it off may answer from a default snapshot, b
 it reads only the sizes a default scan also recorded; it says it read no rules.
 
 ```console
-$ fdu --format json --size apparent --depth 0 --limit 0 project
+$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -620,7 +621,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
 ```
 
 ```console
-$ fdu --no-gitignore --cache only --format json --size apparent --depth 0 --limit 0 project
+$ fdu --no-gitignore --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -809,7 +810,7 @@ a default request to report, so a cache-only default request refuses it and name
 way out.
 
 ```console
-$ fdu --no-gitignore --format json --size apparent --depth 0 --limit 0 project
+$ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
@@ -868,7 +869,7 @@ $ fdu --no-gitignore --format json --size apparent --depth 0 --limit 0 project
 ```
 
 ```console
-$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 fdu: snapshot is not usable: no usable snapshot for this root and scan scope: the cached snapshot has no .gitignore state, because the request that wrote it did not observe it, and this request does; the `only` cache policy never scans, so use `auto`, or turn .gitignore observation off as that request did
 ? 1
 ```

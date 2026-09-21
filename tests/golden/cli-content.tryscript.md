@@ -17,6 +17,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  AGE_NS: '-?\d+'
   ALLOCATED: '\d+'
   MTIME_NS: '-?\d+'
   SCAN_PATH: '[^\r\n]+'

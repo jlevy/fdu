@@ -215,6 +215,12 @@ Defaults also compose, so check them together rather than one at a time.
 Both `files` defaults passed review individually.
 Nothing examined the pair.
 
+The current metadata default is the List view in Tree format, preserving that directory
+question and its existing output.
+Flat List formats answer “which matching entries are present and largest”: complete by
+default, with size ordering and path tie-breaks.
+Legacy Files remains a complete name-ordered listing for existing callers.
+
 ### Truncate Freely; Never Truncate Silently
 
 Bounding output is legitimate and usually necessary — an unbounded listing of a million

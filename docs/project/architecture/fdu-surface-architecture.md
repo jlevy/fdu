@@ -246,6 +246,32 @@ client has proven it.
 - [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)
   — the crate split, and why a test-only Rust shim was the wrong instrument
 
+## List Selection and Presentation
+
+The metadata default view is List, whose automatic human format is the existing bounded
+directory tree. Core `ReadSpec.format` and `Query.format` resolve projection before
+reading; CLI and Python forward the choice.
+Flat Paths/Long and machine List requests materialize matching rows; ordinary unfiltered
+Tree keeps its maintained roll-up path.
+Full keeps its bounded digest.
+Legacy Files preserves name ordering and legacy Tree preserves structured hierarchy
+output. Explicit Paths/Long overrides Tree presentation.
+
+Directory report rows measure eligible subtrees before name/kind/size/age selection.
+Exclusions win across covered contents; nested matches remain separate rows while
+aggregate totals count their union once.
+Raw native entries continue to expose inode attributes.
+Every flat row carries signed optional age relative to one request instant.
+A detached Report owns only its requested projection: serialization cannot recover rows
+folded out of a tree, so incompatible re-rendering fails instead of returning a partial
+inventory as complete.
+The core renderer returns a Result; Python maps it to its existing invalid-argument
+boundary.
+
+The [machine-output reference](../../machine-output.md) owns field definitions, formats,
+and coverage interpretation.
+The [usage guide](../../usage.md) owns command examples.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

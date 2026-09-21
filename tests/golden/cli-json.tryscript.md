@@ -11,6 +11,8 @@ env:
   NO_COLOR: "1"
   TZ: UTC
 patterns:
+  JSON_SEP: '(?:/|\\\\)'
+  AGE_NS: '-?\d+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   ALLOCATED: '\d+'
   MTIME_NS: '-?\d+'

@@ -93,6 +93,65 @@ The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
 
+## Directory Inventories and Formats
+
+A default `Query()` keeps the existing directory tree.
+Select a flat presentation when requesting a report, so an ordinary tree need not
+materialize a complete inventory:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+for name in (".venv", "venv", "node_modules", "target"):
+    report = index.report(
+        fdu.Query(
+            format=fdu.Format.LONG,
+            selection=fdu.Selection(
+                kinds=(fdu.EntryKind.DIR,),
+                include=(name,),
+                modified_before="30d",
+                sort=fdu.SortKey.MTIME,
+                reverse=True,
+            ),
+        )
+    )
+    print(report.render())
+    print(report.render(fdu.Format.JSON))
+```
+
+All four reads use one retained index without rescanning.
+`View.LIST` is the metadata default.
+`Format.TREE` explicitly requests the current tree; `PATHS` lists matching paths, `LONG`
+adds size and signed modification age, and JSON/JSONL/YAML carry exact metrics.
+`TEXT` selects automatic human presentation.
+Legacy `View.FILES` keeps flat name ordering, and `View.TREE` preserves structured
+directory output. Largest/recent remain regular-file presets, with optional Paths/Long
+output.
+
+Directory `FileRow` values carry subtree `bytes`, `allocated`, `files`, `dirs`,
+`mtime_ns`, and `age_ns`; non-directory counts are `None`. The fixed
+`Report.age_reference_ns` explains age, including negative future ages and pre-epoch
+mtime. An unrepresentable reference yields `None` age.
+Exclusions win throughout the subtree; nested roots may overlap, while grouped totals
+count their union once.
+Age describes modification, not access or last use.
+Native entry/lookup projections retain inode attributes; these report rows deliberately
+carry subtree metrics instead.
+
+A Report owns its requested projection.
+Re-render it to another serialization or between Paths and Long without querying again;
+request another report to change between a bounded tree and complete flat inventory.
+An incompatible conversion raises `InvalidArgumentError` rather than silently listing
+only visible tree rows.
+Tree limits remain per-directory, flat limits apply to the whole list, and machine List
+output is complete unless explicitly limited.
+Details and exact fields are in the
+[usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
+[machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).
+
 ## Long-lived roots
 
 `fdu.opened` is the direct typed interface to the long-lived engine.

@@ -92,6 +92,9 @@ impl<W: fmt::Write> JsonSink<W> {
             Scalar::I64(value) => {
                 let _ = write!(self.out, "{value}");
             }
+            Scalar::I128(value) => {
+                let _ = write!(self.out, "{value}");
+            }
             Scalar::Bool(value) => self.push_str(if value { "true" } else { "false" }),
             Scalar::Null => self.push_str("null"),
         }

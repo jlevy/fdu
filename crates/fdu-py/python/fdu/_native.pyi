@@ -1,4 +1,9 @@
-"""Private native-extension contract used by the typed public package."""
+"""Private native-extension contract used by the typed public package.
+
+Report and watch keyword arguments include ``format``: text, tree, paths, long,
+json, jsonl, or yaml. The query chooses the retained report projection. Rendering
+an incompatible tree/flat shape raises ValueError rather than inventing missing rows.
+"""
 
 from collections.abc import Iterator
 from os import PathLike

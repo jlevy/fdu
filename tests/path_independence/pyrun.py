@@ -47,7 +47,7 @@ def _build(spec: dict[str, Any]) -> tuple[Any, Any, Any]:
     if "size" in selection:
         fields["size"] = fdu.SizeMetric(selection["size"])
     views = tuple(fdu.View(view) for view in spec.get("views", []))
-    query = fdu.Query(views=views, selection=fdu.Selection(**fields))
+    query = fdu.Query(views=views, selection=fdu.Selection(**fields), format=fdu.Format.JSON)
     analysis = fdu.AnalysisOptions(analyze=spec.get("analyze", "none"))
     return scan, query, analysis
 

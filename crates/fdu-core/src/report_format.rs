@@ -81,6 +81,12 @@ pub enum Format {
     /// Human-readable text.
     #[default]
     Text,
+    /// The existing bounded directory hierarchy for a list.
+    Tree,
+    /// Matching paths, one safely escaped path per line.
+    Paths,
+    /// Flat size, signed modification age, and path columns.
+    Long,
     /// One JSON document.
     Json,
     /// One JSON document per line, one line per section.
@@ -93,15 +99,41 @@ pub enum Format {
 pub const fn document_start(format: Format) -> &'static str {
     match format {
         Format::Yaml => "---\n",
-        Format::Text | Format::Json | Format::Jsonl => "",
+        Format::Text
+        | Format::Tree
+        | Format::Paths
+        | Format::Long
+        | Format::Json
+        | Format::Jsonl => "",
     }
 }
 
 impl Format {
+    /// Stable spelling used by request adapters and diagnostics.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Tree => "tree",
+            Self::Paths => "paths",
+            Self::Long => "long",
+            Self::Json => "json",
+            Self::Jsonl => "jsonl",
+            Self::Yaml => "yaml",
+        }
+    }
+
+    /// Whether this format is a structured serialization.
+    pub const fn is_machine(self) -> bool {
+        matches!(self, Self::Json | Self::Jsonl | Self::Yaml)
+    }
+
     /// Parse a `--format` value.
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "text" => Some(Self::Text),
+            "tree" => Some(Self::Tree),
+            "paths" => Some(Self::Paths),
+            "long" => Some(Self::Long),
             "json" => Some(Self::Json),
             "jsonl" => Some(Self::Jsonl),
             "yaml" => Some(Self::Yaml),
@@ -110,20 +142,119 @@ impl Format {
     }
 
     /// Every accepted spelling, for help text and error messages.
-    pub const ALL: &'static [&'static str] = &["text", "json", "jsonl", "yaml"];
+    pub const ALL: &'static [&'static str] =
+        &["text", "tree", "paths", "long", "json", "jsonl", "yaml"];
 }
 
 /// Render a report in the requested format.
 ///
 /// `color` applies to the text form only: machine output is never colourized, because a
 /// consumer parsing JSON should never have to strip escape sequences first.
-pub fn render(report: &Report, format: Format, color: bool) -> String {
-    match format {
-        Format::Text => render_text(report, color),
+///
+/// # Errors
+///
+/// Returns an invalid-request error when Tree/Paths/Long cannot represent the stored
+/// projection. Request the desired format on the query before reading: a detached,
+/// folded tree does not retain the complete flat inventory.
+pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<String> {
+    let format = checked_format(report, format)?;
+    Ok(match format {
+        Format::Text | Format::Tree => render_text(report, color),
+        Format::Paths | Format::Long => render_flat(report, format),
         Format::Json => render_report_machine(report, true, JsonSink::pretty()),
         Format::Jsonl => render_report_jsonl(report),
         Format::Yaml => render_report_machine(report, true, YamlSink::new()),
+    })
+}
+
+/// Escape delimiters and terminal controls while preserving ordinary Unicode paths.
+fn flat_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .chars()
+        .flat_map(|c| if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] })
+        .collect()
+}
+
+/// A compact signed duration. Exact nanoseconds remain available in machine output.
+fn human_age(age: Option<i128>) -> String {
+    let Some(age) = age else { return "unknown".to_string() };
+    let seconds = age.unsigned_abs() / 1_000_000_000;
+    let (amount, unit) = if seconds >= 86400 {
+        (seconds / 86400, "d")
+    } else if seconds >= 3600 {
+        (seconds / 3600, "h")
+    } else if seconds >= 60 {
+        (seconds / 60, "m")
+    } else {
+        (seconds, "s")
+    };
+    format!("{}{amount}{unit}", if age < 0 { "-" } else { "" })
+}
+
+/// Notes excluded from flat stdout, for a frontend's diagnostic stream.
+pub fn flat_diagnostics(report: &Report) -> Vec<String> {
+    let mut notes = report.notes.clone();
+    if report.provenance.source == ReportSource::CacheOnly {
+        notes.push("cache-only result: retained contents have not been revalidated".into());
     }
+    if !report.status.complete() || report.status.freshness != Freshness::Fresh {
+        notes.push(format!(
+            "result freshness: {}; complete: {}",
+            freshness_label(report.status.freshness),
+            report.status.complete()
+        ));
+    }
+    if let Some(depth) = report.scope.max_depth {
+        notes
+            .push(format!("scan scope limited to depth {depth}; subtree metrics cover this scope"));
+    }
+    for section in &report.sections {
+        let bound = bound_note(section);
+        if !bound.is_empty() {
+            notes.push(bound.trim().to_string());
+        }
+    }
+    notes
+}
+
+fn render_flat(report: &Report, format: Format) -> String {
+    let mut out = String::new();
+    for section in &report.sections {
+        if let Section::Files { rows, .. } = section {
+            for row in rows {
+                if format == Format::Long {
+                    let _ = writeln!(
+                        out,
+                        "{:>10} {:>8} {}",
+                        human_bytes(pick(report.size, row.bytes, row.allocated)),
+                        human_age(row.age_ns),
+                        flat_path(&row.path)
+                    );
+                } else {
+                    let _ = writeln!(out, "{}", flat_path(&row.path));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn checked_format(report: &Report, format: Format) -> crate::Result<Format> {
+    let format = if format == Format::Text { report.format } else { format };
+    let valid = match format {
+        Format::Paths | Format::Long => {
+            report.sections.len() == 1 && matches!(report.sections[0], Section::Files { .. })
+        }
+        Format::Tree => {
+            report.sections.len() == 1 && matches!(report.sections[0], Section::Tree { .. })
+        }
+        Format::Text | Format::Json | Format::Jsonl | Format::Yaml => true,
+    };
+    if !valid {
+        return Err(crate::Error::InvalidRequest(crate::query::Rejection::new(format.label(),
+            "incompatible with this report projection; request the desired format when building the query (a folded tree cannot become a complete flat list)").on("format")));
+    }
+    Ok(format)
 }
 
 /// Write a report directly to an output stream.
@@ -136,8 +267,11 @@ pub fn write(
     color: bool,
     out: &mut dyn io::Write,
 ) -> io::Result<()> {
+    let format = checked_format(report, format)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
     match format {
-        Format::Text => out.write_all(render_text(report, color).as_bytes()),
+        Format::Text | Format::Tree => out.write_all(render_text(report, color).as_bytes()),
+        Format::Paths | Format::Long => out.write_all(render_flat(report, format).as_bytes()),
         Format::Json => write_report_machine(report, true, JsonSink::pretty_to(out)),
         Format::Jsonl => write_report_jsonl(report, out),
         Format::Yaml => write_report_machine(report, true, YamlSink::to(out)),
@@ -237,6 +371,10 @@ fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
         emit_scalar(sink, Scalar::Str(&root));
     });
     emit_raw_identity(sink, REPORT_FIELDS.root_raw.name, &report.root);
+    emit_field(sink, REPORT_FIELDS.age_reference_ns, true, |sink| match report.age_reference_ns {
+        Some(value) => emit_scalar(sink, Scalar::I64(value)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
     emit_field(sink, REPORT_FIELDS.request, true, |sink| emit_request(sink, report));
     emit_field(sink, REPORT_FIELDS.status, true, |sink| emit_status(sink, report));
     emit_field(sink, REPORT_FIELDS.provenance, true, |sink| emit_provenance(sink, report));
@@ -486,7 +624,7 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(sink, "view", section.view().label());
     match section {
-        Section::Tree(root) => {
+        Section::Tree { root, .. } => {
             emit_field(sink, Field::always("tree"), true, |sink| emit_tree(sink, root));
         }
         Section::Extensions { rows, total } => {
@@ -551,6 +689,17 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
     emit_u64_field(sink, "bytes", row.bytes);
     emit_u64_field(sink, "allocated", row.allocated);
     emit_i64_field(sink, "mtime_ns", row.mtime_ns);
+    for (name, value) in [("files", row.files), ("dirs", row.dirs)] {
+        emit_field(sink, Field::nullable(name), true, |sink| match value {
+            Some(value) => emit_scalar(sink, Scalar::U64(value)),
+            None => emit_scalar(sink, Scalar::Null),
+        });
+    }
+    emit_field(sink, Field::nullable("age_ns"), true, |sink| match row.age_ns {
+        Some(value) => emit_scalar(sink, Scalar::I128(value)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
+
     emit_field(sink, Field::nullable("ignored"), true, |sink| match row.ignored {
         Some(value) => emit_scalar(sink, Scalar::Bool(value)),
         None => emit_scalar(sink, Scalar::Null),
@@ -779,6 +928,7 @@ struct ReportFields {
     ignore_rules: Field,
     analysis: Field,
     reports: Field,
+    age_reference_ns: Field,
 }
 
 const REPORT_FIELDS: ReportFields = ReportFields {
@@ -792,6 +942,7 @@ const REPORT_FIELDS: ReportFields = ReportFields {
     ignore_rules: Field::always("ignore_rules"),
     analysis: Field::nullable("analysis"),
     reports: Field::when_set("reports"),
+    age_reference_ns: Field::nullable("age_reference_ns"),
 };
 
 /// Why a field is present in a wire document.
@@ -874,7 +1025,7 @@ fn render_text(report: &Report, color: bool) -> String {
             let _ = writeln!(out, "{}", paint(bound.trim_start(), STYLE_TELEMETRY, color));
         }
         match section {
-            Section::Tree(root) => {
+            Section::Tree { root, .. } => {
                 render_text_tree(&mut out, root, report.size, report.ignored_entries, color);
             }
             Section::Extensions { rows, .. } => {
@@ -1192,7 +1343,7 @@ fn bound_note(section: &Section) -> String {
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
         // A tree marks its dropped children in place, at the depth they were dropped; a
         // summary is one row and cannot be bounded.
-        Section::Tree(_) | Section::Summary(_) => (0, 0),
+        Section::Tree { .. } | Section::Summary(_) => (0, 0),
     };
     if shown >= total {
         return String::new();
@@ -1271,6 +1422,7 @@ fn generator() -> String {
 /// and a test holds them in step rather than a shared expression.
 fn view_header(view: ViewSpec) -> &'static str {
     match view {
+        ViewSpec::List => "LIST",
         ViewSpec::Tree => "TREE",
         ViewSpec::Types => "TYPES",
         ViewSpec::Extensions => "EXTENSIONS",
@@ -1496,7 +1648,7 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
         crate::ChangeKind::Invalidate => "invalidate",
     };
 
-    if format == Format::Text {
+    if !format.is_machine() {
         // Path first, so the stream stays greppable and cuts the same way a one-shot
         // listing does; the operation follows on the same line.
         return format!("{}\t{kind}", change.path.display());
@@ -1511,7 +1663,9 @@ pub fn render_change(change: &crate::Change, format: Format) -> String {
                 render_change_machine(change, kind, YamlSink::new())
             )
         }
-        Format::Text => unreachable!("text returned above"),
+        Format::Text | Format::Tree | Format::Paths | Format::Long => {
+            unreachable!("text returned above")
+        }
     }
 }
 
@@ -1625,7 +1779,9 @@ pub fn render_cache_status(
         // the CLI, which meant the only way to print cache status the way fdu prints it
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
-        Format::Text => render_cache_status_text(statuses, scope),
+        Format::Text | Format::Tree | Format::Paths | Format::Long => {
+            render_cache_status_text(statuses, scope)
+        }
         Format::Json => render_cache_machine(statuses, JsonSink::pretty()),
     }
 }
@@ -1971,6 +2127,10 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
 
 #[cfg(test)]
 mod tests {
+    fn render(report: &Report, format: Format, color: bool) -> String {
+        super::render(report, format, color).expect("compatible report format")
+    }
+
     use super::*;
     use crate::Index;
     use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
@@ -2412,7 +2572,8 @@ mod tests {
     }
 
     /// Every view, so a matrix test cannot silently skip one that was added later.
-    const ALL_TEST_VIEWS: [ViewSpec; 10] = [
+    const ALL_TEST_VIEWS: [ViewSpec; 11] = [
+        ViewSpec::List,
         ViewSpec::Tree,
         ViewSpec::Types,
         ViewSpec::Extensions,
@@ -2441,6 +2602,7 @@ mod tests {
                 fields.generator,
                 fields.root,
                 fields.root_raw,
+                fields.age_reference_ns,
                 fields.request,
                 fields.status,
                 fields.provenance,
@@ -2838,7 +3000,7 @@ mod tests {
         }
 
         let mut report = fixture(&[ViewSpec::Tree]);
-        let Section::Tree(root) = &mut report.sections[0] else {
+        let Section::Tree { root, .. } = &mut report.sections[0] else {
             panic!("tree fixture must contain a tree");
         };
         let template = root.children[0].clone();
@@ -3473,7 +3635,7 @@ mod tests {
         assert_eq!(Format::parse("json"), Some(Format::Json));
         assert_eq!(Format::parse("  YAML "), Some(Format::Yaml));
         assert_eq!(Format::parse("xml"), None);
-        assert_eq!(Format::ALL.len(), 4);
+        assert_eq!(Format::ALL.len(), 7);
     }
 
     #[test]

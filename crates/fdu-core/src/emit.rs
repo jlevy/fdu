@@ -24,6 +24,7 @@ pub(crate) enum Scalar<'a> {
     Str(&'a str),
     U64(u64),
     I64(i64),
+    I128(i128),
     Bool(bool),
     Null,
 }

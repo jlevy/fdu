@@ -53,7 +53,7 @@ try {
 }
 
 const views = [
-  'tree', 'types', 'extensions', 'families', 'languages', 'documents',
+  'list', 'tree', 'types', 'extensions', 'families', 'languages', 'documents',
   'files', 'largest', 'recent', 'summary',
 ];
 
@@ -198,5 +198,16 @@ for (const kind of ['cache', 'upsert', 'remove', 'invalidate', 'raw']) {
   if (kind !== 'cache') assert.equal(records.length, 1);
   compared += 1;
 }
+
+// Nanosecond ages need an integer-preserving parser: the signed relationship must be
+// exact, not merely accepted as YAML syntax.
+const directories = parse(execFileSync(
+  fdu, ['--cache', 'off', '--format', 'yaml', '--view', 'files', '--kind', 'dir', '--include', 'src', tree],
+  { encoding: 'utf8' },
+), { intAsBigInt: true });
+const [directory] = directories.reports[0].files;
+assert.equal(directory.files, 2n);
+assert.equal(directory.dirs, 0n);
+assert.equal(directory.age_ns, directories.age_reference_ns - directory.mtime_ns);
 
 console.log(`yaml self-check passed: ${checked} views parsed, ${compared} cross-format cases`);

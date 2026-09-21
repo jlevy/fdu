@@ -127,6 +127,7 @@ class View(StrEnum):
     own view list must give the same sequence, and a parity run compares them (fdu-ggux).
     """
 
+    LIST = "list"
     SUMMARY = "summary"
     TREE = "tree"
     FAMILIES = "families"
@@ -263,6 +264,9 @@ class Format(StrEnum):
     """
 
     TEXT = "text"
+    TREE = "tree"
+    PATHS = "paths"
+    LONG = "long"
     JSON = "json"
     JSONL = "jsonl"
     YAML = "yaml"
@@ -483,6 +487,8 @@ class Query:
     views: tuple[View, ...] | str = ()
     selection: Selection = field(default_factory=Selection)
     words_per_page: int = _native.DEFAULT_WORDS_PER_PAGE
+    #: Select the report projection before reading; the default retains the directory tree.
+    format: Format = Format.TEXT
 
     def __post_init__(self) -> None:
         # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
@@ -657,6 +663,17 @@ class FileRow:
     mtime_ns: int
     #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
     ignored: bool | None = None
+    #: Directory subtree counts, excluding its root; absent for other entry kinds.
+    files: int | None = None
+    dirs: int | None = None
+    #: Whether a directory's eligible subtree was listed in full. ``False`` makes its
+    #: bytes, counts, and ``mtime_ns`` lower bounds and its ``age_ns`` ``None``: a
+    #: scan-depth boundary, a partial scan, or a directory discovery has not listed yet.
+    #: Absent for other entry kinds.
+    complete: bool | None = None
+    #: Signed modification age relative to Report.age_reference_ns; future is negative,
+    #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
+    age_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -792,9 +809,10 @@ class ExtensionsSection:
 
 @dataclass(frozen=True, slots=True)
 class FilesSection:
-    """A flat listing: ``files``, or one of its bounded presets.
+    """A flat list of matching files and directories, with subtree metrics for directories.
 
-    ``view`` distinguishes them, because ``largest`` and ``recent`` produce this shape too.
+    ``view`` preserves the requested list or legacy preset. ``largest`` and ``recent``
+    produce this shape with their bounded regular-file selection.
     """
 
     view: View
@@ -844,6 +862,7 @@ class Report:
     #: present and the refusals from ``status.ignore_rules``.
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    age_reference_ns: int | None = None
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
     _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
 
@@ -866,6 +885,11 @@ class Report:
 
         The report only. The command line appends a performance footer, which is transient
         telemetry the schema excludes and whose counts are not on a `Report`.
+
+        ``TEXT`` uses the query's requested presentation. Machine formats serialize this
+        stored projection; PATHS and LONG require a flat projection, and TREE requires
+        a tree. To change between a folded tree and a complete list, request another
+        report from the retained index with the desired ``Query.format``.
         """
 
         if self._renderer is None:
@@ -1417,7 +1441,13 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     _bound(raw),
                 )
             )
-        elif view in (View.FILES, View.LARGEST, View.RECENT):
+        elif "files" in raw and view in (
+            View.LIST,
+            View.TREE,
+            View.FILES,
+            View.LARGEST,
+            View.RECENT,
+        ):
             rows = raw["files"]
             if not isinstance(rows, list):
                 raise TypeError("files section must be a list")
@@ -1431,6 +1461,10 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             bytes=int(row["bytes"]),
                             allocated=int(row["allocated"]),
                             mtime_ns=int(row["mtime_ns"]),
+                            files=_optional_int(row["files"]) if "files" in row else None,
+                            dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
+                            complete=_optional_bool(row["complete"]) if "complete" in row else None,
+                            age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
                             ignored=_ignored_flag(row["ignored"]),
                         )
                         for row in rows
@@ -1438,7 +1472,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     _bound(raw),
                 )
             )
-        elif view is View.TREE:
+        elif "tree" in raw and view in (View.LIST, View.TREE, View.FILES):
             tree = raw["tree"]
             if not isinstance(tree, dict):
                 raise TypeError("tree section must be an object")
@@ -1512,9 +1546,24 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
         generator=str(wire["generator"]),
         root=_wire_path(wire, "root"),
         request=request,
+        age_reference_ns=_optional_int(wire.get("age_reference_ns")),
         status=status,
         provenance=provenance,
         analysis=analysis,
         sections=tuple(sections),
         _wire=cast(dict[str, JsonValue], wire),
     )
+
+
+def _optional_int(value: Any) -> int | None:
+    """Decode a nullable exact integer from the native wire report."""
+    return None if value is None else int(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    """Decode a nullable boolean, refusing anything that merely looks true or false."""
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError("a file row's complete flag must be a boolean or null")
+    return value

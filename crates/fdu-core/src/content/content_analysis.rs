@@ -1068,7 +1068,8 @@ mod tests {
         )
         .expect("report");
         for format in [crate::report_format::Format::Json, crate::report_format::Format::Yaml] {
-            let output = crate::report_format::render(&rendered, format, false);
+            let output = crate::report_format::render(&rendered, format, false)
+                .expect("compatible report format");
             let total = match format {
                 crate::report_format::Format::Json => {
                     output.split("\"rows\":").next().expect("metrics total")
@@ -1085,7 +1086,8 @@ mod tests {
             );
         }
         let text =
-            crate::report_format::render(&rendered, crate::report_format::Format::Text, false);
+            crate::report_format::render(&rendered, crate::report_format::Format::Text, false)
+                .expect("compatible report format");
         assert!(
             text.contains("1 lines (1 nonblank, 0 blank), 2 words"),
             "unsupported code coverage cannot turn prose lines into a zero code partition: {text}"
@@ -1228,7 +1230,8 @@ mod tests {
         )
         .expect("report");
         let json =
-            crate::report_format::render(&summary, crate::report_format::Format::Json, false);
+            crate::report_format::render(&summary, crate::report_format::Format::Json, false)
+                .expect("compatible report format");
         assert!(json.contains("\"schema\": \"fdu.report/7\""), "{json}");
         assert!(json.contains("\"analyze\": [\"lines\"]"), "{json}");
 
@@ -1256,7 +1259,8 @@ mod tests {
         )
         .expect("report");
         let text =
-            crate::report_format::render(&languages, crate::report_format::Format::Text, false);
+            crate::report_format::render(&languages, crate::report_format::Format::Text, false)
+                .expect("compatible report format");
         assert!(text.contains("—"), "an unavailable 0/0 share needs a distinct marker: {text}");
         assert!(
             text.contains("1 lines (1 nonblank, 0 blank), 1 unsupported"),

@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Directory filters measure eligible subtree bytes and modification activity, including
+  nested directories. Exclusions win throughout a subtree; aggregate totals count covered
+  contents once.
+- Explicit tree, paths, and long presentation formats expose directory and file
+  inventories on the command line and Python surface.
+  Flat rows include subtree counts and signed modification ages measured against one
+  report reference instant.
+
 ### Changed
 
 - Engine execution plans now carry cache policy, scheduling, partial-answer acceptance,
@@ -16,6 +26,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Index.watch()` persists verified changes under the same policy; cache write failures
   warn without ending the feed.
 - Watch repaint defaults come from the engine on every surface.
+- Metadata machine output defaults to the list view while the default human tree
+  presentation stays the same.
+  Directory query fields are part of the unreleased `fdu.report/7` contract.
 
 ## [0.1.0] - 2026-09-16
 
