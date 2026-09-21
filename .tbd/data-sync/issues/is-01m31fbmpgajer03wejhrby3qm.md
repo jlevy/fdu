@@ -3,14 +3,14 @@ type: is
 id: is-01m31fbmpgajer03wejhrby3qm
 title: make check supply-chain scan walks nested .claude/worktrees and fails on untracked hooks
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 6
+version: 7
 labels: []
 dependencies: []
 parent_id: is-01m31hc3p7wv76jeq5dhgv3bd8
 created_at: 2026-09-21T07:54:45.326Z
-updated_at: 2026-09-21T08:41:51.917Z
+updated_at: 2026-09-21T17:08:20.833Z
 ---
 `make check` fails at the `supply-chain` target on any clone that has a git worktree under `.claude/worktrees/`, which is where Claude Code places worktrees by default. Observed 2026-09-21:
 
