@@ -108,11 +108,15 @@ SYNTHETIC_SUBJECTS = {
 #: Linux's current cost. The candidate is not the shipped binary either, so these name
 #: no kept arm at all.
 #:
+#: exp-141 is the same class: H111's current-engine floor scoreboard, both arms the same
+#: binary (`86083632…`), so a rejected decision must not name the control as kept.
+#:
 #: Hand-maintained, like the list above, so the same warning applies: a new evidence
 #: stage recorded against code that ships regardless of its verdict belongs here. A
 #: decision value for that case is the durable fix, and belongs to the contract.
 CLAIM_ONLY_EXPERIMENTS = {
     "exp-103",
+    "exp-141",
 }
 
 

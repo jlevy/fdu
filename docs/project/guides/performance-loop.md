@@ -710,8 +710,9 @@ wrong once and each fails silently.
 - **A rejected candidate is not the product’s state.** Anything plotting “where we are
   now” must read the kept arm, which is the candidate only for an accepted experiment.
   An experiment that decides a claim about code it did not propose has no kept arm:
-  exp-103 rejected H86’s Linux floor claim while the candidate stayed in the stack.
-  `CLAIM_ONLY_EXPERIMENTS` in
+  exp-103 rejected H86’s Linux floor claim while the candidate stayed in the stack;
+  exp-141 is the same class (H111 current-engine floor scoreboard, both arms the same
+  binary). `CLAIM_ONLY_EXPERIMENTS` in
   [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py) lists these by
   hand, so a new one must be added or the page will draw its control as the current
   cost.

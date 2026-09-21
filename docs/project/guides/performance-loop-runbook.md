@@ -496,8 +496,8 @@ H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
 Next free Darwin hypothesis id is **H144**. Do not mint another meaning for H91–H106.
-Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
-take exp-138 here. exp-113 remains reserved unused (H113 superseded).
+Next free experiment id is **exp-144** (numbering is shared with Linux); do not take
+exp-138–143 here. exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -706,7 +706,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | --- | --- |
 | This standing section | Standing best, next-up order |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Ready to merge onto #92 |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main` (`c7babf76`); #91/#92 merged 2026-09-20 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -720,14 +720,17 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 ## Linux Standing (2026-09-20)
 
 Stacked [#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`,
-rebased onto [#92](https://github.com/jlevy/fdu/pull/92) `937f9445` (R1–R3 plus
-`c441edf6` single-view Cow borrow and the #91 restore-evidence repair).
-Ready to merge onto #92. This is not a Linux floor pass.
+base `main` (`c7babf76`);
+[#91](https://github.com/jlevy/fdu/pull/91)/[#92](https://github.com/jlevy/fdu/pull/92)
+merged 2026-09-20 (`6e3d2937` / `a290aedc`). Engine tip of those merges is `937f9445`
+(R1–R3 plus `c441edf6` single-view Cow borrow and the #91 restore-evidence repair).
+Merge onto `main`, then #97. This is not a Linux floor pass.
 H141’s four-view `content-query` still shares one walk (`row_consumers > 1`). A
 single-view report now borrows instead of cloning; that does not change the four-view
 cell. H139 was a well-formed cache-hit tree; snapshot alias reject and restore-timing
 evidence do not change that cell.
-4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
+exp-138/140 are at `a5c98d59` and not re-paired after R1–R3/`c441edf6`; expected below
+noise. 4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
 Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
 Darwin-only).
 
