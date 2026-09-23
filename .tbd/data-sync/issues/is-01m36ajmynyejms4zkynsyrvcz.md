@@ -5,7 +5,7 @@ title: "Full review of alpha correctness stack #99→#117 and 0.1.0 readiness (2
 kind: task
 status: in_progress
 priority: 0
-version: 18
+version: 19
 labels:
   - release
 dependencies: []
@@ -26,7 +26,7 @@ child_order_hints:
   - is-01m36bm5ndp5p73dbdeqwjas0m
   - is-01m36bm65pk7ftex7xvb3qcxn3
 created_at: 2026-09-23T05:07:24.243Z
-updated_at: 2026-09-23T05:26:07.001Z
+updated_at: 2026-09-23T06:35:21.606Z
 ---
 Independent review of every layer of GitHub stack #111 (#99, #98, #110, #112-#117) through its head, audit of prior review dispositions on #94/#97/#105/#109/#96/#103, and an updated list of what remains before a publishable 0.1.0 alpha. Findings are returned to the coordinator and published only with the maintainer's approval.
 
@@ -75,3 +75,6 @@ Already tracked: #105 R2/R3/R4 fdu-03w2/fdu-27aj/fdu-yprs; composition fdu-qx0e,
 Close on merge: fdu-6act, fdu-ns3o (#98), fdu-zjjt, fdu-f9fv, fdu-93e8, fdu-c22r (#117); close #96/#103 as superseded after #117 lands.
 
 No reviews were posted to GitHub from this session (pending maintainer approval).
+
+## Disk cleanup (2026-09-22, user-approved)
+Removed 37 clean fdu worktrees under /private/tmp (branches kept in the repo) and stale build dirs; /private/tmp 34 GiB → 8.8 GiB. Kept: fdu-alpha-review-t5q4I6/integration (detached unpushed c5b759ee, cited by fdu-qx0e/fdu-8fax), fdu-correctness-state (uncommitted index.rs/scan.rs edits), and every audit/log/patch file in fdu-alpha-review-t5q4I6/ and fdu-alpha-stack-PnTm5M/ (reconciliation-audit.md, integration-*.patch, pi-* matrix recordings). Freed blocks are held by the Time Machine local snapshot 2026-09-22-233130 until macOS thins it.
