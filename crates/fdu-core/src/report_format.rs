@@ -197,11 +197,11 @@ pub fn flat_diagnostics(report: &Report) -> Vec<String> {
     if report.provenance.source == ReportSource::CacheOnly {
         notes.push("cache-only result: retained contents have not been revalidated".into());
     }
-    if !report.status.complete() || report.status.freshness != Freshness::Fresh {
+    if !report.status.complete || report.provenance.freshness != Freshness::Fresh {
         notes.push(format!(
             "result freshness: {}; complete: {}",
-            freshness_label(report.status.freshness),
-            report.status.complete()
+            freshness_label(report.provenance.freshness),
+            report.status.complete
         ));
     }
     if let Some(depth) = report.scope.max_depth {
