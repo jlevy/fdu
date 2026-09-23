@@ -135,7 +135,7 @@ The follow-up fixes attach to those contracts as follows:
 | --- | --- | --- |
 | Content identity and results | `fdu-ugom`, `fdu-4vbi`, `fdu-h14g`, `fdu-82vm`, `fdu-2gkh` | Operational failures retry; proof-bearing admission governs all content consumers; encoding refusals and per-unit digests are distinct; cold values match cache-history values in rows and totals. |
 | Reconciliation and watch | `fdu-yfb7`, `fdu-ems3`, `fdu-sb82`, `fdu-08aj`, `fdu-0ywm`, `fdu-aach`, `fdu-jott`, `fdu-4239` | Overlapping passes preserve newer facts and unrelated issues; overflow is captured before flush acknowledgement; registration, membership, ignored-state transitions, and finite intervals have regressions. |
-| Partial directories | `fdu-f9fv` | Serving commit `84de3685` localizes cold failures; public typed-row regression `d70fde32` passed with an actual permission refusal, proving incomplete ancestors, complete siblings, and both time-filter directions. |
+| Partial directories | `fdu-f9fv`, `fdu-bwo2` | Canonical own-listing evidence agrees across cold, serial warm, and parallel warm routes; failed boundaries publish `DirectoryIncomplete`, preserve newer verification and healthy siblings, and recover on a later successful listing. Public rows test actual permission refusal, cache-route identity, unknown ages, and excluded failed subtrees. |
 | Admission and persistence | `fdu-qsos`, `fdu-2o2r`, `fdu-kuev` | Snapshot projection carries its proof; refusals identify cache location, root, and type-rule mismatch; refresh rejects another root and reseeds incompatible stored baselines. |
 | Surface parity | `fdu-up8j`, `fdu-b6iu`, `fdu-zjjt`, `fdu-ns3o` | Native paths and bounded content errors survive shared writers; opened Python retains flat diagnostics; Windows oracle follows validity semantics. |
 
@@ -151,15 +151,20 @@ with a claim of cross-set reuse.
 - [x] Finish `fdu-0ssl`: distinct golden keys and corpus checks cover all three
   projection refusals, including an actual oversized continuation beside a successful
   lookup (`bdc1c7b2`, published through `3a3ad5c8`).
-- [ ] Resolve `fdu-bwo2`: the composed full matrix found 12 Linux cases where warm
-  reconciliation retained directory-listing completeness after an unreadable boundary,
-  producing known ages where a cold scan reported unknown ages.
-  Correct the canonical listing evidence, preserve newer verification, and test
-  exclusions and recovery.
-  This finding is not added to the final exception registry.
+- [x] Implement and independently review `fdu-bwo2`: the composed full matrix found 12
+  cases on each Unix platform where warm reconciliation retained directory-listing
+  completeness after an unreadable boundary.
+  Canonical fixes `7e6e8acf` and `8decb3bf` withdraw only the affected own-listing
+  evidence, publish the withdrawal even when aggregate state is unchanged, and preserve
+  newer verification. Public regression `1ad8b8fd` covers exclusions, healthy siblings,
+  and cache routes; core regressions also cover recovery.
+  Final composed matrix acceptance remains below; no exception was added.
 - [x] Install the reviewed, pinned `uv` before release-plan tests (`fdu-5w7f`,
-  `c2542f55`); the planning job passes in rehearsal run `35812633721`. Packaged-artifact
-  acceptance remains separate.
+  `c2542f55`); rehearsal run `35812633721` passes planning, all five wheel builds,
+  native smoke tests where available, source distribution, crate packaging, and
+  immutable artifact inspection.
+  This run precedes the final listing-state fix and must be repeated for final
+  packaged-artifact acceptance.
 - [x] Correct cache-only directory completeness (`fdu-c22r`, `801bf7a7`) and qualify the
   machine-format depth exemption to flat projections (`fdu-93e8`, `ea7baf50`).
 - [ ] Run `make check` and `make cross-lint` on the composed candidate after all fixes.
