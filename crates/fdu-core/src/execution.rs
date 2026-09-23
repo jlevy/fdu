@@ -135,6 +135,12 @@ pub(crate) enum Admission {
 }
 
 impl Plan {
+    /// The one decision of whether stored state answers this plan's basis.
+    ///
+    /// Every route that reads a snapshot admits it here, warm and cache-only alike, and
+    /// persistence asks the same question of the header on disk before it decides what an
+    /// unchanged pass owes the store. The content arm applies only to a plan that verifies
+    /// nothing, because a verifying route re-reads what its sidecar lacks.
     pub(crate) fn admit(
         &self,
         stored: Option<&StoreHeader<'_>>,
@@ -308,15 +314,28 @@ pub fn plan(
     }
     let delivery = &normalized;
     request.validate_delivery(delivery)?;
-    if route == Route::Opened
-        && (delivery.cache != CachePolicy::Off
+    if route == Route::Opened {
+        if delivery.cache != CachePolicy::Off
             || delivery.watch.is_some()
-            || request.basis.content.is_enabled())
-    {
-        return Err(crate::query::RequestError::DeliveryUnsupported {
-            route: "opened",
-            reason: "progressive discovery requires cache off, no content analyzers, and observation configured through OpenOptions",
-        });
+            || request.basis.content.is_enabled()
+        {
+            return Err(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "progressive discovery requires cache off, no content analyzers, and observation configured through OpenOptions",
+            });
+        }
+        // An opened root runs one breadth-first producer and publishes coverage as state
+        // rather than as one answer, so these fields have no effect there. Refused rather
+        // than dropped: a delivery the route accepts is one it executes.
+        if delivery.workers.scan.is_some()
+            || delivery.order != crate::ScanOrder::default()
+            || delivery.accept_partial
+        {
+            return Err(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "progressive discovery schedules one breadth-first producer and reports coverage as state, so it takes no scan worker count, traversal order, or partial-answer acceptance",
+            });
+        }
     }
     if route == Route::Refresh && delivery.cache == CachePolicy::Only {
         return Err(crate::query::RequestError::DeliveryUnsupported {
@@ -452,7 +471,7 @@ fn prepare_report_internal(
                     }
                 }
             };
-            let (scan, scan_diagnostics) = if collect_scan_diagnostics {
+            let (mut scan, scan_diagnostics) = if collect_scan_diagnostics {
                 let (scan, diagnostics) =
                     crate::scan::scan_with_diagnostics(&root, &scan_config, &mut reduce)?;
                 (scan, Some(diagnostics))
@@ -466,7 +485,7 @@ fn prepare_report_internal(
                 scan_config.scope(),
                 query.selection.size,
                 summary,
-                TreeStatus::of_walk(&root, &scan),
+                TreeStatus::of_walk(&root, &mut scan),
                 ReportProvenance::of_walk(scan_started_at, generated_at, complete),
             );
             let performance = PerformanceSummary {
@@ -662,6 +681,130 @@ mod tests {
         assert_eq!(restored, original);
     }
 
+    /// One root with one file and one empty directory, and a writing delivery whose
+    /// snapshot lives in its own directory so a test can make that directory read-only.
+    #[cfg(unix)]
+    fn owed_persistence_fixture()
+    -> (tempfile::TempDir, tempfile::TempDir, crate::query::Basis, Delivery) {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        fs::create_dir(root.path().join("locked")).expect("locked dir");
+        fs::write(root.path().join("first"), b"first").expect("first file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        (root, cache, basis, delivery)
+    }
+
+    /// The files a cache-only open of `delivery`'s snapshot answers with.
+    #[cfg(unix)]
+    fn cached_files(basis: &crate::query::Basis, delivery: &Delivery) -> u64 {
+        let cache_only = Delivery { cache: CachePolicy::Only, ..delivery.clone() };
+        crate::open(basis, &cache_only).expect("cache-only open").0.total().files
+    }
+
+    /// A refresh whose metadata write failed leaves the index holding facts the snapshot
+    /// lacks; the next refresh must write them even though it changes nothing itself.
+    ///
+    /// The metadata write used to be keyed to the pass that ran it: a later pass that
+    /// mutated nothing wrote nothing, so a snapshot that missed one write missed the
+    /// facts for good, and cache-only reads answered older facts than the index held.
+    #[test]
+    #[cfg(unix)]
+    fn an_unchanged_refresh_repeats_the_metadata_write_a_failed_refresh_owed() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, cache, basis, delivery) = owed_persistence_fixture();
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        assert_eq!(cached_files(&basis, &delivery), 1);
+
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555)).expect("deny write");
+        let failed = crate::refresh(&mut index, &basis, &delivery);
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o755)).expect("restore");
+        assert!(failed.is_err(), "a read-only cache directory fails the write");
+        assert_eq!(index.total().files, 2, "the index advanced before the write");
+        assert_eq!(cached_files(&basis, &delivery), 1, "the failed write left the old image");
+
+        let unchanged = crate::refresh(&mut index, &basis, &delivery).expect("unchanged refresh");
+        assert!(unchanged.is_complete());
+        assert!(!unchanged.apply.mutated(), "nothing changed between the passes");
+        assert_eq!(cached_files(&basis, &delivery), 2, "the owed write ran");
+
+        // Paid once: the next unchanged pass has nothing to write.
+        let snapshot = delivery.cache_path.as_deref().expect("path");
+        let written = fs::metadata(snapshot).expect("snapshot").modified().expect("mtime");
+        crate::refresh(&mut index, &basis, &delivery).expect("settled refresh");
+        assert_eq!(fs::metadata(snapshot).expect("snapshot").modified().expect("mtime"), written);
+    }
+
+    /// The same debt when the failed write is the one a warm `open` started: a caller
+    /// keeping the index through [`crate::open_with_pending_save`] keeps the debt too.
+    #[test]
+    #[cfg(unix)]
+    fn an_unchanged_refresh_repeats_the_metadata_write_a_failed_open_owed() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, cache, basis, delivery) = owed_persistence_fixture();
+        crate::open(&basis, &delivery).expect("complete open writes the snapshot");
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555)).expect("deny write");
+        let opened = crate::open_with_pending_save(&basis, &delivery);
+        // Joined before the directory is writable again: the write runs in the background.
+        let outcome = opened.map(|(index, report, pending)| (index, report, pending.join()));
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o755)).expect("restore");
+        let (index, report, joined) = outcome.expect("the open itself succeeds");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
+        assert!(joined.is_err(), "the startup write failed");
+        let mut index = std::sync::Arc::into_inner(index).expect("the writer released the index");
+        assert_eq!(cached_files(&basis, &delivery), 1);
+
+        let unchanged = crate::refresh(&mut index, &basis, &delivery).expect("unchanged refresh");
+        assert!(!unchanged.apply.mutated(), "nothing changed between the passes");
+        assert_eq!(cached_files(&basis, &delivery), 2, "the owed write ran");
+    }
+
+    /// A partial refresh cannot write the entry tier; once the tree is readable again a
+    /// complete refresh delivers the partial pass's facts to the snapshot.
+    ///
+    /// Restoring the directory's permissions updates its change time, so on a POSIX host
+    /// the recovering pass reports that directory as updated and would write on its own
+    /// account. The failed-write tests above are the ones that prove the debt is carried;
+    /// this one guards that a partial pass's verified facts reach the snapshot at all.
+    #[test]
+    #[cfg(unix)]
+    fn a_complete_refresh_persists_the_facts_a_partial_refresh_could_not() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, _cache, basis, delivery) = owed_persistence_fixture();
+        let locked = root.path().join("locked");
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        assert_eq!(index.total().files, 1);
+
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny read");
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        let partial = crate::refresh(&mut index, &basis, &delivery);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("restore");
+        let partial = partial.expect("partial refresh");
+        assert!(!partial.is_complete(), "the locked directory made the pass partial");
+        assert!(partial.apply.mutated(), "the second file was inserted");
+        assert_eq!(index.total().files, 2);
+        assert_eq!(cached_files(&basis, &delivery), 1, "a partial pass never writes entries");
+
+        let complete = crate::refresh(&mut index, &basis, &delivery).expect("complete refresh");
+        assert!(complete.is_complete(), "{:?}", complete.scan.errors);
+        assert_eq!(cached_files(&basis, &delivery), 2, "the complete pass wrote the facts");
+    }
+
     #[test]
     fn cache_only_refusals_name_location_root_and_absence_separately() {
         let root = tempfile::tempdir().expect("root");
@@ -706,7 +849,9 @@ mod tests {
                     || matches!(route, Route::Watch | Route::Refresh))
                     && delivery.cache == CachePolicy::Only
                     || route == Route::Opened
-                        && (delivery.cache != CachePolicy::Off || delivery.watch.is_some());
+                        && (delivery.cache != CachePolicy::Off
+                            || delivery.watch.is_some()
+                            || delivery.accept_partial);
                 assert_eq!(result.is_err(), forbidden, "{route:?} {delivery:?}");
                 if let Ok(plan) = result {
                     if route == Route::Opened {
@@ -716,6 +861,53 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn an_opened_root_refuses_the_scheduling_it_would_otherwise_drop() {
+        // `OpenOptions::into_parts` runs one breadth-first producer whatever the delivery
+        // says, and an opened root has no single answer for `accept_partial` to classify.
+        // A value the route would silently ignore is refused at planning instead, and the
+        // same values plan on a route that executes them.
+        let basis = crate::query::Basis {
+            root: ".".into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        let default = Delivery::new(CachePolicy::Off, None);
+        let plan_opened = plan(&request, &default, Route::Opened).expect("defaults plan");
+        assert_eq!(plan_opened.delivery().batch_size, default.batch_size);
+        let unhonored = [
+            (
+                "scan workers",
+                Delivery {
+                    workers: crate::query::Workers { scan: Some(4), ..default.workers },
+                    ..default.clone()
+                },
+            ),
+            (
+                "depth-first order",
+                Delivery { order: crate::ScanOrder::DepthFirst, ..default.clone() },
+            ),
+            ("accept partial", Delivery { accept_partial: true, ..default.clone() }),
+        ];
+        for (case, delivery) in unhonored {
+            let refused = plan(&request, &delivery, Route::Opened).expect_err(case);
+            assert!(
+                matches!(
+                    refused,
+                    crate::query::RequestError::DeliveryUnsupported { route: "opened", .. }
+                ),
+                "{case}: {refused}"
+            );
+            plan(&request, &delivery, Route::Retained)
+                .unwrap_or_else(|error| panic!("{case} executes on a retained route: {error}"));
+        }
+        // A larger batch is honored, so it is not refused.
+        let batched = Delivery { batch_size: default.batch_size * 2, ..default };
+        let plan_batched = plan(&request, &batched, Route::Opened).expect("batch size plans");
+        assert_eq!(plan_batched.delivery().batch_size, batched.batch_size);
     }
 
     #[test]

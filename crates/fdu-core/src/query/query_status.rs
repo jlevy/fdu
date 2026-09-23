@@ -100,7 +100,12 @@ impl TreeStatus {
         }
     }
 
-    pub(crate) fn of_walk(root: &std::path::Path, scan: &crate::ScanReport) -> Self {
+    /// Derive status from a one-shot walk, collapsing repeated causes first.
+    ///
+    /// Workers can meet one unreadable path more than once; the index retains each cause
+    /// once, so this path must too or the two routes disagree about `errors_omitted`.
+    pub(crate) fn of_walk(root: &std::path::Path, scan: &mut crate::ScanReport) -> Self {
+        crate::scan::normalize_walk_errors(root, &mut scan.errors);
         let complete = scan.is_complete();
         let mut details = Vec::with_capacity(crate::MAX_RETAINED_ISSUES);
         let mut count = 0_u64;
@@ -330,6 +335,30 @@ mod tests {
         let status = TreeStatus::of(&index, &request);
         assert!(status.complete, "a successful reread clears the operational failure");
         assert!(status.errors.is_empty());
+    }
+
+    /// A walk can meet one unreadable directory from several workers. The summary fast
+    /// path must collapse those repeats as the index does, or `--view summary` and
+    /// `--view tree` disagree about how many errors were omitted (R113-4).
+    #[test]
+    fn walk_status_counts_each_unreadable_path_once() {
+        let root = std::path::Path::new("/root");
+        let denied = |number: usize| crate::Error::Io {
+            path: root.join(format!("denied-{number:02}")),
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        };
+        let mut scan = crate::ScanReport::default();
+        for number in (0..40).rev() {
+            scan.errors.push(denied(number));
+            scan.errors.push(denied(number));
+        }
+
+        let status = TreeStatus::of_walk(root, &mut scan);
+
+        assert!(!status.complete);
+        assert_eq!(status.errors.len(), 40);
+        assert_eq!(status.errors_omitted, 0);
+        assert_eq!(status.errors[0].path.as_deref(), Some(std::path::Path::new("denied-00")));
     }
 
     #[test]
