@@ -1339,9 +1339,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             files=int(raw["files"]),
             dirs=int(raw["dirs"]),
             newest_mtime_ns=(
-                int(raw["newest_mtime_ns"])
-                if raw.get("newest_mtime_ns") is not None
-                else None
+                int(raw["newest_mtime_ns"]) if raw.get("newest_mtime_ns") is not None else None
             ),
             truncated=bool(raw["truncated"]),
             children=tuple(built[id(child)] for child in children),

@@ -254,14 +254,11 @@ fn a_file_that_leaves_attribute_selection_arrives_as_a_remove() {
 
     fs::write(&path, b"x").expect("shrink below selection");
 
-    let Some(change) = wait_for(
+    let change = wait_for(
         &mut session,
         "a_file_that_leaves_attribute_selection_arrives_as_a_remove",
-        false,
         |change| change.path.ends_with("shrinking.txt") && change.kind == ChangeKind::Remove,
-    ) else {
-        return;
-    };
+    );
     assert_eq!(change.kind, ChangeKind::Remove);
     let report = session.report(SystemTime::now()).expect("report after shrink");
     let files = report
