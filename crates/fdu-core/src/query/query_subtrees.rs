@@ -21,9 +21,9 @@ pub(super) struct SubtreeValues {
     ///
     /// False at the scan-depth boundary, where a directory was retained but never
     /// listed; in an opened root, for a directory discovery has not listed yet; and
-    /// throughout a one-shot index whose walk finished with errors, which records that
-    /// the walk was partial but not where. A lower-bound maximum is not an age, so the
-    /// reader that consumes this turns the mtime into an unknown age rather than
+    /// under a failed cold-walk boundary. Verified siblings retain their completeness.
+    /// An unscoped walk failure leaves the whole tree incomplete. A lower-bound maximum
+    /// is not an age, so the reader turns the mtime into an unknown age rather than
     /// reporting a directory as old because its newest activity was never seen.
     pub complete: bool,
 }
@@ -77,11 +77,10 @@ pub(super) fn measure(
     identity: NameIdentity,
 ) -> BTreeMap<EntryId, SubtreeValues> {
     // A directory is listed in full when the index marks it so, or when the whole index
-    // is complete: a one-shot walk marks every directory only when it finished without
-    // error, and an index assembled from observations alone never marks one, so coverage
-    // has to decide for both. A partial one-shot index therefore holds no complete
-    // directory at all, which is the truth it records: the walk was partial, and nothing
-    // says where.
+    // is complete. Cold walks mark successful listings outside their failure boundaries,
+    // so a partial index can still prove a healthy sibling complete. An index assembled
+    // from observations alone has no per-listing marks, so whole-index coverage remains
+    // a sufficient fallback; scan-depth boundaries below still withdraw completeness.
     let coverage_complete = index.state().coverage == Coverage::Complete;
     let boundary = index.scope().max_depth;
     let mut values: BTreeMap<EntryId, SubtreeValues> = BTreeMap::new();
