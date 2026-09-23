@@ -5,8 +5,8 @@ title: Address remaining 0.1 correctness blockers after performance review
 kind: task
 status: in_progress
 priority: 1
-version: 17
-delegate: codex@spud10
+version: 18
+delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
 child_order_hints:
@@ -24,7 +24,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:30:19.526Z
-updated_at: 2026-09-20T07:05:32.933Z
+updated_at: 2026-09-23T01:20:36.131Z
 started_at: 2026-09-20T04:31:31.377Z
 ---
 Audit remaining release correctness against the current #92 stack, reconcile stale or already-fixed beads, implement confirmed defects in coherent slices with subagents, review changes, validate and publish PRs. Preserve unrelated directory-rollup work and existing core-model ownership. Final candidate verification remains distinct from publishing.
