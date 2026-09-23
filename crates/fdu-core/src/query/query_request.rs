@@ -83,6 +83,7 @@ impl Scope {
             threads: delivery.workers.scan,
             batch_size: delivery.batch_size,
             order: delivery.order,
+            progress: None,
         }
     }
     fn identity_config(&self) -> ScanConfig {

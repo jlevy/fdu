@@ -71,6 +71,7 @@ mod execution;
 mod index;
 mod opened;
 mod platform_tuning;
+mod progress;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
@@ -139,8 +140,9 @@ pub use crate::opened::{
 // previously required to compile the command line to get it (fdu-z7sp).
 pub use crate::execution::{
     Load, OutcomeClass, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
-    prepare_report_with_scan_diagnostics,
+    prepare_report_with_progress, prepare_report_with_scan_diagnostics,
 };
+pub use crate::progress::{Progress, ProgressPhase, ProgressSnapshot};
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
     AnalyzerProvenance, ContentAdmission, ContentTierIdentity, ControlTierIdentity, EntryScope,
@@ -425,7 +427,7 @@ pub fn open_with_pending_save(
     let request =
         query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
     let plan = plan(&request, delivery, Route::Retained).map_err(Error::InvalidRequest)?;
-    execute(&plan, &request.basis, false)
+    execute(&plan, &request.basis, false, None)
         .map(|(index, report, pending, _diagnostics)| (index, report, pending))
 }
 
@@ -587,8 +589,10 @@ pub(crate) fn execute(
     plan: &Plan,
     basis: &query::Basis,
     collect_scan_diagnostics: bool,
+    progress: Option<&Progress>,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
-    let scan_config = basis.scope.scan_config(plan.delivery());
+    let scan_config =
+        ScanConfig { progress: progress.cloned(), ..basis.scope.scan_config(plan.delivery()) };
     let analysis_request = content::AnalysisRequest {
         profile: basis.content,
         workers: plan.delivery.workers.analysis,
@@ -608,6 +612,9 @@ pub(crate) fn execute(
     let mut loaded = None;
     let mut stored: Option<(PathBuf, SnapshotIdentity)> = None;
     if let (Load::Snapshot, Some(cache_path)) = (plan.load(), &delivery.cache_path) {
+        if let Some(progress) = progress {
+            progress.enter(ProgressPhase::Loading);
+        }
         match snapshot::load_serving(
             cache_path,
             scan_config.types_shared(),
@@ -710,7 +717,7 @@ pub(crate) fn execute(
         let analysis = basis
             .content
             .is_enabled()
-            .then(|| content::analyze_index(&mut index, analysis_request));
+            .then(|| content::analyze_index_observed(&mut index, analysis_request, progress));
         // A reconciliation that mutated nothing leaves an index that serializes to the
         // bytes already on disk, so rewriting it is pure cost: the clone, the encode,
         // and the write all produce a file identical to the one just read. Each artifact
@@ -730,7 +737,7 @@ pub(crate) fn execute(
         // The index is shared read-only from here, so the debt a completed write clears
         // is cleared by the blocking [`open`] once it has joined the write.
         let index = std::sync::Arc::new(index);
-        let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
+        let pending = spawn_save(&index, &plan.delivery, plan.writes(facts), progress);
         return Ok((
             index,
             OpenReport {
@@ -754,12 +761,14 @@ pub(crate) fn execute(
         (index, report, None)
     };
     let content_cache = load_content(&mut index, basis, delivery)?;
-    let analysis =
-        basis.content.is_enabled().then(|| content::analyze_index(&mut index, analysis_request));
+    let analysis = basis
+        .content
+        .is_enabled()
+        .then(|| content::analyze_index_observed(&mut index, analysis_request, progress));
     let facts =
         run_facts(&index, basis, delivery, true, true, false, || stored_entries(delivery, &root));
     let index = std::sync::Arc::new(index);
-    let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
+    let pending = spawn_save(&index, &plan.delivery, plan.writes(facts), progress);
     Ok((
         index,
         OpenReport {
@@ -899,10 +908,17 @@ fn spawn_save(
     index: &std::sync::Arc<Index>,
     delivery: &query::Delivery,
     writes: SaveTargets,
+    progress: Option<&Progress>,
 ) -> PendingSave {
     let Some(cache_path) = delivery.cache_path.clone().filter(|_| !writes.none()) else {
         return PendingSave::none();
     };
+    // Entered here, on the caller's thread, rather than by the writers: a run that
+    // returns with a pending save is saving from the caller's point of view from this
+    // moment, and a poller sees the phase without waiting for a thread to be scheduled.
+    if let Some(progress) = progress {
+        progress.enter(ProgressPhase::Saving);
+    }
 
     // The index is read-only from here, so the writer and the caller's rendering are two
     // readers of one index rather than of two copies. This used to deep-clone — every
