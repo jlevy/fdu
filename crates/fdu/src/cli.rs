@@ -1819,7 +1819,7 @@ fn style_guide(guide: &str, color: bool) -> String {
     out
 }
 
-fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
+pub(crate) fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
     if color { format!("{style}{text}{style:#}") } else { text.to_string() }
 }
 
