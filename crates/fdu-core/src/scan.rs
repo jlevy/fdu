@@ -1353,7 +1353,7 @@ fn scan_internal(
             std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
         ));
     }
-    let root_dev = attrs_from(root, &root_meta).map_err(|error| Error::io(root, error))?.dev;
+    let root_dev = root_device(root, &root_meta).map_err(|error| Error::io(root, error))?;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let pool = config.worker_pool_for(available_parallelism);
@@ -3712,7 +3712,7 @@ fn scan_detached_directories(
             std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
         ));
     }
-    let root_dev = attrs_from(root, &root_metadata).map_err(|error| Error::io(root, error))?.dev;
+    let root_dev = root_device(root, &root_metadata).map_err(|error| Error::io(root, error))?;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let pool = config.worker_pool_for(available_parallelism);
@@ -3858,7 +3858,7 @@ pub fn revalidate(
             ),
         ));
     }
-    let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
+    let root_dev = root_device(&root, &root_meta).map_err(|error| Error::io(&root, error))?;
     let mut report = ScanReport::default();
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
@@ -4326,7 +4326,7 @@ fn reconcile_target_inner(
             ),
         ));
     }
-    let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
+    let root_dev = root_device(&root, &root_meta).map_err(|error| Error::io(&root, error))?;
     let start_depth = subtree.components().count();
     let mut report = ReconcileReport::default();
     let mut retry_frontier = None;
@@ -5313,10 +5313,9 @@ fn resolve_subtree_root(
     if !root_metadata.is_dir() {
         return Ok(subtree.to_path_buf());
     }
-    let Ok(root_attrs) = attrs_from(&root, &root_metadata) else {
+    let Ok(root_dev) = root_device(&root, &root_metadata) else {
         return Ok(subtree.to_path_buf());
     };
-    let root_dev = root_attrs.dev;
     let mut prefix = PathBuf::new();
     let mut components = subtree.components().peekable();
     while let Some(component) = components.next() {
@@ -5463,6 +5462,22 @@ pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<A
         inode: 0,
         dev: 0,
     })
+}
+
+/// The device a walk's root is on, which bounds a one-filesystem walk.
+///
+/// Only the device is needed, and on Windows it is read without demanding a consistent
+/// observation of the root's times, which change whenever a child is created or removed.
+pub(crate) fn root_device(root: &Path, meta: &fs::Metadata) -> std::io::Result<u64> {
+    #[cfg(windows)]
+    {
+        let _ = meta;
+        windows_metadata::volume_serial(root)
+    }
+    #[cfg(not(windows))]
+    {
+        attrs_from(root, meta).map(|attrs| attrs.dev)
+    }
 }
 
 pub(crate) fn attrs_from_file(file: &fs::File, meta: &fs::Metadata) -> std::io::Result<Attrs> {
@@ -8191,7 +8206,7 @@ mod tests {
         let outcome = reconcile_direct_parallel(
             &mut index,
             &root,
-            attrs_from(&root, &root_meta).expect("root attrs").dev,
+            root_device(&root, &root_meta).expect("root device"),
             &config,
             1,
             &mut |commit| commits.push(commit.clone()),
