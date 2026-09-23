@@ -725,3 +725,13 @@ def test_cache_models_read_wire_presence_without_native_padding() -> None:
     assert stale.stale_reason is fdu.StaleReason.OTHER_ENGINE
     assert stale.content is not None
     assert stale.content.format_version == 1 and stale.content.identity is None
+
+
+def test_directory_listing_withdrawal_transition_is_typed() -> None:
+    transition = opened._transition({"kind": "directory_incomplete", "path": "dir"})
+    assert transition.kind is opened.StateTransitionKind.DIRECTORY_INCOMPLETE
+    assert transition.path == Path("dir")
+    assert transition.previous_freshness is None
+    assert transition.current_freshness is None
+    assert transition.previous_state is None
+    assert transition.current_state is None

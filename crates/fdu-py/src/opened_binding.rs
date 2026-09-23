@@ -797,6 +797,10 @@ fn transition_dict<'py>(
             out.set_item("kind", "directory_complete")?;
             out.set_item("path", path.as_os_str())?;
         }
+        StateTransition::DirectoryIncomplete { path } => {
+            out.set_item("kind", "directory_incomplete")?;
+            out.set_item("path", path.as_os_str())?;
+        }
         StateTransition::IndexState { previous, current } => {
             out.set_item("kind", "index_state")?;
             out.set_item("previous", state_dict(py, *previous)?)?;
