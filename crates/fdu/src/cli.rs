@@ -649,7 +649,12 @@ impl Cli {
         let delivery = Delivery {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
             cache_path: default_cache_path(path),
-            analysis_workers: self.analysis_workers,
+            workers: fdu_core::query::Workers {
+                analysis: self.analysis_workers,
+                ..Default::default()
+            },
+            batch_size: fdu_core::ScanConfig::default().batch_size,
+            order: fdu_core::ScanOrder::default(),
             watch: self.watch_delivery().map_err(|error| usage(&error))?,
             // What `--allow-partial` says: a partial answer is a success. Only this
             // command's exit mapping reads it today, and the execution plan model will.
@@ -1880,8 +1885,8 @@ mod tests {
                 .map(|request| request.basis.scope)
         };
         let defaults = fdu_core::ControlLimits::default();
-        let unobserved = |config: &fdu_core::ScanConfig| {
-            fdu_core::ScanConfig { read_controls: false, ..config.clone() }.scope()
+        let unobserved = |config: &fdu_core::query::Scope| {
+            fdu_core::query::Scope { read_controls: false, ..config.clone() }.scope()
         };
         let default = scan_config(&[]).expect("defaults");
         assert_eq!(default.control_limits, defaults);

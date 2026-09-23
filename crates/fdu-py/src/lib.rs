@@ -29,7 +29,7 @@ use fdu_core::query::{
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
-use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp};
+use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, RollUp};
 use std::time::{Duration, SystemTime};
 
 mod opened_binding;
@@ -372,14 +372,9 @@ impl PyIndex {
     /// This is the revalidation tier: unchanged entries cost a stat and nothing more,
     /// because an upsert whose complete observed state already matches is a no-op.
     fn refresh<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let config = self.basis.scope.clone();
         let report = py
-            .detach(|| fdu_core::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
+            .detach(|| fdu_core::refresh(&mut self.inner, &self.basis, &self.delivery))
             .map_err(to_py_err)?;
-        if self.basis.content.is_enabled() {
-            let request = self.analysis_request();
-            py.detach(|| fdu_core::content::analyze_index(&mut self.inner, request));
-        }
         let applied = report.apply;
         let status = self.tree_status();
         let out = PyDict::new(py);
@@ -500,7 +495,7 @@ impl PyIndex {
     /// The analysis pass this index's basis asks for, with the worker count it was opened
     /// under.
     fn analysis_request(&self) -> AnalysisRequest {
-        AnalysisRequest { profile: self.basis.content, workers: self.delivery.analysis_workers }
+        AnalysisRequest { profile: self.basis.content, workers: self.delivery.workers.analysis }
     }
 }
 
@@ -973,7 +968,9 @@ fn report_once(
         cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
             .map_err(|error| value_error(&error))?,
         cache_path: fdu_core::default_cache_path(&root),
-        analysis_workers,
+        workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
+        batch_size: fdu_core::ScanConfig::default().batch_size,
+        order: fdu_core::ScanOrder::default(),
         // A one-shot report is neither partial-tolerant nor repeated: this function
         // returns one complete answer or raises.
         accept_partial: false,
@@ -1228,15 +1225,16 @@ fn open(
         cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
             .map_err(|error| value_error(&error))?,
         cache_path: fdu_core::default_cache_path(&root),
-        analysis_workers,
+        workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
+        batch_size: fdu_core::ScanConfig::default().batch_size,
+        order: fdu_core::ScanOrder::default(),
         accept_partial: false,
         // An index is opened here and may be watched later; `Index.watch` states the
         // watch delivery then, over this one.
         watch: None,
     };
-    let config = OpenConfig::of(&basis, &delivery);
 
-    let opened = py.detach(|| fdu_core::open(&root, &config));
+    let opened = py.detach(|| fdu_core::open(&basis, &delivery));
     let (index, _report) = opened.map_err(to_py_err)?;
     Ok(PyIndex { inner: index, basis, delivery })
 }
@@ -1285,12 +1283,13 @@ fn scan(
     let delivery = Delivery {
         cache: CachePolicy::Off,
         cache_path: None,
-        analysis_workers,
+        workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
+        batch_size: fdu_core::ScanConfig::default().batch_size,
+        order: fdu_core::ScanOrder::default(),
         accept_partial: false,
         watch: None,
     };
-    let config = OpenConfig::of(&basis, &delivery);
-    let scanned = py.detach(|| fdu_core::open(&root, &config));
+    let scanned = py.detach(|| fdu_core::open(&basis, &delivery));
     let (index, _report) = scanned.map_err(to_py_err)?;
     // A bare scan never consults the cache, so it is always cold.
     Ok(PyIndex { inner: index, basis, delivery })
@@ -1412,7 +1411,7 @@ mod tests {
                     inner: fdu_core::Index::new("/unused"),
                     basis: Basis {
                         root: PathBuf::from("/unused"),
-                        scope: fdu_core::ScanConfig::default(),
+                        scope: fdu_core::query::Scope::default(),
                         content: AnalysisSet::NONE,
                     },
                     delivery: Delivery {
@@ -1420,7 +1419,9 @@ mod tests {
                         cache_path: None,
                         accept_partial: false,
                         watch: None,
-                        analysis_workers: 0,
+                        workers: fdu_core::query::Workers::default(),
+                        batch_size: fdu_core::ScanConfig::default().batch_size,
+                        order: fdu_core::ScanOrder::default(),
                     },
                 },
             )

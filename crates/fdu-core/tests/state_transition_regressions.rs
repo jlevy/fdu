@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use fdu_core::content::{AnalysisRequest, AnalysisSet, analyze_index};
 use fdu_core::query::{Basis, Query, Request, report};
 use fdu_core::scan::{ScanConfig, reconcile, reconcile_handle, reconcile_subtree, scan_into_index};
-use fdu_core::{CachePolicy, Coverage, IndexHandle, OpenConfig, OpenPath};
+use fdu_core::{CachePolicy, Coverage, IndexHandle, OpenPath};
 
 #[test]
 fn control_read_failure_has_identical_cold_serial_and_parallel_rules() {
@@ -59,13 +59,12 @@ fn warm_partial_report_retains_reconciliation_error() {
     assert_eq!(denied.kind(), std::io::ErrorKind::PermissionDenied);
 
     let opened = fdu_core::open(
-        root.path(),
-        &OpenConfig {
-            policy: CachePolicy::ReadOnly,
-            cache_path: Some(snapshot),
-            scan: config,
-            ..OpenConfig::default()
+        &Basis {
+            root: root.path().to_path_buf(),
+            scope: config.into(),
+            content: AnalysisSet::NONE,
         },
+        &fdu_core::query::Delivery::new(CachePolicy::ReadOnly, Some(snapshot)),
     );
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).expect("restore");
 

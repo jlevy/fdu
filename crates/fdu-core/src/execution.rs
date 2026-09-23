@@ -13,7 +13,7 @@ use crate::query::{
     Delivery, Report, ReportProvenance, ReportSource, Request, SummaryRow, TreeStatus, ViewSpec,
     report, report_summary,
 };
-use crate::{CachePolicy, EntryKind, Error, OpenConfig, OpenPath, PendingSave, Result, execute};
+use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Result, execute};
 
 /// The minimum state a one-shot report plan retains while scanning.
 ///
@@ -325,7 +325,7 @@ fn prepare_report_internal(
     // keeps the refusal independent of the delivery: the cache-only tier never scans and
     // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
-    let config = &OpenConfig::of(&request.basis, delivery);
+    let scan_config = request.basis.scope.scan_config(delivery);
     let query = &request.query;
     let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();
@@ -357,16 +357,16 @@ fn prepare_report_internal(
             };
             let (scan, scan_diagnostics) = if collect_scan_diagnostics {
                 let (scan, diagnostics) =
-                    crate::scan::scan_with_diagnostics(&root, &config.scan, &mut reduce)?;
+                    crate::scan::scan_with_diagnostics(&root, &scan_config, &mut reduce)?;
                 (scan, Some(diagnostics))
             } else {
-                (crate::scan::scan(&root, &config.scan, &mut reduce)?, None)
+                (crate::scan::scan(&root, &scan_config, &mut reduce)?, None)
             };
             let complete = scan.is_complete();
             let generated_at = SystemTime::now();
             let report = report_summary(
                 &root,
-                config.scan.scope(),
+                scan_config.scope(),
                 query.selection.size,
                 summary,
                 TreeStatus::of_walk(&root, &scan),
@@ -385,7 +385,7 @@ fn prepare_report_internal(
                 execute(&plan, &request.basis, collect_scan_diagnostics)?;
             let performance = PerformanceSummary::from_open_report(&open_report);
             let answer = report(&index, request, SystemTime::now())?;
-            debug_assert_eq!(answer.scope, config.scan.scope());
+            debug_assert_eq!(answer.scope, scan_config.scope());
             Ok((answer, pending_save, performance, scan_diagnostics))
         }
     }
@@ -397,8 +397,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::ScanConfig;
     use crate::query::{IgnoredEntries, Pattern, Query, Section};
+    use crate::{OpenFixture, ScanConfig};
 
     #[test]
     fn write_policy_depends_only_on_delivery_and_observed_facts() {
@@ -443,7 +443,7 @@ mod tests {
         }
     }
 
-    fn planned(config: &OpenConfig, query: &Query) -> Plan {
+    fn planned(config: &OpenFixture, query: &Query) -> Plan {
         let (request, delivery) = split(Path::new("."), config, query);
         plan(&request, &delivery, Route::OneShot).expect("valid plan")
     }
@@ -452,9 +452,9 @@ mod tests {
         Query { views: vec![ViewSpec::Summary], ..Query::default() }
     }
 
-    /// The request and the delivery a test's `OpenConfig` spells, split the way the two
+    /// The request and the delivery a test's `OpenFixture` spells, split the way the two
     /// models now divide it: what the answer says, and how it is carried out.
-    fn split(root: &Path, config: &OpenConfig, query: &Query) -> (Request, Delivery) {
+    fn split(root: &Path, config: &OpenFixture, query: &Query) -> (Request, Delivery) {
         let (basis, delivery) = config.split(root);
         (Request::new(basis, query.clone(), SystemTime::now()), delivery)
     }
@@ -462,7 +462,7 @@ mod tests {
     /// [`prepare_report`] as these tests ask for it: one configuration, one query.
     fn prepared(
         root: &Path,
-        config: &OpenConfig,
+        config: &OpenFixture,
         query: &Query,
     ) -> Result<(Report, PendingSave, PerformanceSummary)> {
         let (request, delivery) = split(root, config, query);
@@ -472,7 +472,7 @@ mod tests {
     /// [`prepared`], keeping the scan diagnostics.
     fn prepared_with_diagnostics(
         root: &Path,
-        config: &OpenConfig,
+        config: &OpenFixture,
         query: &Query,
     ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)>
     {
@@ -480,14 +480,14 @@ mod tests {
         prepare_report_with_scan_diagnostics(&request, &delivery)
     }
 
-    fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
-        OpenConfig { scan: ScanConfig::default(), cache_path, policy, ..OpenConfig::default() }
+    fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenFixture {
+        OpenFixture { scan: ScanConfig::default(), cache_path, policy, ..OpenFixture::default() }
     }
 
     /// [`config`] with `.gitignore` observation turned off, the one scan the compact
     /// summary tier can answer.
-    fn blind(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
-        OpenConfig {
+    fn blind(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenFixture {
+        OpenFixture {
             scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
             ..config(policy, cache_path)
         }
@@ -497,19 +497,19 @@ mod tests {
         policy: CachePolicy,
         cache_path: PathBuf,
         read_controls: bool,
-    ) -> OpenConfig {
-        OpenConfig {
+    ) -> OpenFixture {
+        OpenFixture {
             scan: ScanConfig { read_controls, ..ScanConfig::default() },
             cache_path: Some(cache_path),
             policy,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         }
     }
 
     fn seed_controls_snapshot(root: &Path, cache_path: PathBuf) {
         fs::write(root.join(".gitignore"), b"ignored.log\n").expect("control file");
         fs::write(root.join("ignored.log"), b"ignored").expect("ignored file");
-        crate::open(root, &controls_config(CachePolicy::Auto, cache_path, true))
+        crate::open_fixture(root, &controls_config(CachePolicy::Auto, cache_path, true))
             .expect("seed controls-on snapshot");
     }
 
@@ -599,7 +599,7 @@ mod tests {
 
         // Analysis reuses the content sidecar, which avoids re-reading file bodies —
         // the one measured case where a warm read wins (639 ms to 325 ms).
-        let analyzed = OpenConfig {
+        let analyzed = OpenFixture {
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_code(),
                 ..Default::default()
@@ -629,7 +629,7 @@ mod tests {
             crate::content::AnalysisSet::NONE.with_words(),
             crate::content::AnalysisSet::ALL,
         ] {
-            let analyzed = OpenConfig {
+            let analyzed = OpenFixture {
                 analysis: crate::content::AnalysisRequest { profile, ..Default::default() },
                 ..blind(CachePolicy::Off, None)
             };
@@ -671,7 +671,7 @@ mod tests {
 
         // A default report and a default `open` both observe control state, so they share
         // one snapshot scope and the `open` starts from the report's snapshot.
-        let (_, open_report) = crate::open(root.path(), &auto).expect("library open");
+        let (_, open_report) = crate::open_fixture(root.path(), &auto).expect("library open");
         assert_eq!(
             open_report.path_taken,
             OpenPath::WarmRevalidate,
@@ -730,7 +730,7 @@ mod tests {
             prepared(root.path(), &controls_off, &query).expect("projected report");
         pending.join().expect("no cache-only save");
 
-        let cold = OpenConfig { policy: CachePolicy::Off, cache_path: None, ..controls_off };
+        let cold = OpenFixture { policy: CachePolicy::Off, cache_path: None, ..controls_off };
         let (mut expected, pending, _) =
             prepared(root.path(), &cold, &query).expect("controls-off cold report");
         pending.join().expect("no cold save");
@@ -752,7 +752,7 @@ mod tests {
         let cache_path = cache.path().join("cache.fdu");
         seed_controls_snapshot(root.path(), cache_path.clone());
 
-        let controls_off = OpenConfig {
+        let controls_off = OpenFixture {
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..Default::default()
@@ -868,7 +868,7 @@ mod tests {
         for policy in
             [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
         {
-            let asked = OpenConfig {
+            let asked = OpenFixture {
                 scan: unsupported.clone(),
                 ..config(policy, Some(cache_path.clone()))
             };
@@ -980,7 +980,7 @@ mod tests {
         pending.join().expect("save");
 
         let only = config(CachePolicy::Only, Some(cache_path));
-        let (index, report) = crate::open(root.path(), &only).expect("the shared snapshot");
+        let (index, report) = crate::open_fixture(root.path(), &only).expect("the shared snapshot");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
     }
@@ -1003,7 +1003,7 @@ mod tests {
         assert!(cache_path.exists(), "the report left a snapshot");
 
         let only = blind(CachePolicy::Only, Some(cache_path));
-        let (index, report) = crate::open(root.path(), &only).expect("the shared snapshot");
+        let (index, report) = crate::open_fixture(root.path(), &only).expect("the shared snapshot");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert!(matches!(
             index.is_ignored(Path::new("file.txt")),
@@ -1028,7 +1028,7 @@ mod tests {
 
         // Only a report that turns control observation off takes the compact tier, so the
         // index it must match exactly is opened under that scope too.
-        let (index, _open_report) = crate::open(root.path(), &off).expect("indexed scan");
+        let (index, _open_report) = crate::open_fixture(root.path(), &off).expect("indexed scan");
         let indexed = report(
             &index,
             &crate::test_support::read_of(&index, query.clone()),

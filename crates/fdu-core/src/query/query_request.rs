@@ -28,6 +28,98 @@ use crate::query::query_values::{
 };
 use crate::scan::ScanConfig;
 
+/// Semantic filesystem scope, independent of scheduling and batching.
+#[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct Scope {
+    /// Maximum retained depth.
+    pub max_depth: Option<usize>,
+    /// Whether directory symlinks are followed.
+    pub follow_symlinks: bool,
+    /// Whether traversal stays on one filesystem.
+    pub one_filesystem: bool,
+    /// Hidden-component admission.
+    pub hidden: Option<std::sync::Arc<crate::admission::HiddenPolicy>>,
+    /// Whether special filesystem objects are excluded.
+    pub exclude_special: bool,
+    /// Classification rules.
+    pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
+    /// Whether gitignore control files are observed.
+    pub read_controls: bool,
+    /// Control admission limits.
+    pub control_limits: ControlLimits,
+}
+impl Default for Scope {
+    fn default() -> Self {
+        ScanConfig::default().into()
+    }
+}
+impl From<ScanConfig> for Scope {
+    fn from(scan: ScanConfig) -> Self {
+        Self {
+            max_depth: scan.max_depth,
+            follow_symlinks: scan.follow_symlinks,
+            one_filesystem: scan.one_filesystem,
+            hidden: scan.hidden,
+            exclude_special: scan.exclude_special,
+            types: scan.types,
+            read_controls: scan.read_controls,
+            control_limits: scan.control_limits,
+        }
+    }
+}
+impl Scope {
+    /// Derive the scanner's operational configuration from this scope and a delivery.
+    pub fn scan_config(&self, delivery: &Delivery) -> ScanConfig {
+        ScanConfig {
+            max_depth: self.max_depth,
+            follow_symlinks: self.follow_symlinks,
+            one_filesystem: self.one_filesystem,
+            hidden: self.hidden.clone(),
+            exclude_special: self.exclude_special,
+            types: self.types.clone(),
+            read_controls: self.read_controls,
+            control_limits: self.control_limits,
+            threads: delivery.workers.scan,
+            batch_size: delivery.batch_size,
+            order: delivery.order,
+        }
+    }
+    fn identity_config(&self) -> ScanConfig {
+        ScanConfig {
+            max_depth: self.max_depth,
+            follow_symlinks: self.follow_symlinks,
+            one_filesystem: self.one_filesystem,
+            hidden: self.hidden.clone(),
+            exclude_special: self.exclude_special,
+            types: self.types.clone(),
+            read_controls: self.read_controls,
+            control_limits: self.control_limits,
+            ..ScanConfig::default()
+        }
+    }
+    /// Semantic identity observed by the scanner.
+    pub fn scope(&self) -> crate::ScanScope {
+        self.identity_config().scope()
+    }
+    /// Identity of the persisted metadata tiers.
+    pub fn snapshot_identity(&self) -> crate::SnapshotIdentity {
+        self.identity_config().snapshot_identity()
+    }
+    pub(crate) fn unsupported_axis(&self) -> Option<ScopeAxis> {
+        self.identity_config().unsupported_axis()
+    }
+}
+
+/// Operational worker limits. Zero analysis workers selects available parallelism.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Workers {
+    /// Directory-reading workers; absent selects the engine's bounded automatic pool.
+    pub scan: Option<usize>,
+    /// Content-reader workers.
+    pub analysis: usize,
+}
+
 /// What a retained index or an opened root holds for its lifetime.
 ///
 /// Everything here shapes the stored state itself, so a read can only be answered by a
@@ -41,7 +133,7 @@ pub struct Basis {
     /// `ScanConfig` still carries delivery fields (`threads`, `batch_size`, `order`), and
     /// `threads` stays the authoritative scan worker count until worker counts move into
     /// [`Delivery`]; none of them changes an answer.
-    pub scope: ScanConfig,
+    pub scope: Scope,
     /// The analyzers whose results the answer may report.
     pub content: AnalysisSet,
 }
@@ -64,7 +156,7 @@ impl Basis {
         let controls = index.control_identity();
         Self {
             root: index.root_path().to_path_buf(),
-            scope: ScanConfig {
+            scope: Scope {
                 max_depth: scope.max_depth,
                 follow_symlinks: scope.follow_symlinks,
                 one_filesystem: scope.one_filesystem,
@@ -74,7 +166,7 @@ impl Basis {
                     crate::ControlTierIdentity::Observed { limits } => limits,
                     crate::ControlTierIdentity::NotObserved => Self::UNOBSERVED_LIMITS,
                 },
-                ..ScanConfig::default()
+                ..Scope::default()
             },
             content: index.content_set(),
         }
@@ -129,11 +221,28 @@ pub struct Delivery {
     pub accept_partial: bool,
     /// Whether the answer repeats as a watch, and how.
     pub watch: Option<WatchDelivery>,
-    /// Content-reader workers; zero asks for the machine's available parallelism.
-    pub analysis_workers: usize,
+    /// Directory and content reader workers.
+    pub workers: Workers,
+    /// Maximum operations in one scanner batch.
+    pub batch_size: usize,
+    /// Directory traversal scheduling.
+    pub order: crate::ScanOrder,
 }
 
 impl Delivery {
+    /// Ordinary execution settings with an explicitly chosen cache policy and location.
+    pub fn new(cache: CachePolicy, cache_path: Option<PathBuf>) -> Self {
+        Self {
+            cache,
+            cache_path,
+            accept_partial: false,
+            watch: None,
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
+        }
+    }
+
     /// Representative deliveries for checking policy independently of route.
     /// Worker counts and cache location are fixed; every cache, partial-answer, and
     /// watch choice is represented.
@@ -148,15 +257,15 @@ impl Delivery {
         .into_iter()
         .flat_map(|cache| {
             [false, true].into_iter().flat_map(move |accept_partial| {
-                [None, Some(WatchDelivery { interval: Duration::from_secs(2) })].into_iter().map(
-                    move |watch| Self {
-                        cache,
-                        cache_path: Some(PathBuf::from("cache.fdu")),
-                        accept_partial,
-                        watch,
-                        analysis_workers: 1,
-                    },
-                )
+                [None, Some(WatchDelivery::default())].into_iter().map(move |watch| Self {
+                    cache,
+                    cache_path: Some(PathBuf::from("cache.fdu")),
+                    accept_partial,
+                    watch,
+                    workers: Workers { analysis: 1, ..Workers::default() },
+                    batch_size: ScanConfig::default().batch_size,
+                    order: crate::ScanOrder::default(),
+                })
             })
         })
     }
@@ -167,6 +276,16 @@ impl Delivery {
 pub struct WatchDelivery {
     /// The longest a repaint waits for changes; change detection itself is event-driven.
     pub interval: Duration,
+}
+
+impl Default for WatchDelivery {
+    fn default() -> Self {
+        Self { interval: Self::DEFAULT_INTERVAL }
+    }
+}
+impl WatchDelivery {
+    /// Shared default repaint cadence for every surface.
+    pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(2);
 }
 
 /// Everything that determines an answer.
@@ -505,12 +624,9 @@ fn parse_content(
 /// The delivery fields a `ScanConfig` still carries -- threads, batch size, order -- are
 /// its own defaults: no answer depends on them, and they move into `Delivery` with
 /// `Workers`.
-fn parse_scope(
-    spec: &RequestSpec<'_>,
-    axes: &'static AxisNames,
-) -> Result<ScanConfig, RequestError> {
+fn parse_scope(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> Result<Scope, RequestError> {
     let limits = Request::DEFAULTS.control_limits;
-    Ok(ScanConfig {
+    Ok(Scope {
         max_depth: spec
             .scan_depth
             .map(|value| {
@@ -532,7 +648,7 @@ fn parse_scope(
                     .map_err(|error| named_refusal(error, axes.control_line_limit))
             })?,
         },
-        ..ScanConfig::default()
+        ..Scope::default()
     })
 }
 
@@ -1570,7 +1686,7 @@ mod tests {
     fn basis(content: AnalysisSet, read_controls: bool) -> Basis {
         Basis {
             root: root().to_path_buf(),
-            scope: ScanConfig { read_controls, ..ScanConfig::default() },
+            scope: Scope { read_controls, ..ScanConfig::default() },
             content,
         }
     }
@@ -1773,12 +1889,11 @@ mod tests {
             cache_path: None,
             accept_partial: false,
             watch: None,
-            analysis_workers: 0,
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
         };
-        let watching = Delivery {
-            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            ..one_shot.clone()
-        };
+        let watching = Delivery { watch: Some(WatchDelivery::default()), ..one_shot.clone() };
         let cases = [
             (
                 RequestSpec { scan_depth: Some("2"), ..RequestSpec::new(root()) },
@@ -1824,8 +1939,10 @@ mod tests {
             cache: CachePolicy::Only,
             cache_path: None,
             accept_partial: false,
-            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            analysis_workers: 0,
+            watch: Some(WatchDelivery::default()),
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
         };
         let everything = RequestSpec {
             scan_depth: Some("2"),
@@ -1858,8 +1975,10 @@ mod tests {
             cache: CachePolicy::Auto,
             cache_path: None,
             accept_partial: false,
-            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            analysis_workers: 0,
+            watch: Some(WatchDelivery::default()),
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
         };
         let spec = RequestSpec { one_filesystem: true, ..RequestSpec::new(root()) };
         let request = built(&spec);

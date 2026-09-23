@@ -204,7 +204,7 @@ impl OpenedIndex {
     pub fn basis() -> crate::query::Basis {
         crate::query::Basis {
             root: PathBuf::new(),
-            scope: ScanConfig { read_controls: true, ..ScanConfig::default() },
+            scope: crate::query::Scope { read_controls: true, ..crate::query::Scope::default() },
             content: crate::content::AnalysisSet::NONE,
         }
     }
@@ -2206,12 +2206,12 @@ mod tests {
         std::fs::write(root.path().join("file.txt"), b"one").expect("fixture");
 
         let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
-        let (detached, _) = crate::open(
+        let (detached, _) = crate::open_fixture(
             root.path(),
-            &crate::OpenConfig {
+            &crate::OpenFixture {
                 cache_path: None,
                 policy: crate::CachePolicy::Off,
-                ..crate::OpenConfig::default()
+                ..crate::OpenFixture::default()
             },
         )
         .expect("blocking open");

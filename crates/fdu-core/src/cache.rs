@@ -673,7 +673,7 @@ fn clear_leftover(path: &Path, kind: LeftoverKind) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CachePolicy, OpenConfig, open};
+    use crate::{CachePolicy, OpenFixture, open};
 
     /// Byte offset of the format version: it follows the eight-byte magic.
     const VERSION_OFFSET: usize = 8;
@@ -688,10 +688,10 @@ mod tests {
 
     fn seed(tree: &Path, snapshot_path: &Path) {
         std::fs::write(tree.join("a.txt"), b"hello").expect("write");
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(snapshot_path.to_path_buf()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
         open(tree, &config).expect("seed");
     }
@@ -727,14 +727,14 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache");
         let path = cache.path().join(layout_name(1));
         std::fs::write(tree.path().join("notes.md"), b"one two\n").expect("write");
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(path.clone()),
             policy: CachePolicy::Auto,
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..crate::content::AnalysisRequest::default()
             },
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
         let (index, _) = open(tree.path(), &config).expect("seed analyzed cache");
 
@@ -826,14 +826,14 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache");
         let path = cache.path().join(layout_name(1));
         std::fs::write(tree.path().join("notes.md"), b"one two\n").expect("write");
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(path.clone()),
             policy: CachePolicy::Auto,
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..crate::content::AnalysisRequest::default()
             },
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
         open(tree.path(), &config).expect("seed analyzed cache");
         with_format_version(&path, &path, |version| version - 1);
@@ -855,14 +855,14 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache");
         let path = cache.path().join(layout_name(1));
         std::fs::write(tree.path().join("notes.md"), b"one two\n").expect("write");
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(path.clone()),
             policy: CachePolicy::Auto,
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..crate::content::AnalysisRequest::default()
             },
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
         open(tree.path(), &config).expect("seed analyzed cache");
         let sidecar = crate::content::content_cache_path(&path);
