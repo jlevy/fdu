@@ -420,8 +420,7 @@ def check_an_index_can_opt_out_of_control_state() -> None:
         cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
         assert cached.report().provenance.source is fdu.ReportSource.CACHE_ONLY
         assert (
-            fdu.open(root, scan=opted_out).report().provenance.source
-            is fdu.ReportSource.COLD_SCAN
+            fdu.open(root, scan=opted_out).report().provenance.source is fdu.ReportSource.COLD_SCAN
         )
     finally:
         fdu.clear_cache(root)

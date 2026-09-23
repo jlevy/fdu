@@ -262,9 +262,7 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
             }
         ]
     )
-    wire.update(
-        {"root": "/�", "root_raw": {"encoding": "unix-bytes", "hex": "2f80"}}
-    )
+    wire.update({"root": "/�", "root_raw": {"encoding": "unix-bytes", "hex": "2f80"}})
     report = report_from_dict(wire)
     assert os.fsencode(report.root) == b"/\x80"
     section = report.sections[0]

@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu_core::query::{Basis, Delivery, Provenance, Query, ReportSource, Request, ViewSpec};
+use fdu_core::query::{Basis, Delivery, Query, Request, ViewSpec};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
     EngineVersion, EntryId, EntryKind, Index, IndexState, Knowledge, LifecyclePhase, Observation,
@@ -570,13 +570,6 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         views: vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents],
         ..Query::default()
     };
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: std::time::UNIX_EPOCH,
-        source: ReportSource::ColdScan,
-        complete: analysis.is_complete(),
-        errors: Vec::new(),
-    };
     let read = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
@@ -588,7 +581,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     );
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));
+        black_box(fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("report"));
     }
     let component = started.elapsed();
     // The historical benchmark digest hashes retained index/content facts after the
@@ -757,8 +750,8 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         index_len: None,
         ..Summary::default()
     };
-    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
-    summary.complete = report.complete;
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.status.complete;
     // The walk counted more than the summary reports -- symlinks and other kinds are
     // observed and then deliberately not tallied -- so entries is the honest total of
     // what this tier can speak for, not of what it touched.
@@ -839,10 +832,10 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         index_len: None,
         ..Summary::default()
     };
-    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
     summary.counters = counters;
     summary.scan_diagnostics = scan_diagnostics;
-    summary.complete = report.complete;
+    summary.complete = report.status.complete;
     summary.entries = root.files + root.dirs;
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
     // A rewrite lands a fresh temporary and renames it over the path, so the file's
@@ -1258,29 +1251,21 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         query,
         now,
     );
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: now,
-        source: ReportSource::ColdScan,
-        complete: true,
-        errors: Vec::new(),
-    };
-
-    let first = fdu_core::query::report(&index, &request, &provenance)?;
+    let first = fdu_core::query::report(&index, &request, now)?;
     let first_rendered =
         fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false);
     black_box(first_rendered.len());
 
     let started = Instant::now();
-    let second = fdu_core::query::report(&index, &request, &provenance)?;
+    let second = fdu_core::query::report(&index, &request, now)?;
     let rendered =
         fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false);
     black_box(rendered.len());
     let component = started.elapsed();
 
     let mut summary = summarize_index(arguments, &index)?;
-    summary.errors = u64::try_from(second.errors.len()).unwrap_or(u64::MAX);
-    summary.complete = second.complete;
+    summary.errors = u64::try_from(second.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = second.status.complete;
     Ok(ProbeOutput::new(arguments.mode, "index-retained", component, summary))
 }
 
