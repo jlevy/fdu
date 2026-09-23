@@ -984,13 +984,14 @@ impl ActiveReconcile {
         }
     }
 
-    fn refuses(&self, observation: &Observation) -> bool {
+    fn refuses(&self, observation: &Observation, index: &Index) -> bool {
         match &self.evidence {
             ReconcileEvidence::Retry => true,
             ReconcileEvidence::Scopes(scopes) => observation.ops.iter().any(|op| {
                 scopes
                     .iter()
                     .any(|path| op.op.path().starts_with(path) || path.starts_with(op.op.path()))
+                    && !index.holds_target(&op.op, index.path_state(op.op.path()))
             }),
         }
     }
@@ -1488,7 +1489,7 @@ impl IndexHandle {
         if index
             .active_reconciles
             .get(&started_at)
-            .is_some_and(|active| active.refuses(observation))
+            .is_some_and(|active| active.refuses(observation, &index))
         {
             let stats = ApplyStats {
                 stale: u64::try_from(observation.len()).unwrap_or(u64::MAX),
@@ -3127,7 +3128,12 @@ impl Index {
             }
         }
         let mut state = Vec::new();
-        if superseded.is_empty() && (complete || !scoped_failures.is_empty()) {
+        // A complete older walk plus successful newer child verification still proves
+        // the entire scope. A newer failed child must keep its own evidence and mark.
+        let verified_scope = superseded.is_empty()
+            || (complete
+                && superseded.iter().all(|newer| self.freshness_at(newer) == Freshness::Fresh));
+        if verified_scope && (complete || !scoped_failures.is_empty()) {
             // A sweep stat'd every entry beneath `path` except the precise failure paths,
             // which carry stronger `Partial` marks below. Record the successful interval
             // once rather than manufacturing millions of unchanged entry updates.
@@ -9789,6 +9795,44 @@ mod tests {
         assert_eq!(index.freshness_at(Path::new("a")), Freshness::Fresh);
         assert_eq!(index.freshness_at(Path::new("b/blocked")), Freshness::Partial);
     }
+    #[test]
+    fn complete_older_root_does_not_verify_a_newer_failed_child() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer, _) = index.begin_reconcile(Path::new("child")).expect("newer child");
+        let error = crate::Error::io(
+            root.join("child"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "new failure"),
+        );
+        index
+            .finish_reconcile(
+                Path::new("child"),
+                newer,
+                false,
+                &[],
+                &[PathBuf::from("child")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("failed child");
+        let finish = index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("complete older walk");
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.freshness_at(Path::new("child")), Freshness::Partial);
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert!(!finish.commit.iter().flat_map(|commit| commit.state.iter()).any(|state| {
+            matches!(state, StateTransition::Verified { path } if path.as_os_str().is_empty())
+        }));
+    }
+
     #[test]
     fn reconciliation_scope_budget_preserves_issues_and_newer_facts() {
         let mut index = Index::new("/root");
