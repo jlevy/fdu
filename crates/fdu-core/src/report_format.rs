@@ -952,9 +952,15 @@ fn render_text_metrics(
         };
         let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
         if let Some(physical_lines) = row.metrics.physical_lines.filter(|lines| *lines > 0) {
-            if let (Some(code_lines), Some(comment_lines), Some(code_blank_lines)) =
-                (row.metrics.code_lines, row.metrics.comment_lines, row.metrics.code_blank_lines)
-            {
+            let code_fully_analyzed = row.code_coverage.as_ref().is_some_and(|coverage| {
+                coverage.len() == 1 && coverage.get(&CoverageReason::Analyzed) == Some(&row.files)
+            });
+            if let (true, Some(code_lines), Some(comment_lines), Some(code_blank_lines)) = (
+                code_fully_analyzed,
+                row.metrics.code_lines,
+                row.metrics.comment_lines,
+                row.metrics.code_blank_lines,
+            ) {
                 let _ = write!(
                     suffix,
                     ", {} lines ({} code, {} comment, {} blank)",
