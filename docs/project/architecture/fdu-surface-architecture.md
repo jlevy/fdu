@@ -161,6 +161,8 @@ Machine output names its schema in a `schema` field: at the top of a JSON or YAM
 document, in the first record of JSON Lines, and on every watch stream record.
 The version is the compatibility promise: changing a field’s name, type, or meaning
 bumps it, and a golden fails when the output moves without a bump.
+A version no release has emitted yet is a draft that may still change in place, as
+[the release process](../guides/release-process.md) states.
 Each identity is a constant in the engine’s
 [`report_format`](../../../crates/fdu-core/src/report_format.rs) module, so every
 surface emits the same string.

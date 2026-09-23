@@ -63,7 +63,7 @@ SELECTION
       --only-ignored            Report only entries a .gitignore rule ignores
   -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all`
                                 [tree default: 2]
-  -n, --limit <N>               Rows to show, per group. Accepts `all`
+  -n, --limit <N>               Rows to show, per group, or in all for a flat list. Accepts `all`
       --sort <KEY>              Order results: size, count, mtime, or name
       --reverse                 Reverse the ordering
       --size <METRIC>           Which size metric to report: allocated or apparent [default:

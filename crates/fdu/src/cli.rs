@@ -470,7 +470,7 @@ pub struct Cli {
     #[arg(short, long, value_name = "N", help_heading = "SELECTION")]
     pub depth: Option<String>,
 
-    /// Rows to show, per group. Accepts `all`.
+    /// Rows to show, per group, or in all for a flat list. Accepts `all`.
     ///
     /// Each view brings its own default, because one number does not suit them all: a
     /// tree shows ten per directory, `largest` and `recent` show twenty, and `files`

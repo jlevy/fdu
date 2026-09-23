@@ -49,9 +49,9 @@ report (`fdu.report/7`), the watch stream (`fdu.stream/2`), and cache status
 (`fdu.cache/2`) each version independently, as
 [the surface architecture](../architecture/fdu-surface-architecture.md#machine-output-schemas)
 lists. The bump rule protects consumers of a released schema.
-A schema version that no published release has emitted yet is still a draft: changes
-before its first release extend that version rather than minting another, and the
-CHANGELOG entry for the release that first emits it describes its final shape.
+A schema version that no published release has emitted yet is still a draft: it may
+change in place before its first release, without a new number, and the CHANGELOG entry
+for the release that first emits it describes its final shape.
 Every release also strands the snapshots the previous one wrote, because the engine
 fingerprint mixes in the crate version: after an upgrade `--cache-status` reports them
 as `stale`, no run reuses them, and `--cache-clear` removes them.
