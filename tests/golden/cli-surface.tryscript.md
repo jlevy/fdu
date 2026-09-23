@@ -543,7 +543,7 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
