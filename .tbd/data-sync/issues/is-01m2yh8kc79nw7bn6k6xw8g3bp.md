@@ -5,7 +5,7 @@ title: Address remaining 0.1 correctness blockers after performance review
 kind: task
 status: in_progress
 priority: 1
-version: 27
+version: 28
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
@@ -30,7 +30,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:30:19.526Z
-updated_at: 2026-09-23T04:33:32.059Z
+updated_at: 2026-09-23T04:50:54.013Z
 started_at: 2026-09-20T04:31:31.377Z
 ---
 Audit remaining release correctness against the current #92 stack, reconcile stale or already-fixed beads, implement confirmed defects in coherent slices with subagents, review changes, validate and publish PRs. Preserve unrelated directory-rollup work and existing core-model ownership. Final candidate verification remains distinct from publishing.
@@ -46,3 +46,5 @@ Integration now includes report7/stream2 serializers and typed Python models, pe
 2026-09-22 stabilization checkpoint: native stack111 has nine reviewed dependent PRs99→98→110→112→113→114→115→116→117. Final production at4464308e (test-only followups throughff2b07da) fixes typed answers, per-analyzer values, shared writers, scope/state reconciliation, watch handoff, Plan/Delivery persistence, controls-off projection, and directory-query composition. New fdu-bwo2 canonical own-listing withdrawal and explicit DirectoryIncomplete publication reviewed independently; Linux full matrix16272cases zero deviations at446, release rehearsal35814796698 all9jobs passed. FinalLinux parity artifact recorded by CI and independently reviewed: same24 existing deviations,10additional passing sessions. Final local broad gate has passed core828 tests/integrations/CLI175/format64; remaining gate and finalall-platform CI still running. Currentheadff2b fullPI/release35815753312 pending; intermediate layer fixture/prerequisite cleanup being batched. User requested switching remaining subagent work toSol to conserve budget; model handoff completed. AllPRs remain unmerged; implementation beads remain inprogress for final validation/publication acceptance. No performance acceptance or release publication claim.
 
 2026-09-22 publication checkpoint: after exact ff2b07da path-independence run35815707617 passed Linux16,272, macOS16,272, Windows14,382 cases with zero false verdicts and zero exception lists on each, the reviewed test-fixture/parity batch fast-forwarded the native stack: PR113 876bd39c, PR114 0266b95c, PR115 7a38900b, PR116 ee8cff4c, PR117 d0fbbe93. PR117 includes reviewed plan evidence and merge order. Production behavior did not change from ff2b07da; corrections are golden portability/guide text, exact Linux parity artifact lines, and pedantic test literals. New exact-head CI and final acceptance remain pending; no PR merge, release publication, or performance integration occurred.
+
+2026-09-22 final stack checkpoint: native stack #111 has nine dependent reviewed PRs 99→98→110→112→113→114→115→116→117, all unmerged. Current heads 113 876bd39c, 114 0266b95c, 115 eb862ec6, 116 57f01a48, 117 adc39d24 each passed all 19 CI jobs; applicable full PI runs passed, with final117 46,926 cases and empty registry on Linux/macOS/Windows (run 35819047425). PR115 PI is skipped by design. Packaged rehearsal at production-equivalent ff2b07da passed all nine jobs (35815753312); later changes were test/docs only. PR115 earlier Windows stall cause unproven, guard fdu-ex5k reviewed and fresh Windows test green. Technical review is not formal GitHub approval; no PR merge or release publication. Correctness acceptance stays in progress pending actual stack merge and final release verification.
