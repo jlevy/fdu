@@ -1091,9 +1091,8 @@ fn run_discovery(
 ) -> Result<()> {
     let root_metadata =
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
-    let root_dev = crate::scan::attrs_from(root, &root_metadata)
-        .map_err(|source| Error::io(root, source))?
-        .dev;
+    let root_dev =
+        crate::scan::root_device(root, &root_metadata).map_err(|source| Error::io(root, source))?;
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
