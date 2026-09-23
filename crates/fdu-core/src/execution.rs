@@ -308,15 +308,28 @@ pub fn plan(
     }
     let delivery = &normalized;
     request.validate_delivery(delivery)?;
-    if route == Route::Opened
-        && (delivery.cache != CachePolicy::Off
+    if route == Route::Opened {
+        if delivery.cache != CachePolicy::Off
             || delivery.watch.is_some()
-            || request.basis.content.is_enabled())
-    {
-        return Err(crate::query::RequestError::DeliveryUnsupported {
-            route: "opened",
-            reason: "progressive discovery requires cache off, no content analyzers, and observation configured through OpenOptions",
-        });
+            || request.basis.content.is_enabled()
+        {
+            return Err(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "progressive discovery requires cache off, no content analyzers, and observation configured through OpenOptions",
+            });
+        }
+        // An opened root runs one breadth-first producer and publishes coverage as state
+        // rather than as one answer, so these fields have no effect there. Refused rather
+        // than dropped: a delivery the route accepts is one it executes.
+        if delivery.workers.scan.is_some()
+            || delivery.order != crate::ScanOrder::default()
+            || delivery.accept_partial
+        {
+            return Err(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "progressive discovery schedules one breadth-first producer and reports coverage as state, so it takes no scan worker count, traversal order, or partial-answer acceptance",
+            });
+        }
     }
     if route == Route::Refresh && delivery.cache == CachePolicy::Only {
         return Err(crate::query::RequestError::DeliveryUnsupported {
@@ -706,7 +719,9 @@ mod tests {
                     || matches!(route, Route::Watch | Route::Refresh))
                     && delivery.cache == CachePolicy::Only
                     || route == Route::Opened
-                        && (delivery.cache != CachePolicy::Off || delivery.watch.is_some());
+                        && (delivery.cache != CachePolicy::Off
+                            || delivery.watch.is_some()
+                            || delivery.accept_partial);
                 assert_eq!(result.is_err(), forbidden, "{route:?} {delivery:?}");
                 if let Ok(plan) = result {
                     if route == Route::Opened {
@@ -716,6 +731,53 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn an_opened_root_refuses_the_scheduling_it_would_otherwise_drop() {
+        // `OpenOptions::into_parts` runs one breadth-first producer whatever the delivery
+        // says, and an opened root has no single answer for `accept_partial` to classify.
+        // A value the route would silently ignore is refused at planning instead, and the
+        // same values plan on a route that executes them.
+        let basis = crate::query::Basis {
+            root: ".".into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        let default = Delivery::new(CachePolicy::Off, None);
+        let plan_opened = plan(&request, &default, Route::Opened).expect("defaults plan");
+        assert_eq!(plan_opened.delivery().batch_size, default.batch_size);
+        let unhonored = [
+            (
+                "scan workers",
+                Delivery {
+                    workers: crate::query::Workers { scan: Some(4), ..default.workers },
+                    ..default.clone()
+                },
+            ),
+            (
+                "depth-first order",
+                Delivery { order: crate::ScanOrder::DepthFirst, ..default.clone() },
+            ),
+            ("accept partial", Delivery { accept_partial: true, ..default.clone() }),
+        ];
+        for (case, delivery) in unhonored {
+            let refused = plan(&request, &delivery, Route::Opened).expect_err(case);
+            assert!(
+                matches!(
+                    refused,
+                    crate::query::RequestError::DeliveryUnsupported { route: "opened", .. }
+                ),
+                "{case}: {refused}"
+            );
+            plan(&request, &delivery, Route::Retained)
+                .unwrap_or_else(|error| panic!("{case} executes on a retained route: {error}"));
+        }
+        // A larger batch is honored, so it is not refused.
+        let batched = Delivery { batch_size: default.batch_size * 2, ..default };
+        let plan_batched = plan(&request, &batched, Route::Opened).expect("batch size plans");
+        assert_eq!(plan_batched.delivery().batch_size, batched.batch_size);
     }
 
     #[test]

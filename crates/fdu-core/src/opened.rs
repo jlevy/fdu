@@ -173,7 +173,9 @@ impl OpenOptions {
             exclude_special: self.exclude_special,
             // The first opened-root scheduler is intentionally one parent-first
             // producer. Parallel I/O is an internal optimization, not a public
-            // semantic or tuning promise for this new API.
+            // semantic or tuning promise for this new API. `crate::plan` refuses a
+            // `Route::Opened` delivery that asks for another worker count or order, so
+            // nothing a caller asked for is dropped here.
             threads: Some(1),
             order: crate::ScanOrder::BreadthFirst,
             types: self.types,
