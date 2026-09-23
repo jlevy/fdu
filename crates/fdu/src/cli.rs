@@ -28,12 +28,16 @@ use fdu_core::query::{
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{CachePolicy, CacheScope, CacheState, default_cache_path};
-use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
+use fdu_core::{CachePolicy, CacheScope, CacheState, Progress, default_cache_path};
+use fdu_core::{
+    PerformanceSummary, prepare_report, prepare_report_with_progress,
+    prepare_report_with_scan_diagnostics,
+};
 
 use crate::progress_line::{
     ProgressMode, ProgressPlan, TerminalFacts, display_root, home_directory, should_draw,
 };
+use crate::progress_ticker::{ProgressIo, Ticker};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -622,12 +626,15 @@ impl Cli {
     /// `terminal` is what the process read about stderr once, in `run_process`; every
     /// stderr presentation decision, color and progress alike, is taken from it here
     /// rather than from the environment, so a test can say what the terminal is.
+    /// `progress_io` is what a drawing run draws with, read there too, so a test can
+    /// see the line's bytes and wait out no delay.
     pub fn run(
         &self,
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
         stdout_is_terminal: bool,
         terminal: &TerminalFacts,
+        progress_io: ProgressIo,
     ) -> anyhow::Result<RunOutcome> {
         let stderr_is_terminal = terminal.stderr_is_terminal;
         if self.docs {
@@ -684,6 +691,10 @@ impl Cli {
         // caller and a Python caller meet the same wall this command line has always been.
         request.validate_delivery(&delivery).map_err(|error| usage(&refused(&error)))?;
 
+        // Resolved before any work starts, beside the color decision; the ticker takes
+        // this rather than re-deriving it deeper in.
+        let progress_plan = self.progress_plan(terminal);
+
         #[cfg(feature = "watch")]
         if self.watch {
             let color = ColorContext::from_environment(
@@ -693,14 +704,32 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return Self::run_watch(out, diagnostic, format, &request, &delivery, color);
+            let indicator = progress_plan.draw.then_some((progress_plan, progress_io));
+            return Self::run_watch(out, diagnostic, format, &request, &delivery, color, indicator);
         }
 
         let report_started = Instant::now();
         let collect_scan_diagnostics =
             std::env::var_os(SCAN_DIAGNOSTICS_ENV).is_some_and(|value| value == OsStr::new("1"));
+        // Three doors into one engine route, and the answer is the same bytes through each.
+        // The measurement door comes first because it is a measurement: a ticker thread
+        // polling beside the walk would be part of what it measures. A run that does not
+        // draw takes the plain door and pays nothing for the indicator, not even a handle.
         let (report, pending_save, performance, scan_diagnostics) = if collect_scan_diagnostics {
             prepare_report_with_scan_diagnostics(&request, &delivery)?
+        } else if progress_plan.draw {
+            // The one place the line is stopped on this route: right after the engine
+            // returns, with a report or with an error, and before a byte reaches either
+            // stream. Everything below -- the report, the save warning, the performance
+            // line, the notes, the diagnostics, and the error `finish` prints -- comes
+            // after this stop, and the ticker's drop repeats it on unwind.
+            let progress = Progress::new();
+            let mut ticker =
+                Ticker::start(progress_plan, progress.clone(), report_started, progress_io);
+            let prepared = prepare_report_with_progress(&request, &delivery, &progress);
+            ticker.stop();
+            let (report, pending_save, performance) = prepared?;
+            (report, pending_save, performance, None)
         } else {
             let (report, pending_save, performance) = prepare_report(&request, &delivery)?;
             (report, pending_save, performance, None)
@@ -815,13 +844,8 @@ impl Cli {
     /// line is drawn is decided by `--progress`, the terminal, the format, and whether
     /// this command walks at all; whether it is colored follows the rule that colors
     /// warnings on stderr, `--color`, then `NO_COLOR`, then `FORCE_COLOR`, so neither
-    /// setting can turn the other on or off. The ticker (fdu-hjjj) starts from this
-    /// plan before `prepare_report` and stops before the first byte reaches either
-    /// stream; nothing in this build starts it yet.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "consumed by the progress ticker, which is fdu-hjjj")
-    )]
+    /// setting can turn the other on or off. The ticker starts from this plan before
+    /// the engine is called and stops before the first byte reaches either stream.
     fn progress_plan(&self, terminal: &TerminalFacts) -> ProgressPlan {
         let walks =
             !(self.docs || self.skill || self.cache_status.is_some() || self.cache_clear.is_some());
@@ -845,6 +869,10 @@ impl Cli {
     /// render is the same query re-evaluated. Detection is event-driven throughout: an
     /// idle tree costs no filesystem work, and `--interval` throttles only how often
     /// aggregate views repaint.
+    ///
+    /// `indicator` is the progress plan and what it draws with, for a run that draws:
+    /// the line runs during the initial scan and stops before the first paint, after
+    /// which the repaint is the progress.
     #[cfg(feature = "watch")]
     fn run_watch(
         out: &mut dyn Write,
@@ -853,6 +881,7 @@ impl Cli {
         request: &Request,
         delivery: &Delivery,
         color: bool,
+        indicator: Option<(ProgressPlan, ProgressIo)>,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::query::ViewSpec;
         use fdu_core::watch_session::Session;
@@ -865,7 +894,20 @@ impl Cli {
             .expect("run() builds a watch delivery before it takes the watch path")
             .interval;
 
-        let mut session = Session::start(request.clone(), delivery.clone())?;
+        let mut session = match indicator {
+            Some((plan, progress_io)) => {
+                // The one place the line is stopped on this route: right after the start
+                // returns, with a session or with an error, and before the startup save's
+                // warning, the first report, or anything else reaches either stream.
+                let progress = Progress::new();
+                let mut ticker = Ticker::start(plan, progress.clone(), Instant::now(), progress_io);
+                let session =
+                    Session::start_with_progress(request.clone(), delivery.clone(), &progress);
+                ticker.stop();
+                session?
+            }
+            None => Session::start(request.clone(), delivery.clone())?,
+        };
         Self::persist_live(&mut session, diagnostic, color);
 
         // A streaming run keeps only the views it can render incrementally plus the
@@ -1538,14 +1580,25 @@ where
 {
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let stdout = io::stdout();
-    let stderr = io::stderr();
     let stdout_is_terminal = stdout.is_terminal();
     // Everything the run will ever ask about stderr, read here and only here.
     let terminal = TerminalFacts::detect();
     let mut out = io::BufWriter::new(stdout.lock());
-    let mut diagnostic = stderr.lock();
+    // Not locked for the run: the progress ticker draws to stderr from its own thread,
+    // and a lock held here would make its first frame wait for the process to end. Each
+    // diagnostic is one `writeln!`, which stderr writes under its lock as one piece, so
+    // a line is still never interleaved with a frame; the ticker's own protocol -- stop
+    // and erase before any write -- is what keeps the two in order.
+    let mut diagnostic = io::stderr();
 
-    run_with_io(&args, &mut out, &mut diagnostic, stdout_is_terminal, &terminal)
+    run_with_io(
+        &args,
+        &mut out,
+        &mut diagnostic,
+        stdout_is_terminal,
+        &terminal,
+        ProgressIo::for_process(),
+    )
 }
 
 fn run_with_io(
@@ -1554,6 +1607,7 @@ fn run_with_io(
     diagnostic: &mut dyn Write,
     stdout_is_terminal: bool,
     terminal: &TerminalFacts,
+    progress_io: ProgressIo,
 ) -> u8 {
     let stderr_is_terminal = terminal.stderr_is_terminal;
     // A bare invocation is the long-help discovery surface, byte for byte. Rewriting it
@@ -1606,10 +1660,11 @@ fn run_with_io(
         }
     };
 
-    let result = cli.run(out, diagnostic, stdout_is_terminal, terminal).and_then(|outcome| {
-        out.flush()?;
-        Ok(outcome)
-    });
+    let result =
+        cli.run(out, diagnostic, stdout_is_terminal, terminal, progress_io).and_then(|outcome| {
+            out.flush()?;
+            Ok(outcome)
+        });
     let diagnostic_color = ColorContext::from_environment(
         cli.color,
         cli.machine_format(),
@@ -1838,6 +1893,7 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::progress_ticker::{ERASE_LINE, SharedBuffer, Timing};
     use fdu_core::EntryKind;
     use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey};
     #[cfg(feature = "watch")]
@@ -1916,7 +1972,14 @@ mod tests {
             "/nonexistent-root-that-must-not-be-scanned",
         ]
         .map(OsString::from);
-        let status = run_with_io(&args, &mut out, &mut err, false, &TerminalFacts::default());
+        let status = run_with_io(
+            &args,
+            &mut out,
+            &mut err,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        );
         assert_eq!(status, 2);
         assert!(out.is_empty());
         assert_eq!(
@@ -2146,12 +2209,14 @@ mod tests {
         let mut bare_err = Vec::new();
         let bare = [OsString::from("fdu")];
         let terminal = TerminalFacts::default();
-        let status = run_with_io(&bare, &mut bare_out, &mut bare_err, false, &terminal);
+        let status =
+            run_with_io(&bare, &mut bare_out, &mut bare_err, false, &terminal, ProgressIo::inert());
 
         let mut help_out = Vec::new();
         let mut help_err = Vec::new();
         let help = [OsString::from("fdu"), OsString::from("--help")];
-        let help_status = run_with_io(&help, &mut help_out, &mut help_err, false, &terminal);
+        let help_status =
+            run_with_io(&help, &mut help_out, &mut help_err, false, &terminal, ProgressIo::inert());
 
         assert_eq!(status, 0, "showing help is a successful discovery action");
         assert_eq!(help_status, 0);
@@ -2648,7 +2713,13 @@ mod tests {
         };
         let mut output = Vec::new();
         let outcome = command
-            .run(&mut output, &mut Vec::new(), false, &TerminalFacts::default())
+            .run(
+                &mut output,
+                &mut Vec::new(),
+                false,
+                &TerminalFacts::default(),
+                ProgressIo::inert(),
+            )
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
@@ -2674,7 +2745,7 @@ mod tests {
 
         let mut plain = Vec::new();
         command
-            .run(&mut plain, &mut Vec::new(), false, &TerminalFacts::default())
+            .run(&mut plain, &mut Vec::new(), false, &TerminalFacts::default(), ProgressIo::inert())
             .expect("plain report");
         let plain = String::from_utf8(plain).expect("plain UTF-8");
         // `summary` displays no content metric, so this run also earns the paid-for-
@@ -2694,7 +2765,13 @@ mod tests {
 
         let mut colored = Vec::new();
         Cli { color: ColorWhen::Always, ..command }
-            .run(&mut colored, &mut Vec::new(), false, &TerminalFacts::default())
+            .run(
+                &mut colored,
+                &mut Vec::new(),
+                false,
+                &TerminalFacts::default(),
+                ProgressIo::inert(),
+            )
             .expect("colored report");
         let colored = String::from_utf8(colored).expect("colored UTF-8");
         let footer = colored
@@ -2749,7 +2826,13 @@ mod tests {
             };
             let mut output = Vec::new();
             command
-                .run(&mut output, &mut Vec::new(), false, &TerminalFacts::default())
+                .run(
+                    &mut output,
+                    &mut Vec::new(),
+                    false,
+                    &TerminalFacts::default(),
+                    ProgressIo::inert(),
+                )
                 .expect("machine report");
             let output = String::from_utf8(output).expect("machine UTF-8");
             assert!(!output.contains("Performance:"), "{format}: {output}");
@@ -2915,7 +2998,8 @@ mod tests {
                 &mut FailingWriter,
                 &mut diagnostic,
                 false,
-                &TerminalFacts::default()
+                &TerminalFacts::default(),
+                ProgressIo::inert()
             ),
             1,
             "a non-pipe help-output failure is fatal"
@@ -2946,7 +3030,14 @@ mod tests {
         let mut out = Vec::new();
         let mut err = Vec::new();
         let args = ["fdu", "--progress", "sometimes", "."].map(OsString::from);
-        let status = run_with_io(&args, &mut out, &mut err, false, &TerminalFacts::default());
+        let status = run_with_io(
+            &args,
+            &mut out,
+            &mut err,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        );
         assert_eq!(status, 2, "a value outside the grammar is a usage error");
         assert!(out.is_empty());
         let err = String::from_utf8(err).expect("UTF-8 diagnostics");
@@ -2958,7 +3049,14 @@ mod tests {
         let mut out = Vec::new();
         let mut err = Vec::new();
         let args = [OsString::from("fdu"), OsString::from("--help")];
-        run_with_io(&args, &mut out, &mut err, false, &TerminalFacts::default());
+        run_with_io(
+            &args,
+            &mut out,
+            &mut err,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        );
         let help = String::from_utf8(out).expect("help is UTF-8");
         let lines: Vec<&str> = help.lines().collect();
         let color = lines
@@ -3054,21 +3152,25 @@ mod tests {
         );
     }
 
-    /// Until the ticker lands, an interactive run with the flag on writes exactly what
-    /// it wrote before: nothing on stderr for a clean run.
+    /// An interactive run that finishes inside the first-frame delay writes nothing on
+    /// stderr: no frame, no erase, and for a clean run nothing at all.
     #[test]
-    fn an_interactive_run_still_writes_nothing_to_stderr() {
+    fn an_interactive_run_inside_the_delay_writes_nothing_to_stderr() {
         let interactive = interactive_terminal();
         let mut out = Vec::new();
-        let mut err = Vec::new();
+        let err = SharedBuffer::default();
+        let shipped =
+            || ProgressIo { out: Box::new(err.clone()), timing: Timing::default(), width: || 100 };
         let args = ["fdu", "--progress", "always", "--docs"].map(OsString::from);
-        assert_eq!(run_with_io(&args, &mut out, &mut err, true, &interactive), 0);
+        assert_eq!(
+            run_with_io(&args, &mut out, &mut err.clone(), true, &interactive, shipped()),
+            0
+        );
         assert!(!out.is_empty());
-        assert!(err.is_empty(), "{:?}", String::from_utf8_lossy(&err));
+        assert!(err.contents().is_empty(), "{:?}", err.text());
 
         let root = tempfile::tempdir().expect("tempdir");
         let mut out = Vec::new();
-        let mut err = Vec::new();
         let args = [
             "fdu",
             "--cache",
@@ -3080,8 +3182,183 @@ mod tests {
             root.path().to_str().expect("Unicode"),
         ]
         .map(OsString::from);
-        assert_eq!(run_with_io(&args, &mut out, &mut err, true, &interactive), 0);
+        assert_eq!(
+            run_with_io(&args, &mut out, &mut err.clone(), true, &interactive, shipped()),
+            0
+        );
         assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
-        assert!(err.is_empty(), "{:?}", String::from_utf8_lossy(&err));
+        assert!(err.contents().is_empty(), "{:?}", err.text());
+    }
+
+    /// A tree whose walk outlasts the ticker thread's start by a wide margin, so a
+    /// ticker with no delay and a one-millisecond tick has drawn at least one frame
+    /// by the time the run stops it. A thousand files across forty directories take
+    /// milliseconds to walk; the thread takes microseconds to start.
+    fn wide_tree() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("tempdir");
+        for dir in 0..40 {
+            let dir = root.path().join(format!("dir{dir}"));
+            std::fs::create_dir(&dir).expect("a directory");
+            for file in 0..25 {
+                std::fs::write(dir.join(format!("file{file}.txt")), b"some bytes\n")
+                    .expect("a file");
+            }
+        }
+        root
+    }
+
+    /// The line drawn into `err` at once and redrawn every millisecond, into the same
+    /// buffer the run's diagnostics go to, so the test sees the order a terminal would.
+    fn drawing_io(err: &SharedBuffer) -> ProgressIo {
+        ProgressIo {
+            out: Box::new(err.clone()),
+            timing: Timing { delay: Duration::ZERO, tick: Duration::from_millis(1) },
+            width: || 100,
+        }
+    }
+
+    fn drawn_frames(text: &str) -> usize {
+        // One erase per frame, plus the one at the stop point.
+        text.matches(ERASE_LINE).count().saturating_sub(1)
+    }
+
+    /// The frames drawn while the tree was walked, then the erase, then the report's
+    /// warning: the erase is the last thing on stderr before the warning, and nothing
+    /// of the line follows it.
+    #[cfg(unix)]
+    #[test]
+    fn the_line_is_erased_before_the_first_warning() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = wide_tree();
+        let denied = root.path().join("denied");
+        std::fs::create_dir(&denied).expect("a directory");
+        std::fs::write(denied.join("hidden.txt"), b"hidden").expect("a file");
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o000))
+            .expect("deny reads");
+        if std::fs::read_dir(&denied).is_ok() {
+            // A privileged process reads the directory anyway, so there is no warning
+            // to order against; the ordering is covered by the error test below.
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        let err = SharedBuffer::default();
+        let mut out = Vec::new();
+        let args = [
+            "fdu",
+            "--cache",
+            "off",
+            "--color",
+            "never",
+            "--progress",
+            "always",
+            root.path().to_str().expect("Unicode"),
+        ]
+        .map(OsString::from);
+        let status = run_with_io(
+            &args,
+            &mut out,
+            &mut err.clone(),
+            false,
+            &interactive_terminal(),
+            drawing_io(&err),
+        );
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755))
+            .expect("restore permissions so the directory can be removed");
+        assert_eq!(status, 2, "a partial scan");
+        assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
+
+        let text = err.text();
+        let warning = text.find("warning:").expect("a status warning on stderr");
+        assert!(drawn_frames(&text) >= 1, "no frame was drawn:\n{text:?}");
+        assert!(
+            text[..warning].ends_with(ERASE_LINE),
+            "the erase is the last thing before the warning:\n{text:?}"
+        );
+        assert!(text[..warning].starts_with(&format!("{ERASE_LINE}⠋ ")), "{text:?}");
+        assert!(!text[warning..].contains(ERASE_LINE), "the line was drawn after the warning");
+        assert!(!text[warning..].contains('\r'), "{text:?}");
+    }
+
+    /// The frames, then the erase, then the error `finish` prints: a run whose report
+    /// cannot be written still leaves a clean line under the error.
+    #[test]
+    fn the_line_is_erased_before_an_error() {
+        let root = wide_tree();
+        let err = SharedBuffer::default();
+        let args = [
+            "fdu",
+            "--cache",
+            "off",
+            "--color",
+            "never",
+            "--progress",
+            "always",
+            root.path().to_str().expect("Unicode"),
+        ]
+        .map(OsString::from);
+        let status = run_with_io(
+            &args,
+            &mut FailingWriter,
+            &mut err.clone(),
+            false,
+            &interactive_terminal(),
+            drawing_io(&err),
+        );
+        assert_eq!(status, 1, "a report that cannot be written is fatal");
+
+        let text = err.text();
+        let error = text.find("fdu: ").expect("the error on stderr");
+        assert!(drawn_frames(&text) >= 1, "no frame was drawn:\n{text:?}");
+        assert!(
+            text[..error].ends_with(ERASE_LINE),
+            "the erase is the last thing before the error:\n{text:?}"
+        );
+        assert_eq!(&text[error..], "fdu: output failed\n");
+    }
+
+    /// The same run, the same tree, and the same drawing resources, but no person at
+    /// the terminal: nothing reaches stderr, whatever `--progress` says.
+    #[test]
+    fn a_non_interactive_run_writes_nothing_extra_to_stderr() {
+        let root = wide_tree();
+        for terminal in [
+            TerminalFacts::default(),
+            TerminalFacts { stderr_is_terminal: false, ..interactive_terminal() },
+            TerminalFacts { term: Some(OsString::from("dumb")), ..interactive_terminal() },
+            TerminalFacts { ci: Some(OsString::from("true")), ..interactive_terminal() },
+        ] {
+            for mode in ["auto", "always"] {
+                let err = SharedBuffer::default();
+                let mut out = Vec::new();
+                let args = [
+                    "fdu",
+                    "--cache",
+                    "off",
+                    "--color",
+                    "never",
+                    "--progress",
+                    mode,
+                    root.path().to_str().expect("Unicode"),
+                ]
+                .map(OsString::from);
+                let status = run_with_io(
+                    &args,
+                    &mut out,
+                    &mut err.clone(),
+                    false,
+                    &terminal,
+                    drawing_io(&err),
+                );
+                assert_eq!(status, 0);
+                assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
+                assert!(
+                    err.contents().is_empty(),
+                    "{terminal:?} --progress {mode}:\n{:?}",
+                    err.text()
+                );
+            }
+        }
     }
 }

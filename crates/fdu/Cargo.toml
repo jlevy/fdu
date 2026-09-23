@@ -68,6 +68,9 @@ fdu-core = { workspace = true, default-features = false }
 
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 anyhow = "1.0"
+# The progress line is fitted to stderr's own width, read again for every frame. This
+# is the crate clap's `wrap_help` already brings in, at the version the lock holds.
+terminal_size = "0.4.4"
 
 # A Windows console must accept escape sequences before a progress line may be drawn
 # to it. This is the safe query clap already ships, at the version the lock already
