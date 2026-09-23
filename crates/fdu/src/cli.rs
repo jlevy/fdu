@@ -702,12 +702,14 @@ impl Cli {
         // that buffer, and the user would see nothing until the snapshot's fsync and the
         // index teardown had finished (fdu-n75m). Same bytes in the same order; only
         // when they arrive changes.
-        let rendered_text = matches!(format, report_format::Format::Text | report_format::Format::Tree)
-            .then(|| report_format::render(&report, format, color));
+        let rendered_text =
+            matches!(format, report_format::Format::Text | report_format::Format::Tree)
+                .then(|| report_format::render(&report, format, color));
         let (rendered_text, render_result): (Option<String>, anyhow::Result<()>) =
             match rendered_text {
                 Some(Ok(rendered)) => {
-                    let result = write!(out, "{rendered}").and_then(|()| out.flush()).map_err(Into::into);
+                    let result =
+                        write!(out, "{rendered}").and_then(|()| out.flush()).map_err(Into::into);
                     (Some(rendered), result)
                 }
                 Some(Err(error)) => (None, Err(error.into())),
