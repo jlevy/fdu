@@ -5,7 +5,7 @@ title: Address remaining 0.1 correctness blockers after performance review
 kind: task
 status: in_progress
 priority: 1
-version: 23
+version: 24
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
@@ -25,10 +25,11 @@ child_order_hints:
   - is-01m35xrf4gyhcj9q42reapfeen
   - is-01m35yv020z6cayddk13mnhmpt
   - is-01m3637s9hez8e47f6tw7svrhp
+  - is-01m363y726frrgtqtp2z8xanpm
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:30:19.526Z
-updated_at: 2026-09-23T02:59:08.208Z
+updated_at: 2026-09-23T03:11:23.161Z
 started_at: 2026-09-20T04:31:31.377Z
 ---
 Audit remaining release correctness against the current #92 stack, reconcile stale or already-fixed beads, implement confirmed defects in coherent slices with subagents, review changes, validate and publish PRs. Preserve unrelated directory-rollup work and existing core-model ownership. Final candidate verification remains distinct from publishing.
