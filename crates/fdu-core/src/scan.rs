@@ -3858,7 +3858,7 @@ fn consolidate_detached_index(
         });
     }
     index.record_walk_errors(&mut output.errors);
-    index.set_initial_freshness(output.is_complete());
+    index.set_initial_scan_freshness(&output.errors);
     (index, output)
 }
 
@@ -3893,7 +3893,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
         return Err(error);
     }
     index.record_walk_errors(&mut report.errors);
-    index.set_initial_freshness(report.is_complete());
+    index.set_initial_scan_freshness(&report.errors);
     Ok((index, report))
 }
 
@@ -9090,6 +9090,52 @@ mod tests {
             vec![(PathBuf::new(), crate::InvalidateReason::Requested)]
         );
         assert_eq!(index.freshness(), crate::Freshness::Partial);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_cold_scan_keeps_verified_siblings_complete() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join("blocked/unknown.txt"), b"unread");
+        write_file(&root.path().join("healthy/nested/known.txt"), b"known");
+        let blocked = root.path().join("blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny reads");
+        let scan = ScanConfig::default();
+        let detached = scan_into_index(root.path(), &scan);
+        let streamed = scan_into_index_via_scanner(root.path(), &scan);
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
+        for result in [detached, streamed] {
+            let (index, report) = result.expect("partial scan still returns its facts");
+            assert!(!report.is_complete(), "permission fixture must fail the blocked listing");
+            assert!(
+                index
+                    .issues()
+                    .iter()
+                    .any(|issue| issue.path.as_deref() == Some(Path::new("blocked")))
+            );
+            assert_eq!(index.freshness_at(Path::new("")), crate::Freshness::Partial);
+            assert_eq!(index.directory_complete(Path::new("")), Some(false));
+            assert_eq!(index.directory_complete(Path::new("blocked")), Some(false));
+            assert_eq!(index.freshness_at(Path::new("blocked")), crate::Freshness::Partial);
+            assert!(index.lookup(Path::new("blocked/unknown.txt")).is_none());
+            for sibling in ["healthy", "healthy/nested"] {
+                assert_eq!(index.directory_complete(Path::new(sibling)), Some(true), "{sibling}");
+                assert_eq!(
+                    index.freshness_at(Path::new(sibling)),
+                    crate::Freshness::Fresh,
+                    "{sibling}"
+                );
+            }
+            assert!(index.lookup(Path::new("healthy/nested/known.txt")).is_some());
+            assert!(
+                !crate::stored_state::entries_writable(&index),
+                "partial root cannot persist metadata"
+            );
+        }
     }
 
     #[cfg(unix)]
