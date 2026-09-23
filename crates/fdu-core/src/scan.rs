@@ -9483,7 +9483,7 @@ mod tests {
         index.record_walk_errors(&mut errors);
         let status = crate::query::TreeStatus::of_walk(
             root,
-            &ScanReport { errors, ..ScanReport::default() },
+            &mut ScanReport { errors, ..ScanReport::default() },
         );
 
         assert_eq!(status.errors, index.issues());
