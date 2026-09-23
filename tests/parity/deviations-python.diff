@@ -174,7 +174,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
   ✓ Prepare Empty and Unsupported-Language Trees
   ✓ Prepare a Signature-Only Binary
-  ✓ Bounded Deep Detection Reports Its Evidence
+  ✓ Name Groups Stay Stable Under Bounded Deep Detection
   ✓ Human Summaries Separate Code and Documents
   ✗ Human Summaries Separate Code and Documents
     stderr:
