@@ -3,9 +3,9 @@ type: is
 id: is-01m36ajmynyejms4zkynsyrvcz
 title: "Full review of alpha correctness stack #99→#117 and 0.1.0 readiness (2026-09-22)"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 19
+version: 20
 labels:
   - release
 dependencies: []
@@ -26,7 +26,11 @@ child_order_hints:
   - is-01m36bm5ndp5p73dbdeqwjas0m
   - is-01m36bm65pk7ftex7xvb3qcxn3
 created_at: 2026-09-23T05:07:24.243Z
-updated_at: 2026-09-23T06:35:21.606Z
+updated_at: 2026-09-23T09:42:56.171Z
+closed_at: 2026-09-23T09:42:56.162Z
+close_reason: "Done 2026-09-23. Every layer of stack #111 reviewed (published), findings fixed with independent delta reviews, dispositions posted; correctness stack merged atomically (9989c5ad), perf stack #94/#97 (d69c705b), #105 (4993b099), #109 (7e06e5a4), runbook fix #118 (0059ddd5); #96/#103 closed as superseded. Final main tree == the tree that passed an uninterrupted make check + cross-lint; main CI and the full 3-platform path-independence matrix green. Post-merge QA: correctness runbook (after fixing its report/7 scripts in #118) and integration runbook sections 5, 6, 9 passed; see fdu-tyvq notes. Remaining alpha work is on fdu-yv36, fdu-w76x, fdu-xgjx (conformance pointer), fdu-tyvq, fdu-d237, fdu-f7cf and the maintainer beads."
+resolution: null
+duplicate_of: null
 ---
 Independent review of every layer of GitHub stack #111 (#99, #98, #110, #112-#117) through its head, audit of prior review dispositions on #94/#97/#105/#109/#96/#103, and an updated list of what remains before a publishable 0.1.0 alpha. Findings are returned to the coordinator and published only with the maintainer's approval.
 
