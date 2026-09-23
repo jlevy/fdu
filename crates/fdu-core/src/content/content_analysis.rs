@@ -68,8 +68,8 @@ impl AnalysisReport {
     pub fn is_complete(&self) -> bool {
         self.stale == 0
             && self.lines.is_complete()
-            && self.code.is_none_or(|coverage| coverage.is_complete())
-            && self.words.is_none_or(|coverage| coverage.is_complete())
+            && self.code.is_none_or(AnalyzerCoverage::is_complete)
+            && self.words.is_none_or(AnalyzerCoverage::is_complete)
     }
 
     /// Explain operational failures without presenting expected coverage as an error.
@@ -438,14 +438,14 @@ fn analyze_open_file(
                 raw_words: metrics.raw_words,
             };
             let code = request.profile.includes_code().then(|| {
-                if !code_supported {
-                    AnalyzerOutcome::unavailable(CoverageReason::Unsupported)
-                } else {
+                if code_supported {
                     AnalyzerOutcome::analyzed(CodeMetrics {
                         code_lines: metrics.code_lines,
                         comment_lines: metrics.comment_lines,
                         code_blank_lines: metrics.code_blank_lines,
                     })
+                } else {
+                    AnalyzerOutcome::unavailable(CoverageReason::Unsupported)
                 }
             });
             let words = request.profile.includes_words().then_some(AnalyzerOutcome::analyzed(
