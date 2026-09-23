@@ -1307,6 +1307,47 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
     missing_as_none(metadata_for_fingerprint(entry))
 }
 
+/// Kind and attributes for one listed child.
+///
+/// The transient summary fold counts directories and ignores symlink attributes, so a
+/// listing `file_type` (`d_type` on Linux) is enough for those kinds when the walk is
+/// not bound to one filesystem. Files and specials still need a metadata lookup for
+/// size, allocated bytes, and mtime. `one_filesystem` still stats directories because
+/// descent compares `attrs.dev` to the root device, and `dev == 0` would otherwise
+/// cross a mount.
+///
+/// Where `d_type` is `DT_UNKNOWN` (XFS without `ftype`, some FUSE/NFS mounts, older
+/// ext3), std's `file_type` performs the non-following stat itself. The skip is a
+/// no-op there, and the `stats` counter does not see that fallback.
+///
+/// Windows never takes the skip: its observation contract reads every listed entry
+/// through a fresh non-following handle ([`observe_dir_entry`]), so the transient fold
+/// there performs exactly the observations the retained walk performs.
+fn listed_child_kind_and_attrs(
+    entry: &fs::DirEntry,
+    skip_dir_symlink_stat: bool,
+    one_filesystem: bool,
+) -> std::io::Result<Option<(EntryKind, Attrs)>> {
+    #[cfg(not(windows))]
+    {
+        if skip_dir_symlink_stat {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() && !one_filesystem {
+                    return Ok(Some((EntryKind::Dir, Attrs::default())));
+                }
+                if file_type.is_symlink() {
+                    return Ok(Some((EntryKind::Symlink, Attrs::default())));
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = (skip_dir_symlink_stat, one_filesystem);
+    }
+    observe_dir_entry(entry)
+}
+
 fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> {
     match lookup {
         Ok(metadata) => Ok(Some(metadata)),
@@ -1337,20 +1378,32 @@ const fn walk_hook_covers(_path: &Path) -> bool {
 #[derive(Debug)]
 pub(crate) struct ScannerBatch {
     ops: Vec<ObservationOp>,
+    /// When set, the consumer must return `ops` through this sender instead of dropping
+    /// them. Workers allocate the `PathBuf`s; returning the drained vec lets glibc free
+    /// those arenas on the producing thread. The public [`scan`] path leaves this unset.
+    recycle: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
 }
 
 impl ScannerBatch {
     pub(crate) const fn new(ops: Vec<ObservationOp>) -> Self {
-        Self { ops }
+        Self { ops, recycle: None }
+    }
+
+    fn with_recycle(self, recycle: std::sync::mpsc::Sender<Vec<ObservationOp>>) -> Self {
+        Self { recycle: Some(recycle), ..self }
     }
 
     #[cfg(test)]
     pub(crate) fn from_ops(ops: Vec<Op>) -> Self {
-        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect() }
+        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect(), recycle: None }
     }
 
     pub(crate) fn len(&self) -> usize {
         self.ops.len()
+    }
+
+    pub(crate) fn ops(&self) -> &[ObservationOp] {
+        &self.ops
     }
 
     pub(crate) fn into_ops(self) -> Vec<ObservationOp> {
@@ -1359,6 +1412,12 @@ impl ScannerBatch {
 
     fn into_observation(self) -> Observation {
         Observation::from_ops(self.ops)
+    }
+
+    fn recycle(self) {
+        if let Some(recycle) = self.recycle {
+            let _ = recycle.send(self.ops);
+        }
     }
 }
 
@@ -1404,9 +1463,64 @@ pub fn scan(
         &mut public_sink,
         false,
         WorkerPolicyExperiment::ShippedOneShot,
+        SinkMode::Retained,
     )?;
     normalize_walk_errors(root, &mut report.errors);
     Ok(report)
+}
+
+/// Walk `root` for the transient summary tier, folding each op without retaining it.
+///
+/// The public [`scan`] path hands each batch to the caller as an [`Observation`], so
+/// worker-allocated `PathBuf`s are freed on the consumer thread. This path returns
+/// drained batches to the producing worker so each arena is allocated and freed on one
+/// thread. Tallies must match [`scan`], and so must the normalized error set: the
+/// summary report's status is built from these errors exactly as a retained walk's is.
+pub(crate) fn scan_summary_fold(
+    root: &Path,
+    config: &ScanConfig,
+    fold: &mut dyn FnMut(&ObservationOp),
+) -> Result<ScanReport> {
+    let mut sink = |batch: ScannerBatch| {
+        for op in batch.ops() {
+            fold(op);
+        }
+        batch.recycle();
+    };
+    let (mut report, _diagnostics) = scan_internal(
+        root,
+        config,
+        &mut sink,
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+        SinkMode::TransientFold,
+    )?;
+    normalize_walk_errors(root, &mut report.errors);
+    Ok(report)
+}
+
+/// [`scan_summary_fold`] plus the diagnostic trace [`scan_with_diagnostics`] collects.
+pub(crate) fn scan_summary_fold_with_diagnostics(
+    root: &Path,
+    config: &ScanConfig,
+    fold: &mut dyn FnMut(&ObservationOp),
+) -> Result<(ScanReport, ScanDiagnostics)> {
+    let mut sink = |batch: ScannerBatch| {
+        for op in batch.ops() {
+            fold(op);
+        }
+        batch.recycle();
+    };
+    let (mut report, diagnostics) = scan_internal(
+        root,
+        config,
+        &mut sink,
+        true,
+        WorkerPolicyExperiment::ShippedOneShot,
+        SinkMode::TransientFold,
+    )?;
+    normalize_walk_errors(root, &mut report.errors);
+    Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
 }
 
 /// Walk `root`, emitting observations and a bounded run-scoped diagnostic trace.
@@ -1431,9 +1545,38 @@ pub fn scan_with_policy_diagnostics(
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, ScanDiagnostics)> {
     let mut public_sink = |batch: ScannerBatch| sink(batch.into_observation());
-    let (mut report, diagnostics) = scan_internal(root, config, &mut public_sink, true, policy)?;
+    let (mut report, diagnostics) =
+        scan_internal(root, config, &mut public_sink, true, policy, SinkMode::Retained)?;
     normalize_walk_errors(root, &mut report.errors);
     Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
+}
+
+/// What the caller does with each batch of observations.
+///
+/// Two measured keeps hang off this one concept, and both were measured on the
+/// transient fold alone: returning drained batches to the producing worker (H147,
+/// exp-151) and taking directory and symlink kind from the listing without a stat
+/// (H72, exp-153). They are named here as properties of the mode rather than passed as
+/// one flag under one of their names, so a measurement on another platform can move
+/// one without silently moving the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SinkMode {
+    /// The consumer keeps the observations: the public [`scan`] and the index.
+    Retained,
+    /// The consumer folds each batch and drops it: the transient summary tier.
+    TransientFold,
+}
+
+impl SinkMode {
+    /// Drained batches go back to the worker that allocated them (H147).
+    fn recycles_batches(self) -> bool {
+        self == Self::TransientFold
+    }
+
+    /// Directory and symlink kind come from the listing without a stat (H72).
+    fn skips_dir_symlink_stat(self) -> bool {
+        self == Self::TransientFold
+    }
 }
 
 fn scan_internal(
@@ -1442,6 +1585,7 @@ fn scan_internal(
     sink: &mut dyn FnMut(ScannerBatch),
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
+    sink_mode: SinkMode,
 ) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
     config.validate()?;
     let root_meta = {
@@ -1463,8 +1607,16 @@ fn scan_internal(
         .then(|| ScanDiagnosticsRecorder::new(pool, available_parallelism, policy));
 
     if config.max_depth != Some(0) && pool.initial > 1 {
-        let report =
-            scan_concurrent(root, config, root_dev, sink, pool, diagnostics.as_ref(), policy);
+        let report = scan_concurrent(
+            root,
+            config,
+            root_dev,
+            sink,
+            pool,
+            diagnostics.as_ref(),
+            policy,
+            sink_mode,
+        );
         return Ok((report, diagnostics.as_ref().map(|value| value.finish())));
     }
 
@@ -1512,7 +1664,11 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let (kind, attrs) = match observe_dir_entry(&item) {
+            let (kind, attrs) = match listed_child_kind_and_attrs(
+                &item,
+                sink_mode.skips_dir_symlink_stat(),
+                config.one_filesystem,
+            ) {
                 Ok(Some(observed)) => observed,
                 Ok(None) => continue,
                 Err(error) => {
@@ -2262,6 +2418,7 @@ const DIR_CLAIM: usize = 4;
 /// filesystem work. The resulting index is byte-identical to the serial walker's,
 /// which the benchmark harness re-proves on every trial by comparing engine digests
 /// against an independent oracle.
+#[allow(clippy::too_many_arguments)]
 fn scan_concurrent(
     root: &Path,
     config: &ScanConfig,
@@ -2270,6 +2427,7 @@ fn scan_concurrent(
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
+    sink_mode: SinkMode,
 ) -> ScanReport {
     let mut consume = |message| match message {
         WalkMessage::Batch(batch) => {
@@ -2292,7 +2450,10 @@ fn scan_concurrent(
         pool,
         diagnostics,
         policy,
-        walk_worker,
+        match sink_mode {
+            SinkMode::Retained => walk_worker,
+            SinkMode::TransientFold => walk_worker_transient_fold,
+        },
         &mut consume,
     )
 }
@@ -2574,15 +2735,73 @@ trait WalkEmission {
         report: &mut ScanReport,
         diagnostics: Option<&ScanDiagnosticsRecorder>,
     );
+
+    /// Transient summary can take directory and symlink kind from the listing.
+    fn skip_dir_symlink_stat(&self) -> bool {
+        false
+    }
 }
 
 struct StreamingEmission {
     batch: Vec<ObservationOp>,
+    batch_size: usize,
+    recycle_tx: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
+    recycle_rx: Option<std::sync::mpsc::Receiver<Vec<ObservationOp>>>,
+    skip_dir_symlink_stat: bool,
 }
 
 impl StreamingEmission {
-    fn new(batch_size: usize) -> Self {
-        Self { batch: Vec::with_capacity(batch_size) }
+    /// An emission with the properties [`SinkMode`] names for `mode`.
+    ///
+    /// The recycle channel returns drained `PathBuf` arenas to this worker so glibc
+    /// frees them on the thread that allocated them.
+    fn for_sink(batch_size: usize, mode: SinkMode) -> Self {
+        let (recycle_tx, recycle_rx) = if mode.recycles_batches() {
+            let (tx, rx) = std::sync::mpsc::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+        Self {
+            batch: Vec::with_capacity(batch_size),
+            batch_size,
+            recycle_tx,
+            recycle_rx,
+            skip_dir_symlink_stat: mode.skips_dir_symlink_stat(),
+        }
+    }
+
+    fn wrap(&self, ops: Vec<ObservationOp>) -> ScannerBatch {
+        match &self.recycle_tx {
+            Some(recycle) => ScannerBatch::new(ops).with_recycle(recycle.clone()),
+            None => ScannerBatch::new(ops),
+        }
+    }
+
+    fn next_vec(&self) -> Vec<ObservationOp> {
+        // The retained path keeps its pre-H147 shape: an empty vec that grows by
+        // doubling. Pre-sizing every batch there was never measured, and the public
+        // `scan` is what a library caller pays for.
+        let Some(recycle_rx) = &self.recycle_rx else {
+            return Vec::new();
+        };
+        let mut kept = None;
+        while let Ok(mut recycled) = recycle_rx.try_recv() {
+            recycled.clear();
+            kept = Some(recycled);
+        }
+        kept.unwrap_or_else(|| Vec::with_capacity(self.batch_size))
+    }
+
+    fn send_full(
+        &mut self,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        let ops = std::mem::take(&mut self.batch);
+        let sent = send_scanner_batch(sender, self.wrap(ops), diagnostics);
+        self.batch = self.next_vec();
+        sent
     }
 }
 
@@ -2620,7 +2839,7 @@ impl WalkEmission for StreamingEmission {
             attrs,
             root_dev,
             config,
-            &mut self.batch,
+            self,
             discovered,
             report,
             sender,
@@ -2642,11 +2861,7 @@ impl WalkEmission for StreamingEmission {
             return true;
         }
         let send_started = std::time::Instant::now();
-        let sent = send_scanner_batch(
-            sender,
-            ScannerBatch::new(std::mem::take(&mut self.batch)),
-            diagnostics,
-        );
+        let sent = self.send_full(sender, diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         sent
     }
@@ -2661,12 +2876,16 @@ impl WalkEmission for StreamingEmission {
             return;
         }
         let send_started = std::time::Instant::now();
-        let _ = send_scanner_batch(
-            sender,
-            ScannerBatch::new(std::mem::take(&mut self.batch)),
-            diagnostics,
-        );
+        // The walk is over: do not ask `send_full` for a replacement vec that no
+        // later `record_entry` would use.
+        let ops = std::mem::take(&mut self.batch);
+        let _ = send_scanner_batch(sender, self.wrap(ops), diagnostics);
+        self.batch = Vec::new();
         report.attribution.send_ns += elapsed_ns(send_started);
+    }
+
+    fn skip_dir_symlink_stat(&self) -> bool {
+        self.skip_dir_symlink_stat
     }
 }
 
@@ -2784,7 +3003,27 @@ fn walk_worker(
         queue,
         sender,
         diagnostics,
-        StreamingEmission::new(config.batch_size),
+        StreamingEmission::for_sink(config.batch_size, SinkMode::Retained),
+    )
+}
+
+/// One worker's share of the transient summary walk.
+fn walk_worker_transient_fold(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+) -> ScanReport {
+    walk_worker_with(
+        root,
+        config,
+        root_dev,
+        queue,
+        sender,
+        diagnostics,
+        StreamingEmission::for_sink(config.batch_size, SinkMode::TransientFold),
     )
 }
 
@@ -2888,7 +3127,11 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let (kind, attrs) = match observe_dir_entry(&item) {
+                let (kind, attrs) = match listed_child_kind_and_attrs(
+                    &item,
+                    emission.skip_dir_symlink_stat(),
+                    config.one_filesystem,
+                ) {
                     Ok(Some(observed)) => observed,
                     Ok(None) => continue,
                     Err(error) => {
@@ -3064,7 +3307,7 @@ fn record_walk_entry(
     attrs: Attrs,
     root_dev: u64,
     config: &ScanConfig,
-    batch: &mut Vec<ObservationOp>,
+    emission: &mut StreamingEmission,
     discovered: &mut Vec<(PathBuf, usize, RegionId)>,
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
@@ -3081,14 +3324,10 @@ fn record_walk_entry(
     }
     if !prepared.retained {
         if let Some(control) = prepared.control {
-            batch.push(ObservationOp::unconditional(control));
-            if batch.len() >= config.batch_size {
+            emission.batch.push(ObservationOp::unconditional(control));
+            if emission.batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
-                let sent = send_scanner_batch(
-                    sender,
-                    ScannerBatch::new(std::mem::take(batch)),
-                    diagnostics,
-                );
+                let sent = emission.send_full(sender, diagnostics);
                 *chunk_send_ns += elapsed_ns(send_started);
                 return sent;
             }
@@ -3096,26 +3335,24 @@ fn record_walk_entry(
         return true;
     }
     report.observe(kind, attrs);
-    batch.push(ObservationOp::unconditional(Op::Upsert {
+    emission.batch.push(ObservationOp::unconditional(Op::Upsert {
         path: prepared.path.clone(),
         kind,
         attrs,
     }));
-    if batch.len() >= config.batch_size {
+    if emission.batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
-        let sent =
-            send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
+        let sent = emission.send_full(sender, diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         if !sent {
             return false;
         }
     }
     if let Some(control) = prepared.control {
-        batch.push(ObservationOp::unconditional(control));
-        if batch.len() >= config.batch_size {
+        emission.batch.push(ObservationOp::unconditional(control));
+        if emission.batch.len() >= config.batch_size {
             let send_started = std::time::Instant::now();
-            let sent =
-                send_scanner_batch(sender, ScannerBatch::new(std::mem::take(batch)), diagnostics);
+            let sent = emission.send_full(sender, diagnostics);
             *chunk_send_ns += elapsed_ns(send_started);
             if !sent {
                 return false;
@@ -3894,6 +4131,7 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
         },
         false,
         WorkerPolicyExperiment::ShippedOneShot,
+        SinkMode::Retained,
     )?;
     if let Some(error) = apply_error {
         return Err(error);
@@ -5882,6 +6120,129 @@ mod tests {
             // that half; this covers the counters the library itself drives.
         }
         crate::counters::enable(false);
+    }
+
+    #[test]
+    fn summary_fold_skips_stat_on_directories_and_symlinks() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(dir.path().join("src")).expect("directory");
+        write_file(&dir.path().join("a.txt"), b"hi");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("a.txt", dir.path().join("link")).expect("symlink");
+        let config = ScanConfig { threads: Some(1), read_controls: false, ..ScanConfig::default() };
+
+        crate::counters::test_thread_reset();
+        let scan_report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        let scan_stats = crate::counters::test_thread_snapshot().stats;
+
+        crate::counters::test_thread_reset();
+        let fold_report = scan_summary_fold(dir.path(), &config, &mut |_| {}).expect("fold");
+        let fold_stats = crate::counters::test_thread_snapshot().stats;
+        crate::counters::enable(false);
+
+        assert_eq!(fold_report.entries, scan_report.entries);
+        assert_eq!(fold_report.files_walked, scan_report.files_walked);
+        assert_eq!(fold_report.bytes_walked, scan_report.bytes_walked);
+        // Windows observes every listed entry through a fresh handle on both paths, so the
+        // fold performs exactly the retained walk's observations there; the skip is a
+        // non-Windows saving.
+        #[cfg(not(windows))]
+        assert!(
+            fold_stats < scan_stats,
+            "fold {fold_stats} should skip directory/symlink stats versus scan {scan_stats}"
+        );
+        #[cfg(unix)]
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 2);
+        #[cfg(not(any(unix, windows)))]
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+        #[cfg(windows)]
+        assert_eq!(fold_stats, scan_stats);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn summary_fold_still_stats_directories_when_bound_to_one_filesystem() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(dir.path().join("src")).expect("directory");
+        write_file(&dir.path().join("a.txt"), b"hi");
+        std::os::unix::fs::symlink("a.txt", dir.path().join("link")).expect("symlink");
+        let config = ScanConfig {
+            threads: Some(1),
+            read_controls: false,
+            one_filesystem: true,
+            ..ScanConfig::default()
+        };
+
+        crate::counters::test_thread_reset();
+        let scan_report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        let scan_stats = crate::counters::test_thread_snapshot().stats;
+
+        crate::counters::test_thread_reset();
+        let fold_report = scan_summary_fold(dir.path(), &config, &mut |_| {}).expect("fold");
+        let fold_stats = crate::counters::test_thread_snapshot().stats;
+        crate::counters::enable(false);
+
+        assert_eq!(fold_report.entries, scan_report.entries);
+        assert_eq!(scan_stats.saturating_sub(fold_stats), 1);
+    }
+
+    #[test]
+    fn summary_fold_reuses_cleared_recycled_batches() {
+        // Four workers and a batch of three force StreamingEmission to send more than
+        // once per worker on this tree. Without `recycled.clear()`, the next send
+        // re-folds the previous ops and files/bytes/dirs double-count.
+        const DIRS: usize = 16;
+        const FILES_PER_DIR: usize = 40;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut expected_bytes = 0u64;
+        for directory in 0..DIRS {
+            let child = dir.path().join(format!("d{directory:02}"));
+            fs::create_dir(&child).expect("directory");
+            for file in 0..FILES_PER_DIR {
+                let size = directory * FILES_PER_DIR + file + 1;
+                expected_bytes += size as u64;
+                write_file(&child.join(format!("f{file:02}.dat")), &vec![b'x'; size]);
+            }
+        }
+        let expected_files = (DIRS * FILES_PER_DIR) as u64;
+        let expected_dirs = DIRS as u64;
+        let expected_entries = expected_files + expected_dirs;
+        let config = ScanConfig {
+            threads: Some(4),
+            batch_size: 3,
+            read_controls: false,
+            ..ScanConfig::default()
+        };
+        let mut files = 0u64;
+        let mut bytes = 0u64;
+        let mut dirs = 0u64;
+        let mut ops = 0u64;
+        let report = scan_summary_fold(dir.path(), &config, &mut |observed| {
+            ops += 1;
+            let Op::Upsert { kind, attrs, .. } = &observed.op else {
+                return;
+            };
+            match kind {
+                EntryKind::File => {
+                    files += 1;
+                    bytes += attrs.size;
+                }
+                EntryKind::Dir => dirs += 1,
+                EntryKind::Symlink | EntryKind::Other => {}
+            }
+        })
+        .expect("fold");
+        assert_eq!(files, expected_files);
+        assert_eq!(bytes, expected_bytes);
+        assert_eq!(dirs, expected_dirs);
+        assert_eq!(ops, report.entries);
+        assert_eq!(report.entries, expected_entries);
+        assert_eq!(report.files_walked, expected_files);
+        assert_eq!(report.bytes_walked, expected_bytes);
     }
 
     /// An automatic walk too short to fill its calibration window must say so.

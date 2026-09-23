@@ -273,13 +273,15 @@ subject sizes are in
 The remaining unaddressed queue after that overnight is
 [the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
 this file’s 2026-08-23 Tier 1–3 list.
-H86’s remaining gap is the Linux floor (H111 / `fdu-jekg`), not a rewrite, and not this
-Darwin host.
+H86’s remaining gap is still the Linux floor after H111 failed on
+[#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
+That is not a rewrite, and not this Darwin host.
 
 - **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
   snapshot rewrite; landed and closed), `fdu-n75m` part 1 (flush the render before the
-  join; landed, with the bead open for parts 2 and 3), `fdu-pdne` (PGO, screen only),
-  `fdu-78q6` (sidecar restore, on the metabrowser clone).
+  join; landed, with the bead open for parts 2 and 3), `fdu-pdne` (PGO screen recorded
+  as H148; pipeline adoption open), `fdu-78q6` (sidecar restore, on the metabrowser
+  clone).
 - **Tier 2, instruments:** `fdu-9hdc` (a `getattrlistbulk` floor, so `fdu-33ri` can ship
   two scoreboards with the regime difference recorded), `fdu-4xtm`, `fdu-5yjk`,
   `fdu-0pzh` (measure only), and promoting `host_regime` into the artifact schema.
@@ -295,7 +297,11 @@ Darwin host.
   32% at the floor itself and diskus’s 3×-cores default is the whole remaining
   scalar-class cold gap (~22%). Unblocked since its gate, `fdu-tyjx`, closed; bare metal
   confirms before the constant ships as evidence.
-- [ ] `fdu-pdne` — PGO screen (H93), one afternoon, release builds only if it clears.
+- [x] `fdu-pdne` screen — H148 / exp-154, quiet `linux-v6.12`: `cold-scan-index` −8.35%,
+  `warm-revalidate` −8.15%. `[profile.release]` unchanged (profdata is host-specific).
+  Training and measurement used the same tree, so −8.35% is the ceiling a shipped
+  profile could reach on other trees, not an estimate — inherited, not proven.
+  The standing bead stays open for release-pipeline adoption, not another screen.
 - [ ] `fdu-6kyn` — hardware CRC32C behind runtime detection, the H88 follow-up.
 
 ### Phase B: The structural experiment (the campaign’s centerpiece)
@@ -417,10 +423,10 @@ preparation. A successful Darwin stage may keep the implementation provisionally
 stack, but `fdu-xde5` and the campaign’s Linux floor claim remain open until the Linux
 stage passes.
 
-- [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — expect the arena to have
-  consumed it; screen against −20%, not 3%), `fdu-sk7v` (H66 — the directory-only
-  transient tree may be moot at 1.06×), snapshot economics (below), and the tier
-  scoreboard itself.
+- [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — the arena did **not** consume
+  `RetainedState::Summary`; −20% screen **rejected**, exp-150; 3% keep is H147 /
+  exp-151), `fdu-sk7v` (H66 — the directory-only transient tree may be moot at 1.06×),
+  snapshot economics (below), and the tier scoreboard itself.
 
 ### Phase C: The content tier (independent of B)
 
@@ -520,8 +526,15 @@ strategy and the record is visible in review.
 - [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
-  remaining queue after the H116–H120 overnight (H113, H122, H107, H123, H121, H124,
-  H111)
+  remaining Darwin queue after the H116–H120 overnight
+- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
+  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
+  virtualized host; base `main`, merges onto `main` then #97
+- [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
+  leftover records, H147/H72 keeps, and H148 PGO screen on
+  [#97](https://github.com/jlevy/fdu/pull/97)
+- [Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md) — H148 / exp-154 folded onto
+  #97
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

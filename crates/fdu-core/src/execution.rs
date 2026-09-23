@@ -449,33 +449,34 @@ fn prepare_report_internal(
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
             let mut summary = SummaryRow::default();
-            let mut reduce = |observation: crate::Observation| {
-                for observed in observation.ops {
-                    let crate::Op::Upsert { kind, attrs, .. } = observed.op else {
-                        continue;
-                    };
-                    match kind {
-                        EntryKind::File => {
-                            summary.files += 1;
-                            summary.bytes += attrs.size;
-                            summary.allocated += attrs.allocated;
-                            summary.newest_mtime_ns = Some(
-                                summary
-                                    .newest_mtime_ns
-                                    .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
-                            );
-                        }
-                        EntryKind::Dir => summary.dirs += 1,
-                        EntryKind::Symlink | EntryKind::Other => {}
+            let mut reduce = |observed: &crate::ObservationOp| {
+                let crate::Op::Upsert { kind, attrs, .. } = &observed.op else {
+                    return;
+                };
+                match kind {
+                    EntryKind::File => {
+                        summary.files += 1;
+                        summary.bytes += attrs.size;
+                        summary.allocated += attrs.allocated;
+                        summary.newest_mtime_ns = Some(
+                            summary
+                                .newest_mtime_ns
+                                .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
+                        );
                     }
+                    EntryKind::Dir => summary.dirs += 1,
+                    EntryKind::Symlink | EntryKind::Other => {}
                 }
             };
             let (mut scan, scan_diagnostics) = if collect_scan_diagnostics {
-                let (scan, diagnostics) =
-                    crate::scan::scan_with_diagnostics(&root, &scan_config, &mut reduce)?;
+                let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
+                    &root,
+                    &scan_config,
+                    &mut reduce,
+                )?;
                 (scan, Some(diagnostics))
             } else {
-                (crate::scan::scan(&root, &scan_config, &mut reduce)?, None)
+                (crate::scan::scan_summary_fold(&root, &scan_config, &mut reduce)?, None)
             };
             let complete = scan.is_complete();
             let generated_at = SystemTime::now();
@@ -1533,9 +1534,16 @@ mod tests {
         fs::create_dir(root.path().join("src")).expect("directory");
         fs::write(root.path().join("src/lib.rs"), b"library").expect("file");
         fs::write(root.path().join("README.md"), b"read me").expect("file");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("README.md", root.path().join("readme-link")).expect("symlink");
 
         let query = summary_query();
-        let off = blind(CachePolicy::Off, None);
+        // Two workers so the compact fold exercises StreamingEmission recycle even on
+        // a one-vCPU runner (`threads: None` would take the serial walker there).
+        let off = OpenFixture {
+            scan: ScanConfig { read_controls: false, threads: Some(2), ..ScanConfig::default() },
+            ..blind(CachePolicy::Off, None)
+        };
         let (compact, pending, performance) =
             prepared(root.path(), &off, &query).expect("compact report");
         pending.join().expect("no pending compact save");
