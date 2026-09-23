@@ -51,19 +51,11 @@ fn report_allocations(index: &Index, views: Vec<ViewSpec>, selection: Selection)
         Query { views, selection, ..Query::default() },
         UNIX_EPOCH,
     );
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: UNIX_EPOCH,
-        source: ReportSource::ColdScan,
-        complete: true,
-        errors: Vec::new(),
-    };
-
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let _disable = DisableCounters;
     fdu_core::counters::reset();
     fdu_core::counters::enable(true);
-    fdu_core::query::report(index, &request, &provenance).expect("report");
+    fdu_core::query::report(index, &request, UNIX_EPOCH).expect("report");
     let allocations = usize::try_from(fdu_core::counters::thread_snapshot().allocs)
         .expect("allocation count fits usize");
     fdu_core::counters::enable(false);
