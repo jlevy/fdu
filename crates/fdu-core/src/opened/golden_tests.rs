@@ -313,7 +313,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
     let foreign = continuation(&foreign_source, 0);
     let other_root = tempfile::tempdir().expect("foreign root");
     trace.alias_path(other_root.path(), "$OTHER_ROOT");
-    let other = OpenedIndex::open(other_root.path(), OpenOptions::default()).expect("other open");
+    let other = super::open_fixture(other_root.path(), OpenOptions::default()).expect("other open");
     trace.bind_session(other.state.session);
     trace.record("action.read.foreign", &foreign);
     let foreign_result = other.read(ReadRequest {

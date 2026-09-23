@@ -76,6 +76,7 @@ pub enum OutcomeClass {
 /// Validated policy shared by all engine execution routes.
 #[derive(Clone, Debug)]
 pub struct Plan {
+    pub(crate) basis: crate::query::Basis,
     pub(crate) route: Route,
     pub(crate) retained: RetainedState,
     pub(crate) load: Load,
@@ -92,6 +93,10 @@ impl Plan {
             OutcomeClass::Partial
         }
     }
+    /// The semantic basis validated when the plan was constructed.
+    pub fn basis(&self) -> &crate::query::Basis {
+        &self.basis
+    }
     /// The lifecycle this plan executes.
     pub const fn route(&self) -> Route {
         self.route
@@ -107,6 +112,59 @@ impl Plan {
     /// The caller's operational choices after validation.
     pub fn delivery(&self) -> &Delivery {
         &self.delivery
+    }
+}
+
+/// Stored tier declarations and restoration evidence presented to a plan.
+pub(crate) struct StoreHeader<'a> {
+    pub(crate) root: &'a std::path::Path,
+    pub(crate) snapshot: crate::SnapshotIdentity,
+    pub(crate) content: Option<&'a crate::ContentTierIdentity>,
+    pub(crate) content_complete: bool,
+}
+
+/// Why persisted state cannot deliver a planned answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Admission {
+    Serve(crate::Serves),
+    NoLocation,
+    Missing,
+    WrongRoot,
+    WrongScope,
+    IncompleteContent,
+}
+
+impl Plan {
+    pub(crate) fn admit(
+        &self,
+        stored: Option<&StoreHeader<'_>>,
+        basis: &crate::query::Basis,
+    ) -> Admission {
+        if self.delivery.cache_path.is_none() {
+            return Admission::NoLocation;
+        }
+        let Some(stored) = stored else {
+            return Admission::Missing;
+        };
+        if stored.root != basis.root {
+            return Admission::WrongRoot;
+        }
+        let relation = crate::serves_snapshot(stored.snapshot, basis.scope.snapshot_identity());
+        if relation == crate::Serves::Refuse {
+            return Admission::WrongScope;
+        }
+        if self.verify == Verify::None && basis.content.is_enabled() {
+            let wanted = crate::ContentTierIdentity::for_request(
+                basis.scope.snapshot_identity().entries,
+                basis.content,
+            );
+            if !stored.content_complete
+                || stored.content.and_then(|identity| wanted.admit(identity)).is_none()
+            {
+                return Admission::IncompleteContent;
+            }
+        }
+        Admission::Serve(relation)
     }
 }
 
@@ -244,7 +302,28 @@ pub fn plan(
     route: Route,
 ) -> std::result::Result<Plan, crate::query::RequestError> {
     request.validate()?;
+    let mut normalized = delivery.clone();
+    if route == Route::Watch {
+        normalized.watch.get_or_insert_with(crate::query::WatchDelivery::default);
+    }
+    let delivery = &normalized;
     request.validate_delivery(delivery)?;
+    if route == Route::Opened
+        && (delivery.cache != CachePolicy::Off
+            || delivery.watch.is_some()
+            || request.basis.content.is_enabled())
+    {
+        return Err(crate::query::RequestError::DeliveryUnsupported {
+            route: "opened",
+            reason: "progressive discovery requires cache off, no content analyzers, and observation configured through OpenOptions",
+        });
+    }
+    if route == Route::Refresh && delivery.cache == CachePolicy::Only {
+        return Err(crate::query::RequestError::DeliveryUnsupported {
+            route: "refresh",
+            reason: "the only cache policy cannot verify filesystem state",
+        });
+    }
     let analysis_requested = request.basis.content.is_enabled();
     let summary_is_sufficient = request.query.views.as_slice() == [ViewSpec::Summary]
         && request.query.selection.is_unfiltered()
@@ -264,6 +343,7 @@ pub fn plan(
         CachePolicy::Auto | CachePolicy::ReadOnly => route != Route::OneShot || analysis_requested,
     };
     Ok(Plan {
+        basis: request.basis.clone(),
         route,
         retained: if route == Route::OneShot
             && !policy_requires_index
@@ -418,6 +498,139 @@ mod tests {
     use crate::{OpenFixture, ScanConfig};
 
     #[test]
+    #[cfg(unix)]
+    fn an_unreadable_stored_header_never_authorizes_live_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let snapshot = cache.path().join("snapshot.fdu");
+        fs::write(root.path().join(".gitignore"), b"ignored\n").expect("control");
+        let observed = crate::query::Basis {
+            root: root.path().into(),
+            scope: Default::default(),
+            content: Default::default(),
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(snapshot.clone()));
+        crate::open(&observed, &delivery).expect("stronger snapshot");
+        let original = fs::read(&snapshot).expect("original image");
+        let basis = crate::query::Basis {
+            scope: crate::query::Scope { read_controls: false, ..Default::default() },
+            ..observed
+        };
+        let (index, _) =
+            crate::open(&basis, &Delivery::new(CachePolicy::Off, None)).expect("fresh blind index");
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        let plan = plan(&request, &delivery, Route::Refresh).expect("plan");
+        fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o000))
+            .expect("deny header read");
+        let result = crate::persist_index(&index, &plan);
+        fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o600)).expect("restore");
+        assert!(
+            result.is_err(),
+            "a writable parent must not let unknown identity authorize replacement"
+        );
+        assert_eq!(fs::read(&snapshot).expect("retained image"), original);
+    }
+
+    #[test]
+    fn refreshed_metadata_and_content_are_visible_to_a_later_cache_only_open() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let path = root.path().join("note.txt");
+        fs::write(&path, b"old\n").expect("old file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: Default::default(),
+            content: crate::content::AnalysisSet::NONE.with_lines(),
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        fs::write(&path, b"new longer text\nsecond line\n").expect("mutation");
+        let refreshed = crate::refresh(&mut index, &basis, &delivery).expect("refresh");
+        assert!(refreshed.is_complete());
+        let (cached, report) =
+            crate::open(&basis, &Delivery { cache: CachePolicy::Only, ..delivery })
+                .expect("cache-only sees refreshed tiers");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert_eq!(cached.total(), index.total());
+        assert_eq!(
+            cached.total().bytes,
+            u64::try_from(b"new longer text\nsecond line\n".len()).expect("length")
+        );
+        assert_eq!(report.content_cache.hits, 1);
+        let original = index
+            .content()
+            .expect("fresh content")
+            .file(Path::new("note.txt"))
+            .expect("fresh file");
+        let restored = cached
+            .content()
+            .expect("restored content")
+            .file(Path::new("note.txt"))
+            .expect("restored file");
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn cache_only_refusals_name_location_root_and_absence_separately() {
+        let root = tempfile::tempdir().expect("root");
+        let other = tempfile::tempdir().expect("other root");
+        let cache = tempfile::tempdir().expect("cache");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: Default::default(),
+            content: Default::default(),
+        };
+        let snapshot = cache.path().join("snapshot.fdu");
+        let message = |delivery: &Delivery| {
+            crate::open(&basis, delivery).expect_err("cache-only refusal").to_string()
+        };
+        let no_location = message(&Delivery::new(CachePolicy::Only, None));
+        assert!(no_location.contains("no cache location"), "{no_location}");
+        assert!(!no_location.contains("use auto"), "no write can succeed without a location");
+        let missing = message(&Delivery::new(CachePolicy::Only, Some(snapshot.clone())));
+        assert!(missing.contains("no usable snapshot"), "{missing}");
+        assert!(missing.contains("auto"), "{missing}");
+        let other_basis = crate::query::Basis { root: other.path().into(), ..basis.clone() };
+        crate::open(&other_basis, &Delivery::new(CachePolicy::Auto, Some(snapshot.clone())))
+            .expect("other snapshot");
+        let wrong_root = message(&Delivery::new(CachePolicy::Only, Some(snapshot)));
+        assert!(wrong_root.contains("different root"), "{wrong_root}");
+    }
+
+    #[test]
+    fn route_delivery_matrix_rejects_contracts_the_route_cannot_execute() {
+        let basis = crate::query::Basis {
+            root: ".".into(),
+            scope: Default::default(),
+            content: Default::default(),
+        };
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        for delivery in Delivery::enumerate() {
+            for route in
+                [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened]
+            {
+                let result = plan(&request, &delivery, route);
+                let forbidden = (delivery.watch.is_some() || route == Route::Watch)
+                    && delivery.cache == CachePolicy::Only
+                    || route == Route::Refresh && delivery.cache == CachePolicy::Only
+                    || route == Route::Opened
+                        && (delivery.cache != CachePolicy::Off || delivery.watch.is_some());
+                assert_eq!(result.is_err(), forbidden, "{route:?} {delivery:?}");
+                if let Ok(plan) = result {
+                    if route == Route::Opened {
+                        assert_eq!(plan.load(), Load::None);
+                        assert_eq!(plan.verify(), Verify::Filesystem);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn write_policy_depends_only_on_delivery_and_observed_facts() {
         let routes = [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened];
         for delivery in Delivery::enumerate() {
@@ -443,6 +656,11 @@ mod tests {
                 };
                 for route in routes {
                     let plan = Plan {
+                        basis: crate::query::Basis {
+                            root: ".".into(),
+                            scope: Default::default(),
+                            content: Default::default(),
+                        },
                         route,
                         retained: RetainedState::FullIndex,
                         load: Load::Snapshot,

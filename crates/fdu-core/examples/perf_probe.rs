@@ -8,6 +8,13 @@
 // Measurement scaffolding, kept out of the library so the engine's unsafe-free
 // guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
 // probe is the right place to pay for that.
+fn open_planned(root: &std::path::Path, options: OpenOptions) -> fdu_core::Result<OpenedIndex> {
+    let mut delivery = fdu_core::query::Delivery::new(fdu_core::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -1197,7 +1204,7 @@ fn opened_discovery_with_options(
 ) -> ProbeResult<ProbeOutput> {
     let counters = begin_component_counters();
     let started = Instant::now();
-    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let opened = open_planned(&arguments.root, options)?;
     let initial = opened.read(ReadRequest::default())?;
     let cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
     let (terminal, cursor, commits) = settle_opened(
@@ -1275,7 +1282,7 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         journal_capacity_bytes: OPENED_PROBE_JOURNAL_CAPACITY_BYTES,
         ..OpenOptions::default()
     };
-    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let opened = open_planned(&arguments.root, options)?;
     let initial = match opened.read(ReadRequest::default()) {
         Ok(initial) => initial,
         Err(error) => {
@@ -2504,7 +2511,7 @@ mod tests {
     #[test]
     fn opened_oracle_rejects_an_unavailable_version() {
         let root = tempfile::tempdir().expect("opened oracle root");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_planned(root.path(), OpenOptions::default()).expect("open");
         let initial = opened.read(ReadRequest::default()).expect("initial read");
         let unavailable = EngineVersion { sequence: Clock(u64::MAX), ..initial.version };
 

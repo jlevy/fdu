@@ -130,9 +130,7 @@ pub struct Basis {
     pub root: PathBuf,
     /// What the scan observes and retains.
     ///
-    /// `ScanConfig` still carries delivery fields (`threads`, `batch_size`, `order`), and
-    /// `threads` stays the authoritative scan worker count until worker counts move into
-    /// [`Delivery`]; none of them changes an answer.
+    /// Scheduling is supplied separately by [`Delivery`].
     pub scope: Scope,
     /// The analyzers whose results the answer may report.
     pub content: AnalysisSet,
@@ -197,13 +195,6 @@ impl Basis {
 }
 
 /// How a request is carried out, which never changes what its answer says.
-///
-/// One worker count is here, because it has nowhere else to wait: scan threads ride in
-/// [`ScanConfig::threads`] inside [`Basis::scope`] until the execution plan model takes
-/// them, and the content readers' count rides in
-/// [`AnalysisRequest`](crate::content::AnalysisRequest), which a request does not carry --
-/// [`Basis::content`] is the analyzer set, which is what changes an answer. Phase 2 replaces
-/// both with one `Workers`.
 ///
 /// No `Default`, deliberately. Every field here is a decision its caller has already made,
 /// and the cache policy is the one that decides whether an answer touches the filesystem
@@ -795,6 +786,13 @@ pub enum RequestError {
     WatchContent,
     /// A watch was asked to start from a snapshot nothing verifies.
     WatchCacheOnly,
+    /// A route cannot honor the requested execution policy.
+    DeliveryUnsupported {
+        /// The lifecycle that refuses it.
+        route: &'static str,
+        /// The unsupported policy combination.
+        reason: &'static str,
+    },
     /// A read names more views than one report may carry.
     ViewLimit {
         /// Views and omitted views the request carries.
@@ -844,6 +842,7 @@ impl RequestError {
                 held = analysis_label(*held),
             ),
             Self::WatchScope => watch_scope_message(axes),
+            Self::DeliveryUnsupported { route, reason } => format!("{route}: {reason}"),
             Self::WatchContent => format!(
                 "{} is not yet supported with {}; use a one-shot report",
                 axes.analyze, axes.watch

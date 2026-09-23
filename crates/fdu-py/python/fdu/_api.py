@@ -416,6 +416,11 @@ class Index:
         return None if value is None else provenance_from_dict(value)
 
     def refresh(self) -> RefreshResult:
+        """Reverify metadata and content, then persist according to this index's cache policy.
+
+        Under ``auto``, a later cache-only open sees the refreshed facts. Partial scans
+        preserve the complete snapshot and save only verified compatible content.
+        """
         value = _call(self._native.refresh)
         return RefreshResult(
             inserted=int(value["inserted"]),
@@ -440,7 +445,8 @@ class Index:
 
         The watch continues the scan that built the index under the same scope, so it
         observes ``.gitignore`` control state unless the index was opened with
-        ``ScanOptions(read_controls=False)``.
+        ``ScanOptions(read_controls=False)``. Iterating the feed persists verified
+        changes under ``auto``; cache write failures warn without ending the feed.
         """
 
         selected = options if options is not None else WatchOptions()

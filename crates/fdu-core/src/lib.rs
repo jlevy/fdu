@@ -149,7 +149,7 @@ pub use crate::stored_state::{
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, SaveOutcome, Session};
 
-use crate::execution::{RunFacts, SaveTargets};
+use crate::execution::{Admission, RunFacts, SaveTargets, StoreHeader};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -558,6 +558,7 @@ pub(crate) fn execute(
     // A snapshot for this root that could not serve, kept so a policy that cannot scan says
     // why it has no answer rather than only that it has none.
     let mut refused_snapshot = None;
+    let mut wrong_root = false;
     let mut projected = false;
     let loaded = match (plan.load() == Load::Snapshot, &delivery.cache_path) {
         (true, Some(cache_path)) => {
@@ -574,7 +575,11 @@ pub(crate) fn execute(
                     refused_snapshot = Some(identity);
                     None
                 }
-                snapshot::LoadOutcome::Served(_, _) | snapshot::LoadOutcome::Absent => None,
+                snapshot::LoadOutcome::Served(_, _) => {
+                    wrong_root = true;
+                    None
+                }
+                snapshot::LoadOutcome::Absent => None,
             }
         }
         _ => None,
@@ -582,7 +587,14 @@ pub(crate) fn execute(
 
     if plan.verify() == Verify::None {
         let Some(mut index) = loaded else {
-            return Err(Error::Snapshot(unusable_snapshot_message(refused_snapshot, &scan_config)));
+            let message = if plan.admit(None, basis) == Admission::NoLocation {
+                "no cache location is configured; configure a cache location before requesting cache-only access".into()
+            } else if wrong_root {
+                "the configured snapshot belongs to a different root; choose this root's cache location or use auto to replace the snapshot for this root".into()
+            } else {
+                unusable_snapshot_message(refused_snapshot, &scan_config)
+            };
+            return Err(Error::Snapshot(message));
         };
         // Deliberately no reconciliation: this tier never touches the tree. The index is
         // marked unverified so the answer cannot claim a currency it has not earned — a
@@ -593,12 +605,27 @@ pub(crate) fn execute(
         // regular file means the sidecar holds the complete answer to this request.
         // Restore already walked that set; compare `hits` to files visited, not a
         // second walk and not unique `PathBuf` keys.
-        if basis.content.is_enabled()
-            && (!content_cache.usable || content_cache.hits != content_cache.candidates)
-        {
-            return Err(Error::Snapshot(
-                "no complete usable content sidecar for this root and analysis profile".into(),
-            ));
+        let canonical_basis = query::Basis { root: root.clone(), ..basis.clone() };
+        let header = StoreHeader {
+            root: index.root_path(),
+            snapshot: index.snapshot_identity(),
+            content: index.content().and_then(|content| content.identity()),
+            content_complete: content_cache.usable
+                && content_cache.hits == content_cache.candidates,
+        };
+        match plan.admit(Some(&header), &canonical_basis) {
+            Admission::Serve(_) => {}
+            Admission::IncompleteContent => {
+                return Err(Error::Snapshot(
+                    "no complete usable content sidecar for this root and analysis profile".into(),
+                ));
+            }
+            _ => {
+                return Err(Error::Snapshot(unusable_snapshot_message(
+                    refused_snapshot,
+                    &scan_config,
+                )));
+            }
         }
         return Ok((
             std::sync::Arc::new(index),
@@ -711,8 +738,7 @@ fn run_facts(
 pub(crate) fn persist_index(index: &Index, plan: &Plan) -> Result<bool> {
     let basis = query::Basis::held_by(index);
     let delivery = plan.delivery();
-    let stored =
-        delivery.cache_path.as_ref().and_then(|path| snapshot::read_header(path).ok().flatten());
+    let stored = delivery.cache_path.as_deref().map(snapshot::read_header).transpose()?.flatten();
     let projected = stored.as_ref().is_some_and(|header| {
         header.root == index.root_path()
             && serves_snapshot(header.identity, index.snapshot_identity())
