@@ -171,16 +171,49 @@ impl Session {
     /// Startup persistence is joined before binding the session. A save failure is
     /// returned by the first `persist_due` call, so it does not discard a valid live
     /// answer. Filesystem and observation failures still fail startup.
-    pub fn start(request: Request, mut delivery: Delivery) -> Result<Self> {
+    pub fn start(request: Request, delivery: Delivery) -> Result<Self> {
+        Self::start_observed(request, delivery, None)
+    }
+
+    /// [`Self::start`], reporting the initial scan through `progress` as it runs.
+    ///
+    /// The same session as [`Self::start`]; the handle observes the start and changes
+    /// nothing about it. A start is two walks, and both are counted: the open (cold, or a
+    /// load and revalidation), its save joined under
+    /// [`ProgressPhase::Saving`](crate::ProgressPhase), and then the revalidation that
+    /// closes the gap between that walk and the bound watcher, under
+    /// [`ProgressPhase::Revalidating`](crate::ProgressPhase) once more. On an unchanged
+    /// tree the counters therefore end at twice the tree's totals. Once this returns
+    /// the session reports nothing further through the handle; its repaints are the
+    /// progress from there.
+    pub fn start_with_progress(
+        request: Request,
+        delivery: Delivery,
+        progress: &crate::Progress,
+    ) -> Result<Self> {
+        Self::start_observed(request, delivery, Some(progress))
+    }
+
+    fn start_observed(
+        request: Request,
+        mut delivery: Delivery,
+        progress: Option<&crate::Progress>,
+    ) -> Result<Self> {
         delivery.watch.get_or_insert_with(WatchDelivery::default);
         let plan =
             crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
-        let (index, report, pending, _diagnostics) = crate::execute(&plan, &request.basis, false)?;
+        let (index, report, pending, _diagnostics) =
+            crate::execute(&plan, &request.basis, false, progress)?;
         let startup_save_error = pending.join().err();
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
-        let mut session =
-            Self::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())?;
+        let mut session = Self::new_observed(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            WatchConfig::default(),
+            progress,
+        )?;
         session.persistence.pending |= startup_save_error.is_some() || !report.is_complete();
         session.startup_save_error = startup_save_error;
         Ok(session)
@@ -238,6 +271,16 @@ impl Session {
         delivery: &Delivery,
         watch: WatchConfig,
     ) -> Result<Self> {
+        Self::new_observed(index, request, delivery, watch, None)
+    }
+
+    fn new_observed(
+        index: IndexHandle,
+        request: Request,
+        delivery: &Delivery,
+        watch: WatchConfig,
+        progress: Option<&crate::Progress>,
+    ) -> Result<Self> {
         let root = index.root_path()?;
         let scan = request.basis.scope.scan_config(delivery);
         // What no delivery can carry, before anything stored is read and before the
@@ -262,7 +305,7 @@ impl Session {
         // The full reconciliation catches a mutation that completed before registration;
         // the capture drain applies every hint observed while that pass ran.
         let watcher = Watcher::new(&root, watch)?;
-        Self::finish_initial_handoff(index, request, &delivery, watcher, scan)
+        Self::finish_initial_handoff(index, request, &delivery, watcher, scan, progress)
     }
 
     /// Finish the two-part initial handoff after observation has been bound.
@@ -270,21 +313,27 @@ impl Session {
     /// Kept separate so the scripted watcher exercises the same reconciliation, drain, and
     /// acceptance boundary as an OS watcher. Once this returns, later partial observations are
     /// valid live state; `accept_partial` governs only the coherent state handed to the caller.
+    ///
+    /// `progress` observes the handoff's own walk and drain only. The session keeps
+    /// `scan` without it, so nothing it reconciles later reports through a handle whose
+    /// poller has long since stopped.
     fn finish_initial_handoff(
         index: IndexHandle,
         request: Request,
         delivery: &Delivery,
         watcher: Watcher,
         scan: ScanConfig,
+        progress: Option<&crate::Progress>,
     ) -> Result<Self> {
+        let observed = ScanConfig { progress: progress.cloned(), ..scan.clone() };
         let mut dirty = false;
-        let reconciliation = crate::scan::reconcile_handle(&index, &scan, &mut |commit| {
+        let reconciliation = crate::scan::reconcile_handle(&index, &observed, &mut |commit| {
             dirty |= !commit.changes.is_empty();
         })?;
         if !reconciliation.scan.is_complete() && !delivery.accept_partial {
             return Err(Error::ObservationHandoffIncomplete);
         }
-        dirty |= drain_initial_capture(&watcher, &index, &scan)?;
+        dirty |= drain_initial_capture(&watcher, &index, &observed)?;
         if !delivery.accept_partial
             && !index.read_with(|index| crate::query::TreeStatus::of(index, &request).complete)?
         {
@@ -786,6 +835,7 @@ mod tests {
             &delivery,
             watcher,
             scan,
+            None,
         )
         .expect("handoff");
         let started = session.persistence.last_attempt;
@@ -1035,6 +1085,7 @@ mod tests {
             &delivery,
             watcher,
             scan,
+            None,
         ) else {
             panic!("a partial state created while draining is refused");
         };
@@ -1068,5 +1119,72 @@ mod tests {
             None,
             "an entry the batch removed is in neither partition, not in the unignored one"
         );
+    }
+
+    /// A start is the open and then the handoff revalidation, and the handle counts both
+    /// walks; the second is what keeps the counters moving on a large tree after the
+    /// save, where a frozen count would look like a hang. The session it returns is the
+    /// one [`Session::start`] returns, and it reports nothing further through the
+    /// handle once started.
+    #[test]
+    fn a_started_session_reports_both_of_its_walks_and_then_nothing() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let mut bytes = 0;
+        for directory in 0..4 {
+            let dir = root.path().join(format!("d{directory}"));
+            std::fs::create_dir(&dir).expect("directory");
+            for file in 0..3 {
+                let size = directory * 3 + file + 1;
+                std::fs::write(dir.join(format!("f{file}.txt")), vec![b'.'; size]).expect("file");
+                bytes += size as u64;
+            }
+        }
+        let request = || {
+            Request::new(
+                Basis {
+                    root: root.path().to_path_buf(),
+                    scope: ScanConfig::default().into(),
+                    content: crate::content::AnalysisSet::NONE,
+                },
+                Query::default(),
+                std::time::UNIX_EPOCH,
+            )
+        };
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Auto,
+            cache_path: Some(cache.path().join("snapshot")),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
+            workers: crate::query::Workers::default(),
+            batch_size: 4,
+            order: crate::scan::ScanOrder::default(),
+        };
+
+        let progress = crate::Progress::new();
+        let session = Session::start_with_progress(request(), delivery.clone(), &progress)
+            .expect("observed start");
+        let after_start = progress.snapshot();
+        assert_eq!(
+            after_start.phase,
+            crate::ProgressPhase::Revalidating,
+            "the handoff revalidation follows the joined save"
+        );
+        assert_eq!(after_start.directories, 2 * 5, "the root and four children, twice");
+        assert_eq!(after_start.files, 2 * 12);
+        assert_eq!(after_start.bytes, 2 * bytes);
+        assert_eq!(after_start.analysis, None);
+
+        let plain = Session::start(request(), delivery).expect("plain start");
+        let generated_at = std::time::SystemTime::now();
+        let observed_report = session.report(generated_at).expect("observed report");
+        let mut plain_report = plain.report(generated_at).expect("plain report");
+        plain_report.provenance = observed_report.provenance.clone();
+        let json = |report: &Report| {
+            crate::report_format::render(report, crate::report_format::Format::Json, false)
+                .expect("render")
+        };
+        assert_eq!(json(&plain_report), json(&observed_report));
+        assert_eq!(progress.snapshot(), after_start, "the second start was not observed");
     }
 }

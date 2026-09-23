@@ -117,6 +117,21 @@ impl AnalyzerCoverage {
 /// through the index's own apply step, which is crate-private until the request model
 /// decides the public analysis surface.
 pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisReport {
+    analyze_index_observed(index, request, None)
+}
+
+/// [`analyze_index`], reporting the pass through `progress` when one is attached.
+///
+/// The candidate total is known before the first file is read, so this is the one
+/// phase with an exact denominator. Each result is counted as it reaches the caller's
+/// thread, whether the index applies it or discards it as stale: the file was read
+/// either way, and progress counts work done. At return, `analysis` is
+/// `(candidates, candidates)`.
+pub(crate) fn analyze_index_observed(
+    index: &mut Index,
+    request: AnalysisRequest,
+    progress: Option<&crate::Progress>,
+) -> AnalysisReport {
     if !request.profile.is_enabled() {
         return AnalysisReport::default();
     }
@@ -131,6 +146,10 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
         words: request.profile.includes_words().then(AnalyzerCoverage::default),
         ..AnalysisReport::default()
     };
+    if let Some(progress) = progress {
+        progress.enter(crate::ProgressPhase::Analyzing);
+        progress.begin_analysis(report.candidates);
+    }
     if candidates.is_empty() {
         finish_content_tier(index, &report, previous_state, pass_started_at_ns);
         return report;
@@ -169,6 +188,11 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
             match index.apply_analysis(observation) {
                 AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
                 AnalysisApplyOutcome::Stale => report.stale = report.stale.saturating_add(1),
+            }
+            // Per result, on this thread, beside the index apply each result already
+            // costs: the workers never touch the handle.
+            if let Some(progress) = progress {
+                progress.add_analyzed(1);
             }
         }
     });
