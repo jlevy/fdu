@@ -7,7 +7,9 @@
 **Status:** Recorded.
 Stacked on [#94](https://github.com/jlevy/fdu/pull/94) at `c234da2b`. Leftover queue,
 the two named Linux cuts (H147 recycle, H72 `d_type` skip), and the H148 PGO screen are
-in the ledger through exp-154 on this PR. See
+in the ledger through exp-154 on [#97](https://github.com/jlevy/fdu/pull/97). H149
+(exp-155) is the leftover-timer restore mix on
+[#105](https://github.com/jlevy/fdu/pull/105). See
 [the Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md) for the H148 cell.
 Former stacked PR #100 is folded here and closed.
 
@@ -145,6 +147,16 @@ Mint the reserved id when the cell starts, not before.
    Profdata is host-specific and is not checked in.
    Adoption into shipped release builds stays on `fdu-pdne`. Bead: `fdu-fg0q` (close).
 
+8. **H149 — cache-hit restore mix after leftover apply-timer expansion (`fdu-78q6` /
+   `fdu-nszx`).** **Same leftover identity** (exp-155, quiet).
+   Apply 60–62% of the four restore rows because HashMap remove + fingerprint now sit in
+   apply. That is the H121 bar as an instrument change, not a new cut.
+   Parse and candidates ~24–26 ms; read ~8–9 ms.
+   Load/core 0.059–0.102 held.
+   Do not retry H116. Do not retry H125/H129/H131/H133. H83 remains format.
+   Stacked on [#97](https://github.com/jlevy/fdu/pull/97) as
+   [#105](https://github.com/jlevy/fdu/pull/105).
+
 ## Subjects
 
 - **linux-v6.12**: reconstructible deciding subject (92,474 entries).
@@ -178,18 +190,21 @@ H108 still requires one-shot `fdu PATH` to stay `cold scan`.
 
 ## Rollout Plan
 
-Work only on `cursor/linux-perf-iterate-de1b`, base `#94`. Do not push to #91, #92, or
+H144–H148 stay on `cursor/linux-perf-iterate-de1b` (#97). H149 is on
+`cursor/linux-sidecar-load-de1b` (#105), stacked on #97. Do not push to #91, #92, or
 #94. No merge unless asked.
 No force-push.
 
-If #94 moves, rebase this branch onto it and keep H144–H148 meanings.
+If #97 moves, rebase #105 onto it and keep H149’s meaning.
 The leftover compileable queue on this 4-core VM is recorded; do not retry H71, H85’s
-20% bar, or H72 on another 6% directory source tree.
-H148 is recorded here; do not reopen #100.
+20% bar, H72 on another 6% directory source tree, or H116 from the H149 mix.
+H148 is recorded on #97; do not reopen #100.
 
 ## Open Questions
 
 - Linux cache-hit leftover after H125–H133: no new ≥3% userspace cut (H144 / exp-144)
+- Linux cache-hit mix after leftover apply-timer expansion: same leftover; apply 60–62%
+  of restore is H116 now in-bucket, not a new cut (H149 / exp-155)
 - Linux opened-discovery leftover: same as Darwin H127; no new ≥3% cut (H145 / exp-145)
 - H84 unlock is silent; named-job `--threads 8` is not a 3% win.
   `--no-controls` aggregate is a warm sign on `linux-v6.12` (exp-146) and nominated

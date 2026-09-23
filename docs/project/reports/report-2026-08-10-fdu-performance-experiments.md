@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
-| Linux 6.12.94+, ext4 | virtualized | warm-steady | 17 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -233,6 +233,7 @@ dead end.
 | 152 | [Linux H72 d_type skip misses 3% on source-tree v6.12](#exp152--linux-h72-dtype-skip-misses-3-on-sourcetree-v612) | H72 | `aggregate-summary` | -1.6% | ❌ rejected |
 | 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp153--linux-h72-dtype-skip-clears-3-on-symlinkheavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
 | 154 | [Linux PGO screen clears 3% on cold-scan-index and warm-revalidate](#exp154--linux-pgo-screen-clears-3-on-coldscanindex-and-warmrevalidate) | H148 | `cold-scan-index` | -8.3% | ✅ accepted |
+| 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
 
 ## The experiments
 
@@ -5180,6 +5181,40 @@ wall win is spawn; Cargo.toml unchanged (profdata is host-specific).
 Full record:
 [`exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md`](../experiments/exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md)
 
+### exp-155 — Linux cache-hit restore mix after leftover apply-timer expansion
+
+✅ accepted · 2026-09-21 · H149 · commit `065175ee`
+
+Control: same leftover-timer release probe both arms
+
+Candidate: same probe leftover restore-mix profile
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 586.8 | 587.9 | +0.04% (n.s.) | [-0.38%, +0.59%] |
+| component (ms) | 500.8 | 502.3 | +0.33% (n.s.) | [-0.48%, +0.96%] |
+| cpu (ms) | 586.2 | 587.4 | +0.00% (n.s.) | [-0.36%, +0.59%] |
+| user (ms) | 535.1 | 533.0 | -0.92% (n.s.) | [-3.20%, +1.01%] |
+| system (ms) | 52.2 | 52.0 | +0.00% (n.s.) | [-10.75%, +26.90%] |
+| blocked (ms) | 0.5 | 0.5 | -7.66% (n.s.) | [-23.77%, +10.01%] |
+| peak rss (MiB) | 149.0 | 149.0 | +0.00% (n.s.) | [-0.06%, +0.06%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+same-binary attachment: both arms ran the 065175ee probe, so 0 lines is the attachment’s
+cost, not that commit’s; 065175ee (apply-timer expansion plus a dead-branch removal, 35
+production lines added in content_cache.rs and index.rs, tests excluded) was never
+paired against its parent e95167b9, so its wall effect is unmeasured; the timers are
+Option-gated and off by default
+
+**Accepted:** same leftover identity as H144: apply 60-62% of restore after timer
+expansion is H116 HashMap now in-bucket; no new compileable cut; do not retry H116.
+
+Full record:
+[`exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md`](../experiments/exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5227,6 +5262,7 @@ Baselines show one value because they measure a state rather than a change.
 | 151 | Linux transient batch recycle clears 3% after H85 misses 20% | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ✅ accepted |
 | 152 | Linux H72 d_type skip misses 3% on source-tree v6.12 | `aggregate-summary` | 36.5 | 35.2 | -1.6% | ❌ rejected |
 | 154 | Linux PGO screen clears 3% on cold-scan-index and warm-revalidate | `cold-scan-index` | 504.5 | 460.5 | -8.3% | ✅ accepted |
+| 155 | Linux cache-hit restore mix after leftover apply-timer expansion | `content-cache-hit` | 586.8 | 587.9 | +0.0% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

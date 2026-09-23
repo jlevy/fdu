@@ -495,11 +495,11 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-Next free unused hypothesis id is **H149** (H144–H146 reserved on the Linux iteration
-stack; H147 used for the Linux transient recycle keep; H148 used for the Linux PGO
-screen; H72 used existing id).
-Next free experiment id is **exp-155** (numbering is shared with Darwin); do not take
-exp-138–154 here. exp-113 remains reserved unused (H113 superseded).
+The next free hypothesis and experiment ids have one home: the end of
+[the Linux standing](#linux-standing-2026-09-20), because both numberings are shared
+with Darwin and the Linux stack mints them.
+Do not mint an id from this section; do not take exp-138–155 or H144–H149 here.
+exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -871,8 +871,21 @@ Quiet `linux-v6.12` `cold-scan-index` −8.35% [−10.35%, −6.92%] and `warm-r
 See [the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
 (recorded on [#97](https://github.com/jlevy/fdu/pull/97)).
 
-Next free Linux experiment id is **exp-155**. Next free unused hypothesis id is
-**H149**.
+**H149 / exp-155** is the standing Linux cache-hit mix after leftover apply-timer
+expansion: **same** leftover identity.
+Quiet 12-pair `content-cache-hit` on `linux-v6.12`. Apply 60–62% of restore (89–99 ms)
+because HashMap remove + fingerprint now sit in apply.
+Parse and candidates ~24–26 ms.
+Read ~8–9 ms. Digest identical.
+Load/core 0.059–0.102 held.
+Do not retry H116. H83 remains format.
+
+Next free experiment id is **exp-156** and next free unused hypothesis id is **H150**.
+This is the one statement of the next free ids for Darwin and Linux alike; the
+[registry header](performance-loop.md#hypotheses) agrees.
+H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
+keep, H148 the Linux PGO screen, and H149 the leftover-timer restore mix; H72 reused its
+existing id. exp-113 remains reserved unused.
 
 ## Before the First Round
 
