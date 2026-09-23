@@ -1137,11 +1137,12 @@ pub(crate) fn report_in(
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
         analysis: index.content().and_then(|held| {
-            // The set the read asked for, which `validate_read` just proved is the one this
-            // index holds: the report echoes the request, never the store.
-            let stored = held.profile()?;
-            debug_assert_eq!(stored, content, "validate_read admits only an equal analyzer set");
-            Some(ContentReportMetadata { profile: content, provenance: held.provenance()? })
+            let wanted = index.content_identity(content);
+            let projected = held.admit(&wanted)?;
+            Some(ContentReportMetadata {
+                profile: projected.identity().analysis,
+                provenance: projected.identity().record_provenance(),
+            })
         }),
         ignored_entries: query.selection.ignored,
         ignore_rules,
@@ -1536,8 +1537,10 @@ fn metric_summary(
     let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
     let files = entry_rows(index, walked, unfiltered_rows);
     let mut grouped = BTreeMap::<String, MetricRow>::new();
+    let wanted = index.content_identity(content);
+    let held = index.content().and_then(|held| held.admit(&wanted));
     for file in files.iter().filter(|row| row.kind == EntryKind::File) {
-        let cached = index.content().and_then(|content| content.file(&file.path));
+        let cached = held.and_then(|content| content.file(&file.path));
         let classification = index.classify(&file.path);
         let included = match view {
             ViewSpec::Languages => classification.family == ContentFamily::Code,

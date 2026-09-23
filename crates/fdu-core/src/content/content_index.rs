@@ -304,6 +304,14 @@ pub(crate) struct ContentTierState {
 }
 
 impl ContentIndex {
+    /// Project this record set to the requested identity before reading its values.
+    pub(crate) fn admit(
+        &self,
+        wanted: &ContentTierIdentity,
+    ) -> Option<crate::stored_state::ContentProjection<'_>> {
+        wanted.admit(self.identity()?)?.project(self)
+    }
+
     /// Number of sparse file records.
     pub fn len(&self) -> usize {
         self.files.len()
@@ -359,32 +367,44 @@ impl ContentIndex {
     /// every record of the prepared one, and keeping both would leave a tier whose totals
     /// match neither request.
     #[must_use = "a refused record was not committed"]
-    pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
-        self.commit_record(path, analysis, true)
-    }
-
-    /// Insert or replace a record without touching roll-ups.
-    ///
-    /// Sidecar restore inserts every cached file first, then rebuilds directory
-    /// totals once. Incremental [`commit`] still walks ancestors per file.
-    #[must_use = "a refused record was not committed"]
-    pub(crate) fn commit_without_rollup(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
-        self.commit_record(path, analysis, false)
-    }
-
-    #[must_use = "a refused record was not committed"]
-    fn commit_record(
+    pub(crate) fn commit(
         &mut self,
         path: PathBuf,
+        profile: AnalysisSet,
+        provenance: &ContentProvenance,
         analysis: FileAnalysis,
-        update_rollups: bool,
     ) -> bool {
-        let Some(identity) = &self.identity else {
+        let Some(analysis) = self
+            .identity
+            .as_ref()
+            .and_then(|identity| identity.admit_record(profile, provenance))
+            .and_then(|admission| admission.record(analysis))
+            .map(crate::stored_state::AdmittedRecord::into_record)
+        else {
             return false;
         };
-        if !analysis.matches_profile(identity.analysis) {
+        self.insert_record(path, analysis, true);
+        true
+    }
+
+    /// Restore only records carrying the admission proved by the sidecar header.
+    #[must_use = "a refused record was not committed"]
+    pub(crate) fn commit_without_rollup(
+        &mut self,
+        path: PathBuf,
+        analysis: crate::stored_state::AdmittedRecord<'_>,
+    ) -> bool {
+        let Some(identity) = self.identity.as_ref() else {
             return false;
-        }
+        };
+        let Some(analysis) = analysis.for_tier(identity) else {
+            return false;
+        };
+        self.insert_record(path, analysis, false);
+        true
+    }
+
+    fn insert_record(&mut self, path: PathBuf, analysis: FileAnalysis, update_rollups: bool) {
         let key = PathKey::new(path);
         if let Some(previous) = self.files.remove(key.bytes()) {
             if update_rollups {
@@ -395,7 +415,6 @@ impl ContentIndex {
             self.merge_ancestors(&key.0, &analysis, true);
         }
         self.files.insert(key, analysis);
-        true
     }
 
     pub(crate) fn invalidate(&mut self, path: &Path) {
@@ -437,7 +456,7 @@ impl ContentIndex {
     /// so a tier prepared for a different one is cleared, whether the stored analyzer set
     /// is wider, narrower, or produced under other rules, versions, options, or entries.
     pub(crate) fn prepare(&mut self, identity: ContentTierIdentity) {
-        if self.identity.as_ref() == Some(&identity) {
+        if self.admit(&identity).is_some() {
             return;
         }
         self.files.clear();
@@ -526,10 +545,7 @@ impl ContentIndex {
 mod tests {
     use super::*;
     use crate::classify::classify_path;
-    use crate::content::{
-        AnalysisRequest, AnalysisSet, AnalyzerOutcome, BasicMetrics, ContentProvenance,
-        FileAnalysis,
-    };
+    use crate::content::{AnalysisSet, AnalyzerOutcome, BasicMetrics, FileAnalysis};
     use crate::{AnalyzerProvenance, EntryTierIdentity, Fingerprint, ScanConfig};
 
     fn lines() -> AnalysisSet {
@@ -537,13 +553,10 @@ mod tests {
     }
 
     fn identity_for(analysis: AnalysisSet) -> ContentTierIdentity {
-        let entries = ScanConfig::default().snapshot_identity().entries;
-        let records = ContentProvenance::for_request(
-            AnalysisRequest { profile: analysis, ..AnalysisRequest::default() },
-            entries.type_rules_fingerprint,
-        );
-        ContentTierIdentity::of_records(entries, analysis, &records)
-            .expect("records under the entry tier's type rules")
+        ContentTierIdentity::for_request(
+            ScanConfig::default().snapshot_identity().entries,
+            analysis,
+        )
     }
 
     /// A tier prepared for the `lines` identity every [`analysis`] record carries.
@@ -569,9 +582,20 @@ mod tests {
         }
     }
 
+    fn try_commit(index: &mut ContentIndex, path: PathBuf, record: FileAnalysis) -> bool {
+        let identity = identity_for(lines());
+        index.commit(path, identity.analysis, &identity.record_provenance(), record)
+    }
+
+    fn restore(index: &mut ContentIndex, path: PathBuf, record: FileAnalysis) -> bool {
+        let identity = identity_for(lines());
+        let admitted = identity.admit(&identity).unwrap().record(record).unwrap();
+        index.commit_without_rollup(path, admitted)
+    }
+
     /// Commit a record the test expects the tier to accept.
     fn commit(index: &mut ContentIndex, path: &str, record: FileAnalysis) {
-        assert!(index.commit(PathBuf::from(path), record), "{path} must commit");
+        assert!(try_commit(index, PathBuf::from(path), record), "{path} must commit");
     }
 
     #[test]
@@ -630,7 +654,7 @@ mod tests {
     fn commit_refuses_a_record_when_the_tier_is_unprepared() {
         let mut unprepared = ContentIndex::default();
         assert!(
-            !unprepared.commit(PathBuf::from("a.rs"), analysis("a.rs", 1)),
+            !try_commit(&mut unprepared, PathBuf::from("a.rs"), analysis("a.rs", 1)),
             "a tier prepared for nothing holds no record"
         );
         assert_eq!(unprepared, ContentIndex::default());
@@ -643,7 +667,12 @@ mod tests {
 
         let record = analysis("a.rs", 1);
         assert!(
-            !index.commit(PathBuf::from("a.rs"), record),
+            !index.commit(
+                PathBuf::from("a.rs"),
+                AnalysisSet::ALL,
+                &identity_for(AnalysisSet::ALL).record_provenance(),
+                record
+            ),
             "an all-unit tier must not admit a lines-only record"
         );
         assert!(index.is_empty());
@@ -652,10 +681,41 @@ mod tests {
         let mut record = analysis("a.rs", 1);
         record.code = Some(AnalyzerOutcome::unavailable(CoverageReason::Unsupported));
         assert!(
-            !index.commit(PathBuf::from("a.rs"), record),
+            !try_commit(&mut index, PathBuf::from("a.rs"), record),
             "a lines-only tier must not admit an unrequested code slot"
         );
         assert!(index.is_empty());
+    }
+
+    #[test]
+    fn admitted_records_cannot_cross_tiers_and_projection_refuses_other_provenance() {
+        let wanted = identity_for(lines());
+        let record = || analysis("a.rs", 1);
+        let proof = wanted.admit(&wanted).expect("exact identity");
+        let mut other = ContentIndex::default();
+        let other_identity = identity_for(AnalysisSet::ALL);
+        other.prepare(other_identity);
+        assert!(
+            !other.commit_without_rollup(PathBuf::from("a.rs"), proof.record(record()).unwrap())
+        );
+        assert!(other.is_empty());
+
+        let mut exact = prepared();
+        assert!(
+            exact.commit_without_rollup(PathBuf::from("a.rs"), proof.record(record()).unwrap())
+        );
+        let projected = exact.admit(&wanted).expect("same request projects");
+        assert_eq!(projected.file(Path::new("a.rs")), Some(&record()));
+        let mut foreign = wanted.clone();
+        foreign.provenance.options_fingerprint.0 ^= 1;
+        assert!(exact.admit(&foreign).is_none());
+        assert!(!exact.commit(
+            PathBuf::from("b.rs"),
+            foreign.analysis,
+            &foreign.record_provenance(),
+            record()
+        ));
+        assert_eq!(exact.len(), 1, "foreign provenance changes nothing");
     }
 
     #[test]
@@ -696,7 +756,7 @@ mod tests {
         // so -- Windows -- and a different file named `src\\c.rs` at the root everywhere
         // else. Either way the map agrees with `Path::starts_with` and `Path::eq`.
         let other = PathBuf::from("src\\c.rs");
-        assert!(index.commit(other.clone(), analysis("src/c.rs", 1)));
+        assert!(try_commit(&mut index, other.clone(), analysis("src/c.rs", 1)));
         let beneath = other.starts_with("src");
         assert_eq!(index.file(Path::new("src/c.rs")).is_some(), beneath);
         assert!(index.file(&other).is_some());
@@ -756,12 +816,12 @@ mod tests {
         let mut rebuilt = prepared();
         for path in paths {
             assert!(
-                rebuilt.commit_without_rollup(PathBuf::from(path), analysis(path, 3)),
+                restore(&mut rebuilt, PathBuf::from(path), analysis(path, 3)),
                 "{path} must commit"
             );
         }
         assert!(
-            rebuilt.commit_without_rollup(PathBuf::from("a/b/c/image.png"), binary),
+            restore(&mut rebuilt, PathBuf::from("a/b/c/image.png"), binary),
             "binary coverage must commit"
         );
         assert!(rebuilt.rollup(Path::new("")).is_none(), "deferred inserts leave roll-ups empty");

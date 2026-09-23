@@ -3816,8 +3816,7 @@ impl Index {
             return false;
         }
         let wanted = self.content_identity(profile);
-        let Some(content) = self.content().filter(|content| content.identity() == Some(&wanted))
-        else {
+        let Some(content) = self.content().and_then(|content| content.admit(&wanted)) else {
             return true;
         };
         u64::try_from(content.len()).unwrap_or(u64::MAX) < self.entry(EntryId::ROOT).rollup().files
@@ -3826,19 +3825,10 @@ impl Index {
     /// The content tier identity this index gives records of `analysis`: its own entry tier,
     /// which holds its type rules, the analyzer set, and the analyzers' versions and options.
     pub fn content_identity(&self, analysis: AnalysisSet) -> crate::ContentTierIdentity {
-        let records = crate::content::ContentProvenance::for_request(
-            crate::content::AnalysisRequest {
-                profile: analysis,
-                ..crate::content::AnalysisRequest::default()
-            },
-            self.types.fingerprint(),
-        );
-        crate::ContentTierIdentity::of_records(
+        crate::ContentTierIdentity::for_request(
             crate::EntryTierIdentity::of_scope(self.scope),
             analysis,
-            &records,
         )
-        .expect("every constructor checks an index's registry against its scope's type rules")
     }
 
     /// Prepare the content tier to hold records of `request`'s identity, clearing it when
@@ -3951,7 +3941,7 @@ impl Index {
         let wanted = self.content_identity(request.profile);
         // The tier refuses a record of any identity but its own, so one comparison here
         // decides for every record it holds.
-        let held = self.content().filter(|content| content.identity() == Some(&wanted));
+        let held = self.content().and_then(|content| content.admit(&wanted));
         self.analysis_candidates(request.profile)
             .into_iter()
             .filter(|candidate| {
@@ -3987,7 +3977,7 @@ impl Index {
     pub(crate) fn apply_restored_analysis(
         &mut self,
         candidate: RestoreCandidate,
-        analysis: crate::content::FileAnalysis,
+        analysis: crate::stored_state::AdmittedRecord<'_>,
     ) -> AnalysisApplyOutcome {
         let Some(entry) = self.try_entry(candidate.entry_id) else {
             return AnalysisApplyOutcome::Stale;
@@ -4029,12 +4019,12 @@ impl Index {
         let Some(content) = self.content.as_mut() else {
             return AnalysisApplyOutcome::Stale;
         };
-        if !content.identity().is_some_and(|identity| {
-            identity.holds_record(observation.profile, &observation.provenance)
-        }) {
-            return AnalysisApplyOutcome::Stale;
-        }
-        if content.commit(candidate.relative_path.clone(), observation.analysis) {
+        if content.commit(
+            candidate.relative_path.clone(),
+            observation.profile,
+            &observation.provenance,
+            observation.analysis,
+        ) {
             AnalysisApplyOutcome::Applied
         } else {
             AnalysisApplyOutcome::Stale

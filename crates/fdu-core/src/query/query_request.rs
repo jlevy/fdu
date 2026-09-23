@@ -538,7 +538,10 @@ impl Request {
     /// observed rather than to what the request says it would have. Scope equality is not
     /// checked here; `ScanConfig` owns it.
     pub fn validate_read(&self, held: &Basis) -> Result<(), RequestError> {
-        if held.content != self.basis.content {
+        let entries = held.scope.snapshot_identity().entries;
+        let wanted = crate::ContentTierIdentity::for_request(entries, self.basis.content);
+        let stored = crate::ContentTierIdentity::for_request(entries, held.content);
+        if wanted.admit(&stored).is_none() {
             return Err(RequestError::ContentMismatch {
                 held: held.content,
                 requested: self.basis.content,
