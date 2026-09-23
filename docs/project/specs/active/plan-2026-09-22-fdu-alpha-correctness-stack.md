@@ -56,7 +56,7 @@ commit, and evidence instead of creating a second set of implementation tickets.
 
 ## Published Delivery Order
 
-The native GitHub stack is #111. Its current lower layers are
+The native GitHub stack #111 contains, in order,
 [#99](https://github.com/jlevy/fdu/pull/99),
 [#98](https://github.com/jlevy/fdu/pull/98),
 [this plan (#110)](https://github.com/jlevy/fdu/pull/110),
@@ -68,6 +68,8 @@ The native GitHub stack is #111. Its current lower layers are
 [composed directory queries (#117)](https://github.com/jlevy/fdu/pull/117). The
 core-model layers form one dependent merge group: the measured-value layer alone does
 not provide the final wire contract.
+The published bases match the branch directly below each of the nine layers.
+Validation below is anchored at PR #117 commit `ff2b07da`.
 
 PR #103 carries the opened-Python diagnostics fix.
 Its functional directory-query changes are ported into the final surface composition
@@ -167,12 +169,29 @@ with a claim of cross-set reuse.
   packaged-artifact acceptance.
 - [x] Correct cache-only directory completeness (`fdu-c22r`, `801bf7a7`) and qualify the
   machine-format depth exemption to flat projections (`fdu-93e8`, `ea7baf50`).
-- [ ] Run `make check` and `make cross-lint` on the composed candidate after all fixes.
-- [ ] Complete Linux, macOS, and Windows path-independence with an empty registry,
-  metric independence, and parser-backed equality for every machine document kind and
-  public Python model on the final commits.
-- [ ] Complete the packaged-artifact rehearsal and release end-to-end verification
-  required by `fdu-tyvq`; local native-extension tests do not replace wheel evidence.
+- [x] Run the local `make check` targets and `make cross-lint` on the composed
+  candidate. The initial full run stopped when the opened-root golden fixture was
+  integrated during the run; the fixture passed on rerun.
+  The remaining targets then passed on the `ff2b07da` tracked tree, including
+  featureless and watch core tests, Python wheel and source-distribution smoke, parity,
+  path-independence subset, and release tests.
+  Both macOS and Windows cross-lint targets passed.
+  Commit `8edd9b21` changes only numeric-literal formatting in a golden-support test;
+  its exact watch-gated normalization test passed.
+  This evidence spans scoped runs, not one uninterrupted `make check` invocation.
+- [x] Complete the full Linux, macOS, and Windows path-independence matrix at PR #117
+  commit `ff2b07da`.
+  [Run 35815707617](https://github.com/jlevy/fdu/actions/runs/35815707617) passed 16,272
+  cases each on Linux and macOS and 14,382 on Windows, with zero recorded known
+  violations on all three platforms.
+  The local gate above also covers metric independence and parser-backed equality for
+  machine documents and public Python models at this commit.
+- [x] Complete the packaged-artifact rehearsal on `ff2b07da`:
+  [run 35815753312](https://github.com/jlevy/fdu/actions/runs/35815753312) passed all
+  nine jobs, including five wheels, source distribution, crate packaging, and artifact
+  inspection.
+- [ ] Complete release end-to-end verification required by `fdu-tyvq` on the final
+  commits. Current-head CI still needs the prepared fixture fixes and a green rerun.
 
 The focused audit preceded the composed matrix finding `fdu-bwo2` above.
 Accepted scope deferrals and performance work remain separate; passing focused tests or
@@ -186,18 +205,37 @@ description must state that boundary.
 
 ### Publish and Verify the Stack
 
-- [ ] Publish the final surface layer, verify every PR base against the branch directly
-  below it, and verify the GitHub stack object.
-- [ ] Complete independent Astra review of each final commit after fixes and merge
-  resolutions. The implementation reviews above do not cover subsequent edits
-  automatically; semantic resolutions receive review before acceptance.
-- [ ] Carry current main’s fixes forward without restoring obsolete test baselines,
+- [x] Publish the final surface layer, verify every PR base against the branch directly
+  below it, and verify the nine-PR GitHub stack object (#111).
+- [x] Complete independent review of production fixes and semantic merges with Astra;
+  Sol reviewed the remaining mechanical changes after the model switch.
+  Each later edit receives scoped review before acceptance.
+- [x] Carry current main’s fixes forward without restoring obsolete test baselines,
   deleting newer guards, or rewriting commits cited by performance evidence.
-- [ ] Resolve the recorded composition work (`fdu-qx0e`, `fdu-8fax`) if the performance
-  branches are incorporated into the candidate.
-- [ ] Run the full local handoff gate and platform checks on the resulting candidate;
-  finish CI for every published layer.
+  Main commit `11a6dc31` is an ancestor of the composed candidate.
+- [ ] Finish current-head CI and the final platform checks for every published layer
+  after the prepared fixture fixes.
 - [ ] Update the core-model specification, work index, and beads from actual evidence.
+
+The performance composition beads `fdu-qx0e` and `fdu-8fax` concern separate performance
+branches. This isolated correctness stack does not incorporate those branches, so their
+composition does not gate correctness acceptance.
+
+### Merge Order After Correctness
+
+Merge the correctness layers #99 → #98 → #110 → #112 → #113 → #114 → #115 → #116 → #117
+first. Integrate the separate performance layers #94 → #97 → #105 only after semantic
+review of their composition and resolution of #105’s held documentation findings.
+Integrate #109 last with its evidence-kept-arm migration.
+The functional work from #96 and #103 is already ported into #117; merging either again
+would duplicate it.
+
+A rehearsal found #117 plus #94 clean.
+Adding #97 and #105 produces conflicts in `execution.rs` and `scan.rs`. PR #109 composes
+cleanly with #117 alone, but following the performance layers requires three more
+performance-harness and documentation reconciliations.
+Merging #103 directly into #117 produces broad conflicts across core, Python, renderers,
+and goldens. The future integration work belongs to `fdu-qx0e` and `fdu-8fax`.
 
 ## Testing Strategy
 
