@@ -1446,12 +1446,6 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
     Ok(ResolvedViews { selected, omitted })
 }
 
-/// Notes that keep the display contract legible in human output.
-///
-/// Both are the same rule read in opposite directions: a run displays what it paid for,
-/// and a view it could not render is named rather than quietly dropped.  Machine formats
-/// carry neither, because the `reports` array already enumerates exactly which views were
-/// produced — a consumer reads the omission from what is absent.
 /// The text-mode warnings for an incomplete report, one per retained issue.
 ///
 /// The retention bound keeps the first [`fdu_core::MAX_RETAINED_ISSUES`] details, and the
@@ -1463,10 +1457,7 @@ fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
         .errors
         .iter()
         .map(|issue| match &issue.path {
-            Some(path)
-                if !path.as_os_str().is_empty()
-                    && !issue.message.contains(&*path.to_string_lossy()) =>
-            {
+            Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
                 format!("warning: {}: {}", path.display(), issue.message)
             }
             _ => format!("warning: {}", issue.message),
@@ -1483,6 +1474,27 @@ fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
     warnings
 }
 
+/// Whether `message` already names `path`, as a whole path rather than as a substring.
+///
+/// A short relative path such as `d` occurs inside most operating-system messages
+/// ("Permission denied"), so a match must end the path at a separator or the start of
+/// the message on the left and at a delimiter or the end of the message on the right.
+fn names_path(message: &str, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    message.match_indices(&*path).any(|(start, found)| {
+        let before = message[..start].chars().next_back();
+        let after = message[start + found.len()..].chars().next();
+        matches!(before, None | Some('/' | '\\' | ' ' | '"' | '\'' | '`'))
+            && matches!(after, None | Some(':' | ' ' | '"' | '\'' | '`' | ')' | ','))
+    })
+}
+
+/// Notes that keep the display contract legible in human output.
+///
+/// Both are the same rule read in opposite directions: a run displays what it paid for,
+/// and a view it could not render is named rather than quietly dropped.  Machine formats
+/// carry neither, because the `reports` array already enumerates exactly which views were
+/// produced — a consumer reads the omission from what is absent.
 fn display_notes(views: &[ViewSpec], profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
     // Only the note that needs telemetry. The omission note is a fact about the report and
     // travels on it, so every surface states it rather than just this one (fdu-x8u6).
@@ -1841,6 +1853,7 @@ mod tests {
                 issue(Some("docs/a.md"), "Permission denied (os error 13)"),
                 issue(Some("src"), "I/O error at /abs/src: Permission denied (os error 13)"),
                 issue(None, "content analysis results became stale"),
+                issue(Some("d"), "Permission denied (os error 13)"),
             ],
             0,
         ));
@@ -1850,6 +1863,7 @@ mod tests {
                 "warning: docs/a.md: Permission denied (os error 13)",
                 "warning: I/O error at /abs/src: Permission denied (os error 13)",
                 "warning: content analysis results became stale",
+                "warning: d: Permission denied (os error 13)",
             ]
         );
         let one = status_warnings(&status(vec![issue(None, "x")], 1));
