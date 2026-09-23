@@ -3,14 +3,15 @@ type: is
 id: is-01m32exka5myg890p63v94yenw
 title: "Harness gaps: subset detects content re-widening only via --cache only, and the registry can absorb regressions"
 kind: bug
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
+delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:06:19.589Z
-updated_at: 2026-09-21T17:06:19.589Z
+updated_at: 2026-09-23T01:51:14.487Z
 ---
 Verified in an adversarial review, 2026-09-21.
 

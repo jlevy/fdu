@@ -3,10 +3,11 @@ type: is
 id: is-01m2pyedpswpa393q9y6req1gz
 title: "P2.3.6: Session::start and persist_due, used by the command line and Python watch"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: codex@spud10
 labels:
   - core-models
 dependencies:
@@ -14,7 +15,7 @@ dependencies:
     target: is-01m2pyee0zf4meqknshjmzbz2k
 parent_id: is-01m2pmrbxvnerxyhnjhrswy1ye
 created_at: 2026-09-17T05:46:46.360Z
-updated_at: 2026-09-17T05:47:00.464Z
+updated_at: 2026-09-23T01:53:51.276Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 3: The Execution Plan Model", commit 6. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 
@@ -33,3 +34,7 @@ Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, s
 
 - `make check` passes; from P1.1.3 on it includes the path-independence subset, which reports no unregistered difference.
 - Every golden diff is read and attributed to this commit; none is regenerated blind.
+
+## Notes
+
+Session/CLI implementation in isolated codex/alpha-session-plan, coordinated with execution owner. Session holds Watch Plan, starts through execute, joins startup saves but surfaces save errors via first persist_due instead of aborting a valid stream. persist_due uses caller Instant, Plan-only persist_index decisions, preserves pending work on skips/failures, and detects registration-handoff mutations. CLI keeps warnings/presentation only. Moved throttle tests; added deterministic cadence, scripted handoff persistence, and startup write-failure retry regressions. Awaiting Scope/Workers API checkpoint and parent build slot; no build run yet.

@@ -3,14 +3,15 @@ type: is
 id: is-01m32ewmqkv1v71f5pjtc3djmx
 title: "Path-independence is one-sided: a cache that never serves passes every case"
 kind: bug
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
+delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:05:48.275Z
-updated_at: 2026-09-21T17:05:48.275Z
+updated_at: 2026-09-23T01:51:14.079Z
 ---
 Verified by execution, 2026-09-21. The harness compares warm answers against cold ones, so a cache that simply stops serving is indistinguishable from a correct one.
 
