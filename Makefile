@@ -17,7 +17,7 @@ help:
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make reference-model  Compare generated index transitions with the independent model"
 	@echo "make test-golden  Build and compare the CLI golden contract"
-	@echo "make opened-root-golden  Compare the five transparent opened-root sessions"
+	@echo "make opened-root-golden  Compare the transparent opened-root sessions"
 	@echo "make opened-root-golden-update SCENARIO=name  Update one opened-root session"
 	@echo "make golden-invocations  Check the corpus never resolves fdu through PATH"
 	@echo "make golden-observability  Reject goldens that hide product output behind parsers"
