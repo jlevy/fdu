@@ -326,7 +326,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,161 +1,1 @@
+@@ -1,163 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -START HERE
@@ -421,7 +421,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -             --exclude-ignored, --only-ignored
 -  View       list,summary,tree,families,types,extensions,languages,documents,
 -             largest,recent,files,full
--  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
+-  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
+-             --color, --progress
 -  Mode       --cache, --watch, --analysis-workers
 -
 -CONTENT ANALYSIS
@@ -480,7 +481,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
 -  lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
 -  Results go to stdout; warnings and errors go to stderr.
--  The command never prompts, pages, or animates progress.
+-  The command never prompts or pages. A progress line is drawn on stderr only for a
+-  person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
 -  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
 -  `fdu --skill` prints a portable agent skill describing this same surface.
 -

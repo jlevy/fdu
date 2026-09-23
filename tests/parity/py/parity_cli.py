@@ -149,6 +149,9 @@ class Args:
         self.analysis_workers = 0
         self.format = fdu.Format.TEXT
         self.color = "auto"
+        # Accepted for grammar parity only: the shim never draws, and neither does the
+        # binary anywhere the parity harness runs it.
+        self.progress = "auto"
         self.cache = fdu.CachePolicy.AUTO
         self.allow_partial = False
         self.watch = False
@@ -241,6 +244,8 @@ def parse_args(argv: list[str]) -> Args:
             args.format = fdu.Format.LONG
         elif flag == "--color":
             args.color = take()
+        elif flag == "--progress":
+            args.progress = take()
         elif flag == "--cache":
             args.cache = parse_cache(take())
         elif flag == "--allow-partial":

@@ -68,7 +68,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
-| Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color` |
+| Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
