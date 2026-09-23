@@ -40,11 +40,11 @@ stack pass.
 
 | Contract | Owning Beads | Specification and Acceptance |
 | --- | --- | --- |
-| Per-analyzer values, coverage, and cache reuse | `fdu-azz3`, `fdu-ky5m`, `fdu-7dj6`, `fdu-ugom`; P2.1 children | Core-model Phase 2 item 1. Every requested metric agrees in each row and total across analyzer combinations; unrequested metrics are absent; operational failures are retried. |
+| Per-analyzer values, coverage, and cache reuse | `fdu-azz3`, `fdu-ky5m`, `fdu-7dj6`, `fdu-ugom`, `fdu-4vbi`; P2.1 children | Core-model Phase 2 item 1. Every requested metric agrees in each row and total across analyzer combinations; unrequested metrics are absent; operational failures are retried. |
 | Typed answers and lossless writers | `fdu-fft9`, `fdu-bqb7`, `fdu-c2ml`, `fdu-up8j`; P2.2 children | Core-model Phase 2 item 2. JSON, reconstructed JSONL, strict YAML 1.1/1.2, and public Python agree for reports, changes, and cache status, including adversarial and native paths. |
-| Truthful state, reconciliation, and watch handoff | `fdu-awjm`, `fdu-szll`, `fdu-08aj`, `fdu-0ywm`, `fdu-aach`, `fdu-jott`, `fdu-4239`; P1.4 children | Core-model Phase 1 item 4 and engine commit boundaries. Unverified descendants are dropped; new observations supersede only their verified scope; unrelated errors remain visible; watch capture covers registration and drain. |
-| Controls-off projection on every route | `fdu-ssyf`; P2.4 children | Core-model Phase 2 item 4. Projected cold-equivalent answers work on retained, opened, report, and initial-watch routes without overwriting the stronger snapshot. |
-| One execution plan and persistence policy | `fdu-838z`; P2.3 children | Core-model Phase 2 item 3. All routes consume `Delivery` and `Plan`; read admission, writes, partial outcomes, refresh, and watch persistence have one owner. |
+| Truthful state, reconciliation, and watch handoff | `fdu-awjm`, `fdu-szll`, `fdu-yfb7`, `fdu-08aj`, `fdu-0ywm`, `fdu-aach`, `fdu-jott`, `fdu-4239`; P1.4 children | Core-model Phase 1 item 4 and engine commit boundaries. Unverified descendants are dropped; new observations supersede only their verified scope; unrelated errors remain visible; watch capture covers registration and drain. |
+| Controls-off projection on every route | `fdu-ssyf`, `fdu-qsos`; P2.4 children | Core-model Phase 2 item 4. Projected cold-equivalent answers work on retained, opened, report, and initial-watch routes without overwriting the stronger snapshot. |
+| One execution plan and persistence policy | `fdu-838z`, `fdu-2o2r`; P2.3 children | Core-model Phase 2 item 3. All routes consume `Delivery` and `Plan`; read admission, writes, partial outcomes, refresh, and watch persistence have one owner. |
 | Windows validity and independent oracle | `fdu-6act`, `fdu-ns3o` | PR #98 and the stored-state validity contract. Oracle timestamps saturate correctly, zero remains zero, locked metadata follows the same documented fallback, and full file identity participates in validation. |
 | Opened Python diagnostic parity | `fdu-zjjt` | [Directory query formats](https://github.com/jlevy/fdu/blob/c3aeed8a0a04cecfc18c5719d93e61dbbe4ba449/docs/project/specs/active/plan-2026-09-20-directory-query-formats.md). Bounded Paths and Long reports, including incomplete discovery, expose the same diagnostics through opened and retained Python. |
 | Conformance harness integrity | `fdu-j7go`, `fdu-laeo`, `fdu-8whh` | Positive exact-cache serving controls reject a cache that never serves; the subset includes code-warmed mutations; registered exceptions cannot pass the gate; builds must establish artifact identity after changing worktrees. |
@@ -53,6 +53,23 @@ stack pass.
 The implementation beads already exist.
 Recovery and publication must update those beads with the actual branch, PR, reviewed
 commit, and evidence instead of creating a second set of implementation tickets.
+
+## Published Delivery Order
+
+The native GitHub stack is #111. Its current lower layers are
+[#99](https://github.com/jlevy/fdu/pull/99),
+[#98](https://github.com/jlevy/fdu/pull/98),
+[this plan (#110)](https://github.com/jlevy/fdu/pull/110),
+[measured values (#112)](https://github.com/jlevy/fdu/pull/112),
+[typed answers (#113)](https://github.com/jlevy/fdu/pull/113), and
+[serving state (#114)](https://github.com/jlevy/fdu/pull/114). Execution planning,
+harness acceptance, and surface composition extend that stack.
+The core-model layers form one dependent merge group: the measured-value layer alone
+does not provide the final wire contract.
+
+PR #103 carries the opened-Python diagnostics fix and joins the final surface
+composition. A published PR or a passing focused test is not a completed alpha gate.
+The checklists below stay open until their full acceptance evidence is available.
 
 ## Design and Recovery Boundaries
 
@@ -81,8 +98,8 @@ does not finish the core-model specification.
 
 ### Recover and Complete the Owning Layers
 
-- [ ] Finish and independently review the Windows oracle correction on PR #98.
-- [ ] Preserve PR #99’s reviewed ignore and test-precondition fixes as a prerequisite.
+- [x] Finish and independently review the Windows oracle correction on PR #98.
+- [x] Preserve PR #99’s reviewed ignore and test-precondition fixes as a prerequisite.
 - [ ] Recover independent metric records and complete row-level acceptance checks.
 - [ ] Recover typed status, provenance, and shared writers; finish all document kinds
   and public Python consumers.
