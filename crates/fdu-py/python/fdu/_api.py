@@ -157,9 +157,13 @@ def _loads_json(document: str) -> Any:
                 key, raw_position = decoder.raw_decode(document, position)
                 position = int(raw_position)
             except json.JSONDecodeError as error:
-                raise _json_error("Expecting property name enclosed in double quotes", document, position) from error
+                raise _json_error(
+                    "Expecting property name enclosed in double quotes", document, position
+                ) from error
             if not isinstance(key, str):
-                raise _json_error("Expecting property name enclosed in double quotes", document, position)
+                raise _json_error(
+                    "Expecting property name enclosed in double quotes", document, position
+                )
             stack[-1][2] = key
             position = whitespace(position)
             if position >= length or document[position] != ":":
