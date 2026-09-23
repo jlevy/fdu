@@ -35,7 +35,32 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::engine_contract::{Attrs, EntryKind, Error, Observation, Op, Result, Source};
 use crate::index::{EntryId, Index, IndexHandle};
-use crate::stored_state::{ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, SnapshotIdentity};
+use crate::stored_state::{
+    ControlTierIdentity, SNAPSHOT_IDENTITY_BYTES, Serves, SnapshotIdentity, serves_snapshot,
+};
+
+/// Result of loading a snapshot for one requested stored-state identity.
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)] // One transient load result; avoid boxing the returned index.
+pub enum LoadOutcome {
+    /// The snapshot supplied an index, either exactly or through a lawful projection.
+    Served {
+        /// The index in the requested scope.
+        index: Index,
+        /// The identity the snapshot declares, which is what a plan admits: a projected
+        /// index reports the requested identity, not this one.
+        stored: SnapshotIdentity,
+    },
+    /// The snapshot was valid, but its identity cannot answer this request.
+    Refused {
+        /// The validated identity that did not serve the request.
+        identity: SnapshotIdentity,
+        /// The validated snapshot root, used before explaining a scope mismatch.
+        root: PathBuf,
+    },
+    /// No valid snapshot was present.
+    Absent,
+}
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -80,6 +105,14 @@ const FORMAT_VERSION: u32 = 5;
 /// 1: initial rules. 2: files with no extension are tallied under `(none)` instead of
 /// being left out of the extension roll-up entirely.
 const CLASSIFICATION_VERSION: u32 = 2;
+
+/// Version of the per-entry facts used to decide whether retained state is still valid.
+///
+/// Version 2 adds Windows change time, volume identity, and file index. A pre-v2 Windows
+/// snapshot stores zeroes in those fields and cannot safely serve cache-only as if those
+/// facts had been observed. This is mixed into the engine fingerprint on every platform
+/// so one build has one store identity.
+const VALIDITY_VERSION: u32 = 2;
 
 /// Snapshot path encoding used by Unix targets.
 #[cfg(unix)]
@@ -208,6 +241,7 @@ pub fn engine_fingerprint() -> u64 {
     mix(env!("CARGO_PKG_VERSION").as_bytes());
     mix(&FORMAT_VERSION.to_le_bytes());
     mix(&CLASSIFICATION_VERSION.to_le_bytes());
+    mix(&VALIDITY_VERSION.to_le_bytes());
     hash
 }
 
@@ -301,11 +335,11 @@ fn publish(path: &Path, mut payload: Vec<u8>) -> Result<()> {
 /// Keep the file at `path` when it is `payload` sealed under any pass's stamp, moving only
 /// its mtime, to the stamp in `payload`.
 ///
-/// The loader reads the mtime as every cached entry's observation time. Moving it to the
-/// start of the pass that would have stamped the image, rather than to now, keeps it from
-/// overstating by that pass's duration. It never moves backwards: a save of an index
-/// loaded under an older stamp leaves a later mtime in place, since that time was already
-/// true of these facts.
+/// The mtime is cache-maintenance metadata, not filesystem-observation provenance: a copy
+/// or a touch must not change when the tree was observed. Moving it to the start of the pass
+/// that would have stamped the image lets the equivalent-image fast path retain its useful
+/// monotonic hint without changing the persisted observation stamp. It never moves backwards:
+/// a save of an index loaded under an older stamp leaves a later mtime in place.
 ///
 /// One read through one handle, comparing every payload byte before computing the
 /// checksum, so a changed tree stops at its first difference and costs no checksum here,
@@ -389,7 +423,22 @@ pub fn load_with_types(
     path: &Path,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
 ) -> Result<Option<Index>> {
-    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types)
+    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types, None).map(|outcome| {
+        match outcome {
+            LoadOutcome::Served { index, .. } => Some(index),
+            LoadOutcome::Refused { .. } | LoadOutcome::Absent => None,
+        }
+    })
+}
+
+/// Load a snapshot that can serve `wanted`, projecting observed control state away when
+/// the entry tier is equal and the request does not observe controls.
+pub fn load_serving(
+    path: &Path,
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
+    wanted: SnapshotIdentity,
+) -> Result<LoadOutcome> {
+    load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types, Some(wanted))
 }
 
 fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<Index>> {
@@ -397,17 +446,23 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         path,
         max_snapshot_bytes,
         crate::classify::TypeRegistry::compiled_shared(),
+        None,
     )
+    .map(|outcome| match outcome {
+        LoadOutcome::Served { index, .. } => Some(index),
+        LoadOutcome::Refused { .. } | LoadOutcome::Absent => None,
+    })
 }
 
 fn load_with_types_and_size_limit(
     path: &Path,
     max_snapshot_bytes: u64,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
-) -> Result<Option<Index>> {
+    wanted: Option<SnapshotIdentity>,
+) -> Result<LoadOutcome> {
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(LoadOutcome::Absent),
         Err(e) => return Err(Error::io(path, e)),
     };
     let file_len = file.metadata().map_err(|e| Error::io(path, e))?.len();
@@ -416,7 +471,7 @@ fn load_with_types_and_size_limit(
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| Error::Snapshot("snapshot footer size overflow".into()))?;
     if file_len > max_snapshot_bytes || file_len < footer_bytes {
-        return Ok(None);
+        return Ok(LoadOutcome::Absent);
     }
 
     let footer_offset = i64::try_from(footer_bytes)
@@ -424,14 +479,16 @@ fn load_with_types_and_size_limit(
     file.seek(SeekFrom::End(-footer_offset)).map_err(|e| Error::io(path, e))?;
     let expected_checksum = match read_footer_checksum(&mut file) {
         Ok(checksum) => checksum,
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Ok(LoadOutcome::Absent);
+        }
         Err(error) => return Err(Error::io(path, error)),
     };
     let mut trailer = [0u8; TRAILER.len()];
     match file.read_exact(&mut trailer) {
         Ok(()) if &trailer == TRAILER => {}
-        Ok(()) => return Ok(None),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Ok(()) => return Ok(LoadOutcome::Absent),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(LoadOutcome::Absent),
         Err(e) => return Err(Error::io(path, e)),
     }
     let payload_len = file_len
@@ -447,29 +504,15 @@ fn load_with_types_and_size_limit(
     // corruption: the parser may do work before the mismatch is known, and the
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
-    // The file's mtime is the observation time of every cached entry: the end of the pass
-    // that wrote the image, which slightly overstates freshness because the walk began
-    // earlier, or the start of a later pass that kept it (`keep_equivalent_image`). The
-    // header's `writing_pass_started_at_ns` is not read here: it is a lower bound that
-    // can predate many passes that verified the same facts, so it would understate a kept
-    // image by as much. The mtime remains the observation time until P1.4.4 gives
-    // `scan_started_at` one meaning and unifies the two.
-    let captured_at_ns = file
-        .metadata()
-        .ok()
-        .and_then(|metadata| metadata.modified().ok())
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|since| i64::try_from(since.as_nanos()).ok())
-        .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns, types);
+    let outcome = parse_stream(&mut reader, payload_len, types, wanted);
     match outcome {
-        Ok(index) => {
+        Ok(outcome) => {
             // A successful parse consumed every payload byte (the trailing-byte check
             // proves it), so the running digest covers the whole image.
-            if reader.finish() == expected_checksum { Ok(Some(index)) } else { Ok(None) }
+            if reader.finish() == expected_checksum { Ok(outcome) } else { Ok(LoadOutcome::Absent) }
         }
-        Err(ParseError::Invalid) => Ok(None),
+        Err(ParseError::Invalid) => Ok(LoadOutcome::Absent),
         Err(ParseError::Io(source)) => Err(Error::io(path, source)),
     }
 }
@@ -727,9 +770,9 @@ fn parse_header_fields(reader: &mut impl Read, engine: u64) -> ParseResult<Heade
 fn parse_stream(
     reader: &mut impl Read,
     payload_len: u64,
-    captured_at_ns: i64,
     types: std::sync::Arc<crate::classify::TypeRegistry>,
-) -> ParseResult<Index> {
+    wanted: Option<SnapshotIdentity>,
+) -> ParseResult<LoadOutcome> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
     }
@@ -739,9 +782,26 @@ fn parse_stream(
     }
     let Header { writing_pass_started_at_ns, identity, root: root_path, entries: count } =
         parse_header_fields(reader, engine)?;
-    let scope = identity.scan_scope();
+    let serves = wanted.map_or(Serves::Exact, |wanted| serves_snapshot(identity, wanted));
+    let mut scope = match (serves, wanted) {
+        (Serves::ProjectControlsOff, Some(wanted)) => wanted.scan_scope(),
+        _ => identity.scan_scope(),
+    };
     if scope.type_rules_fingerprint != types.fingerprint() {
-        return Err(ParseError::Invalid);
+        if serves != Serves::Refuse {
+            return Err(ParseError::Invalid);
+        }
+        // A foreign registry cannot be attached to a served index. For a refusal,
+        // reconstruct only to validate every record and the checksum, then discard it.
+        // The stored identity below remains unchanged for the caller's diagnostic.
+        //
+        // That costs a full index build for a diagnostic: every record is decoded and
+        // inserted so the checksum can be verified over the bytes it covers, and the
+        // result is dropped. It is paid only under a type-rules mismatch, which a
+        // cache-only request reports and every other policy answers by scanning, so it
+        // buys a truthful refusal (valid but foreign, rather than absent) at the price of
+        // one load on a path that has no answer anyway.
+        scope.type_rules_fingerprint = types.fingerprint();
     }
     let minimum_body = count
         .checked_mul(u64::try_from(MIN_RECORD_BYTES).map_err(|_| ParseError::Invalid)?)
@@ -757,7 +817,7 @@ fn parse_stream(
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
     // index claims to be fresh when nothing has been checked since the file was read.
-    index.set_applying_source(Source::Cached, captured_at_ns);
+    index.set_applying_source(Source::Cached, writing_pass_started_at_ns);
     // The record count is validated against the bytes actually present above, so it is
     // safe to size from: reserving here removes the geometric regrowth of a 450k-element
     // vector without letting a corrupt count drive the allocation.
@@ -806,7 +866,9 @@ fn parse_stream(
     }
 
     let controls = read_controls(reader, identity.controls)?;
-    index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
+    if serves == Serves::Exact {
+        index.install_controls(controls).map_err(|_| ParseError::Invalid)?;
+    }
 
     let mut extra = [0u8; 1];
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
@@ -818,7 +880,13 @@ fn parse_stream(
     // Anything applied after the load is this process checking what the snapshot
     // claimed, which is a revalidation rather than a first sighting.
     index.set_applying_source(Source::Revalidated, 0);
-    Ok(index)
+    // The image on disk is this index, so nothing is owed until a pass mutates it.
+    index.set_persistence_owed(false);
+    Ok(if serves == Serves::Refuse {
+        LoadOutcome::Refused { identity, root: root_path }
+    } else {
+        LoadOutcome::Served { index, stored: identity }
+    })
 }
 
 #[derive(Debug)]
@@ -1469,16 +1537,16 @@ mod tests {
         fs::write(root.join("a"), b"one two\n").expect("write first");
         fs::write(root.join("bb"), b"one two\n").expect("write second");
         let snapshot_path = dir.path().join("snapshot.fdu");
-        let config = crate::OpenConfig {
+        let config = crate::OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: crate::CachePolicy::Auto,
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..crate::content::AnalysisRequest::default()
             },
-            ..crate::OpenConfig::default()
+            ..crate::OpenFixture::default()
         };
-        crate::open(&root, &config).expect("seed snapshot and sidecar");
+        crate::open_fixture(&root, &config).expect("seed snapshot and sidecar");
 
         let mut image = fs::read(&snapshot_path).expect("read snapshot");
         let fields = entry_record_fields(&image);
@@ -1488,9 +1556,9 @@ mod tests {
         let forged = replace_entry_name(&image, 2, OsStr::new("a/"));
         fs::write(&snapshot_path, forged).expect("write checksummed alias");
 
-        let only = crate::OpenConfig { policy: crate::CachePolicy::Only, ..config };
+        let only = crate::OpenFixture { policy: crate::CachePolicy::Only, ..config };
         assert!(
-            matches!(crate::open(&root, &only), Err(Error::Snapshot(_))),
+            matches!(crate::open_fixture(&root, &only), Err(Error::Snapshot(_))),
             "a malformed snapshot cannot shrink the cache-only completeness denominator"
         );
     }
@@ -1543,6 +1611,36 @@ mod tests {
             provenance.observed_at_ns > 0,
             "a cached total must say as of when, or a UI cannot label it"
         );
+    }
+
+    #[test]
+    fn cached_observation_time_comes_from_the_header_after_touch_or_copy() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        let copied = dir.path().join("copied.fdu");
+        let mut original = sample_index();
+        original.set_writing_pass_started_at_ns(1_000);
+        save(&original, &path).expect("save");
+
+        // Cache files are routinely kept in place or copied between cache locations. Neither
+        // operation observes the tree, so neither file mtime may become value provenance.
+        touch(&path, UNIX_EPOCH + Duration::from_secs(10)).expect("touch cache image");
+        fs::copy(&path, &copied).expect("copy cache image");
+        touch(&copied, UNIX_EPOCH + Duration::from_secs(20)).expect("touch copied image");
+
+        for cache in [&path, &copied] {
+            let restored = load(cache).expect("load").expect("present");
+            for entry in [Path::new(""), Path::new("src/main.rs")] {
+                assert_eq!(
+                    restored.provenance(entry).expect("present").observed_at_ns,
+                    1_000,
+                    "{} uses its persisted pass start, not its cache-file mtime",
+                    cache.display()
+                );
+            }
+        }
     }
 
     #[test]
@@ -1881,18 +1979,35 @@ mod tests {
         let saved = fs::read(&path).expect("read snapshot");
         let controls_at = IDENTITY_OFFSET + crate::stored_state::ENTRY_TIER_BYTES;
         let controls = controls_at..controls_at + crate::stored_state::CONTROL_TIER_BYTES;
+        let blind = crate::ScanConfig { read_controls: false, ..lifted.clone() };
         let forge = |tier: ControlTierIdentity| {
             let mut forged = saved.clone();
             forged[controls.clone()].copy_from_slice(&tier.encode());
             rewrite_checksum(&mut forged);
             fs::write(&path, &forged).expect("write forged limits");
-            load(&path).expect("forged equals absent")
+            (
+                load(&path).expect("forged equals absent"),
+                load_serving(&path, blind.types_shared(), blind.snapshot_identity())
+                    .expect("projected forged equals absent"),
+            )
         };
         let tight = crate::control::ControlLimits { line_limit: Some(1), ..lifted.control_limits };
-        assert!(forge(ControlTierIdentity::Observed { limits: tight }).is_none());
-        assert!(forge(ControlTierIdentity::NotObserved).is_none());
+        let (exact, projected) = forge(ControlTierIdentity::Observed { limits: tight });
+        assert!(exact.is_none());
+        assert!(matches!(projected, LoadOutcome::Absent));
+        let (exact, projected) = forge(ControlTierIdentity::NotObserved);
+        assert!(exact.is_none());
+        assert!(matches!(projected, LoadOutcome::Absent));
         // The same splice with the saved tier restores, so the splice is not what failed.
-        assert!(forge(lifted.control_identity()).is_some());
+        let (exact, projected) = forge(lifted.control_identity());
+        assert!(exact.is_some());
+        let LoadOutcome::Served { index: projected, stored } = projected else {
+            panic!("the valid control payload projects");
+        };
+        assert_eq!(serves_snapshot(stored, blind.snapshot_identity()), Serves::ProjectControlsOff);
+        assert_eq!(projected.snapshot_identity(), blind.snapshot_identity());
+        assert_eq!(projected.scope(), blind.scope());
+        assert!(matches!(projected.controls(), Err(Error::ControlStateNotObserved)));
     }
 
     /// An index whose control table refused some sources, and its path-ordered tail.
@@ -2718,6 +2833,40 @@ mod tests {
         let control_tier = entry_tier.end..ROOT_OFFSET;
         assert_eq!(on_bytes[entry_tier.clone()], off_bytes[entry_tier]);
         assert_ne!(on_bytes[control_tier.clone()], off_bytes[control_tier]);
+
+        let projected = load_serving(
+            &dir.path().join("on.fdu"),
+            blind.types_shared(),
+            blind.snapshot_identity(),
+        )
+        .expect("load projection");
+        let LoadOutcome::Served { index: projected, stored } = projected else {
+            panic!("an observed snapshot should project to the blind request");
+        };
+        assert_eq!(serves_snapshot(stored, blind.snapshot_identity()), Serves::ProjectControlsOff);
+        let (cold, _) = crate::scan::scan_into_index(tree.path(), &blind).expect("blind scan");
+        assert_eq!(projected.snapshot_identity(), blind.snapshot_identity());
+        assert_eq!(projected.scope(), blind.scope());
+        assert_eq!(projected.len(), cold.len());
+        assert_eq!(projected.total(), cold.total());
+        assert!(matches!(projected.controls(), Err(Error::ControlStateNotObserved)));
+        assert_eq!(
+            projected.path_state(Path::new("debug.log")),
+            cold.path_state(Path::new("debug.log"))
+        );
+
+        let mut corrupt = on_bytes;
+        corrupt[WRITING_PASS_STARTED_AT_OFFSET] ^= 1;
+        fs::write(dir.path().join("on.fdu"), corrupt).expect("corrupt checksum");
+        assert!(matches!(
+            load_serving(
+                &dir.path().join("on.fdu"),
+                blind.types_shared(),
+                blind.snapshot_identity(),
+            )
+            .expect("corrupt projection is absent"),
+            LoadOutcome::Absent
+        ));
     }
 
     /// A format-4 snapshot, laid out as that format wrote it, is fdu's and stale: the

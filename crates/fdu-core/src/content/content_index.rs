@@ -5,51 +5,191 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use crate::classify::ContentFamily;
 use crate::stored_state::ContentTierIdentity;
+use crate::{Freshness, Source};
 
 use super::content_model::{
-    AnalysisSet, ContentProvenance, CoverageReason, FileAnalysis, MetricValues,
+    AnalysisSet, AnalyzerOutcome, BasicMetrics, CodeMetrics, ContentProvenance, CoverageReason,
+    FileAnalysis, WordMetrics,
 };
 
-/// Additive tally for one type or family group.
+/// Additive metrics and coverage for one analyzer unit.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct AnalyzerTally<T> {
+    /// Files for which this analyzer produced a value.
+    pub analyzed_files: u64,
+    /// Additive values from analyzed files.
+    pub metrics: T,
+    /// Outcomes for every file on which the analyzer was requested.
+    pub coverage: BTreeMap<CoverageReason, u64>,
+}
+
+/// Additive tally across records of one content-tier identity.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct MetricTally {
-    /// Files represented, including skipped coverage records.
+    /// Files represented, including unavailable outcomes.
     pub files: u64,
     /// Apparent bytes represented.
     pub bytes: u64,
-    /// Files with complete analyzer coverage.
-    pub analyzed_files: u64,
-    /// Additive metrics from analyzed files.
-    pub metrics: MetricValues,
+    /// Shared lines-unit results.
+    pub lines: AnalyzerTally<BasicMetrics>,
+    /// Code-unit results; empty when the tier did not request code.
+    pub code: AnalyzerTally<CodeMetrics>,
+    /// Words-unit results; empty when the tier did not request words.
+    pub words: AnalyzerTally<WordMetrics>,
 }
 
 impl MetricTally {
     fn add(&mut self, analysis: &FileAnalysis) {
         self.files = self.files.saturating_add(1);
         self.bytes = self.bytes.saturating_add(analysis.bytes);
-        if analysis.coverage == CoverageReason::Analyzed {
-            self.analyzed_files = self.analyzed_files.saturating_add(1);
-            self.metrics.add_assign(&analysis.metrics);
+        add_basic(&mut self.lines, analysis.lines);
+        if let Some(outcome) = analysis.code {
+            add_code(&mut self.code, outcome);
+        }
+        if let Some(outcome) = analysis.words {
+            add_words(&mut self.words, outcome);
         }
     }
 
     fn subtract(&mut self, analysis: &FileAnalysis) {
         self.files = self.files.saturating_sub(1);
         self.bytes = self.bytes.saturating_sub(analysis.bytes);
-        if analysis.coverage == CoverageReason::Analyzed {
-            self.analyzed_files = self.analyzed_files.saturating_sub(1);
-            self.metrics.sub_assign(&analysis.metrics);
+        sub_basic(&mut self.lines, analysis.lines);
+        if let Some(outcome) = analysis.code {
+            sub_code(&mut self.code, outcome);
+        }
+        if let Some(outcome) = analysis.words {
+            sub_words(&mut self.words, outcome);
         }
     }
 
     fn merge(&mut self, other: &Self) {
         self.files = self.files.saturating_add(other.files);
         self.bytes = self.bytes.saturating_add(other.bytes);
-        self.analyzed_files = self.analyzed_files.saturating_add(other.analyzed_files);
-        self.metrics.add_assign(&other.metrics);
+        merge_basic(&mut self.lines, &other.lines);
+        merge_code(&mut self.code, &other.code);
+        merge_words(&mut self.words, &other.words);
     }
+}
+
+fn add_coverage<T>(tally: &mut AnalyzerTally<T>, outcome: &AnalyzerOutcome<T>) {
+    *tally.coverage.entry(outcome.coverage()).or_default() += 1;
+    if outcome.coverage() == CoverageReason::Analyzed {
+        tally.analyzed_files = tally.analyzed_files.saturating_add(1);
+    }
+}
+
+fn sub_coverage<T>(tally: &mut AnalyzerTally<T>, outcome: &AnalyzerOutcome<T>) {
+    if let Some(count) = tally.coverage.get_mut(&outcome.coverage()) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            tally.coverage.remove(&outcome.coverage());
+        }
+    }
+    if outcome.coverage() == CoverageReason::Analyzed {
+        tally.analyzed_files = tally.analyzed_files.saturating_sub(1);
+    }
+}
+
+fn merge_coverage<T>(tally: &mut AnalyzerTally<T>, other: &AnalyzerTally<T>) {
+    tally.analyzed_files = tally.analyzed_files.saturating_add(other.analyzed_files);
+    for (reason, count) in &other.coverage {
+        let slot = tally.coverage.entry(*reason).or_default();
+        *slot = slot.saturating_add(*count);
+    }
+}
+
+fn add_basic(tally: &mut AnalyzerTally<BasicMetrics>, outcome: AnalyzerOutcome<BasicMetrics>) {
+    add_coverage(tally, &outcome);
+    let Some(value) = outcome.value() else { return };
+    tally.metrics.physical_lines =
+        tally.metrics.physical_lines.saturating_add(value.physical_lines);
+    tally.metrics.blank_lines = tally.metrics.blank_lines.saturating_add(value.blank_lines);
+    tally.metrics.nonblank_lines =
+        tally.metrics.nonblank_lines.saturating_add(value.nonblank_lines);
+    tally.metrics.raw_words = tally.metrics.raw_words.saturating_add(value.raw_words);
+}
+
+fn sub_basic(tally: &mut AnalyzerTally<BasicMetrics>, outcome: AnalyzerOutcome<BasicMetrics>) {
+    sub_coverage(tally, &outcome);
+    let Some(value) = outcome.value() else { return };
+    tally.metrics.physical_lines =
+        tally.metrics.physical_lines.saturating_sub(value.physical_lines);
+    tally.metrics.blank_lines = tally.metrics.blank_lines.saturating_sub(value.blank_lines);
+    tally.metrics.nonblank_lines =
+        tally.metrics.nonblank_lines.saturating_sub(value.nonblank_lines);
+    tally.metrics.raw_words = tally.metrics.raw_words.saturating_sub(value.raw_words);
+}
+
+fn merge_basic(tally: &mut AnalyzerTally<BasicMetrics>, other: &AnalyzerTally<BasicMetrics>) {
+    merge_coverage(tally, other);
+    tally.metrics.physical_lines =
+        tally.metrics.physical_lines.saturating_add(other.metrics.physical_lines);
+    tally.metrics.blank_lines = tally.metrics.blank_lines.saturating_add(other.metrics.blank_lines);
+    tally.metrics.nonblank_lines =
+        tally.metrics.nonblank_lines.saturating_add(other.metrics.nonblank_lines);
+    tally.metrics.raw_words = tally.metrics.raw_words.saturating_add(other.metrics.raw_words);
+}
+
+fn add_code(tally: &mut AnalyzerTally<CodeMetrics>, outcome: AnalyzerOutcome<CodeMetrics>) {
+    add_coverage(tally, &outcome);
+    let Some(value) = outcome.value() else { return };
+    tally.metrics.code_lines = tally.metrics.code_lines.saturating_add(value.code_lines);
+    tally.metrics.comment_lines = tally.metrics.comment_lines.saturating_add(value.comment_lines);
+    tally.metrics.code_blank_lines =
+        tally.metrics.code_blank_lines.saturating_add(value.code_blank_lines);
+}
+
+fn sub_code(tally: &mut AnalyzerTally<CodeMetrics>, outcome: AnalyzerOutcome<CodeMetrics>) {
+    sub_coverage(tally, &outcome);
+    let Some(value) = outcome.value() else { return };
+    tally.metrics.code_lines = tally.metrics.code_lines.saturating_sub(value.code_lines);
+    tally.metrics.comment_lines = tally.metrics.comment_lines.saturating_sub(value.comment_lines);
+    tally.metrics.code_blank_lines =
+        tally.metrics.code_blank_lines.saturating_sub(value.code_blank_lines);
+}
+
+fn merge_code(tally: &mut AnalyzerTally<CodeMetrics>, other: &AnalyzerTally<CodeMetrics>) {
+    merge_coverage(tally, other);
+    tally.metrics.code_lines = tally.metrics.code_lines.saturating_add(other.metrics.code_lines);
+    tally.metrics.comment_lines =
+        tally.metrics.comment_lines.saturating_add(other.metrics.comment_lines);
+    tally.metrics.code_blank_lines =
+        tally.metrics.code_blank_lines.saturating_add(other.metrics.code_blank_lines);
+}
+
+fn add_words(tally: &mut AnalyzerTally<WordMetrics>, outcome: AnalyzerOutcome<WordMetrics>) {
+    add_coverage(tally, &outcome);
+    let Some(value) = outcome.value() else { return };
+    tally.metrics.paragraphs = tally.metrics.paragraphs.saturating_add(value.paragraphs);
+    tally.metrics.visible_words = tally.metrics.visible_words.saturating_add(value.visible_words);
+    tally.metrics.logical_word_stats.add_assign(value.logical_word_stats);
+    tally.metrics.visible_logical_word_stats.add_assign(value.visible_logical_word_stats);
+}
+
+fn sub_words(tally: &mut AnalyzerTally<WordMetrics>, outcome: AnalyzerOutcome<WordMetrics>) {
+    sub_coverage(tally, &outcome);
+    let Some(value) = outcome.value() else { return };
+    tally.metrics.paragraphs = tally.metrics.paragraphs.saturating_sub(value.paragraphs);
+    tally.metrics.visible_words = tally.metrics.visible_words.saturating_sub(value.visible_words);
+    sub_word_stats(&mut tally.metrics.logical_word_stats, value.logical_word_stats);
+    sub_word_stats(&mut tally.metrics.visible_logical_word_stats, value.visible_logical_word_stats);
+}
+
+fn merge_words(tally: &mut AnalyzerTally<WordMetrics>, other: &AnalyzerTally<WordMetrics>) {
+    merge_coverage(tally, other);
+    tally.metrics.paragraphs = tally.metrics.paragraphs.saturating_add(other.metrics.paragraphs);
+    tally.metrics.visible_words =
+        tally.metrics.visible_words.saturating_add(other.metrics.visible_words);
+    tally.metrics.logical_word_stats.add_assign(other.metrics.logical_word_stats);
+    tally.metrics.visible_logical_word_stats.add_assign(other.metrics.visible_logical_word_stats);
+}
+
+fn sub_word_stats(tally: &mut super::LogicalWordStats, value: super::LogicalWordStats) {
+    tally.wide_chars = tally.wide_chars.saturating_sub(value.wide_chars);
+    tally.nonwide_tokens = tally.nonwide_tokens.saturating_sub(value.nonwide_tokens);
+    tally.nonwide_chars = tally.nonwide_chars.saturating_sub(value.nonwide_chars);
 }
 
 /// Content totals for one directory subtree.
@@ -57,69 +197,19 @@ impl MetricTally {
 pub struct ContentRollUp {
     /// All sparse file records beneath this directory.
     pub total: MetricTally,
-    /// Tallies keyed by stable file type id.
-    pub by_type: BTreeMap<String, MetricTally>,
-    /// Tallies keyed by broad content family.
-    pub by_family: BTreeMap<ContentFamily, MetricTally>,
-    /// Coverage outcomes across requested files.
-    pub coverage: BTreeMap<CoverageReason, u64>,
 }
 
 impl ContentRollUp {
     fn add(&mut self, analysis: &FileAnalysis) {
         self.total.add(analysis);
-        self.by_type
-            .entry(analysis.classification.file_type.as_str().to_string())
-            .or_default()
-            .add(analysis);
-        self.by_family.entry(analysis.classification.family).or_default().add(analysis);
-        *self.coverage.entry(analysis.coverage).or_default() += 1;
     }
 
     fn subtract(&mut self, analysis: &FileAnalysis) {
         self.total.subtract(analysis);
-        let type_id = analysis.classification.file_type.as_str();
-        if let Some(tally) = self.by_type.get_mut(type_id) {
-            tally.subtract(analysis);
-            if tally.files == 0 {
-                self.by_type.remove(type_id);
-            }
-        }
-        let family = analysis.classification.family;
-        if let Some(tally) = self.by_family.get_mut(&family) {
-            tally.subtract(analysis);
-            if tally.files == 0 {
-                self.by_family.remove(&family);
-            }
-        }
-        if let Some(count) = self.coverage.get_mut(&analysis.coverage) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
-                self.coverage.remove(&analysis.coverage);
-            }
-        }
     }
 
     fn merge(&mut self, other: &Self) {
         self.total.merge(&other.total);
-        for (type_id, tally) in &other.by_type {
-            if let Some(existing) = self.by_type.get_mut(type_id) {
-                existing.merge(tally);
-            } else {
-                self.by_type.insert(type_id.clone(), tally.clone());
-            }
-        }
-        for (family, tally) in &other.by_family {
-            if let Some(existing) = self.by_family.get_mut(family) {
-                existing.merge(tally);
-            } else {
-                self.by_family.insert(*family, tally.clone());
-            }
-        }
-        for (reason, count) in &other.coverage {
-            let slot = self.coverage.entry(*reason).or_default();
-            *slot = slot.saturating_add(*count);
-        }
     }
 }
 
@@ -200,11 +290,28 @@ fn path_bytes(path: &Path) -> &[u8] {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ContentIndex {
     identity: Option<ContentTierIdentity>,
+    state: Option<ContentTierState>,
     files: BTreeMap<PathKey, FileAnalysis>,
     rollups: HashMap<PathBuf, ContentRollUp>,
 }
 
+/// Operational provenance of the content tier, separate from its semantic identity.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct ContentTierState {
+    pub source: Source,
+    pub freshness: Freshness,
+    pub observed_at_ns: Option<i64>,
+}
+
 impl ContentIndex {
+    /// Project this record set to the requested identity before reading its values.
+    pub(crate) fn admit(
+        &self,
+        wanted: &ContentTierIdentity,
+    ) -> Option<crate::stored_state::ContentProjection<'_>> {
+        wanted.admit(self.identity()?)?.project(self)
+    }
+
     /// Number of sparse file records.
     pub fn len(&self) -> usize {
         self.files.len()
@@ -231,6 +338,14 @@ impl ContentIndex {
         self.identity.as_ref().map(ContentTierIdentity::record_provenance)
     }
 
+    pub(crate) const fn state(&self) -> Option<ContentTierState> {
+        self.state
+    }
+
+    pub(crate) fn set_state(&mut self, state: ContentTierState) {
+        self.state = Some(state);
+    }
+
     /// Borrow one file's analysis.
     pub fn file(&self, path: &Path) -> Option<&FileAnalysis> {
         self.files.get(path_bytes(&normalized(path)))
@@ -252,32 +367,44 @@ impl ContentIndex {
     /// every record of the prepared one, and keeping both would leave a tier whose totals
     /// match neither request.
     #[must_use = "a refused record was not committed"]
-    pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
-        self.commit_record(path, analysis, true)
-    }
-
-    /// Insert or replace a record without touching roll-ups.
-    ///
-    /// Sidecar restore inserts every cached file first, then rebuilds directory
-    /// totals once. Incremental [`commit`] still walks ancestors per file.
-    #[must_use = "a refused record was not committed"]
-    pub(crate) fn commit_without_rollup(&mut self, path: PathBuf, analysis: FileAnalysis) -> bool {
-        self.commit_record(path, analysis, false)
-    }
-
-    #[must_use = "a refused record was not committed"]
-    fn commit_record(
+    pub(crate) fn commit(
         &mut self,
         path: PathBuf,
+        profile: AnalysisSet,
+        provenance: &ContentProvenance,
         analysis: FileAnalysis,
-        update_rollups: bool,
     ) -> bool {
-        let Some(identity) = &self.identity else {
+        let Some(analysis) = self
+            .identity
+            .as_ref()
+            .and_then(|identity| identity.admit_record(profile, provenance))
+            .and_then(|admission| admission.record(analysis))
+            .map(crate::stored_state::AdmittedRecord::into_record)
+        else {
             return false;
         };
-        if !identity.holds_record(analysis.profile, &analysis.provenance) {
+        self.insert_record(path, analysis, true);
+        true
+    }
+
+    /// Restore only records carrying the admission proved by the sidecar header.
+    #[must_use = "a refused record was not committed"]
+    pub(crate) fn commit_without_rollup(
+        &mut self,
+        path: PathBuf,
+        analysis: crate::stored_state::AdmittedRecord<'_>,
+    ) -> bool {
+        let Some(identity) = self.identity.as_ref() else {
             return false;
-        }
+        };
+        let Some(analysis) = analysis.for_tier(identity) else {
+            return false;
+        };
+        self.insert_record(path, analysis, false);
+        true
+    }
+
+    fn insert_record(&mut self, path: PathBuf, analysis: FileAnalysis, update_rollups: bool) {
         let key = PathKey::new(path);
         if let Some(previous) = self.files.remove(key.bytes()) {
             if update_rollups {
@@ -288,7 +415,6 @@ impl ContentIndex {
             self.merge_ancestors(&key.0, &analysis, true);
         }
         self.files.insert(key, analysis);
-        true
     }
 
     pub(crate) fn invalidate(&mut self, path: &Path) {
@@ -330,11 +456,12 @@ impl ContentIndex {
     /// so a tier prepared for a different one is cleared, whether the stored analyzer set
     /// is wider, narrower, or produced under other rules, versions, options, or entries.
     pub(crate) fn prepare(&mut self, identity: ContentTierIdentity) {
-        if self.identity.as_ref() == Some(&identity) {
+        if self.admit(&identity).is_some() {
             return;
         }
         self.files.clear();
         self.rollups.clear();
+        self.state = None;
         self.identity = Some(identity);
     }
 
@@ -418,7 +545,7 @@ impl ContentIndex {
 mod tests {
     use super::*;
     use crate::classify::classify_path;
-    use crate::content::{AnalysisRequest, AnalysisSet, ContentProvenance, FileAnalysis};
+    use crate::content::{AnalysisSet, AnalyzerOutcome, BasicMetrics, FileAnalysis};
     use crate::{AnalyzerProvenance, EntryTierIdentity, Fingerprint, ScanConfig};
 
     fn lines() -> AnalysisSet {
@@ -426,13 +553,10 @@ mod tests {
     }
 
     fn identity_for(analysis: AnalysisSet) -> ContentTierIdentity {
-        let entries = ScanConfig::default().snapshot_identity().entries;
-        let records = ContentProvenance::for_request(
-            AnalysisRequest { profile: analysis, ..AnalysisRequest::default() },
-            entries.type_rules_fingerprint,
-        );
-        ContentTierIdentity::of_records(entries, analysis, &records)
-            .expect("records under the entry tier's type rules")
+        ContentTierIdentity::for_request(
+            ScanConfig::default().snapshot_identity().entries,
+            analysis,
+        )
     }
 
     /// A tier prepared for the `lines` identity every [`analysis`] record carries.
@@ -443,26 +567,39 @@ mod tests {
     }
 
     fn analysis(path: &str, lines: u64) -> FileAnalysis {
-        let identity = identity_for(self::lines());
         FileAnalysis {
-            classification: classify_path(Path::new(path)),
             fingerprint: Fingerprint::default(),
             bytes: 10,
-            profile: identity.analysis,
-            provenance: identity.record_provenance(),
-            metrics: MetricValues {
+            detection: classify_path(Path::new(path)).into(),
+            lines: AnalyzerOutcome::analyzed(BasicMetrics {
                 physical_lines: lines,
                 nonblank_lines: lines,
-                ..MetricValues::default()
-            },
-            coverage: CoverageReason::Analyzed,
+                ..BasicMetrics::default()
+            }),
+            code: None,
+            words: None,
             error: None,
         }
     }
 
+    fn try_commit(index: &mut ContentIndex, path: PathBuf, record: FileAnalysis) -> bool {
+        let identity = identity_for(lines());
+        index.commit(path, identity.analysis, &identity.record_provenance(), record)
+    }
+
+    fn restore(index: &mut ContentIndex, path: PathBuf, record: FileAnalysis) -> bool {
+        let identity = identity_for(lines());
+        let admitted = identity
+            .admit(&identity)
+            .expect("same identity")
+            .record(record)
+            .expect("matching record");
+        index.commit_without_rollup(path, admitted)
+    }
+
     /// Commit a record the test expects the tier to accept.
     fn commit(index: &mut ContentIndex, path: &str, record: FileAnalysis) {
-        assert!(index.commit(PathBuf::from(path), record), "{path} must commit");
+        assert!(try_commit(index, PathBuf::from(path), record), "{path} must commit");
     }
 
     #[test]
@@ -518,42 +655,73 @@ mod tests {
     }
 
     #[test]
-    fn commit_refuses_a_record_of_another_identity() {
+    fn commit_refuses_a_record_when_the_tier_is_unprepared() {
         let mut unprepared = ContentIndex::default();
         assert!(
-            !unprepared.commit(PathBuf::from("a.rs"), analysis("a.rs", 1)),
+            !try_commit(&mut unprepared, PathBuf::from("a.rs"), analysis("a.rs", 1)),
             "a tier prepared for nothing holds no record"
         );
         assert_eq!(unprepared, ContentIndex::default());
+    }
+
+    #[test]
+    fn commit_refuses_records_whose_unit_slots_do_not_match_the_prepared_profile() {
+        let mut index = ContentIndex::default();
+        index.prepare(identity_for(AnalysisSet::ALL));
+
+        let record = analysis("a.rs", 1);
+        assert!(
+            !index.commit(
+                PathBuf::from("a.rs"),
+                AnalysisSet::ALL,
+                &identity_for(AnalysisSet::ALL).record_provenance(),
+                record
+            ),
+            "an all-unit tier must not admit a lines-only record"
+        );
+        assert!(index.is_empty());
 
         let mut index = prepared();
-        commit(&mut index, "a.rs", analysis("a.rs", 1));
-        let before = index.clone();
+        let mut record = analysis("a.rs", 1);
+        record.code = Some(AnalyzerOutcome::unavailable(CoverageReason::Unsupported));
+        assert!(
+            !try_commit(&mut index, PathBuf::from("a.rs"), record),
+            "a lines-only tier must not admit an unrequested code slot"
+        );
+        assert!(index.is_empty());
+    }
 
-        let wider = identity_for(AnalysisSet::ALL);
-        let mut other_version = analysis("a.rs", 5);
-        other_version.provenance.analyzers[0].1 = crate::content::AnalyzerVersion(2);
-        let mut other_rules = analysis("a.rs", 5);
-        other_rules.provenance.type_rules_fingerprint ^= 1;
-        for (name, record) in [
-            (
-                "a record of a wider set",
-                FileAnalysis {
-                    profile: wider.analysis,
-                    provenance: wider.record_provenance(),
-                    ..analysis("a.rs", 5)
-                },
-            ),
-            (
-                "a record labelled with another set",
-                FileAnalysis { profile: AnalysisSet::ALL, ..analysis("a.rs", 5) },
-            ),
-            ("a record of another analyzer version", other_version),
-            ("a record classified under other type rules", other_rules),
-        ] {
-            assert!(!index.commit(PathBuf::from("a.rs"), record), "{name} is refused");
-            assert_eq!(index, before, "{name} changes nothing");
-        }
+    #[test]
+    fn admitted_records_cannot_cross_tiers_and_projection_refuses_other_provenance() {
+        let wanted = identity_for(lines());
+        let record = || analysis("a.rs", 1);
+        let proof = wanted.admit(&wanted).expect("exact identity");
+        let mut other = ContentIndex::default();
+        let other_identity = identity_for(AnalysisSet::ALL);
+        other.prepare(other_identity);
+        assert!(!other.commit_without_rollup(
+            PathBuf::from("a.rs"),
+            proof.record(record()).expect("matching record")
+        ));
+        assert!(other.is_empty());
+
+        let mut exact = prepared();
+        assert!(exact.commit_without_rollup(
+            PathBuf::from("a.rs"),
+            proof.record(record()).expect("matching record")
+        ));
+        let projected = exact.admit(&wanted).expect("same request projects");
+        assert_eq!(projected.file(Path::new("a.rs")), Some(&record()));
+        let mut foreign = wanted.clone();
+        foreign.provenance.options_fingerprint.0 ^= 1;
+        assert!(exact.admit(&foreign).is_none());
+        assert!(!exact.commit(
+            PathBuf::from("b.rs"),
+            foreign.analysis,
+            &foreign.record_provenance(),
+            record()
+        ));
+        assert_eq!(exact.len(), 1, "foreign provenance changes nothing");
     }
 
     #[test]
@@ -561,11 +729,17 @@ mod tests {
         let mut index = prepared();
         commit(&mut index, "src/lib.rs", analysis("src/lib.rs", 2));
         commit(&mut index, "src/main.rs", analysis("src/main.rs", 3));
-        assert_eq!(index.rollup(Path::new("")).expect("root").total.metrics.physical_lines, 5);
+        assert_eq!(
+            index.rollup(Path::new("")).expect("root").total.lines.metrics.physical_lines,
+            5
+        );
         assert_eq!(index.rollup(Path::new("src")).expect("src").total.files, 2);
 
         commit(&mut index, "src/lib.rs", analysis("src/lib.rs", 7));
-        assert_eq!(index.rollup(Path::new("")).expect("root").total.metrics.physical_lines, 10);
+        assert_eq!(
+            index.rollup(Path::new("")).expect("root").total.lines.metrics.physical_lines,
+            10
+        );
 
         index.invalidate(Path::new("src"));
         assert!(index.is_empty());
@@ -588,7 +762,7 @@ mod tests {
         // so -- Windows -- and a different file named `src\\c.rs` at the root everywhere
         // else. Either way the map agrees with `Path::starts_with` and `Path::eq`.
         let other = PathBuf::from("src\\c.rs");
-        assert!(index.commit(other.clone(), analysis("src/c.rs", 1)));
+        assert!(try_commit(&mut index, other.clone(), analysis("src/c.rs", 1)));
         let beneath = other.starts_with("src");
         assert_eq!(index.file(Path::new("src/c.rs")).is_some(), beneath);
         assert!(index.file(&other).is_some());
@@ -638,8 +812,7 @@ mod tests {
     fn bottom_up_rebuild_matches_incremental_nested_rollups() {
         let paths = ["README.md", "a/keep.rs", "a/b/nested.rs", "a/b/c/deep.rs", "a/b/c/other.py"];
         let mut binary = analysis("a/b/c/image.png", 0);
-        binary.coverage = CoverageReason::Binary;
-        binary.metrics = MetricValues::default();
+        binary.lines = AnalyzerOutcome::unavailable(CoverageReason::Binary);
         let mut incremental = prepared();
         for path in paths {
             commit(&mut incremental, path, analysis(path, 3));
@@ -649,12 +822,12 @@ mod tests {
         let mut rebuilt = prepared();
         for path in paths {
             assert!(
-                rebuilt.commit_without_rollup(PathBuf::from(path), analysis(path, 3)),
+                restore(&mut rebuilt, PathBuf::from(path), analysis(path, 3)),
                 "{path} must commit"
             );
         }
         assert!(
-            rebuilt.commit_without_rollup(PathBuf::from("a/b/c/image.png"), binary),
+            restore(&mut rebuilt, PathBuf::from("a/b/c/image.png"), binary),
             "binary coverage must commit"
         );
         assert!(rebuilt.rollup(Path::new("")).is_none(), "deferred inserts leave roll-ups empty");

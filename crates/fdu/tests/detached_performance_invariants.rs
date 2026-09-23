@@ -5,6 +5,13 @@
 //! platform-specific fixed costs while constraining per-entry ownership without a
 //! shared-runner timing threshold.
 
+fn open_planned(root: &std::path::Path, options: OpenOptions) -> fdu_core::Result<OpenedIndex> {
+    let mut delivery = fdu_core::query::Delivery::new(fdu_core::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -197,7 +204,7 @@ fn measure_opened(root: &Path, expected_entries: u64) -> Counts {
         journal_capacity_bytes: OPENED_JOURNAL_CAPACITY_BYTES,
         ..OpenOptions::default()
     };
-    let opened = OpenedIndex::open(root, options).expect("opened discovery");
+    let opened = open_planned(root, options).expect("opened discovery");
     let initial = opened.read(ReadRequest::default()).expect("initial opened read");
     let mut cursor = EngineVersion { sequence: Clock::ZERO, ..initial.version };
     loop {

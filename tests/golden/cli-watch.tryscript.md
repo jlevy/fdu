@@ -20,7 +20,7 @@ patterns:
 ---
 # The Watch Change Stream
 
-`--watch` streams one `fdu.stream/1` record per applied change.
+`--watch` streams one `fdu.stream/2` record per applied change.
 A watch process never exits, so it cannot be goldened directly; the `watch-capture`
 helper turns it into a command that does.
 It starts `fdu --watch`, applies a scripted sequence of filesystem changes, waits for
@@ -56,13 +56,13 @@ $ node -e "require('node:fs').mkdirSync('tree'); require('node:fs').writeFileSyn
 ```console
 $ node bin/watch-capture.mjs tree
 # create a file
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 5, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
+{"schema": "fdu.stream/2", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 5, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 # change its size
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 12, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
+{"schema": "fdu.stream/2", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 12, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 # remove it
-{"schema": "fdu.stream/1", "record": "change", "op": "remove", "path": "added.txt", "clock": [CLOCK]}
+{"schema": "fdu.stream/2", "record": "change", "op": "remove", "path": "added.txt", "clock": [CLOCK]}
 # create a directory
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "sub", "clock": [CLOCK], "kind": "dir", "bytes": [DIR_BYTES], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
+{"schema": "fdu.stream/2", "record": "change", "op": "upsert", "path": "sub", "clock": [CLOCK], "kind": "dir", "bytes": [DIR_BYTES], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 ? 0
 ```
 
@@ -94,9 +94,9 @@ $ node -e "require('node:fs').mkdirSync('sized'); require('node:fs').writeFileSy
 $ node bin/watch-capture.mjs --min-size sized
 # create a file under the bound
 # create a file over the bound
-{"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "b-large.txt", "clock": [CLOCK], "kind": "file", "bytes": 200, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
+{"schema": "fdu.stream/2", "record": "change", "op": "upsert", "path": "b-large.txt", "clock": [CLOCK], "kind": "file", "bytes": 200, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "ignored": false}
 # remove the file under the bound
-{"schema": "fdu.stream/1", "record": "change", "op": "remove", "path": "a-small.txt", "clock": [CLOCK]}
+{"schema": "fdu.stream/2", "record": "change", "op": "remove", "path": "a-small.txt", "clock": [CLOCK]}
 ? 0
 ```
 

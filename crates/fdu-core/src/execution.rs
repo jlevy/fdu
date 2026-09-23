@@ -10,13 +10,10 @@
 use std::time::SystemTime;
 
 use crate::query::{
-    Delivery, Provenance, Query, Report, ReportSource, Request, SummaryRow, ViewSpec, report,
-    report_summary,
+    Delivery, Report, ReportProvenance, ReportSource, Request, SummaryRow, TreeStatus, ViewSpec,
+    report, report_summary,
 };
-use crate::{
-    CachePolicy, EntryKind, Error, Freshness, OpenConfig, OpenPath, PendingSave, Result,
-    SnapshotUse, open_for_report,
-};
+use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Result, execute};
 
 /// The minimum state a one-shot report plan retains while scanning.
 ///
@@ -34,24 +31,185 @@ pub(crate) enum RetainedState {
     FullIndex,
 }
 
-/// The execution strategy derived from cache policy and query requirements.
+/// The engine lifecycle that will deliver an answer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct ReportPlan {
-    /// Smallest state that can answer the request without changing its semantics.
-    pub retained_state: RetainedState,
-    /// Whether an existing snapshot should be loaded before the scan.
+pub enum Route {
+    /// A single report may retain only an aggregate.
+    OneShot,
+    /// A reusable index returned to the caller.
+    Retained,
+    /// Verification of an index already held by the caller.
+    Refresh,
+    /// A continuing observation session.
+    Watch,
+    /// Progressive discovery and serving of an opened root.
+    Opened,
+}
+
+/// Which persisted state execution may read.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Load {
+    /// Start without a metadata snapshot.
+    None,
+    /// Attempt to restore a serving metadata snapshot.
+    Snapshot,
+}
+
+/// Whether execution must verify the filesystem.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Verify {
+    /// Answer only from persisted facts, marked unverified.
+    None,
+    /// Observe the requested filesystem scope.
+    Filesystem,
+}
+
+/// Whether an answer fulfills the caller's delivery contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutcomeClass {
+    /// A complete answer, or a partial answer the caller explicitly accepts.
+    Success,
+    /// An incomplete answer the caller did not accept.
+    Partial,
+}
+
+/// Validated policy shared by all engine execution routes.
+#[derive(Clone, Debug)]
+pub struct Plan {
+    pub(crate) basis: crate::query::Basis,
+    pub(crate) route: Route,
+    pub(crate) retained: RetainedState,
+    pub(crate) load: Load,
+    pub(crate) verify: Verify,
+    pub(crate) delivery: Delivery,
+}
+
+impl Plan {
+    /// Classify the answer using the caller's partial-answer policy.
+    pub fn outcome(&self, status: &TreeStatus) -> OutcomeClass {
+        if status.complete || self.delivery.accept_partial {
+            OutcomeClass::Success
+        } else {
+            OutcomeClass::Partial
+        }
+    }
+    /// The semantic basis validated when the plan was constructed.
+    pub fn basis(&self) -> &crate::query::Basis {
+        &self.basis
+    }
+    /// The lifecycle this plan executes.
+    pub const fn route(&self) -> Route {
+        self.route
+    }
+    /// The persisted state this plan may read.
+    pub const fn load(&self) -> Load {
+        self.load
+    }
+    /// The verification this plan performs.
+    pub const fn verify(&self) -> Verify {
+        self.verify
+    }
+    /// The caller's operational choices after validation.
+    pub fn delivery(&self) -> &Delivery {
+        &self.delivery
+    }
+}
+
+/// Stored tier declarations and restoration evidence presented to a plan.
+pub(crate) struct StoreHeader<'a> {
+    pub(crate) root: &'a std::path::Path,
+    pub(crate) snapshot: crate::SnapshotIdentity,
+    pub(crate) content: Option<&'a crate::ContentTierIdentity>,
+    pub(crate) content_complete: bool,
+}
+
+/// Why persisted state cannot deliver a planned answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Admission {
+    Serve(crate::Serves),
+    NoLocation,
+    Missing,
+    WrongRoot,
+    WrongScope,
+    IncompleteContent,
+}
+
+impl Plan {
+    /// The one decision of whether stored state answers this plan's basis.
     ///
-    /// Reading is a cost decision by the same rule as the tier above: revalidating a
-    /// loaded snapshot stats every entry regardless, so for a one-shot metadata query
-    /// the load and the reconciliation against it are additive work with nothing to
-    /// amortise them — measured on macOS/APFS over 494,031 entries, a warm revalidating
-    /// default run cost 4.8 s against 3.6 s to scan cold and persist, while the write
-    /// the read could at best avoid cost ~50 ms. A warm path that loses to a cold scan
-    /// of the same view is a defect by the project's own rule, and this flag is what
-    /// removes it. Reading still pays in exactly two places: [`CachePolicy::Only`],
-    /// whose contract is to answer from the snapshot, and content analysis, whose
-    /// sidecar avoids re-reading file bodies.
-    pub read_snapshot: bool,
+    /// Every route that reads a snapshot admits it here, warm and cache-only alike, and
+    /// persistence asks the same question of the header on disk before it decides what an
+    /// unchanged pass owes the store. The content arm applies only to a plan that verifies
+    /// nothing, because a verifying route re-reads what its sidecar lacks.
+    pub(crate) fn admit(
+        &self,
+        stored: Option<&StoreHeader<'_>>,
+        basis: &crate::query::Basis,
+    ) -> Admission {
+        if self.delivery.cache_path.is_none() {
+            return Admission::NoLocation;
+        }
+        let Some(stored) = stored else {
+            return Admission::Missing;
+        };
+        if stored.root != basis.root {
+            return Admission::WrongRoot;
+        }
+        let relation = crate::serves_snapshot(stored.snapshot, basis.scope.snapshot_identity());
+        if relation == crate::Serves::Refuse {
+            return Admission::WrongScope;
+        }
+        if self.verify == Verify::None && basis.content.is_enabled() {
+            let wanted = crate::ContentTierIdentity::for_request(
+                basis.scope.snapshot_identity().entries,
+                basis.content,
+            );
+            if !stored.content_complete
+                || stored.content.and_then(|identity| wanted.admit(identity)).is_none()
+            {
+                return Admission::IncompleteContent;
+            }
+        }
+        Admission::Serve(relation)
+    }
+}
+
+/// Facts observed by execution, independent of the route that observed them.
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct RunFacts {
+    pub(crate) entries_verified: bool,
+    pub(crate) entries_changed: bool,
+    pub(crate) content_changed: bool,
+    pub(crate) content_requested: bool,
+    pub(crate) projected: bool,
+    pub(crate) paired_entries: bool,
+}
+
+/// Artifacts the plan authorizes its executor to write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SaveTargets {
+    pub(crate) metadata: bool,
+    pub(crate) content: bool,
+}
+
+impl SaveTargets {
+    pub(crate) const fn none(self) -> bool {
+        !self.metadata && !self.content
+    }
+}
+
+impl Plan {
+    pub(crate) fn writes(&self, run: RunFacts) -> SaveTargets {
+        let allowed = self.delivery.cache.writes() && self.delivery.cache_path.is_some();
+        SaveTargets {
+            metadata: allowed && run.entries_verified && run.entries_changed && !run.projected,
+            content: allowed
+                && run.content_requested
+                && run.content_changed
+                && (run.entries_verified || run.paired_entries),
+        }
+    }
 }
 
 /// Operational work behind one one-shot report.
@@ -113,13 +271,13 @@ impl PerformanceSummary {
     }
 }
 
-/// Derive the least-retention plan that can answer `query` under `config`.
+/// Validate a request and derive the least-retention plan for its delivery and route.
 ///
 /// A summary reducer is legal when no content analysis is requested, the sole requested
 /// view is an unfiltered summary, the scan observes no control state, and the policy does
 /// not require the snapshot to participate.  [`crate::open`] and live sessions still
-/// promise an index and therefore never use this planner.  Any future requirement the
-/// compact tier cannot prove falls closed to [`RetainedState::FullIndex`].
+/// promise an index and therefore always plan full retention. Any future requirement the
+/// compact tier cannot prove falls closed to `RetainedState::FullIndex`.
 ///
 /// Control observation is the caller's decision, not this planner's: a report's rows carry
 /// the ignored share of every size they show (fdu-elnn), so a scan that reads `.gitignore`
@@ -144,41 +302,81 @@ impl PerformanceSummary {
 /// rewrite the snapshot, and honouring it means materialising the index that gets
 /// written — though with no cache path configured there is nothing to rewrite, and the
 /// compact tier answers it like any other summary.
-pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
-    // Analysis reads file contents keyed by retained entries and writes its own sidecar,
-    // so the aggregate-only tier cannot answer it.
-    let analysis_requested = config.analysis.profile.is_enabled();
-    let summary_is_sufficient = query.views.as_slice() == [ViewSpec::Summary]
-        && query.selection.is_unfiltered()
-        && !config.scan.read_controls;
-    let policy_requires_index = match config.policy {
-        // Must answer from the snapshot without touching the tree, so there is no scan
-        // to reduce in the first place.
+pub fn plan(
+    request: &Request,
+    delivery: &Delivery,
+    route: Route,
+) -> std::result::Result<Plan, crate::query::RequestError> {
+    request.validate()?;
+    let mut normalized = delivery.clone();
+    if route == Route::Watch {
+        normalized.watch.get_or_insert_with(crate::query::WatchDelivery::default);
+    }
+    let delivery = &normalized;
+    request.validate_delivery(delivery)?;
+    if route == Route::Opened {
+        if delivery.cache != CachePolicy::Off
+            || delivery.watch.is_some()
+            || request.basis.content.is_enabled()
+        {
+            return Err(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "progressive discovery requires cache off, no content analyzers, and observation configured through OpenOptions",
+            });
+        }
+        // An opened root runs one breadth-first producer and publishes coverage as state
+        // rather than as one answer, so these fields have no effect there. Refused rather
+        // than dropped: a delivery the route accepts is one it executes.
+        if delivery.workers.scan.is_some()
+            || delivery.order != crate::ScanOrder::default()
+            || delivery.accept_partial
+        {
+            return Err(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "progressive discovery schedules one breadth-first producer and reports coverage as state, so it takes no scan worker count, traversal order, or partial-answer acceptance",
+            });
+        }
+    }
+    if route == Route::Refresh && delivery.cache == CachePolicy::Only {
+        return Err(crate::query::RequestError::DeliveryUnsupported {
+            route: "refresh",
+            reason: "the only cache policy cannot verify filesystem state",
+        });
+    }
+    let analysis_requested = request.basis.content.is_enabled();
+    let summary_is_sufficient = request.query.views.as_slice() == [ViewSpec::Summary]
+        && request.query.selection.is_unfiltered()
+        && !request.basis.scope.read_controls;
+    let policy_requires_index = match delivery.cache {
         CachePolicy::Only => true,
-        // An explicit instruction to rewrite the snapshot, which requires materialising
-        // the index that gets written — but only when there is somewhere to write it.
-        CachePolicy::Refresh => config.cache_path.is_some(),
+        CachePolicy::Refresh => delivery.cache_path.is_some(),
         CachePolicy::Off | CachePolicy::Auto | CachePolicy::ReadOnly => false,
     };
-    let read_snapshot = match config.policy {
-        // The contract is to answer from the snapshot; reading it is the request.
+    // A one-shot metadata query cannot amortize loading and reconciling a snapshot:
+    // both paths stat every entry. On macOS/APFS (494,031 entries), warm revalidation
+    // cost 4.8 s versus 3.6 s cold, while the write it might avoid cost only ~50 ms.
+    // Content avoids body reads, and retained routes amortize their reusable index.
+    let read_snapshot = match delivery.cache {
         CachePolicy::Only => true,
-        // These two never read by definition.
         CachePolicy::Off | CachePolicy::Refresh => false,
-        // A cost decision, and for a one-shot report the read pays only when a content
-        // sidecar can be reused: revalidation stats every entry regardless, so for a
-        // metadata query the load and reconciliation are purely additive. See the field
-        // doc on [`ReportPlan::read_snapshot`] for the measurement.
-        CachePolicy::Auto | CachePolicy::ReadOnly => analysis_requested,
+        CachePolicy::Auto | CachePolicy::ReadOnly => route != Route::OneShot || analysis_requested,
     };
-    ReportPlan {
-        retained_state: if !policy_requires_index && !analysis_requested && summary_is_sufficient {
+    Ok(Plan {
+        basis: request.basis.clone(),
+        route,
+        retained: if route == Route::OneShot
+            && !policy_requires_index
+            && !analysis_requested
+            && summary_is_sufficient
+        {
             RetainedState::Summary
         } else {
             RetainedState::FullIndex
         },
-        read_snapshot,
-    }
+        load: if read_snapshot { Load::Snapshot } else { Load::None },
+        verify: if delivery.cache == CachePolicy::Only { Verify::None } else { Verify::Filesystem },
+        delivery: delivery.clone(),
+    })
 }
 
 /// Execute a one-shot report, retaining the least state the request needs.
@@ -203,8 +401,8 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 /// limit refused, by the budget or by the line limit. Turned off, no `.gitignore` is
 /// read, every share is `None`, and a selection by ignored state is refused with
 /// [`Error::InvalidRequest`] before anything is scanned. Such a report reads a default
-/// snapshot under [`CachePolicy::Only`], consuming its all-entry facts and describing none
-/// of its classification.
+/// snapshot under every reading policy by constructing a requested-scope index from its
+/// all-entry facts and discarding its classification.
 ///
 /// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
 /// the command line does, so a renderer can run while the snapshot is still being written.
@@ -243,12 +441,11 @@ fn prepare_report_internal(
     // keeps the refusal independent of the delivery: the cache-only tier never scans and
     // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
-    let config = &OpenConfig::of(&request.basis, delivery);
-    let query = &request.query;
+    let scan_config = request.basis.scope.scan_config(delivery);
     let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();
-    let plan = plan_report(config, query);
-    match plan.retained_state {
+    let plan = plan(request, delivery, Route::OneShot).map_err(Error::InvalidRequest)?;
+    match plan.retained {
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
             let mut summary = SummaryRow::default();
@@ -271,31 +468,25 @@ fn prepare_report_internal(
                     EntryKind::Symlink | EntryKind::Other => {}
                 }
             };
-            let (scan, scan_diagnostics) = if collect_scan_diagnostics {
+            let (mut scan, scan_diagnostics) = if collect_scan_diagnostics {
                 let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
                     &root,
-                    &config.scan,
+                    &scan_config,
                     &mut reduce,
                 )?;
                 (scan, Some(diagnostics))
             } else {
-                (crate::scan::scan_summary_fold(&root, &config.scan, &mut reduce)?, None)
+                (crate::scan::scan_summary_fold(&root, &scan_config, &mut reduce)?, None)
             };
             let complete = scan.is_complete();
-            let provenance = Provenance {
-                scan_started_at: Some(scan_started_at),
-                generated_at: SystemTime::now(),
-                source: ReportSource::ColdScan,
-                complete,
-                errors: scan.errors.iter().map(ToString::to_string).collect(),
-            };
+            let generated_at = SystemTime::now();
             let report = report_summary(
                 &root,
-                config.scan.scope(),
-                query.selection.size,
+                scan_config.scope(),
+                request,
                 summary,
-                if complete { Freshness::Fresh } else { Freshness::Partial },
-                &provenance,
+                TreeStatus::of_walk(&root, &mut scan),
+                ReportProvenance::of_walk(scan_started_at, generated_at, complete),
             );
             let performance = PerformanceSummary {
                 walked_files: scan.files_walked,
@@ -306,38 +497,11 @@ fn prepare_report_internal(
             Ok((report, PendingSave::none(), performance, scan_diagnostics))
         }
         RetainedState::FullIndex => {
-            let (index, open_report, pending_save, scan_diagnostics) = open_for_report(
-                root,
-                config,
-                plan.read_snapshot,
-                SnapshotUse::ReportOnly,
-                collect_scan_diagnostics,
-            )?;
-            let provenance = Provenance {
-                scan_started_at: Some(scan_started_at),
-                generated_at: SystemTime::now(),
-                source: match open_report.path_taken {
-                    OpenPath::ColdScan => ReportSource::ColdScan,
-                    OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                    OpenPath::CacheOnly => ReportSource::CacheOnly,
-                },
-                complete: open_report.is_complete(),
-                // error_messages() also surfaces analysis and restored content-cache
-                // diagnostics, which errors() alone would drop on a warm or cache-only open.
-                errors: open_report.error_messages(),
-            };
+            let (index, open_report, pending_save, scan_diagnostics) =
+                execute(&plan, &request.basis, collect_scan_diagnostics)?;
             let performance = PerformanceSummary::from_open_report(&open_report);
-            let mut answer = report(&index, request, &provenance)?;
-            // A cache-only report may consume a controls-on snapshot for a controls-off
-            // request because reporting reads only the all-entry facts. No Index escapes
-            // this boundary, and the projected report must describe the requested scope
-            // rather than the stronger internal snapshot it consumed, including what it
-            // says about ignore rules and every row's ignored share.
-            answer.scope = config.scan.scope();
-            if !config.scan.control_identity().is_observed() {
-                crate::query::forget_ignore_classification(&mut answer);
-                answer.notes = crate::query::display_notes(query, &answer.ignore_rules);
-            }
+            let answer = report(&index, request, SystemTime::now())?;
+            debug_assert_eq!(answer.scope, scan_config.scope());
             Ok((answer, pending_save, performance, scan_diagnostics))
         }
     }
@@ -349,24 +513,471 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::*;
-    use crate::ScanConfig;
-    use crate::query::{IgnoredEntries, Pattern, Section};
+    use crate::query::{IgnoredEntries, Pattern, Query, Section};
+    use crate::{OpenFixture, ScanConfig};
+
+    #[test]
+    #[cfg(unix)]
+    fn an_unreadable_stored_header_never_authorizes_live_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let snapshot = cache.path().join("snapshot.fdu");
+        fs::write(root.path().join(".gitignore"), b"ignored\n").expect("control");
+        let observed = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(snapshot.clone()));
+        crate::open(&observed, &delivery).expect("stronger snapshot");
+        let original = fs::read(&snapshot).expect("original image");
+        let basis = crate::query::Basis {
+            scope: crate::query::Scope { read_controls: false, ..Default::default() },
+            ..observed
+        };
+        let (mut index, _) =
+            crate::open(&basis, &Delivery::new(CachePolicy::Off, None)).expect("fresh blind index");
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        let plan = plan(&request, &delivery, Route::Refresh).expect("plan");
+        fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o000))
+            .expect("deny header read");
+        for policy in [CachePolicy::Off, CachePolicy::ReadOnly] {
+            let nonwriting = Delivery { cache: policy, ..delivery.clone() };
+            let nonwriting_plan =
+                super::plan(&request, &nonwriting, Route::Refresh).expect("nonwriting plan");
+            assert!(
+                !crate::persist_index_changes(&index, &nonwriting_plan, true, true)
+                    .expect("nonwriting policy never reads the header")
+            );
+        }
+        fs::write(root.path().join("fresh.txt"), b"fresh").expect("mutation");
+        crate::refresh(
+            &mut index,
+            &request.basis,
+            &Delivery { cache: CachePolicy::Off, ..delivery.clone() },
+        )
+        .expect("off refresh does not inspect cache state");
+        let result = crate::persist_index_changes(&index, &plan, true, true);
+        fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o600)).expect("restore");
+        assert!(
+            result.is_err(),
+            "a writable parent must not let unknown identity authorize replacement"
+        );
+        assert_eq!(fs::read(&snapshot).expect("retained image"), original);
+    }
+
+    #[test]
+    fn refresh_rejects_another_root_before_mutating_or_persisting() {
+        let a = tempfile::tempdir().expect("root a");
+        let b = tempfile::tempdir().expect("root b");
+        let cache = tempfile::tempdir().expect("cache");
+        let basis = crate::query::Basis {
+            root: a.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let (mut index, _) =
+            crate::open(&basis, &Delivery::new(CachePolicy::Off, None)).expect("open a");
+        fs::write(a.path().join("new"), b"new facts").expect("mutation a");
+        let before = index.clock();
+        let snapshot = cache.path().join("snapshot.fdu");
+        let wrong = crate::query::Basis { root: b.path().into(), ..basis.clone() };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(snapshot.clone()));
+        let error = crate::refresh(&mut index, &wrong, &delivery).expect_err("different root");
+        assert!(matches!(
+            error,
+            Error::InvalidRequest(crate::query::RequestError::RootMismatch { .. })
+        ));
+        assert_eq!(index.clock(), before);
+        assert!(!snapshot.exists());
+        let alias = crate::query::Basis { root: a.path().join("."), ..basis };
+        crate::refresh(&mut index, &alias, &delivery).expect("same root spelling");
+        assert_eq!(index.total().files, 1);
+        #[cfg(unix)]
+        {
+            let link = cache.path().join("root-alias");
+            std::os::unix::fs::symlink(a.path(), &link).expect("root alias");
+            let symlink_basis = crate::query::Basis { root: link, ..alias };
+            crate::refresh(&mut index, &symlink_basis, &delivery)
+                .expect("same canonical root through symlink");
+        }
+    }
+
+    #[test]
+    fn unchanged_refresh_replaces_an_incompatible_stored_baseline() {
+        let root = tempfile::tempdir().expect("root");
+        let other = tempfile::tempdir().expect("other root");
+        let cache = tempfile::tempdir().expect("cache");
+        fs::write(root.path().join("file"), b"retained").expect("file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        for wrong_root in [false, true] {
+            let wrong = if wrong_root {
+                crate::query::Basis { root: other.path().into(), ..basis.clone() }
+            } else {
+                crate::query::Basis {
+                    scope: crate::query::Scope { max_depth: Some(0), ..basis.scope.clone() },
+                    ..basis.clone()
+                }
+            };
+            crate::open(&wrong, &Delivery { cache: CachePolicy::Refresh, ..delivery.clone() })
+                .expect("incompatible snapshot");
+            let (mut index, _) = crate::open(&basis, &Delivery::new(CachePolicy::Off, None))
+                .expect("retained index");
+            let refreshed =
+                crate::refresh(&mut index, &basis, &delivery).expect("refresh reseeds cache");
+            assert!(!refreshed.apply.mutated(), "the existing index was already current");
+            let (cached, _) =
+                crate::open(&basis, &Delivery { cache: CachePolicy::Only, ..delivery.clone() })
+                    .expect("cache-only can now answer");
+            assert_eq!(cached.total().bytes, 8);
+        }
+    }
+
+    #[test]
+    fn refreshed_metadata_and_content_are_visible_to_a_later_cache_only_open() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let path = root.path().join("note.txt");
+        fs::write(&path, b"old\n").expect("old file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE.with_lines(),
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        fs::write(&path, b"new longer text\nsecond line\n").expect("mutation");
+        let refreshed = crate::refresh(&mut index, &basis, &delivery).expect("refresh");
+        assert!(refreshed.is_complete());
+        let (cached, report) =
+            crate::open(&basis, &Delivery { cache: CachePolicy::Only, ..delivery })
+                .expect("cache-only sees refreshed tiers");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert_eq!(cached.total(), index.total());
+        assert_eq!(
+            cached.total().bytes,
+            u64::try_from(b"new longer text\nsecond line\n".len()).expect("length")
+        );
+        assert_eq!(report.content_cache.hits, 1);
+        let original = index
+            .content()
+            .expect("fresh content")
+            .file(Path::new("note.txt"))
+            .expect("fresh file");
+        let restored = cached
+            .content()
+            .expect("restored content")
+            .file(Path::new("note.txt"))
+            .expect("restored file");
+        assert_eq!(restored, original);
+    }
+
+    /// One root with one file and one empty directory, and a writing delivery whose
+    /// snapshot lives in its own directory so a test can make that directory read-only.
+    #[cfg(unix)]
+    fn owed_persistence_fixture()
+    -> (tempfile::TempDir, tempfile::TempDir, crate::query::Basis, Delivery) {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        fs::create_dir(root.path().join("locked")).expect("locked dir");
+        fs::write(root.path().join("first"), b"first").expect("first file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        (root, cache, basis, delivery)
+    }
+
+    /// The files a cache-only open of `delivery`'s snapshot answers with.
+    #[cfg(unix)]
+    fn cached_files(basis: &crate::query::Basis, delivery: &Delivery) -> u64 {
+        let cache_only = Delivery { cache: CachePolicy::Only, ..delivery.clone() };
+        crate::open(basis, &cache_only).expect("cache-only open").0.total().files
+    }
+
+    /// A refresh whose metadata write failed leaves the index holding facts the snapshot
+    /// lacks; the next refresh must write them even though it changes nothing itself.
+    ///
+    /// The metadata write used to be keyed to the pass that ran it: a later pass that
+    /// mutated nothing wrote nothing, so a snapshot that missed one write missed the
+    /// facts for good, and cache-only reads answered older facts than the index held.
+    #[test]
+    #[cfg(unix)]
+    fn an_unchanged_refresh_repeats_the_metadata_write_a_failed_refresh_owed() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, cache, basis, delivery) = owed_persistence_fixture();
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        assert_eq!(cached_files(&basis, &delivery), 1);
+
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555)).expect("deny write");
+        let failed = crate::refresh(&mut index, &basis, &delivery);
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o755)).expect("restore");
+        assert!(failed.is_err(), "a read-only cache directory fails the write");
+        assert_eq!(index.total().files, 2, "the index advanced before the write");
+        assert_eq!(cached_files(&basis, &delivery), 1, "the failed write left the old image");
+
+        let unchanged = crate::refresh(&mut index, &basis, &delivery).expect("unchanged refresh");
+        assert!(unchanged.is_complete());
+        assert!(!unchanged.apply.mutated(), "nothing changed between the passes");
+        assert_eq!(cached_files(&basis, &delivery), 2, "the owed write ran");
+
+        // Paid once: the next unchanged pass has nothing to write.
+        let snapshot = delivery.cache_path.as_deref().expect("path");
+        let written = fs::metadata(snapshot).expect("snapshot").modified().expect("mtime");
+        crate::refresh(&mut index, &basis, &delivery).expect("settled refresh");
+        assert_eq!(fs::metadata(snapshot).expect("snapshot").modified().expect("mtime"), written);
+    }
+
+    /// The same debt when the failed write is the one a warm `open` started: a caller
+    /// keeping the index through [`crate::open_with_pending_save`] keeps the debt too.
+    #[test]
+    #[cfg(unix)]
+    fn an_unchanged_refresh_repeats_the_metadata_write_a_failed_open_owed() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, cache, basis, delivery) = owed_persistence_fixture();
+        crate::open(&basis, &delivery).expect("complete open writes the snapshot");
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555)).expect("deny write");
+        let opened = crate::open_with_pending_save(&basis, &delivery);
+        // Joined before the directory is writable again: the write runs in the background.
+        let outcome = opened.map(|(index, report, pending)| (index, report, pending.join()));
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o755)).expect("restore");
+        let (index, report, joined) = outcome.expect("the open itself succeeds");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
+        assert!(joined.is_err(), "the startup write failed");
+        let mut index = std::sync::Arc::into_inner(index).expect("the writer released the index");
+        assert_eq!(cached_files(&basis, &delivery), 1);
+
+        let unchanged = crate::refresh(&mut index, &basis, &delivery).expect("unchanged refresh");
+        assert!(!unchanged.apply.mutated(), "nothing changed between the passes");
+        assert_eq!(cached_files(&basis, &delivery), 2, "the owed write ran");
+    }
+
+    /// A partial refresh cannot write the entry tier; once the tree is readable again a
+    /// complete refresh delivers the partial pass's facts to the snapshot.
+    ///
+    /// Restoring the directory's permissions updates its change time, so on a POSIX host
+    /// the recovering pass reports that directory as updated and would write on its own
+    /// account. The failed-write tests above are the ones that prove the debt is carried;
+    /// this one guards that a partial pass's verified facts reach the snapshot at all.
+    #[test]
+    #[cfg(unix)]
+    fn a_complete_refresh_persists_the_facts_a_partial_refresh_could_not() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, _cache, basis, delivery) = owed_persistence_fixture();
+        let locked = root.path().join("locked");
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        assert_eq!(index.total().files, 1);
+
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny read");
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        let partial = crate::refresh(&mut index, &basis, &delivery);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("restore");
+        let partial = partial.expect("partial refresh");
+        assert!(!partial.is_complete(), "the locked directory made the pass partial");
+        assert!(partial.apply.mutated(), "the second file was inserted");
+        assert_eq!(index.total().files, 2);
+        assert_eq!(cached_files(&basis, &delivery), 1, "a partial pass never writes entries");
+
+        let complete = crate::refresh(&mut index, &basis, &delivery).expect("complete refresh");
+        assert!(complete.is_complete(), "{:?}", complete.scan.errors);
+        assert_eq!(cached_files(&basis, &delivery), 2, "the complete pass wrote the facts");
+    }
+
+    #[test]
+    fn cache_only_refusals_name_location_root_and_absence_separately() {
+        let root = tempfile::tempdir().expect("root");
+        let other = tempfile::tempdir().expect("other root");
+        let cache = tempfile::tempdir().expect("cache");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let snapshot = cache.path().join("snapshot.fdu");
+        let message = |delivery: &Delivery| {
+            crate::open(&basis, delivery).expect_err("cache-only refusal").to_string()
+        };
+        let no_location = message(&Delivery::new(CachePolicy::Only, None));
+        assert!(no_location.contains("no cache location"), "{no_location}");
+        assert!(!no_location.contains("use auto"), "no write can succeed without a location");
+        let missing = message(&Delivery::new(CachePolicy::Only, Some(snapshot.clone())));
+        assert!(missing.contains("no usable snapshot"), "{missing}");
+        assert!(missing.contains("auto"), "{missing}");
+        let other_basis = crate::query::Basis { root: other.path().into(), ..basis.clone() };
+        crate::open(&other_basis, &Delivery::new(CachePolicy::Auto, Some(snapshot.clone())))
+            .expect("other snapshot");
+        let wrong_root = message(&Delivery::new(CachePolicy::Only, Some(snapshot)));
+        assert!(wrong_root.contains("different root"), "{wrong_root}");
+    }
+
+    #[test]
+    fn route_delivery_matrix_rejects_contracts_the_route_cannot_execute() {
+        let basis = crate::query::Basis {
+            root: ".".into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        for delivery in Delivery::enumerate() {
+            for route in
+                [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened]
+            {
+                let result = plan(&request, &delivery, route);
+                let forbidden = (delivery.watch.is_some()
+                    || matches!(route, Route::Watch | Route::Refresh))
+                    && delivery.cache == CachePolicy::Only
+                    || route == Route::Opened
+                        && (delivery.cache != CachePolicy::Off
+                            || delivery.watch.is_some()
+                            || delivery.accept_partial);
+                assert_eq!(result.is_err(), forbidden, "{route:?} {delivery:?}");
+                if let Ok(plan) = result {
+                    if route == Route::Opened {
+                        assert_eq!(plan.load(), Load::None);
+                        assert_eq!(plan.verify(), Verify::Filesystem);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_opened_root_refuses_the_scheduling_it_would_otherwise_drop() {
+        // `OpenOptions::into_parts` runs one breadth-first producer whatever the delivery
+        // says, and an opened root has no single answer for `accept_partial` to classify.
+        // A value the route would silently ignore is refused at planning instead, and the
+        // same values plan on a route that executes them.
+        let basis = crate::query::Basis {
+            root: ".".into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let request = Request::new(basis, Query::default(), SystemTime::now());
+        let default = Delivery::new(CachePolicy::Off, None);
+        let plan_opened = plan(&request, &default, Route::Opened).expect("defaults plan");
+        assert_eq!(plan_opened.delivery().batch_size, default.batch_size);
+        let unhonored = [
+            (
+                "scan workers",
+                Delivery {
+                    workers: crate::query::Workers { scan: Some(4), ..default.workers },
+                    ..default.clone()
+                },
+            ),
+            (
+                "depth-first order",
+                Delivery { order: crate::ScanOrder::DepthFirst, ..default.clone() },
+            ),
+            ("accept partial", Delivery { accept_partial: true, ..default.clone() }),
+        ];
+        for (case, delivery) in unhonored {
+            let refused = plan(&request, &delivery, Route::Opened).expect_err(case);
+            assert!(
+                matches!(
+                    refused,
+                    crate::query::RequestError::DeliveryUnsupported { route: "opened", .. }
+                ),
+                "{case}: {refused}"
+            );
+            plan(&request, &delivery, Route::Retained)
+                .unwrap_or_else(|error| panic!("{case} executes on a retained route: {error}"));
+        }
+        // A larger batch is honored, so it is not refused.
+        let batched = Delivery { batch_size: default.batch_size * 2, ..default };
+        let plan_batched = plan(&request, &batched, Route::Opened).expect("batch size plans");
+        assert_eq!(plan_batched.delivery().batch_size, batched.batch_size);
+    }
+
+    #[test]
+    fn write_policy_depends_only_on_delivery_and_observed_facts() {
+        let routes = [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened];
+        for delivery in Delivery::enumerate() {
+            for bits in 0_u8..64 {
+                let facts = RunFacts {
+                    entries_verified: bits & 1 != 0,
+                    entries_changed: bits & 2 != 0,
+                    content_changed: bits & 4 != 0,
+                    content_requested: bits & 8 != 0,
+                    projected: bits & 16 != 0,
+                    paired_entries: bits & 32 != 0,
+                };
+                let allowed = delivery.cache.writes();
+                let expected = SaveTargets {
+                    metadata: allowed
+                        && facts.entries_verified
+                        && facts.entries_changed
+                        && !facts.projected,
+                    content: allowed
+                        && facts.content_requested
+                        && facts.content_changed
+                        && (facts.entries_verified || facts.paired_entries),
+                };
+                for route in routes {
+                    let plan = Plan {
+                        basis: crate::query::Basis {
+                            root: ".".into(),
+                            scope: crate::query::Scope::default(),
+                            content: crate::content::AnalysisSet::NONE,
+                        },
+                        route,
+                        retained: RetainedState::FullIndex,
+                        load: Load::Snapshot,
+                        verify: Verify::Filesystem,
+                        delivery: delivery.clone(),
+                    };
+                    assert_eq!(plan.writes(facts), expected, "{route:?} {delivery:?} {facts:?}");
+                    let unavailable = Plan {
+                        delivery: Delivery { cache_path: None, ..delivery.clone() },
+                        ..plan
+                    };
+                    assert!(unavailable.writes(facts).none());
+                }
+            }
+        }
+    }
+
+    fn planned(config: &OpenFixture, query: &Query) -> Plan {
+        let (request, delivery) = split(Path::new("."), config, query);
+        plan(&request, &delivery, Route::OneShot).expect("valid plan")
+    }
 
     fn summary_query() -> Query {
         Query { views: vec![ViewSpec::Summary], ..Query::default() }
     }
 
-    /// The request and the delivery a test's `OpenConfig` spells, split the way the two
+    /// The request and the delivery a test's `OpenFixture` spells, split the way the two
     /// models now divide it: what the answer says, and how it is carried out.
-    fn split(root: &Path, config: &OpenConfig, query: &Query) -> (Request, Delivery) {
+    fn split(root: &Path, config: &OpenFixture, query: &Query) -> (Request, Delivery) {
         let (basis, delivery) = config.split(root);
-        (Request::new(basis, query.clone(), SystemTime::now()), delivery)
+        (Request::new(basis, query.clone(), std::time::UNIX_EPOCH), delivery)
     }
 
     /// [`prepare_report`] as these tests ask for it: one configuration, one query.
     fn prepared(
         root: &Path,
-        config: &OpenConfig,
+        config: &OpenFixture,
         query: &Query,
     ) -> Result<(Report, PendingSave, PerformanceSummary)> {
         let (request, delivery) = split(root, config, query);
@@ -376,7 +987,7 @@ mod tests {
     /// [`prepared`], keeping the scan diagnostics.
     fn prepared_with_diagnostics(
         root: &Path,
-        config: &OpenConfig,
+        config: &OpenFixture,
         query: &Query,
     ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)>
     {
@@ -384,14 +995,14 @@ mod tests {
         prepare_report_with_scan_diagnostics(&request, &delivery)
     }
 
-    fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
-        OpenConfig { scan: ScanConfig::default(), cache_path, policy, ..OpenConfig::default() }
+    fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenFixture {
+        OpenFixture { scan: ScanConfig::default(), cache_path, policy, ..OpenFixture::default() }
     }
 
     /// [`config`] with `.gitignore` observation turned off, the one scan the compact
     /// summary tier can answer.
-    fn blind(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
-        OpenConfig {
+    fn blind(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenFixture {
+        OpenFixture {
             scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
             ..config(policy, cache_path)
         }
@@ -401,54 +1012,48 @@ mod tests {
         policy: CachePolicy,
         cache_path: PathBuf,
         read_controls: bool,
-    ) -> OpenConfig {
-        OpenConfig {
+    ) -> OpenFixture {
+        OpenFixture {
             scan: ScanConfig { read_controls, ..ScanConfig::default() },
             cache_path: Some(cache_path),
             policy,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         }
     }
 
     fn seed_controls_snapshot(root: &Path, cache_path: PathBuf) {
         fs::write(root.join(".gitignore"), b"ignored.log\n").expect("control file");
         fs::write(root.join("ignored.log"), b"ignored").expect("ignored file");
-        crate::open(root, &controls_config(CachePolicy::Auto, cache_path, true))
+        crate::open_fixture(root, &controls_config(CachePolicy::Auto, cache_path, true))
             .expect("seed controls-on snapshot");
     }
 
     #[test]
     fn planner_uses_compact_state_only_when_the_request_proves_it_is_sufficient() {
         let off = blind(CachePolicy::Off, Some(PathBuf::from("unused.fdu")));
-        assert_eq!(plan_report(&off, &summary_query()).retained_state, RetainedState::Summary);
+        assert_eq!(planned(&off, &summary_query()).retained, RetainedState::Summary);
 
         for policy in [CachePolicy::Auto, CachePolicy::Refresh, CachePolicy::ReadOnly] {
             let unavailable = blind(policy, None);
-            assert_eq!(
-                plan_report(&unavailable, &summary_query()).retained_state,
-                RetainedState::Summary
-            );
+            assert_eq!(planned(&unavailable, &summary_query()).retained, RetainedState::Summary);
         }
 
         let mut several_views = summary_query();
         several_views.views.push(ViewSpec::Types);
-        assert_eq!(plan_report(&off, &several_views).retained_state, RetainedState::FullIndex);
+        assert_eq!(planned(&off, &several_views).retained, RetainedState::FullIndex);
 
         let mut filtered = summary_query();
         filtered.selection.include.push(Pattern::parse("*.rs").expect("pattern"));
-        assert_eq!(plan_report(&off, &filtered).retained_state, RetainedState::FullIndex);
+        assert_eq!(planned(&off, &filtered).retained, RetainedState::FullIndex);
 
         // The reducer keeps no control table, so a summary whose row carries an ignored
         // share, or selects by one, needs the index.
         let observing = config(CachePolicy::Off, None);
         assert!(observing.scan.read_controls, "observation is the default");
-        assert_eq!(
-            plan_report(&observing, &summary_query()).retained_state,
-            RetainedState::FullIndex
-        );
+        assert_eq!(planned(&observing, &summary_query()).retained, RetainedState::FullIndex);
         let mut by_ignored = summary_query();
         by_ignored.selection.ignored = IgnoredEntries::Exclude;
-        assert_eq!(plan_report(&observing, &by_ignored).retained_state, RetainedState::FullIndex);
+        assert_eq!(planned(&observing, &by_ignored).retained, RetainedState::FullIndex);
     }
 
     #[test]
@@ -461,7 +1066,7 @@ mod tests {
         for policy in [CachePolicy::Auto, CachePolicy::ReadOnly] {
             let cached = blind(policy, Some(PathBuf::from("cache.fdu")));
             assert_eq!(
-                plan_report(&cached, &summary_query()).retained_state,
+                planned(&cached, &summary_query()).retained,
                 RetainedState::Summary,
                 "{policy:?} must not be forced onto the index by a present snapshot"
             );
@@ -476,7 +1081,7 @@ mod tests {
         for policy in [CachePolicy::Only, CachePolicy::Refresh] {
             let cached = config(policy, Some(PathBuf::from("cache.fdu")));
             assert_eq!(
-                plan_report(&cached, &summary_query()).retained_state,
+                planned(&cached, &summary_query()).retained,
                 RetainedState::FullIndex,
                 "{policy:?} needs the index to honour its contract"
             );
@@ -495,7 +1100,7 @@ mod tests {
         for policy in [CachePolicy::Auto, CachePolicy::ReadOnly] {
             let cached = config(policy, Some(PathBuf::from("cache.fdu")));
             assert!(
-                !plan_report(&cached, &tree_query).read_snapshot,
+                planned(&cached, &tree_query).load != Load::Snapshot,
                 "{policy:?} must not pay for a read that saves no work"
             );
         }
@@ -505,23 +1110,23 @@ mod tests {
     fn the_snapshot_is_read_where_reading_pays_or_is_the_contract() {
         // `Only` answers from the snapshot; reading it is the request itself.
         let only = config(CachePolicy::Only, Some(PathBuf::from("cache.fdu")));
-        assert!(plan_report(&only, &summary_query()).read_snapshot);
+        assert_eq!(planned(&only, &summary_query()).load, Load::Snapshot);
 
         // Analysis reuses the content sidecar, which avoids re-reading file bodies —
         // the one measured case where a warm read wins (639 ms to 325 ms).
-        let analyzed = OpenConfig {
+        let analyzed = OpenFixture {
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_code(),
                 ..Default::default()
             },
             ..config(CachePolicy::Auto, Some(PathBuf::from("cache.fdu")))
         };
-        assert!(plan_report(&analyzed, &summary_query()).read_snapshot);
+        assert_eq!(planned(&analyzed, &summary_query()).load, Load::Snapshot);
 
         // `Off` and `Refresh` never read by definition.
         for policy in [CachePolicy::Off, CachePolicy::Refresh] {
             let never = config(policy, Some(PathBuf::from("cache.fdu")));
-            assert!(!plan_report(&never, &summary_query()).read_snapshot, "{policy:?}");
+            assert_eq!(planned(&never, &summary_query()).load, Load::None, "{policy:?}");
         }
     }
 
@@ -531,7 +1136,7 @@ mod tests {
         // sidecar, so the aggregate-only tier cannot answer it even though the request
         // otherwise looks like the uncached unfiltered summary the planner compacts.
         let off = blind(CachePolicy::Off, None);
-        assert_eq!(plan_report(&off, &summary_query()).retained_state, RetainedState::Summary);
+        assert_eq!(planned(&off, &summary_query()).retained, RetainedState::Summary);
 
         for profile in [
             crate::content::AnalysisSet::NONE.with_lines(),
@@ -539,12 +1144,12 @@ mod tests {
             crate::content::AnalysisSet::NONE.with_words(),
             crate::content::AnalysisSet::ALL,
         ] {
-            let analyzed = OpenConfig {
+            let analyzed = OpenFixture {
                 analysis: crate::content::AnalysisRequest { profile, ..Default::default() },
                 ..blind(CachePolicy::Off, None)
             };
             assert_eq!(
-                plan_report(&analyzed, &summary_query()).retained_state,
+                planned(&analyzed, &summary_query()).retained,
                 RetainedState::FullIndex,
                 "{profile:?} must retain the index"
             );
@@ -566,14 +1171,14 @@ mod tests {
 
         let (first, pending, _) = prepared(root.path(), &auto, &tree_query).expect("first report");
         pending.join().expect("first save");
-        assert_eq!(first.source, ReportSource::ColdScan);
+        assert_eq!(first.provenance.source, ReportSource::ColdScan);
         assert!(auto.cache_path.as_deref().expect("path").exists(), "first run persists");
 
         let (second, pending, performance) =
             prepared(root.path(), &auto, &tree_query).expect("second report");
         pending.join().expect("second save");
         assert_eq!(
-            second.source,
+            second.provenance.source,
             ReportSource::ColdScan,
             "a repeated one-shot must not pay for a read that saves no work"
         );
@@ -581,7 +1186,7 @@ mod tests {
 
         // A default report and a default `open` both observe control state, so they share
         // one snapshot scope and the `open` starts from the report's snapshot.
-        let (_, open_report) = crate::open(root.path(), &auto).expect("library open");
+        let (_, open_report) = crate::open_fixture(root.path(), &auto).expect("library open");
         assert_eq!(
             open_report.path_taken,
             OpenPath::WarmRevalidate,
@@ -607,7 +1212,7 @@ mod tests {
         let (from_cache, pending, performance, diagnostics) =
             prepared_with_diagnostics(root.path(), &only, &tree_query).expect("cache-only report");
         pending.join().expect("no save");
-        assert_eq!(from_cache.source, ReportSource::CacheOnly);
+        assert_eq!(from_cache.provenance.source, ReportSource::CacheOnly);
         assert_eq!(performance.walked_files, 0, "cache-only never touches the tree");
         assert!(diagnostics.is_none(), "a cache-only open has no scan trace");
     }
@@ -640,32 +1245,31 @@ mod tests {
             prepared(root.path(), &controls_off, &query).expect("projected report");
         pending.join().expect("no cache-only save");
 
-        let cold = OpenConfig { policy: CachePolicy::Off, cache_path: None, ..controls_off };
+        let cold = OpenFixture { policy: CachePolicy::Off, cache_path: None, ..controls_off };
         let (mut expected, pending, _) =
             prepared(root.path(), &cold, &query).expect("controls-off cold report");
         pending.join().expect("no cold save");
-        expected.scan_started_at = projected.scan_started_at;
-        expected.generated_at = projected.generated_at;
-        expected.source = projected.source;
-        expected.freshness = projected.freshness;
+        expected.provenance = projected.provenance.clone();
 
         assert_eq!(performance.source, ReportSource::CacheOnly);
         assert_eq!(projected.scope, cold.scan.scope());
         assert_eq!(projected.ignore_rules, crate::control::ControlCoverage::NotObserved);
         assert_eq!(
-            crate::report_format::render(&projected, crate::report_format::Format::Json, false,),
-            crate::report_format::render(&expected, crate::report_format::Format::Json, false,),
+            crate::report_format::render(&projected, crate::report_format::Format::Json, false,)
+                .expect("compatible report format"),
+            crate::report_format::render(&expected, crate::report_format::Format::Json, false,)
+                .expect("compatible report format"),
         );
     }
 
     #[test]
-    fn controls_on_snapshot_does_not_serve_controls_off_auto_report() {
+    fn controls_on_snapshot_projects_to_controls_off_auto_report() {
         let root = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
         let cache_path = cache.path().join("cache.fdu");
         seed_controls_snapshot(root.path(), cache_path.clone());
 
-        let controls_off = OpenConfig {
+        let controls_off = OpenFixture {
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..Default::default()
@@ -673,12 +1277,12 @@ mod tests {
             ..controls_config(CachePolicy::Auto, cache_path, false)
         };
         let (report, pending, performance) = prepared(root.path(), &controls_off, &summary_query())
-            .expect("controls-off cold fallback");
-        pending.join().expect("save controls-off snapshot");
+            .expect("controls-off warm projection");
+        pending.join().expect("save content only");
 
-        assert_eq!(report.source, ReportSource::ColdScan);
+        assert_eq!(report.provenance.source, ReportSource::WarmRevalidate);
         assert_eq!(report.scope, controls_off.scan.scope());
-        assert_eq!(performance.source, ReportSource::ColdScan);
+        assert_eq!(performance.source, ReportSource::WarmRevalidate);
     }
 
     /// Control sources past both limits, so no scan can observe them without saying so.
@@ -717,7 +1321,11 @@ mod tests {
                 let (report, pending, _) = prepared(root.path(), &caller, &query)
                     .expect("a refused control file ends nothing");
                 pending.join().expect("save");
-                assert!(report.complete, "a refusal is not a partial: {:?}", report.errors);
+                assert!(
+                    report.status.complete,
+                    "a refusal is not a partial: {:?}",
+                    report.status.errors
+                );
                 assert_eq!(report.scope, caller.scan.scope());
                 match &report.ignore_rules {
                     crate::control::ControlCoverage::Observed(coverage) => {
@@ -777,7 +1385,7 @@ mod tests {
         for policy in
             [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
         {
-            let asked = OpenConfig {
+            let asked = OpenFixture {
                 scan: unsupported.clone(),
                 ..config(policy, Some(cache_path.clone()))
             };
@@ -854,7 +1462,7 @@ mod tests {
                 Ok((report, pending, _)) => {
                     pending.join().expect("no save");
                     assert!(writer || !reader, "writer {writer} served reader {reader}");
-                    assert_eq!(report.source, ReportSource::CacheOnly);
+                    assert_eq!(report.provenance.source, ReportSource::CacheOnly);
                     assert_eq!(
                         matches!(report.ignore_rules, crate::control::ControlCoverage::Observed(_)),
                         reader,
@@ -889,7 +1497,7 @@ mod tests {
         pending.join().expect("save");
 
         let only = config(CachePolicy::Only, Some(cache_path));
-        let (index, report) = crate::open(root.path(), &only).expect("the shared snapshot");
+        let (index, report) = crate::open_fixture(root.path(), &only).expect("the shared snapshot");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
     }
@@ -912,7 +1520,7 @@ mod tests {
         assert!(cache_path.exists(), "the report left a snapshot");
 
         let only = blind(CachePolicy::Only, Some(cache_path));
-        let (index, report) = crate::open(root.path(), &only).expect("the shared snapshot");
+        let (index, report) = crate::open_fixture(root.path(), &only).expect("the shared snapshot");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert!(matches!(
             index.is_ignored(Path::new("file.txt")),
@@ -932,7 +1540,7 @@ mod tests {
         let query = summary_query();
         // Two workers so the compact fold exercises StreamingEmission recycle even on
         // a one-vCPU runner (`threads: None` would take the serial walker there).
-        let off = OpenConfig {
+        let off = OpenFixture {
             scan: ScanConfig { read_controls: false, threads: Some(2), ..ScanConfig::default() },
             ..blind(CachePolicy::Off, None)
         };
@@ -944,17 +1552,11 @@ mod tests {
 
         // Only a report that turns control observation off takes the compact tier, so the
         // index it must match exactly is opened under that scope too.
-        let (index, open_report) = crate::open(root.path(), &off).expect("indexed scan");
+        let (index, _open_report) = crate::open_fixture(root.path(), &off).expect("indexed scan");
         let indexed = report(
             &index,
             &crate::test_support::read_of(&index, query.clone()),
-            &Provenance {
-                scan_started_at: compact.scan_started_at,
-                generated_at: compact.generated_at,
-                source: ReportSource::ColdScan,
-                complete: open_report.is_complete(),
-                errors: Vec::new(),
-            },
+            compact.provenance.generated_at,
         )
         .expect("report");
 
@@ -971,8 +1573,8 @@ mod tests {
         assert_eq!(compact_row.newest_mtime_ns, indexed_row.newest_mtime_ns);
         assert_eq!(compact.root, indexed.root);
         assert_eq!(compact.scope, indexed.scope);
-        assert_eq!(compact.complete, indexed.complete);
-        assert_eq!(compact.freshness, indexed.freshness);
+        assert_eq!(compact.status.complete, indexed.status.complete);
+        assert_eq!(compact.provenance.freshness, indexed.provenance.freshness);
     }
 
     #[test]
@@ -986,7 +1588,7 @@ mod tests {
                 .expect("compact report");
         pending.join().expect("no pending compact save");
 
-        assert!(report.complete);
+        assert!(report.status.complete);
         assert!(!cache.exists());
     }
 
@@ -1002,7 +1604,7 @@ mod tests {
                 .expect("full-index report");
         pending.join().expect("no pending save");
 
-        assert!(report.complete);
+        assert!(report.status.complete);
         assert_eq!(performance.walked_files, 1);
         let diagnostics = diagnostics.expect("full-index scan diagnostics");
         assert_eq!(diagnostics.schema, crate::scan::SCAN_DIAGNOSTICS_SCHEMA);

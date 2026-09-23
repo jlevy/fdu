@@ -1,0 +1,627 @@
+[
+{
+"id": 0,
+"s": "0x10",
+"required": true
+},
+{
+"id": 1,
+"s": "1_000",
+"required": true
+},
+{
+"id": 2,
+"s": "0b101",
+"required": true
+},
+{
+"id": 3,
+"s": "0o17",
+"required": true
+},
+{
+"id": 4,
+"s": "012",
+"required": true
+},
+{
+"id": 5,
+"s": ".inf",
+"required": true
+},
+{
+"id": 6,
+"s": "-.inf",
+"required": true
+},
+{
+"id": 7,
+"s": ".NaN",
+"required": true
+},
+{
+"id": 8,
+"s": "1e3",
+"required": true
+},
+{
+"id": 9,
+"s": "y",
+"required": true
+},
+{
+"id": 10,
+"s": "n",
+"required": true
+},
+{
+"id": 11,
+"s": "Y",
+"required": true
+},
+{
+"id": 12,
+"s": "yes",
+"required": true
+},
+{
+"id": 13,
+"s": "on",
+"required": true
+},
+{
+"id": 14,
+"s": "off",
+"required": true
+},
+{
+"id": 15,
+"s": "~",
+"required": true
+},
+{
+"id": 16,
+"s": "null",
+"required": true
+},
+{
+"id": 17,
+"s": "true",
+"required": true
+},
+{
+"id": 18,
+"s": "2024-01-01",
+"required": true
+},
+{
+"id": 19,
+"s": "12:30:00",
+"required": true
+},
+{
+"id": 20,
+"s": "",
+"required": true
+},
+{
+"id": 21,
+"s": " lead",
+"required": true
+},
+{
+"id": 22,
+"s": "trail ",
+"required": true
+},
+{
+"id": 23,
+"s": "a: b",
+"required": true
+},
+{
+"id": 24,
+"s": "#hash",
+"required": true
+},
+{
+"id": 25,
+"s": "- dash",
+"required": true
+},
+{
+"id": 26,
+"s": "?q",
+"required": true
+},
+{
+"id": 27,
+"s": "*star",
+"required": true
+},
+{
+"id": 28,
+"s": "&amp",
+"required": true
+},
+{
+"id": 29,
+"s": "!bang",
+"required": true
+},
+{
+"id": 30,
+"s": "%pct",
+"required": true
+},
+{
+"id": 31,
+"s": "@at",
+"required": true
+},
+{
+"id": 32,
+"s": "`tick",
+"required": true
+},
+{
+"id": 33,
+"s": "'quote",
+"required": true
+},
+{
+"id": 34,
+"s": "\"dq",
+"required": true
+},
+{
+"id": 35,
+"s": "multi\nline",
+"required": true
+},
+{
+"id": 36,
+"s": "tab\tx",
+"required": true
+},
+{
+"id": 37,
+"s": "del\u007fname",
+"required": true
+},
+{
+"id": 38,
+"s": "nel\u0085name",
+"required": true
+},
+{
+"id": 39,
+"s": "c1\u009bname",
+"required": true
+},
+{
+"id": 40,
+"s": "ls\u2028name",
+"required": true
+},
+{
+"id": 41,
+"s": "bom\ufeff",
+"required": true
+},
+{
+"id": 42,
+"s": "nonchar\ufffe",
+"required": true
+},
+{
+"id": 43,
+"s": "\u00e9 unicode",
+"required": true
+},
+{
+"id": 44,
+"s": "emoji \ud83d\ude42",
+"required": true
+},
+{
+"id": 45,
+"s": "plain-name.txt",
+"required": true
+},
+{
+"id": 46,
+"s": ".",
+"required": true
+},
+{
+"id": 47,
+"s": ".hidden",
+"required": true
+},
+{
+"id": 48,
+"s": "src/main.rs",
+"required": true
+},
+{
+"id": 49,
+"s": "._1",
+"required": false
+},
+{
+"id": 50,
+"s": "._",
+"required": false
+},
+{
+"id": 51,
+"s": ".1_0",
+"required": false
+},
+{
+"id": 52,
+"s": ".5",
+"required": false
+},
+{
+"id": 53,
+"s": "1.",
+"required": false
+},
+{
+"id": 54,
+"s": "+1",
+"required": false
+},
+{
+"id": 55,
+"s": "0",
+"required": false
+},
+{
+"id": 56,
+"s": "-1",
+"required": false
+},
+{
+"id": 57,
+"s": "1:30",
+"required": false
+},
+{
+"id": 58,
+"s": "190:20:30",
+"required": false
+},
+{
+"id": 59,
+"s": "0755",
+"required": false
+},
+{
+"id": 60,
+"s": "1e+3",
+"required": false
+},
+{
+"id": 61,
+"s": "1E3",
+"required": false
+},
+{
+"id": 62,
+"s": "6.8523015e+5",
+"required": false
+},
+{
+"id": 63,
+"s": "0.1.0",
+"required": false
+},
+{
+"id": 64,
+"s": "True",
+"required": false
+},
+{
+"id": 65,
+"s": "TRUE",
+"required": false
+},
+{
+"id": 66,
+"s": "No",
+"required": false
+},
+{
+"id": 67,
+"s": "NO",
+"required": false
+},
+{
+"id": 68,
+"s": "Off",
+"required": false
+},
+{
+"id": 69,
+"s": "N",
+"required": false
+},
+{
+"id": 70,
+"s": "Null",
+"required": false
+},
+{
+"id": 71,
+"s": "NULL",
+"required": false
+},
+{
+"id": 72,
+"s": "=",
+"required": false
+},
+{
+"id": 73,
+"s": "<<",
+"required": false
+},
+{
+"id": 74,
+"s": "inf",
+"required": false
+},
+{
+"id": 75,
+"s": "nan",
+"required": false
+},
+{
+"id": 76,
+"s": "Infinity",
+"required": false
+},
+{
+"id": 77,
+"s": "2001-12-14t21:59:43.10-05:00",
+"required": false
+},
+{
+"id": 78,
+"s": "2002-12-14",
+"required": false
+},
+{
+"id": 79,
+"s": "...",
+"required": false
+},
+{
+"id": 80,
+"s": "---",
+"required": false
+},
+{
+"id": 81,
+"s": "-",
+"required": false
+},
+{
+"id": 82,
+"s": "?",
+"required": false
+},
+{
+"id": 83,
+"s": ":",
+"required": false
+},
+{
+"id": 84,
+"s": "!",
+"required": false
+},
+{
+"id": 85,
+"s": "|",
+"required": false
+},
+{
+"id": 86,
+"s": ">",
+"required": false
+},
+{
+"id": 87,
+"s": "{a}",
+"required": false
+},
+{
+"id": 88,
+"s": "[a]",
+"required": false
+},
+{
+"id": 89,
+"s": "a,b",
+"required": false
+},
+{
+"id": 90,
+"s": "a #b",
+"required": false
+},
+{
+"id": 91,
+"s": "a:b",
+"required": false
+},
+{
+"id": 92,
+"s": "key:",
+"required": false
+},
+{
+"id": 93,
+"s": "a\\b",
+"required": false
+},
+{
+"id": 94,
+"s": "back\\n",
+"required": false
+},
+{
+"id": 95,
+"s": "%",
+"required": false
+},
+{
+"id": 96,
+"s": "\ttab-lead",
+"required": false
+},
+{
+"id": 97,
+"s": "trail\t",
+"required": false
+},
+{
+"id": 98,
+"s": "x\r\ny",
+"required": false
+},
+{
+"id": 99,
+"s": "cr\rx",
+"required": false
+},
+{
+"id": 100,
+"s": "multi\nline\n",
+"required": false
+},
+{
+"id": 101,
+"s": "a\n\nb",
+"required": false
+},
+{
+"id": 102,
+"s": "\nlead-nl",
+"required": false
+},
+{
+"id": 103,
+"s": "trail \nx",
+"required": false
+},
+{
+"id": 104,
+"s": "  \n  ",
+"required": false
+},
+{
+"id": 105,
+"s": " ",
+"required": false
+},
+{
+"id": 106,
+"s": "\u00a0nbsp",
+"required": false
+},
+{
+"id": 107,
+"s": "ps\u2029name",
+"required": false
+},
+{
+"id": 108,
+"s": "vt\u000bx",
+"required": false
+},
+{
+"id": 109,
+"s": "nul\u0000x",
+"required": false
+},
+{
+"id": 110,
+"s": "esc\u001bx",
+"required": false
+},
+{
+"id": 111,
+"s": "\ufefflead-bom",
+"required": false
+},
+{
+"id": 112,
+"s": "nonchar\uffff",
+"required": false
+},
+{
+"id": 113,
+"s": "astral \ud835\udd18",
+"required": false
+},
+{
+"id": 114,
+"s": "combining e\u0301",
+"required": false
+},
+{
+"id": 115,
+"s": "rtl \u202e",
+"required": false
+},
+{
+"id": 116,
+"s": "zwsp\u200b",
+"required": false
+},
+{
+"id": 117,
+"s": "\u00e9",
+"required": false
+},
+{
+"id": 118,
+"s": "\u00f1",
+"required": false
+},
+{
+"id": 119,
+"s": "long path long path long path long path long path long path long path long path long path long path long path long path ",
+"required": false
+},
+{
+"id": 120,
+"s": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+"required": false
+},
+{
+"id": 121,
+"s": "e3",
+"required": true
+},
+{
+"id": 122,
+"s": "E+3",
+"required": true
+},
+{
+"id": 123,
+"s": "e-1",
+"required": true
+},
+{
+"id": 124,
+"s": ".e3",
+"required": true
+}
+]

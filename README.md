@@ -63,14 +63,16 @@ $ fdu .
      827 KiB  ███░░░░░░░    31%    tests (18 files)
 ```
 
-That is the `tree` view: allocated sizes, largest first, two directory levels, up to ten
-children per directory.
+That is the default `list` view in `tree` format: allocated sizes, largest first, two
+directory levels, up to ten children per directory.
 It reads metadata and `.gitignore` files; it does not open regular files for content.
 Hidden and ignored entries are included; ignored byte shares are annotated when present.
 
 | Question | Command |
 | --- | --- |
 | Which directories are large? | `fdu .` |
+| Old build directories with size and age | `fdu . --kind dir --include node_modules --modified-before 30d --long` |
+| Matching paths only | `fdu . --kind dir --include .venv --format paths` |
 | Totals, excluding ignored entries | `fdu . --exclude-ignored --view=summary` |
 | Languages by space | `fdu . --view=languages` |
 | Ten files that changed most recently | `fdu . --view=recent --limit=10` |
@@ -87,6 +89,31 @@ error.
 `fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --skill` prints
 a portable skill for coding agents.
 The full grammar is in the [usage guide](docs/usage.md).
+
+## Find Stale Build Directories
+
+```shell
+fdu ~/projects --kind dir --include .venv --modified-before 7d --long
+fdu ~/projects --kind dir --include node_modules --modified-before 30d --long
+fdu ~/projects --kind dir --include target --modified-before 30d --format paths
+fdu ~/projects --kind dir --include .venv --include venv \
+  --include node_modules --include target --modified-before 30d \
+  --format long --sort mtime --reverse
+```
+
+Directory size includes eligible regular files below it; age is measured from the newest
+modification of the directory or an eligible descendant.
+Exclusions apply throughout the subtree.
+This is modification activity, not last use.
+Nested matches can overlap; aggregate views count their contents once.
+
+The default tree is unchanged, and `--format tree` makes it explicit.
+`--format paths` prints complete flat paths, `--long` adds size and actual age, and
+JSON/JSONL/YAML provide exact metrics.
+Flat lists default to size order and have no row cap; `--sort name` gives an alphabetic
+inventory. Tree keeps its existing depth and per-directory bounds.
+See [formats and directory selection](docs/usage.md#choose-a-format) and the
+[machine schema](docs/machine-output.md).
 
 ## Live Updates
 
@@ -121,10 +148,13 @@ An embedding that wants none of the command line’s dependencies depends on `fd
 instead.
 
 ```rust
-use fdu::{OpenConfig, open};
+use fdu::{CachePolicy, open};
+use fdu::query::{Basis, Delivery, Scope};
 use std::path::Path;
 
-let (index, report) = open(Path::new("."), &OpenConfig::default())?;
+let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: Default::default() };
+let delivery = Delivery::new(CachePolicy::Auto, None);
+let (index, report) = open(&basis, &delivery)?;
 let total = index.total();
 println!("{} files, {} bytes", total.files, total.bytes);
 
@@ -144,16 +174,17 @@ Opt into content analysis explicitly; metadata-only is the default:
 
 ```rust
 use fdu::content::AnalysisSet;
-use fdu::{OpenConfig, open};
+use fdu::{CachePolicy, open};
+use fdu::query::{Basis, Delivery, Scope};
 use std::path::Path;
 
-let mut config = OpenConfig::default();
-config.analysis.profile = AnalysisSet::ALL;
-let (index, report) = open(Path::new("."), &config)?;
+let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: AnalysisSet::ALL };
+let delivery = Delivery::new(CachePolicy::Auto, None);
+let (index, report) = open(&basis, &delivery)?;
 let analyzed = index
     .content_rollup(Path::new(""))
-    .map_or(0, |content| content.total.analyzed_files);
-println!("{} analyzed files", analyzed);
+    .map_or(0, |content| content.total.lines.analyzed_files);
+println!("{} files analyzed for line metrics", analyzed);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
 ```
@@ -166,11 +197,12 @@ from pathlib import Path
 import fdu
 
 index = fdu.open(Path("/path/to/tree"))
-print(index.status.complete, index.status.freshness)
+print(index.status.complete)
 print(index.total().files)
 print(index.children("src"))
 
 report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
+print(report.provenance.freshness)
 print(report.as_dict())  # same JSON the command line emits
 
 mark = index.clock
@@ -198,8 +230,8 @@ Open, scan, and the native reconciliation phase of refresh run with the GIL rele
 building the Python dicts and lists holds it.
 Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
 directory can hold cached descendants.
-Whether a whole answer is complete and current comes from the scan’s `complete` and
-`freshness`, which the example prints.
+Whether a whole answer is complete and current comes from `index.status.complete` and
+`report.provenance.freshness`, which the example prints.
 `fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
 continuations, and a resumable change journal.
 
@@ -294,6 +326,12 @@ make check    # handoff gate: fmt, clippy, tests, docs, lib-only build
 make test     # Rust tests plus the CLI golden contract
 make fix      # formatting and machine-applicable lint fixes
 ```
+
+Permission and native watch tests fail when the host cannot establish their operating
+system preconditions.
+A deliberately unsupported local host may set `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` or
+`FDU_TEST_ALLOW_NO_NATIVE_WATCH=1` for the affected test selection.
+CI must leave both variables unset so a passing test proves its assertions ran.
 
 [AGENTS.md](AGENTS.md) is how to operate on the repository.
 [The supply-chain policy](SUPPLY-CHAIN-SECURITY.md) applies before any dependency

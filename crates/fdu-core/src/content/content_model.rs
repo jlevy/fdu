@@ -2,7 +2,10 @@
 
 use std::path::PathBuf;
 
-use crate::classify::Classification;
+use crate::classify::{
+    Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
+    FileTypeId,
+};
 use crate::query::Rejection;
 use crate::{Attrs, EntryId, Fingerprint};
 
@@ -14,9 +17,18 @@ pub struct AnalyzerId(pub &'static str);
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct AnalyzerVersion(pub u16);
 
-/// Stable metric-slot identity within an analyzer dialect.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct MetricSlotId(pub &'static str);
+/// Definition of one measured value exposed by content reports.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MetricDef {
+    /// Stable report key.
+    pub name: &'static str,
+    /// Requestable unit that owns the value's presence.
+    pub owner: AnalysisSet,
+    /// Analyzer dialect that defines the value.
+    pub analyzer: AnalyzerId,
+    /// Short semantic definition.
+    pub doc: &'static str,
+}
 
 /// Fingerprint of semantic analyzer options; operational worker count is excluded.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -30,6 +42,82 @@ pub const CODE_SLOC: AnalyzerId = AnalyzerId("code-sloc-v1");
 pub const TEXT_LOGICAL: AnalyzerId = AnalyzerId("text-logical-v1");
 /// Reader-visible Markdown prose analyzer.
 pub const MARKDOWN_PROSE: AnalyzerId = AnalyzerId("markdown-prose-v1");
+
+/// The single registry of content metric names, owners, and definitions.
+pub const METRICS: &[MetricDef] = &[
+    MetricDef {
+        name: "physical_lines",
+        owner: AnalysisSet::LINES_ONLY,
+        analyzer: CONTENT_BASIC,
+        doc: "Logical physical lines across admitted text files.",
+    },
+    MetricDef {
+        name: "blank_lines",
+        owner: AnalysisSet::LINES_ONLY,
+        analyzer: CONTENT_BASIC,
+        doc: "Whitespace-only physical lines.",
+    },
+    MetricDef {
+        name: "nonblank_lines",
+        owner: AnalysisSet::LINES_ONLY,
+        analyzer: CONTENT_BASIC,
+        doc: "Physical lines containing non-whitespace text.",
+    },
+    MetricDef {
+        name: "raw_words",
+        owner: AnalysisSet::LINES_ONLY,
+        analyzer: CONTENT_BASIC,
+        doc: "Whitespace-delimited words before document projection.",
+    },
+    MetricDef {
+        name: "code_lines",
+        owner: AnalysisSet::CODE_ONLY,
+        analyzer: CODE_SLOC,
+        doc: "Code-bearing lines in supported source languages.",
+    },
+    MetricDef {
+        name: "comment_lines",
+        owner: AnalysisSet::CODE_ONLY,
+        analyzer: CODE_SLOC,
+        doc: "Comment-only lines in supported source languages.",
+    },
+    MetricDef {
+        name: "code_blank_lines",
+        owner: AnalysisSet::CODE_ONLY,
+        analyzer: CODE_SLOC,
+        doc: "Blank lines under the code analyzer's syntax.",
+    },
+    MetricDef {
+        name: "logical_words",
+        owner: AnalysisSet::WORDS_ONLY,
+        analyzer: TEXT_LOGICAL,
+        doc: "Normalized logical word volume.",
+    },
+    MetricDef {
+        name: "paragraphs",
+        owner: AnalysisSet::WORDS_ONLY,
+        analyzer: TEXT_LOGICAL,
+        doc: "Plain-text runs or reader-visible Markdown paragraphs.",
+    },
+    MetricDef {
+        name: "visible_words",
+        owner: AnalysisSet::WORDS_ONLY,
+        analyzer: MARKDOWN_PROSE,
+        doc: "Reader-visible Markdown words.",
+    },
+    MetricDef {
+        name: "visible_logical_words",
+        owner: AnalysisSet::WORDS_ONLY,
+        analyzer: MARKDOWN_PROSE,
+        doc: "Normalized reader-visible Markdown words.",
+    },
+    MetricDef {
+        name: "document_words",
+        owner: AnalysisSet::WORDS_ONLY,
+        analyzer: TEXT_LOGICAL,
+        doc: "Logical words after the document-type projection.",
+    },
+];
 
 /// The set of content analyzers a request enables.
 ///
@@ -54,6 +142,12 @@ impl AnalysisSet {
 
     /// Open no file; preserve the metadata-only behavior.
     pub const NONE: Self = Self(0);
+    /// Physical-line and raw-word unit.
+    pub const LINES_ONLY: Self = Self(Self::LINES);
+    /// Code unit, including its shared line pass.
+    pub const CODE_ONLY: Self = Self(Self::LINES | Self::CODE);
+    /// Word unit, including its shared line pass.
+    pub const WORDS_ONLY: Self = Self(Self::LINES | Self::WORDS);
     /// Every registered analyzer.
     pub const ALL: Self = Self(Self::KNOWN);
 
@@ -88,6 +182,11 @@ impl AnalysisSet {
     /// Whether logical and visible word metrics are requested.
     pub const fn includes_words(self) -> bool {
         self.0 & Self::WORDS != 0
+    }
+
+    /// Whether this request includes every unit in `other`.
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
     }
 
     /// Stable on-disk and fingerprint encoding.
@@ -195,6 +294,45 @@ impl AnalysisSet {
     }
 }
 
+/// Content-derived classification evidence retained separately from name grouping.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ContentDetection {
+    /// Type suggested by the bounded content probe.
+    pub file_type: FileTypeId,
+    /// Broad family suggested by the bounded content probe.
+    pub family: ContentFamily,
+    /// Evidence source.
+    pub source: DetectionSource,
+    /// Strength of the evidence.
+    pub confidence: DetectionConfidence,
+    /// Orthogonal generated, vendored, and documentation markers.
+    pub flags: ClassificationFlags,
+}
+
+impl From<Classification> for ContentDetection {
+    fn from(value: Classification) -> Self {
+        Self {
+            file_type: value.file_type,
+            family: value.family,
+            source: value.source,
+            confidence: value.confidence,
+            flags: value.flags,
+        }
+    }
+}
+
+impl From<ContentDetection> for Classification {
+    fn from(value: ContentDetection) -> Self {
+        Self {
+            file_type: value.file_type,
+            family: value.family,
+            source: value.source,
+            confidence: value.confidence,
+            flags: value.flags,
+        }
+    }
+}
+
 /// Settings for one analysis pass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct AnalysisRequest {
@@ -271,6 +409,94 @@ pub struct LogicalWordStats {
     pub nonwide_chars: u64,
 }
 
+/// Metrics owned by the always-present line analyzer unit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct BasicMetrics {
+    /// Logical physical lines across admitted text files.
+    pub physical_lines: u64,
+    /// Whitespace-only lines.
+    pub blank_lines: u64,
+    /// Lines containing at least one non-whitespace character.
+    pub nonblank_lines: u64,
+    /// Whitespace-delimited words before document projection.
+    pub raw_words: u64,
+}
+
+/// Metrics owned by the code analyzer unit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct CodeMetrics {
+    /// Code-bearing lines.
+    pub code_lines: u64,
+    /// Comment-only lines.
+    pub comment_lines: u64,
+    /// Blank lines under the code analyzer's syntax.
+    pub code_blank_lines: u64,
+}
+
+/// Metrics owned by the word analyzer unit.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct WordMetrics {
+    /// Plain-text paragraph runs or visible Markdown paragraphs.
+    pub paragraphs: u64,
+    /// Reader-visible Markdown words.
+    pub visible_words: u64,
+    /// Additive logical-word sufficient statistics.
+    pub logical_word_stats: LogicalWordStats,
+    /// Reader-visible Markdown logical-word sufficient statistics.
+    pub visible_logical_word_stats: LogicalWordStats,
+}
+
+/// One analyzer unit's explicit coverage and optional successful value.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct AnalyzerOutcome<T> {
+    /// Why the unit did or did not produce a value.
+    coverage: CoverageReason,
+    /// Successful measured value; absent for every non-analyzed outcome.
+    value: Option<T>,
+}
+
+impl<T> AnalyzerOutcome<T> {
+    /// A successful analyzer result.
+    pub(crate) const fn analyzed(value: T) -> Self {
+        Self { coverage: CoverageReason::Analyzed, value: Some(value) }
+    }
+
+    /// A unit that could not produce a value for the named reason.
+    pub(crate) fn unavailable(coverage: CoverageReason) -> Self {
+        assert!(
+            !matches!(coverage, CoverageReason::Analyzed),
+            "an analyzed outcome must carry a value"
+        );
+        Self { coverage, value: None }
+    }
+
+    /// Coverage outcome for this unit.
+    pub const fn coverage(&self) -> CoverageReason {
+        self.coverage
+    }
+
+    /// Successful measured value, absent for every unavailable outcome.
+    pub const fn value(self) -> Option<T>
+    where
+        T: Copy,
+    {
+        self.value
+    }
+
+    pub(crate) fn from_parts(coverage: CoverageReason, value: Option<T>) -> Option<Self> {
+        if matches!(coverage, CoverageReason::Analyzed) == value.is_some() {
+            Some(Self { coverage, value })
+        } else {
+            None
+        }
+    }
+
+    /// Operational failures must be retried rather than treated as cache hits.
+    pub const fn is_reusable(&self) -> bool {
+        !matches!(self.coverage, CoverageReason::IoError | CoverageReason::ChangedDuringRead)
+    }
+}
+
 impl LogicalWordStats {
     pub(crate) fn add_assign(&mut self, other: Self) {
         self.wide_chars = self.wide_chars.saturating_add(other.wide_chars);
@@ -322,81 +548,6 @@ pub struct MetricValues {
     pub visible_logical_word_stats: LogicalWordStats,
 }
 
-impl MetricValues {
-    pub(crate) fn add_assign(&mut self, other: &Self) {
-        self.physical_lines = self.physical_lines.saturating_add(other.physical_lines);
-        self.blank_lines = self.blank_lines.saturating_add(other.blank_lines);
-        self.nonblank_lines = self.nonblank_lines.saturating_add(other.nonblank_lines);
-        self.raw_words = self.raw_words.saturating_add(other.raw_words);
-        self.code_lines = self.code_lines.saturating_add(other.code_lines);
-        self.comment_lines = self.comment_lines.saturating_add(other.comment_lines);
-        self.code_blank_lines = self.code_blank_lines.saturating_add(other.code_blank_lines);
-        self.paragraphs = self.paragraphs.saturating_add(other.paragraphs);
-        self.visible_words = self.visible_words.saturating_add(other.visible_words);
-        self.logical_word_stats.wide_chars =
-            self.logical_word_stats.wide_chars.saturating_add(other.logical_word_stats.wide_chars);
-        self.logical_word_stats.nonwide_tokens = self
-            .logical_word_stats
-            .nonwide_tokens
-            .saturating_add(other.logical_word_stats.nonwide_tokens);
-        self.logical_word_stats.nonwide_chars = self
-            .logical_word_stats
-            .nonwide_chars
-            .saturating_add(other.logical_word_stats.nonwide_chars);
-        self.visible_logical_word_stats.wide_chars = self
-            .visible_logical_word_stats
-            .wide_chars
-            .saturating_add(other.visible_logical_word_stats.wide_chars);
-        self.visible_logical_word_stats.nonwide_tokens = self
-            .visible_logical_word_stats
-            .nonwide_tokens
-            .saturating_add(other.visible_logical_word_stats.nonwide_tokens);
-        self.visible_logical_word_stats.nonwide_chars = self
-            .visible_logical_word_stats
-            .nonwide_chars
-            .saturating_add(other.visible_logical_word_stats.nonwide_chars);
-    }
-
-    pub(crate) fn sub_assign(&mut self, other: &Self) {
-        macro_rules! subtract {
-            ($field:ident) => {
-                self.$field = self.$field.saturating_sub(other.$field);
-            };
-        }
-        subtract!(physical_lines);
-        subtract!(blank_lines);
-        subtract!(nonblank_lines);
-        subtract!(raw_words);
-        subtract!(code_lines);
-        subtract!(comment_lines);
-        subtract!(code_blank_lines);
-        subtract!(paragraphs);
-        subtract!(visible_words);
-        self.logical_word_stats.wide_chars =
-            self.logical_word_stats.wide_chars.saturating_sub(other.logical_word_stats.wide_chars);
-        self.logical_word_stats.nonwide_tokens = self
-            .logical_word_stats
-            .nonwide_tokens
-            .saturating_sub(other.logical_word_stats.nonwide_tokens);
-        self.logical_word_stats.nonwide_chars = self
-            .logical_word_stats
-            .nonwide_chars
-            .saturating_sub(other.logical_word_stats.nonwide_chars);
-        self.visible_logical_word_stats.wide_chars = self
-            .visible_logical_word_stats
-            .wide_chars
-            .saturating_sub(other.visible_logical_word_stats.wide_chars);
-        self.visible_logical_word_stats.nonwide_tokens = self
-            .visible_logical_word_stats
-            .nonwide_tokens
-            .saturating_sub(other.visible_logical_word_stats.nonwide_tokens);
-        self.visible_logical_word_stats.nonwide_chars = self
-            .visible_logical_word_stats
-            .nonwide_chars
-            .saturating_sub(other.visible_logical_word_stats.nonwide_chars);
-    }
-}
-
 /// Why a requested file did or did not produce metrics.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum CoverageReason {
@@ -406,6 +557,8 @@ pub enum CoverageReason {
     Binary,
     /// Input was not valid UTF-8.
     InvalidUtf8,
+    /// A recognized Unicode byte-order mark names an encoding no analyzer decodes.
+    UnsupportedEncoding,
     /// No shipped analyzer accepts this type.
     Unsupported,
     /// File I/O failed; the human error is retained separately.
@@ -417,22 +570,55 @@ pub enum CoverageReason {
 /// Sparse analysis record for one regular file.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FileAnalysis {
-    /// Stable classification used for grouping.
-    pub classification: Classification,
     /// Metadata fingerprint this result describes.
     pub fingerprint: Fingerprint,
     /// Apparent bytes represented by the record.
     pub bytes: u64,
-    /// Requested profile that produced the record.
-    pub profile: AnalysisSet,
-    /// Analyzer, rule, and semantic-option identity.
-    pub provenance: ContentProvenance,
-    /// Additive metrics; zero when coverage is not `Analyzed`.
-    pub metrics: MetricValues,
-    /// Coverage outcome.
-    pub coverage: CoverageReason,
+    /// Bounded content evidence, kept separate from name-based grouping.
+    pub detection: ContentDetection,
+    /// Shared physical-line and raw-word outcome.
+    pub lines: AnalyzerOutcome<BasicMetrics>,
+    /// Code outcome when the request included the code unit.
+    pub code: Option<AnalyzerOutcome<CodeMetrics>>,
+    /// Word outcome when the request included the word unit.
+    pub words: Option<AnalyzerOutcome<WordMetrics>>,
     /// Optional path-specific failure detail.
     pub error: Option<String>,
+}
+
+impl FileAnalysis {
+    /// Whether optional unit slots exactly match the tier's requested analyzer set.
+    pub const fn matches_profile(&self, profile: AnalysisSet) -> bool {
+        self.code.is_some() == profile.includes_code()
+            && self.words.is_some() == profile.includes_words()
+    }
+
+    /// File-level operational failure, counted once even though it affects every unit.
+    pub const fn operational_failure(&self) -> Option<CoverageReason> {
+        match self.lines.coverage() {
+            CoverageReason::IoError => Some(CoverageReason::IoError),
+            CoverageReason::ChangedDuringRead => Some(CoverageReason::ChangedDuringRead),
+            CoverageReason::Analyzed
+            | CoverageReason::Binary
+            | CoverageReason::InvalidUtf8
+            | CoverageReason::UnsupportedEncoding
+            | CoverageReason::Unsupported => None,
+        }
+    }
+
+    /// Whether every retained requested unit is safe to reuse.
+    pub const fn is_reusable(&self) -> bool {
+        self.operational_failure().is_none()
+            && self.lines.is_reusable()
+            && match self.code {
+                Some(outcome) => outcome.is_reusable(),
+                None => true,
+            }
+            && match self.words {
+                Some(outcome) => outcome.is_reusable(),
+                None => true,
+            }
+    }
 }
 
 /// Owned immutable candidate captured before worker execution.
@@ -482,6 +668,10 @@ pub(crate) struct RestoreCandidate {
 pub(crate) struct AnalysisObservation {
     /// Candidate identity and expectation.
     pub candidate: AnalysisCandidate,
+    /// Analyzer set whose tier may accept the result.
+    pub profile: AnalysisSet,
+    /// Analyzer identity whose tier may accept the result.
+    pub provenance: ContentProvenance,
     /// Completed or skipped analysis record.
     pub analysis: FileAnalysis,
 }
@@ -499,7 +689,33 @@ pub(crate) enum AnalysisApplyOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::{AnalysisSet, LogicalWordStats};
+    use std::collections::HashSet;
+
+    use super::{AnalysisSet, AnalyzerOutcome, CoverageReason, LogicalWordStats, METRICS};
+
+    #[test]
+    #[should_panic(expected = "an analyzed outcome must carry a value")]
+    fn unavailable_outcome_cannot_claim_success() {
+        let _: AnalyzerOutcome<()> = AnalyzerOutcome::unavailable(CoverageReason::Analyzed);
+    }
+
+    #[test]
+    fn metric_registry_has_unique_names_and_one_requestable_owner_each() {
+        let mut names = HashSet::new();
+        for metric in METRICS {
+            assert!(names.insert(metric.name), "duplicate metric name {}", metric.name);
+            assert!(
+                matches!(
+                    metric.owner,
+                    AnalysisSet::LINES_ONLY | AnalysisSet::CODE_ONLY | AnalysisSet::WORDS_ONLY
+                ),
+                "{} has a non-unit owner {:?}",
+                metric.name,
+                metric.owner
+            );
+        }
+        assert_eq!(names.len(), 12);
+    }
 
     #[test]
     fn logical_words_derive_only_after_additive_stats_are_combined() {

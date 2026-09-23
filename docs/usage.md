@@ -13,7 +13,7 @@ fdu .
 
 This is the default report:
 
-- `tree` view
+- `list` view in `tree` format
 - allocated filesystem bytes
 - largest entries first
 - two directory levels
@@ -46,7 +46,8 @@ repeated filesystem walks.
 
 | View | Answer |
 | --- | --- |
-| `tree` | Directory hierarchy and recursive sizes |
+| `list` | Matching entries; directory tree by default, flat paths or details on request |
+| `tree` | Compatibility preset for the directory hierarchy, including structured output |
 | `summary` | One total for the selected tree |
 | `families` | Broad code, prose, markup, data, binary, and unknown groups |
 | `types` | Detected file types |
@@ -55,8 +56,8 @@ repeated filesystem walks.
 | `documents` | Prose metrics; requires an enabled analyzer |
 | `largest` | Twenty largest regular files by default |
 | `recent` | Twenty most recently modified regular files by default |
-| `files` | Every selected entry in name order |
-| `full` | Every supported view except the unbounded `files` listing |
+| `files` | Compatibility preset: every selected entry in name order |
+| `full` | The existing bounded digest, excluding unbounded List/Files inventories |
 
 `largest` and `recent` are presets over `files`. `--sort` and `--limit` override their
 defaults. Use `--limit=all` where a bounded view should print every row.
@@ -72,6 +73,44 @@ In `documents`, it shows document-word share.
 Text output labels those two non-byte denominators; machine output always carries the
 exact `share_metric`, numerator, and denominator.
 
+## Choose a Format
+
+The ordinary output is unchanged: `fdu .`, `fdu . --view list`, and
+`fdu . --format tree` print the same bounded directory roll-ups.
+Files contribute to their directory’s totals; tree output does not add individual file
+leaves.
+
+| Format | List output |
+| --- | --- |
+| `tree` or `--tree` | Directory hierarchy; default depth 2 and ten children per directory |
+| `paths` | Every matching path, safely escaped, one per line |
+| `long` or `--long` | Every match with its size (allocated unless `--size` says otherwise), modification age, and path |
+| `json`, `jsonl`, `yaml` | Structured matching entries with exact metrics and bounds |
+| `text` | Automatic human presentation: tree for List, existing tables for grouped views |
+
+Flat lists use size-descending order with deterministic path ties; `--sort name` gives
+an alphabetic inventory.
+`--sort mtime --reverse` puts oldest entries first.
+Flat `--limit N` caps the whole list; in a tree it caps each directory’s children.
+`--limit all` removes row caps, and `--depth all` expands all directory levels.
+Depth has no effect on flat rows or subtree measurements.
+Paths and Long omit the performance footer; bounds, rule coverage, cache-only status,
+and watch invalidations are reported on stderr.
+Paths is a lossy line-oriented listing: control characters are escaped so one row stays
+one line, undecodable bytes become U+FFFD, and every other character, the platform
+separator and a literal backslash included, is written verbatim.
+Use machine output for exact native path identity when names contain undecodable bytes.
+
+Tree, Paths, and Long require one compatible list view; grouped/mixed views and Full
+accept automatic Text and machine formats.
+Largest/recent keep regular-file ranking and support Paths and Long; use List with Tree
+for directory roll-ups.
+Conflicting format flags are usage errors.
+Legacy Files keeps name ordering in flat formats; explicit Tree uses tree ordering.
+Legacy Tree preserves structured hierarchy output; explicit Paths/Long overrides that
+old tree presentation.
+Full keeps its bounded digest and does not acquire an unbounded listing.
+
 ## Select Entries
 
 Selection changes which retained entries contribute to a report.
@@ -83,11 +122,64 @@ Useful selections include:
 fdu . --include='*.{rs,toml}'
 fdu . --exclude='target/**'
 fdu . --min-size=10MiB
-fdu . --modified-since=1h --view=files --sort=mtime
+fdu . --kind=file --modified-since=1h --view=files --sort=mtime
 fdu . --kind=file --view=largest
 ```
 
 Quote glob patterns so the shell does not expand them before fdu sees them.
+Size and time bounds test a directory’s eligible subtree, not its inode, and a directory
+they match covers its contents in aggregate views.
+Without `--kind`, `fdu . --modified-since 7d` therefore lists every directory with
+activity this week at its full size beside the files that changed, and `--view summary`
+counts everything inside those directories; `--kind file` asks only for the files.
+
+### Find Old Environments and Build Directories
+
+Directory kind is a filter, just like name/path and modification time:
+
+```shell
+fdu ~/projects --kind dir --include .venv --modified-before 7d
+fdu ~/projects --kind dir --include node_modules --modified-before 30d --long
+fdu ~/projects --kind dir --include target --modified-before 30d --format paths
+fdu ~/projects --kind dir --include .venv --include venv \
+  --include node_modules --include target --modified-before 30d \
+  --format long --sort mtime --reverse
+fdu ~/projects --kind dir --include .venv --modified-before 30d --format json
+```
+
+Repeated includes form a union.
+A pattern without a slash matches a basename; one with a slash matches the path relative
+to the scan root. These names are conventions: `target` is Cargo’s default build
+directory, but its name alone does not prove ownership.
+
+Directory size sums eligible regular-file contents, excluding directory-inode and
+symlink bytes. Its modification time is the newest timestamp on the root or an eligible
+descendant, including directories and symlinks; an empty directory uses its own time.
+Long displays age relative to one request instant (`30d`, `2h`, or a negative age for a
+future timestamp). This measures modification activity, not access time or last use.
+`--size apparent` switches to logical file lengths without changing matching semantics.
+
+Exclusions apply throughout a matching directory’s subtree before size/age predicates.
+Excluding a directory excludes its contents; a matching parent cannot bring them back.
+`--exclude-ignored` subtracts ignored contents, while `--only-ignored` still traverses
+structural unignored ancestors to discover ignored matches.
+Matching a directory covers its eligible contents in summary and grouped views without
+requiring descendant names to match.
+Flat output emits matching entries only.
+Nested matching roots are all shown, so their sizes can overlap; summary/grouped totals
+count the covered union once.
+The scan root provides context and is not itself a selectable descendant.
+Hard links and shared extents keep fdu’s existing accounting; sizes do not promise
+uniquely reclaimable space.
+Symlinks are never followed.
+
+A directory whose subtree was not listed in full, at a `--scan-depth` boundary or in a
+scan that finished with errors, reports a lower-bound size and an `unknown` age in
+`long`, carries `complete: false` in machine output, and matches no modification bound.
+See the [machine-output reference](machine-output.md) for exact size, age, timestamp,
+and completeness fields.
+Changing selection or format reuses a retained index and does not change scan/cache
+identity.
 
 ### Select by `.gitignore`
 

@@ -147,6 +147,22 @@ impl Default for OpenOptions {
 }
 
 impl OpenOptions {
+    /// Construct a validated cold-progressive plan from these options and a delivery.
+    pub fn plan(&self, root: &Path, delivery: &crate::query::Delivery) -> Result<crate::Plan> {
+        let scan = self.clone().into_parts().0;
+        let basis = crate::query::Basis {
+            root: root.into(),
+            scope: scan.into(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let request = crate::query::Request::new(
+            basis,
+            crate::query::Query::default(),
+            std::time::SystemTime::now(),
+        );
+        crate::plan(&request, delivery, crate::Route::Opened).map_err(Error::InvalidRequest)
+    }
+
     fn into_parts(self) -> (ScanConfig, DiscoveryBudget, usize) {
         let scan = ScanConfig {
             max_depth: None,
@@ -157,7 +173,9 @@ impl OpenOptions {
             exclude_special: self.exclude_special,
             // The first opened-root scheduler is intentionally one parent-first
             // producer. Parallel I/O is an internal optimization, not a public
-            // semantic or tuning promise for this new API.
+            // semantic or tuning promise for this new API. `crate::plan` refuses a
+            // `Route::Opened` delivery that asks for another worker count or order, so
+            // nothing a caller asked for is dropped here.
             threads: Some(1),
             order: crate::ScanOrder::BreadthFirst,
             types: self.types,
@@ -190,6 +208,14 @@ impl std::fmt::Debug for OpenedIndex {
     }
 }
 
+#[cfg(test)]
+fn open_fixture(root: &Path, options: OpenOptions) -> Result<OpenedIndex> {
+    let mut delivery = crate::query::Delivery::new(crate::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 impl OpenedIndex {
     /// The basis every opened root holds, stated once for every route into one.
     ///
@@ -204,7 +230,7 @@ impl OpenedIndex {
     pub fn basis() -> crate::query::Basis {
         crate::query::Basis {
             root: PathBuf::new(),
-            scope: ScanConfig { read_controls: true, ..ScanConfig::default() },
+            scope: crate::query::Scope { read_controls: true, ..crate::query::Scope::default() },
             content: crate::content::AnalysisSet::NONE,
         }
     }
@@ -214,7 +240,17 @@ impl OpenedIndex {
     /// This constructor validates and binds the root and semantic configuration, starts
     /// cold progressive discovery, and captures optional observation before that
     /// baseline begins. No cache image or second mutable index is created here.
-    pub fn open(root: &Path, options: OpenOptions) -> Result<Self> {
+    pub fn open(plan: &crate::Plan, mut options: OpenOptions) -> Result<Self> {
+        if plan.route() != crate::Route::Opened {
+            return Err(Error::InvalidRequest(crate::query::RequestError::DeliveryUnsupported {
+                route: "opened",
+                reason: "expected an opened-root execution plan",
+            }));
+        }
+        let basis = plan.basis();
+        options.clone().into_parts().0.validate_for_scope(basis.scope.scope())?;
+        options.batch_size = plan.delivery().batch_size;
+        let root = basis.root.as_path();
         #[cfg(test)]
         let opened = Self::open_inner(root, options, Arc::default());
         #[cfg(not(test))]
@@ -391,6 +427,20 @@ impl OpenedIndex {
                     .budget
                     .max_files
                     .expect("resource refusal requires a configured file limit"),
+            );
+            if issues.len() < crate::MAX_RETAINED_ISSUES {
+                issues.push(issue);
+            } else {
+                omitted_issues = omitted_issues.saturating_add(1);
+            }
+        }
+        // A pass retired by newer verification closed its scope partial without an
+        // error of its own: the receipt has to say so, or a caller sees a partial
+        // state with nothing to retry.
+        if report.reconciliation.retry_required() {
+            let issue = crate::Issue::provider_failure(
+                None,
+                "reconciliation interrupted by newer verification; retry this refresh".to_string(),
             );
             if issues.len() < crate::MAX_RETAINED_ISSUES {
                 issues.push(issue);
@@ -1077,7 +1127,8 @@ fn run_discovery(
 ) -> Result<()> {
     let root_metadata =
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
-    let root_dev = crate::scan::attrs_from(&root_metadata).dev;
+    let root_dev =
+        crate::scan::root_device(root, &root_metadata).map_err(|source| Error::io(root, source))?;
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
@@ -1251,8 +1302,9 @@ fn discover_directory(
             continue;
         };
         crate::counters::bump(|c| c.dir_entries += 1);
-        let metadata = match crate::scan::listed_child_metadata(&item) {
-            Ok(Some(metadata)) => metadata,
+        let name = item.file_name();
+        let (kind, attrs) = match crate::scan::observe_dir_entry(&item) {
+            Ok(Some(observed)) => observed,
             Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
@@ -1263,8 +1315,6 @@ fn discover_directory(
                 continue;
             }
         };
-        let name = item.file_name();
-        let (kind, attrs) = crate::scan::observe(&metadata);
         let Some(prepared) = crate::scan::prepare_walk_entry(
             root,
             &directory.path,
@@ -2204,13 +2254,13 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("file.txt"), b"one").expect("fixture");
 
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
-        let (detached, _) = crate::open(
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
+        let (detached, _) = crate::open_fixture(
             root.path(),
-            &crate::OpenConfig {
+            &crate::OpenFixture {
                 cache_path: None,
                 policy: crate::CachePolicy::Off,
-                ..crate::OpenConfig::default()
+                ..crate::OpenFixture::default()
             },
         )
         .expect("blocking open");
@@ -2463,28 +2513,25 @@ mod tests {
     fn opened_root_rejects_invalid_scan_policy_and_nondirectories() {
         let root = tempfile::tempdir().expect("temp root");
         let options = OpenOptions { batch_size: 0, ..OpenOptions::default() };
-        assert!(matches!(
-            OpenedIndex::open(root.path(), options),
-            Err(Error::UnsupportedScanConfig(_))
-        ));
+        assert!(matches!(open_fixture(root.path(), options), Err(Error::UnsupportedScanConfig(_))));
 
         let file = root.path().join("file");
         std::fs::write(&file, b"x").expect("fixture");
-        assert!(matches!(OpenedIndex::open(&file, OpenOptions::default()), Err(Error::Io { .. })));
+        assert!(matches!(open_fixture(&file, OpenOptions::default()), Err(Error::Io { .. })));
 
         let zero_budget = OpenOptions {
             budget: DiscoveryBudget { max_files: Some(0) },
             ..OpenOptions::default()
         };
         assert!(matches!(
-            OpenedIndex::open(root.path(), zero_budget),
+            open_fixture(root.path(), zero_budget),
             Err(Error::UnsupportedScanConfig(_))
         ));
 
         let minimum = crate::MIN_JOURNAL_CAPACITY_BYTES;
         let below_minimum =
             OpenOptions { journal_capacity_bytes: minimum - 1, ..OpenOptions::default() };
-        let error = OpenedIndex::open(root.path(), below_minimum).expect_err("refused");
+        let error = open_fixture(root.path(), below_minimum).expect_err("refused");
         assert!(
             matches!(error, Error::JournalCapacityTooSmall { requested, minimum: stated }
                 if requested == minimum - 1 && stated == minimum),
@@ -2494,14 +2541,14 @@ mod tests {
         assert!(message.contains(&format!("at least {minimum} bytes")), "{message}");
 
         let at_minimum = OpenOptions { journal_capacity_bytes: minimum, ..OpenOptions::default() };
-        OpenedIndex::open(root.path(), at_minimum).expect("accepted").close().expect("close");
+        open_fixture(root.path(), at_minimum).expect("accepted").close().expect("close");
     }
 
     #[test]
     fn distinct_opens_have_distinct_live_identity() {
         let root = tempfile::tempdir().expect("temp root");
-        let first = OpenedIndex::open(root.path(), OpenOptions::default()).expect("first");
-        let second = OpenedIndex::open(root.path(), OpenOptions::default()).expect("second");
+        let first = open_fixture(root.path(), OpenOptions::default()).expect("first");
+        let second = open_fixture(root.path(), OpenOptions::default()).expect("second");
         assert_ne!(first.state.session, second.state.session);
         first.close().expect("first close");
         second.close().expect("second close");
@@ -2537,7 +2584,7 @@ mod tests {
         std::fs::write(root.path().join("alpha/deep/leaf.rs"), b"leaf").expect("leaf fixture");
         let options = OpenOptions { batch_size: 2, ..OpenOptions::default() };
 
-        let opened = OpenedIndex::open(root.path(), options.clone()).expect("opened root");
+        let opened = open_fixture(root.path(), options.clone()).expect("opened root");
         let state = wait_until_settled(&opened);
         assert_eq!(state.phase, crate::LifecyclePhase::Ready);
         assert_eq!(state.coverage, crate::Coverage::Complete);
@@ -2697,7 +2744,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("one"), b"1").expect("fixture");
         std::fs::write(root.path().join("two"), b"2").expect("fixture");
-        let opened = OpenedIndex::open(
+        let opened = open_fixture(
             root.path(),
             OpenOptions {
                 budget: DiscoveryBudget { max_files: Some(2) },
@@ -5285,7 +5332,7 @@ mod tests {
         std::fs::write(root.path().join("one"), b"1").expect("fixture");
         std::fs::write(root.path().join("two"), b"2").expect("fixture");
         std::fs::write(root.path().join("nested/deep"), b"deep").expect("deep fixture");
-        let opened = OpenedIndex::open(
+        let opened = open_fixture(
             root.path(),
             OpenOptions {
                 batch_size: 64,
@@ -5348,7 +5395,7 @@ mod tests {
     fn refresh_receipt_counts_verified_no_op_work_without_a_fact_commit() {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("stable.txt"), b"stable").expect("fixture");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
         assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
 
         let result = opened.refresh(&[PathBuf::from("stable.txt")]).expect("refresh");
@@ -5365,7 +5412,7 @@ mod tests {
     fn refresh_can_fill_remaining_file_budget_without_exceeding_it() {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("one"), b"1").expect("fixture");
-        let opened = OpenedIndex::open(
+        let opened = open_fixture(
             root.path(),
             OpenOptions {
                 budget: DiscoveryBudget { max_files: Some(2) },
@@ -5393,7 +5440,7 @@ mod tests {
         std::fs::write(root.path().join("visible/nested/leaf"), b"leaf").expect("fixture");
         std::fs::create_dir(root.path().join(".hidden")).expect("hidden directory");
         std::fs::write(root.path().join(".hidden/leaf"), b"hidden").expect("hidden fixture");
-        let opened = OpenedIndex::open(
+        let opened = open_fixture(
             root.path(),
             OpenOptions {
                 hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
@@ -5439,7 +5486,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::create_dir_all(root.path().join("parent/child")).expect("fixture directories");
         std::fs::write(root.path().join("parent/child/leaf"), b"leaf").expect("fixture");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
         assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
         std::fs::remove_dir_all(root.path().join("parent")).expect("remove old subtree");
         std::fs::write(root.path().join("parent"), b"replacement").expect("replacement file");
@@ -5482,7 +5529,7 @@ mod tests {
         let outside = tempfile::tempdir().expect("outside root");
         std::fs::create_dir_all(root.path().join("shadow/child")).expect("baseline ancestry");
         std::fs::write(root.path().join("good.txt"), b"before").expect("baseline file");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
         assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
 
         std::fs::remove_dir_all(root.path().join("shadow")).expect("remove ancestry");
@@ -5508,7 +5555,7 @@ mod tests {
     fn refresh_refusal_is_atomic_with_the_shared_file_budget() {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("one"), b"1").expect("fixture");
-        let opened = OpenedIndex::open(
+        let opened = open_fixture(
             root.path(),
             OpenOptions {
                 budget: DiscoveryBudget { max_files: Some(2) },
@@ -5803,7 +5850,7 @@ mod tests {
             ..crate::control::ControlLimits::default()
         };
         let options = OpenOptions { control_limits: limits, ..OpenOptions::default() };
-        let opened = OpenedIndex::open(root.path(), options).expect("open");
+        let opened = open_fixture(root.path(), options).expect("open");
         wait_until_settled(&opened);
 
         let diagnostics = diagnostics(&opened);
@@ -5900,7 +5947,7 @@ mod tests {
     fn a_directory_created_after_discovery_is_complete_once_refreshed() {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("before.txt"), b"b").expect("fixture");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("open");
         let settled = wait_until_settled(&opened);
         assert_eq!(settled.coverage, crate::Coverage::Complete);
 
@@ -5954,7 +6001,7 @@ mod tests {
     fn refresh_rejects_an_unbounded_input_before_filesystem_work() {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("same"), b"same").expect("fixture");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("opened root");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("opened root");
         assert_eq!(wait_until_settled(&opened).phase, crate::LifecyclePhase::Ready);
         let paths = vec![PathBuf::from("same"); MAX_REFRESH_PATHS + 2];
 
@@ -6006,6 +6053,56 @@ mod tests {
         opened.close().expect("close");
     }
 
+    #[test]
+    fn refresh_receipt_names_a_pass_retired_by_newer_verification() {
+        let controls = Arc::new(TestControls::default());
+        let (root, opened) = opened(Arc::clone(&controls));
+        std::fs::write(root.path().join("stable.txt"), b"stable").expect("fixture");
+        controls.gate(TestPoint::AfterRefreshVerification).arm();
+        let refresher = opened.clone();
+        let refresh = thread::spawn(move || refresher.refresh(&[PathBuf::from("")]));
+        controls.gate(TestPoint::AfterRefreshVerification).wait_reached();
+        // The held root pass keeps bounded evidence about newer passes: one entry per
+        // entry present when it began. One more distinct newer scope than that retires
+        // it, so its scope closes partial with no error of its own to report.
+        let budget = opened.state.index.len().expect("entry count");
+        for number in 0..=budget {
+            let path = PathBuf::from(format!("missing-{number}"));
+            let (epoch, _) = opened.state.index.begin_reconcile(&path).expect("begin newer");
+            opened
+                .state
+                .index
+                .finish_reconcile(
+                    &path,
+                    epoch,
+                    true,
+                    &[],
+                    &[],
+                    crate::index::ReconcileErrors {
+                        errors: &[],
+                        terminal: None,
+                        disproves_old: true,
+                    },
+                )
+                .expect("finish newer");
+        }
+        controls.gate(TestPoint::AfterRefreshVerification).release();
+
+        let result = refresh.join().expect("refresh thread").expect("refresh receipt");
+
+        assert_eq!(
+            result.state.coverage,
+            crate::Coverage::Partial(crate::CoverageReason::Inaccessible),
+            "the retired pass publishes its scope partial"
+        );
+        assert!(
+            result.issues.iter().any(|issue| issue.message.contains("retry")),
+            "the receipt must name the retry the retired pass earned: {:?}",
+            result.issues
+        );
+        opened.close().expect("close");
+    }
+
     /// One refresh over two subtrees, one of them unreadable: the readable subtree is
     /// verified on its own walk. One completion flag for the whole set marked it partial
     /// because its sibling could not be read.
@@ -6014,8 +6111,7 @@ mod tests {
     fn multi_path_refresh_closes_each_subtree_on_its_own_walk() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -6025,7 +6121,7 @@ mod tests {
         let blocked = root.path().join("blocked");
         std::fs::create_dir(&blocked).expect("blocked directory");
         std::fs::write(blocked.join("secret"), b"secret").expect("blocked fixture");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("open");
         let settled = wait_until_settled(&opened);
         assert_eq!(settled.phase, crate::LifecyclePhase::Ready);
         std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))
@@ -6073,7 +6169,7 @@ mod tests {
             }
             None
         });
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("open");
         let settled = wait_until_settled(&opened);
         drop(hook);
 
@@ -6094,7 +6190,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::create_dir(root.path().join("steady")).expect("steady directory");
         std::fs::write(root.path().join("steady/kept"), b"kept").expect("steady fixture");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_fixture(root.path(), OpenOptions::default()).expect("open");
         let settled = wait_until_settled(&opened);
         assert_eq!(settled.coverage, crate::Coverage::Complete);
         std::fs::create_dir(root.path().join("fresh")).expect("fresh directory");
@@ -6116,7 +6212,8 @@ mod tests {
             crate::Freshness::Partial
         );
         assert_eq!(index.directory_complete(Path::new("fresh")).expect("lookup"), Some(true));
-        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(true));
+        // Its enumerated child could not be verified, so the retained listing proof is withdrawn.
+        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(false));
         let lookup = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Lookup {
@@ -6202,7 +6299,7 @@ mod tests {
         let root = tempfile::tempdir().expect("temp root");
         std::fs::write(root.path().join("debug.log"), b"log").expect("fixture");
         std::fs::write(root.path().join("keep.rs"), b"keep").expect("fixture");
-        let opened = OpenedIndex::open(
+        let opened = open_fixture(
             root.path(),
             OpenOptions {
                 hidden: Some(Arc::new(crate::HiddenPolicy::prune_hidden::<[&str; 0], &str>([]))),
@@ -6259,8 +6356,7 @@ mod tests {
     fn inaccessible_baseline_enters_watching_with_partial_coverage() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -6274,7 +6370,7 @@ mod tests {
         let script = scripts.path().join("events.script");
         std::fs::write(&script, b"").expect("script");
 
-        let opened = OpenedIndex::open(root.path(), scripted_options(&script)).expect("open");
+        let opened = open_fixture(root.path(), scripted_options(&script)).expect("open");
         let deadline = std::time::Instant::now() + TEST_GATE_TIMEOUT;
         let state = loop {
             let state = opened.state.index.state().expect("read state");
@@ -6308,8 +6404,7 @@ mod tests {
     fn watching_after_a_clean_handoff_rederives_complete_coverage() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -6551,7 +6646,7 @@ mod tests {
         std::fs::write(root.path().join("src/present"), b"present").expect("fixture");
         let script = scripts.path().join("events.script");
         std::fs::write(&script, b"rescan\tsrc\n").expect("script");
-        let opened = OpenedIndex::open(root.path(), scripted_options(&script)).expect("open");
+        let opened = open_fixture(root.path(), scripted_options(&script)).expect("open");
 
         let state = wait_until_phase(&opened, crate::LifecyclePhase::Watching);
         assert_eq!(state.freshness, crate::Freshness::Fresh);
@@ -6588,7 +6683,7 @@ mod tests {
         std::fs::write(root.path().join("newdir/child"), b"child").expect("fixture");
         let script = scripts.path().join("events.script");
         std::fs::write(&script, b"create-dir\tnewdir\n").expect("script");
-        let opened = OpenedIndex::open(root.path(), scripted_options(&script)).expect("open");
+        let opened = open_fixture(root.path(), scripted_options(&script)).expect("open");
 
         wait_until_phase(&opened, crate::LifecyclePhase::Watching);
         let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
@@ -6780,8 +6875,7 @@ mod tests {
     fn an_unreadable_gap_is_walked_once_and_explains_itself() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -6852,8 +6946,7 @@ mod tests {
     fn repeated_unreadable_reconciles_retain_one_issue_per_boundary() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -7011,7 +7104,7 @@ mod tests {
         std::fs::write(&script, b"").expect("script");
         let mut options = scripted_options(&script);
         options.budget.max_files = Some(1);
-        let opened = OpenedIndex::open(root.path(), options).expect("open");
+        let opened = open_fixture(root.path(), options).expect("open");
 
         wait_until_phase(&opened, crate::LifecyclePhase::Stopped);
         let since = opened.state.index.since(crate::Clock::ZERO).expect("journal");
@@ -7062,7 +7155,7 @@ mod tests {
         let scripts = tempfile::tempdir().expect("script root");
         let script = scripts.path().join("events.script");
         std::fs::write(&script, b"teleport\tmissing\n").expect("script");
-        let error = OpenedIndex::open(root.path(), scripted_options(&script))
+        let error = open_fixture(root.path(), scripted_options(&script))
             .expect_err("invalid observer configuration must fail open");
         assert!(matches!(error, Error::WatchScript(_)));
     }
@@ -7077,8 +7170,19 @@ mod tests {
         let mut options = scripted_options(&script);
         options.one_filesystem = true;
 
-        let error = OpenedIndex::open(root.path(), options)
+        let error = open_fixture(root.path(), options)
             .expect_err("unsupported observed scope must fail open");
+        // A platform that cannot express this scope refuses it while planning,
+        // before the observer's narrower live-scope contract is considered.
+        #[cfg(not(unix))]
+        assert!(matches!(
+            error,
+            Error::InvalidRequest(crate::query::RequestError::ScopeUnsupported {
+                axis: crate::query::ScopeAxis::OneFilesystem,
+                ..
+            })
+        ));
+        #[cfg(unix)]
         assert!(matches!(error, Error::UnsupportedScanConfig(_)));
     }
 

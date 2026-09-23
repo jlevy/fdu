@@ -272,11 +272,13 @@ MUTATIONS: dict[str, Mutation] = {
     "unreadable": Mutation(_make_unreadable, needs_permissions=True, restore=_restore_readable),
 }
 
-# Routes that obtain the measured answer. `cli-report` is the command line; the others
-# are the Python package: `fdu.report`, `fdu.open(...).report`, and `fdu.scan(...).report`.
+# Routes that obtain the measured answer. The command line routes are one-shot reporting
+# and the initial report from a real watch. The others are the Python package:
+# `fdu.report`, `fdu.open(...).report`, and `fdu.scan(...).report`.
 CLI_ROUTE = "cli-report"
+CLI_WATCH_ROUTE = "cli-watch-initial"
 PY_ROUTES = ("py-report", "py-open", "py-scan")
-ROUTES = (CLI_ROUTE, *PY_ROUTES)
+ROUTES = (CLI_ROUTE, CLI_WATCH_ROUTE, *PY_ROUTES)
 
 
 @dataclass(frozen=True)
@@ -336,7 +338,7 @@ SUBSET = Tier(
         "symlink",
         "unreadable",
     ),
-    mutation_warmers=("W_default", "W_all"),
+    mutation_warmers=("W_default", "W_all", "W_code"),
     cross_warmers=("W_default", "W_all"),
 )
 
