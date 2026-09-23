@@ -27,7 +27,11 @@ fn open(
     delivery: &RequestDelivery,
 ) -> fdu_core::Result<(fdu_core::Index, fdu_core::OpenReport)> {
     fdu_core::open(
-        &Basis { root: root.to_path_buf(), scope: Default::default(), content: AnalysisSet::NONE },
+        &Basis {
+            root: root.to_path_buf(),
+            scope: fdu_core::query::Scope::default(),
+            content: AnalysisSet::NONE,
+        },
         delivery,
     )
 }
@@ -61,7 +65,7 @@ fn watching(delivery: &RequestDelivery) -> RequestDelivery {
 /// The request a watch answers: the basis its index was opened under, and this query.
 fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
     Request::new(
-        Basis { root: root.to_path_buf(), scope: Default::default(), content },
+        Basis { root: root.to_path_buf(), scope: fdu_core::query::Scope::default(), content },
         query,
         std::time::SystemTime::now(),
     )
@@ -405,7 +409,11 @@ fn a_session_refuses_an_analyzed_index() {
     let lines = AnalysisSet::NONE.with_lines();
     let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = fdu_core::open(
-        &Basis { root: dir.path().to_path_buf(), scope: Default::default(), content: lines },
+        &Basis {
+            root: dir.path().to_path_buf(),
+            scope: fdu_core::query::Scope::default(),
+            content: lines,
+        },
         &config,
     )
     .expect("open");

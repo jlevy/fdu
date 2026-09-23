@@ -589,7 +589,11 @@ mod tests {
 
     fn restore(index: &mut ContentIndex, path: PathBuf, record: FileAnalysis) -> bool {
         let identity = identity_for(lines());
-        let admitted = identity.admit(&identity).unwrap().record(record).unwrap();
+        let admitted = identity
+            .admit(&identity)
+            .expect("same identity")
+            .record(record)
+            .expect("matching record");
         index.commit_without_rollup(path, admitted)
     }
 
@@ -695,15 +699,17 @@ mod tests {
         let mut other = ContentIndex::default();
         let other_identity = identity_for(AnalysisSet::ALL);
         other.prepare(other_identity);
-        assert!(
-            !other.commit_without_rollup(PathBuf::from("a.rs"), proof.record(record()).unwrap())
-        );
+        assert!(!other.commit_without_rollup(
+            PathBuf::from("a.rs"),
+            proof.record(record()).expect("matching record")
+        ));
         assert!(other.is_empty());
 
         let mut exact = prepared();
-        assert!(
-            exact.commit_without_rollup(PathBuf::from("a.rs"), proof.record(record()).unwrap())
-        );
+        assert!(exact.commit_without_rollup(
+            PathBuf::from("a.rs"),
+            proof.record(record()).expect("matching record")
+        ));
         let projected = exact.admit(&wanted).expect("same request projects");
         assert_eq!(projected.file(Path::new("a.rs")), Some(&record()));
         let mut foreign = wanted.clone();

@@ -1005,7 +1005,17 @@ analyzer set, and the page denominator.
 | `crates/fdu/src/cli.rs` | `SaveOutcome`, `save_is_due`, `pending_after`, `save_if_pending`, `save_live`, `run_watch`, `allow_partial`, `run`, `finish` | Move throttling into `Session`; `accept_partial` in `Delivery`; exit status from `Plan::outcome` |
 | `crates/fdu-py/src/lib.rs` | `refresh`, `watch`, `PyWatch.__next__`, `open`, `scan`, `report_once` | Build a `Delivery`; `refresh` calls core `refresh`; `__next__` calls `persist_due`; the `Index.refresh` and `Index.watch` docstrings and the CHANGELOG say both write under `auto` |
 | `opened.rs` | `OpenedIndex::open` | Take a plan with `Route::Opened` |
-| `content/content_model.rs`, `content/content_analysis.rs`, `content/content_cache.rs` | `AnalysisRequest.workers`, `analyze_index`, `save_content_cache` | Workers move to `Delivery.workers` |
+| `content/content_model.rs`, `content/content_analysis.rs`, `content/content_cache.rs` | `AnalysisRequest`, `analyze_index`, `save_content_cache` | Every serving route derives the low-level analysis pass configuration from `Basis.content` and `Delivery.workers`; the executor still accepts `AnalysisRequest` |
+
+**Implemented configuration boundary:** `Basis.scope` contains only semantic settings.
+`Delivery` owns scan and analysis workers, batch size, and scan order.
+Execution derives the low-level `ScanConfig` and `AnalysisRequest` from those inputs;
+these executor configurations retain their operational fields without becoming a second
+source of serving policy or identity.
+`OpenConfig` has no production compatibility bridge.
+Opened roots accept a validated `Route::Opened` plan and reject cache or content
+delivery they cannot honor; they retain the architecture’s cold progressive discovery
+contract.
 
 **Call sites:** `OpenConfig` literals (36 in `lib.rs` tests, 10 in `execution.rs`,
 `cache.rs`, `opened.rs`, `crates/fdu-core/tests/watch_session_integration.rs`, five in

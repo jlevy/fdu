@@ -194,7 +194,7 @@ impl SaveTargets {
 }
 
 impl Plan {
-    pub(crate) fn writes(&self, run: &RunFacts) -> SaveTargets {
+    pub(crate) fn writes(&self, run: RunFacts) -> SaveTargets {
         let allowed = self.delivery.cache.writes() && self.delivery.cache_path.is_some();
         SaveTargets {
             metadata: allowed && run.entries_verified && run.entries_changed && !run.projected,
@@ -510,8 +510,8 @@ mod tests {
         fs::write(root.path().join(".gitignore"), b"ignored\n").expect("control");
         let observed = crate::query::Basis {
             root: root.path().into(),
-            scope: Default::default(),
-            content: Default::default(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
         };
         let delivery = Delivery::new(CachePolicy::Auto, Some(snapshot.clone()));
         crate::open(&observed, &delivery).expect("stronger snapshot");
@@ -543,7 +543,7 @@ mod tests {
         fs::write(&path, b"old\n").expect("old file");
         let basis = crate::query::Basis {
             root: root.path().into(),
-            scope: Default::default(),
+            scope: crate::query::Scope::default(),
             content: crate::content::AnalysisSet::NONE.with_lines(),
         };
         let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
@@ -581,8 +581,8 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache");
         let basis = crate::query::Basis {
             root: root.path().into(),
-            scope: Default::default(),
-            content: Default::default(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
         };
         let snapshot = cache.path().join("snapshot.fdu");
         let message = |delivery: &Delivery| {
@@ -605,8 +605,8 @@ mod tests {
     fn route_delivery_matrix_rejects_contracts_the_route_cannot_execute() {
         let basis = crate::query::Basis {
             root: ".".into(),
-            scope: Default::default(),
-            content: Default::default(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
         };
         let request = Request::new(basis, Query::default(), SystemTime::now());
         for delivery in Delivery::enumerate() {
@@ -614,9 +614,9 @@ mod tests {
                 [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened]
             {
                 let result = plan(&request, &delivery, route);
-                let forbidden = (delivery.watch.is_some() || route == Route::Watch)
+                let forbidden = (delivery.watch.is_some()
+                    || matches!(route, Route::Watch | Route::Refresh))
                     && delivery.cache == CachePolicy::Only
-                    || route == Route::Refresh && delivery.cache == CachePolicy::Only
                     || route == Route::Opened
                         && (delivery.cache != CachePolicy::Off || delivery.watch.is_some());
                 assert_eq!(result.is_err(), forbidden, "{route:?} {delivery:?}");
@@ -658,8 +658,8 @@ mod tests {
                     let plan = Plan {
                         basis: crate::query::Basis {
                             root: ".".into(),
-                            scope: Default::default(),
-                            content: Default::default(),
+                            scope: crate::query::Scope::default(),
+                            content: crate::content::AnalysisSet::NONE,
                         },
                         route,
                         retained: RetainedState::FullIndex,
@@ -667,12 +667,12 @@ mod tests {
                         verify: Verify::Filesystem,
                         delivery: delivery.clone(),
                     };
-                    assert_eq!(plan.writes(&facts), expected, "{route:?} {delivery:?} {facts:?}");
+                    assert_eq!(plan.writes(facts), expected, "{route:?} {delivery:?} {facts:?}");
                     let unavailable = Plan {
                         delivery: Delivery { cache_path: None, ..delivery.clone() },
                         ..plan
                     };
-                    assert!(unavailable.writes(&facts).none());
+                    assert!(unavailable.writes(facts).none());
                 }
             }
         }

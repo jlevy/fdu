@@ -143,8 +143,8 @@ pub use crate::execution::{
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
-    AnalyzerProvenance, ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity,
-    Serves, SnapshotIdentity, serves_snapshot,
+    AnalyzerProvenance, ContentAdmission, ContentTierIdentity, ControlTierIdentity, EntryScope,
+    EntryTierIdentity, Serves, SnapshotIdentity, serves_snapshot,
 };
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, SaveOutcome, Session};
@@ -412,7 +412,7 @@ pub fn open_with_pending_save(
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
     let request =
         query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
-    let plan = plan(&request, &delivery, Route::Retained).map_err(Error::InvalidRequest)?;
+    let plan = plan(&request, delivery, Route::Retained).map_err(Error::InvalidRequest)?;
     execute(&plan, &request.basis, false)
         .map(|(index, report, pending, _diagnostics)| (index, report, pending))
 }
@@ -663,7 +663,7 @@ pub(crate) fn execute(
             projected,
         );
         let index = std::sync::Arc::new(index);
-        let pending = spawn_save(&index, &plan.delivery, plan.writes(&facts));
+        let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
         return Ok((
             index,
             OpenReport {
@@ -691,7 +691,7 @@ pub(crate) fn execute(
         basis.content.is_enabled().then(|| content::analyze_index(&mut index, analysis_request));
     let facts = run_facts(&index, basis, delivery, true, true, false);
     let index = std::sync::Arc::new(index);
-    let pending = spawn_save(&index, &plan.delivery, plan.writes(&facts));
+    let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
     Ok((
         index,
         OpenReport {
@@ -744,7 +744,7 @@ pub(crate) fn persist_index(index: &Index, plan: &Plan) -> Result<bool> {
             && serves_snapshot(header.identity, index.snapshot_identity())
                 == Serves::ProjectControlsOff
     });
-    let writes = plan.writes(&run_facts(index, &basis, delivery, true, true, projected));
+    let writes = plan.writes(run_facts(index, &basis, delivery, true, true, projected));
     let Some(path) = delivery.cache_path.as_ref() else {
         return Ok(false);
     };

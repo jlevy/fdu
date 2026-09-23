@@ -291,10 +291,10 @@ impl<'a> ContentAdmission<'a> {
             .then_some(AdmittedRecord { identity: self.identity, record })
     }
 
-    pub(crate) fn project<'c>(
+    pub(crate) fn project(
         self,
-        content: &'c crate::content::ContentIndex,
-    ) -> Option<ContentProjection<'c>> {
+        content: &crate::content::ContentIndex,
+    ) -> Option<ContentProjection<'_>> {
         let _admission = self.identity.admit(content.identity()?)?;
         Some(ContentProjection { content })
     }
