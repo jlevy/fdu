@@ -338,7 +338,7 @@ SUBSET = Tier(
         "symlink",
         "unreadable",
     ),
-    mutation_warmers=("W_default", "W_all"),
+    mutation_warmers=("W_default", "W_all", "W_code"),
     cross_warmers=("W_default", "W_all"),
 )
 

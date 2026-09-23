@@ -47,6 +47,7 @@ stack pass.
 | One execution plan and persistence policy | `fdu-838z`; P2.3 children | Core-model Phase 2 item 3. All routes consume `Delivery` and `Plan`; read admission, writes, partial outcomes, refresh, and watch persistence have one owner. |
 | Windows validity and independent oracle | `fdu-6act`, `fdu-ns3o` | PR #98 and the stored-state validity contract. Oracle timestamps saturate correctly, zero remains zero, locked metadata follows the same documented fallback, and full file identity participates in validation. |
 | Opened Python diagnostic parity | `fdu-zjjt` | [Directory query formats](https://github.com/jlevy/fdu/blob/c3aeed8a0a04cecfc18c5719d93e61dbbe4ba449/docs/project/specs/active/plan-2026-09-20-directory-query-formats.md). Bounded Paths and Long reports, including incomplete discovery, expose the same diagnostics through opened and retained Python. |
+| Conformance harness integrity | `fdu-j7go`, `fdu-laeo`, `fdu-8whh` | Positive exact-cache serving controls reject a cache that never serves; the subset includes code-warmed mutations; registered exceptions cannot pass the gate; builds must establish artifact identity after changing worktrees. |
 | Final conformance | `fdu-xgjx`, `fdu-fjh1`, `fdu-tyvq` | Empty known-violation registry, independent metric and writer checks, all-platform validation, and a final packaged-artifact rehearsal. |
 
 The implementation beads already exist.
@@ -70,7 +71,8 @@ In particular:
 - A newer child verification must not invalidate an older ancestor pass’s evidence
   outside that child. Error arbitration and entry arbitration need the same scope rule.
 - Existing rendering and directory-query changes must compose without dropping either
-  contract or reusing a schema identifier for incompatible shapes.
+  contract. Document the combined unreleased report shape under the repository’s accepted
+  pre-1.0 schema policy.
 
 The execution-plan model is still required; recovering serializers and projection alone
 does not finish the core-model specification.
@@ -88,6 +90,8 @@ does not finish the core-model specification.
 - [ ] Implement the remaining execution-plan and persistence-policy work.
 - [ ] Fix opened Python diagnostics on PR #103 and compose its list contract with the
   shared answer model.
+- [ ] Strengthen positive serving and subset history checks, and require an empty
+  registry in the conformance gate.
 
 The dependency order is validity and request prerequisites, measured values, typed
 answers and provenance, serving-route state and projection, execution planning, then

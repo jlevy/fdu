@@ -172,9 +172,12 @@ def verify(
     full: bool,
     platform: str,
     cold_answers: int,
+    require_clean: bool = False,
 ) -> list[Failure]:
     """Every way `judged` and the registry disagree."""
     failures: list[Failure] = []
+    if require_clean and (registry.classes or registry.all_entries()):
+        failures.append(Failure("known violations are not allowed by the conformance gate"))
     cases = list(judged)
     if not cases:
         failures.append(Failure("run executed no cases"))

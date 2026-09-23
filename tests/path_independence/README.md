@@ -22,6 +22,7 @@ kind of outcome.
 | --- | --- |
 | `cold` | None, under `auto` on an empty cache |
 | `warm` | One warming request, then each policy |
+| `serves` | A complete explicit `refresh` of the identical request, then `only` through the command line and both cache-reading Python routes |
 | `selfwarm` | The request itself, then `auto`, `read-only`, and `only` in turn |
 | `mutation` | A warming request, then a file change: rewrite, touch, add, delete, `.gitignore` edits, a symlink retarget, or an unreadable directory |
 | `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan`, one-shot CLI reports, and the complete initial CLI watch report |
@@ -31,17 +32,23 @@ The watch route participates only where its delivery is supported: metadata anal
 full scan scope, and a cache policy other than `only`. Core request tests and the CLI
 golden corpus separately pin the named refusals for unsupported watch deliveries.
 The subset runs in `make check` and in CI on every pull request.
+It includes code-only warming before mutations, so a later lines request exercises the
+unsupported-language history that once changed the answer.
+The `serves` phase requires a cache-only answer marked stale; refusing every snapshot or
+silently scanning cold cannot pass it.
+Answer equivalence and positive serving controls protect opposite directions of the
+contract, and both are required.
 The full matrix runs in
 [its own workflow](../../.github/workflows/path-independence.yml) weekly, on demand, and
 on a pull request labelled `path-independence-full`.
 
 ## Known Violations
 
-[`known-violations.toml`](known-violations.toml) lists every difference the engine is
-known to have, grouped into classes that name the plan item that removes them.
-A run fails on a new difference, on a registered difference whose shape changed, and on
-a registered case that now conforms, so the registry shrinks as the fixes land.
-Read it like a golden: every entry is a wrong answer the code gives today.
+The conformance gate requires [`known-violations.toml`](known-violations.toml) to be
+empty, including its classes.
+Classifying or recording a regression cannot make the gate pass.
+The registry tools remain available to diagnose historical failures and merge platform
+evidence while a fix is in progress; their output is evidence, not a waiver.
 
 Each case has one class, the cause that clears last.
 A case with two causes shows as a changed shape when the first is fixed; re-read it
@@ -57,11 +64,12 @@ from a run, merge them, then read each new entry and give it a class:
 
 ```shell
 python tests/path_independence/registry.py judged-Linux.json judged-macOS.json judged-Windows.json
-make path-independence-full   # passes once every entry is classified
+make path-independence-full   # requires no violations or registered exceptions
 ```
 
-`make path-independence-record` does the same for the local platform alone, which is
-enough to classify a change while working; CI then shows what the other platforms add.
+`make path-independence-record` records the local platform for investigation.
+It still fails when any violation remains.
+Use the three CI recordings to establish that the registry can be emptied.
 
 ## Running It
 

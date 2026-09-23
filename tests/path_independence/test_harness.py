@@ -13,6 +13,7 @@ import unittest
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -209,6 +210,47 @@ class CompareTests(unittest.TestCase):
                 verdict = compare(cli(answer()), crash, policy="only")
                 self.assertEqual(verdict.kind, "outcome_class")
 
+    def test_an_exact_seed_must_serve_instead_of_refusing_or_scanning(self) -> None:
+        oracle = cli(answer())
+        miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+        cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+        fresh = cli(answer(provenance={"source": "cache_only", "freshness": "fresh"}))
+        self.assertFalse(compare(oracle, miss, policy="only", must_serve=True).allowed)
+        self.assertFalse(compare(oracle, oracle, policy="only", must_serve=True).allowed)
+        self.assertFalse(compare(oracle, fresh, policy="only", must_serve=True).allowed)
+        self.assertEqual(compare(oracle, cached, policy="only", must_serve=True).kind, "same")
+
+    def test_cache_contract_phase_catches_a_cache_that_never_serves(self) -> None:
+        import matrix
+        from fixture import FixtureFacts
+        from runner import MatrixRun, Surfaces, Workspace
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = MatrixRun(
+                matrix.SUBSET,
+                Surfaces(Path("unused-fdu"), Path("unused-python")),
+                Workspace(base),
+                FixtureFacts(base / "tree", False, False),
+            )
+            run.cold = {request: cli(answer()) for request in matrix.SUBSET.requests}
+            cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+            miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+            with patch("runner.run_cli", return_value=cli(answer())):
+                with patch("runner.run_route", return_value=cached):
+                    healthy = run.phase_cache_contract()
+                with patch("runner.run_route", return_value=miss):
+                    broken = run.phase_cache_contract()
+            self.assertEqual(len(healthy), 18)
+            self.assertEqual(len(broken), len(healthy))
+            self.assertTrue(all(case.verdict.allowed for case in healthy))
+            self.assertTrue(all(not case.verdict.allowed for case in broken))
+            with patch("runner.run_cli", return_value=miss), patch("runner.run_route") as measured:
+                unseeded = run.phase_cache_contract()
+                measured.assert_not_called()
+            self.assertEqual(len(unseeded), len(healthy))
+            self.assertTrue(all(not case.verdict.allowed for case in unseeded))
+
     def test_an_answer_where_cold_refused_is_an_outcome_difference(self) -> None:
         refused = cli(None, exit=2, stderr="fdu: requires content analysis")
         verdict = compare(refused, cli(answer()), policy="only")
@@ -288,6 +330,17 @@ class RegistryTests(unittest.TestCase):
 
     def test_a_conforming_run_passes(self) -> None:
         self.assertEqual(self.verify(self.conforming(), full=True), [])
+
+    def test_the_conformance_gate_rejects_even_matching_registered_failures(self) -> None:
+        from runner import CaseResult, RunResult, Verdict, judge
+
+        result = RunResult(tier="subset", cold_answers=1)
+        result.cases = [
+            CaseResult(key, Verdict("same" if allowed else "differs", paths))
+            for key, allowed, paths in self.conforming()
+        ]
+        reasons = [failure.reason for failure in judge(result, registry.parse(REGISTRY))]
+        self.assertEqual(reasons, ["known violations are not allowed by the conformance gate"])
 
     def test_an_unregistered_difference_fails(self) -> None:
         judged = [*self.conforming(), (D, False, ("reports[]",))]

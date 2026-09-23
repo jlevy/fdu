@@ -226,11 +226,14 @@ def compare(
     *,
     policy: str,
     earlier: Invocation | None = None,
+    must_serve: bool = False,
 ) -> Verdict:
     """Judge `measured` against the cold `oracle`.
 
     `earlier` is a cold run at the state before a mutation; under `--cache only` an answer
     equal to it is the allowed stale outcome, provided it says so.
+    `must_serve` is used after an explicit complete refresh of the identical request:
+    refusing that snapshot or quietly scanning instead is a broken cache contract.
     """
     if measured.outcome == "failure":
         if oracle.outcome == "failure":
@@ -241,7 +244,7 @@ def compare(
             ):
                 return Verdict("same")
             return Verdict("differs", ("<error>",), (oracle.stderr, measured.stderr))
-        if policy == "only" and is_cache_miss(measured):
+        if policy == "only" and is_cache_miss(measured) and not must_serve:
             return Verdict("refused")
         return Verdict("outcome_class", (f"<outcome:{oracle.outcome}>{measured.outcome}>",))
     if oracle.outcome == "failure":
@@ -250,6 +253,10 @@ def compare(
     assert oracle.answer is not None and measured.answer is not None
     oracle_content, _ = normalize(oracle.answer)
     measured_content, provenance = normalize(measured.answer)
+    if must_serve and provenance.get("source") != "cache_only":
+        return Verdict("differs", ("provenance.source",), ("expected cache_only",))
+    if must_serve and provenance.get("freshness") != "stale":
+        return Verdict("differs", ("provenance.freshness",), ("expected stale",))
     diff = json_diff(oracle_content, measured_content)
     if not diff:
         return Verdict("same")
@@ -519,6 +526,7 @@ class MatrixRun:
         result.cases += self.phase_cold()
         result.cold_answers = sum(1 for inv in self.cold.values() if inv.outcome != "failure")
         result.cases += self.phase_warm()
+        result.cases += self.phase_cache_contract()
         if self.tier.selfwarm:
             result.cases += self.phase_selfwarm()
         result.cases += self.phase_mutation()
@@ -600,6 +608,37 @@ class MatrixRun:
             return results
 
         return _parallel(one, self.tier.requests)
+
+    def phase_cache_contract(self) -> list[CaseResult]:
+        """A complete forced write must serve the identical unchanged request.
+
+        These positive controls complement answer equality: a cache that always misses
+        otherwise passes by scanning cold or returning an allowed refusal. Refresh
+        forces persistence even when Auto legitimately avoids writing a small tree.
+        """
+        requests = ("default", "nogi", "a_lines", "a_code", "a_words", "a_all")
+        routes = [matrix.CLI_ROUTE]
+        if self.surfaces.python is not None:
+            routes += ["py-report", "py-open"]
+
+        def one(case: tuple[str, str]) -> list[CaseResult]:
+            request_id, route = case
+            request = matrix.REQUESTS[request_id]
+            xdg = self.ws.fresh(f"serves-{route}-{request_id}")
+            try:
+                seed = run_cli(self.surfaces, self.facts.root, request, "refresh", xdg)
+                key = case_key("serves", route, "only", "refresh-self", "-", request_id)
+                if seed.outcome != "complete":
+                    verdict = Verdict("outcome_class", ("<refresh:not-complete>",))
+                    return [CaseResult(key, verdict, self.cold[request_id], seed)]
+                measured = run_route(self.surfaces, route, self.facts.root, request, "only", xdg)
+                oracle = self.cold[request_id]
+                verdict = compare(oracle, measured, policy="only", must_serve=True)
+                return [CaseResult(key, verdict, oracle, measured, (seed.command,))]
+            finally:
+                self.ws.discard(xdg)
+
+        return _parallel(one, ((request, route) for request in requests for route in routes))
 
     def phase_mutation(self) -> list[CaseResult]:
         """Warm, change the tree, then ask every request under every policy."""
@@ -821,6 +860,7 @@ def judge(
         full=result.complete_matrix,
         platform=sys.platform,
         cold_answers=result.cold_answers,
+        require_clean=True,
     )
     if out is not None and failures:
         write_diffs(result, {failure.key for failure in failures if failure.key}, out)

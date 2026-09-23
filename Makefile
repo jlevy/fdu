@@ -295,8 +295,8 @@ parity-update: build parity-venv $(NODE_INSTALL_STAMP)
 # cache history, cache policy, file changes since warming, or which surface asked. The
 # unit tests need no build. The matrix runs the debug binary and, for the Python routes,
 # an installed wheel -- the gate's .venv-smoke, or .venv-parity from `make parity-venv`
-# when run on its own. Known differences live in known-violations.toml, reviewed like a
-# golden; `path-independence-record` rewrites it from a full run for classification.
+# when run on its own. The gate requires an empty known-violations.toml;
+# `path-independence-record` records diagnostic evidence and cannot waive a failure.
 PATH_INDEPENDENCE_PYTHON ?= $(PARITY_PYTHON)
 check: PATH_INDEPENDENCE_PYTHON = $(SMOKE_PYTHON)
 PATH_INDEPENDENCE_ENV = FDU_BIN="$(CURDIR)/target/debug/fdu" \
