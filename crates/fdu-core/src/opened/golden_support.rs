@@ -160,6 +160,7 @@ impl SessionTrace {
             value = replace_integer_field(value, field, replacement);
         }
         value = replace_integer_after(value, "newest_mtime_ns: Some(", "[TIME]");
+        value = replace_integer_after(value, "observed_at_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "kind: Dir, attrs: Attrs { size: ", "[DIR_SIZE]");
         value
     }
@@ -224,6 +225,18 @@ mod normalization_tests {
         assert_eq!(
             normalize_debug_path_separators(rendered, '\\'),
             r#"Commit { path: "target/leaf.txt" }"#
+        );
+    }
+
+    #[test]
+    fn tier_observation_times_normalize_by_key_without_hiding_stable_values() {
+        let trace = SessionTrace::new("timestamp-keys", Path::new("fixture"));
+        assert_eq!(
+            trace.normalize(
+                "observed_at_ns: Some(-123), observed_at_ns: None, attempted: 123, sequence: 123"
+                    .into()
+            ),
+            "observed_at_ns: Some([TIME]), observed_at_ns: None, attempted: 123, sequence: 123"
         );
     }
 
@@ -530,7 +543,20 @@ impl ContractCoverage {
                         ProjectionResult::Report(_) => self.key("projection.report"),
                         ProjectionResult::Diagnostics(_) => self.key("projection.diagnostics"),
                         ProjectionResult::Limit(_) => self.key("projection.limit"),
-                        ProjectionResult::Refused(_) => self.key("projection.refused"),
+                        ProjectionResult::Refused(reason) => {
+                            self.key("projection.refused");
+                            self.key(match reason {
+                                crate::ProjectionRefusal::NotADirectory { .. } => {
+                                    "projection.refused.not_a_directory"
+                                }
+                                crate::ProjectionRefusal::ContinuationRecordLimit { .. } => {
+                                    "projection.refused.continuation_record_limit"
+                                }
+                                crate::ProjectionRefusal::ContinuationUnavailable => {
+                                    "projection.refused.continuation_unavailable"
+                                }
+                            });
+                        }
                     }
                 }
             }
