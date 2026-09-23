@@ -2,5 +2,6 @@
 *.golden text eol=lf
 tests/golden/** text eol=lf
 tests/golden/fixtures/**/*.tar.gz binary
+crates/fdu-core/src/testdata/yaml-scalar-corpus.yaml text eol=lf
 crates/fdu-py/** text eol=lf
 LICENSE text eol=lf
