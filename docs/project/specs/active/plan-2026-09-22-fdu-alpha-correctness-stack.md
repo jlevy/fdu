@@ -8,11 +8,12 @@
 
 ## Overview
 
-An audit of the open alpha PRs on 2026-09-22 found reviewed changes that can advance,
-three held PRs, and correctness fixes implemented locally but absent from every open PR.
-This plan connects the existing specifications and beads to a reviewable delivery stack.
-The [explicit core models plan](plan-2026-09-17-fdu-explicit-core-models.md) continues
-to own the behavioral contracts and implementation details.
+An audit of the open alpha PRs on 2026-09-22 (`fdu-drsf`) found reviewed changes that
+can advance, three held PRs, and correctness fixes implemented locally but absent from
+every open PR. This plan connects the existing specifications and beads to a reviewable
+delivery stack. The
+[explicit core models plan](plan-2026-09-17-fdu-explicit-core-models.md) continues to
+own the behavioral contracts and implementation details.
 
 The work is complete when the remaining correctness contracts are implemented,
 independently reviewed, published as dependent PRs, and validated on their final
@@ -69,7 +70,8 @@ The native GitHub stack #111 contains, in order,
 core-model layers form one dependent merge group: the measured-value layer alone does
 not provide the final wire contract.
 The published bases match the branch directly below each of the nine layers.
-Validation below is anchored at PR #117 commit `ff2b07da`.
+Earlier validation was anchored at PR #117 commit `ff2b07da`; final acceptance is
+anchored at the merge commit.
 
 PR #103 carries the opened-Python diagnostics fix.
 Its functional directory-query changes are ported into the final surface composition
@@ -154,9 +156,9 @@ with a claim of cross-set reuse.
 
 ### Remaining Acceptance
 
-- [x] Finish `fdu-0ssl`: distinct golden keys and corpus checks cover all three
-  projection refusals, including an actual oversized continuation beside a successful
-  lookup (`bdc1c7b2`, published through `3a3ad5c8`).
+- [x] Implement `fdu-0ssl` (closes on merge): distinct golden keys and corpus checks
+  cover all three projection refusals, including an actual oversized continuation beside
+  a successful lookup (`bdc1c7b2`, published through `3a3ad5c8`).
 - [x] Implement and independently review `fdu-bwo2`: the composed full matrix found 12
   cases on each Unix platform where warm reconciliation retained directory-listing
   completeness after an unreadable boundary.
@@ -197,7 +199,7 @@ with a claim of cross-set reuse.
   nine jobs, including five wheels, source distribution, crate packaging, and artifact
   inspection.
 - [ ] Complete release end-to-end verification required by `fdu-tyvq` on the final
-  commits. Current-head CI still needs the prepared fixture fixes and a green rerun.
+  commits. Depends on green CI at the final merge commit.
 
 The focused audit preceded the composed matrix finding `fdu-bwo2` above.
 Accepted scope deferrals and performance work remain separate; passing focused tests or
@@ -212,7 +214,8 @@ description must state that boundary.
 ### Published Review Fixes
 
 The layer reviews published on 2026-09-22 found no blockers.
-The fixes, each with its own delta review, are:
+The Medium and High fixes, each with its own delta review, are below; the Low fixes and
+deferrals are recorded in `fdu-d237`.
 
 - Windows walks read the root’s volume once instead of demanding a consistent
   observation of a directory whose children are changing, retry a torn entry
@@ -225,7 +228,7 @@ The fixes, each with its own delta review, are:
 - Opened roots refuse delivery fields they cannot honor (`fdu-yonh`); a refresh repeats
   an owed metadata write (`fdu-9kk8`); `Plan::admit` is the one admission decision
   (`fdu-ftsh`) (#115).
-- A serving control fails when both runs fail (`fdu-gzd1`, #116).
+- A serving control fails when either run fails, even identically (`fdu-gzd1`, #116).
 - The draft-schema rule, CHANGELOG notes, and examples (`fdu-9vkc`), and this plan’s
   evidence (`fdu-9mn0`) (#117).
 
@@ -240,8 +243,8 @@ The fixes, each with its own delta review, are:
 - [x] Carry current main’s fixes forward without restoring obsolete test baselines,
   deleting newer guards, or rewriting commits cited by performance evidence.
   Main commit `11a6dc31` is an ancestor of the composed candidate.
-- [ ] Finish current-head CI and the final platform checks for every published layer
-  after the prepared fixture fixes.
+- [ ] Finish current-head CI and the final platform checks for every published layer at
+  the final merge commits.
 - [ ] Update the core-model specification, work index, and beads from actual evidence.
 
 The performance composition beads `fdu-qx0e` and `fdu-8fax` concern separate performance
