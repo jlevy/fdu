@@ -964,6 +964,12 @@ impl ReconcileReport {
             && !self.retry_required
     }
 
+    /// True when a newer verification retired this pass's bounded evidence before it
+    /// closed, so its scope is published partial and must be walked again.
+    pub(crate) const fn retry_required(&self) -> bool {
+        self.retry_required
+    }
+
     /// The directories whose listings this pass can vouch for, taken out of the report.
     ///
     /// None when a conditional commit lost a race or was refused: a child of any listed
