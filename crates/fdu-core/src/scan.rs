@@ -4869,6 +4869,7 @@ struct DeferredReconcile {
     unchanged: u64,
     operations: Vec<Op>,
     discovered: Vec<(PathBuf, usize, RegionId)>,
+    listed_incomplete: Vec<PathBuf>,
 }
 
 enum DirectParallelOutcome {
@@ -4974,6 +4975,7 @@ fn reconcile_direct_parallel(
         let operation_count = deferred_count.load(std::sync::atomic::Ordering::Relaxed);
         let mut operations = Vec::with_capacity(operation_count);
         for worker in results {
+            report.listed_incomplete.extend(worker.listed_incomplete);
             report.scan.absorb(worker.scan);
             report.apply.unchanged += worker.unchanged;
             report.observations = report.observations.saturating_add(worker.unchanged);
@@ -5056,6 +5058,7 @@ fn reconcile_wave_worker(
         }
         let end = start.saturating_add(DIR_CLAIM).min(wave.len());
         for (rel_dir, depth, region) in &wave[start..end] {
+            let errors_before = result.scan.errors.len();
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
             let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
@@ -5250,6 +5253,11 @@ fn reconcile_wave_worker(
             }
             control_read_failed |= listing_open_failed && had_control;
             result.scan.errors.append(&mut control_errors);
+            if index.directory_complete(rel_dir) != Some(true)
+                && result.scan.errors.len() == errors_before
+            {
+                result.listed_incomplete.push(rel_dir.clone());
+            }
             for (name, entry_held) in vanished {
                 for removal in vanished_child_removals(rel_dir, &name, entry_held, &mut had_control)
                     .into_iter()
@@ -8478,7 +8486,59 @@ mod tests {
                 index_fingerprint(&index).is_empty(),
                 "neither warm nor cold may retain attributes it could not verify"
             );
+            assert_eq!(index.directory_complete(Path::new("")), Some(false));
+            assert_eq!(cold.directory_complete(Path::new("")), Some(false));
             assert!(!before.is_empty(), "the fixture began with retained facts");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_listing_withdraws_retained_completeness_and_recovers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        for workers in [1, 2] {
+            let dir = tempfile::tempdir().expect("root");
+            write_file(&dir.path().join("ancestor/blocked/unknown.txt"), b"unknown");
+            write_file(&dir.path().join("healthy/known.txt"), b"known");
+            let config = ScanConfig { threads: Some(workers), ..ScanConfig::default() };
+            let (mut warm, baseline) = scan_into_index(dir.path(), &config).expect("baseline");
+            assert!(baseline.is_complete());
+            let blocked = dir.path().join("ancestor/blocked");
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny listing");
+            let probe = fs::read_dir(&blocked);
+            let mut commits = Vec::new();
+            let refreshed =
+                reconcile(&mut warm, &config, &mut |commit| commits.push(commit.clone()));
+            let cold = scan_into_index(dir.path(), &config);
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore");
+            assert_eq!(
+                probe.expect_err("real denied listing").kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            assert!(!refreshed.expect("partial refresh").is_complete());
+            let (cold, report) = cold.expect("partial cold scan");
+            assert!(!report.is_complete());
+            for index in [&warm, &cold] {
+                for path in ["", "ancestor", "healthy"] {
+                    assert_eq!(
+                        index.directory_complete(Path::new(path)),
+                        Some(true),
+                        "workers={workers}: {path}"
+                    );
+                }
+                assert_eq!(index.directory_complete(Path::new("ancestor/blocked")), Some(false));
+                assert_eq!(index.freshness_at(Path::new("ancestor")), crate::Freshness::Partial);
+            }
+            assert!(commits.iter().flat_map(|commit| &commit.state).any(|state| matches!(state,
+                crate::StateTransition::IndexState { current, .. } if current.coverage != crate::Coverage::Complete
+            )), "failure is published");
+            assert!(reconcile(&mut warm, &config, &mut |_| {}).expect("recovery").is_complete());
+            assert_eq!(warm.directory_complete(Path::new("ancestor/blocked")), Some(true));
+            assert_eq!(warm.state().coverage, crate::Coverage::Complete);
         }
     }
 
@@ -9118,7 +9178,7 @@ mod tests {
                     .any(|issue| issue.path.as_deref() == Some(Path::new("blocked")))
             );
             assert_eq!(index.freshness_at(Path::new("")), crate::Freshness::Partial);
-            assert_eq!(index.directory_complete(Path::new("")), Some(false));
+            assert_eq!(index.directory_complete(Path::new("")), Some(true));
             assert_eq!(index.directory_complete(Path::new("blocked")), Some(false));
             assert_eq!(index.freshness_at(Path::new("blocked")), crate::Freshness::Partial);
             assert!(index.lookup(Path::new("blocked/unknown.txt")).is_none());

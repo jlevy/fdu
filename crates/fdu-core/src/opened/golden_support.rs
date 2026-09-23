@@ -354,7 +354,9 @@ impl SessionModel {
                     assert_eq!(self.state, *previous, "index-state transition skipped");
                     self.state = *current;
                 }
-                StateTransition::Verified { .. } | StateTransition::DirectoryComplete { .. } => {}
+                StateTransition::Verified { .. }
+                | StateTransition::DirectoryComplete { .. }
+                | StateTransition::DirectoryIncomplete { .. } => {}
             }
         }
     }
@@ -637,6 +639,9 @@ impl ContractCoverage {
                 StateTransition::Verified { .. } => self.key("transition.verified"),
                 StateTransition::DirectoryComplete { .. } => {
                     self.key("transition.directory_complete");
+                }
+                StateTransition::DirectoryIncomplete { .. } => {
+                    self.key("transition.directory_incomplete");
                 }
                 StateTransition::IndexState { previous, current } => {
                     self.key("transition.index_state");
