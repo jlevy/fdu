@@ -71,6 +71,7 @@ mod execution;
 mod index;
 mod opened;
 mod platform_tuning;
+mod progress;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
@@ -141,6 +142,7 @@ pub use crate::execution::{
     Load, OutcomeClass, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
     prepare_report_with_scan_diagnostics,
 };
+pub use crate::progress::{Progress, ProgressPhase, ProgressSnapshot};
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
     AnalyzerProvenance, ContentAdmission, ContentTierIdentity, ControlTierIdentity, EntryScope,

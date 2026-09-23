@@ -219,6 +219,18 @@ pub struct ScanConfig {
     /// are part of [`ScanScope`] and a snapshot taken under other limits is not reused.
     /// Ignored when control state is not observed.
     pub control_limits: crate::control::ControlLimits,
+    /// Where to report how much of the walk has been done, or `None` to report nothing.
+    ///
+    /// An observer rather than a knob: it changes neither which observations a walk
+    /// produces nor how it produces them, so it is no part of [`ScanScope`] or of any
+    /// snapshot identity, and two configs that differ only here are the same scan.
+    /// Honoured by every walker in this module -- the cold scans, the summary fold,
+    /// [`revalidate`], and each `reconcile` entry point -- which enter
+    /// [`ProgressPhase::Scanning`](crate::ProgressPhase) or
+    /// [`ProgressPhase::Revalidating`](crate::ProgressPhase) and add their counts once
+    /// per chunk of directories, never per entry. See [`crate::Progress`] for what the
+    /// counts mean and what holds when a walk returns.
+    pub progress: Option<crate::Progress>,
 }
 
 impl Default for ScanConfig {
@@ -235,6 +247,7 @@ impl Default for ScanConfig {
             types: None,
             read_controls: crate::query::Request::DEFAULTS.read_controls,
             control_limits: crate::query::Request::DEFAULTS.control_limits,
+            progress: None,
         }
     }
 }
@@ -472,6 +485,51 @@ impl ScanReport {
             self.files_walked += 1;
             self.bytes_walked += attrs.size;
         }
+    }
+}
+
+/// One walker's running share of the progress counters.
+///
+/// Each walker keeps its own [`ScanReport`]; this remembers how much of that report it
+/// has already added to the shared [`crate::Progress`] cells, so each addition is the
+/// difference since the last. It lives on the worker's stack beside the report rather
+/// than inside it, so a report absorbed into another never carries a stale baseline.
+struct ProgressTally<'a> {
+    progress: Option<&'a crate::Progress>,
+    directories: u64,
+    files: u64,
+    bytes: u64,
+}
+
+impl<'a> ProgressTally<'a> {
+    const fn new(progress: Option<&'a crate::Progress>) -> Self {
+        Self { progress, directories: 0, files: 0, bytes: 0 }
+    }
+
+    /// Add what `report` has counted since the last call.
+    ///
+    /// The one `Option` check is the whole cost when no handle is attached. Called once
+    /// per chunk of directories a walker hands over, never per entry.
+    fn flush(&mut self, report: &ScanReport) {
+        let Some(progress) = self.progress else { return };
+        let directories = report.dirs_read - self.directories;
+        let files = report.files_walked - self.files;
+        let bytes = report.bytes_walked - self.bytes;
+        if directories != 0 || files != 0 || bytes != 0 {
+            progress.add_walked(directories, files, bytes);
+            self.directories = report.dirs_read;
+            self.files = report.files_walked;
+            self.bytes = report.bytes_walked;
+        }
+    }
+
+    /// Treat everything `report` holds as already added.
+    ///
+    /// For a walker that continues a report whose counts other workers added themselves.
+    fn skip_to(&mut self, report: &ScanReport) {
+        self.directories = report.dirs_read;
+        self.files = report.files_walked;
+        self.bytes = report.bytes_walked;
     }
 }
 
@@ -1588,6 +1646,9 @@ fn scan_internal(
     sink_mode: SinkMode,
 ) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
     config.validate()?;
+    if let Some(progress) = &config.progress {
+        progress.enter(crate::ProgressPhase::Scanning);
+    }
     let root_meta = {
         crate::counters::bump(|c| c.stats += 1);
         fs::symlink_metadata(root)
@@ -1632,6 +1693,15 @@ fn scan_internal(
     let walk_started = std::time::Instant::now();
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
+    let mut tally = ProgressTally::new(config.progress.as_ref());
+    // Every batch leaves through here, so the batch is where the serial walk reports
+    // its progress: the handoff the consumer already pays for, never the entry.
+    let mut emit = |ops: Vec<ObservationOp>, report: &mut ScanReport| {
+        let send_started = std::time::Instant::now();
+        sink(ScannerBatch::new(ops));
+        report.attribution.send_ns += elapsed_ns(send_started);
+        tally.flush(report);
+    };
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
@@ -1692,9 +1762,7 @@ fn scan_internal(
                 if let Some(control) = control {
                     batch.push(ObservationOp::unconditional(control));
                     if batch.len() >= config.batch_size {
-                        let send_started = std::time::Instant::now();
-                        sink(ScannerBatch::new(std::mem::take(&mut batch)));
-                        report.attribution.send_ns += elapsed_ns(send_started);
+                        emit(std::mem::take(&mut batch), &mut report);
                         batch.reserve(config.batch_size);
                     }
                 }
@@ -1707,17 +1775,13 @@ fn scan_internal(
                 attrs,
             }));
             if batch.len() >= config.batch_size {
-                let send_started = std::time::Instant::now();
-                sink(ScannerBatch::new(std::mem::take(&mut batch)));
-                report.attribution.send_ns += elapsed_ns(send_started);
+                emit(std::mem::take(&mut batch), &mut report);
                 batch.reserve(config.batch_size);
             }
             if let Some(control) = control {
                 batch.push(ObservationOp::unconditional(control));
                 if batch.len() >= config.batch_size {
-                    let send_started = std::time::Instant::now();
-                    sink(ScannerBatch::new(std::mem::take(&mut batch)));
-                    report.attribution.send_ns += elapsed_ns(send_started);
+                    emit(std::mem::take(&mut batch), &mut report);
                     batch.reserve(config.batch_size);
                 }
             }
@@ -1729,10 +1793,10 @@ fn scan_internal(
     }
 
     if !batch.is_empty() {
-        let send_started = std::time::Instant::now();
-        sink(ScannerBatch::new(batch));
-        report.attribution.send_ns += elapsed_ns(send_started);
+        emit(batch, &mut report);
     }
+    // A walk whose last directories filled no batch has counted them and sent nothing.
+    tally.flush(&report);
     // A serial walk has no coordination to attribute: wall is the loop, "send" is the
     // inline sink — which is the consumer actually running — and work is the rest.
     report.attribution.wall_ns = elapsed_ns(walk_started);
@@ -3040,6 +3104,7 @@ fn walk_worker_with<E: WalkEmission>(
     let _worker_guard = diagnostics.map(ScanDiagnosticsRecorder::worker_guard);
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
+    let mut tally = ProgressTally::new(config.progress.as_ref());
     let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
     let mut consumer_gone = false;
@@ -3179,6 +3244,9 @@ fn walk_worker_with<E: WalkEmission>(
         report.attribution.send_ns += chunk_send_ns;
         let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
         report.attribution.work_ns += chunk_work_ns;
+        // Progress is reported per chunk for the same reason timing is: the chunk is
+        // the unit of handoff, so it is the unit the shared counters are touched in.
+        tally.flush(&report);
 
         // Publish new work before releasing the claim so a worker that finds nothing
         // new does not hold work that others could be doing.
@@ -3201,6 +3269,9 @@ fn walk_worker_with<E: WalkEmission>(
     if !consumer_gone {
         emission.finish(sender, &mut report, diagnostics.map(AsRef::as_ref));
     }
+    // A worker that left mid-chunk because its consumer was gone still read what it
+    // read, and the report it returns says so.
+    tally.flush(&report);
     report.attribution.wall_ns = elapsed_ns(worker_started);
     report
 }
@@ -4042,6 +4113,9 @@ fn scan_detached_directories(
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
 ) -> Result<(ScanReport, DetachedIndexBuilder, Option<ScanDiagnostics>)> {
+    if let Some(progress) = &config.progress {
+        progress.enter(crate::ProgressPhase::Scanning);
+    }
     let root_metadata = {
         crate::counters::bump(|counts| counts.stats += 1);
         fs::symlink_metadata(root)
@@ -4203,7 +4277,11 @@ pub fn revalidate(
         ));
     }
     let root_dev = root_device(&root, &root_meta).map_err(|error| Error::io(&root, error))?;
+    if let Some(progress) = &config.progress {
+        progress.enter(crate::ProgressPhase::Revalidating);
+    }
     let mut report = ScanReport::default();
+    let mut tally = ProgressTally::new(config.progress.as_ref());
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
     if config.max_depth == Some(0) {
@@ -4368,11 +4446,15 @@ pub fn revalidate(
                 ));
             }
         }
+        // Per directory: an unchanged tree fills no batch, so the batch cannot be the
+        // unit here without the counters standing still for the whole walk.
+        tally.flush(&report);
     }
 
     if !batch.is_empty() {
         sink(Observation::from_ops(batch));
     }
+    tally.flush(&report);
     Ok(report)
 }
 
@@ -4664,6 +4746,9 @@ fn reconcile_target(
     sink: &mut dyn FnMut(&Commit),
 ) -> Result<ReconcileReport> {
     config.validate_for_scope(target.scope()?)?;
+    if let Some(progress) = &config.progress {
+        progress.enter(crate::ProgressPhase::Revalidating);
+    }
     let subtree = normalize_subtree(subtree)?;
     if config.max_depth.is_some_and(|maximum| subtree.components().count() > maximum) {
         return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
@@ -4748,6 +4833,7 @@ fn reconcile_target_inner(
     let start_depth = subtree.components().count();
     let mut report =
         ReconcileReport { reconcile_epoch: Some(started_at), ..ReconcileReport::default() };
+    let mut tally = ProgressTally::new(config.progress.as_ref());
     let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
@@ -4854,6 +4940,7 @@ fn reconcile_target_inner(
             if kind.is_dir() {
                 remove_known_children(target, subtree, config, &mut batch, sink, &mut report)?;
             }
+            tally.flush(&report.scan);
             return Ok(report);
         }
     }
@@ -4867,6 +4954,11 @@ fn reconcile_target_inner(
                     report = prefix;
                     report.reconcile_epoch = Some(started_at);
                     retry_frontier = Some(remaining);
+                    // The wave workers reported the prefix themselves, and the wave
+                    // that overflowed as well: progress counts that wave's reads twice,
+                    // once there and once as the serial retry rereads it, while this
+                    // report counts each directory once. Work done, not the answer.
+                    tally.skip_to(&report.scan);
                 }
             }
         }
@@ -5100,10 +5192,13 @@ fn reconcile_target_inner(
                 report.listed_incomplete.push(rel_dir);
             }
         }
+        // Per directory, as in `revalidate`: an unchanged tree hands the sink nothing.
+        tally.flush(&report.scan);
     }
 
     flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
     report.scan.errors.sort_by_cached_key(ToString::to_string);
+    tally.flush(&report.scan);
     Ok(report)
 }
 
@@ -5292,6 +5387,7 @@ fn reconcile_wave_worker(
 ) -> DeferredReconcile {
     let _counter_guard = crate::counters::thread_flush_guard();
     let mut result = DeferredReconcile::default();
+    let mut tally = ProgressTally::new(config.progress.as_ref());
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
 
@@ -5549,6 +5645,9 @@ fn reconcile_wave_worker(
                 );
             }
         }
+        // Once per claimed chunk, as the cold walker reports, so a long wave on a slow
+        // filesystem moves the counters while it runs rather than when it lands.
+        tally.flush(&result.scan);
     }
     result
 }
@@ -9040,6 +9139,133 @@ mod tests {
         assert_eq!(candidate_report.scan.entries, oracle_report.scan.entries);
         assert_eq!(candidate_report.scan.dirs_read, oracle_report.scan.dirs_read);
         assert_eq!(index_fingerprint(&candidate), index_fingerprint(&serial_oracle));
+    }
+
+    /// The three counts a walk reports, in the order [`crate::ProgressSnapshot`] shows them.
+    fn walked(report: &ScanReport) -> (u64, u64, u64) {
+        (report.dirs_read, report.files_walked, report.bytes_walked)
+    }
+
+    fn reported(progress: &crate::Progress) -> (u64, u64, u64) {
+        let snapshot = progress.snapshot();
+        (snapshot.directories, snapshot.files, snapshot.bytes)
+    }
+
+    /// Each walker is a separate loop with its own reporting sites, so each is checked:
+    /// the detached cold walk, the streaming walk, the transient summary fold, the
+    /// reference revalidation, exclusive reconciliation serial and in parallel waves,
+    /// and shared-handle reconciliation. The tree is wide enough that every parallel
+    /// walker claims several chunks and the small batch size fills several batches, so a
+    /// walker that reported only its final state would still fail on the counts a
+    /// mid-walk chunk added twice or not at all.
+    #[test]
+    fn every_walker_reports_exactly_what_its_report_counts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for directory in 0..12 {
+            for file in 0..5 {
+                write_file(
+                    &dir.path().join(format!("d{directory}/f{file}.txt")),
+                    &vec![b'x'; directory * 5 + file + 1],
+                );
+            }
+        }
+        for threads in [1, 4] {
+            let context = format!("threads={threads}");
+            let progress = crate::Progress::new();
+            let cold_config = ScanConfig {
+                threads: Some(threads),
+                batch_size: 4,
+                progress: Some(progress.clone()),
+                ..ScanConfig::default()
+            };
+            let (mut index, cold) = scan_into_index(dir.path(), &cold_config).expect("cold scan");
+            assert_eq!(cold.dirs_read, 13, "{context}: the root and twelve children");
+            assert_eq!(progress.snapshot().phase, crate::ProgressPhase::Scanning, "{context}");
+            assert_eq!(reported(&progress), walked(&cold), "{context}: detached cold walk");
+
+            let progress = crate::Progress::new();
+            let config = ScanConfig { progress: Some(progress.clone()), ..cold_config.clone() };
+            let streamed = scan(dir.path(), &config, &mut |_| {}).expect("streaming scan");
+            assert_eq!(walked(&streamed), walked(&cold), "{context}");
+            assert_eq!(reported(&progress), walked(&streamed), "{context}: streaming walk");
+
+            let progress = crate::Progress::new();
+            let config = ScanConfig {
+                read_controls: false,
+                progress: Some(progress.clone()),
+                ..cold_config.clone()
+            };
+            let folded = scan_summary_fold(dir.path(), &config, &mut |_| {}).expect("fold");
+            assert_eq!(walked(&folded), walked(&cold), "{context}");
+            assert_eq!(reported(&progress), walked(&folded), "{context}: summary fold");
+
+            let progress = crate::Progress::new();
+            let config = ScanConfig { progress: Some(progress.clone()), ..cold_config.clone() };
+            let revalidated = revalidate(&index, &config, &mut |_| {}).expect("revalidate");
+            assert_eq!(progress.snapshot().phase, crate::ProgressPhase::Revalidating, "{context}");
+            assert_eq!(reported(&progress), walked(&revalidated), "{context}: revalidate");
+
+            // Changes, so reconciliation defers and applies operations rather than
+            // discarding every entry as unchanged.
+            write_file(&dir.path().join(format!("d0/new{threads}.txt")), b"added");
+            fs::remove_file(dir.path().join(format!("d1/f{}.txt", threads - 1))).expect("remove");
+            write_file(&dir.path().join("d2/f0.txt"), &vec![b'y'; 40 + threads]);
+            let progress = crate::Progress::new();
+            let config = ScanConfig { progress: Some(progress.clone()), ..cold_config.clone() };
+            let reconciled = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+            assert!(reconciled.apply.mutated(), "{context}: the changes were applied");
+            assert_eq!(progress.snapshot().phase, crate::ProgressPhase::Revalidating, "{context}");
+            assert_eq!(reported(&progress), walked(&reconciled.scan), "{context}: reconcile");
+
+            let handle = crate::IndexHandle::new(index);
+            let progress = crate::Progress::new();
+            let config = ScanConfig { progress: Some(progress.clone()), ..cold_config };
+            let shared = reconcile_handle(&handle, &config, &mut |_| {}).expect("shared");
+            assert_eq!(reported(&progress), walked(&shared.scan), "{context}: shared handle");
+        }
+    }
+
+    /// A wave that overflows its deferred-operation budget is thrown away and rewalked
+    /// serially. The report counts each directory once, as the logical pass does, and
+    /// progress counts the wave's reads both times, as the filesystem did them: work
+    /// done, not the answer. This is the one walker relation that is not equality, and
+    /// the difference is exactly the rewalked wave.
+    #[test]
+    fn progress_counts_a_rewalked_wave_twice_where_the_report_counts_it_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(&dir.path().join(format!("d{directory:04}/file.txt")), b"unchanged");
+        }
+        let parallel = ScanConfig { threads: Some(2), ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &parallel).expect("baseline");
+        let changed = b"changed after the first wave";
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(&dir.path().join(format!("d{directory:04}/file.txt")), changed);
+        }
+
+        let progress = crate::Progress::new();
+        let observed = ScanConfig { progress: Some(progress.clone()), ..parallel };
+        let report = reconcile_target_inner(
+            &mut ReconcileTarget::Direct(&mut index),
+            Path::new(""),
+            0,
+            &observed,
+            0,
+            &mut |_| {},
+        )
+        .expect("late-overflow reconciliation");
+
+        // The root wave changes nothing and completes; the second wave holds exactly
+        // one full wave of changed directories, overflows, and is rewalked with the one
+        // directory the wave left behind.
+        let rewalked = u64::try_from(RECONCILE_WAVE_DIRECTORIES).expect("fits");
+        let snapshot = progress.snapshot();
+        assert_eq!(snapshot.directories, report.scan.dirs_read + rewalked);
+        assert_eq!(snapshot.files, report.scan.files_walked + rewalked);
+        assert_eq!(
+            snapshot.bytes,
+            report.scan.bytes_walked + rewalked * u64::try_from(changed.len()).expect("fits")
+        );
     }
 
     #[test]
