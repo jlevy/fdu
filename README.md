@@ -148,10 +148,13 @@ An embedding that wants none of the command line’s dependencies depends on `fd
 instead.
 
 ```rust
-use fdu::{OpenConfig, open};
+use fdu::{CachePolicy, open};
+use fdu::query::{Basis, Delivery, Scope};
 use std::path::Path;
 
-let (index, report) = open(Path::new("."), &OpenConfig::default())?;
+let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: Default::default() };
+let delivery = Delivery::new(CachePolicy::Auto, None);
+let (index, report) = open(&basis, &delivery)?;
 let total = index.total();
 println!("{} files, {} bytes", total.files, total.bytes);
 
@@ -171,12 +174,13 @@ Opt into content analysis explicitly; metadata-only is the default:
 
 ```rust
 use fdu::content::AnalysisSet;
-use fdu::{OpenConfig, open};
+use fdu::{CachePolicy, open};
+use fdu::query::{Basis, Delivery, Scope};
 use std::path::Path;
 
-let mut config = OpenConfig::default();
-config.analysis.profile = AnalysisSet::ALL;
-let (index, report) = open(Path::new("."), &config)?;
+let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: AnalysisSet::ALL };
+let delivery = Delivery::new(CachePolicy::Auto, None);
+let (index, report) = open(&basis, &delivery)?;
 let analyzed = index
     .content_rollup(Path::new(""))
     .map_or(0, |content| content.total.lines.analyzed_files);
