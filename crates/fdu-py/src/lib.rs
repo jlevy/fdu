@@ -22,7 +22,7 @@ use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::content::AnalysisSet;
 use fdu_core::query::{
     AxisNames, Basis, Delivery, ReadSpec, Report, Request, RequestError, RequestSpec, TreeStatus,
     ViewSpec, WatchDelivery, parse_cache_policy, parse_kind,
@@ -227,7 +227,7 @@ impl PyIndex {
     /// long a single wait blocks before yielding an empty batch.
     #[pyo3(signature = (
         *,
-        interval = 2.0,
+        interval = WatchDelivery::DEFAULT_INTERVAL.as_secs_f64(),
         views = None,
         include = None,
         exclude = None,
@@ -491,12 +491,6 @@ impl PyIndex {
         )?;
         fdu_core::query::report(&self.inner, &request, now).map_err(to_py_err)
     }
-
-    /// The analysis pass this index's basis asks for, with the worker count it was opened
-    /// under.
-    fn analysis_request(&self) -> AnalysisRequest {
-        AnalysisRequest { profile: self.basis.content, workers: self.delivery.workers.analysis }
-    }
 }
 
 /// The request model's refusal, in the Python API's words.
@@ -749,6 +743,11 @@ impl PyWatch {
         // The GIL is released for the whole wait: this blocks for up to `timeout`, and
         // holding the GIL across it would freeze every other Python thread.
         let batch = py.detach(|| session.next_batch(self.timeout)).map_err(to_py_err)?;
+        let saved = py.detach(|| session.persist_due(std::time::Instant::now()));
+        if let fdu_core::SaveOutcome::Failed(error) = saved {
+            py.import("warnings")?
+                .call_method1("warn", (format!("cache persistence failed: {error}"),))?;
+        }
 
         let list = PyList::empty(py);
         if let Some(batch) = batch {
@@ -1340,6 +1339,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // The defaults table, so the Python models state one default rather than a second copy
     // of it: `Query.words_per_page` and `Selection.size` read these.
     m.add("DEFAULT_WORDS_PER_PAGE", Request::DEFAULTS.words_per_page)?;
+    m.add("DEFAULT_WATCH_INTERVAL_SECONDS", WatchDelivery::DEFAULT_INTERVAL.as_secs_f64())?;
     m.add("DEFAULT_SIZE", Request::DEFAULTS.size.label())?;
     m.add("DEFAULT_READ_CONTROLS", Request::DEFAULTS.read_controls)?;
     m.add("MAX_WATCH_INTERVAL_SECONDS", MAX_WATCH_INTERVAL_SECONDS)?;

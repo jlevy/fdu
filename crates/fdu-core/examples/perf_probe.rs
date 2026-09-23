@@ -536,7 +536,7 @@ fn report_for_render(arguments: &Arguments) -> ProbeResult<(Index, fdu_core::que
     let request = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
@@ -696,7 +696,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let read = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
@@ -1370,7 +1370,7 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let request = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,

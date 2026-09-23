@@ -498,7 +498,7 @@ class Query:
 class WatchOptions:
     """Configuration for an event-driven change feed."""
 
-    interval: float = 2.0
+    interval: float = _native.DEFAULT_WATCH_INTERVAL_SECONDS
     #: What the watch answers. A default `Query` takes the request model's own defaults, so
     #: a watch shows what a report of the same index shows; this named `files` of its own,
     #: which made one request mean two things depending on which door it came through.

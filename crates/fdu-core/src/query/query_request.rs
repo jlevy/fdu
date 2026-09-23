@@ -1686,7 +1686,7 @@ mod tests {
     fn basis(content: AnalysisSet, read_controls: bool) -> Basis {
         Basis {
             root: root().to_path_buf(),
-            scope: Scope { read_controls, ..ScanConfig::default() },
+            scope: Scope { read_controls, ..Scope::default() },
             content,
         }
     }

@@ -20,7 +20,7 @@ use fdu_core::query::{
 use fdu_core::query::Delivery as RequestDelivery;
 use fdu_core::session::{ChangeKind, Session};
 use fdu_core::watch::WatchConfig;
-use fdu_core::{CachePolicy, IndexHandle, ScanConfig};
+use fdu_core::{CachePolicy, IndexHandle};
 
 fn open(
     root: &Path,
@@ -481,7 +481,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
     let narrowed = Request::new(
         Basis {
             root: dir.path().to_path_buf(),
-            scope: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+            scope: fdu_core::query::Scope { max_depth: Some(2), ..Default::default() },
             content: AnalysisSet::NONE,
         },
         Query::default(),

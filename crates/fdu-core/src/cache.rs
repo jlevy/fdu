@@ -673,7 +673,7 @@ fn clear_leftover(path: &Path, kind: LeftoverKind) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CachePolicy, OpenFixture, open};
+    use crate::{CachePolicy, OpenFixture, open_fixture as open};
 
     /// Byte offset of the format version: it follows the eight-byte magic.
     const VERSION_OFFSET: usize = 8;

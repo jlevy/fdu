@@ -37,10 +37,12 @@
 //! detached image and never inherits that authority.
 //!
 //! ```no_run
-//! use fdu_core::{OpenConfig, open};
+//! use fdu_core::{CachePolicy, open};
+//! use fdu_core::query::{Basis, Delivery, Scope};
 //! use std::path::Path;
 //!
-//! let (index, report) = open(Path::new("."), &OpenConfig::default())?;
+//! let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: Default::default() };
+//! let (index, report) = open(&basis, &Delivery::new(CachePolicy::Auto, None))?;
 //! let total = index.total();
 //! println!("{} files, {} bytes ({:?})", total.files, total.bytes, report.path_taken);
 //! # Ok::<(), fdu_core::Error>(())
@@ -136,7 +138,7 @@ pub use crate::opened::{
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).
 pub use crate::execution::{
-    Load, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
+    Load, OutcomeClass, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
     prepare_report_with_scan_diagnostics,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
@@ -145,7 +147,7 @@ pub use crate::stored_state::{
     Serves, SnapshotIdentity, serves_snapshot,
 };
 #[cfg(feature = "watch")]
-pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
+pub use crate::watch_session::{Batch, Change, ChangeKind, SaveOutcome, Session};
 
 use crate::execution::{RunFacts, SaveTargets};
 use std::ffi::OsString;
@@ -170,34 +172,7 @@ pub(crate) struct OpenFixture {
 
 #[cfg(test)]
 impl OpenFixture {
-    /// Today's open configuration, composed from the basis and the delivery that carry a
-    /// request.
-    ///
-    /// One direction of a temporary bridge, and the only place it is spliced: the
-    /// execution plan model replaces `OpenFixture` with `Basis` and `Delivery`, and one
-    /// splice is one thing to delete rather than four. A basis rather than a whole
-    /// request, because opening a root is what a basis is for and no query has been named
-    /// yet on two of the routes that open one. Scan workers ride in the basis's scope and
-    /// content workers in the delivery, because that is where each waits until one
-    /// `Workers` takes both.
-    pub fn of(basis: &query::Basis, delivery: &query::Delivery) -> Self {
-        Self {
-            scan: basis.scope.scan_config(delivery),
-            cache_path: delivery.cache_path.clone(),
-            policy: delivery.cache,
-            analysis: content::AnalysisRequest {
-                profile: basis.content,
-                workers: delivery.workers.analysis,
-            },
-        }
-    }
-
-    /// The other direction, for a caller that still holds a configuration: the basis and
-    /// the delivery it spells, over `root`.
-    ///
-    /// The inverse of [`Self::of`] and deleted with it. Fixtures and probes that name one
-    /// configuration read it this way rather than each writing the division out, so the
-    /// two halves are divided in one place whichever way a caller crosses the bridge.
+    /// Compose model inputs for a unit-test fixture.
     pub fn split(&self, root: impl Into<PathBuf>) -> (query::Basis, query::Delivery) {
         (
             query::Basis {
@@ -287,11 +262,6 @@ impl CachePolicy {
     /// copied into every caller.
     pub fn writes(self) -> bool {
         matches!(self, Self::Auto | Self::Refresh)
-    }
-
-    /// Whether this policy may touch the filesystem at all.
-    fn scans(self) -> bool {
-        !matches!(self, Self::Only)
     }
 }
 
@@ -719,14 +689,14 @@ fn run_facts(
 ) -> RunFacts {
     let entries_verified = stored_state::entries_writable(index);
     let paired_entries = !entries_verified
-        && delivery
-            .cache_path
-            .as_ref()
-            .and_then(|path| snapshot::read_header(path).ok().flatten())
-            .is_some_and(|stored| {
-                stored.root == index.root_path()
-                    && stored.identity.entries == index.snapshot_identity().entries
-            });
+        && stored_state::content_tier_writable(index, || {
+            delivery
+                .cache_path
+                .as_ref()
+                .and_then(|path| snapshot::read_header(path).ok().flatten())
+                .filter(|stored| stored.root == index.root_path())
+                .map(|stored| stored.identity.entries)
+        });
     RunFacts {
         entries_verified,
         entries_changed,
@@ -1513,7 +1483,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn cache_only_serves_checksummed_native_non_utf8_names() {
-        use crate::execution::{RunFacts, SaveTargets};
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
 

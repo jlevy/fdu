@@ -64,6 +64,15 @@ pub enum Verify {
     Filesystem,
 }
 
+/// Whether an answer fulfills the caller's delivery contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutcomeClass {
+    /// A complete answer, or a partial answer the caller explicitly accepts.
+    Success,
+    /// An incomplete answer the caller did not accept.
+    Partial,
+}
+
 /// Validated policy shared by all engine execution routes.
 #[derive(Clone, Debug)]
 pub struct Plan {
@@ -75,6 +84,14 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Classify the answer using the caller's partial-answer policy.
+    pub fn outcome(&self, status: &TreeStatus) -> OutcomeClass {
+        if status.complete || self.delivery.accept_partial {
+            OutcomeClass::Success
+        } else {
+            OutcomeClass::Partial
+        }
+    }
     /// The lifecycle this plan executes.
     pub const fn route(&self) -> Route {
         self.route

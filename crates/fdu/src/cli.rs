@@ -528,7 +528,7 @@ pub struct Cli {
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "EXECUTION")]
+    #[arg(long, value_name = "DUR", default_value_t = format!("{}s", WatchDelivery::DEFAULT_INTERVAL.as_secs()), help_heading = "EXECUTION")]
     pub interval: String,
 
     /// Print help.
@@ -719,7 +719,11 @@ impl Cli {
             }
         }
 
-        Ok(if report.status.complete { RunOutcome::Complete } else { RunOutcome::Partial })
+        let plan = fdu_core::plan(&request, &delivery, fdu_core::Route::OneShot)?;
+        Ok(match plan.outcome(&report.status) {
+            fdu_core::OutcomeClass::Success => RunOutcome::Complete,
+            fdu_core::OutcomeClass::Partial => RunOutcome::Partial,
+        })
     }
 
     /// Whether the requested format is a machine format, which is never colorized.
@@ -1423,7 +1427,7 @@ fn run_with_io(
         stderr_is_terminal,
     )
     .enabled();
-    finish(result, cli.allow_partial, diagnostic, diagnostic_color)
+    finish(result, diagnostic, diagnostic_color)
 }
 
 fn write_styled(
@@ -1489,15 +1493,9 @@ fn strip_ansi(line: &str) -> String {
     out
 }
 
-fn finish(
-    result: anyhow::Result<RunOutcome>,
-    allow_partial: bool,
-    diagnostic: &mut dyn Write,
-    color: bool,
-) -> u8 {
+fn finish(result: anyhow::Result<RunOutcome>, diagnostic: &mut dyn Write, color: bool) -> u8 {
     match result {
         Ok(RunOutcome::Complete) => 0,
-        Ok(RunOutcome::Partial) if allow_partial => 0,
         Ok(RunOutcome::Partial) => 2,
         Err(error) if is_broken_pipe(&error) => 0,
         Err(error) if is_usage_error(&error) => {
@@ -1930,7 +1928,7 @@ mod tests {
             assert!(is_usage_error(&error), "{axis:?} must exit like the bad argument it is");
 
             let mut diagnostic = Vec::new();
-            assert_eq!(finish(Err(error), false, &mut diagnostic, false), 2);
+            assert_eq!(finish(Err(error), &mut diagnostic, false), 2);
             assert_eq!(
                 String::from_utf8(diagnostic).expect("diagnostics are UTF-8"),
                 format!("fdu: unsupported scan configuration: {printed}\n")
@@ -2630,14 +2628,13 @@ mod tests {
     #[test]
     fn run_outcomes_and_broken_pipes_have_stable_exit_codes() {
         let mut diagnostic = Vec::new();
-        assert_eq!(finish(Ok(RunOutcome::Complete), false, &mut diagnostic, false), 0);
-        assert_eq!(finish(Ok(RunOutcome::Partial), false, &mut diagnostic, false), 2);
-        assert_eq!(finish(Ok(RunOutcome::Partial), true, &mut diagnostic, false), 0);
+        assert_eq!(finish(Ok(RunOutcome::Complete), &mut diagnostic, false), 0);
+        assert_eq!(finish(Ok(RunOutcome::Partial), &mut diagnostic, false), 2);
 
         let broken_pipe =
             anyhow::Error::new(io::Error::new(io::ErrorKind::BrokenPipe, "reader closed"))
                 .context("render output");
-        assert_eq!(finish(Err(broken_pipe), false, &mut diagnostic, false), 0);
+        assert_eq!(finish(Err(broken_pipe), &mut diagnostic, false), 0);
         assert!(diagnostic.is_empty());
 
         let args = [OsString::from("fdu"), OsString::from("--help")];
