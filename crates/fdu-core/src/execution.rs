@@ -271,7 +271,7 @@ impl PerformanceSummary {
 /// view is an unfiltered summary, the scan observes no control state, and the policy does
 /// not require the snapshot to participate.  [`crate::open`] and live sessions still
 /// promise an index and therefore always plan full retention. Any future requirement the
-/// compact tier cannot prove falls closed to [`RetainedState::FullIndex`].
+/// compact tier cannot prove falls closed to `RetainedState::FullIndex`.
 ///
 /// Control observation is the caller's decision, not this planner's: a report's rows carry
 /// the ignored share of every size they show (fdu-elnn), so a scan that reads `.gitignore`
