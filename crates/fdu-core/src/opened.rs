@@ -1077,7 +1077,9 @@ fn run_discovery(
 ) -> Result<()> {
     let root_metadata =
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
-    let root_dev = crate::scan::attrs_from(&root_metadata).dev;
+    let root_dev = crate::scan::attrs_from(root, &root_metadata)
+        .map_err(|source| Error::io(root, source))?
+        .dev;
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
@@ -1251,8 +1253,9 @@ fn discover_directory(
             continue;
         };
         crate::counters::bump(|c| c.dir_entries += 1);
-        let metadata = match crate::scan::listed_child_metadata(&item) {
-            Ok(Some(metadata)) => metadata,
+        let name = item.file_name();
+        let (kind, attrs) = match crate::scan::observe_dir_entry(&item) {
+            Ok(Some(observed)) => observed,
             Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
@@ -1263,8 +1266,6 @@ fn discover_directory(
                 continue;
             }
         };
-        let name = item.file_name();
-        let (kind, attrs) = crate::scan::observe(&metadata);
         let Some(prepared) = crate::scan::prepare_walk_entry(
             root,
             &directory.path,
@@ -6014,8 +6015,7 @@ mod tests {
     fn multi_path_refresh_closes_each_subtree_on_its_own_walk() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -6259,8 +6259,7 @@ mod tests {
     fn inaccessible_baseline_enters_watching_with_partial_coverage() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -6308,8 +6307,7 @@ mod tests {
     fn watching_after_a_clean_handoff_rederives_complete_coverage() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -6780,8 +6778,7 @@ mod tests {
     fn an_unreadable_gap_is_walked_once_and_explains_itself() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");
@@ -6852,8 +6849,7 @@ mod tests {
     fn repeated_unreadable_reconciles_retain_one_issue_per_boundary() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
         let root = tempfile::tempdir().expect("temp root");

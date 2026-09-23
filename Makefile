@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -62,6 +62,39 @@ test: rust-test test-golden content-selfcheck yaml-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
+
+# The permission fixtures induce a real EACCES by removing read or search permission and
+# assert that it happened. A process not subject to mode bits — anything running as
+# root, the normal case inside a container or a Claude Code web session — reads the file
+# anyway, so the tests refuse to run those fixtures and panic rather than pass vacuously.
+# Each panic names the cause, but a dozen of them across three crates reads as a dozen
+# unrelated failures; the uv floor once cost a session the same way. Probe the way the
+# tests do — a mode-000 file this process can still read — and say it once, before any
+# test target runs. The opt-out is the one the tests honour, and CI leaves it unset so a
+# passing test proves its assertions ran. Windows has no mode bits to enforce, and the
+# fixtures are Unix-only there.
+permission-bits:
+	@case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) exit 0;; esac; \
+	if [ "$${FDU_TEST_ALLOW_NO_PERMISSION_BITS:-}" = 1 ]; then exit 0; fi; \
+	probe="$$(mktemp)" || exit 1; \
+	chmod 000 "$$probe"; \
+	if cat "$$probe" >/dev/null 2>&1; then \
+		rm -f "$$probe"; \
+		echo "error: this process can read a mode-000 file, so the host does not enforce Unix"; \
+		echo "       permission bits for it (root or CAP_DAC_OVERRIDE, the normal case inside a"; \
+		echo "       container). The permission fixtures would fail, one panic per test."; \
+		echo "       Run the tests on a host that enforces mode bits, or declare this one unable"; \
+		echo "       to with:"; \
+		echo "         FDU_TEST_ALLOW_NO_PERMISSION_BITS=1 make $(if $(MAKECMDGOALS),$(MAKECMDGOALS),check)"; \
+		echo "       CI leaves the variable unset so a passing test proves its assertions ran."; \
+		exit 1; \
+	fi; \
+	rm -f "$$probe"
+
+# Every target that runs the crates' tests, so the preflight fires before the first one.
+PERMISSION_FIXTURE_TARGETS := rust-test lib-only msrv
+
+$(PERMISSION_FIXTURE_TARGETS): permission-bits
 
 reference-model:
 	$(CARGO) test --locked -p fdu-core --test reference_model --no-default-features
@@ -356,9 +389,19 @@ lib-only:
 		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
 
+# The Windows target is checked on the MSRV as well, because platform-gated code is
+# invisible to a check on the host target and CI's MSRV job runs on ubuntu; the job
+# installs the target, and locally this skips it when the MSRV toolchain lacks it, as
+# cross-lint does, rather than failing a machine that has not added it.
 msrv:
 	$(CARGO) +$(MSRV) check --locked --all-features
 	$(CARGO) +$(MSRV) test --locked -p fdu-core --no-default-features
+	@if rustup +$(MSRV) target list --installed 2>/dev/null | grep -qx x86_64-pc-windows-msvc; then \
+		echo "== msrv check: x86_64-pc-windows-msvc"; \
+		$(CARGO) +$(MSRV) check --locked --all-features --all-targets --target x86_64-pc-windows-msvc || exit 1; \
+	else \
+		echo "== skipping x86_64-pc-windows-msvc on $(MSRV) (rustup +$(MSRV) target add x86_64-pc-windows-msvc)"; \
+	fi
 
 fix:
 	$(CARGO) fmt --all

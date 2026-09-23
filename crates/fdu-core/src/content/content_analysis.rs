@@ -170,7 +170,10 @@ fn analyze_open_file(
         Err(error) => return (io_record(types, candidate, request, &error), 0),
     };
     let before = match file.metadata() {
-        Ok(metadata) => crate::scan::attrs_from(&metadata).fingerprint(),
+        Ok(metadata) => match crate::scan::attrs_from_file(&file, &metadata) {
+            Ok(attrs) => attrs.fingerprint(),
+            Err(error) => return (io_record(types, candidate, request, &error), 0),
+        },
         Err(error) => return (io_record(types, candidate, request, &error), 0),
     };
     if before != candidate.attrs.fingerprint() {
@@ -243,7 +246,10 @@ fn analyze_open_file(
     }
 
     let after = match file.metadata() {
-        Ok(metadata) => crate::scan::attrs_from(&metadata).fingerprint(),
+        Ok(metadata) => match crate::scan::attrs_from_file(&file, &metadata) {
+            Ok(attrs) => attrs.fingerprint(),
+            Err(error) => return (io_record(types, candidate, request, &error), bytes_read),
+        },
         Err(error) => return (io_record(types, candidate, request, &error), bytes_read),
     };
     if before != after {

@@ -1857,10 +1857,7 @@ mod save_tests {
         // existing complete snapshot is better than that.
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            // A privileged process reads the denied directory anyway, so the fixture
-            // cannot produce the partial scan this asserts on.
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -1902,8 +1899,7 @@ mod save_tests {
     fn a_partial_scan_writes_neither_tier_until_failed_paths_are_marked() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -1993,8 +1989,7 @@ mod save_tests {
     fn a_warm_partial_pass_leaves_a_complete_sidecar_whole() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 

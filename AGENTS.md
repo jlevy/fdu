@@ -97,7 +97,7 @@ scope. An opened root always reads it.
 ### Platform-gated code
 
 `cfg(target_os = ...)` code is invisible to a single-platform lint run, and this
-repository keeps its one unsafe exception behind exactly such a gate.
+repository keeps its audited native API boundaries behind such gates.
 CI lints on ubuntu only, so before `make cross-lint` existed that module had never been
 linted anywhere, and the MSRV job had never checked the Windows-only paths — two of
 which used an API stable since 1.87 against a declared MSRV of 1.85, so a Windows user
@@ -126,6 +126,7 @@ curl -LsSf https://astral.sh/uv/0.12.1/install.sh | sh       # match UV_MIN_VERS
 cargo install cargo-deny --locked --version 0.20.2            # make audit
 rustup toolchain install 1.85.0 --profile minimal             # match MSRV
 rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc  # make cross-lint
+rustup +1.85.0 target add x86_64-pc-windows-msvc              # make msrv, Windows leg
 ```
 
 The uv and Rust versions must match `UV_MIN_VERSION` and `MSRV` in the Makefile, which
@@ -162,6 +163,21 @@ way.
 
 The bootstrap policy enforces one reviewed version across `UV_MIN_VERSION` and both CI
 pins.
+
+### Test Host Preconditions
+
+The permission fixtures induce a real `EACCES` and the native watch tests wait for real
+events, and each fails rather than passing vacuously when the host cannot provide that.
+A process running as root — a container, a Claude Code web session — reads a mode-000
+file anyway, so `make check` there would fail as a dozen scattered panics; the
+`permission-bits` preflight, which `make test`, `make lib-only`, and `make msrv` run
+first, says so once instead.
+Declare such a host unable with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1`, and a host whose
+event service delivers nothing to a fresh watch with `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`;
+the affected tests then print a skip.
+CI leaves both unset so a passing test proves its assertions ran.
+The watch opt-out covers only the warm-up: once a watch has delivered, its later silence
+is a lost event and fails regardless.
 
 ## Performance Work
 

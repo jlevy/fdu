@@ -38,6 +38,10 @@ use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, Sn
 #[allow(unsafe_code)]
 mod macos_bulk;
 
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod windows_metadata;
+
 /// How many ops accumulate before an observation is handed to the sink.
 ///
 /// Batching matters for more than syscall economy: consumers coalesce per path within a
@@ -1080,7 +1084,7 @@ pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<
     entry.metadata()
 }
 
-#[cfg(not(unix))]
+#[cfg(any(all(windows, test), not(any(unix, windows))))]
 pub(crate) fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
     crate::counters::bump(|c| c.stats += 1);
     // Windows serves DirEntry metadata from directory-enumeration data, which the
@@ -1200,6 +1204,7 @@ fn reconcile_listing(listing: fs::ReadDir, _dir: &Path) -> fs::ReadDir {
 /// Reported as an error, it would make a walk over a tree being cleaned partial, and in a
 /// reconciliation it would settle as a phantom entry with permanent partial freshness.
 /// Any other error means the entry is present but unreadable.
+#[cfg(not(windows))]
 pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Option<fs::Metadata>> {
     #[cfg(test)]
     {
@@ -1213,7 +1218,7 @@ pub(crate) fn listed_child_metadata(entry: &fs::DirEntry) -> std::io::Result<Opt
     missing_as_none(metadata_for_fingerprint(entry))
 }
 
-fn missing_as_none(lookup: std::io::Result<fs::Metadata>) -> std::io::Result<Option<fs::Metadata>> {
+fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> {
     match lookup {
         Ok(metadata) => Ok(Some(metadata)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -1348,7 +1353,7 @@ fn scan_internal(
             std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
         ));
     }
-    let root_dev = attrs_from(&root_meta).dev;
+    let root_dev = attrs_from(root, &root_meta).map_err(|error| Error::io(root, error))?.dev;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let pool = config.worker_pool_for(available_parallelism);
@@ -1405,17 +1410,14 @@ fn scan_internal(
             crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let meta = match listed_child_metadata(&item) {
-                Ok(Some(meta)) => meta,
+            let (kind, attrs) = match observe_dir_entry(&item) {
+                Ok(Some(observed)) => observed,
                 Ok(None) => continue,
-                Err(e) => {
-                    report.errors.push(Error::io(item.path(), e));
+                Err(error) => {
+                    report.errors.push(Error::io(item.path(), error));
                     continue;
                 }
             };
-
-            let attrs = attrs_from(&meta);
-            let kind = kind_from(&meta);
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             if disposition == crate::admission::Disposition::Reject {
@@ -2782,17 +2784,14 @@ fn walk_worker_with<E: WalkEmission>(
                 };
                 crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
-                let meta = match listed_child_metadata(&item) {
-                    Ok(Some(meta)) => meta,
+                let (kind, attrs) = match observe_dir_entry(&item) {
+                    Ok(Some(observed)) => observed,
                     Ok(None) => continue,
-                    Err(e) => {
-                        report.errors.push(Error::io(item.path(), e));
+                    Err(error) => {
+                        report.errors.push(Error::io(item.path(), error));
                         continue;
                     }
                 };
-
-                let attrs = attrs_from(&meta);
-                let kind = kind_from(&meta);
                 if !emission.record_entry(
                     root,
                     &rel_dir,
@@ -3713,7 +3712,7 @@ fn scan_detached_directories(
             std::io::Error::new(std::io::ErrorKind::NotADirectory, "scan root is not a directory"),
         ));
     }
-    let root_dev = attrs_from(&root_metadata).dev;
+    let root_dev = attrs_from(root, &root_metadata).map_err(|error| Error::io(root, error))?.dev;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let pool = config.worker_pool_for(available_parallelism);
@@ -3859,7 +3858,7 @@ pub fn revalidate(
             ),
         ));
     }
-    let root_dev = attrs_from(&root_meta).dev;
+    let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
     let mut report = ScanReport::default();
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
@@ -3918,8 +3917,8 @@ pub fn revalidate(
             seen.insert(name.clone());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let meta = match listed_child_metadata(&item) {
-                Ok(Some(meta)) => meta,
+            let (kind, attrs) = match observe_dir_entry(&item) {
+                Ok(Some(observed)) => observed,
                 Ok(None) => {
                     let entry_held = baseline.state != PathState::Absent;
                     for removal in
@@ -3942,9 +3941,6 @@ pub fn revalidate(
                 }
             };
             control_seen |= name == crate::control::CONTROL_FILE_NAME;
-
-            let kind = kind_from(&meta);
-            let attrs = attrs_from(&meta);
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             let control = match read_control_op(config, &root, &rel_path, kind) {
@@ -4229,8 +4225,10 @@ fn refresh_may_expand(
     let absolute = target.root_path()?.join(path);
     let observed = match fs::symlink_metadata(&absolute) {
         Ok(metadata) => {
-            let kind = kind_from(&metadata);
-            work.observe(kind, attrs_from(&metadata));
+            let Ok((kind, attrs)) = observe(&absolute, &metadata) else {
+                return Ok(true);
+            };
+            work.observe(kind, attrs);
             Some(kind)
         }
         Err(error)
@@ -4328,7 +4326,7 @@ fn reconcile_target_inner(
             ),
         ));
     }
-    let root_dev = attrs_from(&root_meta).dev;
+    let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
     let start_depth = subtree.components().count();
     let mut report = ReconcileReport::default();
     let mut retry_frontier = None;
@@ -4363,8 +4361,13 @@ fn reconcile_target_inner(
                 return Ok(report);
             }
         };
-        let kind = kind_from(&meta);
-        let attrs = attrs_from(&meta);
+        let (kind, attrs) = match observe(&absolute, &meta) {
+            Ok(observed) => observed,
+            Err(error) => {
+                report.scan.errors.push(Error::io(absolute, error));
+                return Ok(report);
+            }
+        };
         let disposition =
             crate::admission::decide_path(subtree, kind, config.hidden(), config.exclude_special);
         if disposition != crate::admission::Disposition::Retain {
@@ -4550,8 +4553,8 @@ fn reconcile_target_inner(
                     Some(baseline) => baseline,
                     None => target.expectation(&rel_dir.join(&name))?,
                 };
-                let meta = match listed_child_metadata(&item) {
-                    Ok(Some(meta)) => meta,
+                let (kind, attrs) = match observe_dir_entry(&item) {
+                    Ok(Some(observed)) => observed,
                     Ok(None) => {
                         let entry_held = baseline.state != PathState::Absent;
                         for removal in
@@ -4576,8 +4579,8 @@ fn reconcile_target_inner(
                 };
                 process_entry(
                     name,
-                    kind_from(&meta),
-                    attrs_from(&meta),
+                    kind,
+                    attrs,
                     baseline,
                     &mut control_seen,
                     target,
@@ -4975,8 +4978,8 @@ fn reconcile_wave_worker(
                         let baseline = known
                             .remove(&name)
                             .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
-                        let meta = match listed_child_metadata(&item) {
-                            Ok(Some(meta)) => meta,
+                        let (kind, attrs) = match observe_dir_entry(&item) {
+                            Ok(Some(observed)) => observed,
                             Ok(None) => {
                                 // Removed once this directory's listing is done.
                                 vanished.push((name, baseline.state != PathState::Absent));
@@ -4988,13 +4991,7 @@ fn reconcile_wave_worker(
                                 continue;
                             }
                         };
-                        process_entry(
-                            name,
-                            kind_from(&meta),
-                            attrs_from(&meta),
-                            baseline,
-                            &mut control_seen,
-                        );
+                        process_entry(name, kind, attrs, baseline, &mut control_seen);
                     }
                 }
             }
@@ -5316,7 +5313,10 @@ fn resolve_subtree_root(
     if !root_metadata.is_dir() {
         return Ok(subtree.to_path_buf());
     }
-    let root_dev = attrs_from(&root_metadata).dev;
+    let Ok(root_attrs) = attrs_from(&root, &root_metadata) else {
+        return Ok(subtree.to_path_buf());
+    };
+    let root_dev = root_attrs.dev;
     let mut prefix = PathBuf::new();
     let mut components = subtree.components().peekable();
     while let Some(component) = components.next() {
@@ -5345,7 +5345,9 @@ fn resolve_subtree_root(
         if !metadata.is_dir() {
             return Ok(prefix);
         }
-        let attrs = attrs_from(&metadata);
+        let Ok(attrs) = attrs_from(&root.join(&prefix), &metadata) else {
+            break;
+        };
         if config.one_filesystem && attrs.dev != root_dev && attrs.dev != 0 {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
@@ -5361,10 +5363,51 @@ fn resolve_subtree_root(
 /// Exposed so the watch layer verifies entries exactly the way the walker records them —
 /// two stat interpretations that could drift would show up as an index that disagrees
 /// with itself depending on which producer last touched a path.
-pub fn observe(meta: &fs::Metadata) -> (EntryKind, Attrs) {
-    (kind_from(meta), attrs_from(meta))
+///
+/// On Windows the observation comes from a fresh non-following handle, and `meta` is
+/// what answers for an entry whose handle cannot be opened because it is locked or
+/// access is denied — the same fallback std's `metadata` makes, with identity and change
+/// time unavailable for that entry.
+pub fn observe(path: &Path, meta: &fs::Metadata) -> std::io::Result<(EntryKind, Attrs)> {
+    #[cfg(windows)]
+    {
+        windows_metadata::observe(path, || Ok(meta.clone()))
+    }
+    #[cfg(not(windows))]
+    {
+        Ok((kind_from(meta), attrs_from(path, meta)?))
+    }
 }
 
+pub(crate) fn observe_dir_entry(
+    entry: &fs::DirEntry,
+) -> std::io::Result<Option<(EntryKind, Attrs)>> {
+    #[cfg(windows)]
+    {
+        crate::counters::bump(|c| c.stats += 1);
+        #[cfg(test)]
+        {
+            let path = entry.path();
+            if let Some(error) =
+                walk_hook(&path).and_then(|hook| hook(WalkHookPoint::ChildMetadata(&path)))
+            {
+                return missing_as_none(Err(error));
+            }
+        }
+        // The listing already holds the entry's enumeration data; it is read only when
+        // the handle cannot be opened, so the ordinary path allocates nothing more.
+        missing_as_none(windows_metadata::observe(&entry.path(), || entry.metadata()))
+    }
+    #[cfg(not(windows))]
+    {
+        let Some(meta) = listed_child_metadata(entry)? else {
+            return Ok(None);
+        };
+        Ok(Some((kind_from(&meta), attrs_from(Path::new(""), &meta)?)))
+    }
+}
+
+#[cfg(not(windows))]
 fn kind_from(meta: &fs::Metadata) -> EntryKind {
     let file_type = meta.file_type();
     if file_type.is_symlink() {
@@ -5379,9 +5422,10 @@ fn kind_from(meta: &fs::Metadata) -> EntryKind {
 }
 
 #[cfg(unix)]
-pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
+#[allow(clippy::unnecessary_wraps)] // Windows observation is fallible; keep one call contract.
+pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     use std::os::unix::fs::MetadataExt;
-    Attrs {
+    Ok(Attrs {
         size: meta.size(),
         // st_blocks is in 512-byte units by POSIX convention regardless of the
         // filesystem's own block size.
@@ -5390,7 +5434,7 @@ pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
         ctime_ns: compose_ns(meta.ctime(), meta.ctime_nsec()),
         inode: meta.ino(),
         dev: meta.dev(),
-    }
+    })
 }
 
 #[cfg(unix)]
@@ -5398,10 +5442,16 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
     secs.saturating_mul(1_000_000_000).saturating_add(nanos)
 }
 
-#[cfg(not(unix))]
-pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
+#[cfg(windows)]
+pub(crate) fn attrs_from(path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
+    windows_metadata::observe(path, || Ok(meta.clone())).map(|(_, attrs)| attrs)
+}
+
+#[cfg(not(any(unix, windows)))]
+#[allow(clippy::unnecessary_wraps)] // Windows observation is fallible; keep one call contract.
+pub(crate) fn attrs_from(_path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     let mtime_ns = meta.modified().map_or(0, system_time_ns);
-    Attrs {
+    Ok(Attrs {
         size: meta.len(),
         // No allocated size without platform-specific calls; apparent size is the
         // honest fallback rather than a guess at block rounding.
@@ -5412,10 +5462,23 @@ pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
         ctime_ns: 0,
         inode: 0,
         dev: 0,
+    })
+}
+
+pub(crate) fn attrs_from_file(file: &fs::File, meta: &fs::Metadata) -> std::io::Result<Attrs> {
+    #[cfg(windows)]
+    {
+        let _ = meta;
+        windows_metadata::attrs_from_file(file)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = file;
+        attrs_from(Path::new(""), meta)
     }
 }
 
-#[cfg(any(not(unix), test))]
+#[cfg(any(not(any(unix, windows)), test))]
 fn system_time_ns(time: std::time::SystemTime) -> i64 {
     match time.duration_since(std::time::UNIX_EPOCH) {
         Ok(duration) => i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX),
@@ -5805,7 +5868,9 @@ mod tests {
         let (mut detached, mut streaming) = detached_and_streaming_indexes(dir.path(), &config);
         let created = dir.path().join("t3/m2/after-bootstrap.rs");
         write_file(&created, b"new fact");
-        let attrs = attrs_from(&fs::symlink_metadata(&created).expect("new file metadata"));
+        let attrs =
+            attrs_from(&created, &fs::symlink_metadata(&created).expect("new file metadata"))
+                .expect("observe new file");
         let observation = Observation::new(vec![Op::Upsert {
             path: PathBuf::from("t3/m2/after-bootstrap.rs"),
             kind: EntryKind::File,
@@ -7796,6 +7861,75 @@ mod tests {
         assert_eq!(index.total(), before);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_reconcile_detects_same_size_rewrite_with_preserved_mtime() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let path = root.path().join("same.txt");
+        write_file(&path, b"first");
+        let modified = fs::metadata(&path).expect("metadata").modified().expect("mtime");
+        let (mut index, _) =
+            scan_into_index(root.path(), &ScanConfig::default()).expect("initial scan");
+        let before = *index.attrs(Path::new("same.txt")).expect("initial attrs");
+
+        // NTFS stamps change time from the system clock, which advances in ticks of up to
+        // 15.625 ms, so a rewrite stamped in the same tick as the first write is
+        // indistinguishable from it. Wait for the clock to leave that tick rather than for
+        // a fixed interval; the precise clock `SystemTime` reads runs at most one tick ahead.
+        let stamped = std::time::UNIX_EPOCH
+            + std::time::Duration::from_nanos(
+                u64::try_from(before.ctime_ns).expect("change time after the epoch"),
+            );
+        while std::time::SystemTime::now() <= stamped + std::time::Duration::from_millis(20) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        write_file(&path, b"other");
+        File::options()
+            .write(true)
+            .open(&path)
+            .expect("open rewritten file")
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("restore mtime");
+        reconcile(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        let after = *index.attrs(Path::new("same.txt")).expect("rewritten attrs");
+        assert_eq!((after.size, after.mtime_ns), (before.size, before.mtime_ns));
+        assert_ne!(after.ctime_ns, before.ctime_ns, "change time detects the rewrite");
+        assert_ne!(after.fingerprint(), before.fingerprint());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_reconcile_detects_path_identity_replacement() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let path = root.path().join("replace.txt");
+        let displaced = root.path().join("displaced.txt");
+        write_file(&path, b"first");
+        let modified = fs::metadata(&path).expect("metadata").modified().expect("mtime");
+        let (mut index, _) =
+            scan_into_index(root.path(), &ScanConfig::default()).expect("initial scan");
+        let before = *index.attrs(Path::new("replace.txt")).expect("initial attrs");
+
+        fs::rename(&path, &displaced).expect("retain old file identity");
+        write_file(&path, b"other");
+        File::options()
+            .write(true)
+            .open(&path)
+            .expect("open replacement")
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .expect("restore mtime");
+        reconcile(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        let after = *index.attrs(Path::new("replace.txt")).expect("replacement attrs");
+        assert_eq!((after.size, after.mtime_ns), (before.size, before.mtime_ns));
+        assert_ne!(
+            (after.dev, after.inode),
+            (before.dev, before.inode),
+            "volume serial and file index identify the replacement"
+        );
+        assert_ne!(after.fingerprint(), before.fingerprint());
+    }
+
     #[test]
     fn direct_reconciliation_counts_unchanged_entries_and_publishes_state_commits() {
         let dir = sample_tree();
@@ -7966,8 +8100,7 @@ mod tests {
     fn revalidation_metadata_errors_do_not_delete_enumerated_entries() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -8001,10 +8134,7 @@ mod tests {
     fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            // A privileged process still reads the directory it was denied, so the
-            // fixture cannot reach the metadata-error boundary this pins.
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -8061,7 +8191,7 @@ mod tests {
         let outcome = reconcile_direct_parallel(
             &mut index,
             &root,
-            attrs_from(&root_meta).dev,
+            attrs_from(&root, &root_meta).expect("root attrs").dev,
             &config,
             1,
             &mut |commit| commits.push(commit.clone()),
@@ -8265,8 +8395,7 @@ mod tests {
     fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -8594,6 +8723,9 @@ mod tests {
     fn partial_pending_reconciliation_remains_queued_for_retry() {
         use std::os::unix::fs::PermissionsExt;
 
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join("blocked/known.txt"), b"known");
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
@@ -8608,10 +8740,7 @@ mod tests {
             .expect("permission failure is a partial report");
         let pending = index.take_pending_invalidations();
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
-        if report.is_complete() {
-            return; // Privileged test environments can read mode-000 directories.
-        }
-
+        assert!(!report.is_complete(), "permission fixture must make reconciliation partial");
         assert_eq!(
             pending,
             vec![(PathBuf::from("blocked"), crate::InvalidateReason::VerificationFailed)]
@@ -8629,6 +8758,9 @@ mod tests {
     fn partial_shared_pending_reconciliation_settles_instead_of_retrying() {
         use std::os::unix::fs::PermissionsExt;
 
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join("blocked/known.txt"), b"known");
         let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
@@ -8647,10 +8779,7 @@ mod tests {
         let pending = handle.take_pending_invalidations().expect("pending");
         let freshness = handle.freshness_at(Path::new("blocked")).expect("freshness");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
-        if report.is_complete() {
-            return; // Privileged test environments can read mode-000 directories.
-        }
-
+        assert!(!report.is_complete(), "permission fixture must make reconciliation partial");
         assert!(pending.is_empty(), "{pending:?}");
         assert_eq!(freshness, crate::Freshness::Partial);
         assert!(!report.scan.errors.is_empty());
@@ -8809,7 +8938,7 @@ mod tests {
             Op::Upsert {
                 path: relative.to_path_buf(),
                 kind: EntryKind::Dir,
-                attrs: attrs_from(&mount_meta),
+                attrs: attrs_from(mount, &mount_meta).expect("mount attrs"),
             },
             Op::Upsert {
                 path: stale_child.clone(),
