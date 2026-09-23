@@ -4612,10 +4612,6 @@ impl Index {
         self.writing_pass_started_at_ns
     }
 
-    pub(crate) const fn scanned_at_ns(&self) -> i64 {
-        self.scanned_at_ns
-    }
-
     /// Record the pass start a loaded snapshot carried for the facts it restored.
     pub(crate) fn set_writing_pass_started_at_ns(&mut self, writing_pass_started_at_ns: i64) {
         self.writing_pass_started_at_ns = writing_pass_started_at_ns;
