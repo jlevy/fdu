@@ -458,9 +458,27 @@ def main() -> None:
     assert partial_report["status"]["errors"] == [], partial_report
     coverage = partial_report["reports"][0]["metrics"]["total"]["coverage"]
     assert coverage == {"lines": {"invalid_utf8": 1}}, coverage
-    refreshed = cached_partial.refresh()
+    # Cache-only delivery never verifies filesystem state, including explicit refresh.
+    # A refused refresh must leave the cached coverage and currency unchanged.
+    try:
+        cached_partial.refresh()
+    except ValueError as error:
+        assert "only" in str(error) and "refresh" in str(error), str(error)
+    else:
+        raise AssertionError("cache-only refresh must be refused")
+    assert cached_partial.complete is True, cached_partial.errors
+    assert cached_partial.freshness == "stale", cached_partial.freshness
+    refused_report = report_dict(cached_partial, views=["types"], size="apparent")
+    assert refused_report["status"] == partial_report["status"]
+    assert refused_report["reports"] == partial_report["reports"]
+
+    # The write-permitting holder can refresh; invalid UTF-8 remains an expected
+    # coverage exclusion, not an operational failure, before and after persistence.
+    refreshed = partial.refresh()
     assert refreshed["complete"] is True, refreshed
     assert refreshed["errors"] == [], refreshed
+    refreshed_report = report_dict(partial, views=["types"], size="apparent")
+    assert refreshed_report["reports"][0]["metrics"]["total"]["coverage"] == coverage
 
     # Cache policy is the same closed vocabulary the CLI accepts.
     for bad_cache in ["sometimes", "readonly"]:

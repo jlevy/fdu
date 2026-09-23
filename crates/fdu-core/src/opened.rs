@@ -7106,6 +7106,17 @@ mod tests {
 
         let error = open_fixture(root.path(), options)
             .expect_err("unsupported observed scope must fail open");
+        // A platform that cannot express this scope refuses it while planning,
+        // before the observer's narrower live-scope contract is considered.
+        #[cfg(not(unix))]
+        assert!(matches!(
+            error,
+            Error::InvalidRequest(crate::query::RequestError::ScopeUnsupported {
+                axis: crate::query::ScopeAxis::OneFilesystem,
+                ..
+            })
+        ));
+        #[cfg(unix)]
         assert!(matches!(error, Error::UnsupportedScanConfig(_)));
     }
 
