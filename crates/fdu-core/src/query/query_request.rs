@@ -789,6 +789,13 @@ pub enum RequestError {
     WatchContent,
     /// A watch was asked to start from a snapshot nothing verifies.
     WatchCacheOnly,
+    /// An operation names another root than the retained index it would mutate.
+    RootMismatch {
+        /// Root held by the index.
+        held: PathBuf,
+        /// Root requested by the caller.
+        requested: PathBuf,
+    },
     /// A route cannot honor the requested execution policy.
     DeliveryUnsupported {
         /// The lifecycle that refuses it.
@@ -845,6 +852,13 @@ impl RequestError {
                 held = analysis_label(*held),
             ),
             Self::WatchScope => watch_scope_message(axes),
+            Self::RootMismatch { held, requested } => {
+                format!(
+                    "requested root {} does not match retained root {}",
+                    requested.display(),
+                    held.display()
+                )
+            }
             Self::DeliveryUnsupported { route, reason } => format!("{route}: {reason}"),
             Self::WatchContent => format!(
                 "{} is not yet supported with {}; use a one-shot report",

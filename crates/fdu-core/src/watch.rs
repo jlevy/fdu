@@ -744,6 +744,16 @@ fn run_worker(
                 {
                     return;
                 }
+                // The consumer may have drained the queue while this worker waited
+                // for the barrier. Publish sticky loss before acknowledging; doing it
+                // at the next loop iteration races the consumer's final empty poll.
+                if sticky_overflow {
+                    match try_deliver_overflow(out) {
+                        Ok(true) => sticky_overflow = false,
+                        Ok(false) => {}
+                        Err(()) => return,
+                    }
+                }
                 batch_started = None;
                 let _ = acknowledge.send(());
             }

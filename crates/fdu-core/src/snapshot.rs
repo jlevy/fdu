@@ -46,7 +46,12 @@ pub enum LoadOutcome {
     /// The snapshot supplied an index, either exactly or through a lawful projection.
     Served(Index, Serves),
     /// The snapshot was valid, but its identity cannot answer this request.
-    Refused(SnapshotIdentity),
+    Refused {
+        /// The validated identity that did not serve the request.
+        identity: SnapshotIdentity,
+        /// The validated snapshot root, used before explaining a scope mismatch.
+        root: PathBuf,
+    },
     /// No valid snapshot was present.
     Absent,
 }
@@ -415,7 +420,7 @@ pub fn load_with_types(
     load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types, None).map(|outcome| {
         match outcome {
             LoadOutcome::Served(index, _) => Some(index),
-            LoadOutcome::Refused(_) | LoadOutcome::Absent => None,
+            LoadOutcome::Refused { .. } | LoadOutcome::Absent => None,
         }
     })
 }
@@ -439,7 +444,7 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
     )
     .map(|outcome| match outcome {
         LoadOutcome::Served(index, _) => Some(index),
-        LoadOutcome::Refused(_) | LoadOutcome::Absent => None,
+        LoadOutcome::Refused { .. } | LoadOutcome::Absent => None,
     })
 }
 
@@ -772,12 +777,18 @@ fn parse_stream(
     let Header { writing_pass_started_at_ns, identity, root: root_path, entries: count } =
         parse_header_fields(reader, engine)?;
     let serves = wanted.map_or(Serves::Exact, |wanted| serves_snapshot(identity, wanted));
-    let scope = match (serves, wanted) {
+    let mut scope = match (serves, wanted) {
         (Serves::ProjectControlsOff, Some(wanted)) => wanted.scan_scope(),
         _ => identity.scan_scope(),
     };
     if scope.type_rules_fingerprint != types.fingerprint() {
-        return Err(ParseError::Invalid);
+        if serves != Serves::Refuse {
+            return Err(ParseError::Invalid);
+        }
+        // A foreign registry cannot be attached to a served index. For a refusal,
+        // reconstruct only to validate every record and the checksum, then discard it.
+        // The stored identity below remains unchanged for the caller's diagnostic.
+        scope.type_rules_fingerprint = types.fingerprint();
     }
     let minimum_body = count
         .checked_mul(u64::try_from(MIN_RECORD_BYTES).map_err(|_| ParseError::Invalid)?)
@@ -857,7 +868,7 @@ fn parse_stream(
     // claimed, which is a revalidation rather than a first sighting.
     index.set_applying_source(Source::Revalidated, 0);
     Ok(if serves == Serves::Refuse {
-        LoadOutcome::Refused(identity)
+        LoadOutcome::Refused { identity, root: root_path }
     } else {
         LoadOutcome::Served(index, serves)
     })

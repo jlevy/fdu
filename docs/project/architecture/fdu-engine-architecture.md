@@ -955,14 +955,6 @@ idle native observer performs no filesystem work.
 
 ## Future Considerations
 
-### Known Gaps
-
-Store identity, compatibility, policy, and write-rule gaps are listed once, in
-[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps).
-The explicit request, measured-value, provenance, and answer-shape models above close
-the corresponding items from
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md).
-
 ### Open Questions
 
 - What trust representation and measurements would justify progressively serving a warm

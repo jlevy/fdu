@@ -17,9 +17,9 @@ provenance fields report, never what the answer says.
 A store holds one or more tiers, the unit whose identity decides which requests it may
 answer: a snapshot holds the entry and `.gitignore` control tiers, and a content sidecar
 holds the content tier.
-The code does not meet that bar everywhere; [Known Gaps](#known-gaps) lists where, and
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks the work.
+The
+[explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+records the implementation and acceptance checks for these contracts.
 
 ## Why a Cache Exists at All
 
@@ -361,16 +361,6 @@ promise a reusable baseline after an arbitrary command.
 cacheable.
 
 ## Future Considerations
-
-### Known Gaps
-
-Each item is a way the present code falls short of
-[Caching Improves Performance, Never Semantics](../architecture/fdu-design-principles.md#caching-improves-performance-never-semantics).
-[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them.
-
-- **A type-rules mismatch is silent.** A snapshot taken under another type registry
-  parses as absent, so a `--cache only` failure cannot name the registry as the cause.
 
 ### Potential Improvements
 
