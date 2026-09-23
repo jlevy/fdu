@@ -273,7 +273,7 @@ fn prepare_report_internal(
                     }
                 }
             };
-            let (scan, scan_diagnostics) = if collect_scan_diagnostics {
+            let (mut scan, scan_diagnostics) = if collect_scan_diagnostics {
                 let (scan, diagnostics) =
                     crate::scan::scan_with_diagnostics(&root, &config.scan, &mut reduce)?;
                 (scan, Some(diagnostics))
@@ -287,7 +287,7 @@ fn prepare_report_internal(
                 config.scan.scope(),
                 query.selection.size,
                 summary,
-                TreeStatus::of_walk(&root, &scan),
+                TreeStatus::of_walk(&root, &mut scan),
                 ReportProvenance::of_walk(scan_started_at, generated_at, complete),
             );
             let performance = PerformanceSummary {
