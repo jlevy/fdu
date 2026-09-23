@@ -313,6 +313,9 @@ impl<'a> ContentProjection<'a> {
     pub(crate) fn len(self) -> usize {
         self.content.len()
     }
+    pub(crate) fn state(self) -> Option<crate::content::ContentTierState> {
+        self.content.state()
+    }
     pub(crate) fn file(self, path: &std::path::Path) -> Option<&'a crate::content::FileAnalysis> {
         self.content.file(path)
     }

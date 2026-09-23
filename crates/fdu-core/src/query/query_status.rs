@@ -33,9 +33,11 @@ impl TreeStatus {
                 (issue.path.clone().unwrap_or_default(), issue.clone()),
             );
         }
+        let wanted = index.content_identity(request.basis.content);
+        let admitted = index.content().and_then(|content| content.admit(&wanted));
         let mut content_failures = 0_u64;
         if request.basis.content.is_enabled() {
-            if let Some(content) = index.content() {
+            if let Some(content) = admitted {
                 for (path, analysis) in content.records() {
                     let Some(reason) = analysis.operational_failure() else {
                         continue;
@@ -59,9 +61,8 @@ impl TreeStatus {
             }
         }
         let content_tier_partial = request.basis.content.is_enabled()
-            && index
-                .content()
-                .and_then(crate::content::ContentIndex::state)
+            && admitted
+                .and_then(crate::stored_state::ContentProjection::state)
                 .is_some_and(|tier| tier.freshness == Freshness::Partial);
         let content_pending = index.content_has_pending(request.basis.content);
         if content_tier_partial && content_failures == 0 {
@@ -190,8 +191,9 @@ impl ReportProvenance {
             .ok()
             .map(|nanos| SystemTime::UNIX_EPOCH + Duration::from_nanos(nanos));
         let content_pending = index.content_has_pending(content_requested);
+        let wanted = index.content_identity(content_requested);
         let content = if content_requested.is_enabled() {
-            index.content().and_then(|content| {
+            index.content().and_then(|content| content.admit(&wanted)).and_then(|content| {
                 content.state().map(|state| TierState {
                     source: state.source,
                     freshness: if content_pending { Freshness::Partial } else { state.freshness },
