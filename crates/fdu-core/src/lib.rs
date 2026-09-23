@@ -429,6 +429,7 @@ pub fn refresh(
     let request =
         query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
     let plan = plan(&request, delivery, Route::Refresh).map_err(Error::InvalidRequest)?;
+    validate_basis_root(index.root_path(), basis)?;
     request.validate_read(&query::Basis::held_by(index)).map_err(Error::InvalidRequest)?;
     let scan = basis.scope.scan_config(delivery);
     scan.validate_for_scope(index.scope())?;
@@ -454,6 +455,15 @@ pub fn refresh(
             || analysis.as_ref().is_some_and(|report| report.applied > 0),
     )?;
     Ok(report)
+}
+
+pub(crate) fn validate_basis_root(held: &Path, basis: &query::Basis) -> Result<()> {
+    let requested = basis.root.canonicalize().map_err(|error| Error::io(&basis.root, error))?;
+    let held = held.canonicalize().map_err(|error| Error::io(held, error))?;
+    if requested != held {
+        return Err(Error::InvalidRequest(query::RequestError::RootMismatch { held, requested }));
+    }
+    Ok(())
 }
 
 /// Why a policy that cannot scan has no snapshot to answer from, and what recovers.
@@ -759,16 +769,18 @@ fn persist_index_changes(
         return Ok(false);
     }
     let stored = delivery.cache_path.as_deref().map(snapshot::read_header).transpose()?.flatten();
-    let projected = stored.as_ref().is_some_and(|header| {
-        header.root == index.root_path()
-            && serves_snapshot(header.identity, index.snapshot_identity())
-                == Serves::ProjectControlsOff
-    });
+    let relation = stored
+        .as_ref()
+        .filter(|header| header.root == index.root_path())
+        .map_or(Serves::Refuse, |header| {
+            serves_snapshot(header.identity, index.snapshot_identity())
+        });
+    let projected = relation == Serves::ProjectControlsOff;
     let writes = plan.writes(run_facts(
         index,
         &basis,
         delivery,
-        entries_changed || stored.is_none(),
+        entries_changed || relation == Serves::Refuse,
         content_changed,
         projected,
     ));

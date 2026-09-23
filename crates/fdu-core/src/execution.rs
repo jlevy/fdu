@@ -552,6 +552,78 @@ mod tests {
     }
 
     #[test]
+    fn refresh_rejects_another_root_before_mutating_or_persisting() {
+        let a = tempfile::tempdir().expect("root a");
+        let b = tempfile::tempdir().expect("root b");
+        let cache = tempfile::tempdir().expect("cache");
+        let basis = crate::query::Basis {
+            root: a.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let (mut index, _) =
+            crate::open(&basis, &Delivery::new(CachePolicy::Off, None)).expect("open a");
+        fs::write(a.path().join("new"), b"new facts").expect("mutation a");
+        let before = index.clock();
+        let snapshot = cache.path().join("snapshot.fdu");
+        let wrong = crate::query::Basis { root: b.path().into(), ..basis.clone() };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(snapshot.clone()));
+        let error = crate::refresh(&mut index, &wrong, &delivery).expect_err("different root");
+        assert!(matches!(
+            error,
+            Error::InvalidRequest(crate::query::RequestError::RootMismatch { .. })
+        ));
+        assert_eq!(index.clock(), before);
+        assert!(!snapshot.exists());
+        let alias = crate::query::Basis { root: a.path().join("."), ..basis };
+        crate::refresh(&mut index, &alias, &delivery).expect("same root spelling");
+        assert_eq!(index.total().files, 1);
+        #[cfg(unix)]
+        {
+            let link = cache.path().join("root-alias");
+            std::os::unix::fs::symlink(a.path(), &link).expect("root alias");
+            let symlink_basis = crate::query::Basis { root: link, ..alias };
+            crate::refresh(&mut index, &symlink_basis, &delivery)
+                .expect("same canonical root through symlink");
+        }
+    }
+
+    #[test]
+    fn unchanged_refresh_replaces_an_incompatible_stored_baseline() {
+        let root = tempfile::tempdir().expect("root");
+        let other = tempfile::tempdir().expect("other root");
+        let cache = tempfile::tempdir().expect("cache");
+        fs::write(root.path().join("file"), b"retained").expect("file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        for wrong_root in [false, true] {
+            let wrong = if wrong_root {
+                crate::query::Basis { root: other.path().into(), ..basis.clone() }
+            } else {
+                crate::query::Basis {
+                    scope: crate::query::Scope { max_depth: Some(0), ..basis.scope.clone() },
+                    ..basis.clone()
+                }
+            };
+            crate::open(&wrong, &Delivery { cache: CachePolicy::Refresh, ..delivery.clone() })
+                .expect("incompatible snapshot");
+            let (mut index, _) = crate::open(&basis, &Delivery::new(CachePolicy::Off, None))
+                .expect("retained index");
+            let refreshed =
+                crate::refresh(&mut index, &basis, &delivery).expect("refresh reseeds cache");
+            assert!(!refreshed.apply.mutated(), "the existing index was already current");
+            let (cached, _) =
+                crate::open(&basis, &Delivery { cache: CachePolicy::Only, ..delivery.clone() })
+                    .expect("cache-only can now answer");
+            assert_eq!(cached.total().bytes, 8);
+        }
+    }
+
+    #[test]
     fn refreshed_metadata_and_content_are_visible_to_a_later_cache_only_open() {
         let root = tempfile::tempdir().expect("root");
         let cache = tempfile::tempdir().expect("cache");
