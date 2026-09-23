@@ -118,12 +118,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
--fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
   ✗ The Unreleased View Alias Is Rejected
 @@ -1,1 +1,1 @@
--fdu: invalid --view "docs": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "docs": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
++fdu: invalid view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -148,6 +148,14 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Refresh Ignores the Snapshot and Scans Cold Again
   ✓ An Unknown Policy Lists Every Valid One
   ✓ The Unreleased Cache Alias Is Rejected
+  ✓ Old Build Directories Use Subtree Size and Latest Activity
+  ✓ Old Build Directories Use Subtree Size and Latest Activity
+  ✓ Old Build Directories Use Subtree Size and Latest Activity
+  ✓ A Time Bound Without a Kind Covers Directory Contents
+  ✓ A Time Bound Without a Kind Covers Directory Contents
+  ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
+  ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
+  ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
 FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
@@ -166,6 +174,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
   ✓ Verify the Corrupt File Was Replaced
+  ✓ Reading No .gitignore Is a Separate Scope
+  ✓ Reading No .gitignore Is a Separate Scope
   ✓ Reading No .gitignore Is a Separate Scope
   ✓ Reading No .gitignore Is a Separate Scope
   ✓ Reading No .gitignore Is a Separate Scope
@@ -316,7 +326,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,130 +1,1 @@
+@@ -1,161 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -START HERE
@@ -358,7 +368,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  fdu . --view=types,families --format=json
 -  fdu . --analyze=words --view=documents
 -  fdu PATH --view=largest --limit=100                        the 100 largest files
--  fdu PATH --view=files --modified-since=1h --sort=mtime     recent changes
+-  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
 -  fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
 -  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 -
@@ -370,7 +380,38 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -    largest = files --sort size --limit 20, regular files only
 -    recent  = files --sort mtime --limit 20, regular files only
 -  --sort and --limit still override them. files alone is complete: every
--  matching entry, in name order. full is every view except files.
+-  matching entry, in name order. full keeps its bounded digest, without list/files.
+-
+-LIST FORMATS AND OLD BUILD DIRECTORIES
+-  The metadata default view is list; its default format is tree. These agree:
+-    fdu PATH
+-    fdu PATH --view list --format tree
+-  Tree keeps the current directory roll-ups, depth 2, ten children per directory.
+-  Files contribute to totals without new leaf rows. --depth all expands levels;
+-  --limit all removes row caps. Flat list limits apply to the whole result.
+-
+-  --format paths gives matching paths only; --long adds size, age, and path.
+-  Flat lists are complete and size-ranked by default; --sort name lists by name.
+-  JSON, JSONL, and YAML give exact metrics. text keeps automatic human tables.
+-  Tree/paths/long require a single list view; use text or machine formats for
+-  grouped/mixed views and full. largest/recent accept paths/long, keeping file ranks.
+-  Legacy files keeps name order; legacy tree keeps structured tree output.
+-  Explicit paths/long overrides the legacy tree presentation. Format flags conflict.
+-
+-  fdu PATH --kind dir --include .venv --modified-before 7d --long
+-  fdu PATH --kind dir --include node_modules --modified-before 30d --format long
+-  fdu PATH --kind dir --include target --modified-before 30d --format paths
+-  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
+-  fdu PATH --kind dir --include .venv --modified-before 30d --format json
+-
+-  Kind, name/path, size, and age are filters. Repeated includes form a union.
+-  Directory sizes sum eligible regular-file contents, excluding inode/symlink bytes.
+-  Age uses the newest modification of the root or an eligible descendant, including
+-  directories and symlinks. Empty directories use their own time; future age is negative.
+-  This is modification activity, not access or last use. target is a naming convention.
+-  Exclusions win throughout the subtree before size/age filtering. Nested matching
+-  roots can overlap; aggregate views count the covered contents once. --size apparent
+-  selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 -
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
@@ -378,9 +419,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
 -             --exclude-ignored, --only-ignored
--  View       summary,tree,families,types,extensions,languages,documents,
+-  View       list,summary,tree,families,types,extensions,languages,documents,
 -             largest,recent,files,full
--  Format     --format text|json|jsonl|yaml, --color
+-  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
 -  Mode       --cache, --watch, --analysis-workers
 -
 -CONTENT ANALYSIS
@@ -430,7 +471,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  ignored shares under that directory do not.
 -
 -OUTPUT AND AUTOMATION
--  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+-  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
 -  Cache status is its own document in every machine format: fdu.cache/2.
 -  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
