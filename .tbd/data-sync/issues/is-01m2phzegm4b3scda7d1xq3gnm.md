@@ -5,10 +5,11 @@ title: End-to-end verification of the final 0.1.0 release candidate
 kind: task
 status: open
 priority: 0
-version: 5
+version: 6
 labels:
   - release
   - testing
+  - runbook-verified
 dependencies:
   - type: blocks
     target: is-01m2phzevyf68fdz9zcs3yzncw
@@ -18,7 +19,7 @@ dependencies:
     target: is-01m2phzkwcvz3fwk2nh150bdmj
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:52.755Z
-updated_at: 2026-09-23T04:50:54.649Z
+updated_at: 2026-09-23T08:35:19.345Z
 ---
 After the stabilization fixes merge: main CI green; dispatch the release rehearsal on main; download
 every artifact and verify SHA256SUMS; run the end-to-end harness against the CI-built macOS arm64 wheel
@@ -33,4 +34,4 @@ free-threaded interpreter choice. Harness: scratch e2e_fdu.py (consider committi
 
 ## Notes
 
-2026-09-22 pre-merge candidate evidence: PR117 adc39d24 and current dependent heads 113–116 passed exact-head CI (19/19 each); final full PI run 35819047425 passed 46,926 cases with zero exceptions/empty registry on all three platforms. Packaged rehearsal 35815753312 passed all nine jobs at ff2b07da; subsequent changes affect tests/docs, not production or packaging. This does not satisfy this bead’s post-merge main-branch artifact download, checksum, installed-wheel, watch, real-tree, and release end-to-end checks. Leave open; no merge or publication has occurred.
+2026-09-23 post-merge QA on main 7e06e5a4 (after the alpha correctness stack #99-#117 and performance stack #94/#97/#105/#109 merged; tree identical to the one that passed an uninterrupted make check and make cross-lint). Correctness runbook (macOS arm64, bare metal, APFS, uid 502, 14/17 kinds; devices need root, APFS refuses non-UTF-8): the runbook scripts were stale for report/7 and could not prove serving on a tree with refusals; fixed in PR #118. With the fix: refusal tree 23/23 partial and withheld, 0 mismatches; complete tree 23/23 served, 0 mismatches; cross-warm 30/30; broken-cache wrapper exits 1 with 23 NO-SNAPSHOT. Integration runbook: sections 1-4 and 7 covered by make check on the identical tree; 5 cache by hand ok (runbook text for the first --analyze source is inaccurate after the metadata steps; content tier scanned then revalidated as expected; doc fix in #118); 6 watch ok (idle 0% CPU, record within 2s, snapshot survives kill -9, cache-only serves stale, scope flags exit 2). Full path-independence matrix dispatched on 7e06e5a4. This bead's post-publication items (artifact download, checksums, installed wheel, real trees) remain open.
