@@ -11,19 +11,15 @@
 //! polling: `FSEvents` on macOS, inotify on Linux, `ReadDirectoryChangesW` on Windows. An
 //! idle tree costs no filesystem work at all. Events are hints, so each coalesced path is
 //! verified with one fresh stat before it becomes a delta, and the interval a caller
-//! passes throttles only how often aggregate views are re-rendered — it plays no part in
-//! detection.
+//! passes throttles aggregate repaints and persistence — it plays no part in detection.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
-use crate::query::{
-    Basis, Delivery, IgnoredEntries, Provenance, Query, Report, ReportSource, Request, Selection,
-    WatchDelivery, report,
-};
+use crate::query::{Basis, Delivery, Query, Report, Request, Selection, WatchDelivery, report};
 use crate::scan::ScanConfig;
 use crate::watch::{WatchConfig, Watcher};
 
@@ -112,15 +108,104 @@ struct EntryFacts {
     mtime_ns: i64,
 }
 
+/// The result of a throttled attempt to persist a live session.
+#[derive(Debug)]
+pub enum SaveOutcome {
+    /// The metadata snapshot reached disk.
+    Written,
+    /// No write was due, or the plan could not yet persist the current state.
+    Skipped,
+    /// Persistence failed; the live session remains usable and will retry.
+    Failed(Error),
+}
+
+struct Persistence {
+    pending: bool,
+    last_attempt: Instant,
+}
+
+impl Persistence {
+    fn persist_due(
+        &mut self,
+        now: Instant,
+        interval: Duration,
+        save: impl FnOnce() -> Result<bool>,
+    ) -> SaveOutcome {
+        if !save_is_due(self.pending, now.saturating_duration_since(self.last_attempt), interval) {
+            return SaveOutcome::Skipped;
+        }
+        let outcome = match save() {
+            Ok(true) => SaveOutcome::Written,
+            Ok(false) => SaveOutcome::Skipped,
+            Err(error) => SaveOutcome::Failed(error),
+        };
+        self.pending = pending_after(&outcome);
+        // Skips and failures are throttled too, while retaining the pending work.
+        self.last_attempt = now;
+        outcome
+    }
+}
+
+fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
+    pending && since_last_save >= interval
+}
+
+fn pending_after(outcome: &SaveOutcome) -> bool {
+    !matches!(outcome, SaveOutcome::Written)
+}
+
 /// An index paired with a watcher, answering one request continuously.
 pub struct Session {
     index: IndexHandle,
     watcher: Watcher,
     scan: ScanConfig,
     request: Request,
+    plan: crate::Plan,
+    persistence: Persistence,
+    startup_save_error: Option<Error>,
 }
 
 impl Session {
+    /// Open a tree and bind observation under the shared execution plan.
+    ///
+    /// Startup persistence is joined before binding the session. A save failure is
+    /// returned by the first `persist_due` call, so it does not discard a valid live
+    /// answer. Filesystem and observation failures still fail startup.
+    pub fn start(request: Request, mut delivery: Delivery) -> Result<Self> {
+        delivery.watch.get_or_insert_with(WatchDelivery::default);
+        let plan =
+            crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
+        let (index, report, pending, _diagnostics) = crate::execute(&plan, &request.basis, false)?;
+        let startup_save_error = pending.join().err();
+        let index = std::sync::Arc::into_inner(index)
+            .expect("the joined writer released the only other reference");
+        let mut session =
+            Self::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())?;
+        session.persistence.pending |= startup_save_error.is_some() || !report.is_complete();
+        session.startup_save_error = startup_save_error;
+        Ok(session)
+    }
+
+    /// Persist pending changes when the watch delivery's interval has elapsed.
+    ///
+    /// Call this after batches and idle timeouts. Only a completed write clears pending
+    /// changes; a refused or failed write is retried on a later interval. `now` is a
+    /// monotonic caller-supplied clock so wall-clock corrections cannot postpone saves.
+    pub fn persist_due(&mut self, now: Instant) -> SaveOutcome {
+        if let Some(error) = self.startup_save_error.take() {
+            self.persistence.last_attempt = now;
+            return SaveOutcome::Failed(error);
+        }
+        let interval = self.plan.delivery().watch.expect("watch plan").interval;
+        self.persistence.persist_due(now, interval, || {
+            if !self.plan.delivery().cache.writes() || self.plan.delivery().cache_path.is_none() {
+                return Ok(false);
+            }
+            let index = self.index.snapshot()?;
+            crate::persist_index(&index, &self.plan)
+        })
+    }
+
     /// Start watching an already-opened index, answering `request` as the tree changes.
     ///
     /// `request` carries its own `now`, fixed when it was built: a watch answers one
@@ -154,15 +239,14 @@ impl Session {
         watch: WatchConfig,
     ) -> Result<Self> {
         let root = index.root_path()?;
-        let scan = request.basis.scope.clone();
+        let scan = request.basis.scope.scan_config(delivery);
         // What no delivery can carry, before anything stored is read and before the
         // backend is bound: this is the rule each surface used to keep for itself, so a
         // library caller could watch what `--watch` has always refused.
-        let delivery = Delivery {
-            watch: delivery.watch.or(Some(WatchDelivery { interval: watch.settle })),
-            ..delivery.clone()
-        };
-        request.validate_delivery(&delivery).map_err(Error::InvalidRequest)?;
+        let delivery =
+            Delivery { watch: Some(delivery.watch.unwrap_or_default()), ..delivery.clone() };
+        crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
+        crate::validate_basis_root(&root, &request.basis)?;
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_scope(index.scope()?)?;
@@ -170,12 +254,53 @@ impl Session {
         // identity, control tier included, so what remains is what this index holds.
         let held = Basis {
             root: root.clone(),
-            scope: scan.clone(),
+            scope: scan.clone().into(),
             content: index.read_with(crate::Index::content_set)?,
         };
         request.validate_read(&held).map_err(Error::InvalidRequest)?;
+        // Bind observation before closing the gap from the scan that produced `index`.
+        // The full reconciliation catches a mutation that completed before registration;
+        // the capture drain applies every hint observed while that pass ran.
         let watcher = Watcher::new(&root, watch)?;
-        Ok(Self { index, watcher, scan, request })
+        Self::finish_initial_handoff(index, request, &delivery, watcher, scan)
+    }
+
+    /// Finish the two-part initial handoff after observation has been bound.
+    ///
+    /// Kept separate so the scripted watcher exercises the same reconciliation, drain, and
+    /// acceptance boundary as an OS watcher. Once this returns, later partial observations are
+    /// valid live state; `accept_partial` governs only the coherent state handed to the caller.
+    fn finish_initial_handoff(
+        index: IndexHandle,
+        request: Request,
+        delivery: &Delivery,
+        watcher: Watcher,
+        scan: ScanConfig,
+    ) -> Result<Self> {
+        let mut dirty = false;
+        let reconciliation = crate::scan::reconcile_handle(&index, &scan, &mut |commit| {
+            dirty |= !commit.changes.is_empty();
+        })?;
+        if !reconciliation.scan.is_complete() && !delivery.accept_partial {
+            return Err(Error::ObservationHandoffIncomplete);
+        }
+        dirty |= drain_initial_capture(&watcher, &index, &scan)?;
+        if !delivery.accept_partial
+            && !index.read_with(|index| crate::query::TreeStatus::of(index, &request).complete)?
+        {
+            return Err(Error::ObservationHandoffIncomplete);
+        }
+        let plan =
+            crate::plan(&request, delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
+        Ok(Self {
+            index,
+            watcher,
+            scan,
+            request,
+            plan,
+            persistence: Persistence { pending: dirty, last_attempt: Instant::now() },
+            startup_save_error: None,
+        })
     }
 
     /// The request this session answers.
@@ -192,9 +317,9 @@ impl Session {
     ///
     /// The same `report` a one-shot run produces, from the same index, which is what
     /// makes "watch is the same query repeated" true rather than aspirational.
-    pub fn report(&self, provenance: &Provenance) -> Result<Report> {
+    pub fn report(&self, generated_at: std::time::SystemTime) -> Result<Report> {
         let index = self.index.snapshot()?;
-        report(&index, &self.request, provenance)
+        report(&index, &self.request, generated_at)
     }
 
     /// A consistent copy of the current index.
@@ -216,9 +341,10 @@ impl Session {
         let outcome =
             self.watcher.apply_next(&self.index, &self.scan, timeout, &mut |commit: &Commit| {
                 commits.push(commit.clone());
-            })?;
+            });
 
-        let Some(_report) = outcome else {
+        self.persistence.pending |= commits.iter().any(|commit| !commit.changes.is_empty());
+        let Some(_report) = outcome? else {
             return Ok(None);
         };
 
@@ -245,7 +371,6 @@ impl Session {
     /// every reclassified entry, which is what lets a rule edit that moves an entry into
     /// the selection be streamed as the upsert a consumer needs to draw the row.
     fn batch_facts(&self, commits: &[Commit]) -> Result<BatchFacts> {
-        let filters_by_ignored = self.selection().ignored != IgnoredEntries::Include;
         let mut touched: Vec<&PathBuf> = Vec::new();
         let mut reclassified: Vec<&PathBuf> = Vec::new();
         for effective in commits.iter().flat_map(|commit| &commit.changes) {
@@ -253,18 +378,10 @@ impl Session {
                 EffectiveChange::Inserted { path, .. } | EffectiveChange::Updated { path, .. } => {
                     touched.push(path);
                 }
-                // A reclassified entry is read only when the selection can move it.
-                // Under `Include` its membership cannot change, and membership is what
-                // this stream maintains; its `ignored` bit did change, and the record that
-                // would say so is not emitted, so a consumer's row keeps the stale bit
-                // until the next listing. Deliberate for 0.1.0: a directory rule flips
-                // thousands of entries at once, and paying a lookup each to restate a bit
-                // no selection reads is the wrong default. `fdu-4239` carries the fix.
-                EffectiveChange::Reclassified { path, .. } if filters_by_ignored => {
+                EffectiveChange::Reclassified { path, .. } => {
                     reclassified.push(path);
                 }
-                EffectiveChange::Reclassified { .. }
-                | EffectiveChange::Removed { .. }
+                EffectiveChange::Removed { .. }
                 | EffectiveChange::Invalidated { .. }
                 | EffectiveChange::ControlUpdated { .. }
                 | EffectiveChange::ControlRefusalUpdated { .. } => {}
@@ -314,8 +431,7 @@ impl Session {
         facts: &BatchFacts,
     ) -> Option<Change> {
         match effective {
-            EffectiveChange::Inserted { path, kind, attrs }
-            | EffectiveChange::Updated { path, kind, current: attrs, .. } => {
+            EffectiveChange::Inserted { path, kind, attrs } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 let candidate = crate::query::Candidate {
                     relative: path,
@@ -336,6 +452,44 @@ impl Session {
                     ignored: facts.is_ignored(path),
                     clock,
                 })
+            }
+            EffectiveChange::Updated { path, kind, previous: _, current } => {
+                let name = path.file_name()?.to_string_lossy().into_owned();
+                let ignored = facts.is_ignored(path).unwrap_or(false);
+                let candidate = crate::query::Candidate {
+                    relative: path,
+                    name: &name,
+                    kind: *kind,
+                    bytes: current.size,
+                    allocated: current.allocated,
+                    mtime_ns: current.mtime_ns,
+                    ignored,
+                };
+                if self.selection().admits(&candidate) {
+                    Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Upsert,
+                        entry_kind: Some(*kind),
+                        bytes: Some(current.size),
+                        allocated: Some(current.allocated),
+                        mtime_ns: Some(current.mtime_ns),
+                        ignored: facts.is_ignored(path),
+                        clock,
+                    })
+                } else if self.admits_by_path(path, &name) {
+                    Some(Change {
+                        path: path.clone(),
+                        kind: ChangeKind::Remove,
+                        entry_kind: None,
+                        bytes: None,
+                        allocated: None,
+                        mtime_ns: None,
+                        ignored: None,
+                        clock,
+                    })
+                } else {
+                    None
+                }
             }
             // A removal carries no attributes to filter on, so only the path-shaped parts
             // of a selection can apply. Filtering it out entirely on a size, time, or
@@ -399,7 +553,7 @@ impl Session {
                         ignored: Some(*current_ignored),
                         clock,
                     }),
-                    (false, true) => Some(Change {
+                    (_, true) => Some(Change {
                         path: path.clone(),
                         kind: ChangeKind::Upsert,
                         entry_kind: Some(entry.kind),
@@ -433,22 +587,460 @@ impl Session {
     fn selection(&self) -> &Selection {
         &self.request.query.selection
     }
+}
 
-    /// Provenance for a live report, which is always warm by construction.
-    pub fn live_provenance(&self, generated_at: std::time::SystemTime) -> Provenance {
-        Provenance {
-            scan_started_at: None,
-            generated_at,
-            source: ReportSource::WarmRevalidate,
-            complete: true,
-            errors: Vec::new(),
+fn drain_initial_capture(
+    watcher: &Watcher,
+    index: &IndexHandle,
+    scan: &ScanConfig,
+) -> Result<bool> {
+    let mut dirty = false;
+    for _ in 0..2 {
+        watcher.flush_capture()?;
+        let mut drained = false;
+        for _ in 0..=watcher.capture_backlog_bound() {
+            if watcher
+                .apply_next(index, scan, Duration::ZERO, &mut |commit| {
+                    dirty |= !commit.changes.is_empty();
+                })?
+                .is_none()
+            {
+                drained = true;
+                break;
+            }
+        }
+        if !drained {
+            return Err(Error::ObservationHandoffIncomplete);
         }
     }
+    Ok(dirty)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The watch loop's save throttle, as a table over every state that reaches it.
+    ///
+    /// Two of the three defects review found on this branch were transitions in here, and
+    /// the second was introduced by fixing the first. End-to-end tests could not catch
+    /// either: they observe whether a file changed on disk, which cannot distinguish "not
+    /// due yet" from "due and skipped", nor a cleared flag from a retained one.
+    #[test]
+    fn a_retained_session_rejects_a_request_for_another_root_before_binding() {
+        let a = tempfile::tempdir().expect("root a");
+        let b = tempfile::tempdir().expect("root b");
+        let basis = Basis {
+            root: a.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(crate::CachePolicy::Off, None);
+        let (index, _) = crate::open(&basis, &delivery).expect("open a");
+        let handle = IndexHandle::new(index);
+        let before = handle.clock().expect("clock");
+        let request = Request::new(
+            Basis { root: b.path().into(), ..basis },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        assert!(matches!(
+            Session::new(handle.clone(), request, &delivery, WatchConfig::default()),
+            Err(Error::InvalidRequest(crate::query::RequestError::RootMismatch { .. }))
+        ));
+        assert_eq!(handle.clock().expect("clock"), before);
+    }
+
+    #[test]
+    fn a_save_is_due_only_when_a_change_is_pending_and_the_throttle_has_elapsed() {
+        let interval = Duration::from_secs(1);
+        let cases = [
+            // (pending, since last save, due, what this case is)
+            (true, Duration::from_secs(2), true, "pending and past the interval"),
+            (true, interval, true, "pending, exactly at the interval: inclusive"),
+            // The R5 case. Not due *now* -- and the flag stays set, which is the half that
+            // was missing: the idle path saves it once the interval passes.
+            (true, Duration::from_millis(1), false, "pending but throttled"),
+            (false, Duration::from_secs(60), false, "nothing pending, however long it has been"),
+            (false, Duration::ZERO, false, "nothing pending and just saved"),
+        ];
+
+        for (pending, since, want, case) in cases {
+            assert_eq!(save_is_due(pending, since, interval), want, "{case}");
+        }
+    }
+
+    /// A throttled change must survive every outcome except a completed write.
+    #[test]
+    fn only_a_completed_write_clears_the_pending_change() {
+        // The R7 case is Skipped and Failed: clearing the flag for either means the idle
+        // path never retries, so on a quiet tree the change is never persisted at all.
+        assert!(!pending_after(&SaveOutcome::Written), "a completed write persists the change");
+        assert!(
+            pending_after(&SaveOutcome::Skipped),
+            "a skipped save wrote nothing, so the change is still owed to disk",
+        );
+        assert!(
+            pending_after(&SaveOutcome::Failed(Error::Snapshot("failed".into()))),
+            "a failed save must be retried, not forgotten"
+        );
+    }
+
+    /// The sequence that defeated persistence in its most common shape.
+    #[test]
+    fn a_burst_then_a_quiet_tree_still_persists() {
+        let interval = Duration::from_secs(1);
+
+        // A change arrives too soon after the last save, so nothing is written yet.
+        let mut pending = true;
+        assert!(!save_is_due(pending, Duration::from_millis(50), interval));
+        assert!(pending, "the throttle must not consume the change");
+
+        // The tree goes quiet: no further batches will ever arrive. The idle path is the
+        // only remaining caller, and once the interval passes the save must happen.
+        assert!(save_is_due(pending, Duration::from_secs(3), interval));
+
+        // A skip at that point keeps it pending for the next idle tick rather than
+        // silently dropping the session's work.
+        pending = pending_after(&SaveOutcome::Skipped);
+        assert!(pending);
+        pending = pending_after(&SaveOutcome::Written);
+        assert!(!pending, "once written, the loop stops rewriting an unchanged index");
+    }
+
+    #[test]
+    fn skips_and_failures_retry_only_after_another_interval() {
+        let start = Instant::now();
+        let interval = Duration::from_secs(2);
+        let mut persistence = Persistence { pending: true, last_attempt: start };
+        assert!(matches!(
+            persistence.persist_due(start + interval / 2, interval, || panic!("throttled")),
+            SaveOutcome::Skipped
+        ));
+        assert!(matches!(
+            persistence.persist_due(start + interval, interval, || Ok(false)),
+            SaveOutcome::Skipped
+        ));
+        assert!(persistence.pending);
+        assert!(matches!(
+            persistence.persist_due(start + interval, interval, || panic!("skip was throttled")),
+            SaveOutcome::Skipped
+        ));
+        assert!(matches!(
+            persistence.persist_due(start + interval * 2, interval, || {
+                Err(Error::Snapshot("disk unavailable".into()))
+            }),
+            SaveOutcome::Failed(_)
+        ));
+        assert!(persistence.pending);
+        assert!(matches!(
+            persistence
+                .persist_due(start + interval * 2, interval, || panic!("failure was throttled")),
+            SaveOutcome::Skipped
+        ));
+        assert!(matches!(
+            persistence.persist_due(start + interval * 3, interval, || Ok(true)),
+            SaveOutcome::Written
+        ));
+        assert!(!persistence.pending);
+        assert!(matches!(
+            persistence.persist_due(start + interval * 4, interval, || panic!("already persisted")),
+            SaveOutcome::Skipped
+        ));
+    }
+
+    #[test]
+    fn handoff_changes_are_persisted_after_the_tree_goes_quiet() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let cache_path = cache.path().join("snapshot");
+        let scan = ScanConfig::default();
+        std::fs::write(root.path().join("before.txt"), b"before").expect("before");
+        let (index, _) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let interval = Duration::from_secs(2);
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Auto,
+            cache_path: Some(cache_path.clone()),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let (watcher, _sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        std::fs::write(root.path().join("during-handoff.txt"), b"handoff").expect("handoff change");
+        let mut session = Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            watcher,
+            scan,
+        )
+        .expect("handoff");
+        let started = session.persistence.last_attempt;
+        assert!(session.persistence.pending, "handoff changes need persistence too");
+        assert!(matches!(session.persist_due(started), SaveOutcome::Skipped));
+        assert!(!cache_path.exists(), "throttle delays the write");
+        assert!(matches!(session.persist_due(started + interval), SaveOutcome::Written));
+        let restored = crate::snapshot::load(&cache_path).expect("load").expect("saved");
+        assert!(matches!(
+            restored.path_state(std::path::Path::new("during-handoff.txt")),
+            crate::PathState::Present { .. }
+        ));
+        assert!(matches!(session.persist_due(started + interval * 2), SaveOutcome::Skipped));
+    }
+
+    #[test]
+    fn startup_save_failure_keeps_the_session_live_and_retries() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let cache_path = cache.path().join("blocked-snapshot");
+        std::fs::create_dir(&cache_path).expect("directory blocks snapshot rename");
+        std::fs::write(root.path().join("file.txt"), b"content").expect("file");
+        let interval = Duration::from_secs(2);
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: ScanConfig::default().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Refresh,
+            cache_path: Some(cache_path.clone()),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let mut session = Session::start(request, delivery).expect("save failure is nonfatal");
+        assert!(session.report(std::time::SystemTime::now()).expect("live report").status.complete);
+        let now = Instant::now();
+        assert!(matches!(session.persist_due(now), SaveOutcome::Failed(_)));
+        std::fs::remove_dir(&cache_path).expect("restore writable destination");
+        assert!(matches!(session.persist_due(now), SaveOutcome::Skipped));
+        assert!(matches!(session.persist_due(now + interval), SaveOutcome::Written));
+        assert!(crate::snapshot::load(&cache_path).expect("read snapshot").is_some());
+    }
+
+    #[test]
+    fn an_update_that_leaves_attribute_selection_emits_remove() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("file.txt"), b"12345678").expect("fixture");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query {
+                selection: Selection { min_size: Some(4), ..Selection::default() },
+                ..Query::default()
+            },
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let session =
+            Session::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())
+                .expect("session");
+        let path = PathBuf::from("file.txt");
+        let change = session
+            .change_for(
+                &EffectiveChange::Updated {
+                    path: path.clone(),
+                    kind: EntryKind::File,
+                    previous: crate::Attrs { size: 8, allocated: 8, ..crate::Attrs::default() },
+                    current: crate::Attrs { size: 1, allocated: 1, ..crate::Attrs::default() },
+                },
+                1,
+                &BatchFacts {
+                    ignored: Some(BTreeMap::from([(path, false)])),
+                    reclassified: BTreeMap::new(),
+                },
+            )
+            .expect("membership transition");
+        assert_eq!(change.kind, ChangeKind::Remove);
+    }
+
+    #[test]
+    fn initial_handoff_drains_a_sticky_overflow_after_a_full_intent_queue() {
+        let root = tempfile::tempdir().expect("root");
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let handle = IndexHandle::new(index);
+        let config = WatchConfig {
+            settle: Duration::from_millis(1),
+            max_hold: Duration::from_millis(2),
+            event_capacity: 8,
+            batch_path_capacity: 1,
+            intent_capacity: 1,
+            ..WatchConfig::default()
+        };
+        let (watcher, sender) =
+            Watcher::scripted(root.path(), config, script.path()).expect("scripted watcher");
+        std::fs::write(root.path().join("a.txt"), b"a").expect("a");
+        sender.send("create\ta.txt\n").expect("first event");
+        watcher.flush_capture().expect("first barrier fills the intent queue");
+        std::fs::write(root.path().join("b.txt"), b"b").expect("b");
+        sender.send("create\tb.txt\n").expect("second event");
+        watcher.flush_capture().expect("second barrier retains sticky overflow");
+
+        drain_initial_capture(&watcher, &handle, &scan).expect("bounded handoff");
+
+        assert!(
+            handle.snapshot().expect("snapshot").lookup(std::path::Path::new("a.txt")).is_some()
+        );
+        assert!(
+            handle.snapshot().expect("snapshot").lookup(std::path::Path::new("b.txt")).is_some()
+        );
+        assert!(
+            watcher
+                .apply_next(&handle, &scan, Duration::ZERO, &mut |_| {})
+                .expect("proof poll")
+                .is_none(),
+            "no queued or sticky pre-handoff work remains"
+        );
+    }
+
+    #[test]
+    fn initial_handoff_enforces_partial_acceptance_after_its_reconciliation() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("kept.txt"), b"kept").expect("fixture");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let _fault = crate::scan::install_walk_hook(root.path(), |_| {
+            Some(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "deterministic handoff refusal",
+            ))
+        });
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+
+        let Err(error) = Session::new(
+            IndexHandle::new(index.clone()),
+            request.clone(),
+            &delivery,
+            WatchConfig::default(),
+        ) else {
+            panic!("a partial handoff is refused");
+        };
+        assert!(matches!(error, Error::ObservationHandoffIncomplete));
+
+        let accepted = Session::new(
+            IndexHandle::new(index),
+            request,
+            &Delivery { accept_partial: true, ..delivery },
+            WatchConfig::default(),
+        )
+        .expect("the caller explicitly accepts a partial handoff");
+        assert!(
+            !accepted.report(std::time::SystemTime::now()).expect("partial report").status.complete
+        );
+    }
+
+    #[test]
+    fn initial_handoff_rechecks_partial_acceptance_after_draining_capture() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let root = tempfile::tempdir().expect("root");
+        std::fs::write(root.path().join("kept.txt"), b"kept").expect("fixture");
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let (watcher, sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        sender.send("rescan\t.\n").expect("queue initial gap");
+
+        // The startup reconciliation succeeds. The scripted overflow then reaches the same
+        // tree during the handoff drain, where its reconciliation fails and must be refused.
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let hook_attempts = Arc::clone(&attempts);
+        let _fault = crate::scan::install_walk_hook(root.path(), move |_| {
+            (hook_attempts.fetch_add(1, Ordering::SeqCst) > 0).then(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "deterministic drain-only refusal",
+                )
+            })
+        });
+
+        let Err(error) = Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            watcher,
+            scan,
+        ) else {
+            panic!("a partial state created while draining is refused");
+        };
+        assert!(matches!(error, Error::ObservationHandoffIncomplete));
+        assert!(attempts.load(Ordering::SeqCst) > 1, "the drain ran after startup reconciliation");
+    }
 
     /// A record says what the index can be asked, and nothing more.
     ///

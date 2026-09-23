@@ -133,9 +133,10 @@ Under
 [Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics),
 a cache hit, miss, eviction, cache policy, or execution path may change how fast an
 answer arrives and what its provenance fields report, never what the answer says.
-Metadata-only requests meet that today; content analysis, live repaints, and several
-provenance fields do not ([Known Gaps](#known-gaps), and
-[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)).
+The path-independence harness compares request, status, and answer content across
+histories and public routes.
+Per-tier provenance describes how the answer was obtained;
+[the cache design](../guides/cache-design.md) specifies policy and persistence.
 
 #### One opened root has one authority
 
@@ -239,13 +240,13 @@ The target models are in
 | Concept | Covers | Defined today | One explicit model? |
 | --- | --- | --- | --- |
 | Request | Scope, content axis, selection, views, defaults, validation | `Request { basis: Basis { root, scope, content }, query, now }`, `RequestSpec`, `RequestError`, and one defaults table (`query/query_request.rs`); `ReportRequest` carries the read half at an opened root | Yes. Both surfaces build through `RequestSpec`, `report` and `prepare_report*` take a validated `Request`, and every route validates before it reads stored state |
-| Delivery | Cache policy, worker counts, partial acceptance, watch | `Delivery { cache, cache_path, accept_partial, watch, analysis_workers }` (`query/query_request.rs`), consumed by `prepare_report*`, the watch session, and both surfaces | Partly. One type enumerates them, and `ScanConfig`’s `threads`, `batch_size`, and `order` stay there until one `Workers` takes both counts |
-| Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
-| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `EntryScope`, `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity` with its `AnalyzerProvenance`, their fixed-width codecs, `serves_snapshot`, and the per-tier write rules (`stored_state.rs`), recorded in the format-5 snapshot and sidecar headers (`snapshot.rs`, `content_cache.rs`), which cache status reports as `fdu.cache/2`; `snapshot_scope_serves` (`lib.rs`); `ContentIndex::prepare` and `load_content_cache` | Partly. Every tier records its typed identity, serves by equality, and is written by its own rule, but the snapshot’s one report-only projection is coded in `snapshot_scope_serves` on one route |
+| Delivery | Cache policy, workers, traversal, batching, partial acceptance, watch | `Delivery`, `Workers`, and `WatchDelivery::DEFAULT_INTERVAL` (`query/query_request.rs`) | Yes. Every route consumes operational choices from delivery; low-level scanner and analyzer configurations are derived executor inputs, outside semantic identity |
+| Execution plan | Which route answers, stored-state admission, verification, writes, and partial acceptance | `Plan`, `Route`, `Load`, `Verify`, `plan`, `Plan::admit`, `Plan::writes`, and `Plan::outcome` (`execution.rs`); `Session::persist_due` owns live throttling | Yes. Executors consume the plan, and the command line and Python share the engine’s persistence policy |
+| Stored-state identity | Entry, control, and content tiers and the requests they may serve | `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity`, `ContentAdmission`, and `ContentProjection` (`stored_state.rs`); `snapshot::load_serving` applies snapshot projection | Yes. Snapshot loading applies the serving relation before returning an index; content reads and restores require admitted identities and records |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
-| Measured value | What each metric means, and how coverage is decided | Analyzer identities and `MetricValues` in `content_model.rs`; per-file `CoverageReason` in `FileAnalysis`; `document_words` in `query_report.rs` | No. Coverage is one outcome per file for the whole analyzer set, and `document_words` changes meaning with the analyzers a record ran under |
-| Provenance | Source, freshness, observation time, completeness, errors | `query::Provenance`, built at six production sites; `Index::freshness`; per-entry `Provenance` in `engine_contract.rs` | No. Each site fills the fields its own way, and `scan_started_at` has three meanings |
-| Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants in `report_format.rs` | No. Independent writers render a `Report` with no field-level schema (`fdu-c5v1`) |
+| Measured value | What each metric means, and how coverage is decided | The `METRICS` registry and per-unit outcomes in `FileAnalysis`; `ReportMetricValues` and per-unit coverage in `MetricRow`; `document_words` and `pages` in `query_report.rs` | Yes. The registry owns metric names and units, each requested unit records its own outcome, and absent units stay absent from reports |
+| Provenance | Source, freshness, observation time, completeness, errors | `TreeStatus` and `ReportProvenance`, including per-tier `TierState`; per-entry `Provenance` in `engine_contract.rs` | Yes. Report status, delivery provenance, and retained-tier provenance are separate values; an unavailable observation time is `None` rather than an invented timestamp |
+| Answer shape | Report, change-record, and cache-status documents | `Report`, `Change`, and `CacheStatus`; schema constants, field-presence rules, and the shared machine-output walk in `report_format.rs` | Yes. JSON, JSON Lines, and YAML consume one field walk, while each document family keeps its own schema identity |
 
 ### Core Values and Ownership
 
@@ -342,7 +343,7 @@ The synchronous Rust boundary has one constructor and five lifecycle operations:
 
 ~~~rust
 impl OpenedIndex {
-    pub fn open(root: &Path, options: OpenOptions) -> Result<Self>;
+    pub fn open(plan: &Plan, options: OpenOptions) -> Result<Self>;
     pub fn read(&self, request: ReadRequest) -> Result<ReadResponse>;
     pub fn changes(&self, request: ChangeRequest) -> Result<ChangePoll>;
     pub fn refresh(&self, paths: &[PathBuf]) -> Result<RefreshResult>;
@@ -353,13 +354,27 @@ impl OpenedIndex {
 
 Names may follow established fdu vocabulary, but the responsibilities and shared-state
 semantics are stable.
-The associated constructor preserves the existing blocking free `open()` contract.
+The associated constructor consumes a `Route::Opened` plan and preserves the blocking
+free `open(&Basis, &Delivery)` lifecycle.
+Progressive discovery accepts cache-off delivery without content analysis; observation
+is configured by `OpenOptions`. Unsupported delivery combinations fail before discovery
+starts.
 
 #### Reports and derived report plans
 
 `Query` values are immutable requests over retained facts.
 `Report` values are immutable, provenance-carrying answers.
-Formatting serializes a report and never changes query semantics.
+The request’s format resolves tree versus flat projection before the reader runs;
+formatting serializes that owned projection and never re-queries the index.
+Directory report filters use eligible subtree bytes and activity; raw entry projections
+retain inode attributes.
+Matching directories cover contents once for aggregate views, while flat rows retain
+every matching root, including overlapping ones.
+Opened report budgets charge the subtree-measurement pass as well as selection and
+shaping.
+The default unfiltered tree still reads maintained roll-ups without constructing
+a flat inventory. See [machine output](../../machine-output.md) for age/reference fields
+and conversion rules.
 
 A derived report plan is transient execution state for a provably one-shot request.
 It produces the same `Report` shape and values as indexed execution.
@@ -413,16 +428,15 @@ retained state has no consumer.
 It observes control state as `ScanConfig::read_controls` says, on by default as for
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
-Metadata-only requests do; content-analysis requests do not
-([the cache design’s Known Gaps](../guides/cache-design.md#known-gaps)). `query::report`
-and `report_in` take `&Request` and, after `validate_read`, use `request.basis.content`
-for metric sections, the `analysis` metadata, and the schema version: the report echoes
-the request, never the store.
+`query::report` and `report_in` take `&Request` and, after `validate_read`, use
+`request.basis.content` for metric sections and the `analysis` metadata.
+The report echoes the request, never the store; every report uses the same schema
+version.
 
 Live paths refuse what they cannot keep current.
-`watch_session::Session::new` refuses analyzed content rather than reporting the metrics
-it opened with as fresh, and an opened-root read refuses a `documents` view rather than
-answering zero words.
+`watch_session::Session::start` refuses analyzed content rather than reporting the
+metrics it opened with as fresh, and an opened-root read refuses a `documents` view
+rather than answering zero words.
 
 #### Opened and long-lived
 
@@ -502,7 +516,9 @@ A file name has up to three extensions, one per question, and the public API kee
 apart:
 
 - **Raw**, from `classify::derive_ext` and `classify::ext_bucket`, is any final dotted
-  component, whatever its bytes or length, with a `.tar` before it kept.
+  component that is valid Unicode, without a character or length restriction, with a
+  `.tar` before it kept.
+  An invalid native extension maps to the `(none)` bucket.
   The extension view, per-directory extension tallies, and an unrecognized type’s label
   use it, so detached and command-line answers stay the ones fdu gave before registries
   existed.
@@ -909,9 +925,12 @@ Portable diagnostics escape and bound path examples.
 
 Snapshots fail closed on checksum, format, fingerprint, scope, semantic, or root
 mismatch and use owner-only permissions where supported.
-The one scope exception is a one-shot cache-only report, which may read a snapshot that
-observed `.gitignore` for a request that turned observation off; it consumes only the
-all-entry facts and retags the report to the requested scope.
+A controls-on snapshot may serve a controls-off request with the same entry identity on
+every route. The loader validates the stored control payload but discards it and
+constructs the index directly in the requested blind scope.
+That projected index cannot overwrite the stronger snapshot.
+A controls-off snapshot cannot serve a controls-on request; that direction scans cold or
+misses under cache-only policy.
 
 ## Operational Concerns
 
@@ -946,27 +965,6 @@ idle native observer performs no filesystem work.
 
 ## Future Considerations
 
-### Known Gaps
-
-Each item is a way the present engine falls short of
-[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
-or
-[Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics).
-[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them. This list holds the classification and provenance gaps; store identity,
-compatibility, policy, and write-rule gaps are listed once, in
-[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps).
-
-- **Classification depends on history.** Metric views prefer a content record’s
-  classification, which analysis derives from the file’s leading bytes, over the
-  name-based `Index::classify`, so one path can count under a different type or family
-  depending on whether analysis ran.
-- **Provenance is filled per site.** `scan_started_at` is the run’s start in a one-shot
-  report, even one answered from cache; the open or refresh start for a Python `Index`,
-  except `None` when it was opened cache-only; and `None` for opened reads and watch
-  repaints. Watch repaints hard-code `source: warm_revalidate`, `complete: true`, and no
-  errors, including over a partial or cache-only index.
-
 ### Open Questions
 
 - What trust representation and measurements would justify progressively serving a warm
@@ -977,9 +975,6 @@ compatibility, policy, and write-rule gaps are listed once, in
 
 ### Potential Improvements
 
-- Model the request, execution plan, stored-state identity, per-item validity,
-  provenance, and answer shape once in the engine, as the explicit core models plan
-  describes, so every path and surface applies the same rules.
 - Add mixed-source progressive serving after per-subtree trust and deletion semantics
   have a reviewed composition proof.
 - Add maintained projections only when recorded read workloads show that bounded

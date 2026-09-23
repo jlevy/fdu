@@ -197,25 +197,6 @@ pub struct AnalyzerProvenance {
 }
 
 impl ContentTierIdentity {
-    /// The identity of `analysis` records carrying `provenance`, analyzed over `entries`.
-    ///
-    /// `None` when the records were classified under type rules other than the entry
-    /// tier's, which no index of that entry tier produces.
-    pub(crate) fn of_records(
-        entries: EntryTierIdentity,
-        analysis: AnalysisSet,
-        provenance: &ContentProvenance,
-    ) -> Option<Self> {
-        (provenance.type_rules_fingerprint == entries.type_rules_fingerprint).then(|| Self {
-            entries,
-            analysis,
-            provenance: AnalyzerProvenance {
-                options_fingerprint: provenance.options_fingerprint,
-                analyzers: provenance.analyzers.clone(),
-            },
-        })
-    }
-
     /// The provenance each record of this tier carries.
     pub(crate) fn record_provenance(&self) -> ContentProvenance {
         ContentProvenance {
@@ -225,20 +206,147 @@ impl ContentTierIdentity {
         }
     }
 
-    /// Whether a record of `analysis` carrying `provenance` is one of this tier's: the same
-    /// analyzer set, and the provenance [`Self::record_provenance`] gives, compared field by
-    /// field so a commit never builds it.
-    pub(crate) fn holds_record(
+    /// Identity produced by this build for the requested entry tier and analyzers.
+    pub fn for_request(entries: EntryTierIdentity, analysis: AnalysisSet) -> Self {
+        let provenance = ContentProvenance::for_request(
+            crate::content::AnalysisRequest { profile: analysis, ..Default::default() },
+            entries.type_rules_fingerprint,
+        );
+        Self {
+            entries,
+            analysis,
+            provenance: AnalyzerProvenance {
+                options_fingerprint: provenance.options_fingerprint,
+                analyzers: provenance.analyzers,
+            },
+        }
+    }
+
+    /// Admit a stored content identity and return the projection that may consume it.
+    ///
+    /// Equality is the only lawful content projection today. Adding another relation
+    /// requires implementing its record and tier projection here, not widening a reader.
+    #[must_use]
+    pub fn admit(&self, stored: &Self) -> Option<ContentAdmission<'_>> {
+        self.admit_parts(
+            stored.entries,
+            stored.analysis,
+            stored.provenance.options_fingerprint,
+            &stored.provenance.analyzers,
+        )
+    }
+
+    fn admit_parts(
+        &self,
+        entries: EntryTierIdentity,
+        analysis: AnalysisSet,
+        options: OptionsFingerprint,
+        analyzers: &[(AnalyzerId, AnalyzerVersion)],
+    ) -> Option<ContentAdmission<'_>> {
+        (entries == self.entries
+            && analysis == self.analysis
+            && options == self.provenance.options_fingerprint
+            && analyzers == self.provenance.analyzers)
+            .then_some(ContentAdmission { identity: self })
+    }
+
+    /// Admission for an observation already tied to this entry tier by its candidate.
+    /// This compares borrowed components, without allocating provenance per file.
+    pub(crate) fn admit_record(
         &self,
         analysis: AnalysisSet,
         provenance: &ContentProvenance,
-    ) -> bool {
-        let ContentProvenance { type_rules_fingerprint, options_fingerprint, analyzers } =
-            provenance;
-        analysis == self.analysis
-            && *type_rules_fingerprint == self.entries.type_rules_fingerprint
-            && *options_fingerprint == self.provenance.options_fingerprint
-            && *analyzers == self.provenance.analyzers
+    ) -> Option<ContentAdmission<'_>> {
+        self.admit_parts(
+            EntryTierIdentity {
+                type_rules_fingerprint: provenance.type_rules_fingerprint,
+                ..self.entries
+            },
+            analysis,
+            provenance.options_fingerprint,
+            &provenance.analyzers,
+        )
+    }
+}
+
+/// Proof that stored content can be projected to one requested identity.
+///
+/// The private constructor is the shared admission relation. Consumers apply this proof
+/// to records or a borrowed record set; the proof never widens the requested analyzer set.
+#[must_use = "admission must be applied before consuming stored content"]
+#[derive(Clone, Copy, Debug)]
+pub struct ContentAdmission<'a> {
+    identity: &'a ContentTierIdentity,
+}
+
+impl<'a> ContentAdmission<'a> {
+    /// The identity the projected content answers.
+    pub const fn identity(self) -> &'a ContentTierIdentity {
+        self.identity
+    }
+
+    pub(crate) fn record(self, record: crate::content::FileAnalysis) -> Option<AdmittedRecord<'a>> {
+        record
+            .matches_profile(self.identity.analysis)
+            .then_some(AdmittedRecord { identity: self.identity, record })
+    }
+
+    pub(crate) fn project(
+        self,
+        content: &crate::content::ContentIndex,
+    ) -> Option<ContentProjection<'_>> {
+        let _admission = self.identity.admit(content.identity()?)?;
+        Some(ContentProjection { content })
+    }
+}
+
+/// A record set projected through the content serving relation for one request.
+#[derive(Clone, Copy)]
+pub(crate) struct ContentProjection<'a> {
+    content: &'a crate::content::ContentIndex,
+}
+
+impl<'a> ContentProjection<'a> {
+    pub(crate) fn identity(self) -> &'a ContentTierIdentity {
+        self.content.identity().expect("admitted tier has an identity")
+    }
+    pub(crate) fn len(self) -> usize {
+        self.content.len()
+    }
+    pub(crate) fn state(self) -> Option<crate::content::ContentTierState> {
+        self.content.state()
+    }
+    pub(crate) fn file(self, path: &std::path::Path) -> Option<&'a crate::content::FileAnalysis> {
+        self.content.file(path)
+    }
+    pub(crate) fn records(
+        self,
+    ) -> impl Iterator<Item = (&'a std::path::Path, &'a crate::content::FileAnalysis)> {
+        self.content.records()
+    }
+}
+
+/// A decoded record whose identity and analyzer slots have passed admission.
+#[must_use]
+pub(crate) struct AdmittedRecord<'a> {
+    identity: &'a ContentTierIdentity,
+    record: crate::content::FileAnalysis,
+}
+
+impl AdmittedRecord<'_> {
+    pub(crate) fn value(&self) -> &crate::content::FileAnalysis {
+        &self.record
+    }
+
+    pub(crate) fn into_record(self) -> crate::content::FileAnalysis {
+        self.record
+    }
+
+    pub(crate) fn for_tier(
+        self,
+        wanted: &ContentTierIdentity,
+    ) -> Option<crate::content::FileAnalysis> {
+        wanted.admit(self.identity)?.record(self.record).map(AdmittedRecord::into_record)
     }
 }
 
@@ -248,6 +356,9 @@ pub enum Serves {
     /// The stored identity equals the requested one, so the stored tier holds what a cold
     /// run of the request would build.
     Exact,
+    /// The stored entry tier equals the requested one, and an observed control tier can
+    /// be discarded to produce the controls-off index a cold run would build.
+    ProjectControlsOff,
     /// The stored tier cannot answer the request, which is a miss.
     Refuse,
 }
@@ -258,7 +369,16 @@ pub enum Serves {
 /// its own. Any relation beyond equality arrives with a projection that yields what a cold
 /// run of `wanted` would, and is proven by its own test.
 pub fn serves_snapshot(stored: SnapshotIdentity, wanted: SnapshotIdentity) -> Serves {
-    if stored == wanted { Serves::Exact } else { Serves::Refuse }
+    if stored == wanted {
+        Serves::Exact
+    } else if stored.entries == wanted.entries
+        && stored.controls.is_observed()
+        && wanted.controls == ControlTierIdentity::NotObserved
+    {
+        Serves::ProjectControlsOff
+    } else {
+        Serves::Refuse
+    }
 }
 
 // ---- write rules ----
@@ -291,9 +411,7 @@ pub(crate) fn content_record_writable(
     path: &std::path::Path,
     record: &crate::content::FileAnalysis,
 ) -> bool {
-    use crate::content::CoverageReason;
-
-    if matches!(record.coverage, CoverageReason::IoError | CoverageReason::ChangedDuringRead) {
+    if !record.is_reusable() {
         return false;
     }
     // A complete, fresh pass verified every entry, and the content tier holds only records
@@ -315,28 +433,15 @@ pub(crate) fn content_record_writable(
 /// `stored_entries`, the entry tier of the snapshot already stored for its root, if any.
 ///
 /// After a complete pass, always: the snapshot is written with it. After a partial pass,
-/// nothing — held until P1.4.2 (`fdu-rjv3`), see below. The rule this returns to is: only
-/// beside a snapshot of the same entry tier, which the sidecar pairs with, because a partial
+/// only beside a snapshot of the same entry tier, which the sidecar pairs with, because a partial
 /// pass under another identity writes no snapshot, so replacing the sidecar would evict the
 /// records that pair with the snapshot that stays.
-///
-/// **Held until P1.4.2.** A partial pass marks its root `Partial`, so
-/// [`content_record_writable`] promotes no entry the pass elided as unchanged: the records
-/// it would write are only the files that changed since the last complete snapshot, and
-/// writing them replaces a complete sidecar with that handful. Every later run then re-reads
-/// the whole tree, for as long as the tree holds one unlistable directory — which on macOS
-/// is any home directory. P1.4.2 marks the failed paths instead of the pass root, so an
-/// elided entry under a listable parent is `Fresh`, `content_record_writable` keeps every
-/// file the pass verified, and this gate returns to the pairing rule above by restoring the
-/// second operand. Until then the partial pass leaves the stored pair alone, which is what
-/// it did before per-tier rules existed.
 pub(crate) fn content_tier_writable(
     index: &crate::Index,
     stored_entries: impl FnOnce() -> Option<EntryTierIdentity>,
 ) -> bool {
-    // Not called while the rule is held, so a partial pass reads no stored header.
-    let _ = stored_entries;
     entries_writable(index)
+        || stored_entries().is_some_and(|stored| stored == index.snapshot_identity().entries)
 }
 
 // ---- fixed-width codecs ----
@@ -565,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn a_snapshot_serves_exactly_the_identity_it_was_taken_under() {
+    fn snapshot_serving_is_equality_plus_observation_on_to_off() {
         let base = ScanConfig::default().snapshot_identity();
         assert_eq!(serves_snapshot(base, base), Serves::Exact);
 
@@ -589,7 +694,6 @@ mod tests {
                 },
                 ..base
             },
-            SnapshotIdentity { controls: ControlTierIdentity::NotObserved, ..base },
             SnapshotIdentity {
                 controls: ControlTierIdentity::Observed { limits: limits(None, None) },
                 ..base
@@ -612,6 +716,9 @@ mod tests {
             assert_eq!(serves_snapshot(base, wanted), Serves::Refuse, "{wanted:?}");
             assert_eq!(serves_snapshot(wanted, base), Serves::Refuse, "{wanted:?}");
         }
+        let blind = SnapshotIdentity { controls: ControlTierIdentity::NotObserved, ..base };
+        assert_eq!(serves_snapshot(base, blind), Serves::ProjectControlsOff);
+        assert_eq!(serves_snapshot(blind, base), Serves::Refuse);
     }
 
     #[test]
@@ -695,15 +802,9 @@ mod tests {
         let mut partial = crate::Index::new_with_config("/root", &config);
         partial.set_initial_freshness(false);
         assert!(!entries_writable(&partial), "an absent entry would change totals");
-        // Held until P1.4.2 (`fdu-rjv3`): a partial pass writes no sidecar at all, not even
-        // beside the snapshot it pairs with, because the records it could write today are
-        // only the files that changed. `Some(other)` and `None` are refused by the pairing
-        // rule too, and stay refused when the hold lifts.
-        for stored in [None, Some(entries), Some(other)] {
-            assert!(
-                !content_tier_writable(&partial, || stored),
-                "a partial pass writes nothing until P1.4.2: {stored:?}"
-            );
+        assert!(content_tier_writable(&partial, || Some(entries)));
+        for stored in [None, Some(other)] {
+            assert!(!content_tier_writable(&partial, || stored), "mismatched pair: {stored:?}");
         }
 
         let mut unverified = complete.clone();
@@ -829,16 +930,39 @@ mod tests {
         let entries = ScanConfig::default().snapshot_identity().entries;
         let request = AnalysisRequest { profile: AnalysisSet::ALL, ..AnalysisRequest::default() };
         let records = ContentProvenance::for_request(request, entries.type_rules_fingerprint);
-        let identity = ContentTierIdentity::of_records(entries, request.profile, &records)
-            .expect("records under the entry tier's type rules");
+        let identity = ContentTierIdentity::for_request(entries, request.profile);
         assert_eq!(identity.record_provenance(), records);
-        assert!(identity.holds_record(request.profile, &records));
+        assert!(identity.admit_record(request.profile, &records).is_some());
 
         let other_rules = ContentProvenance::for_request(request, !entries.type_rules_fingerprint);
-        assert_eq!(ContentTierIdentity::of_records(entries, request.profile, &other_rules), None);
-        assert!(!identity.holds_record(request.profile, &other_rules), "other type rules");
+        assert!(identity.admit_record(request.profile, &other_rules).is_none(), "other type rules");
         let lines = AnalysisSet::NONE.with_lines();
-        assert!(!identity.holds_record(lines, &records), "another analyzer set's label");
+        assert!(identity.admit_record(lines, &records).is_none(), "another analyzer set's label");
+    }
+
+    #[test]
+    fn content_admission_refuses_every_identity_difference_and_applies_exact_identity() {
+        let entries = ScanConfig::default().snapshot_identity().entries;
+        let wanted = ContentTierIdentity::for_request(entries, AnalysisSet::ALL);
+        assert_eq!(wanted.admit(&wanted).expect("exact admission").identity(), &wanted);
+        let changes: &[fn(&mut ContentTierIdentity)] = &[
+            |identity| identity.entries.engine ^= 1,
+            |identity| identity.entries.scope.max_depth = Some(1),
+            |identity| identity.entries.type_rules_fingerprint ^= 1,
+            |identity| identity.entries.reducers_fingerprint ^= 1,
+            |identity| identity.analysis = AnalysisSet::LINES_ONLY,
+            |identity| identity.provenance.options_fingerprint.0 ^= 1,
+            |identity| identity.provenance.analyzers[0].1.0 += 1,
+            |identity| {
+                identity.provenance.analyzers.pop();
+            },
+        ];
+        for change in changes {
+            let mut other = wanted.clone();
+            change(&mut other);
+            assert!(wanted.admit(&other).is_none(), "stored mismatch: {other:?}");
+            assert!(other.admit(&wanted).is_none(), "requested mismatch: {other:?}");
+        }
     }
 
     #[test]

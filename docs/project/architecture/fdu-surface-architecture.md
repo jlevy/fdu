@@ -103,10 +103,12 @@ The request half is built that way now: both surfaces fill one surface-neutral
 `RequestSpec`, `Request::build` parses it, and each renders whatever refusal comes back
 through its own `AxisNames`, so a grammar, a default, and a rule that relates one axis
 to another are each stated once.
-The answer half is not: several writers serialize a `Report` independently.
-[Known Gaps](#known-gaps) lists where they still differ, and
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks the work.
+The answer uses one ordered value traversal for JSON, JSON Lines, and YAML, and the
+Python models decode that same report shape.
+Parser-backed conformance tests compare all machine formats, including adversarial
+strings and lossless raw paths.
+[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+records the model and its acceptance checks.
 
 Differences land in `tests/parity/deviations-python.diff`, committed and reviewed like
 any golden. Each is matched against a named class in `scripts/parity-classes.mjs`, and
@@ -159,31 +161,27 @@ Machine output names its schema in a `schema` field: at the top of a JSON or YAM
 document, in the first record of JSON Lines, and on every watch stream record.
 The version is the compatibility promise: changing a field’s name, type, or meaning
 bumps it, and a golden fails when the output moves without a bump.
+A version no release has emitted yet is a draft that may still change in place, as
+[the release process](../guides/release-process.md) states.
 Each identity is a constant in the engine’s
 [`report_format`](../../../crates/fdu-core/src/report_format.rs) module, so every
 surface emits the same string.
 
 | Schema | Document | Constant |
 | --- | --- | --- |
-| `fdu.report/5` | A report, one-shot or each one a watch run prints, over an index with no content tier and with no metric section | `REPORT_SCHEMA` |
-| `fdu.report/6` | A report over an index that holds a content tier, or with a `types`, `families`, `languages`, or `documents` section | `CONTENT_REPORT_SCHEMA` |
-| `fdu.stream/1` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
+| `fdu.report/7` | A report, including its request, status, per-tier provenance, and any requested metric units | `REPORT_SCHEMA` |
+| `fdu.stream/2` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
 | `fdu.cache/2` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
-The report version follows the content tier the index holds, not the request, so a
-Python `Index` opened with analysis emits `fdu.report/6` even for a tree view.
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.
 
-One `Report` reaches callers through five writers: text, JSON, and YAML in
-`report_format.rs`; JSON Lines, which collapses the JSON fragments onto one line by
-string replacement; and the Python models, which the public package builds by parsing
-the JSON rendering. The native binding also keeps a dict writer of its own that the
-public package never uses.
+One iterative field walk in `report_format.rs` feeds JSON, JSON Lines, and YAML sinks;
+the command line writes those sinks directly to its output stream.
+Python builds its public models by parsing the same JSON rendering.
 Change records and cache status have writers of their own.
-No document yet states each envelope field by field (`fdu-c5v1`), so nothing holds the
-writers to one shape; until one does, the renderers in `report_format.rs` and the
-goldens under `tests/golden/` are the reference.
+The declared field presence rules, renderers, and goldens under `tests/golden/` hold the
+wire shape together.
 
 ## Interactive Client Boundary
 
@@ -218,30 +216,6 @@ client has proven it.
 
 ## Future Considerations
 
-### Known Gaps
-
-Each item is a way the surfaces fall short of
-[Model Every Key Concept Explicitly, in One Place](fdu-design-principles.md#model-every-key-concept-explicitly-in-one-place)
-or
-[Caching Improves Performance, Never Semantics](fdu-design-principles.md#caching-improves-performance-never-semantics);
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them. Engine-side gaps are in
-[the engine architecture](fdu-engine-architecture.md#known-gaps).
-
-- **Writers disagree.** YAML flattens metric rows that JSON nests under `metrics`, and
-  omits `root_raw` and `path_raw`. The unused native dict follows YAML rather than JSON
-  and omits a tree node’s `kind`. JSON Lines’ `collapse` rewrites string content, so the
-  path `a [ b/f { g }.txt` is emitted as `a [b/f {g}.txt`. `--watch --format yaml` emits
-  JSON change records, and text output carries no source or freshness label.
-- **Defaults and validation are the request model’s.** One defaults table
-  (`Request::DEFAULTS`) decides the size metric, the page denominator, the analyzer set,
-  and the view a report displays, and `Request::build` parses every axis from the words
-  a caller wrote, so each surface supplies only its own names for them.
-  `Request::validate`, `validate_read`, and `validate_delivery` state every rule once —
-  a view its content cannot answer, a selection by ignored state a scope never observed,
-  a read another analyzer set holds, and the three a watch cannot carry — and each route
-  applies them before it reads any stored state.
-
 ### Open Questions
 
 - Which opened-lifecycle capabilities should eventually receive an explicit CLI
@@ -253,9 +227,6 @@ tracks them. Engine-side gaps are in
 
 ### Potential Improvements
 
-- Hold every writer to one field-level schema, delete the unused native dict, and
-  compare the Python models with the rendered formats, so writer agreement is tested
-  rather than assumed.
 - Add warm-history replays to parity, so a golden also checks that a cached answer
   equals the cold one.
 - Generalize the parity runner to register another public binding without copying the
@@ -276,6 +247,32 @@ tracks them. Engine-side gaps are in
   harness and what it found
 - [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)
   — the crate split, and why a test-only Rust shim was the wrong instrument
+
+## List Selection and Presentation
+
+The metadata default view is List, whose automatic human format is the existing bounded
+directory tree. Core `ReadSpec.format` and `Query.format` resolve projection before
+reading; CLI and Python forward the choice.
+Flat Paths/Long and machine List requests materialize matching rows; ordinary unfiltered
+Tree keeps its maintained roll-up path.
+Full keeps its bounded digest.
+Legacy Files preserves name ordering and legacy Tree preserves structured hierarchy
+output. Explicit Paths/Long overrides Tree presentation.
+
+Directory report rows measure eligible subtrees before name/kind/size/age selection.
+Exclusions win across covered contents; nested matches remain separate rows while
+aggregate totals count their union once.
+Raw native entries continue to expose inode attributes.
+Every flat row carries signed optional age relative to one request instant.
+A detached Report owns only its requested projection: serialization cannot recover rows
+folded out of a tree, so incompatible re-rendering fails instead of returning a partial
+inventory as complete.
+The core renderer returns a Result; Python maps it to its existing invalid-argument
+boundary.
+
+The [machine-output reference](../../machine-output.md) owns field definitions, formats,
+and coverage interpretation.
+The [usage guide](../../usage.md) owns command examples.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

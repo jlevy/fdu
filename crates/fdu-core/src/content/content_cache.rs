@@ -7,8 +7,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::classify::{
-    Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
-    FileTypeId,
+    ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource, FileTypeId,
 };
 use crate::stored_state::{
     AnalyzerProvenance, ContentTierIdentity, ENTRY_TIER_BYTES, EntryTierIdentity,
@@ -16,8 +15,9 @@ use crate::stored_state::{
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
-    AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerId, AnalyzerVersion,
-    ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats, MetricValues,
+    AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerId, AnalyzerOutcome,
+    AnalyzerVersion, BasicMetrics, CodeMetrics, ContentDetection, CoverageReason, FileAnalysis,
+    LogicalWordStats, WordMetrics,
 };
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
@@ -25,11 +25,16 @@ const TRAILER: &[u8; 8] = b"FDUCTEND";
 /// On-disk format version. Bump on any layout change or any change to what a record means;
 /// a sidecar of another version is a clean miss.
 ///
+/// 7: coverage distinguishes recognized unsupported encodings from binary data.
+///
+/// 6: records store detection separately from name classification and one outcome block
+/// per requested analyzer unit.
+///
 /// 5: the header records the engine fingerprint beside the version, at the offset a
 /// snapshot's prologue gives it, and the content tier identity after the path encoding:
 /// the entry tier the records were analyzed over, which holds their type rules, then the
 /// analyzer set, the options fingerprint, and the analyzers.
-const FORMAT_VERSION: u32 = 5;
+const FORMAT_VERSION: u32 = 7;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -114,11 +119,13 @@ pub fn save_content_cache(index: &Index, path: &Path) -> Result<()> {
     // The tier states its records' type rules once, in its entry tier, and a save writes it
     // only as the identity this index gives records of that set, so records produced under
     // any other, such as other type rules, never reach a sidecar under its label.
-    if *identity != index.content_identity(identity.analysis) {
-        return Err(Error::Snapshot(
+    let wanted = index.content_identity(identity.analysis);
+    let content = content.admit(&wanted).ok_or_else(|| {
+        Error::Snapshot(
             "content records were produced under another identity than their index".into(),
-        ));
-    }
+        )
+    })?;
+    let identity = content.identity();
     // Every record the tier holds carries its identity, because the tier refuses any other,
     // so which records are written is decided per record: those this pass verified.
     let records = content
@@ -166,9 +173,11 @@ pub fn load_content_cache(
     wanted: &ContentTierIdentity,
     path: &Path,
 ) -> Result<ContentCacheLoad> {
-    if !wanted.analysis.is_enabled() || *wanted != index.content_identity(wanted.analysis) {
+    let current = index.content_identity(wanted.analysis);
+    let Some(admission) = current.admit(wanted).filter(|_| wanted.analysis.is_enabled()) else {
         return Ok(ContentCacheLoad::default());
-    }
+    };
+    let wanted = admission.identity();
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -245,12 +254,17 @@ pub fn load_content_cache(
         // arrived with e667b739, which left the remove and fingerprint compare between
         // decode and apply. "post-H112" named the wrong change: H112 is exp-109, the
         // measurement with the wide bucket.
+        // Failed analysis is never a reusable cache hit; leave it pending for retry.
         let apply_started = timings.as_ref().map(|_| Instant::now());
         match candidates.remove(&relative_path) {
-            Some(candidate) if candidate.attrs.fingerprint() == analysis.fingerprint => {
-                let coverage_exclusion =
-                    !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
-                let bytes = analysis.bytes;
+            Some(candidate)
+                if candidate.attrs.fingerprint() == analysis.value().fingerprint
+                    && analysis.value().is_reusable() =>
+            {
+                let coverage_exclusion = analysis_outcomes(analysis.value()).any(|outcome| {
+                    !matches!(outcome, CoverageReason::Analyzed | CoverageReason::Binary)
+                });
+                let bytes = analysis.value().bytes;
                 match index.apply_restored_analysis(candidate, analysis) {
                     AnalysisApplyOutcome::Applied => {
                         loaded.hits = loaded.hits.saturating_add(1);
@@ -285,6 +299,8 @@ pub fn load_content_cache(
     if let Some(timings) = timings {
         timings.publish();
     }
+    // The sidecar's mtime names the container write, not the content observation.
+    index.set_content_tier_state(crate::Source::Cached, crate::Freshness::Stale, None);
     Ok(loaded)
 }
 
@@ -460,13 +476,14 @@ fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Resul
     crate::snapshot::put_os_str(buffer, path.as_os_str())?;
     put_fingerprint(buffer, record.fingerprint);
     buffer.extend_from_slice(&record.bytes.to_le_bytes());
-    put_bounded_bytes(buffer, record.classification.file_type.as_str().as_bytes(), MAX_TYPE_BYTES)?;
-    buffer.push(family_code(record.classification.family));
-    buffer.push(source_code(record.classification.source));
-    buffer.push(confidence_code(record.classification.confidence));
-    buffer.push(flags_code(record.classification.flags));
-    put_metrics(buffer, record.metrics);
-    buffer.push(coverage_code(record.coverage));
+    put_bounded_bytes(buffer, record.detection.file_type.as_str().as_bytes(), MAX_TYPE_BYTES)?;
+    buffer.push(family_code(record.detection.family));
+    buffer.push(source_code(record.detection.source));
+    buffer.push(confidence_code(record.detection.confidence));
+    buffer.push(flags_code(record.detection.flags));
+    put_outcome(buffer, record.lines, put_basic_metrics);
+    put_optional_outcome(buffer, record.code, put_code_metrics);
+    put_optional_outcome(buffer, record.words, put_word_metrics);
     put_bounded_bytes(buffer, record.error.as_deref().unwrap_or("").as_bytes(), MAX_ERROR_BYTES)
 }
 
@@ -495,19 +512,18 @@ fn read_identity(reader: &mut Reader<'_>, engine: u64) -> Option<ContentTierIden
 }
 
 /// Header-only sidecar parse. Records are decoded one at a time by [`read_record`].
-struct RecordStream<'a> {
+struct RecordStream<'a, 'identity> {
     reader: Reader<'a>,
     remaining: u64,
-    profile: AnalysisSet,
-    provenance: ContentProvenance,
+    admission: crate::stored_state::ContentAdmission<'identity>,
 }
 
 /// Parse a sidecar for `root` whose content tier identity equals `wanted`.
-fn parse_header<'a>(
+fn parse_header<'a, 'identity>(
     image: &'a [u8],
     root: &Path,
-    wanted: &ContentTierIdentity,
-) -> Option<RecordStream<'a>> {
+    wanted: &'identity ContentTierIdentity,
+) -> Option<RecordStream<'a, 'identity>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
     if reader.u32()? != FORMAT_VERSION {
@@ -521,10 +537,7 @@ fn parse_header<'a>(
     // from another engine or entry tier, which holds their type rules, or another analyzer
     // set, version, or option.
     let identity = read_identity(&mut reader, engine)?;
-    if identity != *wanted {
-        return None;
-    }
-    let (profile, provenance) = (identity.analysis, identity.record_provenance());
+    let admission = wanted.admit(&identity)?;
     if reader.os_string()?.as_os_str() != root.as_os_str() {
         return None;
     }
@@ -532,10 +545,12 @@ fn parse_header<'a>(
     if count > MAX_RECORDS {
         return None;
     }
-    Some(RecordStream { reader, remaining: count, profile, provenance })
+    Some(RecordStream { reader, remaining: count, admission })
 }
 
-fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)> {
+fn read_record<'identity>(
+    stream: &mut RecordStream<'_, 'identity>,
+) -> Option<(PathBuf, crate::stored_state::AdmittedRecord<'identity>)> {
     let relative_path = PathBuf::from(stream.reader.os_string()?);
     if !record_path_stays_inside_root(&relative_path) {
         return None;
@@ -546,29 +561,29 @@ fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)>
     if file_type.is_empty() {
         return None;
     }
-    let classification = Classification {
+    let detection = ContentDetection {
         file_type: FileTypeId::from_cache(file_type),
         family: read_family(stream.reader.u8()?)?,
         source: read_source(stream.reader.u8()?)?,
         confidence: read_confidence(stream.reader.u8()?)?,
         flags: read_flags(stream.reader.u8()?)?,
     };
-    let metrics = read_metrics(&mut stream.reader)?;
-    let coverage = read_coverage(stream.reader.u8()?)?;
+    let lines = read_outcome(&mut stream.reader, read_basic_metrics)?;
+    let code = read_optional_outcome(&mut stream.reader, read_code_metrics)?;
+    let words = read_optional_outcome(&mut stream.reader, read_word_metrics)?;
     let error = String::from_utf8(stream.reader.bytes(MAX_ERROR_BYTES)?).ok()?;
     stream.remaining = stream.remaining.saturating_sub(1);
     Some((
         relative_path,
-        FileAnalysis {
-            classification,
+        stream.admission.record(FileAnalysis {
             fingerprint,
             bytes,
-            profile: stream.profile,
-            provenance: stream.provenance.clone(),
-            metrics,
-            coverage,
+            detection,
+            lines,
+            code,
+            words,
             error: (!error.is_empty()).then_some(error),
-        },
+        })?,
     ))
 }
 
@@ -620,15 +635,37 @@ fn read_fingerprint(reader: &mut Reader<'_>) -> Option<Fingerprint> {
     })
 }
 
-fn put_metrics(buffer: &mut Vec<u8>, value: MetricValues) {
+fn put_basic_metrics(buffer: &mut Vec<u8>, value: BasicMetrics) {
+    for metric in [value.physical_lines, value.blank_lines, value.nonblank_lines, value.raw_words] {
+        buffer.extend_from_slice(&metric.to_le_bytes());
+    }
+}
+
+fn read_basic_metrics(reader: &mut Reader<'_>) -> Option<BasicMetrics> {
+    Some(BasicMetrics {
+        physical_lines: reader.u64()?,
+        blank_lines: reader.u64()?,
+        nonblank_lines: reader.u64()?,
+        raw_words: reader.u64()?,
+    })
+}
+
+fn put_code_metrics(buffer: &mut Vec<u8>, value: CodeMetrics) {
+    for metric in [value.code_lines, value.comment_lines, value.code_blank_lines] {
+        buffer.extend_from_slice(&metric.to_le_bytes());
+    }
+}
+
+fn read_code_metrics(reader: &mut Reader<'_>) -> Option<CodeMetrics> {
+    Some(CodeMetrics {
+        code_lines: reader.u64()?,
+        comment_lines: reader.u64()?,
+        code_blank_lines: reader.u64()?,
+    })
+}
+
+fn put_word_metrics(buffer: &mut Vec<u8>, value: WordMetrics) {
     for metric in [
-        value.physical_lines,
-        value.blank_lines,
-        value.nonblank_lines,
-        value.raw_words,
-        value.code_lines,
-        value.comment_lines,
-        value.code_blank_lines,
         value.paragraphs,
         value.visible_words,
         value.logical_word_stats.wide_chars,
@@ -642,15 +679,8 @@ fn put_metrics(buffer: &mut Vec<u8>, value: MetricValues) {
     }
 }
 
-fn read_metrics(reader: &mut Reader<'_>) -> Option<MetricValues> {
-    Some(MetricValues {
-        physical_lines: reader.u64()?,
-        blank_lines: reader.u64()?,
-        nonblank_lines: reader.u64()?,
-        raw_words: reader.u64()?,
-        code_lines: reader.u64()?,
-        comment_lines: reader.u64()?,
-        code_blank_lines: reader.u64()?,
+fn read_word_metrics(reader: &mut Reader<'_>) -> Option<WordMetrics> {
+    Some(WordMetrics {
         paragraphs: reader.u64()?,
         visible_words: reader.u64()?,
         logical_word_stats: LogicalWordStats {
@@ -664,6 +694,58 @@ fn read_metrics(reader: &mut Reader<'_>) -> Option<MetricValues> {
             nonwide_chars: reader.u64()?,
         },
     })
+}
+
+fn put_outcome<T: Copy>(
+    buffer: &mut Vec<u8>,
+    outcome: AnalyzerOutcome<T>,
+    put_value: fn(&mut Vec<u8>, T),
+) {
+    buffer.push(coverage_code(outcome.coverage()));
+    if let Some(value) = outcome.value() {
+        put_value(buffer, value);
+    }
+}
+
+fn read_outcome<T>(
+    reader: &mut Reader<'_>,
+    read_value: fn(&mut Reader<'_>) -> Option<T>,
+) -> Option<AnalyzerOutcome<T>> {
+    let coverage = read_coverage(reader.u8()?)?;
+    let value = if coverage == CoverageReason::Analyzed { Some(read_value(reader)?) } else { None };
+    AnalyzerOutcome::from_parts(coverage, value)
+}
+
+fn put_optional_outcome<T: Copy>(
+    buffer: &mut Vec<u8>,
+    outcome: Option<AnalyzerOutcome<T>>,
+    put_value: fn(&mut Vec<u8>, T),
+) {
+    buffer.push(u8::from(outcome.is_some()));
+    if let Some(outcome) = outcome {
+        put_outcome(buffer, outcome, put_value);
+    }
+}
+
+#[expect(
+    clippy::option_option,
+    reason = "Outer None rejects malformed bytes; inner None is an absent unit."
+)]
+fn read_optional_outcome<T>(
+    reader: &mut Reader<'_>,
+    read_value: fn(&mut Reader<'_>) -> Option<T>,
+) -> Option<Option<AnalyzerOutcome<T>>> {
+    match reader.u8()? {
+        0 => Some(None),
+        1 => Some(Some(read_outcome(reader, read_value)?)),
+        _ => None,
+    }
+}
+
+fn analysis_outcomes(analysis: &FileAnalysis) -> impl Iterator<Item = CoverageReason> + '_ {
+    std::iter::once(analysis.lines.coverage())
+        .chain(analysis.code.map(|outcome| outcome.coverage()))
+        .chain(analysis.words.map(|outcome| outcome.coverage()))
 }
 
 fn put_analyzers(buffer: &mut Vec<u8>, analyzers: &[(AnalyzerId, AnalyzerVersion)]) -> Result<()> {
@@ -804,6 +886,7 @@ fn coverage_code(value: CoverageReason) -> u8 {
         CoverageReason::Analyzed => 0,
         CoverageReason::Binary => 1,
         CoverageReason::InvalidUtf8 => 2,
+        CoverageReason::UnsupportedEncoding => 3,
         CoverageReason::Unsupported => 4,
         CoverageReason::IoError => 5,
         CoverageReason::ChangedDuringRead => 6,
@@ -815,6 +898,7 @@ fn read_coverage(code: u8) -> Option<CoverageReason> {
         0 => Some(CoverageReason::Analyzed),
         1 => Some(CoverageReason::Binary),
         2 => Some(CoverageReason::InvalidUtf8),
+        3 => Some(CoverageReason::UnsupportedEncoding),
         4 => Some(CoverageReason::Unsupported),
         5 => Some(CoverageReason::IoError),
         6 => Some(CoverageReason::ChangedDuringRead),
@@ -963,6 +1047,24 @@ mod tests {
         assert_eq!(duration_micros(Duration::from_nanos(900)), 0);
     }
 
+    #[test]
+    fn restored_sidecar_does_not_claim_its_container_mtime_as_observation_time() {
+        let (root, analyzed, request) = analyzed_index();
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&analyzed, &cache).expect("save");
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        let loaded = load(&mut restored, request, &cache);
+
+        assert!(loaded.usable && loaded.hits == 1, "{loaded:?}");
+        let state =
+            restored.content().and_then(super::super::ContentIndex::state).expect("tier state");
+        assert_eq!(state.source, crate::Source::Cached);
+        assert_eq!(state.observed_at_ns, None, "the sidecar stores no observation instant");
+    }
+
     /// Restore rebuilds nested directory roll-ups, not only the root.
     ///
     /// The probe content digest hashes the root roll-up; the `ContentIndex` unit test is
@@ -995,6 +1097,90 @@ mod tests {
         }
     }
 
+    #[test]
+    fn operational_failure_in_a_valid_sidecar_is_not_reused() {
+        let (root, analyzed, request) = analyzed_index();
+        let store = tempfile::tempdir().expect("cache dir");
+        let cache = store.path().join("content.cache");
+        let identity = analyzed.content().and_then(|content| content.identity()).expect("identity");
+        let mut record = analyzed
+            .content()
+            .and_then(|content| content.file(Path::new("notes.md")))
+            .cloned()
+            .expect("record");
+        record.lines = AnalyzerOutcome::unavailable(CoverageReason::IoError);
+        record.error = Some("injected failure".into());
+
+        // Build a checksummed sidecar directly: the ordinary writer correctly excludes
+        // this record, while the reader must still distrust an image another process can
+        // create or modify.
+        let mut image = Vec::new();
+        image.extend_from_slice(MAGIC);
+        image.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        image.extend_from_slice(&identity.entries.engine.to_le_bytes());
+        image.push(crate::snapshot::path_encoding());
+        put_identity(&mut image, identity).expect("identity");
+        crate::snapshot::put_os_str(&mut image, analyzed.root_path().as_os_str()).expect("root");
+        image.extend_from_slice(&1_u64.to_le_bytes());
+        put_record(&mut image, Path::new("notes.md"), &record).expect("record");
+        let checksum = crate::snapshot::crc32c(&image);
+        image.extend_from_slice(&checksum.to_le_bytes());
+        image.extend_from_slice(TRAILER);
+        fs::write(&cache, image).expect("write sidecar");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request, &cache);
+        assert!(loaded.usable, "the sidecar identity itself remains usable");
+        assert_eq!((loaded.hits, loaded.stale), (0, 1));
+        assert!(
+            restored
+                .content()
+                .expect("prepared content tier")
+                .file(Path::new("notes.md"))
+                .is_none()
+        );
+        assert_eq!(restored.pending_analysis_candidates(request).len(), 1);
+    }
+
+    #[test]
+    fn unsupported_encoding_outcomes_round_trip_through_the_sidecar() {
+        let root = tempfile::tempdir().expect("root");
+        let store = tempfile::tempdir().expect("cache dir");
+        fs::write(root.path().join("wide.rs"), [0xff, 0xfe, b'f', 0, b'n', 0])
+            .expect("UTF-16 fixture");
+        let request = request_for(AnalysisSet::ALL);
+        let (mut analyzed, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        super::super::analyze_index(&mut analyzed, request);
+        let expected = analyzed
+            .content()
+            .and_then(|content| content.file(Path::new("wide.rs")))
+            .cloned()
+            .expect("analyzed record");
+        let cache = store.path().join("content.cache");
+        save_content_cache(&analyzed, &cache).expect("save");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load(&mut restored, request, &cache);
+        assert!(loaded.usable && loaded.hits == 1, "{loaded:?}");
+        let actual = restored
+            .content()
+            .and_then(|content| content.file(Path::new("wide.rs")))
+            .expect("restored record");
+        assert_eq!(actual, &expected);
+        assert_eq!(actual.lines.coverage(), CoverageReason::UnsupportedEncoding);
+        assert_eq!(
+            actual.code.expect("code outcome").coverage(),
+            CoverageReason::UnsupportedEncoding
+        );
+        assert_eq!(
+            actual.words.expect("word outcome").coverage(),
+            CoverageReason::UnsupportedEncoding
+        );
+    }
+
     /// A sidecar serves exactly the analyzer set it was written for. A wider one holds
     /// metrics the narrower request did not ask for and would report them, and the wider
     /// set's label, as its answer; so it is a clean miss, and every file is read again
@@ -1017,6 +1203,46 @@ mod tests {
             "a missed request reads every file"
         );
         assert!(restored.content().is_none(), "a miss leaves no content tier behind");
+
+        // The load above missed, so both indexes now analyze cold; this checks only that
+        // the rejected wider sidecar left no residue. Counts alone would not show that, so
+        // compare every displayed metric and per-unit outcome in each row and the total
+        // with a fresh index that has never seen the wider sidecar.
+        let (mut cold, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("cold scan");
+        super::super::analyze_index(&mut cold, narrower);
+        super::super::analyze_index(&mut restored, narrower);
+        let values = |index: &Index| {
+            let query = crate::query::Query {
+                views: vec![crate::query::ViewSpec::Types],
+                ..crate::query::Query::default()
+            };
+            let report = crate::query::report(
+                index,
+                &crate::test_support::read_of(index, query),
+                std::time::UNIX_EPOCH,
+            )
+            .expect("metric report");
+            let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
+                panic!("expected type metrics");
+            };
+            std::iter::once(&summary.total)
+                .chain(&summary.rows)
+                .map(|row| {
+                    (
+                        row.id.clone(),
+                        (
+                            row.analysis,
+                            row.metrics,
+                            row.lines_coverage.clone(),
+                            row.code_coverage.clone(),
+                            row.words_coverage.clone(),
+                        ),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        assert_eq!(values(&restored), values(&cold), "wider cache history changes no row value");
     }
 
     /// Neither a narrower sidecar nor one of an incomparable set answers a request: each

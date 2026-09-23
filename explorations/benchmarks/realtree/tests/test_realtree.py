@@ -437,6 +437,12 @@ class StatisticsTests(unittest.TestCase):
             "code-sloc",
             "markdown-prose",
             "text-prose",
+            "render-json",
+            "render-json-string",
+            "render-jsonl",
+            "render-jsonl-string",
+            "render-yaml",
+            "render-yaml-string",
         ):
             with self.subTest(job=job_id):
                 self.assertTrue(measure.PROBE_JOBS[job_id].parallel_cpu)

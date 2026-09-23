@@ -7,6 +7,34 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Directory filters measure eligible subtree bytes and modification activity, including
+  nested directories. Exclusions win throughout a subtree; aggregate totals count covered
+  contents once. Without an explicit kind filter, size and modification bounds now test
+  directory subtrees rather than only the directory inode.
+- Explicit tree, paths, and long presentation formats expose directory and file
+  inventories on the command line and Python surface: `--format tree|paths|long`, with
+  `--tree` and `--long` as shorthands.
+  Flat rows include subtree counts and signed modification ages measured against one
+  report reference instant.
+
+### Changed
+
+- Engine execution plans now carry cache policy, scheduling, partial-answer acceptance,
+  and route selection.
+  Rust callers open with `Basis` and `Delivery`.
+- Python `Index.refresh()` writes refreshed metadata and content under `auto`. Iterating
+  `Index.watch()` persists verified changes under the same policy; cache write failures
+  warn without ending the feed.
+- Watch repaint defaults come from the engine on every surface.
+- Metadata machine output defaults to the list view while the default human tree
+  presentation stays the same.
+  Directory query fields are part of the unreleased `fdu.report/7` contract.
+- Rust `report_format::render` now returns `Result<String>`, refusing a conversion
+  between a folded tree and a flat inventory that the report cannot answer; Python maps
+  the refusal to `InvalidArgumentError`.
+
 ## [0.1.0] - 2026-09-16
 
 <!-- Release date: 2026-09-16 is a placeholder. Set it to the tag date if v0.1.0 is cut
@@ -53,14 +81,16 @@ The GitHub release text is
     a usage error. `--allow-partial` accepts a partial result as success.
   - `fdu --docs` prints the usage guide and `fdu --skill` prints a portable agent skill,
     both without a `PATH` and without scanning.
-- **Machine output.** Every report carries a versioned `schema`: a metadata-only report
-  uses `fdu.report/5`, a report that ran content analysis or includes a metric summary
-  (`types`, `families`, `languages`, `documents`) uses `fdu.report/6`, a `--watch`
-  stream uses `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`, its own
-  document identity rather than a report schema, with the identity of every tier each
-  cached file holds. A field change bumps the schema version.
-  Completeness (`complete`, `errors`) is separate from what a view chose not to render,
-  and a path that is not valid Unicode keeps a lossless, platform-tagged raw identity.
+- **Machine output.** Every report uses `fdu.report/7`, watch changes use
+  `fdu.stream/2`, and `--cache-status` uses the separate `fdu.cache/2` document.
+  Reports carry the effective `request`, structural `status`, and per-tier `provenance`.
+  `status.errors` retains bounded structured details and `status.errors_omitted` counts
+  the remaining failures.
+  Each requested analyzer has its own coverage counts; metrics from unrequested
+  analyzers stay absent.
+  JSON, JSON Lines, YAML, and Python models share the answer shape, including lossless
+  platform-tagged identities for paths that are not valid Unicode.
+  A field change bumps the schema version.
 - **Content analysis**, opt-in with `--analyze`, which takes `lines`, `code`, `words`, a
   comma-separated set of them, `none`, or `all`.
   - `lines` counts physical, blank, and nonblank lines and raw words; `code` adds
@@ -68,9 +98,9 @@ The GitHub release text is
     TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell, and SQL; `words`
     adds normalized words, paragraphs, and derived pages, and reader-visible words for
     Markdown.
-  - Binary files, invalid UTF-8, and code without a shipped SLOC analyzer are reported
-    as coverage and do not make a run partial; an I/O failure or a file that changes
-    while it is read does.
+  - Binary files, unsupported encodings, invalid UTF-8, and code without a shipped SLOC
+    analyzer are reported as coverage and do not make a run partial; an I/O failure or a
+    file that changes while it is read does.
   - Classification stays path-only for exact filenames and known extensions.
     Only unresolved paths and `.h` files receive bounded probes for shebangs, modelines,
     binary signatures, and generated-file markers, and every metric row reports how its
@@ -122,7 +152,7 @@ The GitHub release text is
 - **Watch.** `fdu --watch` repeats the same query as the tree changes.
   Aggregate views repaint at most every `--interval` (2 seconds by default; the age
   grammar, including `200ms`), and `--view files --format jsonl` emits one
-  `fdu.stream/1` record per change.
+  `fdu.stream/2` record per change.
   Events are verified by stat, and a backend overflow or rescan request becomes a
   reconcile of the affected subtree rather than a dropped event.
   An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
@@ -277,7 +307,7 @@ This applies only to anyone who ran fdu built from a development checkout.
 - **Update names a development build used.** Flags, report schema versions, and Rust and
   Python interfaces were renamed before this release, and `### Added` gives each under
   its released name. A consumer pinned to a development build’s `fdu.report` version
-  moves to `fdu.report/5` or `fdu.report/6`.
+  moves to `fdu.report/7`.
 
 ### Compatibility
 
@@ -318,22 +348,24 @@ than behind `#[non_exhaustive]` on 0.1.0.
   stale to an older build in exactly the way an older one is, running an older build’s
   `--cache-clear=all` removes a newer build’s snapshots.
   Status names every file and its state before anything is removed.
-- **Cache scope.** `fdu PATH` and `fdu --no-gitignore PATH` keep snapshots of different
-  scope at one path, so alternating them scans cold each time.
-  Changing either `.gitignore` limit does the same.
+- **Cache scope.** A snapshot that observed `.gitignore` can serve a request with
+  `--no-gitignore` by omitting control state.
+  A request that needs rules cannot use a snapshot that never observed them.
+  Projected reads preserve the stronger snapshot.
+  Changing either `.gitignore` limit invalidates a snapshot that observed controls.
 - **Content analysis** is one-shot on every surface: the command line refuses
   `--analyze` with `--watch`, a Rust `Session` and Python `Index.watch()` refuse an
   index opened with analysis, and a refresh reanalyzes after reconciling.
   SLOC covers 15 languages, with no embedded-language or syntax-tree metrics.
   Sidecars and coverage are scoped to the analyzer set, so a request for analyzers the
   stored set lacks reads the files again.
-- **Analysis memory.** `--analyze code` holds a whole file in memory while it analyzes a
-  file of unknown type, and `--analyze words` does the same for Markdown and unknown
-  types, so a very large such file raises peak memory by its size.
+- **Analysis memory.** Unknown-type detection uses a bounded prefix.
+  Code analysis retains its longest logical line, and Markdown word analysis retains the
+  whole input and parser state.
+  Extremely long lines or large Markdown files can exhaust memory; these analyzers do
+  not truncate input or silently skip it by size.
 - **`.gitignore` fidelity.** `.git/info/exclude`, `core.excludesFile`, and `.gitignore`
   files above the scanned root are not read, and a nested repository is not a boundary.
-  Three unusual patterns match differently from git: `a/\/b`, `a//b`, and `***` between
-  separators.
 - **`.gitignore` budget.** A `.gitignore` inside a directory an ancestor’s rules already
   ignore is still read and charged against the budget, which git never does.
   Classification stays right, because an ignored parent settles its descendants, but a

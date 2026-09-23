@@ -53,6 +53,29 @@ use crate::engine_contract::{
 /// `Cached`, so the bound costs precision, never correctness.
 const MAX_VERIFIED_INTERVALS: usize = 256;
 
+fn same_issue_cause(left: &Issue, right: &Issue) -> bool {
+    left.kind == right.kind && left.path == right.path && (right.path.is_some() || left == right)
+}
+
+fn compare_issues(left: &Issue, right: &Issue) -> std::cmp::Ordering {
+    left.path
+        .cmp(&right.path)
+        .then_with(|| issue_kind_rank(left.kind).cmp(&issue_kind_rank(right.kind)))
+        .then_with(|| left.message.cmp(&right.message))
+        .then_with(|| left.os_error.cmp(&right.os_error))
+}
+
+const fn issue_kind_rank(kind: crate::IssueKind) -> u8 {
+    match kind {
+        crate::IssueKind::Permission => 0,
+        crate::IssueKind::Disappeared => 1,
+        crate::IssueKind::InvalidMetadata => 2,
+        crate::IssueKind::ResourceBudget => 3,
+        crate::IssueKind::ObservationGap => 4,
+        crate::IssueKind::ProviderFailure => 5,
+    }
+}
+
 #[cfg(test)]
 std::thread_local! {
     /// Entries the control reclassification walk has visited on this thread.
@@ -860,6 +883,18 @@ pub struct Index {
     /// stamp, so the value can predate many verifying passes until P1.4.4 stamps completed
     /// passes.
     writing_pass_started_at_ns: i64,
+    /// Whether this index holds facts no completed metadata write has recorded.
+    ///
+    /// True from construction, because a walked index has been written nowhere; cleared
+    /// when the index is loaded from a snapshot or a metadata write of it completes; set
+    /// again by a pass that mutated the entry tier. A partial pass mutates without being
+    /// writable, so this is what carries its verified facts to the next complete write
+    /// rather than keying that write to the one pass that happened to change nothing.
+    persistence_owed: bool,
+    /// Wall-clock starts of in-flight full-root passes, keyed by their freshness epoch.
+    active_root_reconciles: BTreeMap<u64, i64>,
+    /// Scopes and newer verification evidence for filesystem passes still in flight.
+    active_reconciles: BTreeMap<u64, ActiveReconcile>,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -903,11 +938,76 @@ pub struct Index {
     /// The freshness epoch at which each retained issue was last observed, in step with
     /// `issues`. A reconciliation only disproves an issue observed before it began.
     issue_epochs: Vec<u64>,
+    /// Omitted issue counts grouped by the active reconciliation boundary that owns them.
+    /// At most one group exists before/between each active boundary, so this is bounded by
+    /// concurrent passes rather than by the number of failures.
+    omitted_issue_epochs: BTreeMap<u64, u64>,
     /// Optional commit-maintained state for interactive opened-root projections.
     ///
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
     /// one-shot scan. Only [`crate::OpenedIndex`] enables this allocation.
     serving: Option<Box<ServingIndexes>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ReconcileErrors<'a> {
+    pub(crate) errors: &'a [crate::Error],
+    pub(crate) terminal: Option<&'a crate::Error>,
+    pub(crate) disproves_old: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveReconcile {
+    path: PathBuf,
+    // One scope per entry present when this pass began. This bounds concurrent
+    // verification history by retained state, including on a root-only index.
+    scope_budget: usize,
+    evidence: ReconcileEvidence,
+}
+
+#[derive(Clone, Debug)]
+enum ReconcileEvidence {
+    Scopes(BTreeSet<PathBuf>),
+    Retry,
+}
+
+impl ActiveReconcile {
+    fn supersede(&mut self, path: &Path) {
+        if self.path.starts_with(path) {
+            self.evidence = ReconcileEvidence::Scopes(BTreeSet::from([path.to_path_buf()]));
+            return;
+        }
+        let ReconcileEvidence::Scopes(scopes) = &mut self.evidence else {
+            return;
+        };
+        if scopes.iter().any(|newer| path.starts_with(newer)) {
+            return;
+        }
+        scopes.retain(|newer| !newer.starts_with(path));
+        if scopes.len() == self.scope_budget {
+            // Discard proof, never widen it: the caller must retry this pass.
+            self.evidence = ReconcileEvidence::Retry;
+        } else {
+            scopes.insert(path.to_path_buf());
+        }
+    }
+
+    fn refuses(&self, observation: &Observation, index: &Index) -> bool {
+        match &self.evidence {
+            ReconcileEvidence::Retry => true,
+            ReconcileEvidence::Scopes(scopes) => observation.ops.iter().any(|op| {
+                scopes
+                    .iter()
+                    .any(|path| op.op.path().starts_with(path) || path.starts_with(op.op.path()))
+                    && !index.holds_target(&op.op, index.path_state(op.op.path()))
+            }),
+        }
+    }
+}
+
+pub(crate) struct ReconcileFinish {
+    pub(crate) commit: Option<Commit>,
+    pub(crate) retry: bool,
 }
 
 enum ChildIds<'a> {
@@ -1125,6 +1225,7 @@ impl IndexHandle {
         Ok(outcome)
     }
 
+    #[cfg(feature = "watch")]
     pub(crate) fn apply_opened(
         &self,
         observation: &Observation,
@@ -1354,8 +1455,67 @@ impl IndexHandle {
         started_at: u64,
         complete: bool,
         listed_incomplete: &[PathBuf],
-    ) -> crate::Result<Option<Commit>> {
-        self.write_index()?.finish_reconcile(path, started_at, complete, listed_incomplete)
+        failed_paths: &[PathBuf],
+        errors: ReconcileErrors<'_>,
+    ) -> crate::Result<ReconcileFinish> {
+        self.write_index()?.finish_reconcile(
+            path,
+            started_at,
+            complete,
+            listed_incomplete,
+            failed_paths,
+            errors,
+        )
+    }
+
+    pub(crate) fn apply_reconcile(
+        &self,
+        started_at: u64,
+        observation: &Observation,
+    ) -> crate::Result<ApplyOutcome> {
+        self.apply_reconcile_with(started_at, observation, None, BatchProvenance::Public)
+    }
+
+    pub(crate) fn apply_opened_reconcile(
+        &self,
+        started_at: u64,
+        observation: &Observation,
+        max_files: Option<u64>,
+    ) -> crate::Result<ApplyOutcome> {
+        self.apply_reconcile_with(started_at, observation, max_files, BatchProvenance::Opened)
+    }
+
+    fn apply_reconcile_with(
+        &self,
+        started_at: u64,
+        observation: &Observation,
+        max_files: Option<u64>,
+        provenance: BatchProvenance,
+    ) -> crate::Result<ApplyOutcome> {
+        let prepared = prepare_observation(observation)?;
+        let mut index = self.write_index()?;
+        if index
+            .active_reconciles
+            .get(&started_at)
+            .is_some_and(|active| active.refuses(observation, &index))
+        {
+            let stats = ApplyStats {
+                stale: u64::try_from(observation.len()).unwrap_or(u64::MAX),
+                ..ApplyStats::default()
+            };
+            record_batch(provenance, observation.len(), stats);
+            return Ok(ApplyOutcome { stats, commit: None });
+        }
+        let outcome = index.commit_prepared_with(
+            prepared,
+            true,
+            None,
+            None,
+            max_files,
+            matches!(provenance, BatchProvenance::Opened),
+        )?;
+        record_batch(provenance, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     #[cfg(feature = "watch")]
@@ -1709,11 +1869,15 @@ impl Index {
             state: IndexState::default(),
             issues: Vec::new(),
             issue_epochs: Vec::new(),
+            omitted_issue_epochs: BTreeMap::new(),
             serving,
             applying_source: Source::Scanned,
             scanned_at_ns: constructed_at_ns,
             captured_at_ns: 0,
             writing_pass_started_at_ns: constructed_at_ns,
+            persistence_owed: true,
+            active_root_reconciles: BTreeMap::new(),
+            active_reconciles: BTreeMap::new(),
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -2369,6 +2533,7 @@ impl Index {
                         };
                         self.issues.clear();
                         self.issue_epochs.clear();
+                        self.omitted_issue_epochs.clear();
                     }
                     DiscoveryTransition::Finish => {
                         self.state.phase = LifecyclePhase::Ready;
@@ -2400,8 +2565,7 @@ impl Index {
                         for issue in issues {
                             self.retain_issue(issue);
                         }
-                        self.state.issues.omitted =
-                            self.state.issues.omitted.saturating_add(omitted);
+                        self.retain_omitted(omitted);
                     }
                     DiscoveryTransition::Cancelled => {
                         self.state.phase = LifecyclePhase::Stopped;
@@ -2435,8 +2599,7 @@ impl Index {
                             for issue in issues {
                                 self.retain_issue(issue);
                             }
-                            self.state.issues.omitted =
-                                self.state.issues.omitted.saturating_add(omitted);
+                            self.retain_omitted(omitted);
                         } else if self.state.coverage
                             == Coverage::Partial(CoverageReason::Inaccessible)
                         {
@@ -2461,8 +2624,7 @@ impl Index {
                         for issue in issues {
                             self.retain_issue(issue);
                         }
-                        self.state.issues.omitted =
-                            self.state.issues.omitted.saturating_add(omitted);
+                        self.retain_omitted(omitted);
                     }
                 }
                 ObservationTransition::Failed(issue) => {
@@ -2510,31 +2672,78 @@ impl Index {
     /// ways. An issue without a path has nothing to key on, so only an identical one counts
     /// as a repeat.
     fn retain_issue(&mut self, issue: Issue) {
-        let repeat = self.issues.iter().position(|retained| {
-            retained.kind == issue.kind
-                && retained.path == issue.path
-                && (issue.path.is_some() || *retained == issue)
-        });
+        self.retain_issue_at(issue, self.freshness_epoch);
+    }
+
+    fn retain_issue_at(&mut self, issue: Issue, epoch: u64) {
+        let repeat = self.issues.iter().position(|retained| same_issue_cause(retained, &issue));
         if let Some(position) = repeat {
-            self.issue_epochs[position] = self.freshness_epoch;
-        } else if self.issues.len() < MAX_RETAINED_ISSUES {
-            self.issues.push(issue);
-            self.issue_epochs.push(self.freshness_epoch);
-            self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
+            self.issue_epochs[position] = epoch;
         } else {
-            self.state.issues.omitted = self.state.issues.omitted.saturating_add(1);
+            let position = self
+                .issues
+                .binary_search_by(|retained| compare_issues(retained, &issue))
+                .unwrap_or_else(|position| position);
+            if position < MAX_RETAINED_ISSUES {
+                self.issues.insert(position, issue);
+                self.issue_epochs.insert(position, epoch);
+                if self.issues.len() > MAX_RETAINED_ISSUES {
+                    self.issues.pop();
+                    let omitted_epoch =
+                        self.issue_epochs.pop().expect("issue epochs stay parallel");
+                    self.retain_omitted_at(1, omitted_epoch);
+                }
+            } else {
+                self.retain_omitted_at(1, epoch);
+            }
+            self.state.issues.retained = u64::try_from(self.issues.len()).unwrap_or(u64::MAX);
         }
     }
 
-    /// Drop the retained issues a complete reconciliation of `path` has disproved.
+    fn retain_omitted(&mut self, count: u64) {
+        if count == 0 {
+            return;
+        }
+        let epoch =
+            self.active_reconciles.keys().next_back().copied().unwrap_or(self.freshness_epoch);
+        self.retain_omitted_at(count, epoch);
+    }
+
+    fn retain_omitted_at(&mut self, count: u64, epoch: u64) {
+        let retained = self.omitted_issue_epochs.entry(epoch).or_default();
+        *retained = retained.saturating_add(count);
+        self.state.issues.omitted = self.state.issues.omitted.saturating_add(count);
+    }
+
+    fn drop_disproven_omitted(&mut self, started_at: u64) {
+        self.omitted_issue_epochs.retain(|epoch, _| *epoch >= started_at);
+        self.state.issues.omitted =
+            self.omitted_issue_epochs.values().fold(0_u64, |sum, count| sum.saturating_add(*count));
+    }
+
+    fn compact_omitted_epochs(&mut self) {
+        let mut compact = BTreeMap::new();
+        for (epoch, count) in std::mem::take(&mut self.omitted_issue_epochs) {
+            let owner =
+                self.active_reconciles.range(..=epoch).next_back().map_or(0, |(epoch, _)| *epoch);
+            let retained = compact.entry(owner).or_insert(0_u64);
+            *retained = retained.saturating_add(count);
+        }
+        self.omitted_issue_epochs = compact;
+    }
+
+    /// Drop retained issues a reconciliation that visited `path` has disproved.
     ///
-    /// An issue about a path at or below `path`, observed before the pass began, described
+    /// An issue about a path at or below `path`, published before the pass began, described
     /// something the pass has just read without an error: a directory that could not be
     /// listed, an entry whose metadata could not be read, a control the index refused. It is
-    /// no longer true, and keeping it would explain a state the root is not in. Two kinds of
-    /// issue survive. An observation gap records that the observer lost precision and had to
-    /// recover, which the recovery does not undo. And an issue without a path cannot be
-    /// placed under the pass. The omitted count stays: what it counted was never retained.
+    /// no longer true, and keeping it would explain a state the root is not in. Three kinds
+    /// of issue survive. An observation gap records that the observer lost precision and had
+    /// to recover, which the recovery does not undo. An issue without a path cannot be placed
+    /// under the pass. And an issue published at or after `started_at` came from a pass
+    /// that closed while this one ran, whose `Partial` mark this pass leaves in place: the
+    /// issue is stamped with the same epoch as that mark so the two survive together. The
+    /// omitted count stays: what it counted was never retained.
     fn drop_disproven_issues(&mut self, path: &Path, started_at: u64) {
         let mut position = 0;
         while position < self.issues.len() {
@@ -2700,6 +2909,8 @@ impl Index {
     pub(crate) fn mark_unverified(&mut self) {
         self.freshness_marks.clear();
         self.mark_unfresh(Path::new(""), Freshness::Stale);
+        self.state.source = Source::Cached;
+        self.state.freshness = Freshness::Stale;
     }
 
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
@@ -2723,12 +2934,108 @@ impl Index {
         }
     }
 
+    /// Finish a cold walk using all of its failures, before diagnostic retention bounds
+    /// discard any paths. A scoped failure withdraws its unverified listing boundary;
+    /// ancestors still have their own listings, and readers fold eligible descendants.
+    /// An unscoped failure cannot establish completeness anywhere in the walk.
+    pub(crate) fn set_initial_scan_freshness(&mut self, errors: &[crate::Error]) {
+        self.set_initial_freshness(errors.is_empty());
+        if errors.is_empty() {
+            return;
+        }
+        for slot in &mut self.arena {
+            if let Slot::Occupied { entry, .. } = slot {
+                if entry.kind.is_dir() {
+                    entry.directory_mut().children_complete = false;
+                }
+            }
+        }
+        let mut failed = Vec::with_capacity(errors.len());
+        for error in errors {
+            let Some(path) = Issue::from_error_under(&self.root_path, error).path else {
+                return;
+            };
+            if path.is_absolute() || path.as_os_str().is_empty() {
+                return;
+            }
+            failed.push(path);
+        }
+        failed.sort();
+        failed.dedup();
+        let listings: Vec<_> =
+            failed.iter().map(|path| self.failed_listing_boundary(path)).collect();
+        self.freshness_marks.clear();
+        for path in &failed {
+            self.mark_unfresh(path, Freshness::Partial);
+        }
+        // The walk has terminated and each failure is scoped above. Every retained
+        // directory outside those boundaries therefore has its complete in-scope
+        // listing. In particular, never promote descendants of a failed listing.
+        for slot in 0..self.arena.len() {
+            let Slot::Occupied { generation, entry } = &self.arena[slot] else {
+                continue;
+            };
+            if !entry.kind.is_dir() {
+                continue;
+            }
+            let id = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: *generation,
+            };
+            let Some(path) = self.path_of(id) else {
+                continue;
+            };
+            self.entry_mut(id).directory_mut().children_complete =
+                !listings.iter().zip(&failed).any(|(boundary, failure)| {
+                    path == *boundary || (boundary == failure && path.starts_with(boundary))
+                });
+        }
+    }
+
+    /// A retained failed directory has an unknown child set. If the failed entry was
+    /// omitted (for example after a metadata failure), its nearest retained directory
+    /// cannot claim a complete listing either.
+    fn failed_listing_boundary(&self, failed: &Path) -> PathBuf {
+        let mut boundary = failed.to_path_buf();
+        loop {
+            if self.lookup(&boundary).is_some_and(|id| self.entry(id).kind.is_dir()) {
+                return boundary;
+            }
+            if !boundary.pop() {
+                return PathBuf::new();
+            }
+        }
+    }
+
+    pub(crate) fn record_walk_errors(&mut self, errors: &mut Vec<crate::Error>) {
+        self.issues.clear();
+        self.issue_epochs.clear();
+        self.omitted_issue_epochs.clear();
+        self.state.issues = crate::IssueSummary::default();
+        let root = self.root_path.clone();
+        crate::scan::normalize_walk_errors(&root, errors);
+        for error in errors {
+            self.retain_issue(Issue::from_error_under(&root, error));
+        }
+    }
+
     pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<(u64, Option<Commit>)> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
         let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
+        self.active_reconciles.insert(
+            epoch,
+            ActiveReconcile {
+                path: path.clone(),
+                scope_budget: usize::try_from(self.len()).unwrap_or(usize::MAX),
+                evidence: ReconcileEvidence::Scopes(BTreeSet::new()),
+            },
+        );
+        if path.as_os_str().is_empty() {
+            self.active_root_reconciles.insert(epoch, Self::now_unix_nanos());
+        }
         let current = self.freshness_at(&path);
         self.state.freshness = self.published_freshness();
         let commit = if previous == current && previous_index_state == self.state {
@@ -2757,21 +3064,103 @@ impl Index {
     /// recorded as complete in this commit whether or not the whole pass completed, exactly
     /// as discovery's listing commit records the directories it lists, unless a producer
     /// invalidated or began verifying it after this pass started: that producer's own pass
-    /// owns its listing now. Only an opened root passes any, since only an opened root
-    /// serves completeness, and it passes none when a conditional commit lost a race.
+    /// owns its listing now. A caller passes none when a conditional commit lost a race.
     pub(crate) fn finish_reconcile(
         &mut self,
         path: &Path,
         started_at: u64,
         complete: bool,
         listed_incomplete: &[PathBuf],
-    ) -> crate::Result<Option<Commit>> {
+        failed_paths: &[PathBuf],
+        errors: ReconcileErrors<'_>,
+    ) -> crate::Result<ReconcileFinish> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
         let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
+        // Retired evidence is needed only until every older overlapping pass closes.
+        let evidence = self.active_reconciles.get(&started_at).map_or_else(
+            || ReconcileEvidence::Scopes(BTreeSet::new()),
+            |active| active.evidence.clone(),
+        );
+        let superseded = match evidence {
+            ReconcileEvidence::Scopes(scopes) => scopes,
+            ReconcileEvidence::Retry => {
+                self.active_root_reconciles.remove(&started_at);
+                self.active_reconciles.remove(&started_at);
+                self.compact_omitted_epochs();
+                self.mark_unfresh(&path, Freshness::Partial);
+                if self.state.coverage == Coverage::Complete {
+                    self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+                }
+                self.state.freshness = self.published_freshness();
+                self.retain_issue(Issue::provider_failure(
+                    Some(&path),
+                    "reconciliation interrupted by newer verification; retry this scope"
+                        .to_string(),
+                ));
+                let current = self.freshness_at(&path);
+                let mut state = Vec::new();
+                if previous != current {
+                    state.push(StateTransition::Freshness { path, previous, current });
+                }
+                if previous_index_state != self.state {
+                    state.push(StateTransition::IndexState {
+                        previous: previous_index_state,
+                        current: self.state,
+                    });
+                }
+                let commit = if state.is_empty() {
+                    None
+                } else {
+                    let effects = ExactConsequences { state, ..ExactConsequences::default() };
+                    Some(self.publish_effects(next_clock, effects, Work::default(), true))
+                };
+                return Ok(ReconcileFinish { commit, retry: true });
+            }
+        };
+        let fully_superseded = superseded.iter().any(|newer| path.starts_with(newer));
+        if errors.disproves_old && !fully_superseded {
+            for (epoch, active) in &mut self.active_reconciles {
+                if *epoch < started_at
+                    && (active.path.starts_with(&path) || path.starts_with(&active.path))
+                {
+                    active.supersede(&path);
+                }
+            }
+        }
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
+        if fully_superseded {
+            self.active_root_reconciles.remove(&started_at);
+            self.active_reconciles.remove(&started_at);
+            self.compact_omitted_epochs();
+            let current = self.freshness_at(&path);
+            self.state.freshness = self.published_freshness();
+            if self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible) {
+                self.state.freshness = Freshness::Partial;
+            }
+            let mut state = Vec::new();
+            if previous != current {
+                state.push(StateTransition::Freshness { path, previous, current });
+            }
+            if previous_index_state != self.state {
+                state.push(StateTransition::IndexState {
+                    previous: previous_index_state,
+                    current: self.state,
+                });
+            }
+            if state.is_empty() {
+                return Ok(ReconcileFinish { commit: None, retry: false });
+            }
+            let effects = ExactConsequences { state, ..ExactConsequences::default() };
+            return Ok(ReconcileFinish {
+                commit: Some(self.publish_effects(next_clock, effects, Work::default(), true)),
+                retry: false,
+            });
+        }
+        let still_owned =
+            |candidate: &Path| !superseded.iter().any(|newer| candidate.starts_with(newer));
         // Each listed directory is recorded on its own listing, complete pass or not: the
         // walk names only those it listed in full with no error inside them, as discovery
         // decides per directory, and the caller passes none when a commit lost a race. A
@@ -2782,16 +3171,90 @@ impl Index {
             .iter()
             .filter(|directory| {
                 directory.starts_with(&path)
+                    && still_owned(directory)
                     && !self.freshness_marks.iter().any(|(marked, mark)| {
                         mark.epoch > started_at && directory.starts_with(marked)
                     })
             })
             .collect();
+        let scoped_failures: Vec<&PathBuf> = failed_paths
+            .iter()
+            .filter(|failed| failed.starts_with(&path) && still_owned(failed))
+            .collect();
+        // If every failure in this scope was subsequently verified, the older
+        // pass's remaining evidence is complete. Arbitration/resource refusals do
+        // not qualify: their caller cannot disprove prior state.
+        let complete = complete
+            || (errors.disproves_old
+                && failed_paths.iter().any(|failed| failed.starts_with(&path))
+                && scoped_failures.is_empty()
+                && errors.errors.iter().chain(errors.terminal).all(|error| {
+                    Issue::from_error_under(&self.root_path, error)
+                        .path
+                        .is_some_and(|failed| !failed.starts_with(&path) || !still_owned(&failed))
+                }));
+        if errors.disproves_old && self.state.phase != LifecyclePhase::Failed {
+            self.drop_disproven_issues(&path, started_at);
+        }
+        if errors.disproves_old
+            && self.state.phase != LifecyclePhase::Failed
+            && path.as_os_str().is_empty()
+        {
+            self.drop_disproven_omitted(started_at);
+        }
         let mut state = Vec::new();
-        if complete {
-            // A completed sweep stat'd every entry beneath `path`, including the ones
-            // the producer elided as no-ops. Record that interval as one exact state
-            // transition rather than manufacturing millions of entry updates.
+        // Completeness describes this directory's own listing, not its descendants.
+        // Withdraw old listing evidence at failures before publishing the partial pass.
+        // Do not touch successful ancestors: readers compose only eligible descendants,
+        // and an excluded failed child must not poison an otherwise complete subtree.
+        if !complete && (!errors.errors.is_empty() || errors.terminal.is_some()) {
+            let boundaries: Vec<_> = if scoped_failures.is_empty() {
+                vec![(path.clone(), true)]
+            } else {
+                scoped_failures
+                    .iter()
+                    .map(|failed| {
+                        let boundary = self.failed_listing_boundary(failed);
+                        let subtree = boundary == **failed;
+                        (boundary, subtree)
+                    })
+                    .collect()
+            };
+            for slot in 0..self.arena.len() {
+                let Slot::Occupied { generation, entry } = &self.arena[slot] else {
+                    continue;
+                };
+                if !entry.kind.is_dir() || !entry.directory().children_complete {
+                    continue;
+                }
+                let id = EntryId {
+                    slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                    generation: *generation,
+                };
+                let Some(directory) = self.path_of(id) else {
+                    continue;
+                };
+                if boundaries.iter().any(|(boundary, subtree)| {
+                    directory == *boundary || (*subtree && directory.starts_with(boundary))
+                }) && still_owned(&directory)
+                    && !self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+                {
+                    self.entry_mut(id).directory_mut().children_complete = false;
+                    state.push(StateTransition::DirectoryIncomplete { path: directory });
+                }
+            }
+        }
+        // A complete older walk plus successful newer child verification still proves
+        // the entire scope. A newer failed child must keep its own evidence and mark.
+        let verified_scope = superseded.is_empty()
+            || (complete
+                && superseded.iter().all(|newer| self.freshness_at(newer) == Freshness::Fresh));
+        if verified_scope && (complete || !scoped_failures.is_empty()) {
+            // A sweep stat'd every entry beneath `path` except the precise failure paths,
+            // which carry stronger `Partial` marks below. Record the successful interval
+            // once rather than manufacturing millions of unchanged entry updates.
             let now = Self::now_unix_nanos();
             self.verified.retain(|(verified_path, _)| !verified_path.starts_with(&path));
             self.verified.push((path.clone(), now));
@@ -2801,13 +3264,46 @@ impl Index {
                 self.verified.drain(..excess);
             }
             state.push(StateTransition::Verified { path: path.clone() });
-            // A failed root's issues explain the state it is in; a clean walk below one of
-            // their paths cannot un-fail the root, so it disproves none of them.
-            if self.state.phase != LifecyclePhase::Failed {
-                self.drop_disproven_issues(&path, started_at);
+        }
+        if complete {
+            if path.as_os_str().is_empty() {
+                if let Some(started) = self.active_root_reconciles.remove(&started_at) {
+                    self.writing_pass_started_at_ns = started;
+                }
+                self.state.source = self.applying_source;
             }
         } else {
-            self.mark_unfresh(&path, Freshness::Partial);
+            if scoped_failures.is_empty() {
+                self.mark_unfresh(&path, Freshness::Partial);
+            } else {
+                for failed in scoped_failures {
+                    self.mark_unfresh(failed, Freshness::Partial);
+                }
+            }
+            if !errors.errors.is_empty() || errors.terminal.is_some() {
+                self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+            }
+            if path.as_os_str().is_empty() {
+                if let Some(started) = self.active_root_reconciles.remove(&started_at) {
+                    self.writing_pass_started_at_ns = started;
+                }
+                self.state.source = self.applying_source;
+            }
+        }
+        // Retain this pass's failures at the epoch its `Partial` marks were just minted at,
+        // not at `started_at`: a pass that began after this one and closes clean later
+        // keeps the marks (minted after it began) and must keep the issues that explain
+        // them, or a partial subtree would have no cause until the next root pass.
+        // `started_at` is only this pass's own disproof threshold, applied above.
+        for error in errors.errors.iter().chain(errors.terminal) {
+            let issue = Issue::from_error_under(&self.root_path, error);
+            if issue
+                .path
+                .as_deref()
+                .is_none_or(|issue_path| issue_path.starts_with(&path) && still_owned(issue_path))
+            {
+                self.retain_issue(issue);
+            }
         }
         for directory in recordable {
             let Some(id) = self.lookup(directory) else {
@@ -2823,8 +3319,27 @@ impl Index {
             state.push(StateTransition::DirectoryComplete { path: directory.clone() });
         }
 
+        if complete
+            && self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible)
+            && !self.issues.iter().any(|issue| issue.kind != crate::IssueKind::ObservationGap)
+            && self.state.issues.omitted == 0
+            && self.arena.iter().all(|slot| {
+                let Slot::Occupied { entry, .. } = slot else {
+                    return true;
+                };
+                entry.kind != EntryKind::Dir || entry.directory().children_complete
+            })
+        {
+            self.state.coverage = Coverage::Complete;
+        }
+
         let current = self.freshness_at(&path);
         self.state.freshness = self.published_freshness();
+        if self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible) {
+            self.state.freshness = Freshness::Partial;
+        }
+        self.active_reconciles.remove(&started_at);
+        self.compact_omitted_epochs();
         if previous != current {
             state.push(StateTransition::Freshness { path: path.clone(), previous, current });
         }
@@ -2835,10 +3350,13 @@ impl Index {
             });
         }
         if state.is_empty() {
-            return Ok(None);
+            return Ok(ReconcileFinish { commit: None, retry: false });
         }
         let effects = ExactConsequences { state, ..ExactConsequences::default() };
-        Ok(Some(self.publish_effects(next_clock, effects, Work::default(), true)))
+        Ok(ReconcileFinish {
+            commit: Some(self.publish_effects(next_clock, effects, Work::default(), true)),
+            retry: false,
+        })
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -3396,6 +3914,14 @@ impl Index {
         Some(self.try_entry(id)?.ignored)
     }
 
+    /// Whether a live directory's in-scope child set is authoritative: the id form of
+    /// [`Self::directory_complete`], for a reader that already holds the id. `None` for a
+    /// stale handle or an entry that is not a directory.
+    pub(crate) fn directory_complete_of(&self, id: EntryId) -> Option<bool> {
+        let entry = self.try_entry(id)?;
+        (entry.kind == EntryKind::Dir).then(|| entry.directory().children_complete)
+    }
+
     /// Attributes for an entry id, or `None` when the handle is stale.
     pub fn attrs_of(&self, id: EntryId) -> Option<&Attrs> {
         Some(&self.try_entry(id)?.attrs)
@@ -3427,22 +3953,29 @@ impl Index {
         self.content().and_then(ContentIndex::profile).unwrap_or(AnalysisSet::NONE)
     }
 
+    /// Whether the retained content tier lacks a record for any current regular file.
+    ///
+    /// Every requested analyzer records a coverage outcome, including binary, invalid
+    /// UTF-8, and unsupported files. A count mismatch therefore means analysis is still
+    /// pending, while deleting a file removes both its entry and its content record.
+    pub(crate) fn content_has_pending(&self, profile: AnalysisSet) -> bool {
+        if !profile.is_enabled() {
+            return false;
+        }
+        let wanted = self.content_identity(profile);
+        let Some(content) = self.content().and_then(|content| content.admit(&wanted)) else {
+            return true;
+        };
+        u64::try_from(content.len()).unwrap_or(u64::MAX) < self.entry(EntryId::ROOT).rollup().files
+    }
+
     /// The content tier identity this index gives records of `analysis`: its own entry tier,
     /// which holds its type rules, the analyzer set, and the analyzers' versions and options.
     pub fn content_identity(&self, analysis: AnalysisSet) -> crate::ContentTierIdentity {
-        let records = crate::content::ContentProvenance::for_request(
-            crate::content::AnalysisRequest {
-                profile: analysis,
-                ..crate::content::AnalysisRequest::default()
-            },
-            self.types.fingerprint(),
-        );
-        crate::ContentTierIdentity::of_records(
+        crate::ContentTierIdentity::for_request(
             crate::EntryTierIdentity::of_scope(self.scope),
             analysis,
-            &records,
         )
-        .expect("every constructor checks an index's registry against its scope's type rules")
     }
 
     /// Prepare the content tier to hold records of `request`'s identity, clearing it when
@@ -3453,6 +3986,21 @@ impl Index {
         }
         let identity = self.content_identity(request.profile);
         self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(identity);
+    }
+
+    pub(crate) fn set_content_tier_state(
+        &mut self,
+        source: Source,
+        freshness: Freshness,
+        observed_at_ns: Option<i64>,
+    ) {
+        if let Some(content) = self.content.as_deref_mut() {
+            content.set_state(crate::content::ContentTierState {
+                source,
+                freshness,
+                observed_at_ns,
+            });
+        }
     }
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
@@ -3540,12 +4088,15 @@ impl Index {
         let wanted = self.content_identity(request.profile);
         // The tier refuses a record of any identity but its own, so one comparison here
         // decides for every record it holds.
-        let held = self.content().filter(|content| content.identity() == Some(&wanted));
+        let held = self.content().and_then(|content| content.admit(&wanted));
         self.analysis_candidates(request.profile)
             .into_iter()
             .filter(|candidate| {
-                held.and_then(|content| content.file(&candidate.relative_path))
-                    .is_none_or(|record| record.fingerprint != candidate.attrs.fingerprint())
+                held.and_then(|content| content.file(&candidate.relative_path)).is_none_or(
+                    |record| {
+                        record.fingerprint != candidate.attrs.fingerprint() || !record.is_reusable()
+                    },
+                )
             })
             .collect()
     }
@@ -3573,7 +4124,7 @@ impl Index {
     pub(crate) fn apply_restored_analysis(
         &mut self,
         candidate: RestoreCandidate,
-        analysis: crate::content::FileAnalysis,
+        analysis: crate::stored_state::AdmittedRecord<'_>,
     ) -> AnalysisApplyOutcome {
         let Some(entry) = self.try_entry(candidate.entry_id) else {
             return AnalysisApplyOutcome::Stale;
@@ -3615,7 +4166,12 @@ impl Index {
         let Some(content) = self.content.as_mut() else {
             return AnalysisApplyOutcome::Stale;
         };
-        if content.commit(candidate.relative_path.clone(), observation.analysis) {
+        if content.commit(
+            candidate.relative_path.clone(),
+            observation.profile,
+            &observation.provenance,
+            observation.analysis,
+        ) {
             AnalysisApplyOutcome::Applied
         } else {
             AnalysisApplyOutcome::Stale
@@ -4490,6 +5046,17 @@ impl Index {
         self.writing_pass_started_at_ns = writing_pass_started_at_ns;
     }
 
+    /// Whether this index holds entry-tier facts no completed metadata write has recorded.
+    pub(crate) const fn persistence_owed(&self) -> bool {
+        self.persistence_owed
+    }
+
+    /// Record that a metadata write of this index completed, or that a pass mutated it
+    /// since the last one did.
+    pub(crate) fn set_persistence_owed(&mut self, owed: bool) {
+        self.persistence_owed = owed;
+    }
+
     /// Stamp deltas applied from here on with `source`, restoring the previous value
     /// when the returned guard value is passed back.
     ///
@@ -4498,6 +5065,9 @@ impl Index {
     pub(crate) fn set_applying_source(&mut self, source: Source, captured_at_ns: i64) -> Source {
         let previous = self.applying_source;
         self.applying_source = source;
+        if source == Source::Cached {
+            self.state.source = Source::Cached;
+        }
         if captured_at_ns != 0 {
             self.captured_at_ns = captured_at_ns;
         }
@@ -7438,8 +8008,16 @@ mod tests {
         );
 
         let finish = index
-            .finish_reconcile(Path::new("src"), started, true, &[])
+            .finish_reconcile(
+                Path::new("src"),
+                started,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
             .expect("finish")
+            .commit
             .expect("finish commit");
         assert!(finish.changes.is_empty());
         assert_eq!(
@@ -8188,8 +8766,8 @@ mod tests {
     #[test]
     fn content_results_commit_conditionally_and_metadata_changes_invalidate_them() {
         use crate::content::{
-            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, ContentProvenance, CoverageReason,
-            FileAnalysis, MetricValues,
+            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerOutcome, BasicMetrics,
+            ContentProvenance, FileAnalysis,
         };
 
         let mut index = Index::new("/root");
@@ -8201,24 +8779,28 @@ mod tests {
         let candidate =
             index.analysis_candidates(profile).into_iter().next().expect("file candidate");
         let analysis = FileAnalysis {
-            classification: candidate.classification.clone(),
             fingerprint: candidate.attrs.fingerprint(),
             bytes: candidate.attrs.size,
-            profile,
-            provenance: ContentProvenance::for_request(
-                AnalysisRequest { profile, ..AnalysisRequest::default() },
-                crate::classify::type_rule_fingerprint(),
-            ),
-            metrics: MetricValues {
+            detection: candidate.classification.clone().into(),
+            lines: AnalyzerOutcome::analyzed(BasicMetrics {
                 physical_lines: 2,
                 nonblank_lines: 2,
-                ..MetricValues::default()
-            },
-            coverage: CoverageReason::Analyzed,
+                ..BasicMetrics::default()
+            }),
+            code: None,
+            words: None,
             error: None,
         };
-        let observation =
-            AnalysisObservation { candidate: candidate.clone(), analysis: analysis.clone() };
+        let provenance = ContentProvenance::for_request(
+            AnalysisRequest { profile, ..AnalysisRequest::default() },
+            crate::classify::type_rule_fingerprint(),
+        );
+        let observation = AnalysisObservation {
+            candidate: candidate.clone(),
+            profile,
+            provenance: provenance.clone(),
+            analysis: analysis.clone(),
+        };
         assert_eq!(
             index.apply_analysis(observation.clone()),
             AnalysisApplyOutcome::Stale,
@@ -8230,7 +8812,13 @@ mod tests {
         assert_eq!(index.content_set(), profile);
         assert_eq!(index.apply_analysis(observation), AnalysisApplyOutcome::Applied);
         assert_eq!(
-            index.content_rollup(Path::new("")).expect("content root").total.metrics.physical_lines,
+            index
+                .content_rollup(Path::new(""))
+                .expect("content root")
+                .total
+                .lines
+                .metrics
+                .physical_lines,
             2
         );
 
@@ -8241,8 +8829,92 @@ mod tests {
         )]));
         assert!(index.content_rollup(Path::new("")).is_none());
         assert_eq!(
-            index.apply_analysis(AnalysisObservation { candidate, analysis }),
+            index.apply_analysis(AnalysisObservation { candidate, profile, provenance, analysis }),
             AnalysisApplyOutcome::Stale
+        );
+    }
+
+    #[test]
+    fn operational_content_failures_are_retained_but_retried_until_recovery() {
+        use crate::content::{
+            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, AnalyzerOutcome, BasicMetrics,
+            ContentProvenance, CoverageReason, FileAnalysis,
+        };
+
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/lib.rs", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        let profile = AnalysisSet::LINES_ONLY;
+        let request = AnalysisRequest { profile, ..AnalysisRequest::default() };
+        index.prepare_content_analysis(request);
+        let candidate = index.pending_analysis_candidates(request).pop().expect("candidate");
+        let provenance =
+            ContentProvenance::for_request(request, crate::classify::type_rule_fingerprint());
+        let record = |reason, error: &str| FileAnalysis {
+            fingerprint: candidate.attrs.fingerprint(),
+            bytes: candidate.attrs.size,
+            detection: candidate.classification.clone().into(),
+            lines: AnalyzerOutcome::unavailable(reason),
+            code: None,
+            words: None,
+            error: Some(error.to_owned()),
+        };
+
+        for (reason, error) in [
+            (CoverageReason::IoError, "read failed"),
+            (CoverageReason::ChangedDuringRead, "changed during read"),
+        ] {
+            assert_eq!(
+                index.apply_analysis(AnalysisObservation {
+                    candidate: candidate.clone(),
+                    profile,
+                    provenance: provenance.clone(),
+                    analysis: record(reason, error),
+                }),
+                AnalysisApplyOutcome::Applied
+            );
+            let retained = index.content().expect("content").file(Path::new("src/lib.rs"));
+            assert_eq!(retained.and_then(FileAnalysis::operational_failure), Some(reason));
+            assert_eq!(
+                index.pending_analysis_candidates(request).len(),
+                1,
+                "an operational failure must remain pending"
+            );
+        }
+
+        let recovered = FileAnalysis {
+            fingerprint: candidate.attrs.fingerprint(),
+            bytes: candidate.attrs.size,
+            detection: candidate.classification.clone().into(),
+            lines: AnalyzerOutcome::analyzed(BasicMetrics {
+                physical_lines: 1,
+                nonblank_lines: 1,
+                raw_words: 1,
+                ..BasicMetrics::default()
+            }),
+            code: None,
+            words: None,
+            error: None,
+        };
+        assert_eq!(
+            index.apply_analysis(AnalysisObservation {
+                candidate,
+                profile,
+                provenance,
+                analysis: recovered,
+            }),
+            AnalysisApplyOutcome::Applied
+        );
+        assert!(index.pending_analysis_candidates(request).is_empty());
+        assert_eq!(
+            index
+                .content()
+                .expect("content")
+                .file(Path::new("src/lib.rs"))
+                .and_then(FileAnalysis::operational_failure),
+            None
         );
     }
 
@@ -8813,7 +9485,16 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
+        index
+            .finish_reconcile(
+                Path::new(""),
+                0,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish reconciliation");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -8847,7 +9528,16 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true, &[]).expect("finish reconciliation");
+        index
+            .finish_reconcile(
+                Path::new(""),
+                0,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish reconciliation");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -8879,7 +9569,14 @@ mod tests {
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
             index
-                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true, &[])
+                .finish_reconcile(
+                    &PathBuf::from(format!("dir-{which}")),
+                    0,
+                    true,
+                    &[],
+                    &[],
+                    ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+                )
                 .expect("finish reconciliation");
         }
         assert!(
@@ -8887,5 +9584,653 @@ mod tests {
             "interval list grew to {}",
             index.verified.len()
         );
+    }
+
+    #[test]
+    fn retained_walk_issues_are_the_same_first_paths_for_every_arrival_order() {
+        let make = |order: Vec<usize>| {
+            order
+                .into_iter()
+                .map(|number| {
+                    crate::Error::io(
+                        PathBuf::from(format!("/root/file-{number:02}")),
+                        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut reverse_order: Vec<_> = (0..66).rev().collect();
+        reverse_order.push(65);
+        let mut shuffled_order: Vec<_> = (0..66).step_by(2).collect();
+        shuffled_order.extend((0..66).skip(1).step_by(2));
+        shuffled_order.push(65);
+
+        let mut reverse = Index::new("/root");
+        let mut reverse_errors = make(reverse_order);
+        reverse.record_walk_errors(&mut reverse_errors);
+        let mut shuffled = Index::new("/root");
+        let mut shuffled_errors = make(shuffled_order);
+        shuffled.record_walk_errors(&mut shuffled_errors);
+
+        let reverse_paths: Vec<_> =
+            reverse.issues().iter().map(|issue| issue.path.clone().expect("path")).collect();
+        let shuffled_paths: Vec<_> =
+            shuffled.issues().iter().map(|issue| issue.path.clone().expect("path")).collect();
+        assert_eq!(reverse_paths, shuffled_paths);
+        assert_eq!(reverse_paths.len(), MAX_RETAINED_ISSUES);
+        assert_eq!(reverse_paths.first().map(PathBuf::as_path), Some(Path::new("file-00")));
+        assert_eq!(reverse_paths.last().map(PathBuf::as_path), Some(Path::new("file-63")));
+        assert_eq!(reverse.state().issues.omitted, 2);
+        assert_eq!(shuffled.state().issues.omitted, 2);
+        assert_eq!(reverse.issue_epochs.len(), reverse.issues.len());
+        assert_eq!(shuffled.issue_epochs.len(), shuffled.issues.len());
+    }
+
+    #[test]
+    fn repeated_partial_root_pass_replaces_bounded_issues_and_omitted_count() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let run = |index: &mut Index, range: std::ops::Range<usize>| {
+            let errors: Vec<_> = range
+                .clone()
+                .map(|number| {
+                    crate::Error::io(
+                        root.join(format!("file-{number:02}")),
+                        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                    )
+                })
+                .collect();
+            let failed: Vec<_> =
+                range.map(|number| PathBuf::from(format!("file-{number:02}"))).collect();
+            let (started, _) = index.begin_reconcile(Path::new("")).expect("begin");
+            index
+                .finish_reconcile(
+                    Path::new(""),
+                    started,
+                    false,
+                    &[],
+                    &failed,
+                    ReconcileErrors { errors: &errors, terminal: None, disproves_old: true },
+                )
+                .expect("finish");
+        };
+
+        run(&mut index, 0..66);
+        assert_eq!(index.state().issues.omitted, 2);
+        run(&mut index, 10..76);
+
+        assert_eq!(index.state().issues.omitted, 2, "a retry replaces the old omission count");
+        assert_eq!(index.omitted_issue_epochs.len(), 1, "sequential failures use one bucket");
+        assert_eq!(index.issues().len(), crate::MAX_RETAINED_ISSUES);
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("file-10")));
+        assert_eq!(index.issues()[63].path.as_deref(), Some(Path::new("file-73")));
+    }
+
+    #[test]
+    fn partial_pass_preserves_an_issue_published_after_it_began() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (started, _) = index.begin_reconcile(Path::new("")).expect("begin");
+        index.mark_unfresh(Path::new("concurrent"), Freshness::Stale);
+        index.retain_issue(Issue::from_error_under(
+            root,
+            &crate::Error::io(
+                root.join("concurrent"),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "concurrent"),
+            ),
+        ));
+        let pass_error = crate::Error::io(
+            root.join("pass"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "pass"),
+        );
+
+        index
+            .finish_reconcile(
+                Path::new(""),
+                started,
+                false,
+                &[],
+                &[PathBuf::from("pass")],
+                ReconcileErrors { errors: &[pass_error], terminal: None, disproves_old: true },
+            )
+            .expect("finish");
+
+        let paths: Vec<_> =
+            index.issues().iter().filter_map(|issue| issue.path.as_deref()).collect();
+        assert_eq!(paths, [Path::new("concurrent"), Path::new("pass")]);
+    }
+
+    #[test]
+    fn older_root_closer_preserves_newer_pass_omissions_and_partial_coverage() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        for number in 0..66 {
+            let path = PathBuf::from(format!("a-{number:02}"));
+            index.retain_issue(Issue::observation_gap(
+                &path,
+                crate::InvalidateReason::WatchOverflow,
+            ));
+        }
+        index.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+        assert_eq!(index.state.issues.omitted, 2);
+
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("begin older pass");
+        let (newer, _) = index.begin_reconcile(Path::new("")).expect("begin newer pass");
+        let newer_errors = ["z-one", "z-two"].map(|path| {
+            crate::Error::io(
+                root.join(path),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+            )
+        });
+        index
+            .finish_reconcile(
+                Path::new(""),
+                newer,
+                false,
+                &[],
+                &[PathBuf::from("z-one"), PathBuf::from("z-two")],
+                ReconcileErrors { errors: &newer_errors, terminal: None, disproves_old: true },
+            )
+            .expect("finish newer pass");
+        assert_eq!(index.state.issues.omitted, 2);
+
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish older pass");
+
+        assert_eq!(index.state.issues.omitted, 2, "the older closer cannot erase newer omissions");
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+    }
+
+    #[test]
+    fn an_unvisited_aborted_scope_does_not_disprove_its_old_issue() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        index.retain_issue(Issue::from_error_under(
+            root,
+            &crate::Error::io(
+                root.join("later/blocked"),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "old failure"),
+            ),
+        ));
+        let (started, _) = index.begin_reconcile(Path::new("later")).expect("begin later scope");
+
+        index
+            .finish_reconcile(
+                Path::new("later"),
+                started,
+                false,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: false },
+            )
+            .expect("close skipped scope");
+
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("later/blocked")));
+    }
+    #[test]
+    fn older_pass_cannot_publish_errors_after_newer_clean_verification() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("begin older pass");
+        let (newer, _) = index.begin_reconcile(Path::new("")).expect("begin newer pass");
+        index
+            .finish_reconcile(
+                Path::new(""),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish newer pass");
+        let stale_error = crate::Error::io(
+            root.join("stale"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "older failure"),
+        );
+
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                false,
+                &[],
+                &[PathBuf::from("stale")],
+                ReconcileErrors { errors: &[stale_error], terminal: None, disproves_old: true },
+            )
+            .expect("finish superseded older pass");
+
+        assert!(index.issues().is_empty());
+        assert_eq!(index.state.coverage, Coverage::Complete);
+        assert_eq!(index.state.freshness, Freshness::Fresh);
+    }
+
+    #[test]
+    fn newer_unchanged_verification_refuses_an_older_conditional_fact() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("same"),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, 1),
+            }]))
+            .expect("fixture");
+        let handle = IndexHandle::new(index);
+        let baseline = handle.expectation(Path::new("same")).expect("baseline");
+        let (older, _) = handle.begin_reconcile(Path::new("")).expect("begin older pass");
+        let (newer, _) = handle.begin_reconcile(Path::new("")).expect("begin newer pass");
+        handle
+            .finish_reconcile(
+                Path::new(""),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish unchanged newer pass");
+
+        let stale = handle
+            .apply_reconcile(
+                older,
+                &Observation::from_ops(vec![ObservationOp::if_state(
+                    Op::Remove { path: PathBuf::from("same") },
+                    baseline,
+                )]),
+            )
+            .expect("arbitrate older fact");
+
+        assert_eq!(stale.stats.stale, 1);
+        assert!(stale.commit.is_none());
+        assert!(handle.attrs(Path::new("same")).expect("attrs").is_some());
+    }
+
+    #[test]
+    fn newer_disjoint_verification_does_not_refuse_an_older_fact() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::File,
+                    attrs: file_attrs(1, 1),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::File,
+                    attrs: file_attrs(1, 1),
+                },
+            ]))
+            .expect("fixture");
+        let handle = IndexHandle::new(index);
+        let baseline = handle.expectation(Path::new("a")).expect("baseline");
+        let (older, _) = handle.begin_reconcile(Path::new("a")).expect("begin a");
+        let (newer, _) = handle.begin_reconcile(Path::new("b")).expect("begin b");
+        handle
+            .finish_reconcile(
+                Path::new("b"),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish b");
+
+        let applied = handle
+            .apply_reconcile(
+                older,
+                &Observation::from_ops(vec![ObservationOp::if_state(
+                    Op::Remove { path: PathBuf::from("a") },
+                    baseline,
+                )]),
+            )
+            .expect("apply disjoint a fact");
+
+        assert_eq!(applied.stats.removed, 1);
+        assert_eq!(applied.stats.stale, 0);
+        assert!(handle.attrs(Path::new("a")).expect("attrs").is_none());
+    }
+    #[test]
+    fn newer_child_verification_preserves_older_sibling_failure() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        index.apply_ok(&Observation::new(
+            ["a", "a/old", "b", "b/blocked", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        index.set_initial_scan_freshness(&[]);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer, _) = index.begin_reconcile(Path::new("a")).expect("newer child");
+        index
+            .finish_reconcile(
+                Path::new("a"),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("verify a");
+        let errors = ["a/old", "b/blocked"].map(|path| {
+            crate::Error::io(
+                root.join(path),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed read"),
+            )
+        });
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                false,
+                &[],
+                &[PathBuf::from("a/old"), PathBuf::from("b/blocked")],
+                ReconcileErrors { errors: &errors, terminal: None, disproves_old: true },
+            )
+            .expect("finish older root");
+        for path in ["", "a", "a/old", "b", "healthy"] {
+            assert_eq!(index.directory_complete(Path::new(path)), Some(true), "{path}");
+        }
+        assert_eq!(index.directory_complete(Path::new("b/blocked")), Some(false));
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("b/blocked")));
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert_eq!(index.freshness_at(Path::new("a")), Freshness::Fresh);
+        assert_eq!(index.freshness_at(Path::new("b/blocked")), Freshness::Partial);
+    }
+    #[test]
+    fn failure_published_after_a_newer_pass_began_keeps_its_issue_with_its_mark() {
+        // A root pass begins, a child pass begins under it, and the root pass fails on
+        // that child and closes first. Its `Partial` mark is minted after the child pass
+        // began, so the child's clean finish leaves the mark in place; the issue that
+        // explains the mark must follow the same rule, or the root reports a partial with
+        // no explanation until another root pass runs.
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        index.apply_ok(&Observation::new(
+            ["x", "x/deep", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        index.set_initial_scan_freshness(&[]);
+        let (older_root, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer_child, _) = index.begin_reconcile(Path::new("x")).expect("newer child");
+        let error = crate::Error::io(
+            root.join("x"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed read"),
+        );
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older_root,
+                false,
+                &[],
+                &[PathBuf::from("x")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("older root fails on x");
+        assert_eq!(index.freshness_at(Path::new("x")), Freshness::Partial);
+        assert_eq!(index.issues().len(), 1);
+
+        index
+            .finish_reconcile(
+                Path::new("x"),
+                newer_child,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("newer child verifies clean");
+
+        let explained = !index.issues().is_empty();
+        let partial = index.freshness_at(Path::new("x")) == Freshness::Partial;
+        assert_eq!(
+            partial,
+            explained,
+            "a surviving partial mark and its issue must be kept or dropped together: \
+             partial={partial}, issues={:?}",
+            index.issues()
+        );
+        assert!(partial, "the mark minted after the child pass began is the newer claim");
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("x")));
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert_eq!(index.state.freshness, Freshness::Partial);
+        let request = crate::query::Request::new(
+            crate::query::Basis::held_by(&index),
+            crate::query::Query::default(),
+            std::time::UNIX_EPOCH,
+        );
+        let status = crate::query::TreeStatus::of(&index, &request);
+        assert!(!status.complete);
+        assert_eq!(status.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert_eq!(status.errors.len(), 1, "an incomplete status names its cause");
+    }
+    #[test]
+    fn cold_scan_failure_does_not_verify_unknown_descendants_or_unscoped_work() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(
+            ["blocked", "blocked/nested", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        let error = crate::Error::io(
+            PathBuf::from("/root/blocked"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+        );
+        index.set_initial_scan_freshness(&[error]);
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
+        assert_eq!(index.directory_complete(Path::new("")), Some(true));
+        assert_eq!(index.freshness_at(Path::new("")), Freshness::Partial);
+        for path in ["blocked", "blocked/nested"] {
+            assert_eq!(index.directory_complete(Path::new(path)), Some(false), "{path}");
+            assert_eq!(index.freshness_at(Path::new(path)), Freshness::Partial, "{path}");
+        }
+        index.set_initial_scan_freshness(&[crate::Error::Snapshot("unscoped failure".into())]);
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
+        assert_eq!(index.freshness_at(Path::new("healthy")), Freshness::Partial);
+    }
+
+    #[test]
+    fn unscoped_failure_publishes_listing_withdrawal_when_root_state_is_unchanged() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("healthy"),
+            kind: EntryKind::Dir,
+            attrs: Attrs::default(),
+        }]));
+        index.set_initial_scan_freshness(&[]);
+        index.mark_unfresh(Path::new("elsewhere"), Freshness::Partial);
+        index.state.freshness = Freshness::Partial;
+        index.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+        let error = crate::Error::Snapshot("unscoped failure".into());
+        index.retain_issue(Issue::from_error_under(&index.root_path, &error));
+        let progress = index.state.progress;
+        let (epoch, _) = index.begin_reconcile(Path::new("")).expect("begin partial root");
+        let before = index.state;
+        let clock = index.clock;
+        let finished = index
+            .finish_reconcile(
+                Path::new(""),
+                epoch,
+                false,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("finish failure");
+        assert_eq!(index.state, before, "aggregate root state remains identical");
+        assert_eq!(index.state.progress, progress, "discovery progress is cumulative");
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
+        let commit = finished.commit.expect("withdrawal must publish even without another effect");
+        assert!(index.clock > clock);
+        assert_eq!(commit.clock, index.clock);
+        assert!(
+            commit
+                .state
+                .iter()
+                .all(|effect| matches!(effect, StateTransition::DirectoryIncomplete { .. }))
+        );
+        assert!(
+            commit
+                .state
+                .contains(&StateTransition::DirectoryIncomplete { path: PathBuf::from("healthy") })
+        );
+        assert!(commit.impact.dirty_paths.contains(&PathBuf::from("healthy")));
+    }
+
+    #[test]
+    fn omitted_failed_entry_withdraws_parent_listing_without_tainting_siblings() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("healthy"),
+            kind: EntryKind::Dir,
+            attrs: Attrs::default(),
+        }]));
+        let error = crate::Error::io(
+            PathBuf::from("/root/missing"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "metadata failed"),
+        );
+        index.set_initial_scan_freshness(&[error]);
+        assert_eq!(index.directory_complete(Path::new("")), Some(false));
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
+        index.set_initial_scan_freshness(&[]);
+        let (epoch, _) = index.begin_reconcile(Path::new("")).expect("begin root");
+        let error = crate::Error::io(
+            PathBuf::from("/root/missing"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "metadata failed"),
+        );
+        index
+            .finish_reconcile(
+                Path::new(""),
+                epoch,
+                false,
+                &[],
+                &[PathBuf::from("missing")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("partial root");
+        assert_eq!(index.directory_complete(Path::new("")), Some(false));
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
+    }
+
+    #[test]
+    fn complete_older_root_does_not_verify_a_newer_failed_child() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer, _) = index.begin_reconcile(Path::new("child")).expect("newer child");
+        let error = crate::Error::io(
+            root.join("child"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "new failure"),
+        );
+        index
+            .finish_reconcile(
+                Path::new("child"),
+                newer,
+                false,
+                &[],
+                &[PathBuf::from("child")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("failed child");
+        let finish = index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("complete older walk");
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.freshness_at(Path::new("child")), Freshness::Partial);
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert!(!finish.commit.iter().flat_map(|commit| commit.state.iter()).any(|state| {
+            matches!(state, StateTransition::Verified { path } if path.as_os_str().is_empty())
+        }));
+    }
+
+    #[test]
+    fn reconciliation_scope_budget_preserves_issues_and_newer_facts() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("kept"),
+            kind: EntryKind::File,
+            attrs: file_attrs(1, 1),
+        }]));
+        index.retain_issue(Issue::provider_failure(
+            Some(Path::new("unvisited")),
+            "earlier failure".into(),
+        ));
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older pass");
+        let budget = index.active_reconciles[&older].scope_budget;
+        assert_eq!(budget, 2, "root and kept file define the evidence budget");
+        for number in 0..100 {
+            let path = PathBuf::from(format!("missing-{number}"));
+            let (newer, _) = index.begin_reconcile(&path).expect("newer pass");
+            index
+                .finish_reconcile(
+                    &path,
+                    newer,
+                    true,
+                    &[],
+                    &[],
+                    ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+                )
+                .expect("newer verification");
+            if let ReconcileEvidence::Scopes(scopes) = &index.active_reconciles[&older].evidence {
+                assert!(scopes.len() <= budget);
+            }
+        }
+        assert!(matches!(index.active_reconciles[&older].evidence, ReconcileEvidence::Retry));
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("kept"),
+            kind: EntryKind::File,
+            attrs: file_attrs(9, 2),
+        }]));
+        let finished = index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("close interrupted pass");
+        assert!(finished.retry);
+        assert!(finished.commit.is_some());
+        assert_eq!(index.total_scalars().bytes, 9);
+        assert!(
+            index
+                .issues()
+                .iter()
+                .any(|issue| issue.path.as_deref() == Some(Path::new("unvisited")))
+        );
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert!(index.active_reconciles.is_empty(), "closed passes retain no shadow history");
     }
 }

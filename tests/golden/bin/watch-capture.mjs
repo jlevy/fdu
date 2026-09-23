@@ -4,7 +4,7 @@
 // A golden compares one command's completed output, and a watch process never exits, so
 // there is nothing to compare until watching is expressed as a command that terminates.
 // This is that command: it starts a watcher, applies a scripted sequence of changes,
-// collects the `fdu.stream/1` records each one produces, and stops.
+// collects the `fdu.stream/2` records each one produces, and stops.
 //
 // Determinism comes from the sequencing, not from sleeps. Each step waits for its own
 // record to arrive before the next step runs, so the output order is fixed by causality

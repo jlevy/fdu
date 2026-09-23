@@ -4,6 +4,13 @@
 //! releases the GIL for every engine operation, and converts complete engine results
 //! back to ordinary Python values. It owns no scheduler, cache, or duplicate lifecycle.
 
+fn open_planned(root: &std::path::Path, options: OpenOptions) -> fdu_core::Result<OpenedIndex> {
+    let mut delivery = fdu_core::query::Delivery::new(fdu_core::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -165,6 +172,7 @@ impl SelectionValues {
 fn opened_read(
     selection: Option<&Bound<'_, PyDict>>,
     views: Option<Vec<String>>,
+    format: Option<&str>,
     words_per_page: u64,
     now: SystemTime,
 ) -> PyResult<Query> {
@@ -173,6 +181,7 @@ fn opened_read(
         now,
         &fdu_core::OpenedIndex::basis(),
         views,
+        format,
         values.include,
         values.exclude,
         values.min_size.as_deref(),
@@ -194,7 +203,7 @@ fn parse_selection(dict: Option<&Bound<'_, PyDict>>, now: SystemTime) -> PyResul
     let Some(dict) = dict else {
         return Ok(Selection::default());
     };
-    Ok(opened_read(Some(dict), None, fdu_core::query::Request::DEFAULTS.words_per_page, now)?
+    Ok(opened_read(Some(dict), None, None, fdu_core::query::Request::DEFAULTS.words_per_page, now)?
         .selection)
 }
 
@@ -328,7 +337,9 @@ fn parse_report(dict: &Bound<'_, PyDict>) -> PyResult<fdu_core::ReportRequest> {
     // rather than resolved and refused here: a second copy of a rule agrees today and
     // drifts tomorrow, and this one already said `words_per_page must be positive` where
     // every other route said `invalid words_per_page "0"`.
-    let query = opened_read(selection.as_ref(), views, words_per_page, generated_at)?;
+    let format: Option<String> = optional_string(dict, "format")?;
+    let query =
+        opened_read(selection.as_ref(), views, format.as_deref(), words_per_page, generated_at)?;
     Ok(fdu_core::ReportRequest {
         query,
         // The instant this read resolves against, which is also what it reports as its
@@ -786,6 +797,10 @@ fn transition_dict<'py>(
             out.set_item("kind", "directory_complete")?;
             out.set_item("path", path.as_os_str())?;
         }
+        StateTransition::DirectoryIncomplete { path } => {
+            out.set_item("kind", "directory_incomplete")?;
+            out.set_item("path", path.as_os_str())?;
+        }
         StateTransition::IndexState { previous, current } => {
             out.set_item("kind", "index_state")?;
             out.set_item("previous", state_dict(py, *previous)?)?;
@@ -985,17 +1000,18 @@ fn projection_result_dict<'py>(
         }
         ProjectionResult::Report(value) => {
             out.set_item("kind", "report")?;
-            let rendered = fdu_core::report_format::render(
+            let encoded = fdu_core::report_format::render(
                 value,
                 fdu_core::report_format::Format::Json,
                 false,
-            );
-            let wire = py.import("json")?.call_method1("loads", (rendered,))?;
+            )
+            .map_err(super::to_py_err)?;
+            let wire = py.import("json")?.call_method1("loads", (encoded,))?;
             let report = PyDict::new(py);
             report.set_item("wire", wire)?;
-            report.set_item("notes", &value.notes)?;
-            report
-                .set_item("renderer", Py::new(py, super::PyOneShot { report: value.clone() })?)?;
+            let renderer = super::PyOneShot { report: value.clone() };
+            report.set_item("notes", renderer.notes())?;
+            report.set_item("renderer", Py::new(py, renderer)?)?;
             out.set_item("value", report)?;
         }
         ProjectionResult::Diagnostics(value) => {
@@ -1184,7 +1200,7 @@ impl PyOpenedIndex {
                     options.types =
                         Some(Arc::new(fdu_core::classify::TypeRegistry::from_manifest(&source)?));
                 }
-                OpenedIndex::open(&root, options)
+                open_planned(&root, options)
             })
             .map_err(opened_py_err)?;
         Ok(Self { inner })
@@ -1322,7 +1338,7 @@ mod tests {
         Python::initialize();
         let root = TestRoot::new();
         std::fs::write(root.0.join("seed.txt"), b"seed").expect("write seed");
-        let opened = OpenedIndex::open(&root.0, OpenOptions::default()).expect("open test root");
+        let opened = open_planned(&root.0, OpenOptions::default()).expect("open test root");
         let cursor = ready(&opened).change_cursor;
         let producer = opened.clone();
         let changed_path = root.0.join("changed.txt");

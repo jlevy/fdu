@@ -17,9 +17,9 @@ provenance fields report, never what the answer says.
 A store holds one or more tiers, the unit whose identity decides which requests it may
 answer: a snapshot holds the entry and `.gitignore` control tiers, and a content sidecar
 holds the content tier.
-The code does not meet that bar everywhere; [Known Gaps](#known-gaps) lists where, and
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks the work.
+The
+[explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
+records the implementation and acceptance checks for these contracts.
 
 ## Why a Cache Exists at All
 
@@ -56,17 +56,21 @@ special-object settings, type-rules fingerprint, and a reducer-set fingerprint t
 constant today, and the control tier’s record of whether `.gitignore` was observed and,
 if it was, the budget and line limit.
 Snapshots taken with observation on and off hold equal entry tiers and differ only in
-the control tier. A request that returns the index or reconciles it against the tree is
-served only by a snapshot taken under exactly its scope.
+the control tier. Exact identity serves directly.
+A controls-on snapshot may also serve a controls-off request with the same entry
+identity: the loader validates and discards the stored control section while it builds
+the index in the requested blind scope.
 The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, under a write-permitting policy, replaces the root’s one
 snapshot each time the run retains an index (`fdu-w3l5` tracks keying snapshots by
 scope). A `--no-gitignore` summary answered by the transient tier, described below,
 retains none, so it replaces nothing.
-The one exception is a one-shot `--cache only` report that turns observation off, which
-answers from a default snapshot’s all-entry facts and retags the report to its own
-scope. `open` with the same options refuses that snapshot.
+That projection applies to one-shot reports, Rust and Python `open`, cache-only reads,
+warm revalidation, and watch startup.
+A projected index never replaces the stronger controls-on snapshot, even after a watch
+observes changes. A controls-off snapshot cannot serve a controls-on request: a scanning
+policy walks the tree cold, while cache-only reports a miss.
 
 The pass start is a lower bound on when the snapshot’s facts were last verified.
 A later pass that encodes the same facts keeps the file, stamp included, rather than
@@ -300,7 +304,7 @@ belongs.
 | `auto` (default) | per path, below | full scan or full revalidation | per path, below |
 | `refresh` | no | full scan | complete indexed scans |
 | `read-only` | per path, below | full scan or full revalidation | never |
-| `only` | yes | never, except under `--watch` | never |
+| `only` | yes | never; watch is refused | never |
 | `off` | no | full scan | never |
 
 What a policy reads and writes also depends on the path that answers:
@@ -312,68 +316,51 @@ What a policy reads and writes also depends on the path that answers:
   snapshot only when reconciliation changed something.
   The summary-reducer path retains nothing and writes nothing, so
   `--view summary --no-gitignore` under `auto` never leaves a snapshot.
-- **`open` and the first answer of `--watch`.** Both always read a usable snapshot and
-  reconcile it. A warm open writes only when reconciliation changed something; a cold
-  open writes after a complete scan.
-- **Live updates.** Under a write-permitting policy, the command line’s `--watch` saves
-  a throttled snapshot whenever the index is fresh.
-  Python `Index.refresh` and `Index.watch` never write.
+- **`open` and the first answer of `--watch`.** Under `auto` and `read-only`, both load
+  a usable snapshot and reconcile it; `off` and `refresh` start cold.
+  A retained `open` under `only` loads without revalidation; a watch refuses `only`.
+  Under a write-permitting policy, a warm open writes when reconciliation changes
+  something, and a cold open writes after a complete scan.
+- **Live updates.** Under a write-permitting policy, both command-line and Python
+  watches use the engine session’s throttled persistence.
+  Python `Index.refresh` applies the same write policy after reconciliation.
+  A failed watch save reports the error and remains pending for a later attempt.
 - **Content sidecar.** Written after a cold scan with analysis, and after a warm open
   whose analysis applied a record or found a stale one.
   Each tier has its own write rule.
-  After a partial pass neither tier is written, so the stored snapshot and the sidecar
-  that pairs with it both survive whole.
-  The rule the sidecar is heading for is narrower — written when a snapshot of the same
-  entry tier is already stored, keeping a record only for a file the pass scanned or
-  revalidated and read without error, so a record for a file retained under a directory
-  the pass could not list is left out and read again later — and it waits on a partial
-  pass marking the paths it failed rather than its root.
-  Until then a partial pass can name only the files that *changed* as verified, and
-  writing those would replace a complete sidecar with that handful, so every later run
-  would re-read the tree for as long as one directory stayed unlistable.
-  A partial pass under another entry tier will write no sidecar either way, so the one
-  that pairs with the stored snapshot survives.
-  A run with another analyzer set misses the stored sidecar and replaces it, under
-  `refresh` because no sidecar is read and under `auto` because the stored one is
+  A partial pass never replaces the metadata snapshot.
+  It may write a content sidecar only beside an existing snapshot of the same entry
+  identity; the sidecar includes only reusable records whose files this pass verified.
+  Failed or unverified records remain misses and are retried on a later request.
+  A partial pass under another entry identity preserves the existing snapshot and its
+  sidecar. A run with another analyzer set misses the stored sidecar and replaces it,
+  under `refresh` because no sidecar is read and under `auto` because the stored one is
   another identity.
 
 `only` is the one tier that can be stale, and it says so: its report carries
 `source: cache_only` and `freshness: stale`. It fails outright when no usable snapshot
 exists rather than quietly scanning, because a fast path that is sometimes a full walk —
 with nothing in the output to say which happened — is worse than no fast path.
-`--watch --cache only` is accepted: its first answer comes from the snapshot, and it
-then verifies and applies live filesystem events.
+`--watch --cache only` is refused: starting observation cannot verify the interval
+between snapshot capture and observation registration.
+Use `auto` or `read-only` for a watch whose initial answer is revalidated before the
+handoff.
 
-Every machine-format report carries `source`, `freshness`, `complete`, and `errors`.
-Text output names none of them; a partial text run prints its errors as warnings on
-standard error.
+Every machine-format report carries `status` with `complete`, `coverage`, `errors`, and
+`errors_omitted`, plus `provenance` with source, freshness, timestamps, and per-tier
+truth. Text output names none of them; a partial text run prints its errors as warnings
+on standard error.
 
-[`plan_report`](../../../crates/fdu-core/src/execution.rs) and
-[`open_for_report`](../../../crates/fdu-core/src/lib.rs) implement these policies.
+[`Plan`](../../../crates/fdu-core/src/execution.rs) derives loading and verification and
+owns write authorization for every route.
+The [executors](../../../crates/fdu-core/src/lib.rs) perform the authorized work;
+[`Session`](../../../crates/fdu-core/src/watch_session.rs) owns watch throttling.
 The transient summary path and snapshot-read bypass mean that `--cache auto` does not
 promise a reusable baseline after an arbitrary command.
 `--allow-partial` changes exit acceptance; it does not make a partial scan’s snapshot
 cacheable.
 
 ## Future Considerations
-
-### Known Gaps
-
-Each item is a way the present code falls short of
-[Caching Improves Performance, Never Semantics](../architecture/fdu-design-principles.md#caching-improves-performance-never-semantics).
-[The explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-tracks them.
-
-- **The one projection exists on one path.** A one-shot cache-only report may answer a
-  `.gitignore`-off request from a controls-on snapshot; `open` refuses the same request.
-- **Policies mean different things per path.** `read-only` revalidates for `open` but
-  behaves as `off` for a one-shot metadata report, and `auto` reads for `open` but not
-  for that report. Write rules differ by path as listed above, so whether a later
-  `--cache only` succeeds depends on which command ran last.
-- **Live provenance and content decay** are session gaps, listed in
-  [the engine architecture’s Known Gaps](../architecture/fdu-engine-architecture.md#known-gaps).
-- **A type-rules mismatch is silent.** A snapshot taken under another type registry
-  parses as absent, so a `--cache only` failure cannot name the registry as the cause.
 
 ### Potential Improvements
 

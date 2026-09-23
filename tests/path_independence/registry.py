@@ -7,7 +7,8 @@ The registry is reviewed like a golden. A run fails on:
 - a registered case that now matches, so its entry is stale;
 - a class with no entries, or an entry naming a class the table does not define;
 - an entry still marked `unclassified`;
-- a run with zero cases or zero parseable cold answers.
+- a run with zero cases or zero parseable cold answers;
+- any remaining class or violation in the production alpha acceptance gate.
 
 A class is emptied only by a run that executed every case, because a subset run checks
 the entries it executed and nothing else.
@@ -172,9 +173,12 @@ def verify(
     full: bool,
     platform: str,
     cold_answers: int,
+    require_clean: bool = False,
 ) -> list[Failure]:
     """Every way `judged` and the registry disagree."""
     failures: list[Failure] = []
+    if require_clean and (registry.classes or registry.all_entries()):
+        failures.append(Failure("known violations are not allowed by the conformance gate"))
     cases = list(judged)
     if not cases:
         failures.append(Failure("run executed no cases"))
@@ -255,8 +259,9 @@ def merge(registry: Registry, judged_by_platform: dict[str, Iterable[Judged]]) -
 def dump(registry: Registry) -> str:
     """TOML text for `registry`, grouped and sorted so a re-record diffs cleanly."""
     lines = [
-        "# Known path-independence violations. Reviewed like a golden: see registry.py.",
-        "# Regenerate with `make path-independence-record`, then classify new entries.",
+        "# Known path-independence violations: diagnostic evidence, not a waiver (see registry.py).",
+        "# The production gate fails while any entry remains. `make path-independence-record`",
+        "# records what a run observed so each difference can be classified and then fixed.",
     ]
     for name in sorted(registry.classes):
         klass = registry.classes[name]

@@ -133,7 +133,10 @@ pub(crate) fn should_descend(
 ) -> bool {
     let child_depth = parent_depth.saturating_add(1);
     let within_depth = max_depth.is_none_or(|maximum| child_depth < maximum);
-    let within_filesystem = !one_filesystem || attrs.dev == root_dev || attrs.dev == 0;
+    // Zero is an unavailable device on either side (a locked entry, or a root that could
+    // only be listed), so it cannot prove a boundary crossing.
+    let within_filesystem =
+        !one_filesystem || root_dev == 0 || attrs.dev == 0 || attrs.dev == root_dev;
     kind.is_dir() && within_depth && within_filesystem
 }
 
@@ -161,6 +164,18 @@ fn hidden_fingerprint(allow: &BTreeSet<OsString>) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unavailable_device_never_proves_a_filesystem_boundary() {
+        let dir_on = |dev| Attrs { dev, ..Attrs::default() };
+        let descends =
+            |attrs, root_dev| should_descend(EntryKind::Dir, attrs, 0, root_dev, None, true);
+        assert!(descends(dir_on(7), 7), "same device");
+        assert!(!descends(dir_on(8), 7), "another device is a boundary");
+        assert!(descends(dir_on(0), 7), "a locked child has no device");
+        assert!(descends(dir_on(8), 0), "a root that could only be listed has no device");
+        assert!(should_descend(EntryKind::Dir, dir_on(8), 0, 7, None, false), "not bounded");
+    }
 
     #[test]
     fn hidden_allowlists_are_exact_normalized_scope() {

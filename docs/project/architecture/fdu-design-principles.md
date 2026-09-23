@@ -215,6 +215,12 @@ Defaults also compose, so check them together rather than one at a time.
 Both `files` defaults passed review individually.
 Nothing examined the pair.
 
+The current metadata default is the List view in Tree format, preserving that directory
+question and its existing output.
+Flat List formats answer “which matching entries are present and largest”: complete by
+default, with size ordering and path tie-breaks.
+Legacy Files remains a complete name-ordered listing for existing callers.
+
 ### Truncate Freely; Never Truncate Silently
 
 Bounding output is legitimate and usually necessary — an unbounded listing of a million
@@ -567,7 +573,7 @@ Each of these must be one invocation:
 | `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` |
 | `fd -e rs`, `find -name` | `fdu --view files --include '*.rs' PATH` |
 | biggest files | `fdu --view files --sort size -n 100 PATH` |
-| `find -mmin -60` | `fdu --view files --modified-since 1h PATH` |
+| `find -mmin -60` | `fdu --view files --kind file --modified-since 1h PATH` |
 | `du` by type | `fdu --view types PATH` |
 | two reports, one scan | `fdu --view types,tree PATH` |
 | `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` |
