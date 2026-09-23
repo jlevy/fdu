@@ -2824,7 +2824,8 @@ mod tests {
             fdu_core::report_format::Format::Jsonl,
             fdu_core::report_format::Format::Yaml,
         ] {
-            let materialized = fdu_core::report_format::render(&report, format, false);
+            let materialized =
+                fdu_core::report_format::render(&report, format, false).expect("render report");
             let mut streamed = Vec::new();
             fdu_core::report_format::write(&report, format, false, &mut streamed)
                 .expect("stream report");
