@@ -5,13 +5,13 @@ title: Withdraw failed directory listing evidence consistently in cold and warm 
 kind: bug
 status: in_progress
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels: []
 dependencies: []
 parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 created_at: 2026-09-23T03:11:23.161Z
-updated_at: 2026-09-23T03:31:45.674Z
+updated_at: 2026-09-23T03:32:39.123Z
 ---
 Final PR117 path-independence at 0d34e327 found 12 Linux cold/warm differences under unreadable src/nested: cached reconciliation retained children_complete=true and emitted known ages while cold emitted incomplete/unknown. Fix canonical listing evidence, preserve newer scoped verification and healthy siblings, and prove excluded failed subtrees do not taint eligible ancestor metrics. Keep registry empty; add real-permission regression and focused concurrency coverage.
 
@@ -24,3 +24,5 @@ Public surface regression 1ad8b8fd verifies actual Off cold vs Auto/ReadOnly war
 Parent review identified an additional publication edge: an unscoped failure can withdraw listings while aggregate root state already remains Partial. Fixed in 8decb3bf with exact DirectoryIncomplete transitions, including Python kind/binding, transition path/dirty impact and normal bounded journal costing. Deterministic regression proves only these effects advance the clock when IndexState and cumulative DiscoveryProgress remain equal. Required opened contract coverage now includes a new failed-listing-and-recovery golden; generation and normal replay pass. Python model tests: 59 passed; final workspace all-build-features/all-targets clippy clean. make cross-lint passed macOS x86 and Windows before this additive transition followup; no new platform-gated production code. Parent final review, integration, full gate and actual platform path-independence remain required.
 
 Integrated reviewed lower PR114 commits 56e55fb7 (canonical) and d7401e31 (publication), with ancestry-only merge b3b0d5f2 retaining the newer scoped arbitration over equivalent PR113 backports. Node golden inventory already includes new cases; da76ef03 fixes its formerly hardcoded session count. Node audit: 6 tests and 6 scenarios pass. Fresh lower114 all-build-features core lib suite: 803 passed, 1 ignored, zero failures. Answer-agent independent merge and exact patch-identity review clear; parent independently cleared publication. Upper-only public regression remains 1ad8b8fd for forward integration. Final full gate and actual platform path-independence remain pending; bead stays in progress.
+
+Final review confirmation: parent and independent Astra answer-agent both cleared the canonical listing fix, explicit withdrawal publication, public row regression, and lower114 integration. Lower114 da76ef03 passed 803 all-build-features core tests (1 ignored), including required DirectoryIncomplete contract-golden coverage; Node golden audit passed six tests and six scenarios. Public1ad8b8fd tests cache routes, exclusions, healthy siblings and unknown ages; serial/parallel recovery is proved by the private canonical-fix regression. Acceptance remains pending final composed make check/cross-lint, actual platform path-independence, and final packaged-artifact rehearsal. The bead remains in progress and the final registry remains empty.
