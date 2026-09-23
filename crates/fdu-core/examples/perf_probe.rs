@@ -505,7 +505,7 @@ fn render_report(
     let counters = begin_component_counters();
     let started = Instant::now();
     let bytes = if materialize {
-        let rendered = fdu_core::report_format::render(&report, format, false);
+        let rendered = fdu_core::report_format::render(&report, format, false)?;
         let bytes = rendered.len();
         black_box(rendered);
         bytes

@@ -101,11 +101,33 @@ const exactJson = (source) => JSON.parse(source, (key, value, context) => {
   return value;
 });
 
+const assertAges = (report, label) => {
+  assert.ok(Object.hasOwn(report, 'age_reference_ns'), `${label}: age reference missing`);
+  const reference = report.age_reference_ns;
+  for (const section of report.reports ?? []) {
+    for (const row of section.files ?? []) {
+      assert.ok(Object.hasOwn(row, 'age_ns'), `${label}: row age missing`);
+      if (row.age_ns == null) {
+        assert.ok(reference == null || row.complete === false,
+          `${label}: complete row has null age with a reference`);
+        continue;
+      }
+      assert.equal(typeof reference, 'bigint', `${label}: missing exact age reference`);
+      assert.equal(typeof row.mtime_ns, 'bigint', `${label}: missing exact mtime`);
+      assert.notEqual(row.complete, false, `${label}: incomplete row has an age`);
+      assert.equal(row.age_ns, reference - row.mtime_ns,
+        `${label}: age differs from reference minus mtime`);
+    }
+  }
+};
+
 const stripVolatile = (value) => {
   if (Array.isArray(value)) return value.map(stripVolatile);
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value)
-      .filter(([key]) => !['scan_started_at', 'generated_at', 'observed_at_ns'].includes(key))
+      .filter(([key]) => ![
+        'scan_started_at', 'generated_at', 'observed_at_ns', 'age_reference_ns', 'age_ns',
+      ].includes(key))
       .map(([key, inner]) => [key, stripVolatile(inner)]));
   }
   return value;
@@ -143,7 +165,9 @@ for (const view of [...views, 'full']) {
       `${view} --analyze ${analyze}: raw YAML-forbidden character`);
     const json = execFileSync(fdu, [...args, '--format', 'json'], { encoding: 'utf8' });
     const jsonl = execFileSync(fdu, [...args, '--format', 'jsonl'], { encoding: 'utf8' });
-    const expected = stripVolatile(exactJson(json));
+    const jsonReport = exactJson(json);
+    assertAges(jsonReport, `${view} --analyze ${analyze}: JSON`);
+    const expected = stripVolatile(jsonReport);
     const requested = new Set(expected.request.analyze);
     const metricOwners = {
       lines: ['physical_lines', 'blank_lines', 'nonblank_lines', 'raw_words'],
@@ -167,13 +191,17 @@ for (const view of [...views, 'full']) {
       }
     }
     for (const version of ['1.1', '1.2']) {
-      const actual = stripVolatile(parse(yaml, {
+      const yamlReport = parse(yaml, {
         strict: true, uniqueKeys: true, intAsBigInt: true, version,
-      }));
+      });
+      assertAges(yamlReport, `${view} --analyze ${analyze}: YAML ${version}`);
+      const actual = stripVolatile(yamlReport);
       assert.deepStrictEqual(actual, expected,
         `${view} --analyze ${analyze}: YAML ${version} differs from JSON`);
     }
-    assert.deepStrictEqual(stripVolatile(reassembleJsonl(jsonl)), expected,
+    const jsonlReport = reassembleJsonl(jsonl);
+    assertAges(jsonlReport, `${view} --analyze ${analyze}: JSON Lines`);
+    assert.deepStrictEqual(stripVolatile(jsonlReport), expected,
       `${view} --analyze ${analyze}: reconstructed JSON Lines differs from JSON`);
     compared += 1;
   }
@@ -181,21 +209,36 @@ for (const view of [...views, 'full']) {
 
 const probe = process.env.FDU_FORMAT_PROBE
   ?? join(root, 'target', 'debug', 'examples', 'format_conformance');
-for (const kind of ['cache', 'upsert', 'remove', 'invalidate', 'raw']) {
+for (const kind of [
+  'cache', 'upsert', 'remove', 'invalidate', 'raw', 'ages-positive', 'ages-negative',
+]) {
   const run = (format) => execFileSync(probe, [kind, format], { encoding: 'utf8' });
   const expected = exactJson(run('json'));
+  if (kind.startsWith('ages-')) {
+    const extreme = (1n << 64n) - 1n;
+    const signed = kind === 'ages-positive' ? extreme : -extreme;
+    assert.equal(expected.reports[0].files[0].age_ns, signed);
+    assertAges(expected, `${kind}: JSON`);
+  }
   const yaml = run('yaml');
   assert.doesNotMatch(yaml, /[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/u);
   for (const version of ['1.1', '1.2']) {
-    assert.deepStrictEqual(parse(yaml, {
+    const parsed = parse(yaml, {
       strict: true, uniqueKeys: true, intAsBigInt: true, version,
-    }), expected, `${kind}: YAML ${version} differs from JSON`);
+    });
+    if (kind.startsWith('ages-')) assertAges(parsed, `${kind}: YAML ${version}`);
+    assert.deepStrictEqual(parsed, expected, `${kind}: YAML ${version} differs from JSON`);
   }
   const records = run('jsonl').trimEnd().split('\n').map(exactJson);
   const actual = kind === 'cache'
-    ? { ...records[0], caches: records.slice(1) } : records[0];
+    ? { ...records[0], caches: records.slice(1) }
+    : kind.startsWith('ages-')
+      ? { ...records[0], reports: records.slice(1) }
+      : records[0];
+  if (kind.startsWith('ages-')) assertAges(actual, `${kind}: JSON Lines`);
   assert.deepStrictEqual(actual, expected, `${kind}: JSON Lines differs from JSON`);
-  if (kind !== 'cache') assert.equal(records.length, 1);
+  if (kind.startsWith('ages-')) assert.equal(records.length, 2);
+  else if (kind !== 'cache') assert.equal(records.length, 1);
   compared += 1;
 }
 

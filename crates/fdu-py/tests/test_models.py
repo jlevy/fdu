@@ -475,6 +475,40 @@ def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("positive", [True, False])
+def test_directory_age_extremes_preserve_exact_signed_integers(positive: bool) -> None:
+    reference = (2**63 - 1) if positive else -(2**63)
+    modified = -(2**63) if positive else (2**63 - 1)
+    age = reference - modified
+    wire = _envelope(
+        [
+            {
+                "view": "list",
+                "bound": None,
+                "files": [
+                    {
+                        "path": "extreme.txt",
+                        "kind": "file",
+                        "bytes": 0,
+                        "allocated": 0,
+                        "mtime_ns": modified,
+                        "age_ns": age,
+                        "ignored": None,
+                    }
+                ],
+            }
+        ]
+    )
+    wire["age_reference_ns"] = reference
+    report = report_from_dict(wire)
+    section = report.sections[0]
+    assert isinstance(section, FilesSection)
+    assert report.age_reference_ns == reference
+    assert section.files[0].mtime_ns == modified
+    assert section.files[0].age_ns == age
+    assert report.as_dict()["reports"][0]["files"][0]["age_ns"] == age
+
+
 def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() -> None:
     share = {"files": 1, "dirs": 1, "bytes": 128, "allocated": 4096}
     leaf = {

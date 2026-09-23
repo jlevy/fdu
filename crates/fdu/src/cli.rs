@@ -804,7 +804,7 @@ impl Cli {
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::query::ViewSpec;
-        use fdu_core::watch_session::{ChangeKind, Session};
+        use fdu_core::watch_session::Session;
 
         // The repaint interval the delivery already carries, rather than a second reading
         // of `--interval`: `run` refused an unparseable one before it opened anything, and

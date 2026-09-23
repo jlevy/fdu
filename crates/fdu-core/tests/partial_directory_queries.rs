@@ -36,7 +36,7 @@ fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() 
         panic!("permission fixture precondition failed: host permits mode-000 directory listing");
     }
     assert_eq!(
-        permission_probe.err().expect("denied listing").kind(),
+        permission_probe.expect_err("denied listing").kind(),
         std::io::ErrorKind::PermissionDenied
     );
     let basis =
