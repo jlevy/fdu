@@ -234,7 +234,11 @@ def compare(
     equal to it is the allowed stale outcome, provided it says so.
     `must_serve` is used after an explicit complete refresh of the identical request:
     refusing that snapshot or quietly scanning instead is a broken cache contract.
+    A failure on either side fails it too, even when the two failures match: a control
+    that never served proves nothing about the cache.
     """
+    if must_serve and "failure" in (oracle.outcome, measured.outcome):
+        return Verdict("outcome_class", (f"<serve:{oracle.outcome}>{measured.outcome}>",))
     if measured.outcome == "failure":
         if oracle.outcome == "failure":
             same_surface = is_python(oracle) == is_python(measured)
