@@ -8100,8 +8100,7 @@ mod tests {
     fn revalidation_metadata_errors_do_not_delete_enumerated_entries() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -8135,10 +8134,7 @@ mod tests {
     fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            // A privileged process still reads the directory it was denied, so the
-            // fixture cannot reach the metadata-error boundary this pins.
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -8399,8 +8395,7 @@ mod tests {
     fn reconciling_an_unreadable_control_file_root_keeps_its_rules_and_stays_partial() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -8728,6 +8723,9 @@ mod tests {
     fn partial_pending_reconciliation_remains_queued_for_retry() {
         use std::os::unix::fs::PermissionsExt;
 
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join("blocked/known.txt"), b"known");
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
@@ -8742,10 +8740,7 @@ mod tests {
             .expect("permission failure is a partial report");
         let pending = index.take_pending_invalidations();
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
-        if report.is_complete() {
-            return; // Privileged test environments can read mode-000 directories.
-        }
-
+        assert!(!report.is_complete(), "permission fixture must make reconciliation partial");
         assert_eq!(
             pending,
             vec![(PathBuf::from("blocked"), crate::InvalidateReason::VerificationFailed)]
@@ -8763,6 +8758,9 @@ mod tests {
     fn partial_shared_pending_reconciliation_settles_instead_of_retrying() {
         use std::os::unix::fs::PermissionsExt;
 
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join("blocked/known.txt"), b"known");
         let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
@@ -8781,10 +8779,7 @@ mod tests {
         let pending = handle.take_pending_invalidations().expect("pending");
         let freshness = handle.freshness_at(Path::new("blocked")).expect("freshness");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
-        if report.is_complete() {
-            return; // Privileged test environments can read mode-000 directories.
-        }
-
+        assert!(!report.is_complete(), "permission fixture must make reconciliation partial");
         assert!(pending.is_empty(), "{pending:?}");
         assert_eq!(freshness, crate::Freshness::Partial);
         assert!(!report.scan.errors.is_empty());

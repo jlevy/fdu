@@ -164,6 +164,21 @@ way.
 The bootstrap policy enforces one reviewed version across `UV_MIN_VERSION` and both CI
 pins.
 
+### Test Host Preconditions
+
+The permission fixtures induce a real `EACCES` and the native watch tests wait for real
+events, and each fails rather than passing vacuously when the host cannot provide that.
+A process running as root — a container, a Claude Code web session — reads a mode-000
+file anyway, so `make check` there would fail as a dozen scattered panics; the
+`permission-bits` preflight, which `make test`, `make lib-only`, and `make msrv` run
+first, says so once instead.
+Declare such a host unable with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1`, and a host whose
+event service delivers nothing to a fresh watch with `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`;
+the affected tests then print a skip.
+CI leaves both unset so a passing test proves its assertions ran.
+The watch opt-out covers only the warm-up: once a watch has delivered, its later silence
+is a lost event and fails regardless.
+
 ## Performance Work
 
 To run one more iteration, start at

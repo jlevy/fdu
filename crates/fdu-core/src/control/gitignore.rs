@@ -121,18 +121,23 @@ impl Pattern {
         let mut segments = Vec::new();
         // A malformed bracket expression aborts git's match wherever it appears, so the
         // line can never match anything and is dropped as if it were a comment.
-        for (segment, before_escaped_separator) in
-            split_segments(body)?.into_iter().filter(|(segment, _)| !segment.is_empty())
-        {
-            let segment = if matches_path && segment == b"**" {
-                if before_escaped_separator {
-                    Segment::DoubleStarOneOrMore
+        for (segment, before_escaped_separator) in split_segments(body)? {
+            // After the single leading anchor and trailing directory marker have been
+            // removed, an empty component is a repeated separator. Normalized paths can
+            // never contain one, so git makes the whole pattern match nothing.
+            if segment.is_empty() {
+                return None;
+            }
+            let segment =
+                if matches_path && segment.len() >= 2 && segment.iter().all(|byte| *byte == b'*') {
+                    if before_escaped_separator {
+                        Segment::DoubleStarOneOrMore
+                    } else {
+                        Segment::DoubleStar
+                    }
                 } else {
-                    Segment::DoubleStar
-                }
-            } else {
-                Segment::Glob(normalize_glob(segment))
-            };
+                    Segment::Glob(normalize_glob(segment))
+                };
             if matches!(segment, Segment::DoubleStar)
                 && matches!(segments.last(), Some(Segment::DoubleStar))
             {
@@ -701,6 +706,19 @@ mod tests {
             RecordedCase { pattern: b"\\/", ignored: &[], kept: &[b"x"] },
     ];
 
+    /// Empty path components and complete multi-star components, recorded from git.
+    #[rustfmt::skip]
+    const PATH_SEGMENT_CASES: &[RecordedCase] = &[
+            RecordedCase { pattern: b"a//b", ignored: &[], kept: &[b"a/b", b"a/q/b"] },
+            RecordedCase { pattern: b"//foo", ignored: &[], kept: &[b"foo", b"x/foo"] },
+            RecordedCase { pattern: b"a\\//b", ignored: &[], kept: &[b"a/b", b"a/q/b"] },
+            RecordedCase { pattern: b"a/**//", ignored: &[], kept: &[b"a/x", b"a/x/y"] },
+            RecordedCase { pattern: b"a/***/b", ignored: &[b"a/b", b"a/q/b", b"a/q/r/b"], kept: &[b"b", b"q/a/b"] },
+            RecordedCase { pattern: b"***/x", ignored: &[b"x", b"q/x", b"q/r/x"], kept: &[b"y"] },
+            RecordedCase { pattern: b"x/***", ignored: &[b"x/a", b"x/a/b"], kept: &[b"x", b"q/x/a"] },
+            RecordedCase { pattern: b"a/****\\/b", ignored: &[b"a/q/b", b"a/q/r/b"], kept: &[b"a/b"] },
+    ];
+
     fn verdict_bytes(source: &[u8], path: &[u8]) -> bool {
         let components: Vec<&[u8]> = path.split(|byte| *byte == b'/').collect();
         Gitignore::parse(source).matches_components(&components, false).unwrap_or(false)
@@ -734,6 +752,11 @@ mod tests {
     #[test]
     fn escaped_slashes_answer_as_git_check_ignore_does() {
         assert_recorded_verdicts(ESCAPED_SLASH_CASES);
+    }
+
+    #[test]
+    fn path_segment_edges_answer_as_git_check_ignore_does() {
+        assert_recorded_verdicts(PATH_SEGMENT_CASES);
     }
 
     /// Re-ask the host's git for every recorded verdict, when git is installed.
