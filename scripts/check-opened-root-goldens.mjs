@@ -134,14 +134,14 @@ function main() {
     return;
   }
 
-  const { findings, totalBytes, totalLines } = auditCorpus();
+  const { findings, expected, totalBytes, totalLines } = auditCorpus();
   if (findings.length > 0) {
     console.error("opened-root golden audit failed:");
     for (const finding of findings) console.error(`- ${finding}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`opened-root goldens ok: 5 sessions, ${totalLines} records, ${totalBytes} bytes`);
+  console.log(`opened-root goldens ok: ${expected.length} sessions, ${totalLines} records, ${totalBytes} bytes`);
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main();

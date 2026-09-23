@@ -6147,7 +6147,8 @@ mod tests {
             crate::Freshness::Partial
         );
         assert_eq!(index.directory_complete(Path::new("fresh")).expect("lookup"), Some(true));
-        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(true));
+        // Its enumerated child could not be verified, so the retained listing proof is withdrawn.
+        assert_eq!(index.directory_complete(Path::new("steady")).expect("lookup"), Some(false));
         let lookup = opened
             .read(crate::ReadRequest {
                 projections: vec![crate::ReadProjection::Lookup {
