@@ -78,8 +78,15 @@ def reference_outside(out: str, started_ns: int, finished_ns: int) -> str | None
     from a stale instant (a snapshot's, say) with ages to match would pass that check.
     The reference must fall within the invocation that produced the report.
     """
-    reference = (parse(out) or {}).get("age_reference_ns")
-    if reference is None or started_ns <= reference <= finished_ns:
+    doc = parse(out)
+    if doc is None:
+        return None
+    reference = doc.get("age_reference_ns")
+    if reference is None:
+        # Null only when the run's instant overflows i64, which no runbook run reaches;
+        # a null reference would also make every null age pass the age check.
+        return "age_reference_ns is missing"
+    if started_ns <= reference <= finished_ns:
         return None
     return f"age_reference_ns {reference} outside the run [{started_ns}, {finished_ns}]"
 
