@@ -268,6 +268,7 @@ class StateTransitionKind(StrEnum):
     FRESHNESS = "freshness"
     VERIFIED = "verified"
     DIRECTORY_COMPLETE = "directory_complete"
+    DIRECTORY_INCOMPLETE = "directory_incomplete"
     INDEX_STATE = "index_state"
 
 

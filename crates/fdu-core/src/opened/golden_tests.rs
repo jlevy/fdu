@@ -19,6 +19,7 @@ fn opened_root_session_goldens() {
     let traces = [
         cold_progressive_knowledge(),
         exact_mutation_and_refresh(),
+        failed_listing_and_recovery(),
         coherent_projections_and_continuations(),
         journal_and_observation_recovery(),
         ownership_races_and_shutdown(),
@@ -80,6 +81,7 @@ const REQUIRED_CONTRACT_OUTCOMES: &[&str] = &[
     "transition.freshness",
     "transition.verified",
     "transition.directory_complete",
+    "transition.directory_incomplete",
     "transition.index_state",
     "error.closed",
     "error.continuation_unavailable",
@@ -193,6 +195,43 @@ fn exact_mutation_and_refresh() -> SessionTrace {
     refresh(&opened, &mut trace, &[PathBuf::from("same")]);
     let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
     final_read(&opened, &mut trace);
+    close(&opened, &mut trace);
+    record_final(&mut trace, &[&opened]);
+    trace
+}
+
+fn failed_listing_and_recovery() -> SessionTrace {
+    let root = tempfile::tempdir().expect("listing root");
+    std::fs::create_dir(root.path().join("dir")).expect("directory");
+    std::fs::write(root.path().join("dir/kept"), b"kept").expect("child");
+    let mut trace = SessionTrace::new("failed-listing-and-recovery", root.path());
+    let options = OpenOptions::default();
+    trace.record("action.open", &options);
+    let opened = OpenedIndex::open_for_test(root.path(), options, deterministic_controls())
+        .expect("open listing session");
+    trace.bind_session(opened.state.session);
+    trace.record("result.open", &opened);
+    wait_for_phase(&opened, &mut trace, LifecyclePhase::Ready);
+    let cursor = zero_cursor(&opened, &mut trace);
+    let cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
+    let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
+        (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected listing failure")
+        })
+    });
+    refresh(&opened, &mut trace, &[PathBuf::new()]);
+    drop(hook);
+    let cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
+    assert_eq!(
+        opened.state.index.directory_complete(Path::new("dir")).expect("listing"),
+        Some(false)
+    );
+    refresh(&opened, &mut trace, &[PathBuf::new()]);
+    let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
+    assert_eq!(
+        opened.state.index.directory_complete(Path::new("dir")).expect("listing"),
+        Some(true)
+    );
     close(&opened, &mut trace);
     record_final(&mut trace, &[&opened]);
     trace

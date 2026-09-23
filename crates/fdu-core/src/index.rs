@@ -3200,6 +3200,7 @@ impl Index {
                 self.retain_issue_at(issue, started_at);
             }
         }
+        let mut state = Vec::new();
         // Completeness describes this directory's own listing, not its descendants.
         // Withdraw old listing evidence at failures before publishing the partial pass.
         // Do not touch successful ancestors: readers compose only eligible descendants,
@@ -3239,10 +3240,10 @@ impl Index {
                     })
                 {
                     self.entry_mut(id).directory_mut().children_complete = false;
+                    state.push(StateTransition::DirectoryIncomplete { path: directory });
                 }
             }
         }
-        let mut state = Vec::new();
         // A complete older walk plus successful newer child verification still proves
         // the entire scope. A newer failed child must keep its own evidence and mark.
         let verified_scope = superseded.is_empty()
@@ -9951,6 +9952,54 @@ mod tests {
         index.set_initial_scan_freshness(&[crate::Error::Snapshot("unscoped failure".into())]);
         assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
         assert_eq!(index.freshness_at(Path::new("healthy")), Freshness::Partial);
+    }
+
+    #[test]
+    fn unscoped_failure_publishes_listing_withdrawal_when_root_state_is_unchanged() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("healthy"),
+            kind: EntryKind::Dir,
+            attrs: Attrs::default(),
+        }]));
+        index.set_initial_scan_freshness(&[]);
+        index.mark_unfresh(Path::new("elsewhere"), Freshness::Partial);
+        index.state.freshness = Freshness::Partial;
+        index.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+        let error = crate::Error::Snapshot("unscoped failure".into());
+        index.retain_issue(Issue::from_error_under(&index.root_path, &error));
+        let progress = index.state.progress;
+        let (epoch, _) = index.begin_reconcile(Path::new("")).expect("begin partial root");
+        let before = index.state;
+        let clock = index.clock;
+        let finished = index
+            .finish_reconcile(
+                Path::new(""),
+                epoch,
+                false,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("finish failure");
+        assert_eq!(index.state, before, "aggregate root state remains identical");
+        assert_eq!(index.state.progress, progress, "discovery progress is cumulative");
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
+        let commit = finished.commit.expect("withdrawal must publish even without another effect");
+        assert!(index.clock > clock);
+        assert_eq!(commit.clock, index.clock);
+        assert!(
+            commit
+                .state
+                .iter()
+                .all(|effect| matches!(effect, StateTransition::DirectoryIncomplete { .. }))
+        );
+        assert!(
+            commit
+                .state
+                .contains(&StateTransition::DirectoryIncomplete { path: PathBuf::from("healthy") })
+        );
+        assert!(commit.impact.dirty_paths.contains(&PathBuf::from("healthy")));
     }
 
     #[test]

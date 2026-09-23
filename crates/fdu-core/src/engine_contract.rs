@@ -1577,6 +1577,11 @@ pub enum StateTransition {
         /// Relative directory whose child set is now authoritative.
         path: PathBuf,
     },
+    /// Previously known child-listing completeness was withdrawn after failed verification.
+    DirectoryIncomplete {
+        /// Relative directory whose child set is no longer authoritative.
+        path: PathBuf,
+    },
     /// The coherent opened-root state changed.
     IndexState {
         /// State before this commit.
@@ -1592,7 +1597,8 @@ impl StateTransition {
         match self {
             Self::Freshness { path, .. }
             | Self::Verified { path }
-            | Self::DirectoryComplete { path } => path,
+            | Self::DirectoryComplete { path }
+            | Self::DirectoryIncomplete { path } => path,
             Self::IndexState { .. } => Path::new(""),
         }
     }
