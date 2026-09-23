@@ -8,6 +8,7 @@
 //! there is one name to know for both installing the tool and depending on it.
 
 mod cli;
+mod progress_line;
 
 /// The repository README's Rust examples, compiled and run as doctests.
 ///
