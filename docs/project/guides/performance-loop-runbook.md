@@ -24,12 +24,12 @@ serving, watch, `.gitignore` default-on, and a content sidecar.
 Campaign 1 and campaign 2 remain the history; this standing is a registry and
 measurement layer on top of them, not a rewrite of H86.
 
-Branch `perf/campaign-next-2026-09-19`, stacked on
+This standing was measured on `perf/campaign-next-2026-09-19`, stacked on
 [#91](https://github.com/jlevy/fdu/pull/91) (`perf/campaign-quiet-2026-09-18` at
 `e667b739`, which holds H115, H120, and the R1–R2 / S1–S3 review fixes).
-Continue on the stacked branch.
-Do not push to #91. Never merge.
-Never force-push.
+Both merged to `main` on 2026-09-20 (`6e3d2937` / `a290aedc`) and both branches were
+deleted, so a new Darwin round starts from `main`, not from either of them.
+Never force-push: the committed evidence cites SHAs.
 
 ### Standing Best and Regime
 
@@ -489,12 +489,17 @@ Source of truth:
 [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
-H139–H142 and exp-138+ are reserved for stacked
-[#94](https://github.com/jlevy/fdu/pull/94) (Linux parallel validation).
-Do not mint them on this Darwin branch.
-Next free Darwin hypothesis id is **H143**. Do not mint another meaning for H91–H106.
-Next free Darwin experiment id after the Linux reservation is assigned on #94; do not
-take exp-138 here. exp-113 remains reserved unused (H113 superseded).
+H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
+is recorded there as exp-139. H141 is recorded there as exp-140. H111 is recorded there
+as exp-141 (floor/RSS fail).
+H142 is recorded there as exp-143 (file I/O leftover).
+H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
+ids on this Darwin branch.
+The next free hypothesis and experiment ids have one home: the end of
+[the Linux standing](#linux-standing-2026-09-20), because both numberings are shared
+with Darwin and the Linux stack mints them.
+Do not mint an id from this section; do not take exp-138–155 or H144–H149 here.
+exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -515,8 +520,8 @@ recorded exp-122 (H122 leftover), and recorded exp-123 (H113 leftover then 16% o
 `content_open`). Earlier the same day: H113 69.4%, H122 (exp-118), H123, H121, H124. Do
 not start H107 without an ignore-is-the-walk subject.
 Do not retry metabrowser for H107 (exp-106). Do not start H111 on Darwin (no Linux).
-H111 pickup is [#94](https://github.com/jlevy/fdu/pull/94). Do not pad cache-hit,
-first-pass I/O, or walk leftovers already recorded.
+H111 is recorded fail on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141). Do not
+pad cache-hit, first-pass I/O, or walk leftovers already recorded.
 Do not raise the README 200K files/s or 4M cached lines/s.
 
 1. **H138** (`fdu-sce1`). **Accepted** (exp-137). Share one `every_entry` walk across
@@ -601,9 +606,11 @@ Do not raise the README 200K files/s or 4M cached lines/s.
    Do not retry a type/size gate or a larger read chunk.
    `F_RDADVISE` is person-gated `unsafe`.
 
-7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Not in this host** (no Linux
-   runner). Still open.
-   Do not restart the rewrite.
+7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Failed** on
+   [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized).
+   Recorded:
+   [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
+   Leftover is H143. Do not restart the rewrite.
    Do not treat a Darwin cell as this claim.
 
 **H108** (`fdu-1a4z`, confirmed in exp-107). Do not open a cache/one-shot patch.
@@ -699,8 +706,9 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 
 | Document | Role |
 | --- | --- |
-| This standing section | Pickup: standing best, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining queue: H107 (no subject), H111 (not this host) |
+| This standing section | Standing best, next-up order |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
+| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -710,6 +718,174 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | [The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md) | Charted view; regenerate after every record |
 | [Platform tuning](platform-tuning.md) | Which shipped constant was measured in which regime |
 | [Installed-CLI QA](../reports/report-2026-09-18-cli-installed-qa.md) | Product-path table; not interchangeable with probe jobs |
+
+## Linux Standing (2026-09-20)
+
+[#94](https://github.com/jlevy/fdu/pull/94) on `perf/campaign-linux-2026-09-19`, base
+`main` (`c7babf76`). [#91](https://github.com/jlevy/fdu/pull/91) and
+[#92](https://github.com/jlevy/fdu/pull/92) merged 2026-09-20 (`6e3d2937` / `a290aedc`)
+and their branches were deleted, so the engine measured here — `937f9445`, R1–R3 plus
+`c441edf6` single-view Cow borrow and the #91 restore-evidence repair — is on `main`.
+Merge onto `main`, then #97. This is not a Linux floor pass.
+**exp-138 and exp-140 were paired at `a5c98d59`, not at the merged `937f9445`, and have
+not been re-paired since.** `f8a2ed94` (the #92 R1–R3 fixes) and `c441edf6` landed after
+those two pairs ran; only exp-142 and exp-143 used the `937f9445` probe, so no Linux
+`content-cache-hit` or `content-query` pair exists on the merged engine.
+The expectation that the difference sits below the 3% wall rule is **argued from the
+diff, not measured**: `f8a2ed94` adds a per-name `component == name` check inside
+validation that already walked the same names, swaps a completeness denominator from
+`len()` to `visited`, and rewrites `query_report.rs`; `c441edf6` makes a single-view
+report borrow instead of cloning, and H141’s four-view `content-query` still shares one
+walk (`row_consumers > 1`), so the four-view cell has no single-view path to change.
+H139 was a well-formed cache-hit tree, so the snapshot alias reject and the
+restore-timing evidence have nothing to bite on there.
+Treat both cells as inherited across that engine bump until one quiet 12-pair
+`content-cache-hit` runs on the `main` probe.
+That remeasure is open and needs a quiet Linux host (load/core ≤ 0.25); it was not run
+here because this host would not hold the gate.
+4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
+Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
+Darwin-only).
+
+**H139 / exp-138** is the standing Linux cache-hit replication: **same**. Quiet 12-pair
+`content-cache-hit` of #91 `e667b739` (H115+H120) versus this engine on reconstructible
+`linux-v6.12` (92,474 entries / 86,643 files, tag `v6.12` / `adc21867`). Wall −22.48%
+[−23.46%, −21.39%]. Peak RSS −10.24%. Digest identical.
+Load/core 0.115–0.153 held.
+A clean metabrowser clone here is 916 entries and was not the subject.
+
+**H140 / exp-139** is the standing Linux walk leftover: **same** identity.
+Walk 95.7–96.1% of `default-tree` component.
+Leftover is `getdents64`+`statx` (one open/dir, one stat/entry).
+Quiet attempt invalidated 23/24 timed samples.
+Do not compile a walk trim.
+Do not retry H71.
+
+**H141 / exp-140** is the standing Linux content-query replication: **same**.
+Uncontrolled 12-pair `content-query` of the same #91 control versus this engine (H138
+share-one-walk) on `linux-v6.12`. Wall −17.60% [−18.07%, −17.17%]. Component −21.32%.
+Peak RSS +0.24% non-inferior.
+Digest identical. Quiet start 0.185/core did not hold.
+Do not retry H138.
+
+**H111 / exp-141** is the standing Linux floor/RSS stage: **failed** on this virtualized
+host. 450k index 1.78× `parfloor` vs 1.4×; RSS 5.20× `arena_spike` vs 3×. Aggregate on
+nominated reals 1.59× / 1.86× vs 1.25×. p95/median passes.
+Quiet requested; table uncontrolled.
+Do not restart H86.
+
+**H143 / exp-142** is the standing leftover after that fail: **same** identity.
+Quiet 12-pair `cold-scan-index` on reconstructible `linux-450k`. Walk 94.7–94.8% of
+component. Detached finish 4.3% is the H86 consume.
+Peak RSS ~150 MiB. No new cut.
+
+**H142 / exp-143** is the standing Linux first-pass leftover: **same** identity.
+Uncontrolled 12-pair `content-basic` on `linux-v6.12`. 86,634 opens, 184,057 reads
+(~2.12/file). Digest identical.
+Quiet start 0.036/core did not hold.
+Do not retry H124.
+
+**H145 / exp-145** is the standing Linux opened-discovery leftover: **same** identity.
+Uncontrolled 12-pair `opened-discovery` on `linux-v6.12`. 5,772 journal clones; 438,021
+live roll-up merges; opened component ~2.75× first-pass (Darwin H127 was 8.8×). Quiet
+start 0.151/core did not hold.
+Do not port `macos_bulk`.
+
+**H84 / exp-146** is the standing Linux thread-policy screen: **unlock silent**. ~2
+µs/entry vs 30 µs; expansions 0; start 4 / reserve 8. Named-job `--threads 8` is not a
+3% win (default aggregate +1.75% on `linux-v6.12`; **+7.12% quiet regression on
+`/usr`**, exp-149). `--no-controls` aggregate is a warm sign (−5.42% quiet on
+`linux-v6.12`; −10.06% quiet on nominated `/usr`, exp-148). Do not ship `PORTABLE`.
+`fdu-tk1b` stays open.
+
+**H146 / exp-147** is the standing Linux first-run leftover: **same** identity.
+Quiet 12-pair `default-tree-first` on `linux-v6.12`. Walk 93% of component.
+Isolated `snapshot-save` 23.6 ms (~5%) is ≥3% and not skippable.
+Load/core 0.082–0.119 held.
+Do not retry H100.
+
+**H85 / exp-150** is the standing Linux transient-recycle screen: **rejected** against
+its 20% bar. Quiet `linux-v6.12` `--no-controls` aggregate −4.98%. Incomplete quiet
+`linux-450k` −11.31% (n=7). Peak RSS flat.
+Do not lower the bar.
+
+**H147 / exp-151** is the 3% keep of that same patch.
+Quiet `linux-v6.12` −4.98% [−5.92%, −4.33%]. Default gitignore-on placebo includes zero.
+Engine kept (`5c6e6394`). Unmeasured on macOS.
+
+**H72 / exp-152** is the standing Linux source-tree `d_type` screen: **rejected**
+against 3%. Quiet `linux-v6.12` `--no-controls` aggregate −1.63% [−3.33%, −0.72%]. Stats
+92,474 → 86,644. RSS flat.
+Same class as the earlier −1.4% on 6.4% directories.
+
+**H72 / exp-153** is the directory-heavy keep of that same patch.
+Quiet nominated `/usr` −9.01% [−12.52%, −6.30%]. 22% dirs+symlinks.
+RSS flat. Fresh baseline (image digest had drifted).
+Engine kept (`f841662c`). Unmeasured on macOS.
+
+This host’s nominated set is
+[nominated-subjects-linux-x86_64.json](../reports/nominated-subjects-linux-x86_64.json):
+`linux-v6.12` and `usr-prefix` decide; rustup screens (46,632 entries).
+Two deciding characters, so the set cannot yet carry a ranking or transfer claim.
+
+### After #94 (Linux)
+
+[#94](https://github.com/jlevy/fdu/pull/94) is recorded and merges onto `main`, then
+#97. Further Linux cells are on
+[Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md)
+(`cursor/linux-perf-iterate-de1b`).
+
+1. **H144** — Linux cache-hit leftover after the landed stack.
+   **Same leftover identity** (exp-144, quiet).
+   Already-landed restore work.
+   Do not retry H125–H133.
+2. **H145** — Linux opened-discovery leftover (H127 analog).
+   **Same leftover identity** (exp-145, uncontrolled).
+   Journal clones plus live roll-ups; 2.75× first-pass.
+   Do not port `macos_bulk`.
+3. **H84** — adaptive unlock / thread-policy screen (`fdu-tk1b`). **Confirmed silent**
+   (exp-146). Named-job `--threads 8` is not a 3% win.
+   `--no-controls` is a warm sign, not a shipped `PORTABLE` constant.
+4. **H146** — Linux first-run leftover after H140 (H136 analog).
+   **Same leftover identity** (exp-147, quiet).
+   Walk 93%; isolated save ~24 ms not skippable.
+   Do not retry H100.
+5. **H85 / H147** — transient `--no-controls` aggregate recycle.
+   H86 detached arenas did not consume `RetainedState::Summary`. **H85 rejected**
+   against its 20% bar (exp-150, quiet `linux-v6.12` −4.98%). **H147 accepted** as the
+   3% keep (exp-151, same cell).
+   Engine kept (`5c6e6394`). Peak RSS flat.
+   Default gitignore-on placebo includes zero.
+   Do not retry H85’s 20% bar.
+   Do not restart H86. Do not retry H71.
+6. **H72** — `d_type` skip on transient summary.
+   **Rejected** on reconstructible `linux-v6.12` (exp-152, −1.63%). **Accepted** on
+   nominated `/usr` (exp-153, −9.01% [−12.52%, −6.30%]). Engine kept (`f841662c`). Do
+   not retry H71. Do not skip directory `statx` when `one_filesystem` is on.
+
+**H148 / exp-154** is the standing Linux PGO screen: **accepted** as a number, not as a
+shipped release profile.
+Quiet `linux-v6.12` `cold-scan-index` −8.35% [−10.35%, −6.92%] and `warm-revalidate`
+−8.15% [−8.64%, −7.07%]. Revalidate component is flat.
+`[profile.release]` unchanged.
+See [the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
+(recorded on [#97](https://github.com/jlevy/fdu/pull/97)).
+
+**H149 / exp-155** is the standing Linux cache-hit mix after leftover apply-timer
+expansion: **same** leftover identity.
+Quiet 12-pair `content-cache-hit` on `linux-v6.12`. Apply 60–62% of restore (89–99 ms)
+because HashMap remove + fingerprint now sit in apply.
+Parse and candidates ~24–26 ms.
+Read ~8–9 ms. Digest identical.
+Load/core 0.059–0.102 held.
+Do not retry H116. H83 remains format.
+
+Next free experiment id is **exp-156** and next free unused hypothesis id is **H150**.
+This is the one statement of the next free ids for Darwin and Linux alike; the
+[registry header](performance-loop.md#hypotheses) agrees.
+H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
+keep, H148 the Linux PGO screen, and H149 the leftover-timer restore mix; H72 reused its
+existing id. exp-113 remains reserved unused.
 
 ## Before the First Round
 
@@ -734,7 +910,7 @@ Each one has caught a real mistake.
    Remaining order after the overnight is
    [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
    That label still holds older campaign-2 items; several have landed, and H86’s
-   remaining gap is H111 on Linux (not this host).
+   remaining gap is still the Linux floor after H111 failed on #94 (not this host).
 
    ```shell
    tbd show fdu-8ya1 fdu-rfr6 fdu-ytg5 fdu-jcfn fdu-rum0 fdu-vf4b fdu-i39y fdu-jekg

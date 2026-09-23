@@ -6,7 +6,8 @@
 
 **Status:** Active. Overnight H116–H120 is done.
 This file is the remaining unaddressed-hypothesis queue after that overnight: H107
-(ignore-is-the-walk only) and H111 (not this host).
+(ignore-is-the-walk only).
+H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141); leftover is H143.
 H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-119). H121
 is confirmed (exp-120): apply no longer dominates.
 H124 is rejected (exp-121). H125 is accepted (exp-124): restore-count completeness.
@@ -55,14 +56,15 @@ H113 is superseded. Do not retry the file-count shortcut.
 
 - Name only hypotheses that are plausible at the 3% wall bar (or a structural ceiling)
   on a named job and subject, and that can be wrong
-- Keep H121–H138 registered in
-  [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 and
-  H111 open with honest status.
-  H124 is rejected (exp-121). H125 is accepted (exp-124). H126 is confirmed (exp-125).
-  H129 is accepted (exp-128). H130 is confirmed (exp-129). H131 is accepted (exp-130).
-  H132 is confirmed (exp-131). H133 is accepted (exp-132). H134 is confirmed (exp-133).
-  H135 is confirmed (exp-134). H136 is confirmed (exp-135). H137 is confirmed (exp-136).
-  H138 is accepted (exp-137). H113 is superseded.
+- Keep H121–H143 registered in
+  [the loop guide](../../guides/performance-loop.md#current-engine-010); keep H107 open
+  with honest status. H111 is recorded fail on
+  [#94](https://github.com/jlevy/fdu/pull/94) (exp-141). H124 is rejected (exp-121).
+  H125 is accepted (exp-124). H126 is confirmed (exp-125). H129 is accepted (exp-128).
+  H130 is confirmed (exp-129). H131 is accepted (exp-130). H132 is confirmed (exp-131).
+  H133 is accepted (exp-132). H134 is confirmed (exp-133). H135 is confirmed (exp-134).
+  H136 is confirmed (exp-135). H137 is confirmed (exp-136). H138 is accepted (exp-137).
+  H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
 - Keep one source of truth for that queue (this file)
@@ -76,7 +78,9 @@ H113 is superseded. Do not retry the file-count shortcut.
   format rewrite
 - Retrying H113 on an uncontrolled cell, H114 alloc trims, H109 Path rewrites, parse
   speed, or H103-shaped instruction cuts
-- Linux H111 on this Darwin host (still open; not in this host)
+- Linux H111 and #92 replication on this Darwin host (recorded on
+  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md) /
+  [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
 - A capability that exists only on the command line
 - Replacing the overnight macOS-agenda epic (`fdu-d4kg`) or rewriting campaign-2’s
   2026-08-23 Tier 1–3 list
@@ -236,7 +240,8 @@ First-pass 1.952 `getattrlistbulk`/dir.
 Opened uses `read_dir`+`fstatat`; 11,524 journal clones; 1.12M live roll-up merges.
 No smallest cut. Opened roots run no analyzers.
 
-H111 is open and not in this host.
+H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized).
+Leftover is H143. Not in this Darwin host.
 
 ### API Changes
 
@@ -258,7 +263,9 @@ These were considered against the post-H115 path and not registered:
   accepted)
 - Hardware CRC32C (`fdu-6kyn`) or PGO (`fdu-pdne`) as this increment’s wall hunt
 - `searchfs` (H77): person-gated
-- Linux H111 on this Darwin host (still open; not in this host)
+- Linux H111 and #92 replication on this Darwin host (recorded on
+  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md) /
+  [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
 - Bounding the observation channel (H91) without a current-engine occupancy trace
 - Directory-only transient tree (H66) as a cache-hit leftover
 
@@ -274,7 +281,8 @@ These were considered against the post-H115 path and not registered:
   cut). Do not invent a skip.
 - Uncontrolled is allowed on leftover profiles and H107 when quiet fails.
   Label it. Do not lower the 25% busy bar.
-- H111 is not in this host (no Linux runner).
+- H111 is recorded fail on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141). Not a
+  Darwin cell.
 - Do not re-queue H113 file-count, H116, H118, H119 walk-overlap, H114, H109,
   snapshot-load without a policy change, or the H86 / `fdu-jxhk` rewrite.
 
@@ -378,12 +386,14 @@ Overnight H116–H120 is history, not a retry list.
    Do not retry a type/size gate or a larger read chunk.
    `F_RDADVISE` is person-gated `unsafe`.
 
-7. **H111** (`fdu-jekg`). Open.
-   Not in this host. Linux floor stage of H86. No Linux runner on this Darwin campaign
-   machine. Do not treat a Darwin cell as this claim.
+7. **H111** (`fdu-jekg`). **Failed** on [#94](https://github.com/jlevy/fdu/pull/94)
+   (exp-141, virtualized).
+   Linux floor stage of H86. 450k index 1.78× vs 1.4×; RSS 5.20× vs 3×; aggregate 1.59×
+   / 1.86× vs 1.25×. Leftover is H143 (walk floor + retained-index RSS). Do not treat a
+   Darwin cell as this claim.
+   Do not restart the rewrite.
    Darwin comparison from exp-122: 1 open/dir + 1.403 `getattrlistbulk`/dir including
-   EOF versus the playbook’s Linux 2.00 `getdents64`/dir plus per-entry `statx`. Do not
-   restart the rewrite.
+   EOF versus the playbook’s Linux 2.00 `getdents64`/dir plus per-entry `statx`.
 
 **Overnight history (do not re-queue):** H116 rejected, H118 rejected, H119 screened,
 H117 confirmed as a probe, H120 accepted.
@@ -500,18 +510,23 @@ Engine changes land only as the experiment that tests the next row.
 - Whether sharing one `every_entry` walk across unfiltered entry-row views cuts
   `content-query` wall at least 3% (H138). **Closed:** exp-137. Wall −18.76%
   [−22.86%, −13.69%]. Engine kept (`a5c98d59`).
+- Whether H111’s Linux floor/RSS gates now pass on the current engine.
+  **Closed on [#94](https://github.com/jlevy/fdu/pull/94):** exp-141. Failed on that
+  virtualized host. Leftover is H143 (exp-142). H139–H142 same as Darwin.
 
 ## References
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
-  H107–H138
+  H107–H143
+- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
+  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed
 - [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs
   opened
 - [The instrumentation playbook](../../guides/performance-instrumentation-playbook.md)
-- exp-107 through exp-137; H115 engine at `7798fdc1`; H120 streaming restore; H125
+- exp-107 through exp-143; H115 engine at `7798fdc1`; H120 streaming restore; H125
   restore-count at `be8d4d69`; H129 restore-without-classify at `6887a864`; H131
   parent-path join at `7840ce9b`; H133 unused snapshot path skip at `143a1c73`; H138
   shared `every_entry` at `a5c98d59`
@@ -520,8 +535,8 @@ Engine changes land only as the experiment that tests the next row.
   `fdu-16jh`; H127 `fdu-v12n`; H128 `fdu-0wym`; H129 `fdu-qjjh`; H130 `fdu-ajbw`; H131
   `fdu-1dxc`; H132 `fdu-8z5i`; H133 `fdu-7m91`; H134 `fdu-03pr`; H135 `fdu-hh0t`; H136
   `fdu-w9jb`; H137 `fdu-nc3b`; H138 `fdu-sce1`; H113 quiet `fdu-rfr6` (superseded); H107
-  `fdu-jcfn`; H111 `fdu-jekg`; sidecar parent `fdu-78q6`; EntryId composite `fdu-jxhk`
-  (do not restart)
+  `fdu-jcfn`; H111 `fdu-jekg` (closed on #94); sidecar parent `fdu-78q6`; EntryId
+  composite `fdu-jxhk` (do not restart)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

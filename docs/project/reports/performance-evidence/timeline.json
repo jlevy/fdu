@@ -784,6 +784,24 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "tool": "dust",
    "wall_ns": 2114015042
+  },
+  {
+   "entries": 450001,
+   "id": "exp-142",
+   "per_entry_ns": 1254.027387716916,
+   "platform": "Linux",
+   "subject": "b3459e945151:450001:b77ebb296d34",
+   "tool": "dust",
+   "wall_ns": 564313578.5
+  },
+  {
+   "entries": 92474,
+   "id": "exp-145",
+   "per_entry_ns": 933.4126294958583,
+   "platform": "Linux",
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "tool": "dust",
+   "wall_ns": 86316399.5
   }
  ],
  "experiments": [
@@ -35718,9 +35736,2748 @@
    "subject": "3b5427f76be0:146047:dc0df2630acc",
    "title": "Share one every_entry across unfiltered metric views",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "HEAD probe with H125 H129 H131 H133 stacked",
+   "change_pct": -22.483,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e667b739 #91 probe with H115 and H120 only",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H139"
+   ],
+   "id": "exp-138",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 544167.5,
+        "control": 555680.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -4.436,
+        "ci95_high_pct": 11.671,
+        "ci95_low_pct": -13.855,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 503156482.5,
+        "control": 669114189.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -25.052,
+        "ci95_high_pct": -23.401,
+        "ci95_low_pct": -25.825,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 588397000,
+        "control": 760363000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -22.554,
+        "ci95_high_pct": -21.416,
+        "ci95_low_pct": -23.471,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 156200960,
+        "control": 174045184
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -10.244,
+        "ci95_high_pct": -10.223,
+        "ci95_low_pct": -10.318,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 43945000,
+        "control": 67969500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -33.734,
+        "ci95_high_pct": -9.25,
+        "ci95_low_pct": -47.024,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 551356500,
+        "control": 703974500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -22.074,
+        "ci95_high_pct": -20.754,
+        "ci95_low_pct": -22.58,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 588926986.5,
+        "control": 760890341.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -22.483,
+        "ci95_high_pct": -21.394,
+        "ci95_low_pct": -23.463,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 6368.568316499773,
+      "control": 8228.15430823799
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 138,
+   "path": "exp-138-linux-cache-hit-stack-same-versus-91-control.md",
+   "platform": "Linux",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "same on Linux: content-cache-hit wall -22.48% [-23.46%, -21.39%] quiet on reconstructible linux-v6.12; RSS -10.24%; digest identical; no engine patch",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux cache-hit stack same versus #91 control",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 0.636,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H140"
+   ],
+   "id": "exp-139",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 437553750,
+        "control": 431655573.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.655,
+        "ci95_high_pct": 3.547,
+        "ci95_low_pct": -0.425,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 555488500,
+        "control": 548078500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.056,
+        "ci95_high_pct": 2.296,
+        "ci95_low_pct": 0.208,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 45991936,
+        "control": 45813760
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.34,
+        "ci95_high_pct": 0.871,
+        "ci95_low_pct": -0.218,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 101907000,
+        "control": 106205000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -9.14,
+        "ci95_high_pct": 6.608,
+        "ci95_low_pct": -14.164,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 449948000,
+        "control": 444203000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 3.859,
+        "ci95_high_pct": 5.687,
+        "ci95_low_pct": -0.905,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 439365936,
+        "control": 433645679.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.636,
+        "ci95_high_pct": 3.575,
+        "ci95_low_pct": -0.45,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4751.237493782036,
+      "control": 4689.379495858296
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 139,
+   "path": "exp-139-linux-walk-leftover-is-still-the-getdents64-plus-statx-floor.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "walk still 95.7-96.1% of default-tree component; leftover is getdents64+statx floor; no userspace cut; do not retry H71",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux walk leftover is still the getdents64 plus statx floor",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "HEAD probe with H138 share-one-every-entry walk",
+   "change_pct": -17.598,
+   "commit": "a5c98d59",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e667b739 #91 probe with H115 and H120 only",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H141"
+   ],
+   "id": "exp-140",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-query",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 8129485855.5,
+        "control": 10314680644
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -21.325,
+        "ci95_high_pct": -20.762,
+        "ci95_low_pct": -21.611,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 15444420000,
+        "control": 17660812000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -12.669,
+        "ci95_high_pct": -12.271,
+        "ci95_low_pct": -13.177,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 145758208,
+        "control": 145512448
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.236,
+        "ci95_high_pct": 1.037,
+        "ci95_low_pct": -0.505,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 824961000,
+        "control": 787351000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.946,
+        "ci95_high_pct": 11.852,
+        "ci95_low_pct": -1.421,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 14628234500,
+        "control": 16867874500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -13.709,
+        "ci95_high_pct": -13.074,
+        "ci95_low_pct": -14.24,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 10409312500.5,
+        "control": 12615994315.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -17.598,
+        "ci95_high_pct": -17.174,
+        "ci95_low_pct": -18.072,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 112564.74793455457,
+      "control": 136427.47491727406
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 140,
+   "path": "exp-140-linux-content-query-stack-same-versus-91-control.md",
+   "platform": "Linux",
+   "primary_job": "content-query",
+   "primary_metric": "wall_ns",
+   "reason": "same on Linux: content-query wall -17.60% [-18.07%, -17.17%] uncontrolled on reconstructible linux-v6.12; digest identical; no engine patch",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux content-query stack same versus #91 control",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe; floor scoreboard is the verdict",
+   "change_pct": 1.986,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "absolute floor ratio, not paired regression"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "No engine change. Floor scoreboard is the verdict; this run JSON is a same-binary default-tree companion so perf-record can lift a measured pair."
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "rejected",
+   "entries": 450001,
+   "family": "Linux:b3459e945151",
+   "hypotheses": [
+    "H111"
+   ],
+   "id": "exp-141",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 425597944,
+        "control": 415012948.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.887,
+        "ci95_high_pct": 2.397,
+        "ci95_low_pct": -0.355,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1195340000,
+        "control": 1196932000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.151,
+        "ci95_high_pct": 0.895,
+        "ci95_low_pct": -0.463,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 321736704,
+        "control": 321736704
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 793661000,
+        "control": 786420000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.751,
+        "ci95_high_pct": 4.262,
+        "ci95_low_pct": -2.606,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 401468500,
+        "control": 400796500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.355,
+        "ci95_high_pct": 2.473,
+        "ci95_low_pct": -2.751,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 429808792,
+        "control": 419114022.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.986,
+        "ci95_high_pct": 2.385,
+        "ci95_low_pct": -0.356,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 955.1285263810524,
+      "control": 931.3624247501672
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": null,
+   "number": 141,
+   "path": "exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "H111 floor/RSS gates fail: 450k index 1.78x parfloor vs 1.4x; RSS 5.20x arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x",
+   "reference_tools": [],
+   "subject": "b3459e945151:450001:b77ebb296d34",
+   "title": "H111 Linux floor and RSS gates fail on current engine",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 0.131,
+   "commit": "937f9445",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 450001,
+   "family": "Linux:b3459e945151",
+   "hypotheses": [
+    "H143"
+   ],
+   "id": "exp-142",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 318734663.5,
+        "control": 319381209
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.277,
+        "ci95_high_pct": 0.513,
+        "ci95_low_pct": -0.89,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1576612500,
+        "control": 1574917500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.171,
+        "ci95_high_pct": 0.813,
+        "ci95_low_pct": -0.741,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 158410752,
+        "control": 157194240
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.247,
+        "ci95_high_pct": 2.189,
+        "ci95_low_pct": -0.185,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 721049000,
+        "control": 696087500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.45,
+        "ci95_high_pct": 6.322,
+        "ci95_low_pct": 0.126,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 866492000,
+        "control": 881806500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -3.515,
+        "ci95_high_pct": 0.372,
+        "ci95_low_pct": -5.672,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 856732192.5,
+        "control": 857578764
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.131,
+        "ci95_high_pct": 0.756,
+        "ci95_low_pct": -0.957,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1903.8450858998092,
+      "control": 1905.7263517192184
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 142,
+   "path": "exp-142-linux-h111-leftover-is-still-walk-floor-plus-rss.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "walk 94.7-94.8% of 450k cold-scan-index component; leftover is getdents64+statx plus detached finish/retained-index RSS; no new cut; do not restart H86",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-s",
+      "-k",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 564313578.5
+    }
+   ],
+   "subject": "b3459e945151:450001:b77ebb296d34",
+   "title": "Linux H111 leftover is still walk floor plus retained-index RSS",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 0.447,
+   "commit": "937f9445",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H142"
+   ],
+   "id": "exp-143",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-basic",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1632526783.5,
+        "control": 1633343787
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.089,
+        "ci95_high_pct": 0.654,
+        "ci95_low_pct": -0.324,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 6802674000,
+        "control": 6803740000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.172,
+        "ci95_high_pct": 0.439,
+        "ci95_low_pct": -0.121,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 144740352,
+        "control": 144881664
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.034,
+        "ci95_high_pct": 0.027,
+        "ci95_low_pct": -0.165,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 835643500,
+        "control": 841467000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -5.285,
+        "ci95_high_pct": 2.031,
+        "ci95_low_pct": -10.163,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 5974865000,
+        "control": 5967280000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.689,
+        "ci95_high_pct": 1.803,
+        "ci95_low_pct": -0.446,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 2169362545.5,
+        "control": 2165735522.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.447,
+        "ci95_high_pct": 0.575,
+        "ci95_low_pct": -0.168,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 23459.161986071762,
+      "control": 23419.939902026515
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 143,
+   "path": "exp-143-linux-first-pass-content-basic-leftover-is-still-file-i-o.md",
+   "platform": "Linux",
+   "primary_job": "content-basic",
+   "primary_metric": "wall_ns",
+   "reason": "first-pass leftover is still file I/O (86634 opens, 184057 reads, ~2.12/file); no skippable 3% userspace cut; do not retry H124",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux first-pass content-basic leftover is still file I/O",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": -0.085,
+   "commit": "345cd8fc",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H144"
+   ],
+   "id": "exp-144",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 527145,
+        "control": 564853.5
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -13.71,
+        "ci95_high_pct": 23.826,
+        "ci95_low_pct": -24.353,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 518592192,
+        "control": 516381082
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.054,
+        "ci95_high_pct": 1.906,
+        "ci95_low_pct": -1.659,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 606771500,
+        "control": 604788000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.09,
+        "ci95_high_pct": 1.293,
+        "ci95_low_pct": -1.775,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 156233728,
+        "control": 156221440
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.007,
+        "ci95_high_pct": 0.084,
+        "ci95_low_pct": -0.018,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 47870000,
+        "control": 51986500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -10.789,
+        "ci95_high_pct": -0.32,
+        "ci95_low_pct": -18.391,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 559348000,
+        "control": 555565000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.83,
+        "ci95_high_pct": 2.038,
+        "ci95_low_pct": -0.287,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 607317958.5,
+        "control": 605297999
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.085,
+        "ci95_high_pct": 1.256,
+        "ci95_low_pct": -1.788,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 6567.445536042564,
+      "control": 6545.60199623678
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 144,
+   "path": "exp-144-linux-cache-hit-leftover-after-landed-stack.md",
+   "platform": "Linux",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "same leftover identity as Darwin H134: apply ~80ms / parse+candidates ~27ms each; no new userspace cut; do not retry H125/H129/H131/H133",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux cache-hit leftover after landed stack is already-landed restore work",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": -0.231,
+   "commit": "eec14927",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H145"
+   ],
+   "id": "exp-145",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "opened-discovery",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1184382420.5,
+        "control": 1174009001.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.374,
+        "ci95_high_pct": 1.1,
+        "ci95_low_pct": -0.521,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1562332000,
+        "control": 1553772000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.187,
+        "ci95_high_pct": 0.894,
+        "ci95_low_pct": -0.482,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 112205824,
+        "control": 112134144
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.035,
+        "ci95_high_pct": 0.185,
+        "ci95_low_pct": -0.062,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 170345000,
+        "control": 172154000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.762,
+        "ci95_high_pct": 12.521,
+        "ci95_low_pct": -9.374,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1401034000,
+        "control": 1392624500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.35,
+        "ci95_high_pct": 1.651,
+        "ci95_low_pct": -1.251,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1508023276.5,
+        "control": 1496980649
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.231,
+        "ci95_high_pct": 1.097,
+        "ci95_low_pct": -0.579,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 16307.538080974111,
+      "control": 16188.124759391829
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 145,
+   "path": "exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md",
+   "platform": "Linux",
+   "primary_job": "opened-discovery",
+   "primary_metric": "wall_ns",
+   "reason": "same leftover identity as Darwin H127: 5772 journal clones, 438k live roll-up merges, 2.75x first-pass; no smallest cut; do not port macos_bulk",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-s",
+      "-k",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 86316399.5
+    }
+   ],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux opened-discovery leftover is still journal clones plus live roll-ups",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --threads 8",
+   "change_pct": 1.754,
+   "commit": "0a979786",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "screen only; no engine change"
+   },
+   "control": "HEAD automatic workers (available.clamp(1,6)=4)",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H84"
+   ],
+   "id": "exp-146",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 436196430,
+        "control": 425668426
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.693,
+        "ci95_high_pct": 4.185,
+        "ci95_low_pct": 0.142,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 530239500,
+        "control": 529829000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.375,
+        "ci95_high_pct": 0.958,
+        "ci95_low_pct": -0.928,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 37613568,
+        "control": 37150720
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.418,
+        "ci95_high_pct": 1.717,
+        "ci95_low_pct": 0.956,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 94039000,
+        "control": 93043500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 4.532,
+        "ci95_high_pct": 18.17,
+        "ci95_low_pct": -13.069,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 434206500,
+        "control": 440200500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.002,
+        "ci95_high_pct": 3.289,
+        "ci95_low_pct": -3.228,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 437997480,
+        "control": 427289258
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.754,
+        "ci95_high_pct": 4.146,
+        "ci95_low_pct": 0.128,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4736.439215347016,
+      "control": 4620.642104807838
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 428953514,
+        "control": 422604672.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.601,
+        "ci95_high_pct": 2.195,
+        "ci95_low_pct": -0.374,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 604581000,
+        "control": 606469000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.183,
+        "ci95_high_pct": 0.935,
+        "ci95_low_pct": -2.411,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 37511168,
+        "control": 36810752
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.796,
+        "ci95_high_pct": 2.358,
+        "ci95_low_pct": 1.063,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 98414000,
+        "control": 96331000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.247,
+        "ci95_high_pct": 13.128,
+        "ci95_low_pct": -9.326,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 508491000,
+        "control": 509833500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.469,
+        "ci95_high_pct": 2.25,
+        "ci95_low_pct": -4.296,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 504486420,
+        "control": 498430403
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.254,
+        "ci95_high_pct": 2.333,
+        "ci95_low_pct": -0.547,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 5455.440664402968,
+      "control": 5389.951802668858
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 146,
+   "path": "exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "unlock silent at ~2us/entry; named jobs --threads 8 no 3% win (aggregate +1.75% regression, index +0.25%); --no-controls is a warm sign not a shipped PORTABLE constant",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover profile",
+   "change_pct": 1.484,
+   "commit": "f0126084",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "leftover profile only; no engine change"
+   },
+   "control": "HEAD release probe both arms",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H146"
+   ],
+   "id": "exp-147",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 454787711.5,
+        "control": 446874119
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.486,
+        "ci95_high_pct": 3.586,
+        "ci95_low_pct": -2.088,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 561999000,
+        "control": 553849500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.84,
+        "ci95_high_pct": 2.624,
+        "ci95_low_pct": -1.624,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 45836288,
+        "control": 45895680
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.13,
+        "ci95_high_pct": 0.308,
+        "ci95_low_pct": -0.433,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 113846500,
+        "control": 110995500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.775,
+        "ci95_high_pct": 13.178,
+        "ci95_low_pct": -10.833,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 450516500,
+        "control": 445889000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.437,
+        "ci95_high_pct": 4.275,
+        "ci95_low_pct": -2.648,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 456591794.5,
+        "control": 448576649
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.484,
+        "ci95_high_pct": 3.567,
+        "ci95_low_pct": -2.102,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4937.515350260614,
+      "control": 4850.840766053161
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 147,
+   "path": "exp-147-linux-first-run-leftover-is-still-the-walk.md",
+   "platform": "Linux",
+   "primary_job": "default-tree-first",
+   "primary_metric": "wall_ns",
+   "reason": "same leftover identity as Darwin H136: walk 93% of first-run; isolated save ~24ms is >=3% and not skippable; do not retry H100",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux first-run leftover is still the walk; snapshot write not skippable",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls --threads 8",
+   "change_pct": -10.064,
+   "commit": "a58f9e30",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "screen only; no engine change"
+   },
+   "control": "HEAD automatic workers --no-controls",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 208411,
+   "family": "Linux:894d731f69bb",
+   "hypotheses": [
+    "H84"
+   ],
+   "id": "exp-148",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 81716499,
+        "control": 92677047.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -10.174,
+        "ci95_high_pct": -8.162,
+        "ci95_low_pct": -14.979,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 313333500,
+        "control": 341497500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -7.746,
+        "ci95_high_pct": -6.035,
+        "ci95_low_pct": -10.05,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 29593600,
+        "control": 29593600
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 212415000,
+        "control": 209222500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.156,
+        "ci95_high_pct": 8.602,
+        "ci95_low_pct": -2.909,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 100240500,
+        "control": 128293000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -25.27,
+        "ci95_high_pct": -17.148,
+        "ci95_low_pct": -30.492,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 82644132,
+        "control": 93484583.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -10.064,
+        "ci95_high_pct": -7.95,
+        "ci95_low_pct": -14.721,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 396.5440019960559,
+      "control": 448.558778087529
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 148,
+   "path": "exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "confirmatory --no-controls sign on nominated /usr: -10.06% quiet; still not a shipped PORTABLE constant; minor_faults inferior",
+   "reference_tools": [],
+   "subject": "894d731f69bb:208411:44de521b2e23",
+   "title": "Linux H84 --no-controls --threads 8 sign transfers to nominated /usr",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --threads 8",
+   "change_pct": 7.123,
+   "commit": "06b12212",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "screen only; no engine change"
+   },
+   "control": "HEAD automatic workers",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 208411,
+   "family": "Linux:894d731f69bb",
+   "hypotheses": [
+    "H84"
+   ],
+   "id": "exp-149",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 481705934.5,
+        "control": 462043587
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 7.144,
+        "ci95_high_pct": 11.313,
+        "ci95_low_pct": 3.707,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 733473000,
+        "control": 740649500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.343,
+        "ci95_high_pct": 3.183,
+        "ci95_low_pct": -2.068,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 72153088,
+        "control": 71561216
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.39,
+        "ci95_high_pct": 0.951,
+        "ci95_low_pct": -0.02,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 251403500,
+        "control": 253552000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.541,
+        "ci95_high_pct": 2.223,
+        "ci95_low_pct": -3.765,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 480299500,
+        "control": 489024500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.019,
+        "ci95_high_pct": 6.268,
+        "ci95_low_pct": -1.79,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 484288142,
+        "control": 464479934
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 7.123,
+        "ci95_high_pct": 11.301,
+        "ci95_low_pct": 3.721,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2323.7167999769686,
+      "control": 2228.672833967497
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 149,
+   "path": "exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "default gitignore-on /usr aggregate --threads 8 is +7.12% [+3.72%, +11.30%] quiet regression; do not lower unlock or ship PORTABLE from this host",
+   "reference_tools": [],
+   "subject": "894d731f69bb:208411:44de521b2e23",
+   "title": "Linux default /usr aggregate --threads 8 regresses; do not lower unlock",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, drained batches returned to producing worker",
+   "change_pct": -4.981,
+   "commit": "5c6e6394",
+   "complexity": {
+    "lines_changed": 186,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "one-tier win below the pre-registered 20% bar"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "private recycle on RetainedState::Summary only; no dependency; no unsafe; H85 bar is 20%"
+   },
+   "control": "HEAD --no-controls aggregate, consumer drops Observation batches",
+   "date": "2026-09-20",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H85"
+   ],
+   "id": "exp-150",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 33633741,
+        "control": 35246676
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -5.125,
+        "ci95_high_pct": -4.514,
+        "ci95_low_pct": -5.954,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 129044000,
+        "control": 133010500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.269,
+        "ci95_high_pct": -1.942,
+        "ci95_low_pct": -4.504,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25632768,
+        "control": 25632768
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 85063500,
+        "control": 91421500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.762,
+        "ci95_high_pct": 11.437,
+        "ci95_low_pct": -21.71,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 45572000,
+        "control": 40903500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 18.104,
+        "ci95_high_pct": 49.433,
+        "ci95_low_pct": -27.395,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 34475126.5,
+        "control": 36025695
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.981,
+        "ci95_high_pct": -4.33,
+        "ci95_low_pct": -5.92,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 372.808859787616,
+      "control": 389.57647554988426
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 150,
+   "path": "exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "recycle does not capture mimalloc 20%: quiet linux-v6.12 -4.98% [-5.92%, -4.33%]; 450k screening -11.31% n=7; RSS flat; do not lower H85; 3% keep is H147",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux H85 recycle misses the 20% mimalloc bar",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, drained batches returned to producing worker",
+   "change_pct": -4.981,
+   "commit": "5c6e6394",
+   "complexity": {
+    "lines_changed": 186,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "same patch as exp-150; private recycle; no dependency; no unsafe; unmeasured on macOS"
+   },
+   "control": "HEAD --no-controls aggregate, consumer drops Observation batches",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H147"
+   ],
+   "id": "exp-151",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 33633741,
+        "control": 35246676
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -5.125,
+        "ci95_high_pct": -4.514,
+        "ci95_low_pct": -5.954,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 129044000,
+        "control": 133010500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.269,
+        "ci95_high_pct": -1.942,
+        "ci95_low_pct": -4.504,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25632768,
+        "control": 25632768
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 85063500,
+        "control": 91421500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -8.762,
+        "ci95_high_pct": 11.437,
+        "ci95_low_pct": -21.71,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 45572000,
+        "control": 40903500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 18.104,
+        "ci95_high_pct": 49.433,
+        "ci95_low_pct": -27.395,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 34475126.5,
+        "control": 36025695
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.981,
+        "ci95_high_pct": -4.33,
+        "ci95_low_pct": -5.92,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 372.808859787616,
+      "control": 389.57647554988426
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 151,
+   "path": "exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet linux-v6.12 --no-controls aggregate -4.98% [-5.92%, -4.33%]; RSS flat; default gitignore-on placebo +0.91% includes zero; H85 20% missed so this is the 3% keep",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux transient batch recycle clears 3% after H85 misses 20%",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
+   "change_pct": -1.627,
+   "commit": "f841662c",
+   "complexity": {
+    "lines_changed": 123,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "listing file_type skip on RetainedState::Summary only; no dependency; no unsafe; one_filesystem still stats directories"
+   },
+   "control": "H147 --no-controls aggregate (stat every listed child)",
+   "date": "2026-09-20",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H72"
+   ],
+   "id": "exp-152",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 34463047,
+        "control": 35647869
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.521,
+        "ci95_high_pct": -0.603,
+        "ci95_low_pct": -3.257,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 134144500,
+        "control": 137728000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.169,
+        "ci95_high_pct": -0.962,
+        "ci95_low_pct": -2.453,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 25657344,
+        "control": 25657344
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 96666000,
+        "control": 98051500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -9.686,
+        "ci95_high_pct": 2.651,
+        "ci95_low_pct": -11.809,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 42555500,
+        "control": 39105500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 12.874,
+        "ci95_high_pct": 33.174,
+        "ci95_low_pct": -7.269,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 35237923,
+        "control": 36464080.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.627,
+        "ci95_high_pct": -0.72,
+        "ci95_low_pct": -3.333,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 381.0576270086727,
+      "control": 394.3171107554556
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 152,
+   "path": "exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet linux-v6.12 --no-controls aggregate -1.63% [-3.33%, -0.72%]; under 3%; stats 92474 to 86644; RSS flat; directory-heavy keep is exp-153",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux H72 d_type skip misses 3% on source-tree v6.12",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
+   "change_pct": -9.01,
+   "commit": "f841662c",
+   "complexity": {
+    "lines_changed": 123,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "same patch as exp-152; private summary-path skip; no dependency; no unsafe; unmeasured on macOS; /usr not reconstructible"
+   },
+   "control": "H147 --no-controls aggregate (stat every listed child)",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 208411,
+   "family": "Linux:894d731f69bb",
+   "hypotheses": [
+    "H72"
+   ],
+   "id": "exp-153",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 77755569.5,
+        "control": 85459327
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -9.072,
+        "ci95_high_pct": -6.373,
+        "ci95_low_pct": -12.629,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 294383000,
+        "control": 323976500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -9.733,
+        "ci95_high_pct": -7.014,
+        "ci95_low_pct": -11.243,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 29458432,
+        "control": 29458432
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0,
+        "ci95_high_pct": 0,
+        "ci95_low_pct": 0,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 192011000,
+        "control": 222608000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -14.097,
+        "ci95_high_pct": -10.191,
+        "ci95_low_pct": -17.542,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 101575500,
+        "control": 104475500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.773,
+        "ci95_high_pct": 6.516,
+        "ci95_low_pct": -11.183,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 78582763.5,
+        "control": 86302076
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -9.01,
+        "ci95_high_pct": -6.298,
+        "ci95_low_pct": -12.52,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 377.05669806296214,
+      "control": 414.0955899640614
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 153,
+   "path": "exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet nominated /usr --no-controls aggregate -9.01% [-12.52%, -6.30%]; 22% skippable dirs+symlinks; RSS flat; v6.12 companion -1.63% noninferior (exp-152)",
+   "reference_tools": [],
+   "subject": "894d731f69bb:208411:b7e4da004476",
+   "title": "Linux H72 d_type skip clears 3% on symlink-heavy /usr",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same source rebuilt with -Cprofile-use after linux-v6.12 training",
+   "change_pct": -8.347,
+   "commit": "b46edf65",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "no engine source change; PGO rebuild only; no dependency; no unsafe; profdata not checked in; unmeasured on macOS"
+   },
+   "control": "HEAD fat-LTO / codegen-units=1 release probe",
+   "date": "2026-09-20",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H148"
+   ],
+   "id": "exp-154",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 388744045.5,
+        "control": 428622549.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -8.914,
+        "ci95_high_pct": -7.046,
+        "ci95_low_pct": -11.276,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 581448000,
+        "control": 625597500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -6.834,
+        "ci95_high_pct": -5.454,
+        "ci95_low_pct": -8.285,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 35895296,
+        "control": 36929536
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.784,
+        "ci95_high_pct": -2.608,
+        "ci95_low_pct": -2.983,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 109512500,
+        "control": 102660500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 7.408,
+        "ci95_high_pct": 18.14,
+        "ci95_low_pct": -11.487,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 470319000,
+        "control": 520896000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -8.497,
+        "ci95_high_pct": -6.524,
+        "ci95_low_pct": -10.744,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 460536184,
+        "control": 504504068.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.347,
+        "ci95_high_pct": -6.922,
+        "ci95_low_pct": -10.354,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4980.169388152345,
+      "control": 5455.631512641391
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "warm-revalidate",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 40914390.5,
+        "control": 40754147.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.434,
+        "ci95_high_pct": 1.74,
+        "ci95_low_pct": -2.353,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 550613500,
+        "control": 590851500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -6.397,
+        "ci95_high_pct": -5.564,
+        "ci95_low_pct": -7.145,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 40716288,
+        "control": 41564160
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.064,
+        "ci95_high_pct": -1.943,
+        "ci95_low_pct": -2.272,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 115854000,
+        "control": 118129000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -7.268,
+        "ci95_high_pct": 4.775,
+        "ci95_low_pct": -19.404,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 445208500,
+        "control": 472382000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -7.327,
+        "ci95_high_pct": -2.311,
+        "ci95_low_pct": -8.843,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 441839895,
+        "control": 480470994.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.15,
+        "ci95_high_pct": -7.067,
+        "ci95_low_pct": -8.641,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 4777.990516253217,
+      "control": 5195.741446244349
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 154,
+   "path": "exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "quiet linux-v6.12 cold-scan-index -8.35% [-10.35%, -6.92%] and warm-revalidate -8.15% [-8.64%, -7.07%]; RSS no worse; revalidate component flat so that wall win is spawn; Cargo.toml unchanged (profdata is host-specific)",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux PGO screen clears 3% on cold-scan-index and warm-revalidate",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe leftover restore-mix profile",
+   "change_pct": 0.039,
+   "commit": "065175ee",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "same-binary attachment: both arms ran the 065175ee probe, so 0 lines is the attachment's cost, not that commit's; 065175ee (apply-timer expansion plus a dead-branch removal, 35 production lines added in content_cache.rs and index.rs, tests excluded) was never paired against its parent e95167b9, so its wall effect is unmeasured; the timers are Option-gated and off by default"
+   },
+   "control": "same leftover-timer release probe both arms",
+   "date": "2026-09-21",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:d7c0dad8d82c",
+   "hypotheses": [
+    "H149"
+   ],
+   "id": "exp-155",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-cache-hit",
+     "metrics": {
+      "blocked_ns": {
+       "absolute": {
+        "candidate": 460529.5,
+        "control": 490859
+       },
+       "metric": "blocked_ns",
+       "paired": {
+        "change_pct": -7.664,
+        "ci95_high_pct": 10.005,
+        "ci95_low_pct": -23.77,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "component_ns": {
+       "absolute": {
+        "candidate": 502272532,
+        "control": 500811074.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.333,
+        "ci95_high_pct": 0.956,
+        "ci95_low_pct": -0.478,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 587372500,
+        "control": 586213500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.003,
+        "ci95_high_pct": 0.595,
+        "ci95_low_pct": -0.361,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 156256256,
+        "control": 156243968
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.001,
+        "ci95_high_pct": 0.063,
+        "ci95_low_pct": -0.059,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 51962500,
+        "control": 52192000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.003,
+        "ci95_high_pct": 26.898,
+        "ci95_low_pct": -10.753,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 533001500,
+        "control": 535088000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -0.919,
+        "ci95_high_pct": 1.013,
+        "ci95_low_pct": -3.204,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 587930805,
+        "control": 586808098.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.039,
+        "ci95_high_pct": 0.593,
+        "ci95_low_pct": -0.381,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 6357.795758807881,
+      "control": 6345.654978696714
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 155,
+   "path": "exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md",
+   "platform": "Linux",
+   "primary_job": "content-cache-hit",
+   "primary_metric": "wall_ns",
+   "reason": "same leftover identity as H144: apply 60-62% of restore after timer expansion is H116 HashMap now in-bucket; no new compileable cut; do not retry H116",
+   "reference_tools": [],
+   "subject": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "title": "Linux cache-hit restore mix after leftover apply-timer expansion",
+   "trials": 12
   }
  ],
- "prepared": "2026-09-19",
+ "prepared": "2026-09-21",
  "subjects": [
   {
    "apparent_bytes": 1726062376,
@@ -35754,6 +38511,36 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 1759293224,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-138",
+    "exp-139",
+    "exp-140",
+    "exp-143",
+    "exp-144",
+    "exp-145",
+    "exp-146",
+    "exp-147",
+    "exp-150",
+    "exp-151",
+    "exp-152",
+    "exp-154",
+    "exp-155"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "d7c0dad8d82c:92474:a298a9c2c8f8",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -36263,6 +39050,44 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 358665192,
+   "directories": 56251,
+   "entries": 450001,
+   "experiments": [
+    "exp-141",
+    "exp-142"
+   ],
+   "files": 393750,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "b3459e945151:450001:b77ebb296d34",
+   "labels": [
+    "linux-450k"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": true
+  },
+  {
+   "apparent_bytes": 6019421920,
+   "directories": 14325,
+   "entries": 208411,
+   "experiments": [
+    "exp-148",
+    "exp-149"
+   ],
+   "files": 162440,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "894d731f69bb:208411:44de521b2e23",
+   "labels": [
+    "usr-prefix"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 2170167344,
    "directories": 14701,
    "entries": 120135,
@@ -36531,24 +39356,42 @@
    "os_cache": "warm-steady",
    "platform": "macOS",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 6019421920,
+   "directories": 14325,
+   "entries": 208411,
+   "experiments": [
+    "exp-153"
+   ],
+   "files": 162440,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor",
+   "key": "894d731f69bb:208411:b7e4da004476",
+   "labels": [
+    "usr-prefix"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
-  "accepted_lines_changed": 16004,
+  "accepted_lines_changed": 16313,
   "decisions": {
-   "accepted": 74,
+   "accepted": 89,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 2,
-   "rejected": 46,
+   "rejected": 49,
    "superseded": 3
   },
-  "experiments": 137,
+  "experiments": 155,
   "first_date": "2026-08-10",
-  "hypotheses": 93,
-  "last_date": "2026-09-19",
+  "hypotheses": 108,
+  "last_date": "2026-09-21",
   "platforms": {
-   "Linux": 11,
+   "Linux": 29,
    "macOS": 126
   }
  },

@@ -1,0 +1,60 @@
+{
+ "characters_required": 3,
+ "host": {
+  "arch": "x86_64",
+  "release": "6.12.94+",
+  "system": "Linux",
+  "virtualization": "virtualized"
+ },
+ "schema": "fdu-nominated-subjects-v1",
+ "subjects": [
+  {
+   "allocated_bytes": 1965477888,
+   "apparent_bytes": 1759293224,
+   "character": "source-checkout",
+   "directories": 5769,
+   "engine_digest": "a298a9c2c8f8ee910d22b87093a739993cdf153104590f4638eeee740b239bd0",
+   "entries": 92474,
+   "files": 86643,
+   "label": "linux-v6.12",
+   "max_depth": 14,
+   "provenance": "Shallow clone of github.com/torvalds/linux tag v6.12 at adc218676eef25575469234709c2d87185ca223a. Reconstructible: git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux.git. Shape is the published v6.12 source tree plus the clone's .git directory as git left it; no extra workspace install.",
+   "reconstructible": true,
+   "root_id": "d7c0dad8d82c8bb394f459b1dd77c9e8af60d0482cca92199519668546a5147e",
+   "sparse_ratio": 0.9,
+   "symlinks": 62
+  },
+  {
+   "allocated_bytes": 2788982784,
+   "apparent_bytes": 2661531559,
+   "character": "package-cache",
+   "directories": 1266,
+   "engine_digest": "385cec6566837e587b758a225691ec327a1311e477418952d1b073819c6fcffb",
+   "entries": 46632,
+   "files": 45366,
+   "label": "rustup-toolchains",
+   "max_depth": 15,
+   "provenance": "The rustup toolchain store for this machine's installed toolchains (1.83, 1.85, 1.97.1 and the added Darwin/Windows rust-std targets). Shape depends on which toolchains and targets are installed. Screening only on this host (under 50k entries).",
+   "reconstructible": false,
+   "root_id": "d06da5e000ef9175ee9b0e406a3ad92998bf9ce0db7a5275f4dce47f70e90ed7",
+   "sparse_ratio": 0.95,
+   "symlinks": 0
+  },
+  {
+   "allocated_bytes": 6219546624,
+   "apparent_bytes": 5836200367,
+   "character": "system-prefix",
+   "directories": 12413,
+   "engine_digest": "22a5e6bc4dd1e7617a1a0d1c9dc7cf21d4a800087cbd824b8b64dd90026ad3b3",
+   "entries": 198150,
+   "files": 154091,
+   "label": "usr-prefix",
+   "max_depth": 17,
+   "provenance": "This cloud image's /usr prefix (ext4). Shape depends on the image package set, so it is not a recipe another machine can follow. Frozen for this session: no package installs after nomination.",
+   "reconstructible": false,
+   "root_id": "894d731f69bb61966f9ca61d0762a37bc542e0bbe4ba7c931fc75129c2229961",
+   "sparse_ratio": 0.94,
+   "symlinks": 31646
+  }
+ ]
+}

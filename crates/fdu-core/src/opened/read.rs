@@ -236,7 +236,7 @@ fn validate_request(request: &ReadRequest) -> Result<()> {
 fn report_projection(
     index: &crate::Index,
     request: &crate::ReportRequest,
-    state: crate::IndexState,
+    _state: crate::IndexState,
     work: &mut Work,
 ) -> Result<ProjectionResult> {
     validate_report(request)?;
@@ -251,25 +251,12 @@ fn report_projection(
         }));
     }
 
-    let provenance = crate::query::Provenance {
-        scan_started_at: None,
-        generated_at: request.now,
-        source: match state.source {
-            crate::Source::Scanned => crate::query::ReportSource::ColdScan,
-            crate::Source::Revalidated => crate::query::ReportSource::WarmRevalidate,
-            crate::Source::JournalScoped | crate::Source::Cached => {
-                crate::query::ReportSource::CacheOnly
-            }
-        },
-        complete: state.coverage == Coverage::Complete,
-        errors: index.issues().iter().map(|issue| issue.message.clone()).collect(),
-    };
     // The same identity rule as every other projection: a report's selection inside an
     // opened read matches portable names, where a one-shot report matches native ones.
     let report = crate::query::report_in(
         index,
         &read_request(request),
-        &provenance,
+        request.now,
         crate::query::NameIdentity::Portable,
     )?;
     work.rows_visited = work.rows_visited.saturating_add(charge.rows);
@@ -321,14 +308,15 @@ impl ReportWork {
 
 fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork {
     let entries = index.len().saturating_sub(1);
-    if !query.selection.is_unfiltered() {
+    if query.needs_selection_walk() {
         // The report implementation performs one shared filtered walk, then shapes each
         // requested view from that retained result. Charging one full pass for each
         // shaping step is conservative and keeps the bound independent of heap layout.
         let shaping = query.views.iter().fold(0_u64, |total, view| {
             let rows = match view {
                 crate::query::ViewSpec::Summary => 1,
-                crate::query::ViewSpec::Tree
+                crate::query::ViewSpec::List
+                | crate::query::ViewSpec::Tree
                 | crate::query::ViewSpec::Types
                 | crate::query::ViewSpec::Extensions
                 | crate::query::ViewSpec::Families
@@ -340,7 +328,17 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
             };
             total.saturating_add(rows)
         });
-        return ReportWork { rows: entries.saturating_add(shaping), maintained: 0 };
+        let passes = if query.selection.kinds.is_empty()
+            || query.selection.kinds.contains(&crate::EntryKind::Dir)
+        {
+            2
+        } else {
+            1
+        };
+        return ReportWork {
+            rows: entries.saturating_mul(passes).saturating_add(shaping),
+            maintained: 0,
+        };
     }
 
     query.views.iter().fold(ReportWork::default(), |mut work, view| {
@@ -354,7 +352,8 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 // second time merely to price the query.
                 work.maintained = work.maintained.saturating_add(entries);
             }
-            crate::query::ViewSpec::Tree
+            crate::query::ViewSpec::List
+            | crate::query::ViewSpec::Tree
             | crate::query::ViewSpec::Types
             | crate::query::ViewSpec::Families
             | crate::query::ViewSpec::Languages
@@ -372,7 +371,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
 fn report_rows(report: &crate::query::Report) -> u64 {
     report.sections.iter().fold(0_u64, |total, section| {
         let rows = match section {
-            crate::query::Section::Tree(root) => tree_rows(root),
+            crate::query::Section::Tree { root, .. } => tree_rows(root),
             crate::query::Section::Extensions { rows, .. } => rows.len() as u64,
             crate::query::Section::Metrics { summary, .. } => summary.rows.len() as u64,
             crate::query::Section::Files { rows, .. } => rows.len() as u64,
@@ -1119,6 +1118,64 @@ fn push_unrepresentable(out: &mut String, component: &std::ffi::OsStr) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directory_reports_charge_measurement_before_returning_exact_results() {
+        let mut index = crate::Index::new("/root");
+        index.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: "env".into(),
+                kind: crate::EntryKind::Dir,
+                attrs: crate::Attrs::default(),
+            },
+            crate::Op::Upsert {
+                path: "env/file".into(),
+                kind: crate::EntryKind::File,
+                attrs: crate::Attrs { size: 50, allocated: 512, ..crate::Attrs::default() },
+            },
+        ]));
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::List],
+            format: crate::report_format::Format::Paths,
+            selection: crate::query::Selection {
+                kinds: vec![crate::EntryKind::Dir],
+                ..crate::query::Selection::default()
+            },
+            ..crate::query::Query::default()
+        };
+        let charge = report_work(&index, &query).total();
+        // Pinned, not merely bracketed: asserting only that `charge - 1` is refused and
+        // `charge` accepted would pass under any pricing formula at all. A directory
+        // selection over two entries pays two passes, the measurement and the selection
+        // walk, plus one shaping pass for its one view: 2 * 2 + 2.
+        assert_eq!(charge, 6, "two passes over two entries, plus one shaping pass");
+        let mut request =
+            crate::ReportRequest { query, now: std::time::UNIX_EPOCH, max_work: charge - 1 };
+        let state = crate::IndexState {
+            phase: crate::LifecyclePhase::Ready,
+            coverage: crate::Coverage::Complete,
+            freshness: crate::Freshness::Fresh,
+            source: crate::Source::Scanned,
+            progress: crate::DiscoveryProgress::default(),
+            issues: crate::IssueSummary::default(),
+        };
+        let mut work = Work::default();
+        assert!(matches!(
+            report_projection(&index, &request, state, &mut work).expect("bounded read"),
+            ProjectionResult::Limit(_)
+        ));
+        request.max_work = charge;
+        let mut work = Work::default();
+        let ProjectionResult::Report(report) =
+            report_projection(&index, &request, state, &mut work).expect("exact read")
+        else {
+            panic!("report")
+        };
+        // And the charge is what the read records having done, so the two cannot drift.
+        assert_eq!(work.rows_visited, charge);
+        let crate::query::Section::Files { rows, .. } = &report.sections[0] else { panic!("flat") };
+        assert_eq!((rows.len(), rows[0].bytes, rows[0].files), (1, 50, Some(1)));
+    }
 
     /// Ending a level far below the root takes no stack per level climbed.
     ///

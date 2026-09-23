@@ -25,6 +25,32 @@ pub(crate) fn permission_bits_are_enforced() -> bool {
     std::fs::read(&path).is_err()
 }
 
+/// Establish the permission-fixture precondition or require an explicit host opt-out.
+///
+/// Returning `false` is a deliberate skip: the operator named this host as unable to
+/// represent the fixture. Without that declaration, a green test must mean its
+/// permission assertions actually ran.
+#[cfg(unix)]
+pub(crate) fn require_permission_bits() -> bool {
+    if permission_bits_are_enforced() {
+        return true;
+    }
+    if std::env::var_os("FDU_TEST_ALLOW_NO_PERMISSION_BITS").as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!(
+            "skipped by FDU_TEST_ALLOW_NO_PERMISSION_BITS=1: this host does not enforce Unix \
+             permission bits for the test process"
+        );
+        return false;
+    }
+    panic!(
+        "permission fixture precondition failed: this process can read a mode-000 file; \
+         run on a host that enforces Unix permission bits, or explicitly opt out with \
+         FDU_TEST_ALLOW_NO_PERMISSION_BITS=1"
+    );
+}
+
 /// The scan scope a scan with control observation on records.
 ///
 /// A test about ignore classification states that it wants it rather than inheriting the
@@ -39,16 +65,12 @@ pub(crate) fn not_observing_controls() -> crate::ScanScope {
 }
 
 /// The request a test makes of an index it just built: the index's own basis, the query,
-/// and this instant.
+/// and a fixed instant, so repeated pure reads have the same age reference.
 ///
 /// A test names the query it is about, which is the axis it varies; the basis is whatever
 /// the fixture index holds, so [`Request::validate_read`](crate::query::Request::validate_read)
 /// admits it and the test is about the report rather than about composing a request. A test
 /// *about* a refusal builds its own mismatched basis instead.
 pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate::query::Request {
-    crate::query::Request::new(
-        crate::query::Basis::held_by(index),
-        query,
-        std::time::SystemTime::now(),
-    )
+    crate::query::Request::new(crate::query::Basis::held_by(index), query, std::time::UNIX_EPOCH)
 }

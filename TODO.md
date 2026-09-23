@@ -12,7 +12,7 @@ counts are a snapshot of when this page was last edited.
 
 ## Epics
 
-Twenty-one open, ordered by how many direct children are still open under each.
+Open epics; counts below are historical snapshots as described above.
 
 | Epic | Open | What remains | Spec |
 | --- | ---: | --- | --- |
@@ -22,7 +22,10 @@ Twenty-one open, ordered by how many direct children are still open under each.
 | `fdu-d5e1` — reproducible end-to-end performance evidence | 10 | The generated-corpus harness this project’s loop borrows from. | [end-to-end performance](docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
 | `fdu-snej` — implement the opened-root inventory engine rewrite | 9 | The engine merged in PR #48, with lifecycle follow-ups in #56 and contract decisions in #57, and Python has the synchronous `fdu.opened.OpenedIndex`. Measured native indexes and continuations, the revised MetaBrowser provider contract, the thin MetaBrowser backend, cross-provider conformance, composed integration, and final performance acceptance remain. | [opened-root inventory](docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md) |
 | `fdu-u7vo` — fdu for interactive clients: the MetaBrowser contract | 9 | The umbrella over `fdu-snej`, which holds the active design. Session integration shape, progress mode, progressive goldens, a two-engine agreement oracle, and handle lifecycle remain outside it. | [opened-root inventory](docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md) |
+| `fdu-gjc2` — release readiness: land the PR stack and cut the first stable release | 9 | Correctness acceptance (`fdu-xgjx`), the stack review follow-ups (`fdu-1p8b`), final candidate verification (`fdu-tyvq`), and maintainer setup remain. The maintainer publishes the release. | [release process](docs/project/guides/release-process.md) |
 | `fdu-7yx4` — extract the experiment loop as a reusable framework | 8 | The contract, statistics, generated views, and protocol as something other campaigns can adopt. | [framework extraction](docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md) |
+| `fdu-h7xy` — explicit core models and alpha correctness | 8 | Finish metric, answer, provenance, projection, and execution-plan contracts; independently review and validate the dependent PRs. Delivery tracked by `fdu-yi1a`. | [alpha correctness stack](docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md) |
+| `fdu-65x1` — directory filters and list presentation formats | 7 | Publish the plan separately, then implement subtree selection, formats, CLI compatibility, docs/help, and parity while preserving default output. | [directory query formats](docs/project/specs/active/plan-2026-09-20-directory-query-formats.md) |
 | `fdu-pxeb` — composable CLI and query surface | 5 | Follow-ups after the axis surface shipped. | [composable CLI](docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md) |
 | `fdu-748k` — streaming performance parity without one-shot overhead | 4 | Delivered in PR #52. The parity proof and regression guards (`fdu-lj4h`), final validation (`fdu-rx0d`), and removing ordered path-map work from mutation preflight (`fdu-0q6w`) remain. | [streaming performance parity](docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md) |
 | `fdu-xde5` — H86: consumer representation as one structural experiment | 4 | Campaign 2’s centerpiece. The spike measures **1.06× the parallel syscall floor** where the index tier runs 2.68×, and the ~15-point real-tree tax lands in the code it deletes. One experiment, floor-anchored targets, not piecemeal. | [campaign 2](docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) |
@@ -30,7 +33,6 @@ Twenty-one open, ordered by how many direct children are still open under each.
 | `fdu-2lkf` — control state does not scale to a real home directory | 4 | PR #63 made the `.gitignore` bounds degrade instead of aborting. The slowdown attribution (`fdu-pro1`), a `~/Library` scan killed for memory (`fdu-6o5o`), peak memory against dust (`fdu-syyl`), and snapshots keyed by scan scope (`fdu-w3l5`) remain. | [opened-root inventory](docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md) |
 | `fdu-j2ka` — iteratively profile and optimize real-world traversal | 3 | The standing optimization loop itself, now directed by campaign 2 rather than by the harness spec. | [campaign 2](docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) |
 | `fdu-ktyl` — spec: composable CLI and query surface | 2 | Spec-side remainder of the surface work. | [composable CLI](docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md) |
-| `fdu-gjc2` — release readiness: land the PR stack and cut the first stable release | 1 | The stack has merged. The 0.1.0 CHANGELOG section and release notes (`fdu-qy8e`) remain, and the user cuts the release. | [release process](docs/project/guides/release-process.md) |
 | `fdu-yov0` — split the files view; `--view all` becomes `--view full` | 1 | The vocabulary shipped in PR #39: `largest`, `recent`, a complete `files`, `--view full`, stated bounds, and a YAML parse check. Parsing each JSONL report line with a real JSON parser (`fdu-c2ml`) remains. | [view vocabulary](docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md) |
 | `fdu-dxee` — harden fdu against the Rust engineering quality audit | 1 | CLI stack hardening landed; exercising snapshot parsing and commit failures as a state machine (`fdu-471a`) remains. | [rust engineering quality](docs/project/specs/active/plan-2026-08-09-fdu-rust-engineering-quality.md) |
 | `fdu-d4kg` — overnight research loop: the macOS agenda for campaign 2 | 1 | The macOS ordering an unattended agent follows. The macOS floor instrument (`fdu-9hdc`) remains. | [campaign 2](docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) |
@@ -42,6 +44,9 @@ Twenty-one open, ordered by how many direct children are still open under each.
 
 | Spec | Status | What remains |
 | --- | --- | --- |
+| [alpha correctness stack](docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md) | In Progress | Recover existing fixes, finish missing contracts, publish dependent PRs, and validate the final candidate. |
+| [explicit core models](docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md) | In Progress | Metric, answer, provenance, projection, and execution-plan acceptance under `fdu-h7xy`; empty-registry conformance under `fdu-xgjx`. |
+| [directory query formats](docs/project/specs/active/plan-2026-09-20-directory-query-formats.md) | In Progress | Epic `fdu-65x1`: preserve default tree output; add directory subtree filters and explicit paths/long formats across all surfaces. |
 | [phase-1](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md) | Active | The delivery spec behind `fdu-qfz6`. |
 | [end-to-end performance testing](docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md) | Active, narrowed | Owns the evidence harness — corpus contract, probe modes, comparator adapters, regression governance. No longer owns which experiment runs next; that moved to campaign 2. |
 | [rust engineering quality](docs/project/specs/active/plan-2026-08-09-fdu-rust-engineering-quality.md) | Active | PR #1 merged and CLI stack hardening landed; `fdu-471a` remains. |

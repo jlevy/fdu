@@ -145,8 +145,10 @@ figures.
 
 ## What is not measured here
 
-Every number is one Apple M1 Pro and one Linux VM, with the page cache warm throughout
-because dropping it needs root.
+Every number is one Apple M1 Pro and a handful of virtualized Linux hosts — five
+distinct kernels, counted in
+[the ledger’s regime-coverage table](report-2026-08-10-fdu-performance-experiments.md#regime-coverage)
+— with the page cache warm throughout because dropping it needs root.
 Nothing here describes a genuinely cold disk.
 Which tuning constants that evidence actually supports, and which are inherited without
 it, is in [the platform tuning guide](../guides/platform-tuning.md).

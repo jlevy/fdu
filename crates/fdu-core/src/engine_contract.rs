@@ -560,6 +560,16 @@ impl Issue {
             os_error: None,
         }
     }
+
+    /// Describe an operational provider failure when no structured OS error is available.
+    pub(crate) fn provider_failure(path: Option<&Path>, message: String) -> Self {
+        Self {
+            kind: IssueKind::ProviderFailure,
+            path: path.and_then(bounded_issue_path),
+            message: bounded_issue_message(message),
+            os_error: None,
+        }
+    }
 }
 
 fn bounded_issue_path(path: &Path) -> Option<PathBuf> {
@@ -1567,6 +1577,11 @@ pub enum StateTransition {
         /// Relative directory whose child set is now authoritative.
         path: PathBuf,
     },
+    /// Previously known child-listing completeness was withdrawn after failed verification.
+    DirectoryIncomplete {
+        /// Relative directory whose child set is no longer authoritative.
+        path: PathBuf,
+    },
     /// The coherent opened-root state changed.
     IndexState {
         /// State before this commit.
@@ -1582,7 +1597,8 @@ impl StateTransition {
         match self {
             Self::Freshness { path, .. }
             | Self::Verified { path }
-            | Self::DirectoryComplete { path } => path,
+            | Self::DirectoryComplete { path }
+            | Self::DirectoryIncomplete { path } => path,
             Self::IndexState { .. } => Path::new(""),
         }
     }

@@ -66,6 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
+| Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -215,6 +216,24 @@ dead end.
 | 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
 | 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
 | 137 | [Share one every_entry across unfiltered metric views](#exp137--share-one-everyentry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
+| 138 | [Linux cache-hit stack same versus #91 control](#exp138--linux-cachehit-stack-same-versus-91-control) | H139 | `content-cache-hit` | -22.5% | ✅ accepted |
+| 139 | [Linux walk leftover is still the getdents64 plus statx floor](#exp139--linux-walk-leftover-is-still-the-getdents64-plus-statx-floor) | H140 | `default-tree` | +0.6% | ✅ accepted |
+| 140 | [Linux content-query stack same versus #91 control](#exp140--linux-contentquery-stack-same-versus-91-control) | H141 | `content-query` | -17.6% | ✅ accepted |
+| 141 | [H111 Linux floor and RSS gates fail on current engine](#exp141--h111-linux-floor-and-rss-gates-fail-on-current-engine) | H111 | `default-tree` | +2.0% | ❌ rejected |
+| 142 | [Linux H111 leftover is still walk floor plus retained-index RSS](#exp142--linux-h111-leftover-is-still-walk-floor-plus-retainedindex-rss) | H143 | `cold-scan-index` | +0.1% | ✅ accepted |
+| 143 | [Linux first-pass content-basic leftover is still file I/O](#exp143--linux-firstpass-contentbasic-leftover-is-still-file-io) | H142 | `content-basic` | +0.4% | ✅ accepted |
+| 144 | [Linux cache-hit leftover after landed stack is already-landed restore work](#exp144--linux-cachehit-leftover-after-landed-stack-is-alreadylanded-restore-work) | H144 | `content-cache-hit` | -0.1% | ✅ accepted |
+| 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp145--linux-openeddiscovery-leftover-is-still-journal-clones-plus-live-rollups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
+| 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp146--linux-adaptive-unlock-is-silent-namedjob-threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
+| 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp147--linux-firstrun-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
+| 148 | [Linux H84 --no-controls --threads 8 sign transfers to nominated /usr](#exp148--linux-h84-nocontrols-threads-8-sign-transfers-to-nominated-usr) | H84 | `aggregate-summary` | -10.1% | ✅ accepted |
+| 149 | [Linux default /usr aggregate --threads 8 regresses; do not lower unlock](#exp149--linux-default-usr-aggregate-threads-8-regresses-do-not-lower-unlock) | H84 | `aggregate-summary` | +7.1% | ✅ accepted |
+| 150 | [Linux H85 recycle misses the 20% mimalloc bar](#exp150--linux-h85-recycle-misses-the-20-mimalloc-bar) | H85 | `aggregate-summary` | -5.0% | ❌ rejected |
+| 151 | [Linux transient batch recycle clears 3% after H85 misses 20%](#exp151--linux-transient-batch-recycle-clears-3-after-h85-misses-20) | H147 | `aggregate-summary` | -5.0% | ✅ accepted |
+| 152 | [Linux H72 d_type skip misses 3% on source-tree v6.12](#exp152--linux-h72-dtype-skip-misses-3-on-sourcetree-v612) | H72 | `aggregate-summary` | -1.6% | ❌ rejected |
+| 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp153--linux-h72-dtype-skip-clears-3-on-symlinkheavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
+| 154 | [Linux PGO screen clears 3% on cold-scan-index and warm-revalidate](#exp154--linux-pgo-screen-clears-3-on-coldscanindex-and-warmrevalidate) | H148 | `cold-scan-index` | -8.3% | ✅ accepted |
+| 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
 
 ## The experiments
 
@@ -4658,6 +4677,544 @@ digest.
 Full record:
 [`exp-137-share-one-every-entry-across-unfiltered-metric-views.md`](../experiments/exp-137-share-one-every-entry-across-unfiltered-metric-views.md)
 
+### exp-138 — Linux cache-hit stack same versus #91 control
+
+✅ accepted · 2026-09-20 · H139 · commit `a5c98d59`
+
+Control: e667b739 #91 probe with H115 and H120 only
+
+Candidate: HEAD probe with H125 H129 H131 H133 stacked
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 760.9 | 588.9 | -22.48% | [-23.46%, -21.39%] |
+| component (ms) | 669.1 | 503.2 | -25.05% | [-25.82%, -23.40%] |
+| cpu (ms) | 760.4 | 588.4 | -22.55% | [-23.47%, -21.42%] |
+| user (ms) | 704.0 | 551.4 | -22.07% | [-22.58%, -20.75%] |
+| system (ms) | 68.0 | 43.9 | -33.73% | [-47.02%, -9.25%] |
+| blocked (ms) | 0.6 | 0.5 | -4.44% (n.s.) | [-13.86%, +11.67%] |
+| peak rss (MiB) | 166.0 | 149.0 | -10.24% | [-10.32%, -10.22%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** same on Linux: content-cache-hit wall -22.48% [-23.46%, -21.39%] quiet on
+reconstructible linux-v6.12; RSS -10.24%; digest identical; no engine patch.
+
+Full record:
+[`exp-138-linux-cache-hit-stack-same-versus-91-control.md`](../experiments/exp-138-linux-cache-hit-stack-same-versus-91-control.md)
+
+### exp-139 — Linux walk leftover is still the getdents64 plus statx floor
+
+✅ accepted · 2026-09-20 · H140 · commit `a5c98d59`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 433.6 | 439.4 | +0.64% (n.s.) | [-0.45%, +3.58%] |
+| component (ms) | 431.7 | 437.6 | +0.66% (n.s.) | [-0.42%, +3.55%] |
+| cpu (ms) | 548.1 | 555.5 | +1.06% (regression) | [+0.21%, +2.30%] |
+| user (ms) | 444.2 | 449.9 | +3.86% (n.s.) | [-0.91%, +5.69%] |
+| system (ms) | 106.2 | 101.9 | -9.14% (n.s.) | [-14.16%, +6.61%] |
+| peak rss (MiB) | 43.7 | 43.9 | +0.34% (n.s.) | [-0.22%, +0.87%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** walk still 95.7-96.1% of default-tree component; leftover is
+getdents64+statx floor; no userspace cut; do not retry H71.
+
+Full record:
+[`exp-139-linux-walk-leftover-is-still-the-getdents64-plus-statx-floor.md`](../experiments/exp-139-linux-walk-leftover-is-still-the-getdents64-plus-statx-floor.md)
+
+### exp-140 — Linux content-query stack same versus #91 control
+
+✅ accepted · 2026-09-20 · H141 · commit `a5c98d59`
+
+Control: e667b739 #91 probe with H115 and H120 only
+
+Candidate: HEAD probe with H138 share-one-every-entry walk
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 12616.0 | 10409.3 | -17.60% | [-18.07%, -17.17%] |
+| component (ms) | 10314.7 | 8129.5 | -21.32% | [-21.61%, -20.76%] |
+| cpu (ms) | 17660.8 | 15444.4 | -12.67% | [-13.18%, -12.27%] |
+| user (ms) | 16867.9 | 14628.2 | -13.71% | [-14.24%, -13.07%] |
+| system (ms) | 787.4 | 825.0 | +3.95% (n.s.) | [-1.42%, +11.85%] |
+| peak rss (MiB) | 138.8 | 139.0 | +0.24% (n.s.) | [-0.51%, +1.04%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** same on Linux: content-query wall -17.60% [-18.07%, -17.17%] uncontrolled
+on reconstructible linux-v6.12; digest identical; no engine patch.
+
+Full record:
+[`exp-140-linux-content-query-stack-same-versus-91-control.md`](../experiments/exp-140-linux-content-query-stack-same-versus-91-control.md)
+
+### exp-141 — H111 Linux floor and RSS gates fail on current engine
+
+❌ rejected · 2026-09-20 · H111
+
+Control: HEAD release probe both arms
+
+Candidate: same probe; floor scoreboard is the verdict
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 419.1 | 429.8 | +1.99% (n.s.) | [-0.36%, +2.38%] |
+| component (ms) | 415.0 | 425.6 | +1.89% (n.s.) | [-0.35%, +2.40%] |
+| cpu (ms) | 1196.9 | 1195.3 | +0.15% (n.s.) | [-0.46%, +0.90%] |
+| user (ms) | 400.8 | 401.5 | -0.35% (n.s.) | [-2.75%, +2.47%] |
+| system (ms) | 786.4 | 793.7 | +0.75% (n.s.) | [-2.61%, +4.26%] |
+| peak rss (MiB) | 306.8 | 306.8 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: absolute floor ratio, not
+paired regression.
+
+No engine change. Floor scoreboard is the verdict; this run JSON is a same-binary
+default-tree companion so perf-record can lift a measured pair.
+
+**Rejected:** H111 floor/RSS gates fail: 450k index 1.78x parfloor vs 1.4x; RSS 5.20x
+arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x.
+
+Full record:
+[`exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md`](../experiments/exp-141-h111-linux-floor-and-rss-gates-fail-on-current-engine.md)
+
+### exp-142 — Linux H111 leftover is still walk floor plus retained-index RSS
+
+✅ accepted · 2026-09-20 · H143 · commit `937f9445`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 857.6 | 856.7 | +0.13% (n.s.) | [-0.96%, +0.76%] |
+| component (ms) | 319.4 | 318.7 | -0.28% (n.s.) | [-0.89%, +0.51%] |
+| cpu (ms) | 1574.9 | 1576.6 | +0.17% (n.s.) | [-0.74%, +0.81%] |
+| user (ms) | 881.8 | 866.5 | -3.52% (n.s.) | [-5.67%, +0.37%] |
+| system (ms) | 696.1 | 721.0 | +2.45% (regression) | [+0.13%, +6.32%] |
+| peak rss (MiB) | 149.9 | 151.1 | +1.25% (n.s.) | [-0.18%, +2.19%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** walk 94.7-94.8% of 450k cold-scan-index component; leftover is
+getdents64+statx plus detached finish/retained-index RSS; no new cut; do not restart
+H86.
+
+Full record:
+[`exp-142-linux-h111-leftover-is-still-walk-floor-plus-rss.md`](../experiments/exp-142-linux-h111-leftover-is-still-walk-floor-plus-rss.md)
+
+### exp-143 — Linux first-pass content-basic leftover is still file I/O
+
+✅ accepted · 2026-09-20 · H142 · commit `937f9445`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2165.7 | 2169.4 | +0.45% (n.s.) | [-0.17%, +0.57%] |
+| component (ms) | 1633.3 | 1632.5 | +0.09% (n.s.) | [-0.32%, +0.65%] |
+| cpu (ms) | 6803.7 | 6802.7 | +0.17% (n.s.) | [-0.12%, +0.44%] |
+| user (ms) | 5967.3 | 5974.9 | +0.69% (n.s.) | [-0.45%, +1.80%] |
+| system (ms) | 841.5 | 835.6 | -5.29% (n.s.) | [-10.16%, +2.03%] |
+| peak rss (MiB) | 138.2 | 138.0 | -0.03% (n.s.) | [-0.17%, +0.03%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** first-pass leftover is still file I/O (86634 opens, 184057 reads,
+~2.12/file); no skippable 3% userspace cut; do not retry H124.
+
+Full record:
+[`exp-143-linux-first-pass-content-basic-leftover-is-still-file-i-o.md`](../experiments/exp-143-linux-first-pass-content-basic-leftover-is-still-file-i-o.md)
+
+### exp-144 — Linux cache-hit leftover after landed stack is already-landed restore work
+
+✅ accepted · 2026-09-20 · H144 · commit `345cd8fc`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 605.3 | 607.3 | -0.09% (n.s.) | [-1.79%, +1.26%] |
+| component (ms) | 516.4 | 518.6 | +0.05% (n.s.) | [-1.66%, +1.91%] |
+| cpu (ms) | 604.8 | 606.8 | -0.09% (n.s.) | [-1.77%, +1.29%] |
+| user (ms) | 555.6 | 559.3 | +0.83% (n.s.) | [-0.29%, +2.04%] |
+| system (ms) | 52.0 | 47.9 | -10.79% | [-18.39%, -0.32%] |
+| blocked (ms) | 0.6 | 0.5 | -13.71% (n.s.) | [-24.35%, +23.83%] |
+| peak rss (MiB) | 149.0 | 149.0 | +0.01% (n.s.) | [-0.02%, +0.08%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** same leftover identity as Darwin H134: apply ~80ms / parse+candidates
+~27ms each; no new userspace cut; do not retry H125/H129/H131/H133.
+
+Full record:
+[`exp-144-linux-cache-hit-leftover-after-landed-stack.md`](../experiments/exp-144-linux-cache-hit-leftover-after-landed-stack.md)
+
+### exp-145 — Linux opened-discovery leftover is still journal clones plus live roll-ups
+
+✅ accepted · 2026-09-20 · H145 · commit `eec14927`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`opened-discovery`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1497.0 | 1508.0 | -0.23% (n.s.) | [-0.58%, +1.10%] |
+| component (ms) | 1174.0 | 1184.4 | +0.37% (n.s.) | [-0.52%, +1.10%] |
+| cpu (ms) | 1553.8 | 1562.3 | -0.19% (n.s.) | [-0.48%, +0.89%] |
+| user (ms) | 1392.6 | 1401.0 | +0.35% (n.s.) | [-1.25%, +1.65%] |
+| system (ms) | 172.2 | 170.3 | -2.76% (n.s.) | [-9.37%, +12.52%] |
+| peak rss (MiB) | 106.9 | 107.0 | +0.04% (n.s.) | [-0.06%, +0.18%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** same leftover identity as Darwin H127: 5772 journal clones, 438k live
+roll-up merges, 2.75x first-pass; no smallest cut; do not port macos_bulk.
+
+Full record:
+[`exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md`](../experiments/exp-145-linux-opened-discovery-leftover-is-still-journal-clones-plus.md)
+
+### exp-146 — Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win
+
+✅ accepted · 2026-09-20 · H84 · commit `0a979786`
+
+Control: HEAD automatic workers (available.clamp(1,6)=4)
+
+Candidate: same probe --threads 8
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 427.3 | 438.0 | +1.75% (regression) | [+0.13%, +4.15%] |
+| component (ms) | 425.7 | 436.2 | +1.69% (regression) | [+0.14%, +4.18%] |
+| cpu (ms) | 529.8 | 530.2 | -0.38% (n.s.) | [-0.93%, +0.96%] |
+| user (ms) | 440.2 | 434.2 | -1.00% (n.s.) | [-3.23%, +3.29%] |
+| system (ms) | 93.0 | 94.0 | +4.53% (n.s.) | [-13.07%, +18.17%] |
+| peak rss (MiB) | 35.4 | 35.9 | +1.42% (regression) | [+0.96%, +1.72%] |
+
+Other jobs, wall time: `cold-scan-index` +0.3% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+screen only; no engine change
+
+**Accepted:** unlock silent at ~2us/entry; named jobs --threads 8 no 3% win (aggregate
++1.75% regression, index +0.25%); --no-controls is a warm sign not a shipped PORTABLE
+constant.
+
+Full record:
+[`exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md`](../experiments/exp-146-linux-adaptive-unlock-is-silent-named-job-threads-8-not-a-win.md)
+
+### exp-147 — Linux first-run leftover is still the walk; snapshot write not skippable
+
+✅ accepted · 2026-09-20 · H146 · commit `f0126084`
+
+Control: HEAD release probe both arms
+
+Candidate: same probe leftover profile
+
+**`default-tree-first`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 448.6 | 456.6 | +1.48% (n.s.) | [-2.10%, +3.57%] |
+| component (ms) | 446.9 | 454.8 | +1.49% (n.s.) | [-2.09%, +3.59%] |
+| cpu (ms) | 553.8 | 562.0 | +0.84% (n.s.) | [-1.62%, +2.62%] |
+| user (ms) | 445.9 | 450.5 | +0.44% (n.s.) | [-2.65%, +4.28%] |
+| system (ms) | 111.0 | 113.8 | +1.77% (n.s.) | [-10.83%, +13.18%] |
+| peak rss (MiB) | 43.8 | 43.7 | -0.13% (n.s.) | [-0.43%, +0.31%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+leftover profile only; no engine change
+
+**Accepted:** same leftover identity as Darwin H136: walk 93% of first-run; isolated
+save ~24ms is >=3% and not skippable; do not retry H100.
+
+Full record:
+[`exp-147-linux-first-run-leftover-is-still-the-walk.md`](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md)
+
+### exp-148 — Linux H84 --no-controls --threads 8 sign transfers to nominated /usr
+
+✅ accepted · 2026-09-20 · H84 · commit `a58f9e30`
+
+Control: HEAD automatic workers --no-controls
+
+Candidate: same probe --no-controls --threads 8
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 93.5 | 82.6 | -10.06% | [-14.72%, -7.95%] |
+| component (ms) | 92.7 | 81.7 | -10.17% | [-14.98%, -8.16%] |
+| cpu (ms) | 341.5 | 313.3 | -7.75% | [-10.05%, -6.04%] |
+| user (ms) | 128.3 | 100.2 | -25.27% | [-30.49%, -17.15%] |
+| system (ms) | 209.2 | 212.4 | +2.16% (n.s.) | [-2.91%, +8.60%] |
+| peak rss (MiB) | 28.2 | 28.2 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+screen only; no engine change
+
+**Accepted:** confirmatory --no-controls sign on nominated /usr: -10.06% quiet; still
+not a shipped PORTABLE constant; minor_faults inferior.
+
+Full record:
+[`exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md`](../experiments/exp-148-linux-h84-no-controls-threads-8-sign-transfers-to-usr.md)
+
+### exp-149 — Linux default /usr aggregate --threads 8 regresses; do not lower unlock
+
+✅ accepted · 2026-09-20 · H84 · commit `06b12212`
+
+Control: HEAD automatic workers
+
+Candidate: same probe --threads 8
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 464.5 | 484.3 | +7.12% (regression) | [+3.72%, +11.30%] |
+| component (ms) | 462.0 | 481.7 | +7.14% (regression) | [+3.71%, +11.31%] |
+| cpu (ms) | 740.6 | 733.5 | +1.34% (n.s.) | [-2.07%, +3.18%] |
+| user (ms) | 489.0 | 480.3 | +0.02% (n.s.) | [-1.79%, +6.27%] |
+| system (ms) | 253.6 | 251.4 | -0.54% (n.s.) | [-3.77%, +2.22%] |
+| peak rss (MiB) | 68.2 | 68.8 | +0.39% (n.s.) | [-0.02%, +0.95%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+screen only; no engine change
+
+**Accepted:** default gitignore-on /usr aggregate --threads 8 is +7.12%
+[+3.72%, +11.30%] quiet regression; do not lower unlock or ship PORTABLE from this host.
+
+Full record:
+[`exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md`](../experiments/exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md)
+
+### exp-150 — Linux H85 recycle misses the 20% mimalloc bar
+
+❌ rejected · 2026-09-20 · H85 · commit `5c6e6394`
+
+Control: HEAD --no-controls aggregate, consumer drops Observation batches
+
+Candidate: same probe --no-controls, drained batches returned to producing worker
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 36.0 | 34.5 | -4.98% | [-5.92%, -4.33%] |
+| component (ms) | 35.2 | 33.6 | -5.12% | [-5.95%, -4.51%] |
+| cpu (ms) | 133.0 | 129.0 | -3.27% | [-4.50%, -1.94%] |
+| user (ms) | 40.9 | 45.6 | +18.10% (n.s.) | [-27.39%, +49.43%] |
+| system (ms) | 91.4 | 85.1 | -8.76% (n.s.) | [-21.71%, +11.44%] |
+| peak rss (MiB) | 24.4 | 24.4 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 186 lines; no new dependencies; new failure mode: one-tier win below the
+pre-registered 20% bar.
+
+private recycle on RetainedState::Summary only; no dependency; no unsafe; H85 bar is 20%
+
+**Rejected:** recycle does not capture mimalloc 20%: quiet linux-v6.12 -4.98%
+[-5.92%, -4.33%]; 450k screening -11.31% n=7; RSS flat; do not lower H85; 3% keep is
+H147.
+
+Full record:
+[`exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md`](../experiments/exp-150-linux-h85-recycle-misses-the-20-mimalloc-bar.md)
+
+### exp-151 — Linux transient batch recycle clears 3% after H85 misses 20%
+
+✅ accepted · 2026-09-20 · H147 · commit `5c6e6394`
+
+Control: HEAD --no-controls aggregate, consumer drops Observation batches
+
+Candidate: same probe --no-controls, drained batches returned to producing worker
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 36.0 | 34.5 | -4.98% | [-5.92%, -4.33%] |
+| component (ms) | 35.2 | 33.6 | -5.12% | [-5.95%, -4.51%] |
+| cpu (ms) | 133.0 | 129.0 | -3.27% | [-4.50%, -1.94%] |
+| user (ms) | 40.9 | 45.6 | +18.10% (n.s.) | [-27.39%, +49.43%] |
+| system (ms) | 91.4 | 85.1 | -8.76% (n.s.) | [-21.71%, +11.44%] |
+| peak rss (MiB) | 24.4 | 24.4 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 186 lines; no new dependencies.
+
+same patch as exp-150; private recycle; no dependency; no unsafe; unmeasured on macOS
+
+**Accepted:** quiet linux-v6.12 --no-controls aggregate -4.98% [-5.92%, -4.33%]; RSS
+flat; default gitignore-on placebo +0.91% includes zero; H85 20% missed so this is the
+3% keep.
+
+Full record:
+[`exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md`](../experiments/exp-151-linux-transient-batch-recycle-clears-3-after-h85-misses-20.md)
+
+### exp-152 — Linux H72 d_type skip misses 3% on source-tree v6.12
+
+❌ rejected · 2026-09-20 · H72 · commit `f841662c`
+
+Control: H147 --no-controls aggregate (stat every listed child)
+
+Candidate: same probe --no-controls, skip directory and symlink statx via file_type
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 36.5 | 35.2 | -1.63% | [-3.33%, -0.72%] |
+| component (ms) | 35.6 | 34.5 | -1.52% | [-3.26%, -0.60%] |
+| cpu (ms) | 137.7 | 134.1 | -1.17% | [-2.45%, -0.96%] |
+| user (ms) | 39.1 | 42.6 | +12.87% (n.s.) | [-7.27%, +33.17%] |
+| system (ms) | 98.1 | 96.7 | -9.69% (n.s.) | [-11.81%, +2.65%] |
+| peak rss (MiB) | 24.5 | 24.5 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 123 lines; no new dependencies.
+
+listing file_type skip on RetainedState::Summary only; no dependency; no unsafe;
+one_filesystem still stats directories
+
+**Rejected:** quiet linux-v6.12 --no-controls aggregate -1.63% [-3.33%, -0.72%]; under
+3%; stats 92474 to 86644; RSS flat; directory-heavy keep is exp-153.
+
+Full record:
+[`exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md`](../experiments/exp-152-linux-h72-d-type-skip-misses-3-on-source-tree-v6-12.md)
+
+### exp-153 — Linux H72 d_type skip clears 3% on symlink-heavy /usr
+
+✅ accepted · 2026-09-20 · H72 · commit `f841662c`
+
+Control: H147 --no-controls aggregate (stat every listed child)
+
+Candidate: same probe --no-controls, skip directory and symlink statx via file_type
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 86.3 | 78.6 | -9.01% | [-12.52%, -6.30%] |
+| component (ms) | 85.5 | 77.8 | -9.07% | [-12.63%, -6.37%] |
+| cpu (ms) | 324.0 | 294.4 | -9.73% | [-11.24%, -7.01%] |
+| user (ms) | 104.5 | 101.6 | -0.77% (n.s.) | [-11.18%, +6.52%] |
+| system (ms) | 222.6 | 192.0 | -14.10% | [-17.54%, -10.19%] |
+| peak rss (MiB) | 28.1 | 28.1 | +0.00% (n.s.) | [+0.00%, +0.00%] |
+
+Cost to carry: 123 lines; no new dependencies.
+
+same patch as exp-152; private summary-path skip; no dependency; no unsafe; unmeasured
+on macOS; /usr not reconstructible
+
+**Accepted:** quiet nominated /usr --no-controls aggregate -9.01% [-12.52%, -6.30%]; 22%
+skippable dirs+symlinks; RSS flat; v6.12 companion -1.63% noninferior (exp-152).
+
+Full record:
+[`exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md`](../experiments/exp-153-linux-h72-d-type-skip-clears-3-on-symlink-heavy-usr.md)
+
+### exp-154 — Linux PGO screen clears 3% on cold-scan-index and warm-revalidate
+
+✅ accepted · 2026-09-20 · H148 · commit `b46edf65`
+
+Control: HEAD fat-LTO / codegen-units=1 release probe
+
+Candidate: same source rebuilt with -Cprofile-use after linux-v6.12 training
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 504.5 | 460.5 | -8.35% | [-10.35%, -6.92%] |
+| component (ms) | 428.6 | 388.7 | -8.91% | [-11.28%, -7.05%] |
+| cpu (ms) | 625.6 | 581.4 | -6.83% | [-8.29%, -5.45%] |
+| user (ms) | 520.9 | 470.3 | -8.50% | [-10.74%, -6.52%] |
+| system (ms) | 102.7 | 109.5 | +7.41% (n.s.) | [-11.49%, +18.14%] |
+| peak rss (MiB) | 35.2 | 34.2 | -2.78% | [-2.98%, -2.61%] |
+
+Other jobs, wall time: `warm-revalidate` -8.2%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+no engine source change; PGO rebuild only; no dependency; no unsafe; profdata not
+checked in; unmeasured on macOS
+
+**Accepted:** quiet linux-v6.12 cold-scan-index -8.35% [-10.35%, -6.92%] and
+warm-revalidate -8.15% [-8.64%, -7.07%]; RSS no worse; revalidate component flat so that
+wall win is spawn; Cargo.toml unchanged (profdata is host-specific).
+
+Full record:
+[`exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md`](../experiments/exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md)
+
+### exp-155 — Linux cache-hit restore mix after leftover apply-timer expansion
+
+✅ accepted · 2026-09-21 · H149 · commit `065175ee`
+
+Control: same leftover-timer release probe both arms
+
+Candidate: same probe leftover restore-mix profile
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 586.8 | 587.9 | +0.04% (n.s.) | [-0.38%, +0.59%] |
+| component (ms) | 500.8 | 502.3 | +0.33% (n.s.) | [-0.48%, +0.96%] |
+| cpu (ms) | 586.2 | 587.4 | +0.00% (n.s.) | [-0.36%, +0.59%] |
+| user (ms) | 535.1 | 533.0 | -0.92% (n.s.) | [-3.20%, +1.01%] |
+| system (ms) | 52.2 | 52.0 | +0.00% (n.s.) | [-10.75%, +26.90%] |
+| blocked (ms) | 0.5 | 0.5 | -7.66% (n.s.) | [-23.77%, +10.01%] |
+| peak rss (MiB) | 149.0 | 149.0 | +0.00% (n.s.) | [-0.06%, +0.06%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+same-binary attachment: both arms ran the 065175ee probe, so 0 lines is the attachment’s
+cost, not that commit’s; 065175ee (apply-timer expansion plus a dead-branch removal, 35
+production lines added in content_cache.rs and index.rs, tests excluded) was never
+paired against its parent e95167b9, so its wall effect is unmeasured; the timers are
+Option-gated and off by default
+
+**Accepted:** same leftover identity as H144: apply 60-62% of restore after timer
+expansion is H116 HashMap now in-bucket; no new compileable cut; do not retry H116.
+
+Full record:
+[`exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md`](../experiments/exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -4688,6 +5245,24 @@ Baselines show one value because they measure a state rather than a change.
 | 135 | Post-H128 first-run default-tree leftover | `default-tree-first` | 481.0 | 453.6 | +0.2% | ✅ accepted |
 | 136 | Post-H123 content-query leftover | `content-query` | 40,340.5 | 38,623.5 | -3.3% | ✅ accepted |
 | 137 | Share one every_entry across unfiltered metric views | `content-query` | 38,234.2 | 31,475.2 | -18.8% | ✅ accepted |
+
+### linux-v6.12 (92,474 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 138 | Linux cache-hit stack same versus #91 control | `content-cache-hit` | 760.9 | 588.9 | -22.5% | ✅ accepted |
+| 139 | Linux walk leftover is still the getdents64 plus statx floor | `default-tree` | 433.6 | 439.4 | +0.6% | ✅ accepted |
+| 140 | Linux content-query stack same versus #91 control | `content-query` | 12,616.0 | 10,409.3 | -17.6% | ✅ accepted |
+| 143 | Linux first-pass content-basic leftover is still file I/O | `content-basic` | 2,165.7 | 2,169.4 | +0.4% | ✅ accepted |
+| 144 | Linux cache-hit leftover after landed stack is already-landed restore work | `content-cache-hit` | 605.3 | 607.3 | -0.1% | ✅ accepted |
+| 145 | Linux opened-discovery leftover is still journal clones plus live roll-ups | `opened-discovery` | 1,497.0 | 1,508.0 | -0.2% | ✅ accepted |
+| 146 | Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win | `aggregate-summary` | 427.3 | 438.0 | +1.8% | ✅ accepted |
+| 147 | Linux first-run leftover is still the walk; snapshot write not skippable | `default-tree-first` | 448.6 | 456.6 | +1.5% | ✅ accepted |
+| 150 | Linux H85 recycle misses the 20% mimalloc bar | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ❌ rejected |
+| 151 | Linux transient batch recycle clears 3% after H85 misses 20% | `aggregate-summary` | 36.0 | 34.5 | -5.0% | ✅ accepted |
+| 152 | Linux H72 d_type skip misses 3% on source-tree v6.12 | `aggregate-summary` | 36.5 | 35.2 | -1.6% | ❌ rejected |
+| 154 | Linux PGO screen clears 3% on cold-scan-index and warm-revalidate | `cold-scan-index` | 504.5 | 460.5 | -8.3% | ✅ accepted |
+| 155 | Linux cache-hit restore mix after leftover apply-timer expansion | `content-cache-hit` | 586.8 | 587.9 | +0.0% | ✅ accepted |
 
 ### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -4854,6 +5429,14 @@ Baselines show one value because they measure a state rather than a change.
 | 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
 | 068 | Flush the rendered report before joining the snapshot writer | `default-tree` | 353.3 | 361.3 | +1.2% | ✅ accepted |
 
+### usr-prefix (208,411 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 148 | Linux H84 --no-controls --threads 8 sign transfers to nominated /usr | `aggregate-summary` | 93.5 | 82.6 | -10.1% | ✅ accepted |
+| 149 | Linux default /usr aggregate --threads 8 regresses; do not lower unlock | `aggregate-summary` | 464.5 | 484.3 | +7.1% | ✅ accepted |
+| 153 | Linux H72 d_type skip clears 3% on symlink-heavy /usr | `aggregate-summary` | 86.3 | 78.6 | -9.0% | ✅ accepted |
+
 ### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -4867,6 +5450,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
+
+### linux-450k (450,001 entries) — Linux 6.12.94+, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 141 | H111 Linux floor and RSS gates fail on current engine | `default-tree` | 419.1 | 429.8 | +2.0% | ❌ rejected |
+| 142 | Linux H111 leftover is still walk floor plus retained-index RSS | `cold-scan-index` | 857.6 | 856.7 | +0.1% | ✅ accepted |
 
 ### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

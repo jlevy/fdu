@@ -32,8 +32,8 @@ fdu . --analyze=code                       # standard LOC by language
 fdu . --analyze=words                      # prose volume by document type
 ```
 
-The default is `tree` in allocated bytes, largest first, to depth 2, with at most ten
-children per directory.
+The default is `list` in `tree` format, in allocated bytes, largest first, to depth 2,
+with at most ten children per directory.
 Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
 
@@ -67,8 +67,8 @@ There are no subcommands: the grammar is always “report on a path”.
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore` |
 | Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
-| Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
+| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
+| Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
@@ -94,7 +94,10 @@ metadata visible but does not retain a separate lower-level metric record for th
 
 ## Pick the View, Then Shape It
 
-- `--view tree` (default) for per-directory roll-ups.
+- `--view list` (default), with `--format tree` for current directory roll-ups,
+  `--format paths` for complete flat matching paths, or `--long` for size, age, and
+  path.
+- `--view tree` is the compatibility preset for the hierarchy, including machine output.
 - `--view extensions` for the original raw-extension breakdown.
   Rows partition the tree and so sum to its total; a derived extension always carries a
   leading dot, and names having none are tallied under the literal `(none)`.
@@ -110,7 +113,7 @@ metadata visible but does not retain a separate lower-level metric record for th
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
-- `--view full` for every view except `files`.
+- `--view full` for the existing bounded digest, excluding unbounded List/Files.
 - Several views in one run share one scan: `--view summary,types,families`. Text then
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
@@ -149,19 +152,60 @@ from cache, the metadata cache tier, and total report time.
 Known binary files can contribute walked bytes but zero read bytes.
 Cache-only runs report zero walked files because they never consult the tree.
 The line is gray only when color is active and has no ANSI escapes otherwise.
-JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit it.
+Paths, Long, JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit
+it.
 
 Common shapes are compositions rather than dedicated flags:
 
 ```bash
 fdu --view largest -n 100 PATH                        # the 100 largest files
-fdu --view files --modified-since 2h PATH             # changed in the last two hours
+fdu --kind file --modified-since 2h PATH              # files changed in the last two hours
 fdu --view files --include '*.{rs,toml}' PATH         # by pattern
 fdu --view tree --sort mtime PATH                     # an activity map
 ```
 
 `--depth` and `--limit` bound only the rendered view; `--scan-depth` bounds what is
 scanned and retained, so do not reach for it merely to shorten output.
+
+## Find Stale Environments and Build Outputs
+
+```bash
+fdu PATH --kind dir --include .venv --modified-before 7d --long
+fdu PATH --kind dir --include node_modules --modified-before 30d --long
+fdu PATH --kind dir --include target --modified-before 30d --format paths
+fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
+fdu PATH --kind dir --include .venv --modified-before 30d --format json
+```
+
+Kind, basename/relative-path patterns, size, and modification age are filters.
+Repeated includes form a union.
+Directory bytes sum eligible regular-file contents; recency is the newest root or
+eligible descendant mtime, including directories and symlinks.
+Empty directories use their own mtime.
+This is modification activity, not access or last use.
+Directory names such as Cargo’s `target` are conventions, not proof of ownership.
+Reported bytes need not be uniquely reclaimable.
+
+Exclusions win throughout selected subtrees before size/age bounds; ignored-only queries
+traverse structural ancestors.
+Flat output lists matching entries, including nested roots whose sizes overlap.
+Aggregate views count the covered union once.
+The default directory tree stays unchanged; `--tree` makes its format explicit.
+Flat lists are complete, size-ranked by default, with global row limits; tree limits
+remain per-directory and depth only folds the tree.
+Paths escapes control characters only and keeps stdout to paths; bound and rule notices
+go to stderr. Long adds size and signed age.
+Machine rows retain exact `mtime_ns`, `age_ns`, directory `files`/`dirs`, and the
+report’s `age_reference_ns`; unknown ages are null.
+
+Tree/Paths/Long require one compatible list view.
+Use automatic Text or machine output for grouped/mixed views and Full.
+Largest/recent retain regular-file ranks with Paths or Long.
+Explicit Paths/Long overrides legacy Tree presentation.
+Format flags conflict.
+Rust/Python callers select format on the query before reading; a detached Report cannot
+turn a folded tree into a complete flat inventory.
+Request another report from the retained index for that change, without scanning again.
 
 ## Read What `.gitignore` Covers
 
@@ -208,12 +252,12 @@ re-read a listing after a rule edit if the bit matters.
 
 ## Use Timestamps as a Sync Watermark
 
-Every report carries `scan_started_at`. Feeding it back selects exactly what changed
-after that scan began, which is what makes incremental follow-up sound:
+Every report carries `provenance.scan_started_at`. Feeding it back selects exactly what
+changed after that scan began, which is what makes incremental follow-up sound:
 
 ```bash
-fdu --view summary --format json PATH                       # record scan_started_at
-fdu --view files --format jsonl --modified-since <that> PATH
+fdu --view summary --format json PATH              # record provenance.scan_started_at
+fdu --view files --kind file --format jsonl --modified-since <that> PATH
 ```
 
 Use the scan’s *start*, not its end: a file modified mid-scan may have been observed
@@ -223,17 +267,16 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/6` when it ran
-  content analysis or includes a metric summary (the `types`, `families`, `languages`,
-  and `documents` views), `fdu.report/5` otherwise, a `--watch` stream carries
-  `fdu.stream/1`, and `--cache-status` carries `fdu.cache/2`. Treat an unrecognized
-  value as a version you cannot parse rather than guessing at the fields.
+- `schema` before parsing anything else: a report carries `fdu.report/7`, a `--watch`
+  stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/2`. Treat an
+  unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript `JSON.parse`
-- `complete` and `errors` before trusting totals
-- `freshness` and `source` before presenting data as current
+- `status.complete`, `status.errors`, and `status.errors_omitted` before trusting totals
+- `provenance.freshness` and `provenance.source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
-- `coverage` before presenting a metric summary as complete
+- Each requested unit in a metric row’s `coverage` before presenting its metrics as
+  complete
 - `ignored` on a row before calling anything ignored or not: an object, or `true` and
   `false` on a file row, where rules were read, and `null` where none were, which never
   means nothing is ignored
@@ -242,9 +285,10 @@ Check the process exit status and these fields:
 - `detection.sources`, `detection.confidence`, and `detection.flags` before treating a
   deep-detected type or origin label as exact
 
-`source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only `--cache only` can
-return `freshness: stale`, and it says so rather than implying currency; it fails
-outright when no usable snapshot exists rather than silently scanning.
+`provenance.source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only
+`--cache only` can return `provenance.freshness: stale`, and it says so rather than
+implying currency; it fails outright when no usable snapshot exists rather than silently
+scanning.
 
 Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or
 invalid usage. Do not discard useful stdout from exit 2; inspect the completeness fields

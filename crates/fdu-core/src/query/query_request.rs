@@ -28,6 +28,98 @@ use crate::query::query_values::{
 };
 use crate::scan::ScanConfig;
 
+/// Semantic filesystem scope, independent of scheduling and batching.
+#[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct Scope {
+    /// Maximum retained depth.
+    pub max_depth: Option<usize>,
+    /// Whether directory symlinks are followed.
+    pub follow_symlinks: bool,
+    /// Whether traversal stays on one filesystem.
+    pub one_filesystem: bool,
+    /// Hidden-component admission.
+    pub hidden: Option<std::sync::Arc<crate::admission::HiddenPolicy>>,
+    /// Whether special filesystem objects are excluded.
+    pub exclude_special: bool,
+    /// Classification rules.
+    pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
+    /// Whether gitignore control files are observed.
+    pub read_controls: bool,
+    /// Control admission limits.
+    pub control_limits: ControlLimits,
+}
+impl Default for Scope {
+    fn default() -> Self {
+        ScanConfig::default().into()
+    }
+}
+impl From<ScanConfig> for Scope {
+    fn from(scan: ScanConfig) -> Self {
+        Self {
+            max_depth: scan.max_depth,
+            follow_symlinks: scan.follow_symlinks,
+            one_filesystem: scan.one_filesystem,
+            hidden: scan.hidden,
+            exclude_special: scan.exclude_special,
+            types: scan.types,
+            read_controls: scan.read_controls,
+            control_limits: scan.control_limits,
+        }
+    }
+}
+impl Scope {
+    /// Derive the scanner's operational configuration from this scope and a delivery.
+    pub fn scan_config(&self, delivery: &Delivery) -> ScanConfig {
+        ScanConfig {
+            max_depth: self.max_depth,
+            follow_symlinks: self.follow_symlinks,
+            one_filesystem: self.one_filesystem,
+            hidden: self.hidden.clone(),
+            exclude_special: self.exclude_special,
+            types: self.types.clone(),
+            read_controls: self.read_controls,
+            control_limits: self.control_limits,
+            threads: delivery.workers.scan,
+            batch_size: delivery.batch_size,
+            order: delivery.order,
+        }
+    }
+    fn identity_config(&self) -> ScanConfig {
+        ScanConfig {
+            max_depth: self.max_depth,
+            follow_symlinks: self.follow_symlinks,
+            one_filesystem: self.one_filesystem,
+            hidden: self.hidden.clone(),
+            exclude_special: self.exclude_special,
+            types: self.types.clone(),
+            read_controls: self.read_controls,
+            control_limits: self.control_limits,
+            ..ScanConfig::default()
+        }
+    }
+    /// Semantic identity observed by the scanner.
+    pub fn scope(&self) -> crate::ScanScope {
+        self.identity_config().scope()
+    }
+    /// Identity of the persisted metadata tiers.
+    pub fn snapshot_identity(&self) -> crate::SnapshotIdentity {
+        self.identity_config().snapshot_identity()
+    }
+    pub(crate) fn unsupported_axis(&self) -> Option<ScopeAxis> {
+        self.identity_config().unsupported_axis()
+    }
+}
+
+/// Operational worker limits. Zero analysis workers selects available parallelism.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Workers {
+    /// Directory-reading workers; absent selects the engine's bounded automatic pool.
+    pub scan: Option<usize>,
+    /// Content-reader workers.
+    pub analysis: usize,
+}
+
 /// What a retained index or an opened root holds for its lifetime.
 ///
 /// Everything here shapes the stored state itself, so a read can only be answered by a
@@ -38,10 +130,8 @@ pub struct Basis {
     pub root: PathBuf,
     /// What the scan observes and retains.
     ///
-    /// `ScanConfig` still carries delivery fields (`threads`, `batch_size`, `order`), and
-    /// `threads` stays the authoritative scan worker count until worker counts move into
-    /// [`Delivery`]; none of them changes an answer.
-    pub scope: ScanConfig,
+    /// Scheduling is supplied separately by [`Delivery`].
+    pub scope: Scope,
     /// The analyzers whose results the answer may report.
     pub content: AnalysisSet,
 }
@@ -64,7 +154,7 @@ impl Basis {
         let controls = index.control_identity();
         Self {
             root: index.root_path().to_path_buf(),
-            scope: ScanConfig {
+            scope: Scope {
                 max_depth: scope.max_depth,
                 follow_symlinks: scope.follow_symlinks,
                 one_filesystem: scope.one_filesystem,
@@ -74,7 +164,7 @@ impl Basis {
                     crate::ControlTierIdentity::Observed { limits } => limits,
                     crate::ControlTierIdentity::NotObserved => Self::UNOBSERVED_LIMITS,
                 },
-                ..ScanConfig::default()
+                ..Scope::default()
             },
             content: index.content_set(),
         }
@@ -106,13 +196,6 @@ impl Basis {
 
 /// How a request is carried out, which never changes what its answer says.
 ///
-/// One worker count is here, because it has nowhere else to wait: scan threads ride in
-/// [`ScanConfig::threads`] inside [`Basis::scope`] until the execution plan model takes
-/// them, and the content readers' count rides in
-/// [`AnalysisRequest`](crate::content::AnalysisRequest), which a request does not carry --
-/// [`Basis::content`] is the analyzer set, which is what changes an answer. Phase 2 replaces
-/// both with one `Workers`.
-///
 /// No `Default`, deliberately. Every field here is a decision its caller has already made,
 /// and the cache policy is the one that decides whether an answer touches the filesystem
 /// and whether it leaves a trace; a default one reads `cache: Auto` whatever the caller
@@ -129,8 +212,54 @@ pub struct Delivery {
     pub accept_partial: bool,
     /// Whether the answer repeats as a watch, and how.
     pub watch: Option<WatchDelivery>,
-    /// Content-reader workers; zero asks for the machine's available parallelism.
-    pub analysis_workers: usize,
+    /// Directory and content reader workers.
+    pub workers: Workers,
+    /// Maximum operations in one scanner batch.
+    pub batch_size: usize,
+    /// Directory traversal scheduling.
+    pub order: crate::ScanOrder,
+}
+
+impl Delivery {
+    /// Ordinary execution settings with an explicitly chosen cache policy and location.
+    pub fn new(cache: CachePolicy, cache_path: Option<PathBuf>) -> Self {
+        Self {
+            cache,
+            cache_path,
+            accept_partial: false,
+            watch: None,
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
+        }
+    }
+
+    /// Representative deliveries for checking policy independently of route.
+    /// Worker counts and cache location are fixed; every cache, partial-answer, and
+    /// watch choice is represented.
+    pub fn enumerate() -> impl Iterator<Item = Self> {
+        [
+            CachePolicy::Auto,
+            CachePolicy::Refresh,
+            CachePolicy::ReadOnly,
+            CachePolicy::Only,
+            CachePolicy::Off,
+        ]
+        .into_iter()
+        .flat_map(|cache| {
+            [false, true].into_iter().flat_map(move |accept_partial| {
+                [None, Some(WatchDelivery::default())].into_iter().map(move |watch| Self {
+                    cache,
+                    cache_path: Some(PathBuf::from("cache.fdu")),
+                    accept_partial,
+                    watch,
+                    workers: Workers { analysis: 1, ..Workers::default() },
+                    batch_size: ScanConfig::default().batch_size,
+                    order: crate::ScanOrder::default(),
+                })
+            })
+        })
+    }
 }
 
 /// How a watch repeats its answer.
@@ -138,6 +267,16 @@ pub struct Delivery {
 pub struct WatchDelivery {
     /// The longest a repaint waits for changes; change detection itself is event-driven.
     pub interval: Duration,
+}
+
+impl Default for WatchDelivery {
+    fn default() -> Self {
+        Self { interval: Self::DEFAULT_INTERVAL }
+    }
+}
+impl WatchDelivery {
+    /// Shared default repaint cadence for every surface.
+    pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(2);
 }
 
 /// Everything that determines an answer.
@@ -193,6 +332,8 @@ pub struct RequestSpec<'a> {
 pub struct ReadSpec<'a> {
     /// Views: a comma list, or `full`.
     pub views: Option<&'a str>,
+    /// Presentation format; omitted means automatic human output.
+    pub format: Option<&'a str>,
     /// Logical words per document page: a positive integer.
     pub words_per_page: Option<&'a str>,
     /// Patterns an entry must match one of.
@@ -226,6 +367,7 @@ impl ReadSpec<'_> {
     pub const fn new() -> Self {
         Self {
             views: None,
+            format: None,
             words_per_page: None,
             include: &[],
             exclude: &[],
@@ -399,7 +541,10 @@ impl Request {
     /// observed rather than to what the request says it would have. Scope equality is not
     /// checked here; `ScanConfig` owns it.
     pub fn validate_read(&self, held: &Basis) -> Result<(), RequestError> {
-        if held.content != self.basis.content {
+        let entries = held.scope.snapshot_identity().entries;
+        let wanted = crate::ContentTierIdentity::for_request(entries, self.basis.content);
+        let stored = crate::ContentTierIdentity::for_request(entries, held.content);
+        if wanted.admit(&stored).is_none() {
             return Err(RequestError::ContentMismatch {
                 held: held.content,
                 requested: self.basis.content,
@@ -456,6 +601,27 @@ impl Request {
                 limit: crate::MAX_REPORT_VIEWS,
             });
         }
+        let format = self.query.format;
+        if matches!(
+            format,
+            crate::report_format::Format::Tree
+                | crate::report_format::Format::Paths
+                | crate::report_format::Format::Long
+        ) {
+            let compatible = self.query.views.len() == 1
+                && self.query.views.iter().all(|view| {
+                    matches!(view, ViewSpec::List | ViewSpec::Tree | ViewSpec::Files)
+                        || (format != crate::report_format::Format::Tree
+                            && matches!(view, ViewSpec::Largest | ViewSpec::Recent))
+                });
+            if !compatible {
+                return Err(invalid(
+                    self.query.axes.format,
+                    format.label(),
+                    "requires a single list view; use text or a machine format for aggregate/mixed views (largest/recent support paths and long)",
+                ));
+            }
+        }
         check_views(&self.query.views, basis.content)?;
         check_observation(self.query.selection.ignored, basis.scope.read_controls)
     }
@@ -476,12 +642,9 @@ fn parse_content(
 /// The delivery fields a `ScanConfig` still carries -- threads, batch size, order -- are
 /// its own defaults: no answer depends on them, and they move into `Delivery` with
 /// `Workers`.
-fn parse_scope(
-    spec: &RequestSpec<'_>,
-    axes: &'static AxisNames,
-) -> Result<ScanConfig, RequestError> {
+fn parse_scope(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> Result<Scope, RequestError> {
     let limits = Request::DEFAULTS.control_limits;
-    Ok(ScanConfig {
+    Ok(Scope {
         max_depth: spec
             .scan_depth
             .map(|value| {
@@ -503,7 +666,7 @@ fn parse_scope(
                     .map_err(|error| named_refusal(error, axes.control_line_limit))
             })?,
         },
-        ..ScanConfig::default()
+        ..Scope::default()
     })
 }
 
@@ -567,7 +730,16 @@ fn build_query(
                 .ok_or_else(|| invalid(axes.words_per_page, value, "expected a positive integer"))
         })?;
 
-    Ok(Query { selection, views, omitted_views, axes, words_per_page })
+    let format = spec.format.map_or(Ok(crate::report_format::Format::Text), |value| {
+        crate::report_format::Format::parse(value).ok_or_else(|| {
+            invalid(
+                axes.format,
+                value,
+                format!("expected one of {}", crate::report_format::Format::ALL.join(", ")),
+            )
+        })
+    })?;
+    Ok(Query { selection, views, format, omitted_views, axes, words_per_page })
 }
 
 /// A scan-scope axis a build may be unable to honour at all.
@@ -650,6 +822,20 @@ pub enum RequestError {
     WatchContent,
     /// A watch was asked to start from a snapshot nothing verifies.
     WatchCacheOnly,
+    /// An operation names another root than the retained index it would mutate.
+    RootMismatch {
+        /// Root held by the index.
+        held: PathBuf,
+        /// Root requested by the caller.
+        requested: PathBuf,
+    },
+    /// A route cannot honor the requested execution policy.
+    DeliveryUnsupported {
+        /// The lifecycle that refuses it.
+        route: &'static str,
+        /// The unsupported policy combination.
+        reason: &'static str,
+    },
     /// A read names more views than one report may carry.
     ViewLimit {
         /// Views and omitted views the request carries.
@@ -699,6 +885,14 @@ impl RequestError {
                 held = analysis_label(*held),
             ),
             Self::WatchScope => watch_scope_message(axes),
+            Self::RootMismatch { held, requested } => {
+                format!(
+                    "requested root {} does not match retained root {}",
+                    requested.display(),
+                    held.display()
+                )
+            }
+            Self::DeliveryUnsupported { route, reason } => format!("{route}: {reason}"),
             Self::WatchContent => format!(
                 "{} is not yet supported with {}; use a one-shot report",
                 axes.analyze, axes.watch
@@ -771,7 +965,8 @@ pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<()
             ViewSpec::Documents if !content.is_enabled() => {
                 return Err(RequestError::ViewNeedsContent(*view));
             }
-            ViewSpec::Tree
+            ViewSpec::List
+            | ViewSpec::Tree
             | ViewSpec::Types
             | ViewSpec::Extensions
             | ViewSpec::Families
@@ -1256,6 +1451,49 @@ mod tests {
     /// A spec that names nothing builds the table, and every type that also declares a
     /// default for one of these axes agrees with it.
     #[test]
+    fn list_formats_are_resolved_and_validated_in_the_shared_request() {
+        use crate::report_format::Format;
+        for (view, format, valid, tree) in [
+            (None, None, true, true),
+            (Some("list"), Some("tree"), true, true),
+            (Some("list"), Some("paths"), true, false),
+            (None, Some("json"), true, false),
+            (Some("files"), None, true, false),
+            (Some("files"), Some("tree"), true, true),
+            (Some("tree"), Some("long"), true, false),
+            (Some("largest"), Some("long"), true, false),
+            (Some("summary"), Some("long"), false, false),
+            (Some("full"), Some("paths"), false, false),
+            (Some("list,summary"), Some("tree"), false, false),
+            (Some("list,summary"), Some("json"), true, false),
+        ] {
+            let spec = RequestSpec {
+                read: ReadSpec { views: view, format, ..ReadSpec::new() },
+                ..RequestSpec::new(Path::new("/absent"))
+            };
+            let request =
+                Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FIELDS).expect("grammar");
+            assert_eq!(request.validate().is_ok(), valid, "{view:?} {format:?}");
+            if valid {
+                assert_eq!(request.query.tree_for(request.query.views[0]), tree);
+            }
+        }
+        let spec = RequestSpec::new(Path::new("/absent"));
+        let request =
+            Request::build(&spec, SystemTime::UNIX_EPOCH, &AxisNames::FIELDS).expect("default");
+        assert_eq!(request.query.views, [ViewSpec::List]);
+        assert!(
+            !request.query.needs_selection_walk(),
+            "an ordinary tree must retain its bounded projection cost"
+        );
+        let mut flat = request.clone();
+        flat.query.format = Format::Paths;
+        assert!(flat.query.needs_selection_walk());
+        assert_eq!(flat.query.limit_for(ViewSpec::List), Bound::All);
+        assert_eq!(request.query.limit_for(ViewSpec::List), Bound::Limit(10));
+    }
+
+    #[test]
     fn an_empty_spec_builds_the_defaults_table() {
         let defaults = Request::DEFAULTS;
         assert_eq!(defaults.size, SizeMetric::Allocated);
@@ -1265,7 +1503,7 @@ mod tests {
         assert_eq!(defaults.control_limits, ControlLimits::default());
         // A watch serves no content -- `WatchContent` refuses one that names an analyzer
         // -- so its view is the report default for none, derived rather than declared.
-        assert_eq!(defaults.report_view(AnalysisSet::NONE), ViewSpec::Tree);
+        assert_eq!(defaults.report_view(AnalysisSet::NONE), ViewSpec::List);
         for content in [
             AnalysisSet::NONE,
             AnalysisSet::NONE.with_lines(),
@@ -1318,6 +1556,7 @@ mod tests {
             analyze: Some("code"),
             read: ReadSpec {
                 views: Some("languages,tree"),
+                format: None,
                 words_per_page: Some("300"),
                 include: &include,
                 exclude: &exclude,
@@ -1500,6 +1739,7 @@ mod tests {
                     analyze: None,
                     read: ReadSpec {
                         views: None,
+                        format: None,
                         depth: None,
                         words_per_page: None,
                         ..everything.read
@@ -1541,7 +1781,7 @@ mod tests {
     fn basis(content: AnalysisSet, read_controls: bool) -> Basis {
         Basis {
             root: root().to_path_buf(),
-            scope: ScanConfig { read_controls, ..ScanConfig::default() },
+            scope: Scope { read_controls, ..Scope::default() },
             content,
         }
     }
@@ -1744,12 +1984,11 @@ mod tests {
             cache_path: None,
             accept_partial: false,
             watch: None,
-            analysis_workers: 0,
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
         };
-        let watching = Delivery {
-            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            ..one_shot.clone()
-        };
+        let watching = Delivery { watch: Some(WatchDelivery::default()), ..one_shot.clone() };
         let cases = [
             (
                 RequestSpec { scan_depth: Some("2"), ..RequestSpec::new(root()) },
@@ -1795,8 +2034,10 @@ mod tests {
             cache: CachePolicy::Only,
             cache_path: None,
             accept_partial: false,
-            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            analysis_workers: 0,
+            watch: Some(WatchDelivery::default()),
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
         };
         let everything = RequestSpec {
             scan_depth: Some("2"),
@@ -1829,8 +2070,10 @@ mod tests {
             cache: CachePolicy::Auto,
             cache_path: None,
             accept_partial: false,
-            watch: Some(WatchDelivery { interval: Duration::from_secs(2) }),
-            analysis_workers: 0,
+            watch: Some(WatchDelivery::default()),
+            workers: Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::ScanOrder::default(),
         };
         let spec = RequestSpec { one_filesystem: true, ..RequestSpec::new(root()) };
         let request = built(&spec);
