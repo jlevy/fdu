@@ -28,6 +28,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -38,7 +39,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
     },
     "analyze": [],
     "size": "apparent",
-    "views": ["tree"],
+    "views": ["list"],
     "omitted_views": []
   },
   "status": {
@@ -66,60 +67,130 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "analysis": null,
   "reports": [
     {
-      "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 269,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": false,
-        "children": [
-          {
-            "name": "dist",
-            "path": "dist",
-            "kind": "dir",
-            "bytes": 128,
-            "allocated": [ALLOCATED],
-            "files": 1,
-            "dirs": 0,
-            "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]},
-            "newest_mtime_ns": [MTIME_NS],
-            "truncated": false,
-            "children": []
-          },
-          {
-            "name": "src",
-            "path": "src",
-            "kind": "dir",
-            "bytes": 36,
-            "allocated": [ALLOCATED],
-            "files": 2,
-            "dirs": 0,
-            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
-            "newest_mtime_ns": [MTIME_NS],
-            "truncated": false,
-            "children": []
-          },
-          {
-            "name": "docs",
-            "path": "docs",
-            "kind": "dir",
-            "bytes": 23,
-            "allocated": [ALLOCATED],
-            "files": 1,
-            "dirs": 0,
-            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
-            "newest_mtime_ns": [MTIME_NS],
-            "truncated": false,
-            "children": []
-          }
-        ]
-      }
+      "view": "list",
+      "bound": null,
+      "files": [
+        {
+          "path": "dist",
+          "kind": "dir",
+          "bytes": 128,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": 1,
+          "dirs": 0,
+          "complete": true,
+          "age_ns": [AGE_NS],
+          "ignored": true
+        },
+        {
+          "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz",
+          "kind": "file",
+          "bytes": 128,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": true
+        },
+        {
+          "path": "README.md",
+          "kind": "file",
+          "bytes": 48,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": "src",
+          "kind": "dir",
+          "bytes": 36,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": 2,
+          "dirs": 0,
+          "complete": true,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": "Makefile",
+          "kind": "file",
+          "bytes": 28,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": "docs",
+          "kind": "dir",
+          "bytes": 23,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": 1,
+          "dirs": 0,
+          "complete": true,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": "docs[JSON_SEP]FAQ.MD",
+          "kind": "file",
+          "bytes": 23,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": "src[JSON_SEP]alpha.rs",
+          "kind": "file",
+          "bytes": 18,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": "src[JSON_SEP]omega.rs",
+          "kind": "file",
+          "bytes": 18,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        },
+        {
+          "path": ".gitignore",
+          "kind": "file",
+          "bytes": 6,
+          "allocated": [ALLOCATED],
+          "mtime_ns": [MTIME_NS],
+          "files": null,
+          "dirs": null,
+          "complete": null,
+          "age_ns": [AGE_NS],
+          "ignored": false
+        }
+      ]
     }
   ]
 }
@@ -129,11 +200,12 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 ## Render Limits Mark the Projection as Truncated
 
 ```console
-$ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
+$ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -227,11 +299,12 @@ says `complete: false`: their sizes and counts are lower bounds and their age is
 where a lower-bound maximum would have read as an old directory.
 
 ```console
-$ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
+$ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": 1,
@@ -343,6 +416,7 @@ $ fdu --cache off --view types --format json --size apparent project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,

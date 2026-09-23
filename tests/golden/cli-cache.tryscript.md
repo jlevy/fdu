@@ -30,6 +30,7 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -106,6 +107,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -185,6 +187,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -261,6 +264,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -330,6 +334,7 @@ $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -408,6 +413,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": 1,
@@ -455,7 +461,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
         "allocated": [ALLOCATED],
         "files": 3,
         "dirs": 3,
-        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
+        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]},
         "newest_mtime_ns": [MTIME_NS],
         "truncated": true,
         "children": []
@@ -484,6 +490,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": 1,
@@ -531,7 +538,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
         "allocated": [ALLOCATED],
         "files": 3,
         "dirs": 3,
-        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
+        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]},
         "newest_mtime_ns": [MTIME_NS],
         "truncated": true,
         "children": []
@@ -562,6 +569,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -626,6 +634,7 @@ $ fdu --no-gitignore --cache only --view tree --format json --size apparent --de
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -688,6 +697,7 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 -
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -698,7 +708,7 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 -
     },
     "analyze": [],
     "size": "apparent",
-    "views": ["tree"],
+    "views": ["list"],
     "omitted_views": []
   },
   "status": {
@@ -708,12 +718,12 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 -
     "errors_omitted": 0
   },
   "provenance": {
-    "source": "warm_revalidate",
+    "source": "cold_scan",
     "freshness": "fresh",
     "scan_started_at": "[RFC3339]",
     "generated_at": "[RFC3339]",
     "tiers": {
-      "entries": {"source": "revalidated", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
       "content": null
     }
   },
@@ -721,20 +731,9 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 -
   "analysis": null,
   "reports": [
     {
-      "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": null,
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "view": "list",
+      "bound": {"shown": 0, "total": 10},
+      "files": []
     }
   ]
 }
@@ -747,6 +746,7 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
@@ -757,7 +757,7 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
     },
     "analyze": [],
     "size": "apparent",
-    "views": ["tree"],
+    "views": ["list"],
     "omitted_views": []
   },
   "status": {
@@ -785,20 +785,9 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
   "analysis": null,
   "reports": [
     {
-      "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "view": "list",
+      "bound": {"shown": 0, "total": 10},
+      "files": []
     }
   ]
 }
@@ -815,6 +804,7 @@ $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit
   "schema": "fdu.report/7",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
   "request": {
     "scope": {
       "max_depth": null,
