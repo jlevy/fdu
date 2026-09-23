@@ -2704,6 +2704,14 @@ mod tests {
             super::render(&list, Format::Paths, false).is_err(),
             "folding cannot silently become an inventory"
         );
+        let mut rejected = Vec::new();
+        assert_eq!(
+            write(&list, Format::Paths, false, &mut rejected)
+                .expect_err("folded projection")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert!(rejected.is_empty(), "validate before writing any bytes");
         let flat = fixture_for(&Query {
             views: vec![ViewSpec::List],
             format: Format::Paths,
@@ -2748,6 +2756,29 @@ mod tests {
         assert!(notes.contains("freshness: stale"));
         assert!(notes.contains("scan scope limited to depth 2"));
         assert_eq!(super::render(&stale, Format::Paths, false).expect("paths"), "src\n");
+    }
+
+    #[test]
+    fn signed_ages_preserve_exact_endpoints_in_streaming_machine_formats() {
+        let mut report = fixture_for(&Query {
+            views: vec![ViewSpec::List],
+            format: Format::Json,
+            ..Query::default()
+        });
+        for (reference, modified) in [(i64::MAX, i64::MIN), (i64::MIN, i64::MAX)] {
+            let age = i128::from(reference) - i128::from(modified);
+            report.age_reference_ns = Some(reference);
+            let Section::Files { rows, .. } = &mut report.sections[0] else { panic!("flat rows") };
+            rows[0].mtime_ns = modified;
+            rows[0].age_ns = Some(age);
+            for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+                let rendered = super::render(&report, format, false).expect("machine format");
+                assert!(rendered.contains(&age.to_string()), "{format:?} lost exact signed age");
+                let mut streamed = Vec::new();
+                write(&report, format, false, &mut streamed).expect("streaming writer");
+                assert_eq!(streamed, rendered.as_bytes());
+            }
+        }
     }
 
     fn fixture(views: &[ViewSpec]) -> Report {

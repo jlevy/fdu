@@ -16,6 +16,48 @@ fn main() {
         "yaml" => Format::Yaml,
         _ => panic!("expected json, jsonl, or yaml"),
     };
+    if matches!(kind.as_str(), "ages-positive" | "ages-negative") {
+        let positive = kind == "ages-positive";
+        let (reference, modified) =
+            if positive { (i64::MAX, i64::MIN) } else { (i64::MIN, i64::MAX) };
+        let mut index = fdu_core::Index::new("/fixture");
+        index
+            .apply(&fdu_core::Observation::new(vec![fdu_core::Op::Upsert {
+                path: PathBuf::from("extreme.txt"),
+                kind: EntryKind::File,
+                attrs: fdu_core::Attrs { mtime_ns: modified, ..fdu_core::Attrs::default() },
+            }]))
+            .expect("fixture observation");
+        let duration = std::time::Duration::from_nanos(reference.unsigned_abs());
+        let now = if reference >= 0 {
+            std::time::UNIX_EPOCH + duration
+        } else {
+            std::time::UNIX_EPOCH - duration
+        };
+        let request = fdu_core::query::Request::new(
+            fdu_core::query::Basis::held_by(&index),
+            fdu_core::query::Query {
+                views: vec![fdu_core::query::ViewSpec::List],
+                format: Format::Json,
+                ..fdu_core::query::Query::default()
+            },
+            now,
+        );
+        let mut report =
+            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH).expect("age report");
+        // Windows SystemTime has 100 ns granularity. The public typed report carries
+        // exact nanoseconds, so seed the exact endpoint after deriving its real row.
+        report.age_reference_ns = Some(reference);
+        let fdu_core::query::Section::Files { rows, .. } = &mut report.sections[0] else {
+            panic!("flat list")
+        };
+        rows[0].age_ns = Some(i128::from(reference) - i128::from(modified));
+        println!(
+            "{}",
+            fdu_core::report_format::render(&report, format, false).expect("machine format")
+        );
+        return;
+    }
     let mut path = PathBuf::from("a { b } [ c ]\u{85}\u{2028}");
     if kind == "cache" {
         let identity = fdu_core::SnapshotIdentity {

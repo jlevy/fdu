@@ -2302,7 +2302,7 @@ mod tests {
             Selection { include: vec![pattern("past"), pattern("future")], ..Selection::default() },
         );
         let mut request = Request::new(Basis::held_by(&index), query, UNIX_EPOCH);
-        let answer = report(&index, &request, &provenance()).expect("report");
+        let answer = report(&index, &request, UNIX_EPOCH).expect("report");
         let rows = files_of(&answer);
         assert_eq!(answer.age_reference_ns, Some(0));
         assert_eq!(
@@ -2310,7 +2310,7 @@ mod tests {
             [Some(-i128::from(i64::MAX)), Some(10)]
         );
         request.now = UNIX_EPOCH + Duration::from_secs(10_000_000_000);
-        let answer = report(&index, &request, &provenance())
+        let answer = report(&index, &request, UNIX_EPOCH)
             .expect("out-of-range reference is representable as unknown age");
         assert_eq!(answer.age_reference_ns, None);
         assert!(files_of(&answer).iter().all(|row| row.age_ns.is_none()));
