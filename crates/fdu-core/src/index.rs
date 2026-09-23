@@ -2922,6 +2922,60 @@ impl Index {
         }
     }
 
+    /// Finish a cold walk using all of its failures, before diagnostic retention bounds
+    /// discard any paths. A scoped failure withdraws only its subtree and ancestors;
+    /// an unscoped failure cannot establish completeness anywhere in the walk.
+    pub(crate) fn set_initial_scan_freshness(&mut self, errors: &[crate::Error]) {
+        self.set_initial_freshness(errors.is_empty());
+        if errors.is_empty() {
+            return;
+        }
+        for slot in &mut self.arena {
+            if let Slot::Occupied { entry, .. } = slot {
+                if entry.kind.is_dir() {
+                    entry.directory_mut().children_complete = false;
+                }
+            }
+        }
+        let mut failed = Vec::with_capacity(errors.len());
+        for error in errors {
+            let Some(path) = Issue::from_error_under(&self.root_path, error).path else {
+                return;
+            };
+            if path.is_absolute() || path.as_os_str().is_empty() {
+                return;
+            }
+            failed.push(path);
+        }
+        failed.sort();
+        failed.dedup();
+        self.freshness_marks.clear();
+        for path in &failed {
+            self.mark_unfresh(path, Freshness::Partial);
+        }
+        // The walk has terminated and each failure is scoped above. Every retained
+        // directory outside those boundaries therefore has its complete in-scope
+        // listing. In particular, never promote descendants of a failed listing.
+        for slot in 0..self.arena.len() {
+            let Slot::Occupied { generation, entry } = &self.arena[slot] else {
+                continue;
+            };
+            if !entry.kind.is_dir() {
+                continue;
+            }
+            let id = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: *generation,
+            };
+            let Some(path) = self.path_of(id) else {
+                continue;
+            };
+            self.entry_mut(id).directory_mut().children_complete = !failed
+                .iter()
+                .any(|failure| path.starts_with(failure) || failure.starts_with(&path));
+        }
+    }
+
     pub(crate) fn record_walk_errors(&mut self, errors: &mut Vec<crate::Error>) {
         self.issues.clear();
         self.issue_epochs.clear();
@@ -9795,6 +9849,33 @@ mod tests {
         assert_eq!(index.freshness_at(Path::new("a")), Freshness::Fresh);
         assert_eq!(index.freshness_at(Path::new("b/blocked")), Freshness::Partial);
     }
+    #[test]
+    fn cold_scan_failure_does_not_verify_unknown_descendants_or_unscoped_work() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(
+            ["blocked", "blocked/nested", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        let error = crate::Error::io(
+            PathBuf::from("/root/blocked"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+        );
+        index.set_initial_scan_freshness(&[error]);
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
+        for path in ["", "blocked", "blocked/nested"] {
+            assert_eq!(index.directory_complete(Path::new(path)), Some(false), "{path}");
+            assert_eq!(index.freshness_at(Path::new(path)), Freshness::Partial, "{path}");
+        }
+        index.set_initial_scan_freshness(&[crate::Error::Snapshot("unscoped failure".into())]);
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
+        assert_eq!(index.freshness_at(Path::new("healthy")), Freshness::Partial);
+    }
+
     #[test]
     fn complete_older_root_does_not_verify_a_newer_failed_child() {
         let root = Path::new("/root");
