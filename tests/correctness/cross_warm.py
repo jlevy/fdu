@@ -17,6 +17,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from answer import answer
+
 # Repository-relative so the runbook is not tied to one checkout.
 DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
 FDU = os.environ.get("FDU_BIN") or str(DEFAULT_FDU)
@@ -43,23 +45,8 @@ def run(args, cache):
     return p.returncode, p.stdout, p.stderr
 
 
-def scrub(node):
-    if isinstance(node, dict):
-        return {
-            k: scrub(v)
-            for k, v in node.items()
-            if k not in {"generated_at", "scan_started_at", "source", "freshness", "elapsed_ns"}
-        }
-    if isinstance(node, list):
-        return [scrub(v) for v in node]
-    return node
-
-
 def body(out):
-    try:
-        return scrub(json.loads(out))
-    except json.JSONDecodeError:
-        return out
+    return answer(out)
 
 
 def analyze_field(out):

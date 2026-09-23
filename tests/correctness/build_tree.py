@@ -24,7 +24,7 @@ def note(kind: str, ok: bool) -> None:
     made[kind] = ok
 
 
-def build(root: Path) -> dict[str, bool]:
+def build(root: Path, *, refusals: bool = True) -> dict[str, bool]:
     # A fresh directory, always. Re-running into an existing tree raises FileExistsError
     # from every `os.link`/`os.symlink`/`os.mkfifo`/`os.mknod`, which is an OSError, so a
     # second run used to report six kinds as "platform refused" and print a truthful-
@@ -127,16 +127,22 @@ def build(root: Path) -> dict[str, bool]:
     # has to drop privileges; recorded here either way.
     # Root ignores mode bits, so these entries exist but exercise nothing. Recorded as a
     # fact about the run rather than printed as a plain "yes".
-    note("permission-denied-effective", os.geteuid() != 0)
+    # A tree built without them is complete, which is what the serving proof needs: a
+    # partial scan never writes the entry tier, so nothing it answers is ever served.
+    note(
+        "permission-denied-effective",
+        os.geteuid() != 0 if refusals else "skipped (--without-refusals)",
+    )
     denied = root / "denied"
     denied.mkdir(exist_ok=True)
     (denied / "secret.txt").write_text("hidden\n")
     (denied / "readable.txt").write_text("visible\n")
-    os.chmod(denied / "secret.txt", 0o000)
     nolist = root / "denied-dir"
     nolist.mkdir(exist_ok=True)
     (nolist / "inside.txt").write_text("unreachable\n")
-    os.chmod(nolist, 0o000)
+    if refusals:
+        os.chmod(denied / "secret.txt", 0o000)
+        os.chmod(nolist, 0o000)
 
     # --- awkward names ---------------------------------------------------------------
     names = root / "names"
@@ -221,8 +227,10 @@ def build(root: Path) -> dict[str, bool]:
 
 
 if __name__ == "__main__":
-    target = Path(sys.argv[1])
-    facts = build(target)
+    arguments = sys.argv[1:]
+    refusals = "--without-refusals" not in arguments
+    target = Path(next(arg for arg in arguments if not arg.startswith("--")))
+    facts = build(target, refusals=refusals)
     print(f"running as uid {os.geteuid()}\n")
     width = max(len(k) for k in facts)
     for kind, ok in facts.items():

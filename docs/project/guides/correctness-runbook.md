@@ -24,8 +24,8 @@ A warm-against-cold comparison cannot fail usefully on its own.
 hypothetical: with snapshot serving hard-wired to refuse, the path-independence subset
 ran 884 cases with zero failures, because a miss simply scans cold and compares equal.
 
-So every case records the mechanism as well as the answer, and the expectation differs
-by request:
+So every case records the mechanism as well as the answer, read from the report’s
+`provenance.source` and `provenance.freshness`, and the expectation differs by request:
 
 | Request | Second run reports | Why |
 | --- | --- | --- |
@@ -43,18 +43,34 @@ An earlier version guarded the cache-only check with `only_rc == 0`, and the eng
 either serves `cache_only` or exits 1 — so against a build that never wrote a snapshot,
 cache-only exited 1, the check was skipped, and seventeen of the twenty-three cases
 printed `ok` against a cache that never served.
-Verify the check by breaking the thing it watches: run the comparison against a wrapper
-that rewrites `--cache auto` to `--cache off` and confirm every case reports
-`NO-SNAPSHOT` and the script exits 1.
+Verify the check by breaking the thing it watches: run the comparison over the
+refusal-free tree against a wrapper that rewrites `--cache auto` to `--cache off` and
+confirm every case reports `NO-SNAPSHOT` and the script exits 1.
 
 ## Running It
 
 ```shell
 make build
 python3 tests/correctness/build_tree.py /tmp/fdu-correctness/tree
-FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py /tmp/fdu-correctness/tree
-FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py /tmp/fdu-correctness/tree
+FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py --refusals-only /tmp/fdu-correctness/tree
+python3 tests/correctness/build_tree.py --without-refusals /tmp/fdu-correctness/served
+FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py /tmp/fdu-correctness/served
+FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py /tmp/fdu-correctness/served
 ```
+
+**The serving proof needs a tree without refusals.** An unreadable file or unlistable
+directory makes every answer partial for an unprivileged user, and a partial scan never
+writes the entry tier: a snapshot missing an entry would be served as the tree’s totals
+on the next run. So over the full tree the check is the refusal path: every answer is
+partial, warm matches cold, and cache-only finds nothing stored (`withheld`).
+`--refusals-only` asserts exactly that, and fails a case that comes back complete, which
+is what a run whose refusals were not effective looks like.
+The same kinds without their refusal bits are complete, so the second run must serve
+every case; it exits 1 if the snapshot served none.
+
+Keep the socket path short.
+A Unix socket path is limited to about 104 bytes on macOS, so a tree under a long
+scratch path reports `socket` absent.
 
 `build_tree.py` prints which kinds it managed to create.
 A kind the platform refuses is reported absent rather than skipped silently, because a
