@@ -400,12 +400,14 @@ fn coherent_projections_and_continuations() -> SessionTrace {
         ],
         expected: None,
     });
-    trace.record("result.read.record-limit", &oversized);
-    trace.observe_read(&oversized);
-    assert!(matches!(oversized, Ok(ReadResponse { results, .. }) if matches!(results.as_slice(), [
+    assert!(
+        matches!(&oversized, Ok(ReadResponse { results, .. }) if matches!(results.as_slice(), [
         ProjectionResult::Refused(crate::ProjectionRefusal::ContinuationRecordLimit { attempted, limit }),
         ProjectionResult::Lookup(Knowledge::Present(_)),
-    ] if attempted > limit && *limit == crate::MAX_CONTINUATION_RECORD_BYTES)));
+    ] if attempted > limit && *limit == crate::MAX_CONTINUATION_RECORD_BYTES))
+    );
+    trace.record("result.read.record-limit", &oversized);
+    trace.observe_read(&oversized);
 
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);

@@ -14,6 +14,7 @@ const MAX_SCENARIO_BYTES = 256 * 1024;
 const MAX_CORPUS_BYTES = 768 * 1024;
 const ALLOWED_TOKENS = new Set([
   "[ALLOCATED]",
+  "[CONTINUATION_BYTES]",
   "[DEVICE]",
   "[DIR_SIZE]",
   "[INODE]",
@@ -60,6 +61,9 @@ export function auditGolden(name, source) {
   // changes on every run, so it may never reach an artifact.
   if (/\b\d+\.\d+(?:ns|µs|ms|s)\b/.test(source) || /\bInstant \{/.test(source)) {
     findings.push(`${name}: contains a wall-clock duration`);
+  }
+  if (/ContinuationRecordLimit \{ attempted: \d/.test(source)) {
+    findings.push(`${name}: contains an unnormalized native continuation size`);
   }
   for (const token of source.match(/\[[A-Z_]+\]/g) ?? []) {
     if (!ALLOWED_TOKENS.has(token)) {
