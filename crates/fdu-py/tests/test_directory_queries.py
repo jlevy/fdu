@@ -114,7 +114,7 @@ def test_cold_warm_and_cache_only_directory_membership_agree(builds: Path) -> No
     # A new file would change an actual scan, but cannot change an unverified cache read.
     (builds / "a/.venv/new").write_bytes(b"new")
     cached = fdu.report(builds, query, cache=fdu.CachePolicy.ONLY)
-    assert cached.status.source is fdu.ReportSource.CACHE_ONLY
+    assert cached.provenance.source is fdu.ReportSource.CACHE_ONLY
     for result in (cold, warm, cached):
         section = result.sections[0]
         assert isinstance(section, fdu.FilesSection)
