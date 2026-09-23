@@ -2469,12 +2469,14 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
+        // Joined natively, as the report joins it: Windows spells this row `env\lib`.
+        let env_lib = Path::new("env").join("lib").to_string_lossy().into_owned();
         assert_eq!(
             directories(Selection::default()),
             vec![
                 ("env".to_string(), Some(false), 100, None),
                 ("docs".to_string(), Some(true), 30, Some(-50)),
-                ("env/lib".to_string(), Some(false), 0, None),
+                (env_lib, Some(false), 0, None),
             ],
             "sizes are lower bounds and the age is unknown below the boundary"
         );
