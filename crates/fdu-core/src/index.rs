@@ -2923,8 +2923,9 @@ impl Index {
     }
 
     /// Finish a cold walk using all of its failures, before diagnostic retention bounds
-    /// discard any paths. A scoped failure withdraws only its subtree and ancestors;
-    /// an unscoped failure cannot establish completeness anywhere in the walk.
+    /// discard any paths. A scoped failure withdraws its unverified listing boundary;
+    /// ancestors still have their own listings, and readers fold eligible descendants.
+    /// An unscoped failure cannot establish completeness anywhere in the walk.
     pub(crate) fn set_initial_scan_freshness(&mut self, errors: &[crate::Error]) {
         self.set_initial_freshness(errors.is_empty());
         if errors.is_empty() {
@@ -2949,6 +2950,8 @@ impl Index {
         }
         failed.sort();
         failed.dedup();
+        let listings: Vec<_> =
+            failed.iter().map(|path| self.failed_listing_boundary(path)).collect();
         self.freshness_marks.clear();
         for path in &failed {
             self.mark_unfresh(path, Freshness::Partial);
@@ -2970,9 +2973,25 @@ impl Index {
             let Some(path) = self.path_of(id) else {
                 continue;
             };
-            self.entry_mut(id).directory_mut().children_complete = !failed
-                .iter()
-                .any(|failure| path.starts_with(failure) || failure.starts_with(&path));
+            self.entry_mut(id).directory_mut().children_complete =
+                !listings.iter().zip(&failed).any(|(boundary, failure)| {
+                    path == *boundary || (boundary == failure && path.starts_with(boundary))
+                });
+        }
+    }
+
+    /// A retained failed directory has an unknown child set. If the failed entry was
+    /// omitted (for example after a metadata failure), its nearest retained directory
+    /// cannot claim a complete listing either.
+    fn failed_listing_boundary(&self, failed: &Path) -> PathBuf {
+        let mut boundary = failed.to_path_buf();
+        loop {
+            if self.lookup(&boundary).is_some_and(|id| self.entry(id).kind.is_dir()) {
+                return boundary;
+            }
+            if !boundary.pop() {
+                return PathBuf::new();
+            }
         }
     }
 
@@ -3179,6 +3198,48 @@ impl Index {
                 .is_none_or(|issue_path| issue_path.starts_with(&path) && still_owned(issue_path))
             {
                 self.retain_issue_at(issue, started_at);
+            }
+        }
+        // Completeness describes this directory's own listing, not its descendants.
+        // Withdraw old listing evidence at failures before publishing the partial pass.
+        // Do not touch successful ancestors: readers compose only eligible descendants,
+        // and an excluded failed child must not poison an otherwise complete subtree.
+        if !complete && (!errors.errors.is_empty() || errors.terminal.is_some()) {
+            let boundaries: Vec<_> = if scoped_failures.is_empty() {
+                vec![(path.clone(), true)]
+            } else {
+                scoped_failures
+                    .iter()
+                    .map(|failed| {
+                        let boundary = self.failed_listing_boundary(failed);
+                        let subtree = boundary == **failed;
+                        (boundary, subtree)
+                    })
+                    .collect()
+            };
+            for slot in 0..self.arena.len() {
+                let Slot::Occupied { generation, entry } = &self.arena[slot] else {
+                    continue;
+                };
+                if !entry.kind.is_dir() || !entry.directory().children_complete {
+                    continue;
+                }
+                let id = EntryId {
+                    slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                    generation: *generation,
+                };
+                let Some(directory) = self.path_of(id) else {
+                    continue;
+                };
+                if boundaries.iter().any(|(boundary, subtree)| {
+                    directory == *boundary || (*subtree && directory.starts_with(boundary))
+                }) && still_owned(&directory)
+                    && !self.freshness_marks.iter().any(|(marked, mark)| {
+                        mark.epoch > started_at && directory.starts_with(marked)
+                    })
+                {
+                    self.entry_mut(id).directory_mut().children_complete = false;
+                }
             }
         }
         let mut state = Vec::new();
@@ -9815,6 +9876,16 @@ mod tests {
     fn newer_child_verification_preserves_older_sibling_failure() {
         let root = Path::new("/root");
         let mut index = Index::new(root);
+        index.apply_ok(&Observation::new(
+            ["a", "a/old", "b", "b/blocked", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        index.set_initial_scan_freshness(&[]);
         let (older, _) = index.begin_reconcile(Path::new("")).expect("older root");
         let (newer, _) = index.begin_reconcile(Path::new("a")).expect("newer child");
         index
@@ -9843,6 +9914,10 @@ mod tests {
                 ReconcileErrors { errors: &errors, terminal: None, disproves_old: true },
             )
             .expect("finish older root");
+        for path in ["", "a", "a/old", "b", "healthy"] {
+            assert_eq!(index.directory_complete(Path::new(path)), Some(true), "{path}");
+        }
+        assert_eq!(index.directory_complete(Path::new("b/blocked")), Some(false));
         assert_eq!(index.issues().len(), 1);
         assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("b/blocked")));
         assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
@@ -9867,13 +9942,50 @@ mod tests {
         );
         index.set_initial_scan_freshness(&[error]);
         assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
-        for path in ["", "blocked", "blocked/nested"] {
+        assert_eq!(index.directory_complete(Path::new("")), Some(true));
+        assert_eq!(index.freshness_at(Path::new("")), Freshness::Partial);
+        for path in ["blocked", "blocked/nested"] {
             assert_eq!(index.directory_complete(Path::new(path)), Some(false), "{path}");
             assert_eq!(index.freshness_at(Path::new(path)), Freshness::Partial, "{path}");
         }
         index.set_initial_scan_freshness(&[crate::Error::Snapshot("unscoped failure".into())]);
         assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
         assert_eq!(index.freshness_at(Path::new("healthy")), Freshness::Partial);
+    }
+
+    #[test]
+    fn omitted_failed_entry_withdraws_parent_listing_without_tainting_siblings() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("healthy"),
+            kind: EntryKind::Dir,
+            attrs: Attrs::default(),
+        }]));
+        let error = crate::Error::io(
+            PathBuf::from("/root/missing"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "metadata failed"),
+        );
+        index.set_initial_scan_freshness(&[error]);
+        assert_eq!(index.directory_complete(Path::new("")), Some(false));
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
+        index.set_initial_scan_freshness(&[]);
+        let (epoch, _) = index.begin_reconcile(Path::new("")).expect("begin root");
+        let error = crate::Error::io(
+            PathBuf::from("/root/missing"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "metadata failed"),
+        );
+        index
+            .finish_reconcile(
+                Path::new(""),
+                epoch,
+                false,
+                &[],
+                &[PathBuf::from("missing")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("partial root");
+        assert_eq!(index.directory_complete(Path::new("")), Some(false));
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
     }
 
     #[test]
