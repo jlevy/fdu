@@ -853,7 +853,11 @@ impl RequestError {
             ),
             Self::WatchScope => watch_scope_message(axes),
             Self::RootMismatch { held, requested } => {
-                format!("requested root {requested:?} does not match retained root {held:?}")
+                format!(
+                    "requested root {} does not match retained root {}",
+                    requested.display(),
+                    held.display()
+                )
             }
             Self::DeliveryUnsupported { route, reason } => format!("{route}: {reason}"),
             Self::WatchContent => format!(

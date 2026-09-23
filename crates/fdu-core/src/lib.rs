@@ -740,7 +740,8 @@ fn run_facts(
     projected: bool,
 ) -> RunFacts {
     let entries_verified = stored_state::entries_writable(index);
-    let paired_entries = !entries_verified
+    let paired_entries = delivery.cache.writes()
+        && !entries_verified
         && stored_state::content_tier_writable(index, || {
             delivery
                 .cache_path
