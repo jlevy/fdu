@@ -461,7 +461,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
         "allocated": [ALLOCATED],
         "files": 3,
         "dirs": 3,
-        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]},
+        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
         "newest_mtime_ns": [MTIME_NS],
         "truncated": true,
         "children": []
@@ -538,7 +538,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
         "allocated": [ALLOCATED],
         "files": 3,
         "dirs": 3,
-        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": [ALLOCATED]},
+        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
         "newest_mtime_ns": [MTIME_NS],
         "truncated": true,
         "children": []

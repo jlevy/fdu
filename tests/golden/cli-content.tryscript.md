@@ -91,6 +91,7 @@ $ fdu --cache off --view languages --size apparent content-project
       39 B   50.6%  Python  1 file
       38 B   49.4%  Rust    1 file
 Performance: walked 7 files / 256 B; ignore rules 0 files; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+!
 ? 0
 ```
 
