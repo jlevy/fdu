@@ -51,7 +51,7 @@ export function auditGolden(name, source) {
   if (/\b(?:mtime_ns|ctime_ns|inode|dev|allocated): -?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized platform-assigned attribute`);
   }
-  if (/newest_mtime_ns: Some\(-?\d/.test(source)) {
+  if (/(?:newest_mtime_ns|observed_at_ns): Some\(-?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized aggregate timestamp`);
   }
   // A duration a scenario declares -- a poll timeout, a watch settle interval -- is a round
@@ -70,6 +70,15 @@ export function auditGolden(name, source) {
     findings.push(`${name}: missing final newline`);
   }
   return findings;
+}
+
+// Each refusal is a different contract outcome. A whole-read error with the same
+// name cannot stand in for a per-projection refusal.
+export function auditRefusalCoverage(sources) {
+  const trace = sources.join("\n");
+  const required = ["NotADirectory", "ContinuationRecordLimit", "ContinuationUnavailable"];
+  return required.filter((reason) => !new RegExp(`Refused\\(${reason}(?: \\{|\\))`).test(trace))
+    .map((reason) => `corpus: missing projection refusal ${reason}`);
 }
 
 export function auditCorpus() {
@@ -103,6 +112,7 @@ export function auditCorpus() {
       recordedSources.set(source, name);
     }
   }
+  findings.push(...auditRefusalCoverage([...recordedSources.keys()]));
   if (totalLines > MAX_CORPUS_LINES) {
     findings.push(`corpus: ${totalLines} lines exceeds ${MAX_CORPUS_LINES}`);
   }

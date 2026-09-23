@@ -68,6 +68,9 @@ const REQUIRED_CONTRACT_OUTCOMES: &[&str] = &[
     "projection.diagnostics",
     "projection.limit",
     "projection.refused",
+    "projection.refused.not_a_directory",
+    "projection.refused.continuation_record_limit",
+    "projection.refused.continuation_unavailable",
     "change.inserted",
     "change.updated",
     "change.removed",
@@ -380,6 +383,30 @@ fn coherent_projections_and_continuations() -> SessionTrace {
             ]
         )
     ));
+    // A valid selection can exceed the continuation payload bound even though its
+    // first page is tiny. Record the exact generator instead of thousands of repetitive
+    // strings; the response below is still the unmodified production read result.
+    let mut exact_names = vec!["a.txt".to_string(), "b.txt".to_string()];
+    exact_names.extend((0..4_000).map(|number| format!("unused-{number:05}.txt")));
+    trace.record_text("action.read.record-limit", "Flat { exact_names: [a.txt, b.txt] + unused-{00000..03999}.txt, shape: Compact, page: { limit: 1, max_work: 16 } }, Lookup { path: b.txt }");
+    let oversized = opened.read(ReadRequest {
+        projections: vec![
+            ReadProjection::Flat {
+                selection: crate::query::EntrySelection { exact_names, ..Default::default() },
+                shape: RowShape::Compact,
+                page,
+            },
+            ReadProjection::Lookup { path: PathBuf::from("b.txt") },
+        ],
+        expected: None,
+    });
+    trace.record("result.read.record-limit", &oversized);
+    trace.observe_read(&oversized);
+    assert!(matches!(oversized, Ok(ReadResponse { results, .. }) if matches!(results.as_slice(), [
+        ProjectionResult::Refused(crate::ProjectionRefusal::ContinuationRecordLimit { attempted, limit }),
+        ProjectionResult::Lookup(Knowledge::Present(_)),
+    ] if attempted > limit && *limit == crate::MAX_CONTINUATION_RECORD_BYTES)));
+
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
     let closed = opened.read(ReadRequest::default());
