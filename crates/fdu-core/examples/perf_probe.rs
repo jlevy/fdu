@@ -2751,13 +2751,26 @@ mod tests {
             Some(snapshot),
             AnalysisRequest::default(),
         );
-        // Index-returning cache-only open requires the exact stored scope. Report-only
-        // projection would let a controls-off request read it and fail to test the CLI path.
+        // Inspect the stored identity: controls-off reads may lawfully project a
+        // controls-on snapshot, so admission alone cannot prove which scope was saved.
+        assert!(
+            fdu_core::snapshot::read_header(delivery.cache_path.as_ref().expect("cache path"))
+                .expect("snapshot header")
+                .expect("stored snapshot")
+                .identity
+                .controls
+                .is_observed()
+        );
         let (index, report) = fdu_core::open(&basis, &delivery).expect("the CLI scope");
         assert!(report.is_complete());
         assert_eq!(index.is_ignored(std::path::Path::new("ignored.txt")).ok(), Some(Some(true)));
         basis.scope.read_controls = false;
-        assert!(fdu_core::open(&basis, &delivery).is_err(), "controls were observed");
+        let (projected, _) = fdu_core::open(&basis, &delivery).expect("controls-off projection");
+        assert!(matches!(
+            projected.is_ignored(Path::new("ignored.txt")),
+            Err(fdu_core::Error::ControlStateNotObserved)
+        ));
+        assert_eq!(projected.total().files, index.total().files);
     }
 
     #[test]
