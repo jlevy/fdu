@@ -474,6 +474,53 @@ impl ScanReport {
     }
 }
 
+/// Normalize filesystem failures before one of the bounded status collectors retains them.
+///
+/// A walk may encounter the same inaccessible path from several worker paths. The report is
+/// already the full, transient set for this pass, so sorting and deduplicating it here avoids
+/// allocating or formatting a second unbounded set solely to decide which 64 details survive.
+/// I/O causes are keyed by their native root-relative path and the issue category, exactly the
+/// cause identity retained by an index. Other engine failures are left distinct: walker errors
+/// are I/O failures, and treating arbitrary engine errors as equivalent without constructing
+/// their bounded issue representation would lose information.
+pub(crate) fn normalize_walk_errors(root: &Path, errors: &mut Vec<Error>) {
+    errors.sort_by(|left, right| match (left, right) {
+        (
+            Error::Io { path: left_path, source: left_source },
+            Error::Io { path: right_path, source: right_source },
+        ) => left_path
+            .strip_prefix(root)
+            .unwrap_or(left_path)
+            .cmp(right_path.strip_prefix(root).unwrap_or(right_path))
+            .then_with(|| {
+                walk_issue_kind_rank(left_source).cmp(&walk_issue_kind_rank(right_source))
+            }),
+        (Error::Io { .. }, _) => std::cmp::Ordering::Less,
+        (_, Error::Io { .. }) => std::cmp::Ordering::Greater,
+        _ => std::cmp::Ordering::Equal,
+    });
+    errors.dedup_by(|right, left| match (left, right) {
+        (
+            Error::Io { path: left_path, source: left_source },
+            Error::Io { path: right_path, source: right_source },
+        ) => {
+            left_path.strip_prefix(root).unwrap_or(left_path)
+                == right_path.strip_prefix(root).unwrap_or(right_path)
+                && walk_issue_kind_rank(left_source) == walk_issue_kind_rank(right_source)
+        }
+        _ => false,
+    });
+}
+
+fn walk_issue_kind_rank(error: &std::io::Error) -> u8 {
+    match error.kind() {
+        std::io::ErrorKind::PermissionDenied => 0,
+        std::io::ErrorKind::NotFound => 1,
+        std::io::ErrorKind::InvalidData | std::io::ErrorKind::InvalidInput => 2,
+        _ => 5,
+    }
+}
+
 /// Schema carried by [`ScanDiagnostics`].
 ///
 /// Diagnostics are an opt-in measurement contract rather than stable human output.
