@@ -84,3 +84,93 @@ fn partial_cold_list_keeps_healthy_age_and_refuses_unknown_modification_times() 
         assert_eq!(rows[0].path, Path::new("healthy"));
     }
 }
+
+#[test]
+fn cached_partial_directory_rows_match_cold_and_pruned_subtrees_remain_complete() {
+    let root = tempfile::tempdir().expect("root");
+    let cache = tempfile::tempdir().expect("cache");
+    let blocked = root.path().join("ancestor/blocked");
+    fs::create_dir_all(&blocked).expect("blocked directory");
+    fs::write(blocked.join("unknown.txt"), b"unread\n").expect("unknown descendant");
+    fs::create_dir(root.path().join("healthy")).expect("healthy directory");
+    fs::write(root.path().join("healthy/known.txt"), b"known\n").expect("known descendant");
+    let basis = Basis {
+        root: root.path().into(),
+        scope: Scope::default(),
+        content: AnalysisSet::LINES_ONLY,
+    };
+    let cache_path = cache.path().join("state.fdu");
+    let (_, baseline) =
+        fdu_core::open(&basis, &Delivery::new(CachePolicy::Auto, Some(cache_path.clone())))
+            .expect("baseline cache");
+    assert!(baseline.is_complete());
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny listing");
+    let probe = fs::read_dir(&blocked);
+    if probe.is_ok() {
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore");
+        if std::env::var_os("FDU_TEST_ALLOW_NO_PERMISSION_BITS").as_deref()
+            == Some(std::ffi::OsStr::new("1"))
+        {
+            eprintln!(
+                "skipped by FDU_TEST_ALLOW_NO_PERMISSION_BITS=1: host permits denied listing"
+            );
+            return;
+        }
+        panic!("permission fixture precondition failed: host permits mode-000 directory listing");
+    }
+    assert_eq!(probe.expect_err("denied listing").kind(), std::io::ErrorKind::PermissionDenied);
+    let results: Vec<_> = [CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
+        .into_iter()
+        .map(|policy| fdu_core::open(&basis, &Delivery::new(policy, Some(cache_path.clone()))))
+        .collect();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore");
+    let now = SystemTime::now();
+    let mut request = Request::new(
+        basis,
+        Query {
+            views: vec![ViewSpec::List],
+            format: fdu_core::report_format::Format::Json,
+            selection: Selection { kinds: vec![EntryKind::Dir], ..Selection::default() },
+            ..Query::default()
+        },
+        now,
+    );
+    for (position, result) in results.into_iter().enumerate() {
+        let (index, report) = result.expect("partial answer");
+        assert_eq!(
+            report.path_taken,
+            if position == 0 {
+                fdu_core::OpenPath::ColdScan
+            } else {
+                fdu_core::OpenPath::WarmRevalidate
+            }
+        );
+        assert!(!report.is_complete());
+        request.query.selection.exclude.clear();
+        let answer = fdu_core::query::report(&index, &request, now).expect("rows");
+        let Section::Files { rows, .. } = &answer.sections[0] else {
+            panic!("list");
+        };
+        assert_eq!(rows.len(), 3);
+        for row in rows {
+            let complete = row.path == Path::new("healthy");
+            assert_eq!(row.complete, Some(complete), "{}", row.path.display());
+            assert_eq!(row.age_ns.is_some(), complete, "{}", row.path.display());
+        }
+        request
+            .query
+            .selection
+            .exclude
+            .push(fdu_core::query::Pattern::parse("blocked").expect("pattern"));
+        let pruned = fdu_core::query::report(&index, &request, now).expect("pruned rows");
+        assert!(!pruned.status.complete, "query pruning does not change root coverage");
+        let Section::Files { rows, .. } = &pruned.sections[0] else {
+            panic!("list");
+        };
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            assert_eq!(row.complete, Some(true), "{}", row.path.display());
+            assert!(row.age_ns.is_some(), "{}", row.path.display());
+        }
+    }
+}
