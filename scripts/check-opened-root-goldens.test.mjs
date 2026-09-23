@@ -66,3 +66,12 @@ test("rejects unnormalized tier times without rejecting stable counters", () => 
   assert.ok(auditGolden("sample", valid.replace("result.close: Ok(())", "observed_at_ns: Some(-123)")).some((finding) => finding.includes("timestamp")));
   assert.deepEqual(auditGolden("sample", valid.replace("result.close: Ok(())", "observed_at_ns: None, attempted: 123")), []);
 });
+
+
+test("normalizes only the native continuation refusal size", () => {
+  const recorded = valid.replace("result.close: Ok(())", "Refused(ContinuationRecordLimit { attempted: [CONTINUATION_BYTES], limit: 65536 }), attempted: 123, ResourceLimit { attempted: 456, limit: 789 }");
+  assert.deepEqual(auditGolden("sample", recorded), []);
+  for (const attempted of [160263, 160287]) {
+    assert.ok(auditGolden("sample", recorded.replace("[CONTINUATION_BYTES]", String(attempted))).some((finding) => finding.includes("native continuation size")));
+  }
+});
