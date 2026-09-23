@@ -1701,8 +1701,11 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
         summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v2\0disabled")));
         return;
     };
+    let profile = index.content_set();
+    let mut record = format!("fdu-content-summary-v2\0profile={}\0", profile.bits());
     let Some(root) = content.rollup(Path::new("")) else {
-        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v2\0empty")));
+        record.push_str("empty");
+        summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
         return;
     };
     summary.content_records = root.total.files;
@@ -1714,9 +1717,10 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
     let lines = root.total.lines.metrics;
     let code = root.total.code.metrics;
     let words = root.total.words.metrics;
-    let record = format!(
+    let _ = write!(
+        record,
         concat!(
-            "fdu-content-summary-v2\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
+            "records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
             "physical={}\0blank={}\0nonblank={}\0code={}\0comment={}\0",
             "code_blank={}\0raw_words={}\0logical_words={}\0paragraphs={}\0visible_words={}\0",
             "visible_logical_words={}"
@@ -1737,6 +1741,24 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
         words.visible_words,
         words.visible_logical_word_stats.logical_words(),
     );
+    for (unit, coverage) in [
+        ("lines", &root.total.lines.coverage),
+        ("code", &root.total.code.coverage),
+        ("words", &root.total.words.coverage),
+    ] {
+        for (reason, count) in coverage {
+            let reason = match reason {
+                CoverageReason::Analyzed => "analyzed",
+                CoverageReason::Binary => "binary",
+                CoverageReason::InvalidUtf8 => "invalid_utf8",
+                CoverageReason::UnsupportedEncoding => "unsupported_encoding",
+                CoverageReason::Unsupported => "unsupported",
+                CoverageReason::IoError => "io_error",
+                CoverageReason::ChangedDuringRead => "changed_during_read",
+            };
+            let _ = write!(record, "\0{unit}.{reason}={count}");
+        }
+    }
     summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
 }
 
@@ -2324,6 +2346,39 @@ impl From<std::io::Error> for ProbeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_digest_distinguishes_equal_values_with_different_unit_outcomes() {
+        fn summarize_empty_file(name: &str, profile: AnalysisSet) -> Summary {
+            let root = tempfile::tempdir().expect("root");
+            std::fs::write(root.path().join(name), []).expect("empty file");
+            let (mut index, _) =
+                fdu_core::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            let report = fdu_core::content::analyze_index(
+                &mut index,
+                AnalysisRequest { profile, workers: 1 },
+            );
+            assert!(report.is_complete());
+            let total = &index.content().expect("content").rollup(Path::new("")).unwrap().total;
+            assert_eq!(total.lines.metrics, Default::default());
+            assert_eq!(total.code.metrics, Default::default());
+            assert_eq!(total.words.metrics, Default::default());
+            let mut summary = Summary::default();
+            attach_content_summary(&mut summary, &index);
+            summary
+        }
+
+        let analyzed = summarize_empty_file("empty.rs", AnalysisSet::ALL);
+        let unsupported = summarize_empty_file("empty.hs", AnalysisSet::ALL);
+        let unrequested = summarize_empty_file("empty.rs", AnalysisSet::NONE.with_lines());
+        assert_eq!(analyzed.content_records, unsupported.content_records);
+        assert_eq!(analyzed.content_analyzed, unsupported.content_analyzed);
+        assert_eq!(analyzed.content_binary, unsupported.content_binary);
+        assert_eq!(analyzed.content_invalid_utf8, unsupported.content_invalid_utf8);
+        assert_ne!(analyzed.content_digest, unsupported.content_digest);
+        assert_ne!(analyzed.content_digest, unrequested.content_digest);
+        assert_ne!(unsupported.content_digest, unrequested.content_digest);
+    }
 
     #[test]
     fn sha256_matches_standard_vectors() {

@@ -746,8 +746,7 @@ mod tests {
     fn bottom_up_rebuild_matches_incremental_nested_rollups() {
         let paths = ["README.md", "a/keep.rs", "a/b/nested.rs", "a/b/c/deep.rs", "a/b/c/other.py"];
         let mut binary = analysis("a/b/c/image.png", 0);
-        binary.coverage = CoverageReason::Binary;
-        binary.metrics = MetricValues::default();
+        binary.lines = AnalyzerOutcome::unavailable(CoverageReason::Binary);
         let mut incremental = prepared();
         for path in paths {
             commit(&mut incremental, path, analysis(path, 3));

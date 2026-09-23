@@ -729,7 +729,10 @@ fn put_optional_outcome<T: Copy>(
     }
 }
 
-#[allow(clippy::option_option)] // Outer None rejects malformed bytes; inner None is an absent unit.
+#[expect(
+    clippy::option_option,
+    reason = "Outer None rejects malformed bytes; inner None is an absent unit."
+)]
 fn read_optional_outcome<T>(
     reader: &mut Reader<'_>,
     read_value: fn(&mut Reader<'_>) -> Option<T>,
