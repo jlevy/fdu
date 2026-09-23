@@ -76,17 +76,28 @@ pub(crate) struct ProgressIo {
     /// The width a frame must fit, read again for every frame so a resize takes effect
     /// at once.
     pub width: fn() -> usize,
+    /// Installs the Ctrl-C handler over the line once the ticker owns it, with whether
+    /// the interruption message is colored.
+    ///
+    /// The process's real handler ends the process, so a test passes one that does
+    /// nothing and drives the handler's logic directly.
+    pub interrupt: fn(Arc<Line>, bool),
 }
 
 impl ProgressIo {
-    /// The process's own stderr and the shipped timings.
+    /// The process's own stderr, the shipped timings, and the real Ctrl-C handler.
     pub(crate) fn for_process() -> Self {
-        Self { out: Box::new(io::stderr()), timing: Timing::default(), width: stderr_width }
+        Self {
+            out: Box::new(io::stderr()),
+            timing: Timing::default(),
+            width: stderr_width,
+            interrupt: crate::interrupt::install,
+        }
     }
 
     /// Resources for a test that is not about the indicator: a line nobody reads, with
     /// a delay no test outlives, so a run under injected interactive facts behaves as
-    /// one that finished inside the delay.
+    /// one that finished inside the delay, and no handler.
     #[cfg(test)]
     pub(crate) fn inert() -> Self {
         let never = Duration::from_secs(60 * 60);
@@ -94,6 +105,7 @@ impl ProgressIo {
             out: Box::new(io::sink()),
             timing: Timing { delay: never, tick: never },
             width: || 80,
+            interrupt: |_, _| {},
         }
     }
 }
@@ -128,7 +140,7 @@ impl LineState {
     /// refuses it is not one to keep writing to. Whether a frame is on screen is left
     /// as it was, because a frame drawn earlier may still be showing and one attempt
     /// to erase it at the stop point costs nothing.
-    fn draw(&mut self, frame: &str) {
+    pub(crate) fn draw(&mut self, frame: &str) {
         let written = self
             .out
             .write_all(ERASE_LINE.as_bytes())
@@ -220,7 +232,8 @@ impl Ticker {
     ///
     /// The line is owned from here: nothing else may write to `io.out` until
     /// [`Ticker::stop`] returns. A thread that cannot be spawned draws nothing, and the
-    /// run proceeds as if it were not drawing.
+    /// run proceeds as if it were not drawing. The Ctrl-C handler is installed here,
+    /// over the same line, and only here: a run that does not draw never reaches this.
     pub(crate) fn start(
         plan: ProgressPlan,
         progress: Progress,
@@ -228,6 +241,7 @@ impl Ticker {
         io: ProgressIo,
     ) -> Self {
         let line = Line::new(io.out);
+        let color = plan.color;
         let (stop, stopped) = mpsc::channel();
         let thread = thread::Builder::new()
             .name("fdu-progress".to_string())
@@ -240,14 +254,12 @@ impl Ticker {
                 }
             })
             .ok();
+        (io.interrupt)(Arc::clone(&line), color);
         Self { line, stop: Some(stop), thread }
     }
 
-    /// The line this ticker draws, for the interrupt handler to share.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "shared with the Ctrl-C handler, which is fdu-9286")
-    )]
+    /// The line this ticker draws, for a test to inspect or interrupt.
+    #[cfg(test)]
     pub(crate) fn line(&self) -> &Arc<Line> {
         &self.line
     }
@@ -336,16 +348,41 @@ impl Write for SharedBuffer {
     }
 }
 
+/// A handle a route has finished with, for tests: its final phase persists after the
+/// route returns, so a ticker started over it draws at once.
+///
+/// The engine keeps phase changes to itself, so this is the one way a test in this
+/// crate gets a handle past `Starting`: run a real report over `root` with the cache
+/// off, which leaves the handle in `Scanning` with the tree's counts.
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::path::Path;
+pub(crate) fn scanned(root: &std::path::Path) -> Progress {
     use std::time::SystemTime;
 
     use fdu_core::content::AnalysisSet;
     use fdu_core::query::{Basis, Delivery, Query, Request};
     use fdu_core::{CachePolicy, ScanConfig, prepare_report_with_progress};
+
+    let progress = Progress::new();
+    let request = Request::new(
+        Basis {
+            root: root.to_path_buf(),
+            scope: ScanConfig::default().into(),
+            content: AnalysisSet::NONE,
+        },
+        Query::default(),
+        SystemTime::now(),
+    );
+    let delivery = Delivery::new(CachePolicy::Off, None);
+    let (_, pending, _) =
+        prepare_report_with_progress(&request, &delivery, &progress).expect("a report");
+    pending.join().expect("no save to fail");
+    assert_eq!(progress.snapshot().phase, ProgressPhase::Scanning);
+    progress
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 
     const ROOT: &str = "~/wrk/github";
 
@@ -354,28 +391,7 @@ mod tests {
     }
 
     fn io(out: &SharedBuffer, timing: Timing) -> ProgressIo {
-        ProgressIo { out: Box::new(out.clone()), timing, width: || 100 }
-    }
-
-    /// A handle a route has finished with: its final phase persists, so a ticker
-    /// started over it draws at once.
-    fn scanned(root: &Path) -> Progress {
-        let progress = Progress::new();
-        let request = Request::new(
-            Basis {
-                root: root.to_path_buf(),
-                scope: ScanConfig::default().into(),
-                content: AnalysisSet::NONE,
-            },
-            Query::default(),
-            SystemTime::now(),
-        );
-        let delivery = Delivery::new(CachePolicy::Off, None);
-        let (_, pending, _) =
-            prepare_report_with_progress(&request, &delivery, &progress).expect("a report");
-        pending.join().expect("no save to fail");
-        assert_eq!(progress.snapshot().phase, ProgressPhase::Scanning);
-        progress
+        ProgressIo { out: Box::new(out.clone()), timing, width: || 100, interrupt: |_, _| {} }
     }
 
     /// How many erase sequences `bytes` holds: one per frame drawn, plus the final one.
@@ -514,7 +530,7 @@ mod tests {
         let accepted = SharedBuffer::default();
         let out = FailsAfterOneFrame { accepted: accepted.clone(), writes: 0 };
         let timing = Timing { delay: Duration::ZERO, tick: Duration::from_millis(1) };
-        let io = ProgressIo { out: Box::new(out), timing, width: || 100 };
+        let io = ProgressIo { out: Box::new(out), timing, width: || 100, interrupt: |_, _| {} };
         let mut ticker = Ticker::start(plan(), scanned(root.path()), Instant::now(), io);
         wait_for(&accepted, |bytes| !bytes.is_empty());
         // The second frame fails and stops the ticker on its own.

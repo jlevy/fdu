@@ -71,7 +71,7 @@ const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 /// view-header style so there is a single definition to change.
 const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
-const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
+pub(crate) const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
 const STYLE_CAUSE: AnsiStyle = AnsiStyle::new().dimmed();
 const STYLE_PERFORMANCE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 
@@ -3159,8 +3159,12 @@ mod tests {
         let interactive = interactive_terminal();
         let mut out = Vec::new();
         let err = SharedBuffer::default();
-        let shipped =
-            || ProgressIo { out: Box::new(err.clone()), timing: Timing::default(), width: || 100 };
+        let shipped = || ProgressIo {
+            out: Box::new(err.clone()),
+            timing: Timing::default(),
+            width: || 100,
+            interrupt: |_, _| {},
+        };
         let args = ["fdu", "--progress", "always", "--docs"].map(OsString::from);
         assert_eq!(
             run_with_io(&args, &mut out, &mut err.clone(), true, &interactive, shipped()),
@@ -3214,6 +3218,7 @@ mod tests {
             out: Box::new(err.clone()),
             timing: Timing { delay: Duration::ZERO, tick: Duration::from_millis(1) },
             width: || 100,
+            interrupt: |_, _| {},
         }
     }
 
