@@ -5,7 +5,7 @@ title: Address remaining 0.1 correctness blockers after performance review
 kind: task
 status: in_progress
 priority: 1
-version: 25
+version: 26
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
@@ -29,7 +29,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:30:19.526Z
-updated_at: 2026-09-23T03:50:50.120Z
+updated_at: 2026-09-23T04:12:13.915Z
 started_at: 2026-09-20T04:31:31.377Z
 ---
 Audit remaining release correctness against the current #92 stack, reconcile stale or already-fixed beads, implement confirmed defects in coherent slices with subagents, review changes, validate and publish PRs. Preserve unrelated directory-rollup work and existing core-model ownership. Final candidate verification remains distinct from publishing.
@@ -43,3 +43,5 @@ Integration now includes report7/stream2 serializers and typed Python models, pe
 2026-09-22 resumed alpha correctness delivery: plan PR110 in native stack111 follows reviewed PR99 and corrected PR98. PR98 head fb9fef49 now passes all23CI checks including all3fullplatformmatrices; independent Astra oracle review has no blockers. Metric layer PR112 ba3e9564 published and under independent review. Answer fixes7edd44b0/2e5425b0 pass36format tests,56Python model tests, native/public smoke and57exact parser cases. State followup7af768c8 fixes old-pass error resurrection with bounded scope arbitration, focused tests/clippy passing; independent review pending. PR103 flat diagnostics red regressions established; fix under validation. Full Phase2.3 execution Plan remains required and assigned next. Old worktrees/root checkout preserved. No merge or release.
 
 2026-09-22 stabilization checkpoint: native stack111 has nine reviewed dependent PRs99→98→110→112→113→114→115→116→117. Final production at4464308e (test-only followups throughff2b07da) fixes typed answers, per-analyzer values, shared writers, scope/state reconciliation, watch handoff, Plan/Delivery persistence, controls-off projection, and directory-query composition. New fdu-bwo2 canonical own-listing withdrawal and explicit DirectoryIncomplete publication reviewed independently; Linux full matrix16272cases zero deviations at446, release rehearsal35814796698 all9jobs passed. FinalLinux parity artifact recorded by CI and independently reviewed: same24 existing deviations,10additional passing sessions. Final local broad gate has passed core828 tests/integrations/CLI175/format64; remaining gate and finalall-platform CI still running. Currentheadff2b fullPI/release35815753312 pending; intermediate layer fixture/prerequisite cleanup being batched. User requested switching remaining subagent work toSol to conserve budget; model handoff completed. AllPRs remain unmerged; implementation beads remain inprogress for final validation/publication acceptance. No performance acceptance or release publication claim.
+
+2026-09-22 publication checkpoint: after exact ff2b07da path-independence run35815707617 passed Linux16,272, macOS16,272, Windows14,382 cases with zero false verdicts and zero exception lists on each, the reviewed test-fixture/parity batch fast-forwarded the native stack: PR113 876bd39c, PR114 0266b95c, PR115 7a38900b, PR116 ee8cff4c, PR117 d0fbbe93. PR117 includes reviewed plan evidence and merge order. Production behavior did not change from ff2b07da; corrections are golden portability/guide text, exact Linux parity artifact lines, and pedantic test literals. New exact-head CI and final acceptance remain pending; no PR merge, release publication, or performance integration occurred.
