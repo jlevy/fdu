@@ -135,6 +135,12 @@ pub(crate) enum Admission {
 }
 
 impl Plan {
+    /// The one decision of whether stored state answers this plan's basis.
+    ///
+    /// Every route that reads a snapshot admits it here, warm and cache-only alike, and
+    /// persistence asks the same question of the header on disk before it decides what an
+    /// unchanged pass owes the store. The content arm applies only to a plan that verifies
+    /// nothing, because a verifying route re-reads what its sidecar lacks.
     pub(crate) fn admit(
         &self,
         stored: Option<&StoreHeader<'_>>,

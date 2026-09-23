@@ -44,7 +44,13 @@ use crate::stored_state::{
 #[allow(clippy::large_enum_variant)] // One transient load result; avoid boxing the returned index.
 pub enum LoadOutcome {
     /// The snapshot supplied an index, either exactly or through a lawful projection.
-    Served(Index, Serves),
+    Served {
+        /// The index in the requested scope.
+        index: Index,
+        /// The identity the snapshot declares, which is what a plan admits: a projected
+        /// index reports the requested identity, not this one.
+        stored: SnapshotIdentity,
+    },
     /// The snapshot was valid, but its identity cannot answer this request.
     Refused {
         /// The validated identity that did not serve the request.
@@ -419,7 +425,7 @@ pub fn load_with_types(
 ) -> Result<Option<Index>> {
     load_with_types_and_size_limit(path, MAX_SNAPSHOT_BYTES, types, None).map(|outcome| {
         match outcome {
-            LoadOutcome::Served(index, _) => Some(index),
+            LoadOutcome::Served { index, .. } => Some(index),
             LoadOutcome::Refused { .. } | LoadOutcome::Absent => None,
         }
     })
@@ -443,7 +449,7 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         None,
     )
     .map(|outcome| match outcome {
-        LoadOutcome::Served(index, _) => Some(index),
+        LoadOutcome::Served { index, .. } => Some(index),
         LoadOutcome::Refused { .. } | LoadOutcome::Absent => None,
     })
 }
@@ -872,7 +878,7 @@ fn parse_stream(
     Ok(if serves == Serves::Refuse {
         LoadOutcome::Refused { identity, root: root_path }
     } else {
-        LoadOutcome::Served(index, serves)
+        LoadOutcome::Served { index, stored: identity }
     })
 }
 
@@ -1988,9 +1994,10 @@ mod tests {
         // The same splice with the saved tier restores, so the splice is not what failed.
         let (exact, projected) = forge(lifted.control_identity());
         assert!(exact.is_some());
-        let LoadOutcome::Served(projected, Serves::ProjectControlsOff) = projected else {
+        let LoadOutcome::Served { index: projected, stored } = projected else {
             panic!("the valid control payload projects");
         };
+        assert_eq!(serves_snapshot(stored, blind.snapshot_identity()), Serves::ProjectControlsOff);
         assert_eq!(projected.snapshot_identity(), blind.snapshot_identity());
         assert_eq!(projected.scope(), blind.scope());
         assert!(matches!(projected.controls(), Err(Error::ControlStateNotObserved)));
@@ -2826,9 +2833,10 @@ mod tests {
             blind.snapshot_identity(),
         )
         .expect("load projection");
-        let LoadOutcome::Served(projected, Serves::ProjectControlsOff) = projected else {
+        let LoadOutcome::Served { index: projected, stored } = projected else {
             panic!("an observed snapshot should project to the blind request");
         };
+        assert_eq!(serves_snapshot(stored, blind.snapshot_identity()), Serves::ProjectControlsOff);
         let (cold, _) = crate::scan::scan_into_index(tree.path(), &blind).expect("blind scan");
         assert_eq!(projected.snapshot_identity(), blind.snapshot_identity());
         assert_eq!(projected.scope(), blind.scope());
