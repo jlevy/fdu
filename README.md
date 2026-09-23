@@ -152,7 +152,7 @@ config.analysis.profile = AnalysisSet::ALL;
 let (index, report) = open(Path::new("."), &config)?;
 let analyzed = index
     .content_rollup(Path::new(""))
-    .map_or(0, |content| content.total.analyzed_files);
+    .map_or(0, |content| content.total.lines.analyzed_files);
 println!("{} analyzed files", analyzed);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
