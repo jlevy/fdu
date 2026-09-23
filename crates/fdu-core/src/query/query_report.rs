@@ -944,7 +944,7 @@ pub struct Report {
     /// Whether ignore classification applies every `.gitignore` in scope, serialised as
     /// `ignore_rules`.
     ///
-    /// Not operational completeness: a refused control file leaves [`Self::complete`]
+    /// Not operational completeness: a refused control file leaves [`TreeStatus::complete`]
     /// true and every size exact, and costs only the ignored and unignored split below
     /// it. [`Self::notes`] names the directories and the knob that applies them.
     pub ignore_rules: ControlCoverage,
