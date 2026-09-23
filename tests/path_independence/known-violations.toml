@@ -44,7 +44,6 @@ platforms = [
   "linux",
 ]
 paths = [
-  "reports[].metrics.rows<order>",
   "reports[].metrics.rows[].allocated",
   "reports[].metrics.rows[].analyzed_files",
   "reports[].metrics.rows[].bytes",
@@ -57,6 +56,7 @@ paths = [
   "reports[].metrics.rows[].metrics.document_words",
   "reports[].metrics.rows[].metrics.logical_words",
   "reports[].metrics.rows[].metrics.nonblank_lines",
+  "reports[].metrics.rows[].metrics.paragraphs",
   "reports[].metrics.rows[].metrics.physical_lines",
   "reports[].metrics.rows[].metrics.raw_words",
   "reports[].metrics.rows[].pages.words",
@@ -74,6 +74,7 @@ paths = [
   "reports[].metrics.total.metrics.document_words",
   "reports[].metrics.total.metrics.logical_words",
   "reports[].metrics.total.metrics.nonblank_lines",
+  "reports[].metrics.total.metrics.paragraphs",
   "reports[].metrics.total.metrics.physical_lines",
   "reports[].metrics.total.metrics.raw_words",
   "reports[].metrics.total.pages.words",
@@ -82,56 +83,11 @@ paths = [
 ]
 keys = [
   "mutation/cli-report/auto/W_all/unreadable/a_all",
+  "mutation/cli-report/auto/W_all/unreadable/a_all_sizeapp",
   "mutation/cli-report/auto/W_all/unreadable/a_codewords",
   "mutation/cli-report/read-only/W_all/unreadable/a_all",
-  "mutation/cli-report/read-only/W_all/unreadable/a_codewords",
-]
-
-[[violation]]
-class = "unverified-subtree"
-platforms = [
-  "darwin",
-  "linux",
-]
-paths = [
-  "reports[].metrics.rows[].allocated",
-  "reports[].metrics.rows[].analyzed_files",
-  "reports[].metrics.rows[].bytes",
-  "reports[].metrics.rows[].coverage.analyzed",
-  "reports[].metrics.rows[].detection.confidence.certain",
-  "reports[].metrics.rows[].detection.sources.extension",
-  "reports[].metrics.rows[].files",
-  "reports[].metrics.rows[].metrics.code_lines",
-  "reports[].metrics.rows[].metrics.comment_lines",
-  "reports[].metrics.rows[].metrics.document_words",
-  "reports[].metrics.rows[].metrics.logical_words",
-  "reports[].metrics.rows[].metrics.nonblank_lines",
-  "reports[].metrics.rows[].metrics.physical_lines",
-  "reports[].metrics.rows[].metrics.raw_words",
-  "reports[].metrics.rows[].pages.words",
-  "reports[].metrics.rows[].share.denominator",
-  "reports[].metrics.rows[].share.numerator",
-  "reports[].metrics.total.allocated",
-  "reports[].metrics.total.analyzed_files",
-  "reports[].metrics.total.bytes",
-  "reports[].metrics.total.coverage.analyzed",
-  "reports[].metrics.total.detection.confidence.certain",
-  "reports[].metrics.total.detection.sources.extension",
-  "reports[].metrics.total.files",
-  "reports[].metrics.total.metrics.code_lines",
-  "reports[].metrics.total.metrics.comment_lines",
-  "reports[].metrics.total.metrics.document_words",
-  "reports[].metrics.total.metrics.logical_words",
-  "reports[].metrics.total.metrics.nonblank_lines",
-  "reports[].metrics.total.metrics.physical_lines",
-  "reports[].metrics.total.metrics.raw_words",
-  "reports[].metrics.total.pages.words",
-  "reports[].metrics.total.share.denominator",
-  "reports[].metrics.total.share.numerator",
-]
-keys = [
-  "mutation/cli-report/auto/W_all/unreadable/a_all_sizeapp",
   "mutation/cli-report/read-only/W_all/unreadable/a_all_sizeapp",
+  "mutation/cli-report/read-only/W_all/unreadable/a_codewords",
 ]
 
 [[violation]]
@@ -176,6 +132,7 @@ paths = [
   "reports[].metrics.rows[].metrics.document_words",
   "reports[].metrics.rows[].metrics.logical_words",
   "reports[].metrics.rows[].metrics.nonblank_lines",
+  "reports[].metrics.rows[].metrics.paragraphs",
   "reports[].metrics.rows[].metrics.physical_lines",
   "reports[].metrics.rows[].metrics.raw_words",
   "reports[].metrics.rows[].pages.words",
@@ -193,6 +150,7 @@ paths = [
   "reports[].metrics.total.metrics.document_words",
   "reports[].metrics.total.metrics.logical_words",
   "reports[].metrics.total.metrics.nonblank_lines",
+  "reports[].metrics.total.metrics.paragraphs",
   "reports[].metrics.total.metrics.physical_lines",
   "reports[].metrics.total.metrics.raw_words",
   "reports[].metrics.total.pages.words",
@@ -246,12 +204,18 @@ paths = [
 keys = [
   "mutation/cli-report/auto/W_all/unreadable/a_code",
   "mutation/cli-report/auto/W_all/unreadable/a_code_exclign",
+  "mutation/cli-report/auto/W_all/unreadable/a_lines_v_languages",
+  "mutation/cli-report/auto/W_code/unreadable/a_lines_v_languages",
   "mutation/cli-report/auto/W_default/unreadable/a_code",
   "mutation/cli-report/auto/W_default/unreadable/a_code_exclign",
+  "mutation/cli-report/auto/W_default/unreadable/a_lines_v_languages",
   "mutation/cli-report/read-only/W_all/unreadable/a_code",
   "mutation/cli-report/read-only/W_all/unreadable/a_code_exclign",
+  "mutation/cli-report/read-only/W_all/unreadable/a_lines_v_languages",
+  "mutation/cli-report/read-only/W_code/unreadable/a_lines_v_languages",
   "mutation/cli-report/read-only/W_default/unreadable/a_code",
   "mutation/cli-report/read-only/W_default/unreadable/a_code_exclign",
+  "mutation/cli-report/read-only/W_default/unreadable/a_lines_v_languages",
 ]
 
 [[violation]]
@@ -411,7 +375,6 @@ platforms = [
 ]
 paths = [
   "errors[]",
-  "reports[].metrics.rows<order>",
   "reports[].metrics.rows[].allocated",
   "reports[].metrics.rows[].bytes",
   "reports[].metrics.rows[].coverage.io_error",
@@ -431,67 +394,33 @@ paths = [
 ]
 keys = [
   "mutation/cli-report/auto/W_all/unreadable/a_lines",
-  "mutation/cli-report/auto/W_all/unreadable/a_lines_v_languages",
+  "mutation/cli-report/auto/W_all/unreadable/a_lines_incl_rs",
   "mutation/cli-report/auto/W_budget1k/unreadable/a_lines_budget1k",
   "mutation/cli-report/auto/W_code/unreadable/a_all",
+  "mutation/cli-report/auto/W_code/unreadable/a_all_sizeapp",
   "mutation/cli-report/auto/W_code/unreadable/a_codewords",
   "mutation/cli-report/auto/W_code/unreadable/a_lines",
-  "mutation/cli-report/auto/W_code/unreadable/a_lines_v_languages",
+  "mutation/cli-report/auto/W_code/unreadable/a_lines_incl_rs",
   "mutation/cli-report/auto/W_default/unreadable/a_all",
+  "mutation/cli-report/auto/W_default/unreadable/a_all_sizeapp",
   "mutation/cli-report/auto/W_default/unreadable/a_codewords",
   "mutation/cli-report/auto/W_default/unreadable/a_lines",
-  "mutation/cli-report/auto/W_default/unreadable/a_lines_v_languages",
+  "mutation/cli-report/auto/W_default/unreadable/a_lines_incl_rs",
   "mutation/cli-report/auto/W_nogi/unreadable/a_all_nogi",
   "mutation/cli-report/read-only/W_all/unreadable/a_lines",
-  "mutation/cli-report/read-only/W_all/unreadable/a_lines_v_languages",
+  "mutation/cli-report/read-only/W_all/unreadable/a_lines_incl_rs",
   "mutation/cli-report/read-only/W_budget1k/unreadable/a_lines_budget1k",
   "mutation/cli-report/read-only/W_code/unreadable/a_all",
+  "mutation/cli-report/read-only/W_code/unreadable/a_all_sizeapp",
   "mutation/cli-report/read-only/W_code/unreadable/a_codewords",
   "mutation/cli-report/read-only/W_code/unreadable/a_lines",
-  "mutation/cli-report/read-only/W_code/unreadable/a_lines_v_languages",
+  "mutation/cli-report/read-only/W_code/unreadable/a_lines_incl_rs",
   "mutation/cli-report/read-only/W_default/unreadable/a_all",
+  "mutation/cli-report/read-only/W_default/unreadable/a_all_sizeapp",
   "mutation/cli-report/read-only/W_default/unreadable/a_codewords",
   "mutation/cli-report/read-only/W_default/unreadable/a_lines",
-  "mutation/cli-report/read-only/W_default/unreadable/a_lines_v_languages",
-  "mutation/cli-report/read-only/W_nogi/unreadable/a_all_nogi",
-]
-
-[[violation]]
-class = "unverified-subtree"
-platforms = [
-  "darwin",
-  "linux",
-]
-paths = [
-  "errors[]",
-  "reports[].metrics.rows[].allocated",
-  "reports[].metrics.rows[].bytes",
-  "reports[].metrics.rows[].coverage.io_error",
-  "reports[].metrics.rows[].detection.confidence.certain",
-  "reports[].metrics.rows[].detection.sources.extension",
-  "reports[].metrics.rows[].files",
-  "reports[].metrics.rows[].share.denominator",
-  "reports[].metrics.rows[].share.numerator",
-  "reports[].metrics.total.allocated",
-  "reports[].metrics.total.bytes",
-  "reports[].metrics.total.coverage.io_error",
-  "reports[].metrics.total.detection.confidence.certain",
-  "reports[].metrics.total.detection.sources.extension",
-  "reports[].metrics.total.files",
-  "reports[].metrics.total.share.denominator",
-  "reports[].metrics.total.share.numerator",
-]
-keys = [
-  "mutation/cli-report/auto/W_all/unreadable/a_lines_incl_rs",
-  "mutation/cli-report/auto/W_code/unreadable/a_all_sizeapp",
-  "mutation/cli-report/auto/W_code/unreadable/a_lines_incl_rs",
-  "mutation/cli-report/auto/W_default/unreadable/a_all_sizeapp",
-  "mutation/cli-report/auto/W_default/unreadable/a_lines_incl_rs",
-  "mutation/cli-report/read-only/W_all/unreadable/a_lines_incl_rs",
-  "mutation/cli-report/read-only/W_code/unreadable/a_all_sizeapp",
-  "mutation/cli-report/read-only/W_code/unreadable/a_lines_incl_rs",
-  "mutation/cli-report/read-only/W_default/unreadable/a_all_sizeapp",
   "mutation/cli-report/read-only/W_default/unreadable/a_lines_incl_rs",
+  "mutation/cli-report/read-only/W_nogi/unreadable/a_all_nogi",
 ]
 
 [[violation]]
@@ -585,11 +514,9 @@ paths = [
   "reports[].metrics.rows[].files",
   "reports[].metrics.rows[].metrics.code_lines",
   "reports[].metrics.rows[].metrics.comment_lines",
-  "reports[].metrics.rows[].metrics.document_words",
   "reports[].metrics.rows[].metrics.nonblank_lines",
   "reports[].metrics.rows[].metrics.physical_lines",
   "reports[].metrics.rows[].metrics.raw_words",
-  "reports[].metrics.rows[].pages.words",
   "reports[].metrics.rows[].share.denominator",
   "reports[].metrics.rows[].share.numerator",
   "reports[].metrics.total.allocated",
@@ -601,11 +528,9 @@ paths = [
   "reports[].metrics.total.files",
   "reports[].metrics.total.metrics.code_lines",
   "reports[].metrics.total.metrics.comment_lines",
-  "reports[].metrics.total.metrics.document_words",
   "reports[].metrics.total.metrics.nonblank_lines",
   "reports[].metrics.total.metrics.physical_lines",
   "reports[].metrics.total.metrics.raw_words",
-  "reports[].metrics.total.pages.words",
   "reports[].metrics.total.share.denominator",
   "reports[].metrics.total.share.numerator",
 ]
@@ -633,11 +558,9 @@ paths = [
   "reports[].metrics.total.files",
   "reports[].metrics.total.metrics.code_lines",
   "reports[].metrics.total.metrics.comment_lines",
-  "reports[].metrics.total.metrics.document_words",
   "reports[].metrics.total.metrics.nonblank_lines",
   "reports[].metrics.total.metrics.physical_lines",
   "reports[].metrics.total.metrics.raw_words",
-  "reports[].metrics.total.pages.words",
   "reports[].metrics.total.share.denominator",
   "reports[].metrics.total.share.numerator",
 ]
@@ -671,11 +594,9 @@ paths = [
   "reports[].metrics.rows[].files",
   "reports[].metrics.rows[].metrics.code_lines",
   "reports[].metrics.rows[].metrics.comment_lines",
-  "reports[].metrics.rows[].metrics.document_words",
   "reports[].metrics.rows[].metrics.nonblank_lines",
   "reports[].metrics.rows[].metrics.physical_lines",
   "reports[].metrics.rows[].metrics.raw_words",
-  "reports[].metrics.rows[].pages.words",
   "reports[].metrics.rows[].share.denominator",
   "reports[].metrics.rows[].share.numerator",
   "reports[].metrics.total.allocated",
@@ -687,11 +608,9 @@ paths = [
   "reports[].metrics.total.files",
   "reports[].metrics.total.metrics.code_lines",
   "reports[].metrics.total.metrics.comment_lines",
-  "reports[].metrics.total.metrics.document_words",
   "reports[].metrics.total.metrics.nonblank_lines",
   "reports[].metrics.total.metrics.physical_lines",
   "reports[].metrics.total.metrics.raw_words",
-  "reports[].metrics.total.pages.words",
   "reports[].metrics.total.share.denominator",
   "reports[].metrics.total.share.numerator",
   "reports[].summary.allocated",
