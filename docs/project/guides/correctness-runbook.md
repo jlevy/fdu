@@ -43,9 +43,13 @@ An earlier version guarded the cache-only check with `only_rc == 0`, and the eng
 either serves `cache_only` or exits 1 — so against a build that never wrote a snapshot,
 cache-only exited 1, the check was skipped, and seventeen of the twenty-three cases
 printed `ok` against a cache that never served.
-Verify the check by breaking the thing it watches: run the comparison over the
-refusal-free tree against a wrapper that rewrites `--cache auto` to `--cache off` and
-confirm every case reports `NO-SNAPSHOT` and the script exits 1.
+Verify each pass by breaking the thing it watches.
+Over the refusal-free tree, a wrapper that rewrites `--cache auto` to `--cache off` must
+make every case report `NO-SNAPSHOT` and both scripts exit 1. Over the refusal tree, a
+wrapper that answers `--cache only` with the cold output relabeled `cache_only` must
+make every case report `PARTIAL-STORED` and `--refusals-only` exit 1. A partial answer
+exits 2, so a check that trusted a zero exit would have called that stored snapshot
+`withheld`; the first version of this pass did.
 
 ## Running It
 
@@ -63,10 +67,13 @@ directory makes every answer partial for an unprivileged user, and a partial sca
 writes the entry tier: a snapshot missing an entry would be served as the tree’s totals
 on the next run. So over the full tree the check is the refusal path: every answer is
 partial, warm matches cold, and cache-only finds nothing stored (`withheld`).
-`--refusals-only` asserts exactly that, and fails a case that comes back complete, which
-is what a run whose refusals were not effective looks like.
-The same kinds without their refusal bits are complete, so the second run must serve
-every case; it exits 1 if the snapshot served none.
+`--refusals-only` asserts exactly that: a case is withheld only when cache-only exits 1
+with nothing on stdout, any answer it does print is compared with cold, and a case that
+comes back complete fails, which is what a run whose refusals were not effective looks
+like. The same kinds without their refusal bits are complete, so the second run must
+serve every case and fails any case that comes back partial.
+Every report’s `age_ns` is checked against its own `age_reference_ns` and `mtime_ns`,
+because ages move with the reference instant and are not comparable across runs.
 
 Keep the socket path short.
 A Unix socket path is limited to about 104 bytes on macOS, so a tree under a long
@@ -128,7 +135,9 @@ at store time. Both passed their own tests, because those tests asserted cache h
 rather than answers.
 
 It compares the full report body and `analysis.analyze` against a cold answer to the
-request that was asked.
+request that was asked, and when the warmer stored the same analyzer set it requires the
+ask’s content tier to report `revalidated`: a wider stored set is not yet reused (the
+containment deferral in `fdu-7dj6`), so only matching pairs are held to serving.
 The field’s documented meaning is what the report *requested*, so serving it from a
 wider stored set is itself the defect — a warm `--analyze lines` after `--analyze all`
 must report `["lines"]`, never the stored set.

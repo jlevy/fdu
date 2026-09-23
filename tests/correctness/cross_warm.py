@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from answer import answer
+from answer import age_problems, answer, content_source_of, reject_unknown_flags
 
 # Repository-relative so the runbook is not tied to one checkout.
 DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
@@ -64,7 +64,13 @@ def analyze_field(out):
     }
 
 
+def analyzers(args):
+    """The analyzer set a request asks for, or None for a metadata-only request."""
+    return args[args.index("--analyze") + 1] if "--analyze" in args else None
+
+
 def main():
+    reject_unknown_flags(sys.argv[1:], set())
     root = Path(sys.argv[1])
     # The oracle: each request answered with no cache at all.
     cold = {}
@@ -94,6 +100,14 @@ def main():
                     v.append("ANSWER!=COLD")
                 if gotf != wantf:
                     v.append(f"ANALYZE {wantf}->{gotf}")
+                if age_problems(out):
+                    v.append("AGE")
+                # A warmer that stored the same analyzer set must serve the ask's content
+                # records. A wider set may not yet (the containment deferral, fdu-7dj6),
+                # so only the matching pairs are held to serving; every pair is held to
+                # the cold answer.
+                if analyzers(wargs) == analyzers(aargs) and content_source_of(out) != "revalidated":
+                    v.append(f"NOT-WARM({content_source_of(out)})")
                 if v:
                     bad.append(f"{wname} -> {ask}: {' '.join(v)}")
                 shown = str((gotf or {}).get("analyze"))

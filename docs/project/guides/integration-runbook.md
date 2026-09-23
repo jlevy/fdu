@@ -146,11 +146,13 @@ Content analysis is the one a one-shot report reuses, because an unchanged finge
 lets it skip re-reading file bodies:
 
 ```shell
-./target/debug/fdu --analyze code --view languages --format json . | grep '"source"'
-./target/debug/fdu --analyze code --view languages --format json . | grep '"source"'
+./target/debug/fdu --analyze code --view languages --format json . | grep -A2 '"content"'
+./target/debug/fdu --analyze code --view languages --format json . | grep -A2 '"content"'
 ```
 
-✅ The first run reports `"source": "cold_scan"`; the second reports `"warm_revalidate"`.
+✅ The first run’s content tier reports `"source": "scanned"`; the second reports
+`"revalidated"`. Both runs report `warm_revalidate` at the top of `provenance`, because
+that label describes the entries, which the metadata runs above already stored.
 If the second still reports a cold scan, the snapshot or its content sidecar was not
 written — check the cache directory and any warning on stderr.
 

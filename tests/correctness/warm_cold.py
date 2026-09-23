@@ -17,7 +17,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-from answer import answer, freshness_of, is_complete, source_of
+from answer import (
+    age_problems,
+    answer,
+    content_source_of,
+    freshness_of,
+    is_complete,
+    parse,
+    reject_unknown_flags,
+    source_of,
+)
 
 # Repository-relative so the runbook is not tied to one checkout.
 DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
@@ -63,6 +72,7 @@ def main() -> int:
     # partial scan never writes the entry tier: a snapshot missing an entry would be
     # served as the tree's totals. Such a run proves the refusal path and that nothing
     # partial was stored; the serving proof needs a tree built --without-refusals.
+    reject_unknown_flags(args, {"--refusals-only"})
     refusals_only = "--refusals-only" in args
     root = Path(next(arg for arg in args if not arg.startswith("--")))
     failures: list[str] = []
@@ -87,12 +97,15 @@ def main() -> int:
             only_rc, only_out, _ = run([*base, "--cache", "only"], cache_home)
 
             warm_source = source_of(warm_out) or "-"
+            warm_content = content_source_of(warm_out) or "-"
             verdict = []
 
             if answer(cold_out) != answer(warm_out):
                 verdict.append("WARM!=COLD")
                 failures.append(f"{name}: warm answer differs from cold")
-            if only_rc == 0 and answer(only_out) != answer(cold_out):
+            # Compare whatever cache-only answered, whatever its exit: a partial answer
+            # exits 2, so guarding on 0 would skip exactly the case that matters.
+            if parse(only_out) is not None and answer(only_out) != answer(cold_out):
                 verdict.append("ONLY!=COLD")
                 failures.append(f"{name}: cache-only answer differs from cold")
             if cold_rc != warm_rc:
@@ -114,17 +127,29 @@ def main() -> int:
             only_source = source_of(only_out) or "-"
             only_freshness = freshness_of(only_out) or "-"
 
+            for label, out in (("cold", cold_out), ("warm", warm_out), ("only", only_out)):
+                problems = age_problems(out)
+                if problems:
+                    verdict.append(f"AGE({label})")
+                    failures.append(f"{name}: {label} ages disagree: {problems[0]}")
+
             partial = is_complete(cold_out) is False
+            # A miss prints nothing on stdout and exits 1. Anything else from cache-only,
+            # including a partial answer (exit 2), means a snapshot served it.
+            withheld = only_rc == 1 and parse(only_out) is None
             if refusals_only and not partial:
                 verdict.append("NOT-PARTIAL")
                 failures.append(f"{name}: expected a partial answer; are the refusals effective?")
+            if partial and not refusals_only:
+                verdict.append("UNEXPECTED-PARTIAL")
+                failures.append(f"{name}: partial answer over a tree built without refusals")
             if partial:
-                # Correct behaviour is to store nothing, so cache-only must refuse.
-                if only_rc == 0:
+                # A partial scan never writes the entry tier, so cache-only must refuse.
+                if withheld:
+                    verdict.append("withheld")
+                else:
                     verdict.append("PARTIAL-STORED")
                     never_warm.append(f"{name}: a partial scan was served from the cache")
-                else:
-                    verdict.append("withheld")
             elif only_rc != 0:
                 verdict.append(f"NO-SNAPSHOT(rc={only_rc})")
                 never_warm.append(f"{name}: cache-only exited {only_rc}, so nothing was stored")
@@ -138,9 +163,11 @@ def main() -> int:
             else:
                 served += 1
 
-            if analyses and not partial and warm_source != "warm_revalidate":
-                verdict.append(f"NOT-WARM({warm_source})")
-                never_warm.append(f"{name}: warm source {warm_source}")
+            # A content request is served warm when its content tier is revalidated; the
+            # report-level source only says how the entries were produced.
+            if analyses and not partial and warm_content != "revalidated":
+                verdict.append(f"NOT-WARM({warm_content})")
+                never_warm.append(f"{name}: warm content tier {warm_content}")
 
             print(
                 f"{name:<22} {cold_rc:>6} {warm_rc:>6} {only_rc:>6}  "

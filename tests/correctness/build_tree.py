@@ -17,14 +17,14 @@ import sys
 from contextlib import suppress
 from pathlib import Path
 
-made: dict[str, bool] = {}
+made: dict[str, bool | int | str] = {}
 
 
-def note(kind: str, ok: bool) -> None:
+def note(kind: str, ok: bool | int | str) -> None:
     made[kind] = ok
 
 
-def build(root: Path, *, refusals: bool = True) -> dict[str, bool]:
+def build(root: Path, *, refusals: bool = True) -> dict[str, bool | int | str]:
     # A fresh directory, always. Re-running into an existing tree raises FileExistsError
     # from every `os.link`/`os.symlink`/`os.mkfifo`/`os.mknod`, which is an OSError, so a
     # second run used to report six kinds as "platform refused" and print a truthful-
@@ -174,7 +174,7 @@ def build(root: Path, *, refusals: bool = True) -> dict[str, bool]:
         except OSError:
             pass
     note("awkward-names", created == len(awkward))
-    made["awkward-names-created"] = created  # type: ignore[assignment]
+    made["awkward-names-created"] = created
 
     # A name that is not valid UTF-8 at all.
     try:
@@ -228,6 +228,9 @@ def build(root: Path, *, refusals: bool = True) -> dict[str, bool]:
 
 if __name__ == "__main__":
     arguments = sys.argv[1:]
+    unknown = [arg for arg in arguments if arg.startswith("--") and arg != "--without-refusals"]
+    if unknown:
+        raise SystemExit(f"unknown option: {' '.join(unknown)}")
     refusals = "--without-refusals" not in arguments
     target = Path(next(arg for arg in arguments if not arg.startswith("--")))
     facts = build(target, refusals=refusals)
