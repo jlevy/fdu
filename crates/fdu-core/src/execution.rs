@@ -270,7 +270,7 @@ impl PerformanceSummary {
 /// A summary reducer is legal when no content analysis is requested, the sole requested
 /// view is an unfiltered summary, the scan observes no control state, and the policy does
 /// not require the snapshot to participate.  [`crate::open`] and live sessions still
-/// promise an index and therefore never use this planner.  Any future requirement the
+/// promise an index and therefore always plan full retention. Any future requirement the
 /// compact tier cannot prove falls closed to [`RetainedState::FullIndex`].
 ///
 /// Control observation is the caller's decision, not this planner's: a report's rows carry
@@ -520,13 +520,29 @@ mod tests {
             scope: crate::query::Scope { read_controls: false, ..Default::default() },
             ..observed
         };
-        let (index, _) =
+        let (mut index, _) =
             crate::open(&basis, &Delivery::new(CachePolicy::Off, None)).expect("fresh blind index");
         let request = Request::new(basis, Query::default(), SystemTime::now());
         let plan = plan(&request, &delivery, Route::Refresh).expect("plan");
         fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o000))
             .expect("deny header read");
-        let result = crate::persist_index(&index, &plan);
+        for policy in [CachePolicy::Off, CachePolicy::ReadOnly] {
+            let nonwriting = Delivery { cache: policy, ..delivery.clone() };
+            let nonwriting_plan =
+                super::plan(&request, &nonwriting, Route::Refresh).expect("nonwriting plan");
+            assert!(
+                !crate::persist_index_changes(&index, &nonwriting_plan, true, true)
+                    .expect("nonwriting policy never reads the header")
+            );
+        }
+        fs::write(root.path().join("fresh.txt"), b"fresh").expect("mutation");
+        crate::refresh(
+            &mut index,
+            &request.basis,
+            &Delivery { cache: CachePolicy::Off, ..delivery.clone() },
+        )
+        .expect("off refresh does not inspect cache state");
+        let result = crate::persist_index_changes(&index, &plan, true, true);
         fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o600)).expect("restore");
         assert!(
             result.is_err(),
