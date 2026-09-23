@@ -179,9 +179,9 @@ analyzer with its version.
 ```console
 $ fdu --analyze lines --view families --size apparent project
      128 B   47.6%  binary             1 file, 1 binary
-      71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 13 words (0.0 pages), 2 documentation
-      64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank), 12 words (0.0 pages)
-       6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank), 1 words (0.0 pages)
+      71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 2 documentation
+      64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank)
+       6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank)
 Performance: walked 7 files / 269 B; ignore rules 1 file; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
 ? 0
 ```
