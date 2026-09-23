@@ -5570,7 +5570,7 @@ fn resolve_subtree_root(
         let Ok(attrs) = attrs_from(&root.join(&prefix), &metadata) else {
             break;
         };
-        if config.one_filesystem && attrs.dev != root_dev && attrs.dev != 0 {
+        if config.one_filesystem && root_dev != 0 && attrs.dev != 0 && attrs.dev != root_dev {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
                 scope: config.scope(),
