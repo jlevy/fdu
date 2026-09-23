@@ -251,7 +251,7 @@ mod normalization_tests {
     #[test]
     fn only_continuation_native_size_is_normalized() {
         let trace = SessionTrace::new("continuation-size", Path::new("fixture"));
-        for attempted in [160263, 160287] {
+        for attempted in [160_263, 160_287] {
             assert_eq!(
                 trace.normalize(format!(
                     "Refused(ContinuationRecordLimit {{ attempted: {attempted}, limit: 65536 }}), attempted: 123, ResourceLimit {{ attempted: 456, limit: 789 }}"
