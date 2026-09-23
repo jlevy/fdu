@@ -2567,12 +2567,12 @@ mod tests {
     }
 
     #[test]
-    fn real_basic_documents_report_exposes_lines_words_pages_and_current_schema() {
+    fn real_documents_report_exposes_requested_lines_words_pages_and_current_schema() {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "lines".to_string(),
+            analyze: "lines,words".to_string(),
             view: Some("documents".to_string()),
             format: "json".to_string(),
             size: "apparent".to_string(),
