@@ -1074,8 +1074,7 @@ mod tests {
                 assert_eq!(
                     has_unsupported_encoding_bom(&bom[..length]),
                     length >= recognized_at,
-                    "{} byte prefix of {bom:?}",
-                    length
+                    "{length} byte prefix of {bom:?}"
                 );
             }
         }
