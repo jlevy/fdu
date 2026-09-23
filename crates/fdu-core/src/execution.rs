@@ -675,6 +675,129 @@ mod tests {
         assert_eq!(restored, original);
     }
 
+    /// One root with one file and one empty directory, and a writing delivery whose
+    /// snapshot lives in its own directory so a test can make that directory read-only.
+    #[cfg(unix)]
+    fn owed_persistence_fixture()
+    -> (tempfile::TempDir, tempfile::TempDir, crate::query::Basis, Delivery) {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        fs::create_dir(root.path().join("locked")).expect("locked dir");
+        fs::write(root.path().join("first"), b"first").expect("first file");
+        let basis = crate::query::Basis {
+            root: root.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(CachePolicy::Auto, Some(cache.path().join("snapshot.fdu")));
+        (root, cache, basis, delivery)
+    }
+
+    /// The files a cache-only open of `delivery`'s snapshot answers with.
+    fn cached_files(basis: &crate::query::Basis, delivery: &Delivery) -> u64 {
+        let cache_only = Delivery { cache: CachePolicy::Only, ..delivery.clone() };
+        crate::open(basis, &cache_only).expect("cache-only open").0.total().files
+    }
+
+    /// A refresh whose metadata write failed leaves the index holding facts the snapshot
+    /// lacks; the next refresh must write them even though it changes nothing itself.
+    ///
+    /// The metadata write used to be keyed to the pass that ran it: a later pass that
+    /// mutated nothing wrote nothing, so a snapshot that missed one write missed the
+    /// facts for good, and cache-only reads answered older facts than the index held.
+    #[test]
+    #[cfg(unix)]
+    fn an_unchanged_refresh_repeats_the_metadata_write_a_failed_refresh_owed() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, cache, basis, delivery) = owed_persistence_fixture();
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        assert_eq!(cached_files(&basis, &delivery), 1);
+
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555)).expect("deny write");
+        let failed = crate::refresh(&mut index, &basis, &delivery);
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o755)).expect("restore");
+        assert!(failed.is_err(), "a read-only cache directory fails the write");
+        assert_eq!(index.total().files, 2, "the index advanced before the write");
+        assert_eq!(cached_files(&basis, &delivery), 1, "the failed write left the old image");
+
+        let unchanged = crate::refresh(&mut index, &basis, &delivery).expect("unchanged refresh");
+        assert!(unchanged.is_complete());
+        assert!(!unchanged.apply.mutated(), "nothing changed between the passes");
+        assert_eq!(cached_files(&basis, &delivery), 2, "the owed write ran");
+
+        // Paid once: the next unchanged pass has nothing to write.
+        let snapshot = delivery.cache_path.as_deref().expect("path");
+        let written = fs::metadata(snapshot).expect("snapshot").modified().expect("mtime");
+        crate::refresh(&mut index, &basis, &delivery).expect("settled refresh");
+        assert_eq!(fs::metadata(snapshot).expect("snapshot").modified().expect("mtime"), written);
+    }
+
+    /// The same debt when the failed write is the one a warm `open` started: a caller
+    /// keeping the index through [`crate::open_with_pending_save`] keeps the debt too.
+    #[test]
+    #[cfg(unix)]
+    fn an_unchanged_refresh_repeats_the_metadata_write_a_failed_open_owed() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, cache, basis, delivery) = owed_persistence_fixture();
+        crate::open(&basis, &delivery).expect("complete open writes the snapshot");
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o555)).expect("deny write");
+        let opened = crate::open_with_pending_save(&basis, &delivery);
+        // Joined before the directory is writable again: the write runs in the background.
+        let outcome = opened.map(|(index, report, pending)| (index, report, pending.join()));
+        fs::set_permissions(cache.path(), fs::Permissions::from_mode(0o755)).expect("restore");
+        let (index, report, joined) = outcome.expect("the open itself succeeds");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
+        assert!(joined.is_err(), "the startup write failed");
+        let mut index = std::sync::Arc::into_inner(index).expect("the writer released the index");
+        assert_eq!(cached_files(&basis, &delivery), 1);
+
+        let unchanged = crate::refresh(&mut index, &basis, &delivery).expect("unchanged refresh");
+        assert!(!unchanged.apply.mutated(), "nothing changed between the passes");
+        assert_eq!(cached_files(&basis, &delivery), 2, "the owed write ran");
+    }
+
+    /// A partial refresh cannot write the entry tier; once the tree is readable again a
+    /// complete refresh delivers the partial pass's facts to the snapshot.
+    ///
+    /// Restoring the directory's permissions updates its change time, so on a POSIX host
+    /// the recovering pass reports that directory as updated and would write on its own
+    /// account. The failed-write tests above are the ones that prove the debt is carried;
+    /// this one guards that a partial pass's verified facts reach the snapshot at all.
+    #[test]
+    #[cfg(unix)]
+    fn a_complete_refresh_persists_the_facts_a_partial_refresh_could_not() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let (root, _cache, basis, delivery) = owed_persistence_fixture();
+        let locked = root.path().join("locked");
+        let (mut index, _) = crate::open(&basis, &delivery).expect("initial open");
+        assert_eq!(index.total().files, 1);
+
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny read");
+        fs::write(root.path().join("second"), b"second").expect("second file");
+        let partial = crate::refresh(&mut index, &basis, &delivery);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("restore");
+        let partial = partial.expect("partial refresh");
+        assert!(!partial.is_complete(), "the locked directory made the pass partial");
+        assert!(partial.apply.mutated(), "the second file was inserted");
+        assert_eq!(index.total().files, 2);
+        assert_eq!(cached_files(&basis, &delivery), 1, "a partial pass never writes entries");
+
+        let complete = crate::refresh(&mut index, &basis, &delivery).expect("complete refresh");
+        assert!(complete.is_complete(), "{:?}", complete.scan.errors);
+        assert_eq!(cached_files(&basis, &delivery), 2, "the complete pass wrote the facts");
+    }
+
     #[test]
     fn cache_only_refusals_name_location_root_and_absence_separately() {
         let root = tempfile::tempdir().expect("root");

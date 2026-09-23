@@ -867,6 +867,8 @@ fn parse_stream(
     // Anything applied after the load is this process checking what the snapshot
     // claimed, which is a revalidation rather than a first sighting.
     index.set_applying_source(Source::Revalidated, 0);
+    // The image on disk is this index, so nothing is owed until a pass mutates it.
+    index.set_persistence_owed(false);
     Ok(if serves == Serves::Refuse {
         LoadOutcome::Refused { identity, root: root_path }
     } else {

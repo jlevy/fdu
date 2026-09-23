@@ -296,6 +296,11 @@ impl PendingSave {
         Self { workers: Vec::new() }
     }
 
+    /// Whether the metadata snapshot is among the writes being waited for.
+    pub(crate) fn writes_metadata(&self) -> bool {
+        self.workers.iter().any(|(name, _)| *name == "metadata")
+    }
+
     /// Wait for the write to finish, returning its result.
     ///
     /// A failed save is the caller's to report, not to die on: the answer already
@@ -391,9 +396,16 @@ pub fn open(basis: &query::Basis, delivery: &query::Delivery) -> Result<(Index, 
     // dropped it. `try_unwrap` rather than a clone keeps the owned-`Index` signature
     // honest — a fallback clone here would quietly reintroduce the copy the shared
     // writer exists to avoid.
+    let wrote_metadata = pending.writes_metadata();
     pending.join()?;
-    let index = std::sync::Arc::into_inner(index)
+    let mut index = std::sync::Arc::into_inner(index)
         .expect("the joined writer released the only other reference");
+    // Only here, after the join succeeded: a write that failed leaves the debt on the
+    // index, and a caller of [`open_with_pending_save`] who keeps the index through a
+    // failed write keeps the debt with it, so its next writing pass writes.
+    if wrote_metadata {
+        index.set_persistence_owed(false);
+    }
     Ok((index, report))
 }
 
@@ -421,6 +433,12 @@ pub fn open_with_pending_save(
 ///
 /// A partial pass retains its verified facts and may save only the content tier beside
 /// a compatible complete snapshot. The returned report describes metadata changes.
+///
+/// The metadata write is owed by the index, not by the pass: a pass that mutated the
+/// entry tier without writing it -- because it was partial, or its policy does not write
+/// -- leaves the index holding facts the snapshot lacks, and the next complete pass under
+/// a writing policy writes them even when it changed nothing itself. Only a completed
+/// write clears that debt, so a failed one is retried by the next pass as well.
 pub fn refresh(
     index: &mut Index,
     basis: &query::Basis,
@@ -446,14 +464,20 @@ pub fn refresh(
             content::AnalysisRequest { profile: basis.content, workers: delivery.workers.analysis },
         )
     });
-    persist_index_changes(
+    if report.apply.mutated() {
+        index.set_persistence_owed(true);
+    }
+    let written = persist_index_changes(
         index,
         &plan,
-        report.apply.mutated(),
+        index.persistence_owed(),
         !cached.usable
             || cached.stale > 0
             || analysis.as_ref().is_some_and(|report| report.applied > 0),
     )?;
+    if written {
+        index.set_persistence_owed(false);
+    }
     Ok(report)
 }
 
@@ -679,14 +703,19 @@ pub(crate) fn execute(
         // bytes already on disk, so rewriting it is pure cost: the clone, the encode,
         // and the write all produce a file identical to the one just read. Each artifact
         // is judged separately because content and metadata are invalidated separately.
+        if reconciled.apply.mutated() {
+            index.set_persistence_owed(true);
+        }
         let facts = run_facts(
             &index,
             basis,
             delivery,
-            reconciled.apply.mutated(),
+            index.persistence_owed(),
             analysis.as_ref().is_some_and(|report| report.applied > 0) || content_cache.stale > 0,
             projected,
         );
+        // The index is shared read-only from here, so the debt a completed write clears
+        // is cleared by the blocking [`open`] once it has joined the write.
         let index = std::sync::Arc::new(index);
         let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
         return Ok((

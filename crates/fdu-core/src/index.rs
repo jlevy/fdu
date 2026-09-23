@@ -883,6 +883,14 @@ pub struct Index {
     /// stamp, so the value can predate many verifying passes until P1.4.4 stamps completed
     /// passes.
     writing_pass_started_at_ns: i64,
+    /// Whether this index holds facts no completed metadata write has recorded.
+    ///
+    /// True from construction, because a walked index has been written nowhere; cleared
+    /// when the index is loaded from a snapshot or a metadata write of it completes; set
+    /// again by a pass that mutated the entry tier. A partial pass mutates without being
+    /// writable, so this is what carries its verified facts to the next complete write
+    /// rather than keying that write to the one pass that happened to change nothing.
+    persistence_owed: bool,
     /// Wall-clock starts of in-flight full-root passes, keyed by their freshness epoch.
     active_root_reconciles: BTreeMap<u64, i64>,
     /// Scopes and newer verification evidence for filesystem passes still in flight.
@@ -1867,6 +1875,7 @@ impl Index {
             scanned_at_ns: constructed_at_ns,
             captured_at_ns: 0,
             writing_pass_started_at_ns: constructed_at_ns,
+            persistence_owed: true,
             active_root_reconciles: BTreeMap::new(),
             active_reconciles: BTreeMap::new(),
             verified: Vec::new(),
@@ -5019,6 +5028,17 @@ impl Index {
     /// Record the pass start a loaded snapshot carried for the facts it restored.
     pub(crate) fn set_writing_pass_started_at_ns(&mut self, writing_pass_started_at_ns: i64) {
         self.writing_pass_started_at_ns = writing_pass_started_at_ns;
+    }
+
+    /// Whether this index holds entry-tier facts no completed metadata write has recorded.
+    pub(crate) const fn persistence_owed(&self) -> bool {
+        self.persistence_owed
+    }
+
+    /// Record that a metadata write of this index completed, or that a pass mutated it
+    /// since the last one did.
+    pub(crate) fn set_persistence_owed(&mut self, owed: bool) {
+        self.persistence_owed = owed;
     }
 
     /// Stamp deltas applied from here on with `source`, restoring the previous value
