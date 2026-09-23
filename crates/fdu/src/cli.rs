@@ -224,7 +224,7 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -2567,7 +2567,7 @@ mod tests {
     }
 
     #[test]
-    fn real_basic_documents_report_exposes_lines_words_pages_and_schema_two() {
+    fn real_basic_documents_report_exposes_lines_words_pages_and_current_schema() {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
@@ -2583,7 +2583,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/6\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/7\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
