@@ -4,8 +4,20 @@
 
 **Author:** fdu project, with Claude assistance
 
-**Status:** Draft. Ships in 0.1.0: the release waits for the acceptance criteria below,
-and scope may shrink only by the deferrals this plan names.
+**Status:** In Progress.
+Ships in 0.1.0: the release waits for the acceptance criteria below, and scope may
+shrink only by the deferrals this plan names.
+
+## Current Delivery
+
+The [alpha correctness stack](plan-2026-09-22-fdu-alpha-correctness-stack.md) maps the
+remaining implementation beads to review and validation layers.
+Request and stored-state foundations are on main.
+Additional metric, answer, provenance, reconciliation, and projection work exists in
+unpublished branches and must be recovered and validated.
+The execution-plan model remains to be implemented.
+No conformance acceptance is claimed until the criteria below pass on the composed
+candidate.
 
 ## Overview
 
