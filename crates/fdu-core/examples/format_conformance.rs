@@ -48,6 +48,8 @@ fn main() {
         // Windows SystemTime has 100 ns granularity. The public typed report carries
         // exact nanoseconds, so seed the exact endpoint after deriving its real row.
         report.age_reference_ns = Some(reference);
+        report.provenance.scan_started_at = Some(std::time::UNIX_EPOCH);
+        report.provenance.tiers.entries.observed_at_ns = Some(0);
         let fdu_core::query::Section::Files { rows, .. } = &mut report.sections[0] else {
             panic!("flat list")
         };
