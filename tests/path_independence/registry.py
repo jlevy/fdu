@@ -7,7 +7,8 @@ The registry is reviewed like a golden. A run fails on:
 - a registered case that now matches, so its entry is stale;
 - a class with no entries, or an entry naming a class the table does not define;
 - an entry still marked `unclassified`;
-- a run with zero cases or zero parseable cold answers.
+- a run with zero cases or zero parseable cold answers;
+- any remaining class or violation in the production alpha acceptance gate.
 
 A class is emptied only by a run that executed every case, because a subset run checks
 the entries it executed and nothing else.

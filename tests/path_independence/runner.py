@@ -614,7 +614,8 @@ class MatrixRun:
 
         These positive controls complement answer equality: a cache that always misses
         otherwise passes by scanning cold or returning an allowed refusal. Refresh
-        forces persistence even when Auto legitimately avoids writing a small tree.
+        requires indexed persistence even for a summary that Auto can answer without
+        retaining an index.
         """
         requests = ("default", "nogi", "a_lines", "a_code", "a_words", "a_all")
         routes = [matrix.CLI_ROUTE]
