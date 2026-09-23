@@ -162,6 +162,14 @@ impl SessionTrace {
         value = replace_integer_after(value, "newest_mtime_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "observed_at_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "kind: Dir, attrs: Attrs { size: ", "[DIR_SIZE]");
+        // This byte count includes size_of::<ContinuationRecord>(), whose native
+        // representation differs by platform. The scenario checks the actual refusal
+        // against its exact limit before formatting; no other attempted count is hidden.
+        value = replace_integer_after(
+            value,
+            "ContinuationRecordLimit { attempted: ",
+            "[CONTINUATION_BYTES]",
+        );
         value
     }
 }
@@ -238,6 +246,19 @@ mod normalization_tests {
             ),
             "observed_at_ns: Some([TIME]), observed_at_ns: None, attempted: 123, sequence: 123"
         );
+    }
+
+    #[test]
+    fn only_continuation_native_size_is_normalized() {
+        let trace = SessionTrace::new("continuation-size", Path::new("fixture"));
+        for attempted in [160263, 160287] {
+            assert_eq!(
+                trace.normalize(format!(
+                    "Refused(ContinuationRecordLimit {{ attempted: {attempted}, limit: 65536 }}), attempted: 123, ResourceLimit {{ attempted: 456, limit: 789 }}"
+                )),
+                "Refused(ContinuationRecordLimit { attempted: [CONTINUATION_BYTES], limit: 65536 }), attempted: 123, ResourceLimit { attempted: 456, limit: 789 }"
+            );
+        }
     }
 
     #[test]
