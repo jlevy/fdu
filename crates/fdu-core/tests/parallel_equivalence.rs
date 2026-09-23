@@ -419,6 +419,14 @@ fn reconciling_a_tree_that_is_changing_underneath_converges_once_it_settles() {
     // may never do is panic, corrupt the index, or fail to converge afterwards.
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    struct StopChurnOnDrop<'a>(&'a AtomicBool);
+
+    impl Drop for StopChurnOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
     let dir = tempfile::Builder::new().prefix("fdu-churn-").tempdir().expect("tempdir");
     let root = dir.path().to_path_buf();
     build_bulk_tree(&root, 200, 20, b"initial");
@@ -428,6 +436,8 @@ fn reconciling_a_tree_that_is_changing_underneath_converges_once_it_settles() {
 
     let stop = AtomicBool::new(false);
     std::thread::scope(|scope| {
+        // A failed reconciliation must stop the writer before scope joins its thread.
+        let _stop_churn_on_unwind = StopChurnOnDrop(&stop);
         let churn_root = root.clone();
         let churn = scope.spawn(|| {
             let root = churn_root;
