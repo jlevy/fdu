@@ -880,10 +880,10 @@ fn metric_row_dict<'py>(
     dict.set_item("comment_lines", row.metrics.comment_lines)?;
     dict.set_item("code_blank_lines", row.metrics.code_blank_lines)?;
     dict.set_item("raw_words", row.metrics.raw_words)?;
-    dict.set_item("logical_words", row.metrics.logical_word_stats.logical_words())?;
+    dict.set_item("logical_words", row.metrics.logical_words)?;
     dict.set_item("paragraphs", row.metrics.paragraphs)?;
     dict.set_item("visible_words", row.metrics.visible_words)?;
-    dict.set_item("visible_logical_words", row.metrics.visible_logical_word_stats.logical_words())?;
+    dict.set_item("visible_logical_words", row.metrics.visible_logical_words)?;
     dict.set_item("document_words", document_words(row))?;
     dict.set_item("page_words", document_words(row))?;
     dict.set_item("words_per_page", words_per_page)?;
@@ -931,6 +931,7 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
         CoverageReason::Analyzed => "analyzed",
         CoverageReason::Binary => "binary",
         CoverageReason::InvalidUtf8 => "invalid_utf8",
+        CoverageReason::UnsupportedEncoding => "unsupported_encoding",
         CoverageReason::Unsupported => "unsupported",
         CoverageReason::IoError => "io_error",
         CoverageReason::ChangedDuringRead => "changed_during_read",
