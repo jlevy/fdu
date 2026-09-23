@@ -8,9 +8,9 @@
 
 ## Overview
 
-The alpha PR audit found reviewed changes that can advance, three held PRs, and
-correctness fixes implemented locally but absent from every open PR. This plan connects
-the existing specifications and beads to a reviewable delivery stack.
+An audit of the open alpha PRs on 2026-09-22 found reviewed changes that can advance,
+three held PRs, and correctness fixes implemented locally but absent from every open PR.
+This plan connects the existing specifications and beads to a reviewable delivery stack.
 The [explicit core models plan](plan-2026-09-17-fdu-explicit-core-models.md) continues
 to own the behavioral contracts and implementation details.
 
@@ -47,7 +47,7 @@ stack pass.
 | One execution plan and persistence policy | `fdu-838z`, `fdu-2o2r`, `fdu-kuev`; P2.3 children | Core-model Phase 2 item 3. All routes consume `Delivery` and `Plan`; read admission, writes, partial outcomes, refresh, and watch persistence have one owner. |
 | Windows validity and independent oracle | `fdu-6act`, `fdu-ns3o` | PR #98 and the stored-state validity contract. Oracle timestamps saturate correctly, zero remains zero, locked metadata follows the same documented fallback, and full file identity participates in validation. |
 | Opened Python diagnostic parity | `fdu-zjjt` | [Directory query formats](https://github.com/jlevy/fdu/blob/c3aeed8a0a04cecfc18c5719d93e61dbbe4ba449/docs/project/specs/active/plan-2026-09-20-directory-query-formats.md). Bounded Paths and Long reports, including incomplete discovery, expose the same diagnostics through opened and retained Python. |
-| Conformance harness integrity | `fdu-j7go`, `fdu-laeo`, `fdu-8whh`, `fdu-k3ca`, `fdu-0ssl` | Positive exact-cache serving controls reject a cache that never serves; the subset includes code-warmed mutations; registered exceptions cannot pass the gate; builds must establish artifact identity after changing worktrees. |
+| Conformance harness integrity | `fdu-j7go`, `fdu-laeo`, `fdu-8whh`, `fdu-k3ca`, `fdu-0ssl` | Positive exact-cache serving controls reject a cache that never serves; the subset includes code-warmed mutations; registered exceptions cannot pass the gate. `fdu-8whh` (artifact identity after changing worktrees) is addressed only by AGENTS.md guidance, with no mechanical check; `fdu-k3ca` has no change in this stack. |
 | Final conformance | `fdu-xgjx`, `fdu-fjh1`, `fdu-tyvq` | Empty known-violation registry, independent metric and writer checks, all-platform validation, and a final packaged-artifact rehearsal. |
 
 The implementation beads already exist.
@@ -83,7 +83,6 @@ The checklists below stay open until their full acceptance evidence is available
 The existing local correctness work contains per-analyzer outcomes, shared serializers,
 typed status and provenance, watch fixes, and controls-off projection.
 Recover each concern into a new branch based on the current reviewed prerequisites.
-Old worktrees remain intact, including their uncommitted patches.
 
 Recovery is not validation.
 In particular:
@@ -95,8 +94,8 @@ In particular:
 - A newer child verification must not invalidate an older ancestor pass’s evidence
   outside that child. Error arbitration and entry arbitration need the same scope rule.
 - Existing rendering and directory-query changes must compose without dropping either
-  contract. Document the combined unreleased report shape under the repository’s accepted
-  pre-1.0 schema policy.
+  contract. Document the combined unreleased report shape under the draft-schema rule in
+  [the release process](../../guides/release-process.md).
 
 The composed candidate implements the execution-plan model, including refresh and watch
 persistence.
@@ -107,10 +106,12 @@ acceptance.
 
 ### Implemented Contracts
 
-The September 22 audit of the composed surface through `a920b393` found the following
+The 2026-09-22 audit of the composed surface through `a920b393` found the following
 implementations present and independently reviewed.
 Checked items describe implemented behavior and focused evidence; they do not close the
 owning beads or final gates.
+Beads such as `fdu-0ssl`, `fdu-bwo2`, `fdu-5w7f`, `fdu-c22r`, `fdu-93e8`, `fdu-6act`,
+and `fdu-ns3o` close when their layer merges.
 
 - [x] Finish and independently review the Windows oracle correction on PR #98.
 - [x] Preserve PR #99’s reviewed ignore and test-precondition fixes as a prerequisite.
@@ -130,6 +131,9 @@ owning beads or final gates.
   scans.
 - [x] Add positive cache-serving controls, code-warmed mutation histories, and an
   empty-registry requirement to the production conformance gate.
+- [x] Correct the raw-extension documentation (`fdu-tp2p`) with the architecture update:
+  only a valid-Unicode extension has a string bucket, while Unix and Windows can extract
+  it from a native stem that is not valid Unicode.
 
 The follow-up fixes attach to those contracts as follows:
 
@@ -169,9 +173,10 @@ with a claim of cross-set reuse.
   packaged-artifact acceptance.
 - [x] Correct cache-only directory completeness (`fdu-c22r`, `801bf7a7`) and qualify the
   machine-format depth exemption to flat projections (`fdu-93e8`, `ea7baf50`).
-- [x] Run the local `make check` targets and `make cross-lint` on the composed
-  candidate. The initial full run stopped when the opened-root golden fixture was
-  integrated during the run; the fixture passed on rerun.
+- [ ] Run one uninterrupted `make check` and `make cross-lint` on the exact merge
+  candidate (`fdu-n2ok`). Earlier evidence below is partial and does not satisfy this.
+  On the composed candidate at `ff2b07da` the initial full run stopped when the
+  opened-root golden fixture was integrated during the run; the fixture passed on rerun.
   The remaining targets then passed on the `ff2b07da` tracked tree, including
   featureless and watch core tests, Python wheel and source-distribution smoke, parity,
   path-independence subset, and release tests.
@@ -179,14 +184,15 @@ with a claim of cross-set reuse.
   Commit `8edd9b21` changes only numeric-literal formatting in a golden-support test;
   its exact watch-gated normalization test passed.
   This evidence spans scoped runs, not one uninterrupted `make check` invocation.
-- [x] Complete the full Linux, macOS, and Windows path-independence matrix at PR #117
-  commit `ff2b07da`.
+- [ ] Complete the full Linux, macOS, and Windows path-independence matrix on the final
+  merge commit. An earlier run at PR #117 commit `ff2b07da` passed:
   [Run 35815707617](https://github.com/jlevy/fdu/actions/runs/35815707617) passed 16,272
   cases each on Linux and macOS and 14,382 on Windows, with zero recorded known
   violations on all three platforms.
-  The local gate above also covers metric independence and parser-backed equality for
-  machine documents and public Python models at this commit.
-- [x] Complete the packaged-artifact rehearsal on `ff2b07da`:
+  Metric independence and parser-backed equality for machine documents and public Python
+  models are covered by `make check`, so they wait on the item above.
+- [ ] Repeat the packaged-artifact rehearsal on the final merge commit.
+  The earlier rehearsal on `ff2b07da`
   [run 35815753312](https://github.com/jlevy/fdu/actions/runs/35815753312) passed all
   nine jobs, including five wheels, source distribution, crate packaging, and artifact
   inspection.
@@ -203,13 +209,34 @@ final surface composition.
 A layer may include tightly coupled migrations needed to compile independently; the PR
 description must state that boundary.
 
+### Published Review Fixes
+
+The layer reviews published on 2026-09-22 found no blockers.
+The fixes, each with its own delta review, are:
+
+- Windows walks read the root’s volume once instead of demanding a consistent
+  observation of a directory whose children are changing, retry a torn entry
+  observation, and treat an unavailable device as no filesystem boundary (#98,
+  `fdu-39m3`); this was the cause of the stalled Windows churn test.
+- YAML quotes letter-initial YAML 1.1 exponent forms such as `e3` (`fdu-ju6w`); text
+  output states omitted errors and names a missing path (`fdu-peil`) (#113).
+- A failure retained by a pass is stamped at its own Partial marks’ epoch, so a
+  concurrent later-finishing pass cannot drop it (`fdu-goge`, #114).
+- Opened roots refuse delivery fields they cannot honor (`fdu-yonh`); a refresh repeats
+  an owed metadata write (`fdu-9kk8`); `Plan::admit` is the one admission decision
+  (`fdu-ftsh`) (#115).
+- A serving control fails when both runs fail (`fdu-gzd1`, #116).
+- The draft-schema rule, CHANGELOG notes, and examples (`fdu-9vkc`), and this plan’s
+  evidence (`fdu-9mn0`) (#117).
+
 ### Publish and Verify the Stack
 
 - [x] Publish the final surface layer, verify every PR base against the branch directly
   below it, and verify the nine-PR GitHub stack object (#111).
-- [x] Complete independent review of production fixes and semantic merges with Astra;
-  Sol reviewed the remaining mechanical changes after the model switch.
-  Each later edit receives scoped review before acceptance.
+- [x] Complete independent review of every layer.
+  Private reviews preceded publication; the published layer reviews and their
+  dispositions are on each PR, and every fix commit made in answer to them received a
+  separate delta review before merge.
 - [x] Carry current main’s fixes forward without restoring obsolete test baselines,
   deleting newer guards, or rewriting commits cited by performance evidence.
   Main commit `11a6dc31` is an ancestor of the composed candidate.
@@ -265,10 +292,6 @@ merge; release acceptance remains open until the composed candidate meets its co
 Release publication remains a separate maintainer action.
 
 ## Open Questions
-
-The raw-extension documentation correction (`fdu-tp2p`) also ships with the architecture
-update: only a valid-Unicode extension has a string bucket, while Unix and Windows can
-extract it from a native stem that is not valid Unicode.
 
 No product decision blocks the confirmed fixes.
 Resolve implementation choices against the owning core-model and directory-query

@@ -769,12 +769,8 @@ impl Cli {
             let color =
                 ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
                     .enabled();
-            for error in &report.status.errors {
-                let _ = writeln!(
-                    diagnostic,
-                    "{}",
-                    paint(&format!("warning: {}", error.message), STYLE_WARNING, color)
-                );
+            for warning in status_warnings(&report.status) {
+                let _ = writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color));
             }
         }
 
@@ -1413,6 +1409,49 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
     Ok(ResolvedViews { selected, omitted })
 }
 
+/// The text-mode warnings for an incomplete report, one per retained issue.
+///
+/// The retention bound keeps the first [`fdu_core::MAX_RETAINED_ISSUES`] details, and the
+/// last line says how many it dropped, so the terminal is never told less than the
+/// machine formats' `errors_omitted`. An issue whose message does not name its path (a
+/// content read failure carries only the operating system's text) is prefixed with it.
+fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
+    let mut warnings: Vec<String> = status
+        .errors
+        .iter()
+        .map(|issue| match &issue.path {
+            Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
+                format!("warning: {}: {}", path.display(), issue.message)
+            }
+            _ => format!("warning: {}", issue.message),
+        })
+        .collect();
+    if status.errors_omitted > 0 {
+        warnings.push(format!(
+            "warning: {} more {} omitted; details are kept for the first {}",
+            human_count(status.errors_omitted),
+            if status.errors_omitted == 1 { "error" } else { "errors" },
+            fdu_core::MAX_RETAINED_ISSUES,
+        ));
+    }
+    warnings
+}
+
+/// Whether `message` already names `path`, as a whole path rather than as a substring.
+///
+/// A short relative path such as `d` occurs inside most operating-system messages
+/// ("Permission denied"), so a match must end the path at a separator or the start of
+/// the message on the left and at a delimiter or the end of the message on the right.
+fn names_path(message: &str, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    message.match_indices(&*path).any(|(start, found)| {
+        let before = message[..start].chars().next_back();
+        let after = message[start + found.len()..].chars().next();
+        matches!(before, None | Some('/' | '\\' | ' ' | '"' | '\'' | '`'))
+            && matches!(after, None | Some(':' | ' ' | '"' | '\'' | '`' | ')' | ','))
+    })
+}
+
 /// Notes that keep the display contract legible in human output.
 ///
 /// Both are the same rule read in opposite directions: a run displays what it paid for,
@@ -1749,6 +1788,49 @@ mod tests {
     use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey};
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
+
+    /// A warning names the path its message leaves out, and the count the retention
+    /// bound dropped closes the list (fdu-peil).
+    #[test]
+    fn status_warnings_name_missing_paths_and_the_omitted_count() {
+        let issue = |path: Option<&str>, message: &str| fdu_core::Issue {
+            kind: fdu_core::IssueKind::ProviderFailure,
+            path: path.map(PathBuf::from),
+            message: message.to_string(),
+            os_error: None,
+        };
+        let status = |errors, errors_omitted| fdu_core::query::TreeStatus {
+            complete: false,
+            coverage: fdu_core::Coverage::Partial(fdu_core::CoverageReason::Failed),
+            errors,
+            errors_omitted,
+        };
+        let complete = status_warnings(&status(
+            vec![
+                issue(Some("docs/a.md"), "Permission denied (os error 13)"),
+                issue(Some("src"), "I/O error at /abs/src: Permission denied (os error 13)"),
+                issue(None, "content analysis results became stale"),
+                issue(Some("d"), "Permission denied (os error 13)"),
+            ],
+            0,
+        ));
+        assert_eq!(
+            complete,
+            [
+                "warning: docs/a.md: Permission denied (os error 13)",
+                "warning: I/O error at /abs/src: Permission denied (os error 13)",
+                "warning: content analysis results became stale",
+                "warning: d: Permission denied (os error 13)",
+            ]
+        );
+        let one = status_warnings(&status(vec![issue(None, "x")], 1));
+        assert_eq!(
+            one.last().map(String::as_str),
+            Some("warning: 1 more error omitted; details are kept for the first 64")
+        );
+        let many = status_warnings(&status(Vec::new(), 1_234));
+        assert_eq!(many, ["warning: 1,234 more errors omitted; details are kept for the first 64"]);
+    }
 
     /// The two flags select opposite partitions, so asking for both is a usage error.
     #[test]

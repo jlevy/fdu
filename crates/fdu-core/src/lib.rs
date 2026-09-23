@@ -296,6 +296,11 @@ impl PendingSave {
         Self { workers: Vec::new() }
     }
 
+    /// Whether the metadata snapshot is among the writes being waited for.
+    pub(crate) fn writes_metadata(&self) -> bool {
+        self.workers.iter().any(|(name, _)| *name == "metadata")
+    }
+
     /// Wait for the write to finish, returning its result.
     ///
     /// A failed save is the caller's to report, not to die on: the answer already
@@ -391,9 +396,16 @@ pub fn open(basis: &query::Basis, delivery: &query::Delivery) -> Result<(Index, 
     // dropped it. `try_unwrap` rather than a clone keeps the owned-`Index` signature
     // honest — a fallback clone here would quietly reintroduce the copy the shared
     // writer exists to avoid.
+    let wrote_metadata = pending.writes_metadata();
     pending.join()?;
-    let index = std::sync::Arc::into_inner(index)
+    let mut index = std::sync::Arc::into_inner(index)
         .expect("the joined writer released the only other reference");
+    // Only here, after the join succeeded: a write that failed leaves the debt on the
+    // index, and a caller of [`open_with_pending_save`] who keeps the index through a
+    // failed write keeps the debt with it, so its next writing pass writes.
+    if wrote_metadata {
+        index.set_persistence_owed(false);
+    }
     Ok((index, report))
 }
 
@@ -421,6 +433,12 @@ pub fn open_with_pending_save(
 ///
 /// A partial pass retains its verified facts and may save only the content tier beside
 /// a compatible complete snapshot. The returned report describes metadata changes.
+///
+/// The metadata write is owed by the index, not by the pass: a pass that mutated the
+/// entry tier without writing it -- because it was partial, or its policy does not write
+/// -- leaves the index holding facts the snapshot lacks, and the next complete pass under
+/// a writing policy writes them even when it changed nothing itself. Only a completed
+/// write clears that debt, so a failed one is retried by the next pass as well.
 pub fn refresh(
     index: &mut Index,
     basis: &query::Basis,
@@ -433,11 +451,9 @@ pub fn refresh(
     request.validate_read(&query::Basis::held_by(index)).map_err(Error::InvalidRequest)?;
     let scan = basis.scope.scan_config(delivery);
     scan.validate_for_scope(index.scope())?;
-    if plan.verify() == Verify::None {
-        return Err(Error::Snapshot(
-            "the `only` cache policy cannot refresh filesystem state".into(),
-        ));
-    }
+    // `plan` refuses the one policy that verifies nothing on this route, so there is no
+    // second refusal here to keep in step with it.
+    debug_assert_eq!(plan.verify(), Verify::Filesystem, "a refresh plan verifies the tree");
     let report = scan::reconcile(index, &scan, &mut |_| {})?;
     let cached = load_content(index, basis, delivery)?;
     let analysis = basis.content.is_enabled().then(|| {
@@ -446,14 +462,20 @@ pub fn refresh(
             content::AnalysisRequest { profile: basis.content, workers: delivery.workers.analysis },
         )
     });
-    persist_index_changes(
+    if report.apply.mutated() {
+        index.set_persistence_owed(true);
+    }
+    let written = persist_index_changes(
         index,
         &plan,
-        report.apply.mutated(),
+        index.persistence_owed(),
         !cached.usable
             || cached.stale > 0
             || analysis.as_ref().is_some_and(|report| report.applied > 0),
     )?;
+    if written {
+        index.set_persistence_owed(false);
+    }
     Ok(report)
 }
 
@@ -579,79 +601,91 @@ pub(crate) fn execute(
     // `--cache only` report a snapshot miss for a request every other policy refuses --
     // which failure a run named then depended on how it was delivered (`refusal-order`).
     scan_config.validate()?;
-    // A snapshot for this root that could not serve, kept so a policy that cannot scan says
-    // why it has no answer rather than only that it has none.
-    let mut refused_snapshot = None;
-    let mut wrong_root = false;
-    let mut projected = false;
-    let loaded = match (plan.load() == Load::Snapshot, &delivery.cache_path) {
-        (true, Some(cache_path)) => {
-            match snapshot::load_serving(
-                cache_path,
-                scan_config.types_shared(),
-                scan_config.snapshot_identity(),
-            )? {
-                snapshot::LoadOutcome::Served(index, serves) if index.root_path() == root => {
-                    projected = serves == Serves::ProjectControlsOff;
-                    Some(index)
-                }
-                snapshot::LoadOutcome::Refused { identity, root: stored_root } => {
-                    refused_snapshot = Some(identity);
-                    wrong_root = stored_root != root;
-                    None
-                }
-                snapshot::LoadOutcome::Served(_, _) => {
-                    wrong_root = true;
-                    None
-                }
-                snapshot::LoadOutcome::Absent => None,
+    let canonical_basis = query::Basis { root: root.clone(), ..basis.clone() };
+    // What the store holds, for the plan to admit: the index a served snapshot supplied,
+    // and the root and identity the snapshot declares whether or not it served, kept so a
+    // policy that cannot scan says why it has no answer rather than only that it has none.
+    let mut loaded = None;
+    let mut stored: Option<(PathBuf, SnapshotIdentity)> = None;
+    if let (Load::Snapshot, Some(cache_path)) = (plan.load(), &delivery.cache_path) {
+        match snapshot::load_serving(
+            cache_path,
+            scan_config.types_shared(),
+            scan_config.snapshot_identity(),
+        )? {
+            snapshot::LoadOutcome::Served { index, stored: identity } => {
+                stored = Some((index.root_path().to_path_buf(), identity));
+                loaded = Some(index);
             }
+            snapshot::LoadOutcome::Refused { identity, root: stored_root } => {
+                stored = Some((stored_root, identity));
+            }
+            snapshot::LoadOutcome::Absent => {}
+        }
+    }
+    let cache_only = plan.verify() == Verify::None;
+    // A policy that cannot scan is admitted on its content tier too, so its sidecar is
+    // loaded before the one admission below. A verifying route loads it after reconciling.
+    // Deliberately no reconciliation there: that tier never touches the tree, and the
+    // index is marked unverified so the answer cannot claim a currency it has not earned
+    // -- a snapshot records the freshness it was written with, which was true then.
+    let content_cache = match (&mut loaded, cache_only) {
+        (Some(index), true) => {
+            index.mark_unverified();
+            Some(load_content(index, basis, delivery)?)
         }
         _ => None,
     };
+    // The one admission of stored state on every route that reads it. A sidecar serves
+    // only its own identity, so restoring one record per visited regular file means it
+    // holds the complete answer to this request: restore already walked that set, so
+    // compare `hits` to files visited, not a second walk and not unique `PathBuf` keys.
+    let admission = {
+        let header = stored.as_ref().map(|(stored_root, identity)| StoreHeader {
+            root: stored_root,
+            snapshot: *identity,
+            content: loaded
+                .as_ref()
+                .and_then(Index::content)
+                .and_then(|content| content.identity()),
+            content_complete: content_cache
+                .as_ref()
+                .is_some_and(|cache| cache.usable && cache.hits == cache.candidates),
+        });
+        plan.admit(header.as_ref(), &canonical_basis)
+    };
 
-    if plan.verify() == Verify::None {
-        let Some(mut index) = loaded else {
-            let message = if plan.admit(None, basis) == Admission::NoLocation {
-                "no cache location is configured; configure a cache location before requesting cache-only access".into()
-            } else if wrong_root {
-                "the configured snapshot belongs to a different root; choose this root's cache location or use auto to replace the snapshot for this root".into()
-            } else {
-                unusable_snapshot_message(refused_snapshot, &scan_config)
-            };
-            return Err(Error::Snapshot(message));
-        };
-        // Deliberately no reconciliation: this tier never touches the tree. The index is
-        // marked unverified so the answer cannot claim a currency it has not earned — a
-        // snapshot records the freshness it was written with, which was true then.
-        index.mark_unverified();
-        let content_cache = load_content(&mut index, basis, delivery)?;
-        // A sidecar serves only its own identity, so restoring one record per visited
-        // regular file means the sidecar holds the complete answer to this request.
-        // Restore already walked that set; compare `hits` to files visited, not a
-        // second walk and not unique `PathBuf` keys.
-        let canonical_basis = query::Basis { root: root.clone(), ..basis.clone() };
-        let header = StoreHeader {
-            root: index.root_path(),
-            snapshot: index.snapshot_identity(),
-            content: index.content().and_then(|content| content.identity()),
-            content_complete: content_cache.usable
-                && content_cache.hits == content_cache.candidates,
-        };
-        match plan.admit(Some(&header), &canonical_basis) {
-            Admission::Serve(_) => {}
+    if cache_only {
+        let relation = match admission {
+            Admission::Serve(relation) => relation,
+            Admission::NoLocation => {
+                return Err(Error::Snapshot(
+                    "no cache location is configured; configure a cache location before requesting cache-only access".into(),
+                ));
+            }
+            Admission::WrongRoot => {
+                return Err(Error::Snapshot(
+                    "the configured snapshot belongs to a different root; choose this root's cache location or use auto to replace the snapshot for this root".into(),
+                ));
+            }
+            Admission::Missing => {
+                return Err(Error::Snapshot(unusable_snapshot_message(None, &scan_config)));
+            }
+            Admission::WrongScope => {
+                return Err(Error::Snapshot(unusable_snapshot_message(
+                    stored.map(|(_, identity)| identity),
+                    &scan_config,
+                )));
+            }
             Admission::IncompleteContent => {
                 return Err(Error::Snapshot(
                     "no complete usable content sidecar for this root and analysis profile".into(),
                 ));
             }
-            _ => {
-                return Err(Error::Snapshot(unusable_snapshot_message(
-                    refused_snapshot,
-                    &scan_config,
-                )));
-            }
-        }
+        };
+        let index = loaded.expect("a served admission is of the loaded snapshot");
+        let content_cache =
+            content_cache.expect("the sidecar was loaded beside the served snapshot");
         return Ok((
             std::sync::Arc::new(index),
             OpenReport {
@@ -659,14 +693,16 @@ pub(crate) fn execute(
                 scan: ScanReport::default(),
                 analysis: None,
                 content_cache,
-                projected,
+                projected: relation == Serves::ProjectControlsOff,
             },
             PendingSave::none(),
             None,
         ));
     }
 
-    if let Some(mut index) = loaded {
+    if let Admission::Serve(relation) = admission {
+        let mut index = loaded.expect("a served admission is of the loaded snapshot");
+        let projected = relation == Serves::ProjectControlsOff;
         let reconciled = scan::reconcile(&mut index, &scan_config, &mut |_| {})?;
         let scan_report = reconciled.scan;
         index.establish_baseline();
@@ -679,14 +715,20 @@ pub(crate) fn execute(
         // bytes already on disk, so rewriting it is pure cost: the clone, the encode,
         // and the write all produce a file identical to the one just read. Each artifact
         // is judged separately because content and metadata are invalidated separately.
+        if reconciled.apply.mutated() {
+            index.set_persistence_owed(true);
+        }
         let facts = run_facts(
             &index,
             basis,
             delivery,
-            reconciled.apply.mutated(),
+            index.persistence_owed(),
             analysis.as_ref().is_some_and(|report| report.applied > 0) || content_cache.stale > 0,
             projected,
+            || stored_entries(delivery, &root),
         );
+        // The index is shared read-only from here, so the debt a completed write clears
+        // is cleared by the blocking [`open`] once it has joined the write.
         let index = std::sync::Arc::new(index);
         let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
         return Ok((
@@ -714,7 +756,8 @@ pub(crate) fn execute(
     let content_cache = load_content(&mut index, basis, delivery)?;
     let analysis =
         basis.content.is_enabled().then(|| content::analyze_index(&mut index, analysis_request));
-    let facts = run_facts(&index, basis, delivery, true, true, false);
+    let facts =
+        run_facts(&index, basis, delivery, true, true, false, || stored_entries(delivery, &root));
     let index = std::sync::Arc::new(index);
     let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
     Ok((
@@ -731,6 +774,19 @@ pub(crate) fn execute(
     ))
 }
 
+/// The entry tier the snapshot at the delivery's cache location declares for `root`.
+///
+/// Read for the content tier's pairing rule alone, by a route that attempted no load;
+/// a route that did reads the header it already holds.
+fn stored_entries(delivery: &query::Delivery, root: &Path) -> Option<EntryTierIdentity> {
+    delivery
+        .cache_path
+        .as_ref()
+        .and_then(|path| snapshot::read_header(path).ok().flatten())
+        .filter(|stored| stored.root == root)
+        .map(|stored| stored.identity.entries)
+}
+
 fn run_facts(
     index: &Index,
     basis: &query::Basis,
@@ -738,18 +794,12 @@ fn run_facts(
     entries_changed: bool,
     content_changed: bool,
     projected: bool,
+    stored_entries: impl FnOnce() -> Option<EntryTierIdentity>,
 ) -> RunFacts {
     let entries_verified = stored_state::entries_writable(index);
     let paired_entries = delivery.cache.writes()
         && !entries_verified
-        && stored_state::content_tier_writable(index, || {
-            delivery
-                .cache_path
-                .as_ref()
-                .and_then(|path| snapshot::read_header(path).ok().flatten())
-                .filter(|stored| stored.root == index.root_path())
-                .map(|stored| stored.identity.entries)
-        });
+        && stored_state::content_tier_writable(index, stored_entries);
     RunFacts {
         entries_verified,
         entries_changed,
@@ -778,12 +828,25 @@ fn persist_index_changes(
         return Ok(false);
     }
     let stored = delivery.cache_path.as_deref().map(snapshot::read_header).transpose()?.flatten();
-    let relation = stored
-        .as_ref()
-        .filter(|header| header.root == index.root_path())
-        .map_or(Serves::Refuse, |header| {
-            serves_snapshot(header.identity, index.snapshot_identity())
-        });
+    // The same admission a load makes, over the header alone: the index's root is the
+    // canonical one the header records, and its scope is the plan's, verified against the
+    // index before any pass mutated it. Whatever the store cannot serve is replaced.
+    let admitted = query::Basis { root: index.root_path().to_path_buf(), ..plan.basis().clone() };
+    let header = stored.as_ref().map(|info| StoreHeader {
+        root: &info.root,
+        snapshot: info.identity,
+        content: None,
+        content_complete: false,
+    });
+    let relation = match plan.admit(header.as_ref(), &admitted) {
+        Admission::Serve(relation) => relation,
+        // The content arm needs a plan that verifies nothing, and no such plan writes.
+        Admission::NoLocation
+        | Admission::Missing
+        | Admission::WrongRoot
+        | Admission::WrongScope
+        | Admission::IncompleteContent => Serves::Refuse,
+    };
     let projected = relation == Serves::ProjectControlsOff;
     let writes = plan.writes(run_facts(
         index,
@@ -792,6 +855,12 @@ fn persist_index_changes(
         entries_changed || relation == Serves::Refuse,
         content_changed,
         projected,
+        || {
+            stored
+                .as_ref()
+                .filter(|info| info.root == index.root_path())
+                .map(|info| info.identity.entries)
+        },
     ));
     let Some(path) = delivery.cache_path.as_ref() else {
         return Ok(false);

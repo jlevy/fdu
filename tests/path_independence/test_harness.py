@@ -237,6 +237,19 @@ class CompareTests(unittest.TestCase):
         self.assertFalse(compare(oracle, fresh, policy="only", must_serve=True).allowed)
         self.assertEqual(compare(oracle, cached, policy="only", must_serve=True).kind, "same")
 
+    def test_a_serving_control_fails_when_both_runs_fail_identically(self) -> None:
+        # Two identical failures are `same` for ordinary cases, but a serving control
+        # that never served has not shown the cache works, whatever the oracle did.
+        crash = cli(None, exit=101, stderr="thread 'main' panicked at src/lib.rs")
+        miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+        cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+        for failure in (crash, miss):
+            with self.subTest(failure.stderr):
+                self.assertEqual(compare(failure, failure, policy="only").kind, "same")
+                verdict = compare(failure, failure, policy="only", must_serve=True)
+                self.assertEqual(verdict.kind, "outcome_class")
+                self.assertFalse(compare(failure, cached, policy="only", must_serve=True).allowed)
+
     def test_cache_contract_phase_catches_a_cache_that_never_serves(self) -> None:
         import matrix
         from fixture import FixtureFacts

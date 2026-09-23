@@ -105,6 +105,49 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
 }
 
+/// Text mode prints one warning per retained issue, and the retention bound drops the
+/// rest; the count of what it dropped must reach the terminal too, not only the machine
+/// formats, or 200 unreadable directories read as 64 (fdu-peil).
+#[test]
+fn text_warnings_state_how_many_errors_were_omitted() {
+    if !require_permission_bits() {
+        return;
+    }
+
+    let denied_count = fdu_core::MAX_RETAINED_ISSUES + 6;
+    let root = tempfile::tempdir().expect("tempdir");
+    let denied: Vec<_> =
+        (0..denied_count).map(|n| root.path().join(format!("denied-{n:03}"))).collect();
+    for directory in &denied {
+        fs::create_dir(directory).expect("create denied directory");
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o000)).expect("deny reads");
+    }
+    let run = |format: &str| {
+        Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--cache", "off", "--color", "never", "--format", format])
+            .arg(root.path())
+            .output()
+            .expect("run fdu")
+    };
+    let text = run("text");
+    let json = run("json");
+    for directory in &denied {
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).expect("restore");
+    }
+
+    assert_eq!(text.status.code(), Some(2));
+    let json = String::from_utf8(json.stdout).expect("JSON is UTF-8");
+    assert!(json.contains("\"errors_omitted\": 6"), "{json}");
+    let stderr = String::from_utf8(text.stderr).expect("stderr is UTF-8");
+    let warnings: Vec<&str> = stderr.lines().filter(|line| line.starts_with("warning:")).collect();
+    assert_eq!(warnings.len(), fdu_core::MAX_RETAINED_ISSUES + 1, "{stderr}");
+    assert_eq!(
+        warnings.last().copied(),
+        Some("warning: 6 more errors omitted; details are kept for the first 64"),
+        "{stderr}"
+    );
+}
+
 /// Every report reads `.gitignore`, so one it cannot read is an unreadable path like any
 /// other: the report is partial and exits 2, `--allow-partial` accepts it, and
 /// `--no-gitignore`, which reads no rule, is the escape (fdu-elnn).

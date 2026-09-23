@@ -14,6 +14,7 @@ pub(crate) fn is_plain_safe(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '/' | '-' | '+'))
         && !value.starts_with(|ch: char| ch.is_ascii_digit() || matches!(ch, '-' | '+'))
         && dot_safe
+        && !is_yaml11_exponent_float(value)
         && !matches!(
             value.to_ascii_lowercase().as_str(),
             "true"
@@ -29,6 +30,31 @@ pub(crate) fn is_plain_safe(value: &str) -> bool {
                 | ".inf"
                 | ".nan"
         )
+}
+
+/// Whether YAML 1.1 reads `value` as an exponent float.
+///
+/// This is the YAML 1.1 float form `[-+]?([0-9][0-9_]*)?(\.[0-9_]*)?[eE][-+]?[0-9]+`,
+/// which needs no digit before the exponent: `e3`, `E+3` and `.e3` are numbers to a 1.1
+/// parser and strings to a 1.2 one, so a file named `e3` must be quoted to mean the same
+/// thing in both.
+fn is_yaml11_exponent_float(value: &str) -> bool {
+    let Some(marker) = value.rfind(['e', 'E']) else {
+        return false;
+    };
+    let exponent = &value[marker + 1..];
+    let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+    if exponent.is_empty() || !exponent.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let mantissa = &value[..marker];
+    let mantissa = mantissa.strip_prefix(['+', '-']).unwrap_or(mantissa);
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits_or_underscores =
+        |text: &str| text.bytes().all(|byte| byte.is_ascii_digit() || byte == b'_');
+    (whole.is_empty() || whole.starts_with(|ch: char| ch.is_ascii_digit()))
+        && digits_or_underscores(whole)
+        && digits_or_underscores(fraction)
 }
 
 /// Append one JSON string, escaping the YAML-forbidden characters too.
@@ -114,10 +140,35 @@ mod tests {
             "~",
             "has space",
             "2024-01-01",
+            // YAML 1.1 floats need no digit before the exponent.
+            "e3",
+            "E10",
+            "e+5",
+            "e-1",
+            "E+3",
+            ".e3",
+            ".E-1",
         ] {
             assert!(!is_plain_safe(value), "{value:?} must be quoted");
         }
-        for value in ["./src", "../src", "src", "main.rs", ".hidden", "a-b_c/d.e"] {
+        for value in [
+            "./src",
+            "../src",
+            "src",
+            "main.rs",
+            ".hidden",
+            "a-b_c/d.e",
+            "e",
+            "E",
+            "e+",
+            "e3.txt",
+            "e3x",
+            "ex3",
+            "E_3",
+            ".env",
+            ".e",
+            "e1_0",
+        ] {
             assert!(is_plain_safe(value), "{value:?} may stay plain");
         }
         for value in [".", ".1", "._1", "..", "..."] {
@@ -249,8 +300,12 @@ mod tests {
             "ñ",
             "long path long path long path long path long path long path long path long path long path long path long path long path ",
             "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "e3",
+            "E+3",
+            "e-1",
+            ".e3",
         ];
-        assert_eq!(CORPUS.len(), 121);
+        assert_eq!(CORPUS.len(), 125);
         for value in CORPUS {
             let mut rendered = String::new();
             write_yaml_scalar(&mut rendered, value);

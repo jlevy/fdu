@@ -105,8 +105,9 @@ jobs:
         run: npm run test:golden
       # The subset of the path-independence matrix that reaches the command line alone:
       # every answer after other requests, cache policies, and file changes must equal a
-      # cold run's, or be a registered known violation. The Python routes run in the
-      # parity job, which builds the wheel. The full matrix is its own workflow.
+      # cold run's. The known-violation registry is diagnostic evidence, not a waiver:
+      # the gate fails while it is nonempty. The Python routes run in the parity job,
+      # which builds the wheel. The full matrix is its own workflow.
       - name: Check answers against cold runs across cache histories
         env:
           FDU_PI_SURFACES: cli

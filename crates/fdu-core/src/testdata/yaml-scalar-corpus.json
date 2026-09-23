@@ -603,5 +603,25 @@
 "id": 120,
 "s": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 "required": false
+},
+{
+"id": 121,
+"s": "e3",
+"required": true
+},
+{
+"id": 122,
+"s": "E+3",
+"required": true
+},
+{
+"id": 123,
+"s": "e-1",
+"required": true
+},
+{
+"id": 124,
+"s": ".e3",
+"required": true
 }
 ]
