@@ -150,9 +150,10 @@ views, while `paths` cannot silently discard non-list sections.
 | `full` | Existing bounded digest | Usage error | Usage error | Existing bounded digest contract |
 
 `--depth` bounds tree rendering only.
-Under `paths`, `long`, and the machine formats it has no effect, as it already had none
-under `--view files`; a usage error would break those existing invocations, so the flag
-stays accepted and is documented as tree-only.
+Under `paths`, `long`, and machine flat-list projections it has no effect, as it already
+had none under `--view files`; a usage error would break those existing invocations, so
+the flag stays accepted.
+Machine output for legacy `tree` and the tree section of `full` retains its depth bound.
 
 Largest/recent retain their documented regular-file selection and ranking presets.
 Their automatic human presentation remains compatible; explicit list formats render that
