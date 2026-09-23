@@ -7,9 +7,9 @@ name: Path independence
 # `path-independence-full`.
 #
 # Each platform uploads every case it judged, the registry it would record, and a diff per
-# failing case. Merging the three platforms' judged cases regenerates
-# tests/path_independence/known-violations.toml from what each platform observed, not
-# from a local guess.
+# failing case. The recorded registry is diagnostic evidence of what each platform
+# observed, not a waiver: the production gate requires
+# tests/path_independence/known-violations.toml to be empty, so any entry fails it.
 
 on:
   schedule:
@@ -94,7 +94,7 @@ jobs:
             --judged "path-independence-out/judged-$RUNNER_OS.json" \
             --record path-independence-out/known-violations.toml
       # Uploaded on success too: merging every platform's judged cases is how the
-      # committed registry is regenerated (tests/path_independence/README.md).
+      # diagnostic registry is regenerated (tests/path_independence/README.md).
       - name: Upload the judged cases, recorded registry, and failing diffs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

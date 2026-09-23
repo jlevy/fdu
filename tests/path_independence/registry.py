@@ -259,8 +259,9 @@ def merge(registry: Registry, judged_by_platform: dict[str, Iterable[Judged]]) -
 def dump(registry: Registry) -> str:
     """TOML text for `registry`, grouped and sorted so a re-record diffs cleanly."""
     lines = [
-        "# Known path-independence violations. Reviewed like a golden: see registry.py.",
-        "# Regenerate with `make path-independence-record`, then classify new entries.",
+        "# Known path-independence violations: diagnostic evidence, not a waiver (see registry.py).",
+        "# The production gate fails while any entry remains. `make path-independence-record`",
+        "# records what a run observed so each difference can be classified and then fixed.",
     ]
     for name in sorted(registry.classes):
         klass = registry.classes[name]
