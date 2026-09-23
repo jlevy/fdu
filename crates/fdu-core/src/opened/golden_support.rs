@@ -160,7 +160,16 @@ impl SessionTrace {
             value = replace_integer_field(value, field, replacement);
         }
         value = replace_integer_after(value, "newest_mtime_ns: Some(", "[TIME]");
+        value = replace_integer_after(value, "observed_at_ns: Some(", "[TIME]");
         value = replace_integer_after(value, "kind: Dir, attrs: Attrs { size: ", "[DIR_SIZE]");
+        // This byte count includes size_of::<ContinuationRecord>(), whose native
+        // representation differs by platform. The scenario checks the actual refusal
+        // against its exact limit before formatting; no other attempted count is hidden.
+        value = replace_integer_after(
+            value,
+            "ContinuationRecordLimit { attempted: ",
+            "[CONTINUATION_BYTES]",
+        );
         value
     }
 }
@@ -225,6 +234,31 @@ mod normalization_tests {
             normalize_debug_path_separators(rendered, '\\'),
             r#"Commit { path: "target/leaf.txt" }"#
         );
+    }
+
+    #[test]
+    fn tier_observation_times_normalize_by_key_without_hiding_stable_values() {
+        let trace = SessionTrace::new("timestamp-keys", Path::new("fixture"));
+        assert_eq!(
+            trace.normalize(
+                "observed_at_ns: Some(-123), observed_at_ns: None, attempted: 123, sequence: 123"
+                    .into()
+            ),
+            "observed_at_ns: Some([TIME]), observed_at_ns: None, attempted: 123, sequence: 123"
+        );
+    }
+
+    #[test]
+    fn only_continuation_native_size_is_normalized() {
+        let trace = SessionTrace::new("continuation-size", Path::new("fixture"));
+        for attempted in [160_263, 160_287] {
+            assert_eq!(
+                trace.normalize(format!(
+                    "Refused(ContinuationRecordLimit {{ attempted: {attempted}, limit: 65536 }}), attempted: 123, ResourceLimit {{ attempted: 456, limit: 789 }}"
+                )),
+                "Refused(ContinuationRecordLimit { attempted: [CONTINUATION_BYTES], limit: 65536 }), attempted: 123, ResourceLimit { attempted: 456, limit: 789 }"
+            );
+        }
     }
 
     #[test]
@@ -341,7 +375,9 @@ impl SessionModel {
                     assert_eq!(self.state, *previous, "index-state transition skipped");
                     self.state = *current;
                 }
-                StateTransition::Verified { .. } | StateTransition::DirectoryComplete { .. } => {}
+                StateTransition::Verified { .. }
+                | StateTransition::DirectoryComplete { .. }
+                | StateTransition::DirectoryIncomplete { .. } => {}
             }
         }
     }
@@ -530,7 +566,20 @@ impl ContractCoverage {
                         ProjectionResult::Report(_) => self.key("projection.report"),
                         ProjectionResult::Diagnostics(_) => self.key("projection.diagnostics"),
                         ProjectionResult::Limit(_) => self.key("projection.limit"),
-                        ProjectionResult::Refused(_) => self.key("projection.refused"),
+                        ProjectionResult::Refused(reason) => {
+                            self.key("projection.refused");
+                            self.key(match reason {
+                                crate::ProjectionRefusal::NotADirectory { .. } => {
+                                    "projection.refused.not_a_directory"
+                                }
+                                crate::ProjectionRefusal::ContinuationRecordLimit { .. } => {
+                                    "projection.refused.continuation_record_limit"
+                                }
+                                crate::ProjectionRefusal::ContinuationUnavailable => {
+                                    "projection.refused.continuation_unavailable"
+                                }
+                            });
+                        }
                     }
                 }
             }
@@ -611,6 +660,9 @@ impl ContractCoverage {
                 StateTransition::Verified { .. } => self.key("transition.verified"),
                 StateTransition::DirectoryComplete { .. } => {
                     self.key("transition.directory_complete");
+                }
+                StateTransition::DirectoryIncomplete { .. } => {
+                    self.key("transition.directory_incomplete");
                 }
                 StateTransition::IndexState { previous, current } => {
                     self.key("transition.index_state");

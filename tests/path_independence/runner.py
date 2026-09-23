@@ -3,9 +3,9 @@
 The invariant (see the explicit core models plan, "The Rule"): for a request, tree
 state, delivery, and any history, a run returns the cold run's content and tree status,
 a named failure, or, under `--cache only`, a labelled stale answer equal to a cold run at
-an earlier state. Provenance (`source`, `freshness`, `scan_started_at`, `generated_at`)
-is excluded from the comparison. Every route returns the same kind of outcome for the
-same request, delivery, and history.
+an earlier state. The nested `provenance` object is excluded from the comparison; the
+request, status, and all answer content remain compared. Every route returns the same
+kind of outcome for the same request, delivery, and history.
 
 Usage:
     python tests/path_independence/runner.py [--tier subset|full] [--surfaces cli,python]
@@ -18,6 +18,7 @@ import argparse
 import difflib
 import json
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -39,8 +40,6 @@ sys.path.insert(0, str(HERE))
 import matrix  # noqa: E402
 import registry  # noqa: E402
 from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
-
-PROVENANCE_KEYS = ("source", "freshness", "scan_started_at", "generated_at")
 
 Outcome = Literal["complete", "partial", "failure"]
 
@@ -70,7 +69,14 @@ class Invocation:
     def outcome(self) -> Outcome:
         if self.answer is None:
             return "failure"
-        return "partial" if self.answer.get("complete") is False else "complete"
+        schema = self.answer.get("schema")
+        status = self.answer.get("status")
+        complete = status.get("complete") if isinstance(status, dict) else None
+        if not isinstance(schema, str) or not schema.startswith("fdu.report/"):
+            return "failure"
+        if not isinstance(complete, bool):
+            return "failure"
+        return "complete" if complete else "partial"
 
 
 @dataclass(frozen=True)
@@ -128,8 +134,22 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     if isinstance(root, str) and root:
         encoded = json.dumps(answer).replace(json.dumps(root)[1:-1], ROOT_PLACEHOLDER)
         answer = json.loads(encoded)
-    content = dict(answer)
-    provenance = {key: content.pop(key, None) for key in PROVENANCE_KEYS}
+    # Keep the invocation intact for evidence while removing delivery-only facts.
+    content = json.loads(json.dumps(answer))
+    provenance = content.pop("provenance", {})
+    if not isinstance(provenance, dict):
+        raise TypeError("report provenance must be an object")
+    reference = content.pop("age_reference_ns", None)
+    for section in content.get("reports", []):
+        for row in section.get("files", []):
+            if "age_ns" in row and reference is not None:
+                # Exact zero means the age agrees with its clock and mtime. Comparing
+                # this residual preserves age bugs while allowing different read times.
+                row["age_ns"] = (
+                    row["age_ns"] - (reference - row["mtime_ns"])
+                    if row["age_ns"] is not None
+                    else None
+                )
     return content, provenance
 
 
@@ -218,12 +238,19 @@ def compare(
     *,
     policy: str,
     earlier: Invocation | None = None,
+    must_serve: bool = False,
 ) -> Verdict:
     """Judge `measured` against the cold `oracle`.
 
     `earlier` is a cold run at the state before a mutation; under `--cache only` an answer
     equal to it is the allowed stale outcome, provided it says so.
+    `must_serve` is used after an explicit complete refresh of the identical request:
+    refusing that snapshot or quietly scanning instead is a broken cache contract.
+    A failure on either side fails it too, even when the two failures match: a control
+    that never served proves nothing about the cache.
     """
+    if must_serve and "failure" in (oracle.outcome, measured.outcome):
+        return Verdict("outcome_class", (f"<serve:{oracle.outcome}>{measured.outcome}>",))
     if measured.outcome == "failure":
         if oracle.outcome == "failure":
             same_surface = is_python(oracle) == is_python(measured)
@@ -233,7 +260,7 @@ def compare(
             ):
                 return Verdict("same")
             return Verdict("differs", ("<error>",), (oracle.stderr, measured.stderr))
-        if policy == "only" and is_cache_miss(measured):
+        if policy == "only" and is_cache_miss(measured) and not must_serve:
             return Verdict("refused")
         return Verdict("outcome_class", (f"<outcome:{oracle.outcome}>{measured.outcome}>",))
     if oracle.outcome == "failure":
@@ -242,6 +269,10 @@ def compare(
     assert oracle.answer is not None and measured.answer is not None
     oracle_content, _ = normalize(oracle.answer)
     measured_content, provenance = normalize(measured.answer)
+    if must_serve and provenance.get("source") != "cache_only":
+        return Verdict("differs", ("provenance.source",), ("expected cache_only",))
+    if must_serve and provenance.get("freshness") != "stale":
+        return Verdict("differs", ("provenance.freshness",), ("expected stale",))
     diff = json_diff(oracle_content, measured_content)
     if not diff:
         return Verdict("same")
@@ -250,13 +281,17 @@ def compare(
         if earlier_content == measured_content:
             if provenance["freshness"] == "stale":
                 return Verdict("stale")
-            return Verdict("differs", ("freshness",), (f"freshness={provenance['freshness']}",))
+            return Verdict(
+                "differs",
+                ("provenance.freshness",),
+                (f"freshness={provenance['freshness']}",),
+            )
     sample = tuple(f"{p}: {json.dumps(a)} -> {json.dumps(b)}" for p, a, b in diff[:12])
     return Verdict("differs", tuple(sorted({generalize(p) for p, _, _ in diff})), sample)
 
 
 def is_python(invocation: Invocation) -> bool:
-    return invocation.route != matrix.CLI_ROUTE
+    return invocation.route in matrix.PY_ROUTES
 
 
 def is_cache_miss(invocation: Invocation) -> bool:
@@ -297,12 +332,125 @@ def run_cli(
     return Invocation(matrix.CLI_ROUTE, command, done.returncode, done.stderr.strip(), answer)
 
 
+def watch_can_serve(request: matrix.Spec, policy: str) -> bool:
+    """Compare watch answers only where Request::validate_delivery permits a watch.
+
+    Unsupported deliveries have explicit refusal tests in the core and CLI corpus;
+    they are not history-dependent differences from a one-shot answer.
+    """
+    scope = request.get("scope", {})
+    return (
+        policy != "only"
+        and request.get("analyze", "none") == "none"
+        and "scan_depth" not in scope
+        and not scope.get("one_fs", False)
+    )
+
+
+def run_cli_watch_initial(
+    surfaces: Surfaces, root: Path, request: matrix.Spec, policy: str, xdg: Path
+) -> Invocation:
+    """Ask through the real watch route and retain its initial report only."""
+    argv = [
+        str(surfaces.fdu_bin),
+        str(root),
+        "--watch",
+        "--format",
+        "jsonl",
+        "--cache",
+        policy,
+    ]
+    argv += matrix.cli_args(request)
+    process = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=_cache_env(xdg),
+    )
+    assert process.stdout is not None and process.stderr is not None
+    parsed: queue.Queue[tuple[dict[str, Any] | None, str]] = queue.Queue(maxsize=1)
+
+    def read_report() -> None:
+        try:
+            parsed.put((_read_jsonl_report(process.stdout), ""))
+        except (EOFError, TypeError, ValueError, json.JSONDecodeError) as error:
+            parsed.put((None, f"invalid watch initial report: {error}"))
+
+    stderr_chunks: list[str] = []
+    reader = threading.Thread(target=read_report, daemon=True)
+    stderr_reader = threading.Thread(
+        target=lambda: stderr_chunks.append(process.stderr.read()), daemon=True
+    )
+    reader.start()
+    stderr_reader.start()
+    timed_out = False
+    try:
+        answer, parse_error = parsed.get(timeout=30)
+    except queue.Empty:
+        answer, parse_error = None, "timed out waiting for watch initial report"
+        timed_out = True
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        exit_code = 0 if answer is not None else process.returncode
+    else:
+        exit_code = process.returncode
+    stderr_reader.join(timeout=5)
+    stderr = "".join(stderr_chunks).strip()
+    if parse_error and (timed_out or exit_code == 0 or not stderr):
+        stderr = f"{stderr}\n{parse_error}".strip()
+    if timed_out:
+        exit_code = PY_UNEXPECTED
+    command = " ".join([*argv[:1], "<root>", *argv[2:]])
+    return Invocation(matrix.CLI_WATCH_ROUTE, command, exit_code, stderr, answer)
+
+
+def _read_jsonl_report(stream: Iterable[str]) -> dict[str, Any]:
+    """Read one complete JSONL report without consuming later watch records."""
+    lines = iter(stream)
+    first = next(lines, "")
+    if not first:
+        raise EOFError("watch exited before the report envelope")
+    envelope = json.loads(first)
+    if not isinstance(envelope, dict):
+        raise TypeError("report envelope must be an object")
+    request = envelope.get("request")
+    views = request.get("views") if isinstance(request, dict) else None
+    if not isinstance(views, list) or not all(isinstance(view, str) for view in views):
+        raise ValueError("report request.views must be an array of strings")
+    reports: list[dict[str, Any]] = []
+    for expected_view in views:
+        line = next(lines, "")
+        if not line:
+            raise EOFError(f"watch exited before the {expected_view} report section")
+        section = json.loads(line)
+        if not isinstance(section, dict) or section.get("view") != expected_view:
+            raise ValueError(f"expected the {expected_view} report section")
+        reports.append(section)
+    return {**envelope, "reports": reports}
+
+
 def run_py(
-    surfaces: Surfaces, root: Path, request: matrix.Spec, policy: str, xdg: Path, route: str
+    surfaces: Surfaces,
+    root: Path,
+    request: matrix.Spec,
+    policy: str,
+    xdg: Path,
+    route: str,
 ) -> Invocation:
     """Ask `request` through the Python package on `route`."""
     assert surfaces.python is not None and route in matrix.PY_ROUTES
-    job = {"root": str(root), "mode": route.removeprefix("py-"), "cache": policy, "spec": request}
+    job = {
+        "root": str(root),
+        "mode": route.removeprefix("py-"),
+        "cache": policy,
+        "spec": request,
+    }
     done = subprocess.run(
         [str(surfaces.python), str(HERE / "pyrun.py"), json.dumps(job)],
         capture_output=True,
@@ -324,10 +472,17 @@ def run_py(
 
 
 def run_route(
-    surfaces: Surfaces, route: str, root: Path, request: matrix.Spec, policy: str, xdg: Path
+    surfaces: Surfaces,
+    route: str,
+    root: Path,
+    request: matrix.Spec,
+    policy: str,
+    xdg: Path,
 ) -> Invocation:
     if route == matrix.CLI_ROUTE:
         return run_cli(surfaces, root, request, policy, xdg)
+    if route == matrix.CLI_WATCH_ROUTE:
+        return run_cli_watch_initial(surfaces, root, request, policy, xdg)
     return run_py(surfaces, root, request, policy, xdg, route)
 
 
@@ -364,7 +519,11 @@ class MatrixRun:
     """One tier over one fixture, producing judged cases."""
 
     def __init__(
-        self, tier: matrix.Tier, surfaces: Surfaces, workspace: Workspace, facts: FixtureFacts
+        self,
+        tier: matrix.Tier,
+        surfaces: Surfaces,
+        workspace: Workspace,
+        facts: FixtureFacts,
     ) -> None:
         self.tier = tier
         self.surfaces = surfaces
@@ -381,8 +540,9 @@ class MatrixRun:
             and self.facts.permissions
         )
         result.cases += self.phase_cold()
-        result.cold_answers = sum(1 for inv in self.cold.values() if inv.answer is not None)
+        result.cold_answers = sum(1 for inv in self.cold.values() if inv.outcome != "failure")
         result.cases += self.phase_warm()
+        result.cases += self.phase_cache_contract()
         if self.tier.selfwarm:
             result.cases += self.phase_selfwarm()
         result.cases += self.phase_mutation()
@@ -465,6 +625,38 @@ class MatrixRun:
 
         return _parallel(one, self.tier.requests)
 
+    def phase_cache_contract(self) -> list[CaseResult]:
+        """A complete forced write must serve the identical unchanged request.
+
+        These positive controls complement answer equality: a cache that always misses
+        otherwise passes by scanning cold or returning an allowed refusal. Refresh
+        requires indexed persistence even for a summary that Auto can answer without
+        retaining an index.
+        """
+        requests = ("default", "nogi", "a_lines", "a_code", "a_words", "a_all")
+        routes = [matrix.CLI_ROUTE]
+        if self.surfaces.python is not None:
+            routes += ["py-report", "py-open"]
+
+        def one(case: tuple[str, str]) -> list[CaseResult]:
+            request_id, route = case
+            request = matrix.REQUESTS[request_id]
+            xdg = self.ws.fresh(f"serves-{route}-{request_id}")
+            try:
+                seed = run_cli(self.surfaces, self.facts.root, request, "refresh", xdg)
+                key = case_key("serves", route, "only", "refresh-self", "-", request_id)
+                if seed.outcome != "complete":
+                    verdict = Verdict("outcome_class", ("<refresh:not-complete>",))
+                    return [CaseResult(key, verdict, self.cold[request_id], seed)]
+                measured = run_route(self.surfaces, route, self.facts.root, request, "only", xdg)
+                oracle = self.cold[request_id]
+                verdict = compare(oracle, measured, policy="only", must_serve=True)
+                return [CaseResult(key, verdict, oracle, measured, (seed.command,))]
+            finally:
+                self.ws.discard(xdg)
+
+        return _parallel(one, ((request, route) for request in requests for route in routes))
+
     def phase_mutation(self) -> list[CaseResult]:
         """Warm, change the tree, then ask every request under every policy."""
         pairs = [
@@ -509,12 +701,21 @@ class MatrixRun:
                         xdg = base / f"xdg-{request_id}-{policy}"
                         shutil.copytree(warmed, xdg)
                         invocation = run_cli(
-                            self.surfaces, tree, matrix.REQUESTS[request_id], policy, xdg
+                            self.surfaces,
+                            tree,
+                            matrix.REQUESTS[request_id],
+                            policy,
+                            xdg,
                         )
                         shutil.rmtree(xdg, ignore_errors=True)
                         measured = _rerooted(invocation, tree)
                         key = case_key(
-                            "mutation", matrix.CLI_ROUTE, policy, warmer, mutation, request_id
+                            "mutation",
+                            matrix.CLI_ROUTE,
+                            policy,
+                            warmer,
+                            mutation,
+                            request_id,
                         )
                         oracle = mutated_oracles[(mutation, request_id)]
                         earlier = self.cold[request_id]
@@ -542,16 +743,20 @@ class MatrixRun:
             histories.append((f"py-open:{warmer}", warmer, "py-open"))
         cases = [(history, request) for history in histories for request in self.tier.requests]
 
-        def one(case: tuple[tuple[str, str | None, str | None], str]) -> list[CaseResult]:
+        def one(
+            case: tuple[tuple[str, str | None, str | None], str],
+        ) -> list[CaseResult]:
             (history_id, warmer, warm_route), request_id = case
             request = matrix.REQUESTS[request_id]
             oracle = self.cold[request_id]
             results: list[CaseResult] = []
             outcomes: dict[str, dict[str, Outcome]] = defaultdict(dict)
-            readers = [matrix.CLI_ROUTE, "py-report", "py-open"]
+            readers = [matrix.CLI_ROUTE, matrix.CLI_WATCH_ROUTE, "py-report", "py-open"]
             policies: tuple[str, ...] = ("off",) if warmer is None else ("auto", "only")
             for policy in policies:
                 for route in readers + (["py-scan"] if warmer is None else []):
+                    if route == matrix.CLI_WATCH_ROUTE and not watch_can_serve(request, policy):
+                        continue
                     xdg = self.ws.fresh(f"cross-{history_id}-{request_id}-{route}-{policy}")
                     history: tuple[str, ...] = ()
                     if warmer is not None and warm_route is not None:
@@ -614,7 +819,10 @@ def write_diffs(result: RunResult, keys: set[str], out: Path) -> None:
     for case in result.cases:
         if case.key not in keys:
             continue
-        lines = [f"# {case.key}", f"# verdict: {case.verdict.kind} {list(case.verdict.paths)}"]
+        lines = [
+            f"# {case.key}",
+            f"# verdict: {case.verdict.kind} {list(case.verdict.paths)}",
+        ]
         lines += [f"# history: {command}" for command in case.history]
         if case.measured is not None:
             lines.append(f"# measured: {case.measured.command}")
@@ -669,6 +877,7 @@ def judge(
         full=result.complete_matrix,
         platform=sys.platform,
         cold_answers=result.cold_answers,
+        require_clean=True,
     )
     if out is not None and failures:
         write_diffs(result, {failure.key for failure in failures if failure.key}, out)

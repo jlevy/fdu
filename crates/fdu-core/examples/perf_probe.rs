@@ -8,6 +8,13 @@
 // Measurement scaffolding, kept out of the library so the engine's unsafe-free
 // guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
 // probe is the right place to pay for that.
+fn open_planned(root: &std::path::Path, options: OpenOptions) -> fdu_core::Result<OpenedIndex> {
+    let mut delivery = fdu_core::query::Delivery::new(fdu_core::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -17,12 +24,12 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu_core::query::{Basis, Delivery, Provenance, Query, ReportSource, Request, ViewSpec};
+use fdu_core::query::{Basis, Bound, Delivery, Query, Request, Selection, ViewSpec, Workers};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
     EngineVersion, EntryId, EntryKind, Index, IndexState, Knowledge, LifecyclePhase, Observation,
-    Op, OpenConfig, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection,
-    ReadRequest, ReportRequest, RowShape, ScanConfig, ScanOrder,
+    Op, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection, ReadRequest,
+    ReportRequest, RowShape, ScanConfig, ScanOrder,
 };
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
@@ -96,6 +103,12 @@ enum Mode {
     OpenedSecondReport,
     IndexSecondReport,
     Query,
+    RenderJson,
+    RenderJsonString,
+    RenderJsonl,
+    RenderJsonlString,
+    RenderYaml,
+    RenderYamlString,
     ColdOpenSave,
     DefaultTree,
     Revalidate,
@@ -133,6 +146,12 @@ impl Mode {
             "opened-second-report" => Ok(Self::OpenedSecondReport),
             "index-second-report" => Ok(Self::IndexSecondReport),
             "query" => Ok(Self::Query),
+            "render-json" => Ok(Self::RenderJson),
+            "render-json-string" => Ok(Self::RenderJsonString),
+            "render-jsonl" => Ok(Self::RenderJsonl),
+            "render-jsonl-string" => Ok(Self::RenderJsonlString),
+            "render-yaml" => Ok(Self::RenderYaml),
+            "render-yaml-string" => Ok(Self::RenderYamlString),
             "revalidate" => Ok(Self::Revalidate),
             "cold-open-save" => Ok(Self::ColdOpenSave),
             "default-tree" => Ok(Self::DefaultTree),
@@ -171,6 +190,12 @@ impl Mode {
             Self::OpenedSecondReport => "opened-second-report",
             Self::IndexSecondReport => "index-second-report",
             Self::Query => "query",
+            Self::RenderJson => "render-json",
+            Self::RenderJsonString => "render-json-string",
+            Self::RenderJsonl => "render-jsonl",
+            Self::RenderJsonlString => "render-jsonl-string",
+            Self::RenderYaml => "render-yaml",
+            Self::RenderYamlString => "render-yaml-string",
             Self::Revalidate => "revalidate",
             Self::ColdOpenSave => "cold-open-save",
             Self::DefaultTree => "default-tree",
@@ -443,6 +468,104 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::IndexSecondReport => index_second_report(arguments),
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
+        Mode::RenderJson => render_report(arguments, fdu_core::report_format::Format::Json, false),
+        Mode::RenderJsonString => {
+            render_report(arguments, fdu_core::report_format::Format::Json, true)
+        }
+        Mode::RenderJsonl => {
+            render_report(arguments, fdu_core::report_format::Format::Jsonl, false)
+        }
+        Mode::RenderJsonlString => {
+            render_report(arguments, fdu_core::report_format::Format::Jsonl, true)
+        }
+        Mode::RenderYaml => render_report(arguments, fdu_core::report_format::Format::Yaml, false),
+        Mode::RenderYamlString => {
+            render_report(arguments, fdu_core::report_format::Format::Yaml, true)
+        }
+    }
+}
+
+/// Serialize one unbounded tree and file listing after an untimed retained-index setup.
+///
+/// The plain mode calls the product's streaming `write` path through a byte-counting
+/// discard writer. The `-string` control calls `render`, retaining the complete document
+/// until the timed component ends. Both construct the same report before the timer starts,
+/// so their component wall time and allocation deltas isolate serialization. Process RSS
+/// still includes the common scan, index, and report; compare paired modes on one subject
+/// and treat a flat result as "the shared baseline dominated", not as zero writer memory.
+/// A one-off run is diagnostic only: CPU or speed conclusions require the harness's
+/// interleaved paired protocol under one declared host-pressure regime.
+fn render_report(
+    arguments: &Arguments,
+    format: fdu_core::report_format::Format,
+    materialize: bool,
+) -> ProbeResult<ProbeOutput> {
+    let (index, report) = report_for_render(arguments)?;
+
+    let counters = begin_component_counters();
+    let started = Instant::now();
+    let bytes = if materialize {
+        let rendered = fdu_core::report_format::render(&report, format, false)?;
+        let bytes = rendered.len();
+        black_box(rendered);
+        bytes
+    } else {
+        let mut writer = CountingWriter::default();
+        fdu_core::report_format::write(&report, format, false, &mut writer)?;
+        writer.bytes
+    };
+    black_box(bytes);
+    let component = started.elapsed();
+    let counters = finish_component_counters(counters.as_ref());
+
+    let mut summary = summarize_index(arguments, &index)?;
+    summary.counters = counters;
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.status.complete;
+    Ok(ProbeOutput::new(arguments.mode, "report-retained", component, summary))
+}
+
+fn report_for_render(arguments: &Arguments) -> ProbeResult<(Index, fdu_core::query::Report)> {
+    let (index, scan) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    if !scan.is_complete() {
+        return Err(ProbeError("report render setup scan was partial".into()));
+    }
+    let query = Query {
+        selection: Selection {
+            depth: Some(Bound::All),
+            limit: Some(Bound::All),
+            ..Selection::default()
+        },
+        views: vec![ViewSpec::Tree, ViewSpec::Files],
+        ..Query::default()
+    };
+    let now = std::time::SystemTime::now();
+    let request = Request::new(
+        Basis {
+            root: index.root_path().to_path_buf(),
+            scope: arguments.scan.clone().into(),
+            content: index.content_set(),
+        },
+        query,
+        now,
+    );
+    let report = fdu_core::query::report(&index, &request, now)?;
+    Ok((index, report))
+}
+
+#[derive(Default)]
+struct CountingWriter {
+    bytes: usize,
+}
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self.bytes.saturating_add(bytes.len());
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -490,11 +613,22 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
     Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
 }
 
-/// The request and the delivery one probe mode asks for, composed from the configuration
-/// it measures exactly as the command line composes them.
-fn asked(root: &Path, config: &OpenConfig, query: Query) -> (Request, Delivery) {
-    let (basis, delivery) = config.split(root);
-    (Request::new(basis, query, std::time::SystemTime::now()), delivery)
+/// Keep the scanner's semantic scope and its operational settings on their respective
+/// execution-plan axes, matching the command line's one-shot route.
+fn open_plan(
+    root: &Path,
+    scan: &ScanConfig,
+    policy: CachePolicy,
+    cache_path: Option<PathBuf>,
+    analysis: AnalysisRequest,
+) -> (Basis, Delivery) {
+    let basis =
+        Basis { root: root.to_path_buf(), scope: scan.clone().into(), content: analysis.profile };
+    let mut delivery = Delivery::new(policy, cache_path);
+    delivery.workers = Workers { scan: scan.threads, analysis: analysis.workers };
+    delivery.batch_size = scan.batch_size;
+    delivery.order = scan.order;
+    (basis, delivery)
 }
 
 fn basic_request() -> AnalysisRequest {
@@ -533,14 +667,10 @@ fn content_open(
     analysis: AnalysisRequest,
 ) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    let config = OpenConfig {
-        scan: arguments.scan.clone(),
-        cache_path: Some(snapshot.clone()),
-        policy,
-        analysis,
-    };
+    let (basis, delivery) =
+        open_plan(&arguments.root, &arguments.scan, policy, Some(snapshot.clone()), analysis);
     let started = Instant::now();
-    let (index, report) = fdu_core::open(&arguments.root, &config)?;
+    let (index, report) = fdu_core::open(&basis, &delivery)?;
     let component = started.elapsed();
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
@@ -570,17 +700,10 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         views: vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents],
         ..Query::default()
     };
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: std::time::UNIX_EPOCH,
-        source: ReportSource::ColdScan,
-        complete: analysis.is_complete(),
-        errors: Vec::new(),
-    };
     let read = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
@@ -588,7 +711,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     );
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu_core::query::report(&index, &read, &provenance).expect("report"));
+        black_box(fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("report"));
     }
     let component = started.elapsed();
     // The historical benchmark digest hashes retained index/content facts after the
@@ -717,15 +840,16 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // with `CachePolicy::Off` is what keeps the planner on the transient tier: `Refresh`
     // would demand an index to write, and `Only` would demand a snapshot to read. Off is
     // also what the measured invocation uses.
-    let config = OpenConfig {
-        scan: arguments.scan.clone(),
-        cache_path: None,
-        policy: CachePolicy::Off,
-        analysis: AnalysisRequest::default(),
-    };
+    let (basis, delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Off,
+        None,
+        AnalysisRequest::default(),
+    );
     let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
 
-    let (request, delivery) = asked(&arguments.root, &config, query);
+    let request = Request::new(basis, query, std::time::SystemTime::now());
     let started = Instant::now();
     // `_performance` is what the command line prints in its footer; this tier's tallies
     // come out of the report itself, so it is deliberately unused here.
@@ -757,8 +881,8 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         index_len: None,
         ..Summary::default()
     };
-    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
-    summary.complete = report.complete;
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.status.complete;
     // The walk counted more than the summary reports -- symlinks and other kinds are
     // observed and then deliberately not tallied -- so entries is the honest total of
     // what this tier can speak for, not of what it touched.
@@ -787,18 +911,18 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let identity_before = snapshot_identity(&snapshot);
-    let config = OpenConfig {
-        // Passed through unchanged, as the command line passes its own: observing
-        // `.gitignore` by default, and not under `--no-controls`, which is the probe's
-        // spelling of `--no-gitignore`.
-        scan: arguments.scan.clone(),
-        cache_path: Some(snapshot.clone()),
-        policy: CachePolicy::Auto,
-        analysis: AnalysisRequest::default(),
-    };
+    // Preserve `.gitignore` observation (or `--no-controls`) from the probe's scan
+    // settings, matching the command line's `--no-gitignore` scope.
+    let (basis, delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Auto,
+        Some(snapshot.clone()),
+        AnalysisRequest::default(),
+    );
     let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
-    let (request, delivery) = asked(&arguments.root, &config, query);
+    let request = Request::new(basis, query, std::time::SystemTime::now());
     let counters = begin_component_counters();
     let started = Instant::now();
     let (report, pending, _performance, scan_diagnostics) = if arguments.diagnostics {
@@ -811,7 +935,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // are not printed because stdout carries this probe's JSON, and `black_box` keeps the
     // render from being optimised away as an unused value.
     let rendered =
-        fdu_core::report_format::render(&report, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(&report, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
     pending.join()?;
     let component = started.elapsed();
@@ -821,7 +945,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         .sections
         .iter()
         .find_map(|section| match section {
-            fdu_core::query::Section::Tree(node) => Some(node),
+            fdu_core::query::Section::Tree { root: node, .. } => Some(node),
             _ => None,
         })
         .ok_or_else(|| ProbeError("default tree returned no tree section".to_string()))?;
@@ -839,10 +963,10 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         index_len: None,
         ..Summary::default()
     };
-    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.errors = u64::try_from(report.status.errors.len()).unwrap_or(u64::MAX);
     summary.counters = counters;
     summary.scan_diagnostics = scan_diagnostics;
-    summary.complete = report.complete;
+    summary.complete = report.status.complete;
     summary.entries = root.files + root.dirs;
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
     // A rewrite lands a fresh temporary and renames it over the path, so the file's
@@ -878,16 +1002,17 @@ fn snapshot_identity(path: &Path) -> Option<(u64, Option<std::time::SystemTime>)
 /// unmeasurable under the accept rule until this job existed.
 fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    let config = OpenConfig {
-        scan: arguments.scan.clone(),
-        cache_path: Some(snapshot.clone()),
-        // Refresh rather than Auto: the job must always walk and always write, or a
-        // stray snapshot would silently turn one trial into a warm open.
-        policy: CachePolicy::Refresh,
-        analysis: AnalysisRequest::default(),
-    };
+    // Refresh rather than Auto: the job must always walk and always write, or a
+    // stray snapshot would silently turn one trial into a warm open.
+    let (basis, delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Refresh,
+        Some(snapshot.clone()),
+        AnalysisRequest::default(),
+    );
     let started = Instant::now();
-    let (index, report, pending) = fdu_core::open_with_pending_save(&arguments.root, &config)?;
+    let (index, report, pending) = fdu_core::open_with_pending_save(&basis, &delivery)?;
     pending.join()?;
     let component = started.elapsed();
     if !report.is_complete() {
@@ -1079,7 +1204,7 @@ fn opened_discovery_with_options(
 ) -> ProbeResult<ProbeOutput> {
     let counters = begin_component_counters();
     let started = Instant::now();
-    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let opened = open_planned(&arguments.root, options)?;
     let initial = opened.read(ReadRequest::default())?;
     let cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
     let (terminal, cursor, commits) = settle_opened(
@@ -1157,7 +1282,7 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         journal_capacity_bytes: OPENED_PROBE_JOURNAL_CAPACITY_BYTES,
         ..OpenOptions::default()
     };
-    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let opened = open_planned(&arguments.root, options)?;
     let initial = match opened.read(ReadRequest::default()) {
         Ok(initial) => initial,
         Err(error) => {
@@ -1218,7 +1343,7 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         }
     };
     let rendered =
-        fdu_core::report_format::render(report, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(report, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
     let component = started.elapsed();
 
@@ -1252,35 +1377,27 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let request = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
         now,
     );
-    let provenance = Provenance {
-        scan_started_at: None,
-        generated_at: now,
-        source: ReportSource::ColdScan,
-        complete: true,
-        errors: Vec::new(),
-    };
-
-    let first = fdu_core::query::report(&index, &request, &provenance)?;
+    let first = fdu_core::query::report(&index, &request, now)?;
     let first_rendered =
-        fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(&first, fdu_core::report_format::Format::Text, false)?;
     black_box(first_rendered.len());
 
     let started = Instant::now();
-    let second = fdu_core::query::report(&index, &request, &provenance)?;
+    let second = fdu_core::query::report(&index, &request, now)?;
     let rendered =
-        fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false);
+        fdu_core::report_format::render(&second, fdu_core::report_format::Format::Text, false)?;
     black_box(rendered.len());
     let component = started.elapsed();
 
     let mut summary = summarize_index(arguments, &index)?;
-    summary.errors = u64::try_from(second.errors.len()).unwrap_or(u64::MAX);
-    summary.complete = second.complete;
+    summary.errors = u64::try_from(second.status.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = second.status.complete;
     Ok(ProbeOutput::new(arguments.mode, "index-retained", component, summary))
 }
 
@@ -1597,22 +1714,29 @@ impl Default for Summary {
 
 fn attach_content_summary(summary: &mut Summary, index: &Index) {
     let Some(content) = index.content() else {
-        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v1\0disabled")));
+        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v2\0disabled")));
         return;
     };
+    let profile = index.content_set();
+    let mut record = format!("fdu-content-summary-v2\0profile={}\0", profile.bits());
     let Some(root) = content.rollup(Path::new("")) else {
-        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v1\0empty")));
+        record.push_str("empty");
+        summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
         return;
     };
     summary.content_records = root.total.files;
-    summary.content_analyzed = root.total.analyzed_files;
-    summary.content_binary = root.coverage.get(&CoverageReason::Binary).copied().unwrap_or(0);
+    summary.content_analyzed = root.total.lines.analyzed_files;
+    summary.content_binary =
+        root.total.lines.coverage.get(&CoverageReason::Binary).copied().unwrap_or(0);
     summary.content_invalid_utf8 =
-        root.coverage.get(&CoverageReason::InvalidUtf8).copied().unwrap_or(0);
-    let metrics = root.total.metrics;
-    let record = format!(
+        root.total.lines.coverage.get(&CoverageReason::InvalidUtf8).copied().unwrap_or(0);
+    let lines = root.total.lines.metrics;
+    let code = root.total.code.metrics;
+    let words = root.total.words.metrics;
+    let _ = write!(
+        record,
         concat!(
-            "fdu-content-summary-v1\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
+            "records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
             "physical={}\0blank={}\0nonblank={}\0code={}\0comment={}\0",
             "code_blank={}\0raw_words={}\0logical_words={}\0paragraphs={}\0visible_words={}\0",
             "visible_logical_words={}"
@@ -1621,18 +1745,36 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
         summary.content_analyzed,
         summary.content_binary,
         summary.content_invalid_utf8,
-        metrics.physical_lines,
-        metrics.blank_lines,
-        metrics.nonblank_lines,
-        metrics.code_lines,
-        metrics.comment_lines,
-        metrics.code_blank_lines,
-        metrics.raw_words,
-        metrics.logical_word_stats.logical_words(),
-        metrics.paragraphs,
-        metrics.visible_words,
-        metrics.visible_logical_word_stats.logical_words(),
+        lines.physical_lines,
+        lines.blank_lines,
+        lines.nonblank_lines,
+        code.code_lines,
+        code.comment_lines,
+        code.code_blank_lines,
+        lines.raw_words,
+        words.logical_word_stats.logical_words(),
+        words.paragraphs,
+        words.visible_words,
+        words.visible_logical_word_stats.logical_words(),
     );
+    for (unit, coverage) in [
+        ("lines", &root.total.lines.coverage),
+        ("code", &root.total.code.coverage),
+        ("words", &root.total.words.coverage),
+    ] {
+        for (reason, count) in coverage {
+            let reason = match reason {
+                CoverageReason::Analyzed => "analyzed",
+                CoverageReason::Binary => "binary",
+                CoverageReason::InvalidUtf8 => "invalid_utf8",
+                CoverageReason::UnsupportedEncoding => "unsupported_encoding",
+                CoverageReason::Unsupported => "unsupported",
+                CoverageReason::IoError => "io_error",
+                CoverageReason::ChangedDuringRead => "changed_during_read",
+            };
+            let _ = write!(record, "\0{unit}.{reason}={count}");
+        }
+    }
     summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
 }
 
@@ -2222,6 +2364,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn content_digest_distinguishes_equal_values_with_different_unit_outcomes() {
+        fn summarize_empty_file(name: &str, profile: AnalysisSet) -> Summary {
+            let root = tempfile::tempdir().expect("root");
+            std::fs::write(root.path().join(name), []).expect("empty file");
+            let (mut index, _) =
+                fdu_core::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+            let report = fdu_core::content::analyze_index(
+                &mut index,
+                AnalysisRequest { profile, workers: 1 },
+            );
+            assert!(report.is_complete());
+            let total = &index.content().expect("content").rollup(Path::new("")).unwrap().total;
+            assert_eq!(total.lines.metrics, Default::default());
+            assert_eq!(total.code.metrics, Default::default());
+            assert_eq!(total.words.metrics, Default::default());
+            let mut summary = Summary::default();
+            attach_content_summary(&mut summary, &index);
+            summary
+        }
+
+        let analyzed = summarize_empty_file("empty.rs", AnalysisSet::ALL);
+        let unsupported = summarize_empty_file("empty.hs", AnalysisSet::ALL);
+        let unrequested = summarize_empty_file("empty.rs", AnalysisSet::NONE.with_lines());
+        assert_eq!(analyzed.content_records, unsupported.content_records);
+        assert_eq!(analyzed.content_analyzed, unsupported.content_analyzed);
+        assert_eq!(analyzed.content_binary, unsupported.content_binary);
+        assert_eq!(analyzed.content_invalid_utf8, unsupported.content_invalid_utf8);
+        assert_ne!(analyzed.content_digest, unsupported.content_digest);
+        assert_ne!(analyzed.content_digest, unrequested.content_digest);
+        assert_ne!(unsupported.content_digest, unrequested.content_digest);
+    }
+
+    #[test]
     fn sha256_matches_standard_vectors() {
         assert_eq!(
             hex(&Sha256::digest(b"")),
@@ -2336,7 +2511,7 @@ mod tests {
     #[test]
     fn opened_oracle_rejects_an_unavailable_version() {
         let root = tempfile::tempdir().expect("opened oracle root");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_planned(root.path(), OpenOptions::default()).expect("open");
         let initial = opened.read(ReadRequest::default()).expect("initial read");
         let unavailable = EngineVersion { sequence: Clock(u64::MAX), ..initial.version };
 
@@ -2474,6 +2649,12 @@ mod tests {
             "delta-apply-large",
             "markdown-prose",
             "query",
+            "render-json",
+            "render-json-string",
+            "render-jsonl",
+            "render-jsonl-string",
+            "render-yaml",
+            "render-yaml-string",
             "revalidate",
             "cold-open-save",
             "default-tree",
@@ -2563,19 +2744,33 @@ mod tests {
         // The probe observes control state by default, as the command line does, so the
         // snapshot it writes carries that scope.
         assert!(arguments.scan.read_controls, "the default command observes .gitignore");
-        let mut config = OpenConfig {
-            scan: arguments.scan.clone(),
-            cache_path: Some(snapshot),
-            policy: CachePolicy::Only,
-            analysis: AnalysisRequest::default(),
-        };
-        // Index-returning cache-only open requires the exact stored scope. Report-only
-        // projection would let a controls-off request read it and fail to test the CLI path.
-        let (index, report) = fdu_core::open(root.path(), &config).expect("the CLI scope");
+        let (mut basis, delivery) = open_plan(
+            root.path(),
+            &arguments.scan,
+            CachePolicy::Only,
+            Some(snapshot),
+            AnalysisRequest::default(),
+        );
+        // Inspect the stored identity: controls-off reads may lawfully project a
+        // controls-on snapshot, so admission alone cannot prove which scope was saved.
+        assert!(
+            fdu_core::snapshot::read_header(delivery.cache_path.as_ref().expect("cache path"))
+                .expect("snapshot header")
+                .expect("stored snapshot")
+                .identity
+                .controls
+                .is_observed()
+        );
+        let (index, report) = fdu_core::open(&basis, &delivery).expect("the CLI scope");
         assert!(report.is_complete());
         assert_eq!(index.is_ignored(std::path::Path::new("ignored.txt")).ok(), Some(Some(true)));
-        config.scan.read_controls = false;
-        assert!(fdu_core::open(root.path(), &config).is_err(), "controls were observed");
+        basis.scope.read_controls = false;
+        let (projected, _) = fdu_core::open(&basis, &delivery).expect("controls-off projection");
+        assert!(matches!(
+            projected.is_ignored(Path::new("ignored.txt")),
+            Err(fdu_core::Error::ControlStateNotObserved)
+        ));
+        assert_eq!(projected.total().files, index.total().files);
     }
 
     #[test]
@@ -2621,6 +2816,34 @@ mod tests {
         assert_eq!(output.summary.files, 1);
         assert!(output.summary.complete);
         assert_eq!(output.source, "index-retained");
+    }
+
+    #[test]
+    fn report_render_modes_stream_the_exact_string_document() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        std::fs::create_dir(root.path().join("nested")).expect("directory");
+        std::fs::write(root.path().join("nested/one.txt"), b"one").expect("file");
+        std::fs::write(root.path().join("two.json"), br#"{"two":2}"#).expect("file");
+        let arguments = Arguments::parse(
+            ["render-json", "--root", root.path().to_str().expect("utf8")]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .expect("probe arguments");
+        let (_index, report) = report_for_render(&arguments).expect("render report");
+
+        for format in [
+            fdu_core::report_format::Format::Json,
+            fdu_core::report_format::Format::Jsonl,
+            fdu_core::report_format::Format::Yaml,
+        ] {
+            let materialized =
+                fdu_core::report_format::render(&report, format, false).expect("render report");
+            let mut streamed = Vec::new();
+            fdu_core::report_format::write(&report, format, false, &mut streamed)
+                .expect("stream report");
+            assert_eq!(streamed, materialized.as_bytes(), "{format:?}");
+        }
     }
 
     #[test]

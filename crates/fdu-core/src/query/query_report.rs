@@ -16,26 +16,25 @@
 //! index's separate derived tier.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource};
-use crate::content::{
-    AnalysisSet, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
-};
+use crate::content::{AnalysisSet, ContentProvenance, CoverageReason, LogicalWordStats, MetricDef};
 use crate::control::ControlCoverage;
-use crate::engine_contract::{EntryKind, Freshness, ScanScope};
+use crate::engine_contract::{EntryKind, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
-use crate::query::Rejection;
 use crate::query::query_request::{Basis, Request};
 use crate::query::query_selection::{
-    Bound, Candidate, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
+    Bound, IgnoredEntries, NameIdentity, Selection, SizeMetric, SortKey,
 };
+use crate::query::{Rejection, ReportProvenance, TreeStatus, query_subtrees};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ViewSpec {
+    /// Matching entries, rendered as a tree or a flat list by the format axis.
+    List,
     /// Per-directory roll-ups down the hierarchy.
     Tree,
     /// One row per stable detected file type.
@@ -68,7 +67,8 @@ impl ViewSpec {
     fn default_sort(self) -> SortKey {
         match self {
             // Size-ranked by default, because "what is big" is the question these answer.
-            Self::Tree
+            Self::List
+            | Self::Tree
             | Self::Types
             | Self::Extensions
             | Self::Families
@@ -96,7 +96,7 @@ impl ViewSpec {
     /// display default.
     const fn default_limit(self) -> Bound {
         match self {
-            Self::Files => Bound::All,
+            Self::List | Self::Files => Bound::All,
             Self::Largest | Self::Recent => Bound::Limit(20),
             _ => Bound::Limit(10),
         }
@@ -126,7 +126,8 @@ impl ViewSpec {
     ///
     /// One list, so a front end cannot hold a stale copy: the Python binding kept its own
     /// view parser and silently rejected `largest` and `recent` for exactly that reason.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
+        Self::List,
         Self::Summary,
         Self::Tree,
         Self::Families,
@@ -146,6 +147,7 @@ impl ViewSpec {
     /// same words or the two disagree about what a request means.
     pub fn parse(value: &str) -> Result<Self, String> {
         match value.trim().to_ascii_lowercase().as_str() {
+            "list" => Ok(Self::List),
             "tree" => Ok(Self::Tree),
             "types" => Ok(Self::Types),
             "extensions" => Ok(Self::Extensions),
@@ -172,6 +174,7 @@ impl ViewSpec {
     /// Stable wire label.
     pub const fn label(self) -> &'static str {
         match self {
+            Self::List => "list",
             Self::Tree => "tree",
             Self::Types => "types",
             Self::Extensions => "extensions",
@@ -197,7 +200,7 @@ impl ViewSpec {
             (true, false) => Self::Languages,
             (false, true) => Self::Documents,
             (false, false) if analysis.is_enabled() => Self::Families,
-            (false, false) => Self::Tree,
+            (false, false) => Self::List,
         }
     }
 
@@ -288,7 +291,7 @@ impl ViewSpec {
     /// `full` is every *summary* view. `files` is an unbounded enumeration, and putting
     /// one inside a digest destroys the digest.
     pub const fn is_summary_view(self) -> bool {
-        !matches!(self, Self::Files)
+        !matches!(self, Self::List | Self::Files)
     }
 }
 
@@ -314,6 +317,8 @@ impl ViewSpec {
 pub struct AxisNames {
     /// The view axis.
     pub view: &'static str,
+    /// The output format axis.
+    pub format: &'static str,
     /// The analyzer axis.
     pub analyze: &'static str,
     /// The budget on retained `.gitignore` state.
@@ -369,6 +374,7 @@ impl AxisNames {
     /// naming a `--follow-symlinks` that does not exist would point them at the wrong door.
     pub const FLAGS: Self = Self {
         view: "--view",
+        format: "--format",
         analyze: "--analyze",
         control_budget: "--gitignore-budget",
         control_line_limit: "--gitignore-line-limit",
@@ -405,6 +411,7 @@ impl AxisNames {
     /// without changing it.
     pub const FIELDS: Self = Self {
         view: "view",
+        format: "format",
         analyze: "analyze",
         control_budget: "control_budget",
         control_line_limit: "control_line_limit",
@@ -442,6 +449,8 @@ pub struct Query {
     pub selection: Selection,
     /// Which views to report, in the order they were requested.
     pub views: Vec<ViewSpec>,
+    /// Presentation requested before projecting retained entries.
+    pub format: crate::report_format::Format,
     /// Views `full` had to drop because the requested analyzers cannot answer them.
     ///
     /// Carried so the report can name the omission rather than leave a caller to notice a
@@ -462,6 +471,7 @@ impl Default for Query {
         Self {
             selection: Selection::default(),
             views: Vec::new(),
+            format: crate::report_format::Format::Text,
             omitted_views: Vec::new(),
             axes: &AxisNames::FIELDS,
             words_per_page: crate::query::Request::DEFAULTS.words_per_page,
@@ -470,14 +480,44 @@ impl Default for Query {
 }
 
 impl Query {
+    /// Whether this view needs the directory hierarchy rather than matching flat rows.
+    pub fn tree_for(&self, view: ViewSpec) -> bool {
+        use crate::report_format::Format;
+        match view {
+            ViewSpec::List => matches!(self.format, Format::Text | Format::Tree),
+            ViewSpec::Tree => !matches!(self.format, Format::Paths | Format::Long),
+            ViewSpec::Files => self.format == Format::Tree,
+            _ => false,
+        }
+    }
+
+    /// Whether this read needs directory candidates and their subtree measurements.
+    pub(crate) fn needs_selection_walk(&self) -> bool {
+        !self.selection.is_unfiltered()
+            || self.views.iter().any(|view| {
+                matches!(view, ViewSpec::List | ViewSpec::Tree | ViewSpec::Files)
+                    && !self.tree_for(*view)
+            })
+    }
+
     /// The bound to apply for `view`: the caller's if they named one, else the view's own.
     pub fn limit_for(&self, view: ViewSpec) -> Bound {
-        self.selection.limit.unwrap_or_else(|| view.default_limit())
+        self.selection.limit.unwrap_or_else(|| {
+            if self.tree_for(view) {
+                ViewSpec::Tree.default_limit()
+            } else if view == ViewSpec::Tree {
+                Bound::All
+            } else {
+                view.default_limit()
+            }
+        })
     }
 
     /// The tree depth to apply for `view`, on the same terms as `limit_for`.
     pub fn depth_for(&self, view: ViewSpec) -> Bound {
-        self.selection.depth.unwrap_or_else(|| view.default_depth())
+        self.selection.depth.unwrap_or_else(|| {
+            if self.tree_for(view) { ViewSpec::Tree.default_depth() } else { view.default_depth() }
+        })
     }
 }
 
@@ -490,32 +530,6 @@ pub enum ReportSource {
     WarmRevalidate,
     /// A snapshot answered without the filesystem being consulted.
     CacheOnly,
-}
-
-/// Facts about how a report's index was produced.
-///
-/// Passed in rather than sampled inside [`report`] so the view layer stays a pure
-/// function of its inputs: the same index and query must always produce the same report,
-/// which is what makes the goldens meaningful and the tests deterministic.
-#[derive(Clone, Debug)]
-pub struct Provenance {
-    /// When the walk or revalidation behind this index began.
-    ///
-    /// This, not the finish time, is the sound watermark for an incremental follow-up
-    /// query: a file modified mid-scan may have been observed before the modification,
-    /// so only the start bound is conservative.
-    pub scan_started_at: Option<SystemTime>,
-    /// When the report was rendered.
-    pub generated_at: SystemTime,
-    /// Which cache tier answered.
-    pub source: ReportSource,
-    /// Whether every path in scope was read successfully.
-    pub complete: bool,
-    /// Per-path failures that made this result partial, already rendered.
-    ///
-    /// Rendered strings rather than error values: this crosses into serialization, and a
-    /// report is evidence about a run, not a place to re-handle its errors.
-    pub errors: Vec<String>,
 }
 
 /// One directory's row in a tree view.
@@ -646,6 +660,8 @@ pub enum ShareMetric {
     CodeLines,
     /// Raw or reader-visible normalized document words, selected by analysis depth.
     DocumentWords,
+    /// Whitespace-delimited words from the shared lines unit.
+    RawWords,
 }
 
 impl ShareMetric {
@@ -656,13 +672,85 @@ impl ShareMetric {
             Self::AllocatedBytes => "allocated_bytes",
             Self::CodeLines => "code_lines",
             Self::DocumentWords => "document_words",
+            Self::RawWords => "raw_words",
         }
+    }
+}
+
+/// One stable group in a metric-summary section.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ReportMetricValues {
+    /// Physical lines, present with the lines unit.
+    pub physical_lines: Option<u64>,
+    /// Blank lines, present with the lines unit.
+    pub blank_lines: Option<u64>,
+    /// Nonblank lines, present with the lines unit.
+    pub nonblank_lines: Option<u64>,
+    /// Raw words, present with the lines unit.
+    pub raw_words: Option<u64>,
+    /// Code lines, present with the code unit.
+    pub code_lines: Option<u64>,
+    /// Comment lines, present with the code unit.
+    pub comment_lines: Option<u64>,
+    /// Code-analyzer blank lines, present with the code unit.
+    pub code_blank_lines: Option<u64>,
+    /// Logical words, present with the words unit.
+    pub logical_words: Option<u64>,
+    /// Paragraphs, present with the words unit.
+    pub paragraphs: Option<u64>,
+    /// Reader-visible words, present with the words unit.
+    pub visible_words: Option<u64>,
+    /// Reader-visible logical words, present with the words unit.
+    pub visible_logical_words: Option<u64>,
+    /// Query-selected document words, present with the words unit.
+    pub document_words: Option<u64>,
+}
+
+impl ReportMetricValues {
+    fn for_analysis(analysis: AnalysisSet) -> Self {
+        let lines = analysis.is_enabled().then_some(0);
+        let code = analysis.includes_code().then_some(0);
+        let words = analysis.includes_words().then_some(0);
+        Self {
+            physical_lines: lines,
+            blank_lines: lines,
+            nonblank_lines: lines,
+            raw_words: lines,
+            code_lines: code,
+            comment_lines: code,
+            code_blank_lines: code,
+            logical_words: words,
+            paragraphs: words,
+            visible_words: words,
+            visible_logical_words: words,
+            document_words: words,
+        }
+    }
+
+    fn add_assign(&mut self, other: &Self) {
+        add_optional(&mut self.physical_lines, other.physical_lines);
+        add_optional(&mut self.blank_lines, other.blank_lines);
+        add_optional(&mut self.nonblank_lines, other.nonblank_lines);
+        add_optional(&mut self.raw_words, other.raw_words);
+        add_optional(&mut self.code_lines, other.code_lines);
+        add_optional(&mut self.comment_lines, other.comment_lines);
+        add_optional(&mut self.code_blank_lines, other.code_blank_lines);
+        add_optional(&mut self.paragraphs, other.paragraphs);
+        add_optional(&mut self.visible_words, other.visible_words);
+    }
+}
+
+fn add_optional(total: &mut Option<u64>, value: Option<u64>) {
+    if let (Some(total), Some(value)) = (total, value) {
+        *total = total.saturating_add(value);
     }
 }
 
 /// One stable group in a metric-summary section.
 #[derive(Clone, Debug)]
 pub struct MetricRow {
+    /// Analyzer units requested for this row.
+    pub analysis: AnalysisSet,
     /// Stable type or family label.
     pub id: String,
     /// Broad family for type-grouped rows.
@@ -676,7 +764,11 @@ pub struct MetricRow {
     /// Files whose requested metrics completed.
     pub analyzed_files: u64,
     /// Additive content metric slots.
-    pub metrics: MetricValues,
+    pub metrics: ReportMetricValues,
+    /// Additive sufficient statistics behind `logical_words`.
+    pub(crate) logical_word_stats: LogicalWordStats,
+    /// Additive sufficient statistics behind `visible_logical_words`.
+    pub(crate) visible_logical_word_stats: LogicalWordStats,
     /// Query-selected raw document words before normalization.
     pub document_raw_words: u64,
     /// Additive sufficient statistics for the query-selected document projection.
@@ -685,6 +777,12 @@ pub struct MetricRow {
     pub document_metric_files: u64,
     /// Explicit content-analysis outcomes.
     pub coverage: BTreeMap<CoverageReason, u64>,
+    /// Lines-unit outcomes.
+    pub lines_coverage: BTreeMap<CoverageReason, u64>,
+    /// Code-unit outcomes when requested.
+    pub code_coverage: Option<BTreeMap<CoverageReason, u64>>,
+    /// Words-unit outcomes when requested.
+    pub words_coverage: Option<BTreeMap<CoverageReason, u64>>,
     /// Files by the classification tier that established their type.
     pub detection_sources: BTreeMap<DetectionSource, u64>,
     /// Files by classification confidence.
@@ -697,6 +795,39 @@ pub struct MetricRow {
     pub documentation_files: u64,
     /// Exact share in the report's selected size metric.
     pub share: MetricShare,
+}
+
+impl MetricRow {
+    /// Return one registry metric when its owning analyzer unit was requested.
+    pub fn metric_value(&self, metric: &MetricDef) -> Option<u64> {
+        if !self.analysis.contains(metric.owner) {
+            return None;
+        }
+        match metric.name {
+            "physical_lines" => self.metrics.physical_lines,
+            "blank_lines" => self.metrics.blank_lines,
+            "nonblank_lines" => self.metrics.nonblank_lines,
+            "raw_words" => self.metrics.raw_words,
+            "code_lines" => self.metrics.code_lines,
+            "comment_lines" => self.metrics.comment_lines,
+            "code_blank_lines" => self.metrics.code_blank_lines,
+            "logical_words" => self.metrics.logical_words,
+            "paragraphs" => self.metrics.paragraphs,
+            "visible_words" => self.metrics.visible_words,
+            "visible_logical_words" => self.metrics.visible_logical_words,
+            "document_words" => self.metrics.document_words,
+            _ => None,
+        }
+    }
+
+    fn finish_derived_metrics(&mut self) {
+        if self.analysis.includes_words() {
+            self.metrics.logical_words = Some(self.logical_word_stats.logical_words());
+            self.metrics.visible_logical_words =
+                Some(self.visible_logical_word_stats.logical_words());
+            self.metrics.document_words = Some(self.document_word_stats.logical_words());
+        }
+    }
 }
 
 /// Totals and grouped rows for types, families, languages, or documents.
@@ -725,7 +856,8 @@ pub struct ContentReportMetadata {
     pub provenance: ContentProvenance,
 }
 
-/// One entry's row in a files view.
+/// One matching entry in a flat view. Directory size and mtime describe its subtree
+/// after exclusions; other entries carry their own metadata. Nested rows may overlap.
 #[derive(Clone, Debug)]
 pub struct FileRow {
     /// Path relative to the index root.
@@ -738,6 +870,17 @@ pub struct FileRow {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// Descendant regular files for a directory; absent for other entry kinds.
+    pub files: Option<u64>,
+    /// Descendant directories, excluding the matching root; absent for other kinds.
+    pub dirs: Option<u64>,
+    /// Whether a directory's eligible subtree was listed in full, so its bytes, counts,
+    /// and modification time are exact; `Some(false)` makes them lower bounds and its age
+    /// unknown. Absent for other kinds.
+    pub complete: Option<bool>,
+    /// Signed nanoseconds since modification at the request's reference instant, or
+    /// `None` when the reference is unrepresentable or the subtree is incomplete.
+    pub age_ns: Option<i128>,
     /// Whether `.gitignore` rules ignore this entry, or `None` when the index observed no
     /// control state.
     pub ignored: Option<bool>,
@@ -765,7 +908,12 @@ pub struct SummaryRow {
 #[derive(Clone, Debug)]
 pub enum Section {
     /// A tree view.
-    Tree(TreeNode),
+    Tree {
+        /// The view whose directory hierarchy is shown.
+        view: ViewSpec,
+        /// The bounded directory roll-ups.
+        root: TreeNode,
+    },
     /// A raw-extension view.
     Extensions {
         /// The rows, already sorted and bounded.
@@ -804,9 +952,10 @@ impl Section {
     /// Which view produced this section.
     pub fn view(&self) -> ViewSpec {
         match self {
-            Self::Tree(_) => ViewSpec::Tree,
             Self::Extensions { .. } => ViewSpec::Extensions,
-            Self::Metrics { view, .. } | Self::Files { view, .. } => *view,
+            Self::Tree { view, .. } | Self::Metrics { view, .. } | Self::Files { view, .. } => {
+                *view
+            }
             Self::Summary(_) => ViewSpec::Summary,
         }
     }
@@ -815,23 +964,25 @@ impl Section {
 /// A rendered answer: provenance, plus one section per requested view.
 #[derive(Clone, Debug)]
 pub struct Report {
-    /// When the walk behind this index began.
-    pub scan_started_at: Option<SystemTime>,
-    /// When this report was rendered.
-    pub generated_at: SystemTime,
-    /// Which cache tier answered.
-    pub source: ReportSource,
-    /// Whether every path in scope was read successfully.
-    pub complete: bool,
-    /// Per-path failures that made this result partial.
-    pub errors: Vec<String>,
-    /// How current the index is.
-    pub freshness: Freshness,
+    /// Instant used for modification age, in epoch nanoseconds; unknown outside i64.
+    pub age_reference_ns: Option<i64>,
+    /// Requested presentation; Text resolves from each section projection.
+    pub format: crate::report_format::Format,
+    /// Completeness and bounded failure detail for this answer.
+    pub status: TreeStatus,
+    /// Source, currency, and timing for this answer and its retained tiers.
+    pub provenance: ReportProvenance,
     /// The semantic scan scope represented by this report.
     ///
-    /// A report-only cache projection may consume stronger internal control state that
-    /// no report view exposes; this field still names the weaker requested scope.
+    /// A projected cache load constructs its index directly in the requested controls-off
+    /// scope, so every report route reads this value from the same requested-scope index.
     pub scope: ScanScope,
+    /// Analyzer units requested for this answer.
+    pub requested_analysis: AnalysisSet,
+    /// Resolved views requested and answerable by this analyzer set.
+    pub requested_views: Vec<ViewSpec>,
+    /// Resolved views requested but unavailable from this analyzer set.
+    pub omitted_views: Vec<ViewSpec>,
     /// Absolute path of the indexed root.
     pub root: PathBuf,
     /// Remarks about the report itself, in the order a renderer should print them.
@@ -858,7 +1009,7 @@ pub struct Report {
     /// Whether ignore classification applies every `.gitignore` in scope, serialised as
     /// `ignore_rules`.
     ///
-    /// Not operational completeness: a refused control file leaves [`Self::complete`]
+    /// Not operational completeness: a refused control file leaves [`TreeStatus::complete`]
     /// true and every size exact, and costs only the ignored and unignored split below
     /// it. [`Self::notes`] names the directories and the knob that applies them.
     pub ignore_rules: ControlCoverage,
@@ -994,8 +1145,12 @@ fn refused_controls_note(ignore_rules: &ControlCoverage, axes: &AxisNames) -> Op
 /// ([`Selection::ignored`]) over an index that read no `.gitignore` -- which can say of no
 /// entry that it is ignored or that it is not, so the request is refused rather than
 /// answered with every entry or none.
-pub fn report(index: &Index, request: &Request, provenance: &Provenance) -> crate::Result<Report> {
-    report_in(index, request, provenance, NameIdentity::Native)
+pub fn report(
+    index: &Index,
+    request: &Request,
+    generated_at: std::time::SystemTime,
+) -> crate::Result<Report> {
+    report_in(index, request, generated_at, NameIdentity::Native)
 }
 
 /// [`report`], with the selection evaluated against the named spelling of each path.
@@ -1005,7 +1160,7 @@ pub fn report(index: &Index, request: &Request, provenance: &Provenance) -> crat
 pub(crate) fn report_in(
     index: &Index,
     request: &Request,
-    provenance: &Provenance,
+    generated_at: std::time::SystemTime,
     identity: NameIdentity,
 ) -> crate::Result<Report> {
     // What this index holds is what it can be read for. Every surface validates before it
@@ -1017,8 +1172,7 @@ pub(crate) fn report_in(
     let content = request.basis.content;
     // One traversal serves every filtered view in the request, so asking for three views
     // costs one pass rather than three.
-    let walked =
-        (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection, identity));
+    let walked = query.needs_selection_walk().then(|| walk(index, &query.selection, identity));
     // Unfiltered metric and file views share one `FileRow` walk only when more than one
     // section consumes it. A single section keeps ownership of its one traversal, so a
     // bounded file view does not clone every path before sorting and truncating it.
@@ -1027,7 +1181,7 @@ pub(crate) fn report_in(
         query.views.iter().copied().filter(|view| needs_unfiltered_entry_rows(*view)).count();
     let unfiltered_rows = (walked.is_none() && row_consumers > 1).then(|| every_entry(index));
 
-    let sections = query
+    let mut sections: Vec<Section> = query
         .views
         .iter()
         .map(|view| {
@@ -1035,63 +1189,47 @@ pub(crate) fn report_in(
         })
         .collect();
 
+    let age_reference_ns = crate::query::system_time_to_nanos(request.now);
+    for section in &mut sections {
+        if let Section::Files { rows, .. } = section {
+            for row in rows {
+                // An incomplete subtree's mtime is a lower bound, and a lower-bound
+                // maximum is not an age: the activity that would make the directory
+                // younger may sit in the part that was never listed.
+                row.age_ns = match row.complete {
+                    Some(false) => None,
+                    Some(true) | None => {
+                        age_reference_ns.map(|now| i128::from(now) - i128::from(row.mtime_ns))
+                    }
+                };
+            }
+        }
+    }
     let ignore_rules = index.control_coverage();
     Ok(Report {
+        age_reference_ns,
+        format: query.format,
         notes: display_notes(query, &ignore_rules),
-        scan_started_at: provenance.scan_started_at,
-        generated_at: provenance.generated_at,
-        source: provenance.source,
-        complete: provenance.complete,
-        errors: provenance.errors.clone(),
-        freshness: index.freshness(),
+        status: TreeStatus::of(index, request),
+        provenance: ReportProvenance::of(index, content, generated_at),
         scope: index.scope(),
+        requested_analysis: content,
+        requested_views: query.views.clone(),
+        omitted_views: query.omitted_views.clone(),
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
         analysis: index.content().and_then(|held| {
-            // The set the read asked for, which `validate_read` just proved is the one this
-            // index holds: the report echoes the request, never the store.
-            let stored = held.profile()?;
-            debug_assert_eq!(stored, content, "validate_read admits only an equal analyzer set");
-            Some(ContentReportMetadata { profile: content, provenance: held.provenance()? })
+            let wanted = index.content_identity(content);
+            let projected = held.admit(&wanted)?;
+            Some(ContentReportMetadata {
+                profile: projected.identity().analysis,
+                provenance: projected.identity().record_provenance(),
+            })
         }),
         ignored_entries: query.selection.ignored,
         ignore_rules,
         sections,
     })
-}
-
-/// Drop every ignored share from a report, for a request whose scope observes no control
-/// state.
-///
-/// A cache-only report may answer a request that turned observation off from a snapshot
-/// that observed it. Every row of that report must then say what the request did, which
-/// is that nothing was classified: `null`, never the stronger snapshot's split.
-pub(crate) fn forget_ignore_classification(report: &mut Report) {
-    report.ignore_rules = ControlCoverage::NotObserved;
-    for section in &mut report.sections {
-        match section {
-            Section::Tree(root) => {
-                let mut pending: Vec<&mut TreeNode> = vec![root];
-                while let Some(node) = pending.pop() {
-                    node.ignored = None;
-                    pending.extend(node.children.iter_mut());
-                }
-            }
-            Section::Extensions { rows, .. } => {
-                for row in rows {
-                    row.ignored = None;
-                }
-            }
-            Section::Files { rows, .. } => {
-                for row in rows {
-                    row.ignored = None;
-                }
-            }
-            Section::Summary(row) => row.ignored = None,
-            // Grouped metric rows carry no ignored share.
-            Section::Metrics { .. } => {}
-        }
-    }
 }
 
 /// Build a one-section report from an already reduced exact summary.
@@ -1102,23 +1240,24 @@ pub(crate) fn forget_ignore_classification(report: &mut Report) {
 pub(crate) fn report_summary(
     root: &Path,
     scope: ScanScope,
-    size: SizeMetric,
+    request: &Request,
     summary: SummaryRow,
-    freshness: Freshness,
-    provenance: &Provenance,
+    status: TreeStatus,
+    provenance: ReportProvenance,
 ) -> Report {
     Report {
+        age_reference_ns: crate::query::system_time_to_nanos(request.now),
+        format: request.query.format,
         // A compact summary resolves one view and drops none.
         notes: Vec::new(),
-        scan_started_at: provenance.scan_started_at,
-        generated_at: provenance.generated_at,
-        source: provenance.source,
-        complete: provenance.complete,
-        errors: provenance.errors.clone(),
-        freshness,
+        status,
+        provenance,
         scope,
+        requested_analysis: AnalysisSet::NONE,
+        requested_views: vec![ViewSpec::Summary],
+        omitted_views: Vec::new(),
         root: root.to_path_buf(),
-        size,
+        size: request.query.selection.size,
         // The planner only selects this tier when no analysis was requested, so there is
         // no analyzer provenance to report.
         analysis: None,
@@ -1145,6 +1284,10 @@ struct Walked {
     ignored_by_ext: BTreeMap<String, ExtTally>,
     /// Entries the selection admitted.
     rows: Vec<FileRow>,
+    /// Regular files in the union of matches and selected subtrees, counted once.
+    members: Vec<FileRow>,
+    /// Directories in that union or on a path to it, including empty matches.
+    visible: BTreeSet<EntryId>,
 }
 
 impl Walked {
@@ -1184,6 +1327,8 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
         by_ext: BTreeMap::new(),
         ignored_by_ext: BTreeMap::new(),
         rows: Vec::new(),
+        members: Vec::new(),
+        visible: BTreeSet::new(),
     };
     // No entry of an index that read no rule can be shown to be ignored or not, so
     // `report_in` refuses a selection by ignored state before it reaches this walk.
@@ -1192,9 +1337,13 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
         "a selection by ignored state over an unobserving index is refused before the walk"
     );
 
-    // (id, path, whether its children have already been pushed)
-    let mut stack: Vec<(EntryId, PathBuf, bool)> = vec![(EntryId::ROOT, PathBuf::new(), false)];
-    while let Some((id, path, expanded)) = stack.pop() {
+    // Directory predicates see subtree values even in mixed listings. A file-only
+    // selection needs no directory measurements and retains its existing query cost.
+    let directories = (selection.kinds.is_empty() || selection.kinds.contains(&EntryKind::Dir))
+        .then(|| query_subtrees::measure(index, selection, identity));
+    // (id, path, post-order, covered by a selected ancestor)
+    let mut stack = vec![(EntryId::ROOT, PathBuf::new(), false, false)];
+    while let Some((id, path, expanded, covered)) = stack.pop() {
         if expanded {
             // Post-order: every child has finished, so fold their totals into this one.
             // `total` already carries this directory's own admitted files and admitted
@@ -1209,11 +1358,14 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
                     }
                 }
             }
+            if total.files > 0 || total.dirs > 0 {
+                walked.visible.insert(id);
+            }
             walked.per_directory.insert(id, total);
             continue;
         }
 
-        stack.push((id, path.clone(), true));
+        stack.push((id, path.clone(), true, covered));
         let Some(children) = index.children_of(id) else {
             continue;
         };
@@ -1228,35 +1380,57 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
             // bytes the index interned from, or a name that is not valid UTF-8 would be
             // filed under one label by the fast tier and another by this one.
             let file_name = child_path.file_name().unwrap_or_default();
-            let portable = (identity == NameIdentity::Portable)
-                .then(|| crate::opened::read::portable_path(&child_path));
-            let (relative, name) = match &portable {
-                Some(portable) => {
-                    let path = portable.as_str();
-                    (Path::new(path), path.rsplit('/').next().unwrap_or(path).to_owned())
-                }
-                None => (child_path.as_path(), file_name.to_string_lossy().into_owned()),
-            };
             let ignored = index.ignored_bit_of(child).unwrap_or(false);
-            let candidate = Candidate {
-                relative,
-                name: &name,
+            let mut measured = *attrs;
+            let subtree = directories.as_ref().and_then(|values| values.get(&child)).copied();
+            if let Some(subtree) = subtree {
+                measured.size = subtree.bytes;
+                measured.allocated = subtree.allocated;
+                measured.mtime_ns = subtree.mtime_ns;
+            }
+            let (pruned, matches) = query_subtrees::with_candidate(
+                &child_path,
                 kind,
-                bytes: attrs.size,
-                allocated: attrs.allocated,
-                mtime_ns: attrs.mtime_ns,
+                measured,
                 ignored,
+                identity,
+                |candidate| {
+                    (query_subtrees::pruned(selection, &candidate), selection.admits(&candidate))
+                },
+            );
+            if pruned {
+                continue;
+            }
+            // An incomplete subtree's newest activity is a lower bound, not an age, so no
+            // modification bound can be shown to hold for it: `before` could be disproved
+            // by any unlisted descendant, and `since`, which a lower bound could prove, is
+            // held to the same rule so that a row's presence under a time filter always
+            // means the filter was decided on a complete measurement. A size bound still
+            // matches, since a lower bound at or above the minimum proves the true size is.
+            let matches = matches
+                && (selection.modified.is_unbounded()
+                    || subtree.is_none_or(|subtree| subtree.complete));
+            let row = FileRow {
+                path: child_path.clone(),
+                kind,
+                bytes: measured.size,
+                allocated: measured.allocated,
+                mtime_ns: measured.mtime_ns,
+                files: subtree.map(|subtree| subtree.files),
+                dirs: subtree.map(|subtree| subtree.dirs),
+                complete: subtree.map(|subtree| subtree.complete),
+                age_ns: None,
+                ignored: observed.then_some(ignored),
             };
-
-            if selection.admits(&candidate) {
-                walked.rows.push(FileRow {
-                    path: child_path.clone(),
-                    kind,
-                    bytes: attrs.size,
-                    allocated: attrs.allocated,
-                    mtime_ns: attrs.mtime_ns,
-                    ignored: observed.then_some(ignored),
-                });
+            if matches {
+                walked.rows.push(row.clone());
+            }
+            if matches || (covered && selection.ignored.admits(ignored)) {
+                if kind == EntryKind::File {
+                    walked.members.push(row);
+                } else if kind == EntryKind::Dir {
+                    walked.visible.insert(child);
+                }
 
                 if kind == EntryKind::File {
                     let own = walked.per_directory.entry(id).or_default();
@@ -1298,7 +1472,7 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
             }
 
             if kind == EntryKind::Dir {
-                stack.push((child, child_path, false));
+                stack.push((child, child_path, false, covered || matches));
             }
         }
     }
@@ -1358,6 +1532,9 @@ fn build_section(
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
 ) -> Section {
+    if query.tree_for(view) {
+        return Section::Tree { view, root: tree_node(index, query, walked) };
+    }
     match view {
         ViewSpec::Summary => Section::Summary(match walked {
             None => unfiltered_summary(index, EntryId::ROOT),
@@ -1380,11 +1557,14 @@ fn build_section(
                 )),
             }
         }
-        ViewSpec::Files | ViewSpec::Largest | ViewSpec::Recent => {
+        ViewSpec::List
+        | ViewSpec::Tree
+        | ViewSpec::Files
+        | ViewSpec::Largest
+        | ViewSpec::Recent => {
             let (rows, total) = file_rows(view, index, query, walked, unfiltered_rows);
             Section::Files { view, rows, total }
         }
-        ViewSpec::Tree => Section::Tree(tree_node(index, query, walked)),
     }
 }
 
@@ -1480,19 +1660,24 @@ fn metric_summary(
     unfiltered_rows: Option<&[FileRow]>,
 ) -> MetricSummary {
     let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
-    let files = entry_rows(index, walked, unfiltered_rows);
+    let files = walked.map_or_else(
+        || entry_rows(index, None, unfiltered_rows),
+        |walked| Cow::Borrowed(walked.members.as_slice()),
+    );
     let mut grouped = BTreeMap::<String, MetricRow>::new();
+    let wanted = index.content_identity(content);
+    let held = index.content().and_then(|held| held.admit(&wanted));
     for file in files.iter().filter(|row| row.kind == EntryKind::File) {
-        let cached = index.content().and_then(|content| content.file(&file.path));
-        let classification = cached
-            .map_or_else(|| index.classify(&file.path), |record| record.classification.clone());
+        let cached = held.and_then(|content| content.file(&file.path));
+        let classification = index.classify(&file.path);
         let included = match view {
             ViewSpec::Languages => classification.family == ContentFamily::Code,
             ViewSpec::Documents => {
                 matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup)
             }
             ViewSpec::Types | ViewSpec::Families => true,
-            ViewSpec::Tree
+            ViewSpec::List
+            | ViewSpec::Tree
             | ViewSpec::Extensions
             | ViewSpec::Files
             | ViewSpec::Largest
@@ -1507,17 +1692,23 @@ fn metric_summary(
             MetricGroup::Family => classification.family.as_str().to_string(),
         };
         let row = grouped.entry(id.clone()).or_insert_with(|| MetricRow {
+            analysis: content,
             id,
             family: classification.family,
             files: 0,
             bytes: 0,
             allocated: 0,
             analyzed_files: 0,
-            metrics: MetricValues::default(),
+            metrics: ReportMetricValues::for_analysis(content),
+            logical_word_stats: LogicalWordStats::default(),
+            visible_logical_word_stats: LogicalWordStats::default(),
             document_raw_words: 0,
             document_word_stats: LogicalWordStats::default(),
             document_metric_files: 0,
             coverage: BTreeMap::new(),
+            lines_coverage: BTreeMap::new(),
+            code_coverage: content.includes_code().then(BTreeMap::new),
+            words_coverage: content.includes_words().then(BTreeMap::new),
             detection_sources: BTreeMap::new(),
             detection_confidence: BTreeMap::new(),
             generated_files: 0,
@@ -1528,51 +1719,96 @@ fn metric_summary(
         row.files = row.files.saturating_add(1);
         row.bytes = row.bytes.saturating_add(file.bytes);
         row.allocated = row.allocated.saturating_add(file.allocated);
-        *row.detection_sources.entry(classification.source).or_default() += 1;
-        *row.detection_confidence.entry(classification.confidence).or_default() += 1;
-        row.generated_files =
-            row.generated_files.saturating_add(u64::from(classification.flags.generated));
-        row.vendored_files =
-            row.vendored_files.saturating_add(u64::from(classification.flags.vendored));
+        let detection = cached.map_or(
+            (classification.source, classification.confidence, classification.flags),
+            |record| (record.detection.source, record.detection.confidence, record.detection.flags),
+        );
+        *row.detection_sources.entry(detection.0).or_default() += 1;
+        *row.detection_confidence.entry(detection.1).or_default() += 1;
+        row.generated_files = row.generated_files.saturating_add(u64::from(detection.2.generated));
+        row.vendored_files = row.vendored_files.saturating_add(u64::from(detection.2.vendored));
         row.documentation_files =
-            row.documentation_files.saturating_add(u64::from(classification.flags.documentation));
+            row.documentation_files.saturating_add(u64::from(detection.2.documentation));
         if let Some(record) = cached {
-            *row.coverage.entry(record.coverage).or_default() += 1;
-            if record.coverage == CoverageReason::Analyzed {
+            *row.lines_coverage.entry(record.lines.coverage()).or_default() += 1;
+            if let (Some(coverage), Some(outcome)) = (&mut row.code_coverage, record.code) {
+                *coverage.entry(outcome.coverage()).or_default() += 1;
+            }
+            if let (Some(coverage), Some(outcome)) = (&mut row.words_coverage, record.words) {
+                *coverage.entry(outcome.coverage()).or_default() += 1;
+            }
+            let selected = match view {
+                ViewSpec::Languages if content.includes_code() => {
+                    record.code.map(|outcome| outcome.coverage())
+                }
+                ViewSpec::Documents if content.includes_words() => {
+                    record.words.map(|outcome| outcome.coverage())
+                }
+                _ => None,
+            }
+            .unwrap_or(record.lines.coverage());
+            *row.coverage.entry(selected).or_default() += 1;
+            if selected == CoverageReason::Analyzed {
                 row.analyzed_files = row.analyzed_files.saturating_add(1);
-                row.metrics.add_assign(&record.metrics);
-                if record.profile.includes_words() {
-                    row.document_metric_files = row.document_metric_files.saturating_add(1);
-                    if classification.file_type.as_str() == "markdown" {
-                        row.document_raw_words =
-                            row.document_raw_words.saturating_add(record.metrics.visible_words);
-                        row.document_word_stats
-                            .add_assign(record.metrics.visible_logical_word_stats);
-                    } else {
-                        row.document_raw_words =
-                            row.document_raw_words.saturating_add(record.metrics.raw_words);
-                        row.document_word_stats.add_assign(record.metrics.logical_word_stats);
-                    }
-                } else {
+            }
+            if let Some(lines) = record.lines.value() {
+                add_optional(&mut row.metrics.physical_lines, Some(lines.physical_lines));
+                add_optional(&mut row.metrics.blank_lines, Some(lines.blank_lines));
+                add_optional(&mut row.metrics.nonblank_lines, Some(lines.nonblank_lines));
+                add_optional(&mut row.metrics.raw_words, Some(lines.raw_words));
+                row.document_raw_words = row.document_raw_words.saturating_add(lines.raw_words);
+            }
+            if let Some(code_metrics) = record.code.and_then(crate::content::AnalyzerOutcome::value)
+            {
+                add_optional(&mut row.metrics.code_lines, Some(code_metrics.code_lines));
+                add_optional(&mut row.metrics.comment_lines, Some(code_metrics.comment_lines));
+                add_optional(
+                    &mut row.metrics.code_blank_lines,
+                    Some(code_metrics.code_blank_lines),
+                );
+            }
+            if let Some(words) = record.words.and_then(crate::content::AnalyzerOutcome::value) {
+                add_optional(&mut row.metrics.paragraphs, Some(words.paragraphs));
+                add_optional(&mut row.metrics.visible_words, Some(words.visible_words));
+                row.logical_word_stats.add_assign(words.logical_word_stats);
+                row.visible_logical_word_stats.add_assign(words.visible_logical_word_stats);
+                row.document_metric_files = row.document_metric_files.saturating_add(1);
+                if classification.file_type.as_str() == "markdown" {
+                    row.document_raw_words = row
+                        .document_raw_words
+                        .saturating_sub(record.lines.value().map_or(0, |lines| lines.raw_words));
                     row.document_raw_words =
-                        row.document_raw_words.saturating_add(record.metrics.raw_words);
+                        row.document_raw_words.saturating_add(words.visible_words);
+                    row.document_word_stats.add_assign(words.visible_logical_word_stats);
+                } else {
+                    row.document_word_stats.add_assign(words.logical_word_stats);
                 }
             }
         }
     }
 
+    for row in grouped.values_mut() {
+        row.finish_derived_metrics();
+    }
+
     let mut total = MetricRow {
+        analysis: content,
         id: "total".to_string(),
         family: ContentFamily::Unknown,
         files: 0,
         bytes: 0,
         allocated: 0,
         analyzed_files: 0,
-        metrics: MetricValues::default(),
+        metrics: ReportMetricValues::for_analysis(content),
+        logical_word_stats: LogicalWordStats::default(),
+        visible_logical_word_stats: LogicalWordStats::default(),
         document_raw_words: 0,
         document_word_stats: LogicalWordStats::default(),
         document_metric_files: 0,
         coverage: BTreeMap::new(),
+        lines_coverage: BTreeMap::new(),
+        code_coverage: content.includes_code().then(BTreeMap::new),
+        words_coverage: content.includes_words().then(BTreeMap::new),
         detection_sources: BTreeMap::new(),
         detection_confidence: BTreeMap::new(),
         generated_files: 0,
@@ -1586,12 +1822,21 @@ fn metric_summary(
         total.allocated = total.allocated.saturating_add(row.allocated);
         total.analyzed_files = total.analyzed_files.saturating_add(row.analyzed_files);
         total.metrics.add_assign(&row.metrics);
+        total.logical_word_stats.add_assign(row.logical_word_stats);
+        total.visible_logical_word_stats.add_assign(row.visible_logical_word_stats);
         total.document_raw_words = total.document_raw_words.saturating_add(row.document_raw_words);
         total.document_word_stats.add_assign(row.document_word_stats);
         total.document_metric_files =
             total.document_metric_files.saturating_add(row.document_metric_files);
         for (reason, count) in &row.coverage {
             *total.coverage.entry(*reason).or_default() += count;
+        }
+        merge_coverage(&mut total.lines_coverage, &row.lines_coverage);
+        if let (Some(total), Some(row)) = (&mut total.code_coverage, &row.code_coverage) {
+            merge_coverage(total, row);
+        }
+        if let (Some(total), Some(row)) = (&mut total.words_coverage, &row.words_coverage) {
+            merge_coverage(total, row);
         }
         for (source, count) in &row.detection_sources {
             *total.detection_sources.entry(*source).or_default() += count;
@@ -1604,6 +1849,7 @@ fn metric_summary(
         total.documentation_files =
             total.documentation_files.saturating_add(row.documentation_files);
     }
+    total.finish_derived_metrics();
     let byte_share_metric = match query.selection.size {
         SizeMetric::Apparent => ShareMetric::ApparentBytes,
         SizeMetric::Allocated => ShareMetric::AllocatedBytes,
@@ -1612,9 +1858,13 @@ fn metric_summary(
         // The requested analyzers, not the stored ones: a share is a fact about what the
         // request asked to measure, and `validate_read` proved the index holds exactly it.
         ViewSpec::Languages if content.includes_code() => ShareMetric::CodeLines,
-        ViewSpec::Documents => ShareMetric::DocumentWords,
-        ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families => byte_share_metric,
-        ViewSpec::Tree
+        ViewSpec::Documents if content.includes_words() => ShareMetric::DocumentWords,
+        ViewSpec::Languages | ViewSpec::Documents if content.is_enabled() => ShareMetric::RawWords,
+        ViewSpec::Languages | ViewSpec::Documents | ViewSpec::Types | ViewSpec::Families => {
+            byte_share_metric
+        }
+        ViewSpec::List
+        | ViewSpec::Tree
         | ViewSpec::Extensions
         | ViewSpec::Files
         | ViewSpec::Largest
@@ -1655,22 +1905,39 @@ fn metric_summary(
     }
 }
 
+fn merge_coverage(total: &mut BTreeMap<CoverageReason, u64>, row: &BTreeMap<CoverageReason, u64>) {
+    for (reason, count) in row {
+        *total.entry(*reason).or_default() += count;
+    }
+}
+
 fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {
     match metric {
         ShareMetric::ApparentBytes => row.bytes,
         ShareMetric::AllocatedBytes => row.allocated,
-        ShareMetric::CodeLines => row.metrics.code_lines,
-        ShareMetric::DocumentWords => document_words(row),
+        ShareMetric::CodeLines => row.metrics.code_lines.unwrap_or(0),
+        ShareMetric::DocumentWords => document_words(row).unwrap_or(0),
+        ShareMetric::RawWords => row.metrics.raw_words.unwrap_or(0),
     }
 }
 
 /// Derive the selected document volume only after every sufficient statistic is added.
-pub fn document_words(row: &MetricRow) -> u64 {
-    if row.document_metric_files > 0 {
-        row.document_word_stats.logical_words()
-    } else {
-        row.document_raw_words
-    }
+pub fn document_words(row: &MetricRow) -> Option<u64> {
+    row.metrics.document_words
+}
+
+/// Derived page inputs, absent unless the words unit was requested.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Pages {
+    /// Query-selected document words.
+    pub words: u64,
+    /// Words represented by one page.
+    pub words_per_page: u64,
+}
+
+/// Build page inputs only when document words were measured.
+pub fn pages(row: &MetricRow, words_per_page: u64) -> Option<Pages> {
+    document_words(row).map(|words| Pages { words, words_per_page: words_per_page.max(1) })
 }
 
 /// Rows for the files view.
@@ -1694,7 +1961,7 @@ fn file_rows(
             SizeMetric::Apparent => row.bytes,
             SizeMetric::Allocated => row.allocated,
         },
-        |_| 1,
+        |row| row.files.unwrap_or(1),
         |row| Some(row.mtime_ns),
         |row| row.path.to_string_lossy().into_owned(),
     );
@@ -1723,6 +1990,10 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 mtime_ns: attrs.mtime_ns,
+                files: None,
+                dirs: None,
+                complete: None,
+                age_ns: None,
                 ignored: observed.then(|| index.ignored_bit_of(child).unwrap_or(false)),
             });
             if kind == EntryKind::Dir {
@@ -1806,20 +2077,29 @@ fn expand(
         let (id, depth) = (built[cursor].id, built[cursor].depth);
         let path = built[cursor].node.path.clone();
 
-        if !query.depth_for(ViewSpec::Tree).admits(depth) {
+        if !query.selection.depth.unwrap_or(ViewSpec::Tree.default_depth()).admits(depth) {
             // `--depth 0` keeps du's meaning: totals for this node, nothing beneath it.
             // Files are already represented in this directory's totals and never become
             // tree rows. Only a directory child hidden by the depth bound makes the
             // rendered hierarchy incomplete.
             built[cursor].node.truncated = index.children_of(id).is_some_and(|mut children| {
-                children.any(|(_, child)| index.kind_of(child) == Some(EntryKind::Dir))
+                children.any(|(_, child)| {
+                    index.kind_of(child) == Some(EntryKind::Dir)
+                        && walked.is_none_or(|walked| walked.visible.contains(&child))
+                })
             });
             cursor += 1;
             continue;
         }
 
         let mut rows = child_rows(index, query, walked, id, &path);
-        let kept = query.limit_for(ViewSpec::Tree).limit().unwrap_or(rows.len()).min(rows.len());
+        let kept = query
+            .selection
+            .limit
+            .unwrap_or(ViewSpec::Tree.default_limit())
+            .limit()
+            .unwrap_or(rows.len())
+            .min(rows.len());
         built[cursor].node.truncated = kept < rows.len();
         rows.truncate(kept);
 
@@ -1869,6 +2149,9 @@ fn child_rows(
         // The tree view is a directory hierarchy: a file contributes its bytes to the
         // directory holding it rather than appearing as its own row.
         if kind != EntryKind::Dir {
+            continue;
+        }
+        if walked.is_some_and(|walked| !walked.visible.contains(&child)) {
             continue;
         }
         let summary = match walked {
@@ -2008,6 +2291,316 @@ mod tests {
     }
 
     #[test]
+    fn ages_use_one_signed_reference_and_unrepresentable_clocks_are_unknown() {
+        let mut index = sample();
+        index.apply_ok(&Observation::new(vec![
+            upsert("past", EntryKind::File, attrs(1, -10)),
+            upsert("future", EntryKind::File, attrs(1, i64::MAX)),
+        ]));
+        let query = query(
+            &[ViewSpec::Files],
+            Selection { include: vec![pattern("past"), pattern("future")], ..Selection::default() },
+        );
+        let mut request = Request::new(Basis::held_by(&index), query, UNIX_EPOCH);
+        let answer = report(&index, &request, UNIX_EPOCH).expect("report");
+        let rows = files_of(&answer);
+        assert_eq!(answer.age_reference_ns, Some(0));
+        assert_eq!(
+            rows.iter().map(|r| r.age_ns).collect::<Vec<_>>(),
+            [Some(-i128::from(i64::MAX)), Some(10)]
+        );
+        request.now = UNIX_EPOCH + Duration::from_secs(10_000_000_000);
+        let answer = report(&index, &request, UNIX_EPOCH)
+            .expect("out-of-range reference is representable as unknown age");
+        assert_eq!(answer.age_reference_ns, None);
+        assert!(files_of(&answer).iter().all(|row| row.age_ns.is_none()));
+    }
+
+    #[test]
+    fn matching_a_directory_selects_its_subtree_once() {
+        let index = sample();
+        let selection = Selection {
+            include: vec![pattern("src"), pattern("deep")],
+            kinds: vec![EntryKind::Dir],
+            size: SizeMetric::Apparent,
+            min_size: Some(40),
+            ..Selection::default()
+        };
+        let report = run(
+            &index,
+            &query(&[ViewSpec::Files, ViewSpec::Summary, ViewSpec::Extensions], selection),
+        );
+        let rows = files_of(&report);
+        assert_eq!(rows.len(), 2);
+        assert_eq!((rows[0].bytes, rows[0].mtime_ns), (350, 40));
+        let Section::Summary(summary) = &report.sections[1] else { panic!("summary") };
+        assert_eq!((summary.files, summary.dirs, summary.bytes), (3, 2, 350));
+        let Section::Extensions { rows, .. } = &report.sections[2] else { panic!("extensions") };
+        assert_eq!((rows[0].files, rows[0].bytes), (3, 350));
+    }
+
+    #[test]
+    fn subtree_predicates_include_directory_and_symlink_activity_but_only_file_bytes() {
+        let mut index = sample();
+        index
+            .apply(&Observation::new(vec![
+                upsert("src", EntryKind::Dir, attrs(9999, 45)),
+                upsert("src/empty", EntryKind::Dir, attrs(8888, 60)),
+                upsert("src/link", EntryKind::Symlink, attrs(7777, 70)),
+                upsert("empty", EntryKind::Dir, attrs(6666, -10)),
+            ]))
+            .expect("apply");
+        let base = Selection {
+            include: vec![pattern("src"), pattern("empty")],
+            size: SizeMetric::Apparent,
+            ..Selection::default()
+        };
+        // A one-shot report matches native names, so the nested spelling is joined rather
+        // than written with a literal separator: `src/empty` holds only on Unix.
+        let nested = PathBuf::from("src").join("empty").to_string_lossy().into_owned();
+        let rows = files_of(&run(&index, &query(&[ViewSpec::Files], base.clone())));
+        assert_eq!(
+            rows.iter()
+                .map(|r| (r.path.to_string_lossy().into_owned(), r.bytes, r.mtime_ns))
+                .collect::<Vec<_>>(),
+            [("empty".into(), 0, -10), ("src".into(), 350, 70), (nested.clone(), 0, 60)]
+        );
+        for (before, since, expected) in [
+            (70, 0, vec![nested.clone()]),
+            (71, 70, vec!["src".to_owned()]),
+            (0, -10, vec!["empty".to_owned()]),
+        ] {
+            let selection = Selection {
+                modified: ModifiedWindow { before: Some(before), since: Some(since) },
+                ..base.clone()
+            };
+            let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
+            assert_eq!(
+                rows.iter().map(|r| r.path.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                expected
+            );
+        }
+        for (size, minimum, expected) in [
+            (SizeMetric::Apparent, 350, 1),
+            (SizeMetric::Apparent, 351, 0),
+            (SizeMetric::Allocated, 1536, 1),
+            (SizeMetric::Allocated, 1537, 0),
+        ] {
+            let selection = Selection { size, min_size: Some(minimum), ..base.clone() };
+            assert_eq!(
+                files_of(&run(&index, &query(&[ViewSpec::Files], selection))).len(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn exclusions_apply_before_subtree_bounds_and_selected_ancestor_coverage() {
+        let index = classified_sample();
+        for (ignored, exclude, bytes, newest) in [
+            (IgnoredEntries::Include, vec![], 325, 70),
+            (IgnoredEntries::Exclude, vec![], 300, 20),
+            (IgnoredEntries::Include, vec![pattern("*.log")], 300, 20),
+            (IgnoredEntries::Include, vec![pattern("lib.rs")], 125, 70),
+        ] {
+            let selection = Selection {
+                include: vec![pattern("src")],
+                kinds: vec![EntryKind::Dir],
+                ignored,
+                exclude,
+                size: SizeMetric::Apparent,
+                ..Selection::default()
+            };
+            let report = run(
+                &index,
+                &query(&[ViewSpec::Files, ViewSpec::Summary, ViewSpec::Types], selection),
+            );
+            let row = &files_of(&report)[0];
+            assert_eq!((row.bytes, row.mtime_ns), (bytes, newest));
+            let Section::Summary(summary) = &report.sections[1] else { panic!("summary") };
+            assert_eq!(summary.bytes, bytes);
+            let Section::Metrics { summary, .. } = &report.sections[2] else { panic!("types") };
+            assert_eq!(summary.rows.iter().map(|r| r.bytes).sum::<u64>(), bytes);
+        }
+        let selection = Selection {
+            include: vec![pattern("build")],
+            exclude: vec![pattern("cache")],
+            kinds: vec![EntryKind::Dir],
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Files, ViewSpec::Summary], selection));
+        assert_eq!(files_of(&report)[0].bytes, 0);
+        let Section::Summary(summary) = &report.sections[1] else { panic!("summary") };
+        assert_eq!((summary.files, summary.dirs, summary.bytes), (0, 1, 0));
+        let only = Selection {
+            include: vec![pattern("cache")],
+            kinds: vec![EntryKind::Dir],
+            ignored: IgnoredEntries::Only,
+            ..Selection::default()
+        };
+        assert_eq!(files_of(&run(&index, &query(&[ViewSpec::Files], only)))[0].bytes, 1000);
+    }
+
+    /// A directory whose subtree was not listed in full says so, and its lower-bound
+    /// activity is not an age: it matches no modification bound, in either direction,
+    /// while a size bound still holds on the lower bound it can prove.
+    #[test]
+    fn an_incomplete_subtree_reports_lower_bounds_and_matches_no_time_bound() {
+        // `--scan-depth 2`: `env/lib` sits at the boundary, retained and never listed, so
+        // `env` is incomplete; `docs` holds only files at that depth and is complete.
+        let mut index = Index::new_with_scope(
+            "/root",
+            crate::ScanScope { max_depth: Some(2), ..crate::ScanScope::default() },
+        );
+        index.apply_ok(&Observation::new(vec![
+            upsert("env", EntryKind::Dir, attrs(0, 5)),
+            upsert("env/lib", EntryKind::Dir, attrs(0, 7)),
+            upsert("env/a.bin", EntryKind::File, attrs(100, 40)),
+            upsert("docs", EntryKind::Dir, attrs(0, 5)),
+            upsert("docs/guide.md", EntryKind::File, attrs(30, 50)),
+        ]));
+        let directories = |selection: Selection| {
+            let selection =
+                Selection { kinds: vec![EntryKind::Dir], size: SizeMetric::Apparent, ..selection };
+            files_of(&run(&index, &flat(selection)))
+                .into_iter()
+                .map(|row| {
+                    (row.path.to_string_lossy().into_owned(), row.complete, row.bytes, row.age_ns)
+                })
+                .collect::<Vec<_>>()
+        };
+        // Joined natively, as the report joins it: Windows spells this row `env\lib`.
+        let env_lib = Path::new("env").join("lib").to_string_lossy().into_owned();
+        assert_eq!(
+            directories(Selection::default()),
+            vec![
+                ("env".to_string(), Some(false), 100, None),
+                ("docs".to_string(), Some(true), 30, Some(-50)),
+                (env_lib, Some(false), 0, None),
+            ],
+            "sizes are lower bounds and the age is unknown below the boundary"
+        );
+        for modified in [
+            ModifiedWindow { since: None, before: Some(100) },
+            ModifiedWindow { since: Some(0), before: None },
+        ] {
+            assert_eq!(
+                directories(Selection { modified, ..Selection::default() }),
+                vec![("docs".to_string(), Some(true), 30, Some(-50))],
+                "an unknown age satisfies no bound, not even one its lower bound would prove"
+            );
+        }
+        assert_eq!(
+            directories(Selection { min_size: Some(100), ..Selection::default() }),
+            vec![("env".to_string(), Some(false), 100, None)],
+            "a lower bound at or above the minimum proves the true size is too"
+        );
+        assert!(directories(Selection { min_size: Some(101), ..Selection::default() }).is_empty());
+        // A regular file has no subtree to be incomplete, and its own age stands.
+        let files = files_of(&run(
+            &index,
+            &flat(Selection {
+                kinds: vec![EntryKind::File],
+                modified: ModifiedWindow { since: Some(45), before: None },
+                ..Selection::default()
+            }),
+        ));
+        assert_eq!(files.len(), 1);
+        assert_eq!((files[0].complete, files[0].age_ns), (None, Some(-50)));
+    }
+
+    /// A legacy unscoped partial marker carries no authoritative child-list evidence,
+    /// so no directory row can claim completeness. Scoped scan failures preserve healthy
+    /// siblings, as the public partial-directory integration test proves.
+    #[test]
+    fn an_unscoped_partial_marker_marks_every_directory_row_incomplete() {
+        let directories = |index: &Index| {
+            files_of(&run(
+                index,
+                &flat(Selection { kinds: vec![EntryKind::Dir], ..Selection::default() }),
+            ))
+        };
+        let mut partial = sample();
+        partial.set_initial_freshness(false);
+        let rows = directories(&partial);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.complete == Some(false) && row.age_ns.is_none()));
+        let mut complete = sample();
+        complete.set_initial_freshness(true);
+        let rows = directories(&complete);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.complete == Some(true) && row.age_ns.is_some()));
+    }
+
+    /// While an opened root is discovering, a directory is complete exactly when
+    /// discovery has listed it, so a report served mid-discovery marks the rest.
+    #[test]
+    fn an_opened_root_marks_a_directory_complete_only_once_discovery_listed_it() {
+        let handle = crate::index::IndexHandle::new(Index::new("/root"));
+        handle
+            .transition_discovery(crate::index::DiscoveryTransition::Begin)
+            .expect("begin discovery");
+        handle
+            .apply(&Observation::new(vec![
+                upsert("known", EntryKind::Dir, attrs(0, 5)),
+                upsert("pending", EntryKind::Dir, attrs(0, 5)),
+            ]))
+            .expect("seed directories");
+        handle
+            .apply_discovery(
+                &Observation::new(Vec::new()),
+                crate::index::DiscoveryCommit {
+                    directory_complete: Some(PathBuf::from("known")),
+                    transition: None,
+                },
+            )
+            .expect("list one directory");
+        let completeness = handle
+            .read_with(|index| {
+                files_of(&run(
+                    index,
+                    &flat(Selection { kinds: vec![EntryKind::Dir], ..Selection::default() }),
+                ))
+                .into_iter()
+                .map(|row| (row.path.to_string_lossy().into_owned(), row.complete))
+                .collect::<BTreeMap<_, _>>()
+            })
+            .expect("read");
+        assert_eq!(
+            completeness,
+            BTreeMap::from([
+                ("known".to_string(), Some(true)),
+                ("pending".to_string(), Some(false))
+            ])
+        );
+    }
+
+    #[test]
+    fn a_filtered_tree_keeps_empty_matches_and_only_folds_visible_directories() {
+        let mut index = sample();
+        index
+            .apply(&Observation::new(vec![upsert("src/empty", EntryKind::Dir, Attrs::default())]))
+            .expect("apply");
+        let selection = Selection {
+            include: vec![pattern("empty")],
+            depth: Some(Bound::All),
+            ..Selection::default()
+        };
+        let root = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
+        assert_eq!(root.children.len(), 1);
+        assert_eq!(root.children[0].name, "src");
+        assert_eq!(root.children[0].children[0].name, "empty");
+        let selection = Selection {
+            include: vec![pattern("notes.txt")],
+            depth: Some(Bound::Limit(0)),
+            ..Selection::default()
+        };
+        let root = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
+        assert!(!root.truncated);
+        assert_eq!(root.bytes, 7);
+    }
+
+    #[test]
     fn the_undocumented_docs_view_alias_is_rejected() {
         assert_eq!(
             ViewSpec::parse("documents").expect("the canonical view name parses"),
@@ -2019,23 +2612,27 @@ mod tests {
         );
     }
 
-    fn provenance() -> Provenance {
-        Provenance {
-            scan_started_at: Some(UNIX_EPOCH + Duration::from_secs(1_000)),
-            generated_at: UNIX_EPOCH + Duration::from_secs(1_001),
-            source: ReportSource::ColdScan,
-            complete: true,
-            errors: Vec::new(),
-        }
+    fn generated_at() -> std::time::SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_001)
     }
 
     fn run(index: &Index, query: &Query) -> Report {
-        report(index, &crate::test_support::read_of(index, query.clone()), &provenance())
+        report(index, &crate::test_support::read_of(index, query.clone()), generated_at())
             .expect("the query is answerable over this index")
     }
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
         Query { selection, views: views.to_vec(), ..Query::default() }
+    }
+
+    /// A flat List: the projection whose rows carry subtree metrics and completeness.
+    fn flat(selection: Selection) -> Query {
+        Query {
+            selection,
+            views: vec![ViewSpec::List],
+            format: crate::report_format::Format::Paths,
+            ..Query::default()
+        }
     }
 
     fn pattern(source: &str) -> Pattern {
@@ -2065,7 +2662,7 @@ mod tests {
 
     fn tree_of(report: &Report) -> TreeNode {
         match report.sections.first().expect("a section") {
-            Section::Tree(node) => node.clone(),
+            Section::Tree { root: node, .. } => node.clone(),
             other => panic!("expected a tree, got {other:?}"),
         }
     }
@@ -2163,7 +2760,7 @@ mod tests {
     }
 
     #[test]
-    fn a_summary_and_a_files_view_agree_on_how_many_directories_a_filter_admits() {
+    fn a_summary_counts_the_union_of_listed_entries_and_directory_contents() {
         // One query must not give two answers. The directory tally is folded from the
         // walk while the files view is filtered entry by entry, so they are two paths to
         // the same number and drifted apart: `--kind file` answered "5 files, 3
@@ -2181,7 +2778,16 @@ mod tests {
             let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
             let listed = files_of(&run(&index, &query(&[ViewSpec::Files], selection.clone())));
             let dirs = listed.iter().filter(|row| row.kind == EntryKind::Dir).count() as u64;
-            let files = listed.iter().filter(|row| row.kind == EntryKind::File).count() as u64;
+            let files = every_entry(&index)
+                .iter()
+                .filter(|entry| {
+                    entry.kind == EntryKind::File
+                        && listed.iter().any(|row| {
+                            entry.path == row.path
+                                || (row.kind == EntryKind::Dir && entry.path.starts_with(&row.path))
+                        })
+                })
+                .count() as u64;
             assert_eq!(summary.dirs, dirs, "directory counts disagree under {selection:?}");
             assert_eq!(summary.files, files, "file counts disagree under {selection:?}");
         }
@@ -2207,7 +2813,7 @@ mod tests {
         let selection = Selection { kinds: vec![EntryKind::Dir], ..Selection::default() };
         let root = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert_eq!(root.dirs, 3, "src, src/deep, and docs");
-        assert_eq!(root.files, 0, "no file was admitted");
+        assert_eq!(root.files, 4, "matching directories cover their regular files");
         let src = root.children.iter().find(|node| node.name == "src").expect("src");
         assert_eq!(src.dirs, 1, "src/deep, counted for src as well as for the root");
     }
@@ -2603,7 +3209,7 @@ mod tests {
             panic!("languages")
         };
         assert_eq!(languages.total.files, 1);
-        assert_eq!(languages.total.metrics.code_lines, 3);
+        assert_eq!(languages.total.metrics.code_lines, Some(3));
         let Section::Metrics { summary: documents, .. } = &together.sections[3] else {
             panic!("documents")
         };
@@ -2644,7 +3250,7 @@ mod tests {
             summary.bytes,
             u64::try_from(RUST.len() + MARKDOWN.len() + TEXT.len()).expect("fixture bytes")
         );
-        let Section::Tree(tree) = &together.sections[8] else { panic!("tree") };
+        let Section::Tree { root: tree, .. } = &together.sections[8] else { panic!("tree") };
         assert_eq!((tree.files, tree.dirs), (3, 2));
         let Section::Extensions { rows, total } = &together.sections[9] else {
             panic!("extensions")
@@ -2653,13 +3259,13 @@ mod tests {
     }
 
     #[test]
-    fn a_report_carries_the_provenance_it_was_given() {
+    fn a_report_derives_provenance_from_its_index() {
         let index = sample();
         let report = run(&index, &query(&[ViewSpec::Summary], Selection::default()));
-        assert_eq!(report.source, ReportSource::ColdScan);
-        assert!(report.complete);
-        assert_eq!(report.scan_started_at, Some(UNIX_EPOCH + Duration::from_secs(1_000)));
-        assert_eq!(report.generated_at, UNIX_EPOCH + Duration::from_secs(1_001));
+        assert_eq!(report.provenance.source, ReportSource::ColdScan);
+        assert!(report.status.complete);
+        assert!(report.provenance.scan_started_at.is_some());
+        assert_eq!(report.provenance.generated_at, generated_at());
         assert_eq!(report.root, Path::new("/root"));
     }
 
@@ -2819,13 +3425,10 @@ mod tests {
         );
         assert_eq!(
             ranked(with(IgnoredEntries::Exclude)),
-            [row("docs", 300), row("src", 300), row("build", 0)],
+            [row("docs", 300), row("src", 300)],
             "unignored sizes rank the rows, with the name breaking the tie"
         );
-        assert_eq!(
-            ranked(with(IgnoredEntries::Only)),
-            [row("build", 1_000), row("src", 25), row("docs", 0)]
-        );
+        assert_eq!(ranked(with(IgnoredEntries::Only)), [row("build", 1_000), row("src", 25)]);
     }
 
     /// An index that read no rule reports no ignored share on any row, and refuses a
@@ -2843,7 +3446,7 @@ mod tests {
         let views = [ViewSpec::Summary, ViewSpec::Tree, ViewSpec::Extensions, ViewSpec::Files];
         let report = run(&index, &query(&views, Selection::default()));
         let Section::Summary(summary) = &report.sections[0] else { panic!("a summary") };
-        let Section::Tree(tree) = &report.sections[1] else { panic!("a tree") };
+        let Section::Tree { root: tree, .. } = &report.sections[1] else { panic!("a tree") };
         let Section::Extensions { rows: extensions, .. } = &report.sections[2] else {
             panic!("extensions")
         };
@@ -2873,7 +3476,7 @@ mod tests {
                     super::report(
                         &index,
                         &crate::test_support::read_of(&index, refused),
-                        &provenance()
+                        generated_at()
                     ),
                     Err(crate::Error::InvalidRequest(
                         crate::query::RequestError::IgnoredWithoutObservation(_)

@@ -37,10 +37,12 @@
 //! detached image and never inherits that authority.
 //!
 //! ```no_run
-//! use fdu_core::{OpenConfig, open};
+//! use fdu_core::{CachePolicy, open};
+//! use fdu_core::query::{Basis, Delivery, Scope};
 //! use std::path::Path;
 //!
-//! let (index, report) = open(Path::new("."), &OpenConfig::default())?;
+//! let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: Default::default() };
+//! let (index, report) = open(&basis, &Delivery::new(CachePolicy::Auto, None))?;
 //! let total = index.total();
 //! println!("{} files, {} bytes ({:?})", total.files, total.bytes, report.path_taken);
 //! # Ok::<(), fdu_core::Error>(())
@@ -63,6 +65,7 @@ pub mod classify;
 pub mod content;
 pub mod control;
 pub mod counters;
+mod emit;
 mod engine_contract;
 mod execution;
 mod index;
@@ -135,22 +138,25 @@ pub use crate::opened::{
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).
 pub use crate::execution::{
-    PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
+    Load, OutcomeClass, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
+    prepare_report_with_scan_diagnostics,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
-    AnalyzerProvenance, ContentTierIdentity, ControlTierIdentity, EntryScope, EntryTierIdentity,
-    Serves, SnapshotIdentity, serves_snapshot,
+    AnalyzerProvenance, ContentAdmission, ContentTierIdentity, ControlTierIdentity, EntryScope,
+    EntryTierIdentity, Serves, SnapshotIdentity, serves_snapshot,
 };
 #[cfg(feature = "watch")]
-pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
+pub use crate::watch_session::{Batch, Change, ChangeKind, SaveOutcome, Session};
 
+use crate::execution::{Admission, RunFacts, SaveTargets, StoreHeader};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 /// How to open a tree.
+#[cfg(test)]
 #[derive(Clone, Debug, Default)]
-pub struct OpenConfig {
+pub(crate) struct OpenFixture {
     /// Walk settings.
     pub scan: ScanConfig,
     /// Where the snapshot for this root lives.
@@ -164,40 +170,14 @@ pub struct OpenConfig {
     pub analysis: content::AnalysisRequest,
 }
 
-impl OpenConfig {
-    /// Today's open configuration, composed from the basis and the delivery that carry a
-    /// request.
-    ///
-    /// One direction of a temporary bridge, and the only place it is spliced: the
-    /// execution plan model replaces `OpenConfig` with `Basis` and `Delivery`, and one
-    /// splice is one thing to delete rather than four. A basis rather than a whole
-    /// request, because opening a root is what a basis is for and no query has been named
-    /// yet on two of the routes that open one. Scan workers ride in the basis's scope and
-    /// content workers in the delivery, because that is where each waits until one
-    /// `Workers` takes both.
-    pub fn of(basis: &query::Basis, delivery: &query::Delivery) -> Self {
-        Self {
-            scan: basis.scope.clone(),
-            cache_path: delivery.cache_path.clone(),
-            policy: delivery.cache,
-            analysis: content::AnalysisRequest {
-                profile: basis.content,
-                workers: delivery.analysis_workers,
-            },
-        }
-    }
-
-    /// The other direction, for a caller that still holds a configuration: the basis and
-    /// the delivery it spells, over `root`.
-    ///
-    /// The inverse of [`Self::of`] and deleted with it. Fixtures and probes that name one
-    /// configuration read it this way rather than each writing the division out, so the
-    /// two halves are divided in one place whichever way a caller crosses the bridge.
+#[cfg(test)]
+impl OpenFixture {
+    /// Compose model inputs for a unit-test fixture.
     pub fn split(&self, root: impl Into<PathBuf>) -> (query::Basis, query::Delivery) {
         (
             query::Basis {
                 root: root.into(),
-                scope: self.scan.clone(),
+                scope: self.scan.clone().into(),
                 content: self.analysis.profile,
             },
             query::Delivery {
@@ -205,10 +185,29 @@ impl OpenConfig {
                 cache_path: self.cache_path.clone(),
                 accept_partial: false,
                 watch: None,
-                analysis_workers: self.analysis.workers,
+                workers: query::Workers {
+                    scan: self.scan.threads,
+                    analysis: self.analysis.workers,
+                },
+                batch_size: self.scan.batch_size,
+                order: self.scan.order,
             },
         )
     }
+}
+
+#[cfg(test)]
+pub(crate) fn open_fixture(root: &Path, config: &OpenFixture) -> Result<(Index, OpenReport)> {
+    let (basis, delivery) = config.split(root);
+    open(&basis, &delivery)
+}
+#[cfg(test)]
+pub(crate) fn open_fixture_with_pending_save(
+    root: &Path,
+    config: &OpenFixture,
+) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
+    let (basis, delivery) = config.split(root);
+    open_with_pending_save(&basis, &delivery)
 }
 
 /// How an [`open`] may use the snapshot cache.
@@ -221,19 +220,19 @@ pub enum CachePolicy {
     /// Read the snapshot, revalidate it, and write it back when the scan is complete.
     ///
     /// A root has one cache path, and its snapshot carries the scan scope that wrote it.
-    /// A read under another scope treats that snapshot as absent and scans cold, and the
-    /// scan then writes its own scope over it.
+    /// A read under another scope normally treats that snapshot as absent and scans cold.
+    /// The lawful exception is a controls-off request with the same entry identity: it
+    /// projects a controls-on snapshot into the requested blind scope and never replaces
+    /// the stronger image with that projection.
     ///
     /// Every default request observes `.gitignore` control state -- the one-shot
     /// `fdu <dir>` and [`prepare_report`], `fdu --watch <dir>`, and a default [`open`] --
     /// so they share one scope: an [`open`] or a watch starts warm from a one-shot report's
     /// snapshot, and a report that reads the snapshot, as content analysis does, starts
     /// warm from theirs. A request that turns [`ScanConfig::read_controls`] off is a second
-    /// scope, and alternating it with a default request scans cold each time. One direction
-    /// is spared: a one-shot report under [`CachePolicy::Only`] that turned observation off
-    /// answers from a default snapshot, since it reads nothing a default scan did not also
-    /// record. A summary-only report that turned observation off saves nothing and
-    /// replaces nothing.
+    /// scope, but every route can start from a default snapshot by discarding its control
+    /// tier while loading. A summary-only report that turned observation off saves nothing
+    /// and replaces nothing.
     #[default]
     Auto,
     /// Ignore any snapshot, scan cold, and rewrite it. The benchmark control.
@@ -263,11 +262,6 @@ impl CachePolicy {
     /// copied into every caller.
     pub fn writes(self) -> bool {
         matches!(self, Self::Auto | Self::Refresh)
-    }
-
-    /// Whether this policy may touch the filesystem at all.
-    fn scans(self) -> bool {
-        !matches!(self, Self::Only)
     }
 }
 
@@ -300,6 +294,11 @@ impl PendingSave {
     /// Nothing to wait for.
     pub(crate) fn none() -> Self {
         Self { workers: Vec::new() }
+    }
+
+    /// Whether the metadata snapshot is among the writes being waited for.
+    pub(crate) fn writes_metadata(&self) -> bool {
+        self.workers.iter().any(|(name, _)| *name == "metadata")
     }
 
     /// Wait for the write to finish, returning its result.
@@ -341,6 +340,8 @@ pub struct OpenReport {
     pub analysis: Option<content::AnalysisReport>,
     /// Reusable records restored from the independently versioned content sidecar.
     pub content_cache: content::ContentCacheLoad,
+    /// Whether the returned index was projected from a stronger controls-on snapshot.
+    pub projected: bool,
 }
 
 impl OpenReport {
@@ -384,19 +385,27 @@ impl OpenReport {
 /// A caller that reads no ignore classification may turn the field off. Its `open` reads
 /// no `.gitignore`, and its index answers [`Index::is_ignored`] and [`Index::controls`]
 /// with [`Error::ControlStateNotObserved`] rather than calling every entry unignored. Its
-/// snapshot is of another scope: a policy that scans treats a default snapshot as a miss
-/// and scans cold, and [`CachePolicy::Only`], which never scans, fails with an error
-/// naming the remedy.
-pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
-    let (index, report, pending) = open_with_pending_save(root, config)?;
+/// snapshot is of another scope. When its entry identity matches a default snapshot, the
+/// loader discards that snapshot's control tier and constructs the returned index directly
+/// in the requested controls-off scope. The projected index never replaces the stronger
+/// snapshot, including during a watch session.
+pub fn open(basis: &query::Basis, delivery: &query::Delivery) -> Result<(Index, OpenReport)> {
+    let (index, report, pending) = open_with_pending_save(basis, delivery)?;
     // Joining first is what makes the unwrap infallible: the writer held the only other
     // reference, and this is the blocking entry point, so by here it has finished and
     // dropped it. `try_unwrap` rather than a clone keeps the owned-`Index` signature
     // honest — a fallback clone here would quietly reintroduce the copy the shared
     // writer exists to avoid.
+    let wrote_metadata = pending.writes_metadata();
     pending.join()?;
-    let index = std::sync::Arc::into_inner(index)
+    let mut index = std::sync::Arc::into_inner(index)
         .expect("the joined writer released the only other reference");
+    // Only here, after the join succeeded: a write that failed leaves the debt on the
+    // index, and a caller of [`open_with_pending_save`] who keeps the index through a
+    // failed write keeps the debt with it, so its next writing pass writes.
+    if wrote_metadata {
+        index.set_persistence_owed(false);
+    }
     Ok((index, report))
 }
 
@@ -410,63 +419,88 @@ pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
 /// with it. A one-shot report cannot; the internal report planner decides per request
 /// whether the read pays and routes through the gated variant below.
 pub fn open_with_pending_save(
-    root: &Path,
-    config: &OpenConfig,
+    basis: &query::Basis,
+    delivery: &query::Delivery,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
-    open_for_report(root, config, true, SnapshotUse::ReturnedIndex, false)
+    let request =
+        query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
+    let plan = plan(&request, delivery, Route::Retained).map_err(Error::InvalidRequest)?;
+    execute(&plan, &request.basis, false)
         .map(|(index, report, pending, _diagnostics)| (index, report, pending))
 }
 
-/// What may consume an admitted snapshot.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum SnapshotUse {
-    /// The detached index crosses the API boundary and must match its requested scope.
-    ReturnedIndex,
-    /// A one-shot report consumes the index without exposing it.
-    ReportOnly,
-}
-
-/// Whether the loaded `stored` index can answer `wanted` for this consumer and cache policy.
-fn snapshot_scope_serves(
-    stored: &Index,
-    wanted: &ScanConfig,
-    policy: CachePolicy,
-    snapshot_use: SnapshotUse,
-) -> bool {
-    if serves_snapshot(stored.snapshot_identity(), wanted.snapshot_identity()) == Serves::Exact {
-        return true;
+/// Reverify a retained index, refresh requested content, and persist according to delivery.
+///
+/// A partial pass retains its verified facts and may save only the content tier beside
+/// a compatible complete snapshot. The returned report describes metadata changes.
+///
+/// The metadata write is owed by the index, not by the pass: a pass that mutated the
+/// entry tier without writing it -- because it was partial, or its policy does not write
+/// -- leaves the index holding facts the snapshot lacks, and the next complete pass under
+/// a writing policy writes them even when it changed nothing itself. Only a completed
+/// write clears that debt, so a failed one is retried by the next pass as well.
+pub fn refresh(
+    index: &mut Index,
+    basis: &query::Basis,
+    delivery: &query::Delivery,
+) -> Result<ReconcileReport> {
+    let request =
+        query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
+    let plan = plan(&request, delivery, Route::Refresh).map_err(Error::InvalidRequest)?;
+    validate_basis_root(index.root_path(), basis)?;
+    request.validate_read(&query::Basis::held_by(index)).map_err(Error::InvalidRequest)?;
+    let scan = basis.scope.scan_config(delivery);
+    scan.validate_for_scope(index.scope())?;
+    // `plan` refuses the one policy that verifies nothing on this route, so there is no
+    // second refusal here to keep in step with it.
+    debug_assert_eq!(plan.verify(), Verify::Filesystem, "a refresh plan verifies the tree");
+    let report = scan::reconcile(index, &scan, &mut |_| {})?;
+    let cached = load_content(index, basis, delivery)?;
+    let analysis = basis.content.is_enabled().then(|| {
+        content::analyze_index(
+            index,
+            content::AnalysisRequest { profile: basis.content, workers: delivery.workers.analysis },
+        )
+    });
+    if report.apply.mutated() {
+        index.set_persistence_owed(true);
     }
-    // A no-scan report consumes only the all-entry facts, never the control table or
-    // ignored partition. It may therefore project controls-on to controls-off and retag
-    // the report before return. Any path that exposes the index remains exact, and any
-    // path that will reconcile treats the mismatch as a miss and scans cold.
-    let (stored, wanted) = (stored.scope(), wanted.scope());
-    snapshot_use == SnapshotUse::ReportOnly
-        && !policy.scans()
-        && ScanScope { ignore_rules_fingerprint: wanted.ignore_rules_fingerprint, ..stored }
-            == wanted
-        && wanted.ignore_rules_fingerprint == 0
+    let written = persist_index_changes(
+        index,
+        &plan,
+        index.persistence_owed(),
+        !cached.usable
+            || cached.stale > 0
+            || analysis.as_ref().is_some_and(|report| report.applied > 0),
+    )?;
+    if written {
+        index.set_persistence_owed(false);
+    }
+    Ok(report)
 }
 
-/// A snapshot that could not serve a request, and what it was taken under.
-#[derive(Clone, Copy, Debug)]
-struct RefusedSnapshot {
-    scope: ScanScope,
-    control_limits: crate::control::ControlLimits,
+pub(crate) fn validate_basis_root(held: &Path, basis: &query::Basis) -> Result<()> {
+    let requested = basis.root.canonicalize().map_err(|error| Error::io(&basis.root, error))?;
+    let held = held.canonicalize().map_err(|error| Error::io(held, error))?;
+    if requested != held {
+        return Err(Error::InvalidRequest(query::RequestError::RootMismatch { held, requested }));
+    }
+    Ok(())
 }
 
 /// Why a policy that cannot scan has no snapshot to answer from, and what recovers.
 ///
 /// [`CachePolicy::Only`] is the one policy that cannot fall back to a scan, so its failure
-/// is the only place a caller learns that the snapshot is missing or of another scope. Two
-/// mismatches are common enough to name. Control state: every default request observes it,
-/// so a snapshot without it was written by a request that turned observation off, or by a
+/// is the only place a caller learns that the snapshot is missing or of another scope.
+/// Type rules determine each file's category, so attaching another registry would make a
+/// cache-only answer false. Control state is another common difference: a snapshot
+/// without it was written by a request that turned observation off, or by a
 /// release from before observation was the default, and a default cache-only request after
 /// it would otherwise fail with no hint that a snapshot exists at all. Control limits: both
 /// scopes observe, and their identities are hashes, so "a different scan scope" would
 /// describe a request whose only difference is a limit the caller chose and can choose
 /// again.
-fn unusable_snapshot_message(refused: Option<RefusedSnapshot>, wanted: &ScanConfig) -> String {
+fn unusable_snapshot_message(refused: Option<SnapshotIdentity>, wanted: &ScanConfig) -> String {
     // Not "run once under `auto` to write one": a compact summary scans without retaining
     // an index and writes nothing, so that remedy would fail again for exactly that query.
     const PREFIX: &str = "no usable snapshot for this root and scan scope";
@@ -479,7 +513,13 @@ fn unusable_snapshot_message(refused: Option<RefusedSnapshot>, wanted: &ScanConf
     let Some(refused) = refused else {
         return format!("{PREFIX}; {NEVER_SCANS}, so use `auto`, which scans when none serves");
     };
-    let stored = refused.scope;
+    let stored = refused.scan_scope();
+    if stored.type_rules_fingerprint != wanted_scope.type_rules_fingerprint {
+        return format!(
+            "{PREFIX}: the cached snapshot was taken under different file type rules; \
+             {NEVER_SCANS}, so use the snapshot's type registry or use `auto`, which scans under this request's rules"
+        );
+    }
     if differs_only_in_ignore_rules(stored) {
         // Named without a knob, because the command line and the library spell the switch
         // differently and this message is the engine's.
@@ -491,7 +531,11 @@ fn unusable_snapshot_message(refused: Option<RefusedSnapshot>, wanted: &ScanConf
             );
         }
         if wanted_scope.observes_controls() {
-            let changed = changed_control_limits(refused.control_limits, wanted.control_limits);
+            let stored_limits = match refused.controls {
+                ControlTierIdentity::Observed { limits } => limits,
+                ControlTierIdentity::NotObserved => crate::control::ControlLimits::default(),
+            };
+            let changed = changed_control_limits(stored_limits, wanted.control_limits);
             if !changed.is_empty() {
                 return format!(
                     "{PREFIX}: the cached snapshot was taken under other .gitignore limits \
@@ -534,76 +578,114 @@ fn changed_control_limits(
 /// amortise them — measured on macOS/APFS over 494,031 entries, warm revalidation cost
 /// 4.8 s against 3.6 s for the cold path, whose write-behind the read could at best
 /// have saved ~50 ms of. Persistence is unaffected: the cold path still writes per
-/// [`cold_scan_save_targets`], so the snapshot stays fresh for [`CachePolicy::Only`]
+/// [`Plan::writes`], so the snapshot stays fresh for [`CachePolicy::Only`]
 /// and for content-analysis reuse.
 ///
 /// A policy that cannot scan reads regardless of the flag — for [`CachePolicy::Only`]
 /// the snapshot is the contract, not a cost choice.
-pub(crate) fn open_for_report(
-    root: &Path,
-    config: &OpenConfig,
-    read_snapshot: bool,
-    snapshot_use: SnapshotUse,
+pub(crate) fn execute(
+    plan: &Plan,
+    basis: &query::Basis,
     collect_scan_diagnostics: bool,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
+    let scan_config = basis.scope.scan_config(plan.delivery());
+    let analysis_request = content::AnalysisRequest {
+        profile: basis.content,
+        workers: plan.delivery.workers.analysis,
+    };
+    let delivery = plan.delivery();
+    let root = &basis.root;
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     // Before the snapshot, not at the scan that may never happen: a scope this build cannot
     // honour has no answer at any delivery, and checking it where the scan runs made
     // `--cache only` report a snapshot miss for a request every other policy refuses --
     // which failure a run named then depended on how it was delivered (`refusal-order`).
-    config.scan.validate()?;
-    let policy = config.policy;
-
-    // A snapshot for this root that could not serve, kept so a policy that cannot scan says
-    // why it has no answer rather than only that it has none.
-    let mut refused_snapshot = None;
-    let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
-        (true, Some(cache_path)) => {
-            snapshot::load_with_types(cache_path, config.scan.types_shared())?
-                // A snapshot describing another root or a different scan scope is not this
-                // tree's answer; treat it as absent rather than as data.
-                //
-                // Public index ownership requires exact scope. A report-only cache read
-                // may consume the controls-independent all-entry facts under the narrow
-                // projection proved above; the report executor retags the result before
-                // it crosses the API boundary.
-                .filter(|index| {
-                    if index.root_path() != root {
-                        return false;
-                    }
-                    let serves = snapshot_scope_serves(index, &config.scan, policy, snapshot_use);
-                    if !serves {
-                        refused_snapshot = Some(RefusedSnapshot {
-                            scope: index.scope(),
-                            control_limits: index.control_table().limits(),
-                        });
-                    }
-                    serves
-                })
+    scan_config.validate()?;
+    let canonical_basis = query::Basis { root: root.clone(), ..basis.clone() };
+    // What the store holds, for the plan to admit: the index a served snapshot supplied,
+    // and the root and identity the snapshot declares whether or not it served, kept so a
+    // policy that cannot scan says why it has no answer rather than only that it has none.
+    let mut loaded = None;
+    let mut stored: Option<(PathBuf, SnapshotIdentity)> = None;
+    if let (Load::Snapshot, Some(cache_path)) = (plan.load(), &delivery.cache_path) {
+        match snapshot::load_serving(
+            cache_path,
+            scan_config.types_shared(),
+            scan_config.snapshot_identity(),
+        )? {
+            snapshot::LoadOutcome::Served { index, stored: identity } => {
+                stored = Some((index.root_path().to_path_buf(), identity));
+                loaded = Some(index);
+            }
+            snapshot::LoadOutcome::Refused { identity, root: stored_root } => {
+                stored = Some((stored_root, identity));
+            }
+            snapshot::LoadOutcome::Absent => {}
+        }
+    }
+    let cache_only = plan.verify() == Verify::None;
+    // A policy that cannot scan is admitted on its content tier too, so its sidecar is
+    // loaded before the one admission below. A verifying route loads it after reconciling.
+    // Deliberately no reconciliation there: that tier never touches the tree, and the
+    // index is marked unverified so the answer cannot claim a currency it has not earned
+    // -- a snapshot records the freshness it was written with, which was true then.
+    let content_cache = match (&mut loaded, cache_only) {
+        (Some(index), true) => {
+            index.mark_unverified();
+            Some(load_content(index, basis, delivery)?)
         }
         _ => None,
     };
+    // The one admission of stored state on every route that reads it. A sidecar serves
+    // only its own identity, so restoring one record per visited regular file means it
+    // holds the complete answer to this request: restore already walked that set, so
+    // compare `hits` to files visited, not a second walk and not unique `PathBuf` keys.
+    let admission = {
+        let header = stored.as_ref().map(|(stored_root, identity)| StoreHeader {
+            root: stored_root,
+            snapshot: *identity,
+            content: loaded
+                .as_ref()
+                .and_then(Index::content)
+                .and_then(|content| content.identity()),
+            content_complete: content_cache
+                .as_ref()
+                .is_some_and(|cache| cache.usable && cache.hits == cache.candidates),
+        });
+        plan.admit(header.as_ref(), &canonical_basis)
+    };
 
-    if !policy.scans() {
-        let Some(mut index) = loaded else {
-            return Err(Error::Snapshot(unusable_snapshot_message(refused_snapshot, &config.scan)));
+    if cache_only {
+        let relation = match admission {
+            Admission::Serve(relation) => relation,
+            Admission::NoLocation => {
+                return Err(Error::Snapshot(
+                    "no cache location is configured; configure a cache location before requesting cache-only access".into(),
+                ));
+            }
+            Admission::WrongRoot => {
+                return Err(Error::Snapshot(
+                    "the configured snapshot belongs to a different root; choose this root's cache location or use auto to replace the snapshot for this root".into(),
+                ));
+            }
+            Admission::Missing => {
+                return Err(Error::Snapshot(unusable_snapshot_message(None, &scan_config)));
+            }
+            Admission::WrongScope => {
+                return Err(Error::Snapshot(unusable_snapshot_message(
+                    stored.map(|(_, identity)| identity),
+                    &scan_config,
+                )));
+            }
+            Admission::IncompleteContent => {
+                return Err(Error::Snapshot(
+                    "no complete usable content sidecar for this root and analysis profile".into(),
+                ));
+            }
         };
-        // Deliberately no reconciliation: this tier never touches the tree. The index is
-        // marked unverified so the answer cannot claim a currency it has not earned — a
-        // snapshot records the freshness it was written with, which was true then.
-        index.mark_unverified();
-        let content_cache = load_content(&mut index, config)?;
-        // A sidecar serves only its own identity, so restoring one record per visited
-        // regular file means the sidecar holds the complete answer to this request.
-        // Restore already walked that set; compare `hits` to files visited, not a
-        // second walk and not unique `PathBuf` keys.
-        if config.analysis.profile.is_enabled()
-            && (!content_cache.usable || content_cache.hits != content_cache.candidates)
-        {
-            return Err(Error::Snapshot(
-                "no complete usable content sidecar for this root and analysis profile".into(),
-            ));
-        }
+        let index = loaded.expect("a served admission is of the loaded snapshot");
+        let content_cache =
+            content_cache.expect("the sidecar was loaded beside the served snapshot");
         return Ok((
             std::sync::Arc::new(index),
             OpenReport {
@@ -611,36 +693,44 @@ pub(crate) fn open_for_report(
                 scan: ScanReport::default(),
                 analysis: None,
                 content_cache,
+                projected: relation == Serves::ProjectControlsOff,
             },
             PendingSave::none(),
             None,
         ));
     }
 
-    if let Some(mut index) = loaded {
-        let reconciled = scan::reconcile(&mut index, &config.scan, &mut |_| {})?;
+    if let Admission::Serve(relation) = admission {
+        let mut index = loaded.expect("a served admission is of the loaded snapshot");
+        let projected = relation == Serves::ProjectControlsOff;
+        let reconciled = scan::reconcile(&mut index, &scan_config, &mut |_| {})?;
         let scan_report = reconciled.scan;
         index.establish_baseline();
-        let content_cache = load_content(&mut index, config)?;
-        let analysis = config
-            .analysis
-            .profile
+        let content_cache = load_content(&mut index, basis, delivery)?;
+        let analysis = basis
+            .content
             .is_enabled()
-            .then(|| content::analyze_index(&mut index, config.analysis));
+            .then(|| content::analyze_index(&mut index, analysis_request));
         // A reconciliation that mutated nothing leaves an index that serializes to the
         // bytes already on disk, so rewriting it is pure cost: the clone, the encode,
         // and the write all produce a file identical to the one just read. Each artifact
         // is judged separately because content and metadata are invalidated separately.
-        let writes = SaveTargets {
-            metadata: reconciled.apply.mutated(),
-            // Stale sidecar records no longer match a live candidate; rewriting is what
-            // drops them, so a load that saw any is a reason to write even when the
-            // analysis added nothing.
-            content: analysis.as_ref().is_some_and(|report| report.applied > 0)
-                || content_cache.stale > 0,
-        };
+        if reconciled.apply.mutated() {
+            index.set_persistence_owed(true);
+        }
+        let facts = run_facts(
+            &index,
+            basis,
+            delivery,
+            index.persistence_owed(),
+            analysis.as_ref().is_some_and(|report| report.applied > 0) || content_cache.stale > 0,
+            projected,
+            || stored_entries(delivery, &root),
+        );
+        // The index is shared read-only from here, so the debt a completed write clears
+        // is cleared by the blocking [`open`] once it has joined the write.
         let index = std::sync::Arc::new(index);
-        let pending = spawn_save(&index, config, writes);
+        let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
         return Ok((
             index,
             OpenReport {
@@ -648,6 +738,7 @@ pub(crate) fn open_for_report(
                 scan: scan_report,
                 analysis,
                 content_cache,
+                projected,
             },
             pending,
             None,
@@ -656,121 +747,143 @@ pub(crate) fn open_for_report(
 
     let (mut index, scan_report, scan_diagnostics) = if collect_scan_diagnostics {
         let (index, report, diagnostics) =
-            scan::scan_into_index_with_diagnostics(&root, &config.scan)?;
+            scan::scan_into_index_with_diagnostics(&root, &scan_config)?;
         (index, report, Some(diagnostics))
     } else {
-        let (index, report) = scan::scan_into_index(&root, &config.scan)?;
+        let (index, report) = scan::scan_into_index(&root, &scan_config)?;
         (index, report, None)
     };
-    let content_cache = load_content(&mut index, config)?;
-    let analysis = config
-        .analysis
-        .profile
-        .is_enabled()
-        .then(|| content::analyze_index(&mut index, config.analysis));
+    let content_cache = load_content(&mut index, basis, delivery)?;
+    let analysis =
+        basis.content.is_enabled().then(|| content::analyze_index(&mut index, analysis_request));
+    let facts =
+        run_facts(&index, basis, delivery, true, true, false, || stored_entries(delivery, &root));
     let index = std::sync::Arc::new(index);
-    let pending = spawn_save(&index, config, cold_scan_save_targets(&index, config));
+    let pending = spawn_save(&index, &plan.delivery, plan.writes(facts));
     Ok((
         index,
-        OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
+        OpenReport {
+            path_taken: OpenPath::ColdScan,
+            scan: scan_report,
+            analysis,
+            content_cache,
+            projected: false,
+        },
         pending,
         scan_diagnostics,
     ))
 }
 
-/// Which cache artifacts a completed open still needs to write.
+/// The entry tier the snapshot at the delivery's cache location declares for `root`.
 ///
-/// A cold scan established both from nothing and writes both.  A warm open writes only
-/// what its own pass changed, which on an unchanged tree is neither.
-#[derive(Clone, Copy, Debug)]
-struct SaveTargets {
-    metadata: bool,
-    content: bool,
+/// Read for the content tier's pairing rule alone, by a route that attempted no load;
+/// a route that did reads the header it already holds.
+fn stored_entries(delivery: &query::Delivery, root: &Path) -> Option<EntryTierIdentity> {
+    delivery
+        .cache_path
+        .as_ref()
+        .and_then(|path| snapshot::read_header(path).ok().flatten())
+        .filter(|stored| stored.root == root)
+        .map(|stored| stored.identity.entries)
 }
 
-impl SaveTargets {
-    const fn all() -> Self {
-        Self { metadata: true, content: true }
-    }
-
-    const fn nothing() -> Self {
-        Self { metadata: false, content: false }
-    }
-
-    const fn none(self) -> bool {
-        !self.metadata && !self.content
-    }
-}
-
-/// Entry count at or above which a first scan's metadata snapshot is worth writing.
-///
-/// `None` persists unconditionally, which is what every release has shipped and what
-/// this build still does. It stays unset because APFS measurement argued against a
-/// threshold, not because the measurement is outstanding.
-///
-/// A snapshot repays its write only if a later run reads it *and* that read beats
-/// rescanning. For metadata neither half is free. Revalidating a loaded snapshot stats
-/// every entry regardless, so a warm `Auto` run saves nothing; measured on Linux/ext4
-/// over 84,539 entries, a warm round-trip cost 162 ms against 132 ms to rebuild the index
-/// outright. Only the no-scan `Only` tier avoids the walk, and warm it still loses, 81 ms
-/// against 71 ms, because deserialisation costs about what a warm walk costs.
-///
-/// It wins decisively in exactly one metadata regime: a cold operating-system cache,
-/// where the same read took 118 ms against 277 ms to scan. So the question a threshold
-/// really answers is whether the next run will find this tree's metadata evicted, and
-/// tree size is the honest proxy for that — a tree that fits comfortably in the page
-/// cache will be warm again and the snapshot will never pay, while one that does not
-/// will be cold and it always will.
-///
-/// That reasoning is ext4's, and it did not survive the crossing. Measured on APFS over
-/// 175,128 entries, warm, the `Only` read took 146 ms against 521 ms to scan — a win
-/// rather than ext4's loss, because deserialisation costs about the same on both while an
-/// APFS metadata walk costs roughly three and a half times as much per entry. The 90 ms
-/// write repays about fourfold on the first later `Only` read, at any size, so the
-/// premise that metadata pays back only under a cold cache is false here.
-///
-/// A threshold would therefore give up real value on exactly the trees it gated, and it
-/// would also introduce a visible cliff: below it, `fdu PATH` would stop leaving a
-/// snapshot for a later `--cache only`. `fdu-hvs5` carries the evidence, and
-/// `docs/project/guides/platform-tuning.md` carries why this one is a constant worth
-/// not having.
-const SNAPSHOT_MIN_ENTRIES: Option<u64> = None;
-
-/// Which artifacts a first, cold scan should persist.
-///
-/// Separate from the warm-revalidation decision above, which asks whether a *loaded*
-/// snapshot changed. This one asks whether a snapshot is worth creating at all.
-fn cold_scan_save_targets(index: &Index, config: &OpenConfig) -> SaveTargets {
-    cold_scan_save_targets_with(index.len(), config, SNAPSHOT_MIN_ENTRIES)
-}
-
-/// The decision itself, with the threshold injected so both sides stay provable while
-/// [`SNAPSHOT_MIN_ENTRIES`] is unset.
-fn cold_scan_save_targets_with(
-    entries: u64,
-    config: &OpenConfig,
-    minimum: Option<u64>,
-) -> SaveTargets {
-    // Content sidecars are the clearest case for persisting: re-reading file bodies is
-    // the expensive half of analysis, and reusing them measured 639 ms down to 325 ms.
-    if config.analysis.profile.is_enabled() {
-        return SaveTargets::all();
-    }
-    // An explicit instruction to rewrite the snapshot outranks any cost estimate.
-    if config.policy == CachePolicy::Refresh {
-        return SaveTargets::all();
-    }
-    match minimum {
-        Some(minimum) if entries < minimum => SaveTargets::nothing(),
-        _ => SaveTargets::all(),
+fn run_facts(
+    index: &Index,
+    basis: &query::Basis,
+    delivery: &query::Delivery,
+    entries_changed: bool,
+    content_changed: bool,
+    projected: bool,
+    stored_entries: impl FnOnce() -> Option<EntryTierIdentity>,
+) -> RunFacts {
+    let entries_verified = stored_state::entries_writable(index);
+    let paired_entries = delivery.cache.writes()
+        && !entries_verified
+        && stored_state::content_tier_writable(index, stored_entries);
+    RunFacts {
+        entries_verified,
+        entries_changed,
+        content_changed,
+        content_requested: basis.content.is_enabled(),
+        projected,
+        paired_entries,
     }
 }
 
-fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::ContentCacheLoad> {
-    let (true, Some(snapshot_path)) = (config.policy.reads(), config.cache_path.as_deref()) else {
+/// Execute the persistence policy for a live index without retaining a lock while writing.
+#[cfg(feature = "watch")]
+pub(crate) fn persist_index(index: &Index, plan: &Plan) -> Result<bool> {
+    persist_index_changes(index, plan, true, true)
+}
+
+fn persist_index_changes(
+    index: &Index,
+    plan: &Plan,
+    entries_changed: bool,
+    content_changed: bool,
+) -> Result<bool> {
+    let basis = query::Basis::held_by(index);
+    let delivery = plan.delivery();
+    if !delivery.cache.writes() || delivery.cache_path.is_none() {
+        return Ok(false);
+    }
+    let stored = delivery.cache_path.as_deref().map(snapshot::read_header).transpose()?.flatten();
+    // The same admission a load makes, over the header alone: the index's root is the
+    // canonical one the header records, and its scope is the plan's, verified against the
+    // index before any pass mutated it. Whatever the store cannot serve is replaced.
+    let admitted = query::Basis { root: index.root_path().to_path_buf(), ..plan.basis().clone() };
+    let header = stored.as_ref().map(|info| StoreHeader {
+        root: &info.root,
+        snapshot: info.identity,
+        content: None,
+        content_complete: false,
+    });
+    let relation = match plan.admit(header.as_ref(), &admitted) {
+        Admission::Serve(relation) => relation,
+        // The content arm needs a plan that verifies nothing, and no such plan writes.
+        Admission::NoLocation
+        | Admission::Missing
+        | Admission::WrongRoot
+        | Admission::WrongScope
+        | Admission::IncompleteContent => Serves::Refuse,
+    };
+    let projected = relation == Serves::ProjectControlsOff;
+    let writes = plan.writes(run_facts(
+        index,
+        &basis,
+        delivery,
+        entries_changed || relation == Serves::Refuse,
+        content_changed,
+        projected,
+        || {
+            stored
+                .as_ref()
+                .filter(|info| info.root == index.root_path())
+                .map(|info| info.identity.entries)
+        },
+    ));
+    let Some(path) = delivery.cache_path.as_ref() else {
+        return Ok(false);
+    };
+    if writes.metadata {
+        snapshot::save(index, path)?;
+    }
+    if writes.content {
+        content::save_content_cache(index, &content::content_cache_path(path))?;
+    }
+    Ok(writes.metadata)
+}
+
+fn load_content(
+    index: &mut Index,
+    basis: &query::Basis,
+    delivery: &query::Delivery,
+) -> Result<content::ContentCacheLoad> {
+    let (true, Some(snapshot_path)) = (delivery.cache.reads(), delivery.cache_path.as_deref())
+    else {
         return Ok(content::ContentCacheLoad::default());
     };
-    let wanted = index.content_identity(config.analysis.profile);
+    let wanted = index.content_identity(basis.content);
     content::load_content_cache(index, &wanted, &content::content_cache_path(snapshot_path))
 }
 
@@ -780,27 +893,16 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
 /// ([`stored_state::entries_writable`]): a snapshot recording a partial view would be
 /// served as fact on the next run, and the existing complete snapshot is better than that.
 /// The content sidecar keeps the records the pass verified
-/// ([`stored_state::content_tier_writable`]), which today means after a complete pass only;
-/// that rule admits a partial pass beside a stored snapshot of the same entry tier once
-/// P1.4.2 (`fdu-rjv3`) makes a partial pass keep the records it verified.
+/// ([`stored_state::content_tier_writable`]); a partial pass may replace it only beside a
+/// stored snapshot of the same entry tier.
 fn spawn_save(
     index: &std::sync::Arc<Index>,
-    config: &OpenConfig,
+    delivery: &query::Delivery,
     writes: SaveTargets,
 ) -> PendingSave {
-    let (Some(cache_path), true, false) =
-        (config.cache_path.clone(), config.policy.writes(), writes.none())
-    else {
+    let Some(cache_path) = delivery.cache_path.clone().filter(|_| !writes.none()) else {
         return PendingSave::none();
     };
-    let entries_writable = stored_state::entries_writable(index);
-    let writes = SaveTargets {
-        metadata: writes.metadata && entries_writable,
-        content: writes.content && config.analysis.profile.is_enabled(),
-    };
-    if writes.none() {
-        return PendingSave::none();
-    }
 
     // The index is read-only from here, so the writer and the caller's rendering are two
     // readers of one index rather than of two copies. This used to deep-clone — every
@@ -827,21 +929,6 @@ fn spawn_save(
         if let Ok(worker) =
             std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
                 let _counter_guard = counters::thread_flush_guard();
-                // The pairing check reads the stored snapshot's header, and only when this
-                // pass wrote no snapshot: no metadata writer is running then, and a
-                // complete pass needs no answer. It is passed unevaluated because the rule
-                // is held until P1.4.2 (`fdu-rjv3`) and does not ask, so a partial pass
-                // opens nothing.
-                let stored_entries = || {
-                    snapshot::read_header(&cache_path)
-                        .ok()
-                        .flatten()
-                        .filter(|stored| stored.root == snapshot_source.root_path())
-                        .map(|stored| stored.identity.entries)
-                };
-                if !stored_state::content_tier_writable(&snapshot_source, stored_entries) {
-                    return Ok(());
-                }
                 content::save_content_cache(&snapshot_source, &content_path)
             })
         {
@@ -926,18 +1013,18 @@ mod tests {
         policy: CachePolicy,
         snapshot_path: PathBuf,
         read_controls: bool,
-    ) -> OpenConfig {
-        OpenConfig {
+    ) -> OpenFixture {
+        OpenFixture {
             scan: ScanConfig { read_controls, ..ScanConfig::default() },
             cache_path: Some(snapshot_path),
             policy,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         }
     }
 
     fn seed_controls_snapshot(root: &Path, snapshot_path: PathBuf) {
         let seed = controls_config(CachePolicy::Auto, snapshot_path, true);
-        let (index, report) = open(root, &seed).expect("seed controls-on snapshot");
+        let (index, report) = open_fixture(root, &seed).expect("seed controls-on snapshot");
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(
             !index.controls().expect("control state observed").is_empty(),
@@ -955,13 +1042,13 @@ mod tests {
         write_file(&root.path().join(".gitignore"), b"*.log\n");
         write_file(&root.path().join("debug.log"), b"ignored");
         write_file(&root.path().join("keep.rs"), b"kept");
-        let uncached = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
-        let opted_out = OpenConfig {
+        let uncached = OpenFixture { policy: CachePolicy::Off, ..OpenFixture::default() };
+        let opted_out = OpenFixture {
             scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
             ..uncached.clone()
         };
 
-        let (index, report) = open(root.path(), &uncached).expect("default open");
+        let (index, report) = open_fixture(root.path(), &uncached).expect("default open");
         assert!(report.is_complete(), "{:?}", report.errors());
         assert!(index.observes_controls());
         assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
@@ -977,14 +1064,15 @@ mod tests {
         let mut oversized = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
         oversized.extend_from_slice(b"\n*.log\n");
         write_file(&root.path().join(".gitignore"), &oversized);
-        let (index, report) = open(root.path(), &uncached).expect("a refused control ends nothing");
+        let (index, report) =
+            open_fixture(root.path(), &uncached).expect("a refused control ends nothing");
         assert!(report.is_complete(), "{:?}", report.errors());
         let crate::control::ControlCoverage::Observed(coverage) = index.control_coverage() else {
             panic!("a default open reads the control file the opt-out skips");
         };
         assert_eq!((coverage.applied, coverage.refused), (0, 1));
 
-        let (index, report) = open(root.path(), &opted_out)
+        let (index, report) = open_fixture(root.path(), &opted_out)
             .expect("an opted-out open reads no control line, however long");
         assert!(report.is_complete(), "{:?}", report.errors());
         assert!(!index.observes_controls());
@@ -1015,7 +1103,7 @@ mod tests {
             line_limit: None,
             ..crate::control::ControlLimits::default()
         };
-        let lifted = OpenConfig {
+        let lifted = OpenFixture {
             scan: ScanConfig { control_limits: lifted_limits, ..default.scan.clone() },
             ..controls_config(CachePolicy::Auto, snapshot_path, true)
         };
@@ -1024,36 +1112,42 @@ mod tests {
             crate::control::ControlCoverage::NotObserved => panic!("observed"),
         };
 
-        let (index, report) = open(root.path(), &default).expect("default limits");
+        let (index, report) = open_fixture(root.path(), &default).expect("default limits");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::ColdScan, 1));
-        let (index, report) = open(root.path(), &default).expect("default limits again");
+        let (index, report) = open_fixture(root.path(), &default).expect("default limits again");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::WarmRevalidate, 1));
 
-        let (index, report) = open(root.path(), &lifted).expect("lifted line limit");
+        let (index, report) = open_fixture(root.path(), &lifted).expect("lifted line limit");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::ColdScan, 0));
         assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
-        let (index, report) = open(root.path(), &lifted).expect("lifted line limit again");
+        let (index, report) = open_fixture(root.path(), &lifted).expect("lifted line limit again");
         assert_eq!((report.path_taken, refused(&index)), (OpenPath::WarmRevalidate, 0));
 
-        let (_, report) = open(root.path(), &default).expect("back to the default");
+        let (_, report) = open_fixture(root.path(), &default).expect("back to the default");
         assert_eq!(report.path_taken, OpenPath::ColdScan);
     }
 
     #[test]
-    fn controls_on_snapshot_does_not_serve_controls_off_auto_open() {
+    fn controls_on_snapshot_projects_to_controls_off_auto_open_without_replacing_it() {
         let root = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&root.path().join(".gitignore"), b"ignored.log\n");
         write_file(&root.path().join("ignored.log"), b"ignored");
         seed_controls_snapshot(root.path(), snapshot_path.clone());
+        let stronger = fs::read(&snapshot_path).expect("stronger snapshot");
+        write_file(&root.path().join("new.txt"), b"new");
 
-        let controls_off = controls_config(CachePolicy::Auto, snapshot_path, false);
-        let (index, report) = open(root.path(), &controls_off).expect("controls-off cold fallback");
+        let controls_off = controls_config(CachePolicy::Auto, snapshot_path.clone(), false);
+        let (index, report) =
+            open_fixture(root.path(), &controls_off).expect("projected warm open");
 
-        assert_eq!(report.path_taken, OpenPath::ColdScan);
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
+        assert!(report.projected);
         assert_eq!(index.scope(), controls_off.scan.scope());
         assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
+        assert!(matches!(index.path_state(Path::new("new.txt")), PathState::Present { .. }));
+        assert_eq!(fs::read(snapshot_path).expect("snapshot retained"), stronger);
     }
 
     /// A cache-only open refused for the control limits names them and what recovers.
@@ -1076,7 +1170,7 @@ mod tests {
         };
         let mut wanted = controls_config(CachePolicy::Only, snapshot_path, true);
         wanted.scan.control_limits = lifted;
-        let Err(Error::Snapshot(message)) = open(root.path(), &wanted) else {
+        let Err(Error::Snapshot(message)) = open_fixture(root.path(), &wanted) else {
             panic!("a snapshot taken under other limits must not serve a cache-only open");
         };
         assert!(
@@ -1093,7 +1187,7 @@ mod tests {
     }
 
     #[test]
-    fn controls_on_snapshot_does_not_serve_controls_off_cache_only_open() {
+    fn controls_on_snapshot_projects_to_controls_off_cache_only_open() {
         let root = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
         let snapshot_path = cache.path().join("snap.fdu");
@@ -1102,12 +1196,68 @@ mod tests {
         seed_controls_snapshot(root.path(), snapshot_path.clone());
 
         let controls_off = controls_config(CachePolicy::Only, snapshot_path, false);
-        let Err(Error::Snapshot(message)) = open(root.path(), &controls_off) else {
-            panic!("a snapshot of another scope must not serve a cache-only open");
+        let (index, report) =
+            open_fixture(root.path(), &controls_off).expect("projected cache-only open");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert!(report.projected);
+        assert_eq!(index.scope(), controls_off.scan.scope());
+        assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
+    }
+
+    #[test]
+    fn cache_only_names_foreign_type_rules_after_validating_the_snapshot_and_root() {
+        let root = tempfile::tempdir().expect("root");
+        let other_root = tempfile::tempdir().expect("other root");
+        let cache = tempfile::tempdir().expect("cache");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&root.path().join("main.rs"), b"fn main() {}\n");
+        let custom_types = std::sync::Arc::new(
+            classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+            )
+            .expect("custom rules"),
+        );
+        let custom = OpenFixture {
+            scan: ScanConfig::default().with_types(custom_types.clone()),
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            ..OpenFixture::default()
         };
-        assert!(message.contains("different scan scope"), "names the cause: {message}");
-        assert!(!message.contains("control state"), "the stored snapshot has it: {message}");
-        assert!(message.contains("`auto`"), "names the remedy: {message}");
+        open_fixture(root.path(), &custom).expect("write custom snapshot");
+
+        let default_only = OpenFixture {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Only,
+            ..OpenFixture::default()
+        };
+        let Err(Error::Snapshot(message)) = open_fixture(root.path(), &default_only) else {
+            panic!("foreign type rules must not serve cache-only");
+        };
+        assert!(message.contains("different file type rules"), "{message}");
+        assert!(message.contains("type registry") && message.contains("`auto`"), "{message}");
+        assert!(
+            snapshot::load(&snapshot_path).expect("direct default-registry load").is_none(),
+            "a direct load cannot attach the compiled registry to foreign rules"
+        );
+        let (_, report) =
+            open_fixture(root.path(), &OpenFixture { policy: CachePolicy::Only, ..custom.clone() })
+                .expect("matching registry can use the snapshot");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+
+        let Err(Error::Snapshot(message)) = open_fixture(other_root.path(), &default_only) else {
+            panic!("a foreign root and rules must not serve cache-only");
+        };
+        assert!(message.contains("different root"), "root refusal takes precedence: {message}");
+        assert!(!message.contains("type rules"), "wrong-root identity must not leak: {message}");
+
+        let mut corrupt = fs::read(&snapshot_path).expect("snapshot bytes");
+        let middle = corrupt.len() / 2;
+        corrupt[middle] ^= 1;
+        fs::write(&snapshot_path, corrupt).expect("corrupt payload without updating checksum");
+        let Err(Error::Snapshot(message)) = open_fixture(root.path(), &default_only) else {
+            panic!("corrupt snapshot must not yield a type-rules refusal");
+        };
+        assert!(!message.contains("type rules"), "corruption is an absent snapshot: {message}");
     }
 
     /// Supplied rules reach the answer, and invalidate a snapshot taken under others.
@@ -1124,15 +1274,15 @@ mod tests {
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&dir.path().join("main.rs"), b"fn main() {}\n");
 
-        let default_config = OpenConfig {
+        let default_config = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             analysis: content::AnalysisRequest {
                 profile: content::AnalysisSet::NONE.with_lines(),
                 ..content::AnalysisRequest::default()
             },
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        let (index, _) = open(dir.path(), &default_config).expect("default open");
+        let (index, _) = open_fixture(dir.path(), &default_config).expect("default open");
         assert_eq!(index.classify(Path::new("main.rs")).file_type.as_str(), "rust");
         drop(index);
 
@@ -1142,7 +1292,7 @@ mod tests {
             )
             .expect("a minimal manifest"),
         );
-        let custom_config = OpenConfig {
+        let custom_config = OpenFixture {
             scan: scan::ScanConfig::default().with_types(mine.clone()),
             ..default_config.clone()
         };
@@ -1153,7 +1303,7 @@ mod tests {
             "different rules are a different scan scope"
         );
 
-        let (index, report) = open(dir.path(), &custom_config).expect("custom open");
+        let (index, report) = open_fixture(dir.path(), &custom_config).expect("custom open");
         assert_eq!(
             report.path_taken,
             OpenPath::ColdScan,
@@ -1165,11 +1315,18 @@ mod tests {
             .content()
             .and_then(|content| content.file(Path::new("main.rs")))
             .expect("custom analysis record");
-        assert_eq!(content.classification.file_type.as_str(), "notes");
-        assert_eq!(content.provenance.type_rules_fingerprint, mine.fingerprint());
+        assert_eq!(content.detection.file_type.as_str(), "notes");
+        assert_eq!(
+            index
+                .content()
+                .and_then(content::ContentIndex::provenance)
+                .expect("content provenance")
+                .type_rules_fingerprint,
+            mine.fingerprint()
+        );
 
         // And the snapshot the custom run wrote is reusable by a run under the same rules.
-        let (_, report) = open(dir.path(), &custom_config).expect("second custom open");
+        let (_, report) = open_fixture(dir.path(), &custom_config).expect("second custom open");
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate, "same rules, same snapshot");
         assert_eq!(report.content_cache.hits, 1, "the matching sidecar is reusable");
         assert_eq!(report.analysis.expect("analysis report").candidates, 0);
@@ -1198,12 +1355,12 @@ mod tests {
             let snapshot_path = cache.path().join("snap.fdu");
             write_file(&dir.path().join("a.txt"), b"hello");
 
-            let config = OpenConfig {
+            let config = OpenFixture {
                 cache_path: Some(snapshot_path.clone()),
                 policy,
-                ..OpenConfig::default()
+                ..OpenFixture::default()
             };
-            let (index, report) = open(dir.path(), &config).expect("open");
+            let (index, report) = open_fixture(dir.path(), &config).expect("open");
 
             assert_eq!(index.total().files, 1, "{policy:?} lost an entry");
             assert_eq!(report.path_taken, OpenPath::ColdScan, "{policy:?} without a snapshot");
@@ -1224,16 +1381,16 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"hello");
 
         // Seed a snapshot with auto, then read it without leaving a trace.
-        let seed = OpenConfig {
+        let seed = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &seed).expect("seed");
+        open_fixture(dir.path(), &seed).expect("seed");
         let before = fs::metadata(&snapshot_path).expect("snapshot exists").len();
 
-        let read_only = OpenConfig { policy: CachePolicy::ReadOnly, ..seed };
-        let (index, report) = open(dir.path(), &read_only).expect("warm open");
+        let read_only = OpenFixture { policy: CachePolicy::ReadOnly, ..seed };
+        let (index, report) = open_fixture(dir.path(), &read_only).expect("warm open");
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
         assert_eq!(index.total().files, 1);
         assert_eq!(fs::metadata(&snapshot_path).expect("still there").len(), before);
@@ -1252,15 +1409,15 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"hello");
         write_file(&dir.path().join("sub/b.txt"), b"world");
 
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &auto).expect("seed");
+        open_fixture(dir.path(), &auto).expect("seed");
         let seeded = fs::read(&snapshot_path).expect("seeded snapshot");
 
-        let (index, report) = open(dir.path(), &auto).expect("warm open");
+        let (index, report) = open_fixture(dir.path(), &auto).expect("warm open");
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
         assert_eq!(index.total().files, 2);
         assert_eq!(
@@ -1270,14 +1427,14 @@ mod tests {
         );
 
         write_file(&dir.path().join("sub/c.txt"), b"new file");
-        let (index, report) = open(dir.path(), &auto).expect("warm open after a change");
+        let (index, report) = open_fixture(dir.path(), &auto).expect("warm open after a change");
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
         assert_eq!(index.total().files, 3);
         let after_add = fs::read(&snapshot_path).expect("rewritten snapshot");
         assert_ne!(after_add, seeded, "a warm open that found a new file must persist it");
 
         fs::remove_file(dir.path().join("sub/c.txt")).expect("remove");
-        let (index, _) = open(dir.path(), &auto).expect("warm open after a removal");
+        let (index, _) = open_fixture(dir.path(), &auto).expect("warm open after a removal");
         assert_eq!(index.total().files, 2);
         assert_ne!(
             fs::read(&snapshot_path).expect("rewritten snapshot"),
@@ -1286,8 +1443,8 @@ mod tests {
         );
 
         // The skip must leave a snapshot a later cache-only open can still serve.
-        let cache_only = OpenConfig { policy: CachePolicy::Only, ..auto };
-        let (restored, _) = open(dir.path(), &cache_only).expect("cache-only open");
+        let cache_only = OpenFixture { policy: CachePolicy::Only, ..auto };
+        let (restored, _) = open_fixture(dir.path(), &cache_only).expect("cache-only open");
         assert_eq!(restored.total().files, 2);
     }
 
@@ -1298,17 +1455,17 @@ mod tests {
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&dir.path().join("a.txt"), b"hello");
 
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &auto).expect("seed");
+        open_fixture(dir.path(), &auto).expect("seed");
 
         // A second auto open would be warm; refresh must scan cold anyway, which is what
         // makes it usable as a benchmark control.
-        let refresh = OpenConfig { policy: CachePolicy::Refresh, ..auto };
-        let (_, report) = open(dir.path(), &refresh).expect("refresh open");
+        let refresh = OpenFixture { policy: CachePolicy::Refresh, ..auto };
+        let (_, report) = open_fixture(dir.path(), &refresh).expect("refresh open");
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(snapshot_path.exists());
     }
@@ -1320,19 +1477,19 @@ mod tests {
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&dir.path().join("a.txt"), b"hello");
 
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &auto).expect("seed");
+        open_fixture(dir.path(), &auto).expect("seed");
 
         // Change the tree after the snapshot was taken. A cache-only answer must report
         // what it has, not what is there now — and its freshness must say so.
         write_file(&dir.path().join("b.txt"), b"new file");
 
-        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
-        let (index, report) = open(dir.path(), &only).expect("cache-only open");
+        let only = OpenFixture { policy: CachePolicy::Only, ..auto };
+        let (index, report) = open_fixture(dir.path(), &only).expect("cache-only open");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert_eq!(index.total().files, 1, "the new file must not appear");
         assert_ne!(index.freshness(), Freshness::Fresh, "a stale answer must not claim currency");
@@ -1346,12 +1503,12 @@ mod tests {
 
         // Guessing a scan here would make the fast path unpredictable: sometimes instant,
         // sometimes a full walk, with nothing in the output to say which happened.
-        let only = OpenConfig {
+        let only = OpenFixture {
             cache_path: Some(cache.path().join("absent.fdu")),
             policy: CachePolicy::Only,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        let Err(Error::Snapshot(message)) = open(dir.path(), &only) else {
+        let Err(Error::Snapshot(message)) = open_fixture(dir.path(), &only) else {
             panic!("a cache-only open with no snapshot must fail");
         };
         // A diagnostic names its remedy: `only` is the one policy that cannot recover, so
@@ -1369,33 +1526,33 @@ mod tests {
             profile: content::AnalysisSet::NONE.with_lines(),
             ..content::AnalysisRequest::default()
         };
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
             analysis,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
 
-        let (first, first_report) = open(dir.path(), &auto).expect("cold analyzed open");
-        assert_eq!(first_report.analysis.expect("analysis").analyzed, 1);
+        let (first, first_report) = open_fixture(dir.path(), &auto).expect("cold analyzed open");
+        assert_eq!(first_report.analysis.expect("analysis").lines.analyzed, 1);
         assert_eq!(
-            first.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
+            first.content_rollup(Path::new("")).expect("content").total.lines.metrics.raw_words,
             2
         );
         assert!(content::content_cache_path(&snapshot_path).exists());
 
-        let (_, warm_report) = open(dir.path(), &auto).expect("warm analyzed open");
+        let (_, warm_report) = open_fixture(dir.path(), &auto).expect("warm analyzed open");
         assert_eq!(warm_report.content_cache.hits, 1);
         assert_eq!(warm_report.content_cache.bytes, 8);
         assert_eq!(warm_report.analysis.expect("analysis").candidates, 0);
 
         fs::remove_file(dir.path().join("notes.md")).expect("remove source");
-        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
-        let (cached, cached_report) = open(dir.path(), &only).expect("cache-only content");
+        let only = OpenFixture { policy: CachePolicy::Only, ..auto };
+        let (cached, cached_report) = open_fixture(dir.path(), &only).expect("cache-only content");
         assert_eq!(cached_report.content_cache.hits, 1);
         assert_eq!(cached_report.content_cache.bytes, 8);
         assert_eq!(
-            cached.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
+            cached.content_rollup(Path::new("")).expect("content").total.lines.metrics.raw_words,
             2
         );
     }
@@ -1406,30 +1563,30 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache dir");
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&dir.path().join("invalid.txt"), b"valid prefix\xff");
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path),
             policy: CachePolicy::Auto,
             analysis: content::AnalysisRequest {
                 profile: content::AnalysisSet::NONE.with_lines(),
                 ..content::AnalysisRequest::default()
             },
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
 
-        let (_, cold_report) = open(dir.path(), &auto).expect("cold analyzed open");
+        let (_, cold_report) = open_fixture(dir.path(), &auto).expect("cold analyzed open");
         assert!(cold_report.is_complete());
-        assert_eq!(cold_report.analysis.expect("analysis").invalid_utf8, 1);
+        assert_eq!(cold_report.analysis.expect("analysis").lines.invalid_utf8, 1);
         assert!(cold_report.error_messages().is_empty());
 
-        let (_, warm_report) = open(dir.path(), &auto).expect("warm analyzed open");
+        let (_, warm_report) = open_fixture(dir.path(), &auto).expect("warm analyzed open");
         assert_eq!(warm_report.content_cache.hits, 1);
         assert_eq!(warm_report.content_cache.coverage_exclusions, 1);
         assert_eq!(warm_report.analysis.expect("analysis").candidates, 0);
         assert!(warm_report.is_complete());
         assert!(warm_report.error_messages().is_empty());
 
-        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
-        let (_, cached_report) = open(dir.path(), &only).expect("cache-only analyzed open");
+        let only = OpenFixture { policy: CachePolicy::Only, ..auto };
+        let (_, cached_report) = open_fixture(dir.path(), &only).expect("cache-only analyzed open");
         assert_eq!(cached_report.content_cache.coverage_exclusions, 1);
         assert!(cached_report.is_complete());
         assert!(cached_report.error_messages().is_empty());
@@ -1441,14 +1598,14 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache dir");
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&dir.path().join("notes.md"), b"one two\n");
-        let metadata_only = OpenConfig {
+        let metadata_only = OpenFixture {
             cache_path: Some(snapshot_path),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &metadata_only).expect("seed metadata");
+        open_fixture(dir.path(), &metadata_only).expect("seed metadata");
 
-        let only = OpenConfig {
+        let only = OpenFixture {
             policy: CachePolicy::Only,
             analysis: content::AnalysisRequest {
                 profile: content::AnalysisSet::NONE.with_lines(),
@@ -1456,11 +1613,11 @@ mod tests {
             },
             ..metadata_only
         };
-        assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+        assert!(matches!(open_fixture(dir.path(), &only), Err(Error::Snapshot(_))));
 
         // A sidecar of another analyzer set is not this request's, whether it is wider or
         // narrower: cache-only fails closed rather than answering with the stored set.
-        let with_set = |policy, profile| OpenConfig {
+        let with_set = |policy, profile| OpenFixture {
             policy,
             analysis: content::AnalysisRequest { profile, ..content::AnalysisRequest::default() },
             ..only.clone()
@@ -1469,16 +1626,18 @@ mod tests {
         for (stored, wanted) in
             [(content::AnalysisSet::ALL, lines), (lines, content::AnalysisSet::ALL)]
         {
-            open(dir.path(), &with_set(CachePolicy::Auto, stored)).expect("write a sidecar");
-            let refused = open(dir.path(), &with_set(CachePolicy::Only, wanted));
+            open_fixture(dir.path(), &with_set(CachePolicy::Auto, stored))
+                .expect("write a sidecar");
+            let refused = open_fixture(dir.path(), &with_set(CachePolicy::Only, wanted));
             assert!(
                 matches!(refused, Err(Error::Snapshot(_))),
                 "a {stored:?} sidecar must not serve a cache-only {wanted:?} request"
             );
         }
 
-        open(dir.path(), &with_set(CachePolicy::Auto, lines)).expect("write the lines sidecar");
-        let (cached, report) = open(dir.path(), &only).expect("restore the analyzed state");
+        open_fixture(dir.path(), &with_set(CachePolicy::Auto, lines))
+            .expect("write the lines sidecar");
+        let (cached, report) = open_fixture(dir.path(), &only).expect("restore the analyzed state");
         assert!(report.content_cache.usable);
         assert_eq!(report.content_cache.hits, 1, "one record per candidate is complete");
         assert_eq!(
@@ -1498,24 +1657,24 @@ mod tests {
             profile: content::AnalysisSet::NONE.with_lines(),
             ..content::AnalysisRequest::default()
         };
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path),
             policy: CachePolicy::Auto,
             analysis,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &auto).expect("seed one analyzed file");
+        open_fixture(dir.path(), &auto).expect("seed one analyzed file");
 
         // A later metadata-only pass widens the snapshot without rewriting the sidecar,
         // so cache-only analysis must refuse rather than report a partial content answer.
         write_file(&dir.path().join("extra.txt"), b"three\n");
         let metadata_only =
-            OpenConfig { analysis: content::AnalysisRequest::default(), ..auto.clone() };
-        open(dir.path(), &metadata_only).expect("widen the snapshot");
+            OpenFixture { analysis: content::AnalysisRequest::default(), ..auto.clone() };
+        open_fixture(dir.path(), &metadata_only).expect("widen the snapshot");
 
-        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
+        let only = OpenFixture { policy: CachePolicy::Only, ..auto };
         assert!(
-            matches!(open(dir.path(), &only), Err(Error::Snapshot(_))),
+            matches!(open_fixture(dir.path(), &only), Err(Error::Snapshot(_))),
             "a one-record sidecar must not serve a two-file cache-only analysis request"
         );
     }
@@ -1560,12 +1719,12 @@ mod tests {
         ]));
         snapshot::save(&index, &snapshot_path).expect("save native names");
 
-        let only = OpenConfig {
+        let only = OpenFixture {
             cache_path: Some(snapshot_path),
             policy: CachePolicy::Only,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        let (cached, report) = open(&root, &only).expect("cache-only native name");
+        let (cached, report) = open_fixture(&root, &only).expect("cache-only native name");
         assert_eq!(cached.total().files, 2);
         assert!(cached.lookup(&native).is_some());
         assert!(report.is_complete());
@@ -1576,14 +1735,14 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
         let snapshot_path = cache.path().join("snap.fdu");
-        let metadata_only = OpenConfig {
+        let metadata_only = OpenFixture {
             cache_path: Some(snapshot_path),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &metadata_only).expect("seed empty metadata");
+        open_fixture(dir.path(), &metadata_only).expect("seed empty metadata");
 
-        let only = OpenConfig {
+        let only = OpenFixture {
             policy: CachePolicy::Only,
             analysis: content::AnalysisRequest {
                 profile: content::AnalysisSet::NONE.with_lines(),
@@ -1591,7 +1750,7 @@ mod tests {
             },
             ..metadata_only
         };
-        assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+        assert!(matches!(open_fixture(dir.path(), &only), Err(Error::Snapshot(_))));
     }
 
     #[test]
@@ -1603,15 +1762,15 @@ mod tests {
         write_file(&one.path().join("a.txt"), b"hello");
         write_file(&two.path().join("b.txt"), b"other tree");
 
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(one.path(), &config).expect("seed from the first root");
+        open_fixture(one.path(), &config).expect("seed from the first root");
 
         // Reading another tree's snapshot would be worse than a cache miss.
-        let (index, report) = open(two.path(), &config).expect("second root");
+        let (index, report) = open_fixture(two.path(), &config).expect("second root");
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert_eq!(index.total().files, 1);
         assert_eq!(index.root_path(), two.path().canonicalize().expect("canonical").as_path());
@@ -1622,7 +1781,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join("a.txt"), b"hello");
 
-        let (index, report) = open(dir.path(), &OpenConfig::default()).expect("open");
+        let (index, report) = open_fixture(dir.path(), &OpenFixture::default()).expect("open");
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert_eq!(index.total().files, 1);
     }
@@ -1634,13 +1793,13 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"hello");
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
 
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(cache.path().join("snap.fdu")),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
 
-        let (first, first_report) = open(dir.path(), &config).expect("cold open");
+        let (first, first_report) = open_fixture(dir.path(), &config).expect("cold open");
         assert_eq!(first_report.path_taken, OpenPath::ColdScan);
         assert_eq!(first.total().files, 2);
 
@@ -1648,7 +1807,7 @@ mod tests {
         write_file(&dir.path().join("added.md"), b"new");
         fs::remove_file(dir.path().join("a.txt")).expect("remove");
 
-        let (second, second_report) = open(dir.path(), &config).expect("warm open");
+        let (second, second_report) = open_fixture(dir.path(), &config).expect("warm open");
         assert_eq!(second_report.path_taken, OpenPath::WarmRevalidate);
         assert_eq!(second.total().files, 2);
         assert!(second.lookup(Path::new("added.md")).is_some());
@@ -1664,14 +1823,14 @@ mod tests {
         write_file(&b.path().join("only-in-b.txt"), b"y");
 
         let cache_path = cache.path().join("snap.fdu");
-        let config = OpenConfig {
+        let config = OpenFixture {
             cache_path: Some(cache_path),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
 
-        open(a.path(), &config).expect("open a");
-        let (index, report) = open(b.path(), &config).expect("open b");
+        open_fixture(a.path(), &config).expect("open a");
+        let (index, report) = open_fixture(b.path(), &config).expect("open b");
 
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(index.lookup(Path::new("only-in-b.txt")).is_some());
@@ -1686,20 +1845,20 @@ mod tests {
         write_file(&dir.path().join("deep/nested.txt"), b"nested");
 
         let cache_path = cache.path().join("snap.fdu");
-        let full = OpenConfig {
+        let full = OpenFixture {
             cache_path: Some(cache_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &full).expect("full open");
+        open_fixture(dir.path(), &full).expect("full open");
 
-        let shallow = OpenConfig {
+        let shallow = OpenFixture {
             scan: ScanConfig { max_depth: Some(1), ..ScanConfig::default() },
             cache_path: Some(cache_path),
             policy: CachePolicy::ReadOnly,
             analysis: content::AnalysisRequest::default(),
         };
-        let (index, report) = open(dir.path(), &shallow).expect("shallow open");
+        let (index, report) = open_fixture(dir.path(), &shallow).expect("shallow open");
 
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(index.lookup(Path::new("deep")).is_some());
@@ -1712,12 +1871,12 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache dir");
         write_file(&dir.path().join(".hidden"), b"hidden");
         let cache_path = cache.path().join("snap.fdu");
-        let seed = OpenConfig {
+        let seed = OpenFixture {
             cache_path: Some(cache_path.clone()),
             policy: CachePolicy::Auto,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        open(dir.path(), &seed).expect("seed snapshot");
+        open_fixture(dir.path(), &seed).expect("seed snapshot");
 
         let changed_scopes = [
             ScanConfig {
@@ -1729,13 +1888,13 @@ mod tests {
             ScanConfig { exclude_special: true, ..ScanConfig::default() },
         ];
         for scan in changed_scopes {
-            let only = OpenConfig {
+            let only = OpenFixture {
                 scan,
                 cache_path: Some(cache_path.clone()),
                 policy: CachePolicy::Only,
                 analysis: content::AnalysisRequest::default(),
             };
-            assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+            assert!(matches!(open_fixture(dir.path(), &only), Err(Error::Snapshot(_))));
         }
     }
 
@@ -1746,21 +1905,21 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"a");
         let cache_path = cache.path().join("snap.fdu");
 
-        let first = OpenConfig {
+        let first = OpenFixture {
             scan: ScanConfig { batch_size: 1, ..ScanConfig::default() },
             cache_path: Some(cache_path.clone()),
             policy: CachePolicy::Auto,
             analysis: content::AnalysisRequest::default(),
         };
-        open(dir.path(), &first).expect("first open");
+        open_fixture(dir.path(), &first).expect("first open");
 
-        let second = OpenConfig {
+        let second = OpenFixture {
             scan: ScanConfig { batch_size: 17, ..ScanConfig::default() },
             cache_path: Some(cache_path),
             policy: CachePolicy::ReadOnly,
             analysis: content::AnalysisRequest::default(),
         };
-        let (_, report) = open(dir.path(), &second).expect("second open");
+        let (_, report) = open_fixture(dir.path(), &second).expect("second open");
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
     }
 
@@ -1811,11 +1970,11 @@ mod save_tests {
         fs::write(path, contents).expect("write");
     }
 
-    fn config(snapshot_path: &Path, policy: CachePolicy) -> OpenConfig {
-        OpenConfig {
+    fn config(snapshot_path: &Path, policy: CachePolicy) -> OpenFixture {
+        OpenFixture {
             cache_path: Some(snapshot_path.to_path_buf()),
             policy,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         }
     }
 
@@ -1827,7 +1986,7 @@ mod save_tests {
         write_file(&dir.path().join("a.txt"), b"hello");
 
         let (_index, _report, pending) =
-            open_with_pending_save(dir.path(), &config(&snapshot_path, CachePolicy::Auto))
+            open_fixture_with_pending_save(dir.path(), &config(&snapshot_path, CachePolicy::Auto))
                 .expect("open");
         pending.join().expect("save succeeds");
         assert!(snapshot_path.exists(), "a joined save must have landed");
@@ -1843,9 +2002,11 @@ mod save_tests {
         write_file(&dir.path().join("a.txt"), b"hello");
 
         {
-            let (_index, _report, _pending) =
-                open_with_pending_save(dir.path(), &config(&snapshot_path, CachePolicy::Auto))
-                    .expect("open");
+            let (_index, _report, _pending) = open_fixture_with_pending_save(
+                dir.path(),
+                &config(&snapshot_path, CachePolicy::Auto),
+            )
+            .expect("open");
         }
         assert!(snapshot_path.exists());
     }
@@ -1857,10 +2018,7 @@ mod save_tests {
         // existing complete snapshot is better than that.
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            // A privileged process reads the denied directory anyway, so the fixture
-            // cannot produce the partial scan this asserts on.
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -1870,7 +2028,7 @@ mod save_tests {
         write_file(&dir.path().join("a.txt"), b"hello");
 
         let settings = config(&snapshot_path, CachePolicy::Auto);
-        open(dir.path(), &settings).expect("seed a complete snapshot");
+        open_fixture(dir.path(), &settings).expect("seed a complete snapshot");
         let complete_len = fs::metadata(&snapshot_path).expect("exists").len();
 
         let denied = dir.path().join("denied");
@@ -1878,7 +2036,7 @@ mod save_tests {
         write_file(&denied.join("hidden.txt"), b"hidden");
         fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("deny");
 
-        let opened = open(dir.path(), &settings);
+        let opened = open_fixture(dir.path(), &settings);
         fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore");
         let (_index, report) = opened.expect("partial open still returns a result");
 
@@ -1890,20 +2048,16 @@ mod save_tests {
         );
     }
 
-    /// Each tier is written by its own rule, and a partial pass writes neither: no
-    /// snapshot, because an absent entry would change totals, and no sidecar, because a
-    /// partial pass marks its root `Partial` and so can name only the files that changed
-    /// as verified. Writing those would evict the complete sidecar that pairs with the
-    /// stored snapshot. P1.4.2 (`fdu-rjv3`) marks the failed paths instead, after which a
-    /// partial pass writes every record it verified beside a snapshot of the same entry
-    /// identity, and still writes nothing under any other identity.
+    /// Each tier is written by its own rule: a partial pass writes no snapshot, because an
+    /// absent entry would change totals, but may write every verified content record beside
+    /// a stored snapshot of the same entry identity. It still writes nothing under another
+    /// identity, where replacing the sidecar would separate it from the snapshot it names.
     #[test]
     #[cfg(unix)]
-    fn a_partial_scan_writes_neither_tier_until_failed_paths_are_marked() {
+    fn a_partial_scan_writes_only_verified_content_for_the_stored_entry_tier() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -1917,22 +2071,22 @@ mod save_tests {
             profile: content::AnalysisSet::NONE.with_lines(),
             ..content::AnalysisRequest::default()
         };
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
             analysis,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
-        let (_, seeded) = open(dir.path(), &auto).expect("seed both tiers");
+        let (_, seeded) = open_fixture(dir.path(), &auto).expect("seed both tiers");
         assert!(seeded.is_complete());
         let snapshot_before = fs::read(&snapshot_path).expect("a snapshot");
 
         // Change a file the next pass can verify, and lock the directory holding another.
         write_file(&dir.path().join("notes.md"), b"one two three\n");
         let locked = dir.path().join("locked");
-        let run = |config: &OpenConfig| {
+        let run = |config: &OpenFixture| {
             fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny");
-            let opened = open(dir.path(), config);
+            let opened = open_fixture(dir.path(), config);
             fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
             let (_, report) = opened.expect("a partial open still answers");
             assert!(!report.is_complete(), "the pass should be partial");
@@ -1940,7 +2094,7 @@ mod save_tests {
 
         // Under another entry identity: neither tier is written.
         let sidecar_before = fs::read(&sidecar_path).expect("a sidecar");
-        let other_scope = OpenConfig {
+        let other_scope = OpenFixture {
             scan: ScanConfig { max_depth: Some(8), ..ScanConfig::default() },
             ..auto.clone()
         };
@@ -1952,49 +2106,44 @@ mod save_tests {
             "a partial run under another entry identity must not evict the paired sidecar"
         );
 
-        // Under the stored snapshot's identity: neither tier is written either, because the
-        // only records this pass can name as verified are the files that changed.
+        // Under the stored snapshot's identity, the snapshot stays whole while the sidecar
+        // keeps only content whose entry facts this pass verified.
         run(&auto);
         assert_eq!(
             fs::read(&snapshot_path).expect("snapshot"),
             snapshot_before,
             "a partial scan must not overwrite a complete snapshot"
         );
-        assert_eq!(
-            fs::read(&sidecar_path).expect("sidecar"),
-            sidecar_before,
-            "held until P1.4.2 (`fdu-rjv3`): writing here would evict the complete sidecar \
-             and leave only the changed file"
-        );
-        // What the stored pair still holds: a record for each of the two seeded files,
-        // including the one under the directory this pass could not list, and the older
-        // metrics for the file that changed, which a later complete pass replaces.
+        assert_ne!(fs::read(&sidecar_path).expect("sidecar"), sidecar_before);
+        // The verified changed file is reusable; no record survives under the directory
+        // this pass could not list.
         let (mut fresh, _) =
             scan::scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let wanted = fresh.content_identity(analysis.profile);
         let loaded = content::load_content_cache(&mut fresh, &wanted, &sidecar_path).expect("load");
-        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 1), "{loaded:?}");
+        assert_eq!((loaded.usable, loaded.hits, loaded.stale), (true, 1, 0), "{loaded:?}");
         let content = fresh.content().expect("content");
+        assert!(content.file(Path::new("locked/old.md")).is_none());
         assert_eq!(
-            content.file(Path::new("locked/old.md")).expect("the seeded record").metrics.raw_words,
-            1
+            content
+                .file(Path::new("notes.md"))
+                .expect("verified record")
+                .lines
+                .value()
+                .expect("line metrics")
+                .raw_words,
+            3
         );
     }
 
-    /// The cost the hold above avoids: a warm partial pass must leave a complete sidecar
-    /// whole, not shrink it to the files that changed, or every later run re-reads the
-    /// whole tree for as long as the tree holds one unlistable directory.
-    ///
-    /// P1.4.2 (`fdu-rjv3`) replaces this with the stronger claim: after the same pass the
-    /// sidecar holds a record for every file the pass stat'd unchanged and none under the
-    /// unlistable directory.
+    /// A warm partial pass keeps every record whose entry the pass verified, including
+    /// unchanged files, and removes records below an unlistable directory.
     #[test]
     #[cfg(unix)]
-    fn a_warm_partial_pass_leaves_a_complete_sidecar_whole() {
+    fn a_warm_partial_pass_keeps_all_and_only_verified_content_records() {
         use std::os::unix::fs::PermissionsExt;
 
-        if !crate::test_support::permission_bits_are_enforced() {
-            eprintln!("skipped: this process is not subject to Unix permission bits");
+        if !crate::test_support::require_permission_bits() {
             return;
         }
 
@@ -2010,11 +2159,11 @@ mod save_tests {
             profile: content::AnalysisSet::NONE.with_lines(),
             ..content::AnalysisRequest::default()
         };
-        let auto = OpenConfig {
+        let auto = OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: CachePolicy::Auto,
             analysis,
-            ..OpenConfig::default()
+            ..OpenFixture::default()
         };
 
         let records_in_sidecar = |path: &Path| {
@@ -2026,7 +2175,7 @@ mod save_tests {
             loaded.hits + loaded.stale
         };
 
-        let (_, seeded) = open(dir.path(), &auto).expect("seed both tiers");
+        let (_, seeded) = open_fixture(dir.path(), &auto).expect("seed both tiers");
         assert!(seeded.is_complete());
         assert_eq!(records_in_sidecar(dir.path()), 8, "one record per seeded file");
 
@@ -2034,15 +2183,15 @@ mod save_tests {
         write_file(&dir.path().join("f0.md"), b"alpha\nbeta\ngamma\n");
         let locked = dir.path().join("locked");
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("deny");
-        let opened = open(dir.path(), &auto);
+        let opened = open_fixture(dir.path(), &auto);
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("restore");
         let (_, report) = opened.expect("a partial open still answers");
         assert!(!report.is_complete(), "the pass should be partial");
 
         assert_eq!(
             records_in_sidecar(dir.path()),
-            8,
-            "a warm partial pass must not shrink the sidecar to the files that changed"
+            7,
+            "all seven verified files survive and the inaccessible record does not"
         );
     }
 
@@ -2055,67 +2204,10 @@ mod save_tests {
 
         for policy in [CachePolicy::ReadOnly, CachePolicy::Off] {
             let (_index, _report, pending) =
-                open_with_pending_save(dir.path(), &config(&snapshot_path, policy)).expect("open");
+                open_fixture_with_pending_save(dir.path(), &config(&snapshot_path, policy))
+                    .expect("open");
             pending.join().expect("nothing to join");
             assert!(!snapshot_path.exists(), "{policy:?} wrote a snapshot");
         }
-    }
-}
-
-#[cfg(test)]
-mod cold_scan_persistence_tests {
-    use super::*;
-
-    fn config(policy: CachePolicy, profile: content::AnalysisSet) -> OpenConfig {
-        OpenConfig {
-            policy,
-            analysis: content::AnalysisRequest { profile, ..Default::default() },
-            ..OpenConfig::default()
-        }
-    }
-
-    #[test]
-    fn analysis_always_persists_because_rereading_bodies_is_the_expensive_half() {
-        // The measured case for the cache: 639 ms to 325 ms warm. Size is irrelevant
-        // here, so even a tiny tree under a large threshold still writes.
-        let analyzed = config(CachePolicy::Auto, content::AnalysisSet::NONE.with_code());
-        let targets = cold_scan_save_targets_with(1, &analyzed, Some(250_000));
-        assert!(targets.metadata && targets.content, "analysis must persist its sidecar");
-    }
-
-    #[test]
-    fn refresh_persists_because_the_caller_asked_for_it_outright() {
-        let refresh = config(CachePolicy::Refresh, content::AnalysisSet::NONE);
-        let targets = cold_scan_save_targets_with(1, &refresh, Some(250_000));
-        assert!(targets.metadata, "refresh is an explicit instruction, not a cost estimate");
-    }
-
-    #[test]
-    fn a_metadata_scan_persists_on_either_side_of_an_enabled_threshold() {
-        // Both branches are asserted here rather than through the shipped constant, so
-        // the gate stays proven while SNAPSHOT_MIN_ENTRIES is still unset.
-        let plain = config(CachePolicy::Auto, content::AnalysisSet::NONE);
-        let below = cold_scan_save_targets_with(9, &plain, Some(10));
-        assert!(below.none(), "a tree below the threshold should not create a snapshot");
-
-        let at = cold_scan_save_targets_with(10, &plain, Some(10));
-        assert!(at.metadata, "the threshold is inclusive");
-    }
-
-    #[test]
-    fn an_unset_threshold_preserves_the_behaviour_every_release_has_shipped() {
-        // SNAPSHOT_MIN_ENTRIES stays None because APFS measurement argued against a
-        // threshold rather than supplying one (fdu-hvs5): there the snapshot repays its
-        // write on the first later `Only` read at any size. A cold metadata scan must
-        // persist exactly as before, so `fdu PATH` keeps leaving a snapshot behind.
-        let plain = config(CachePolicy::Auto, content::AnalysisSet::NONE);
-        assert!(
-            cold_scan_save_targets_with(1, &plain, None).metadata,
-            "an unset threshold must not change persistence"
-        );
-        assert_eq!(
-            SNAPSHOT_MIN_ENTRIES, None,
-            "enabling this is a product decision, not a default"
-        );
     }
 }

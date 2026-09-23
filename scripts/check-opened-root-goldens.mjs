@@ -14,6 +14,7 @@ const MAX_SCENARIO_BYTES = 256 * 1024;
 const MAX_CORPUS_BYTES = 768 * 1024;
 const ALLOWED_TOKENS = new Set([
   "[ALLOCATED]",
+  "[CONTINUATION_BYTES]",
   "[DEVICE]",
   "[DIR_SIZE]",
   "[INODE]",
@@ -51,7 +52,7 @@ export function auditGolden(name, source) {
   if (/\b(?:mtime_ns|ctime_ns|inode|dev|allocated): -?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized platform-assigned attribute`);
   }
-  if (/newest_mtime_ns: Some\(-?\d/.test(source)) {
+  if (/(?:newest_mtime_ns|observed_at_ns): Some\(-?\d/.test(source)) {
     findings.push(`${name}: contains an unnormalized aggregate timestamp`);
   }
   // A duration a scenario declares -- a poll timeout, a watch settle interval -- is a round
@@ -60,6 +61,9 @@ export function auditGolden(name, source) {
   // changes on every run, so it may never reach an artifact.
   if (/\b\d+\.\d+(?:ns|µs|ms|s)\b/.test(source) || /\bInstant \{/.test(source)) {
     findings.push(`${name}: contains a wall-clock duration`);
+  }
+  if (/ContinuationRecordLimit \{ attempted: \d/.test(source)) {
+    findings.push(`${name}: contains an unnormalized native continuation size`);
   }
   for (const token of source.match(/\[[A-Z_]+\]/g) ?? []) {
     if (!ALLOWED_TOKENS.has(token)) {
@@ -70,6 +74,15 @@ export function auditGolden(name, source) {
     findings.push(`${name}: missing final newline`);
   }
   return findings;
+}
+
+// Each refusal is a different contract outcome. A whole-read error with the same
+// name cannot stand in for a per-projection refusal.
+export function auditRefusalCoverage(sources) {
+  const trace = sources.join("\n");
+  const required = ["NotADirectory", "ContinuationRecordLimit", "ContinuationUnavailable"];
+  return required.filter((reason) => !new RegExp(`Refused\\(${reason}(?: \\{|\\))`).test(trace))
+    .map((reason) => `corpus: missing projection refusal ${reason}`);
 }
 
 export function auditCorpus() {
@@ -103,6 +116,7 @@ export function auditCorpus() {
       recordedSources.set(source, name);
     }
   }
+  findings.push(...auditRefusalCoverage([...recordedSources.keys()]));
   if (totalLines > MAX_CORPUS_LINES) {
     findings.push(`corpus: ${totalLines} lines exceeds ${MAX_CORPUS_LINES}`);
   }
@@ -124,14 +138,14 @@ function main() {
     return;
   }
 
-  const { findings, totalBytes, totalLines } = auditCorpus();
+  const { findings, expected, totalBytes, totalLines } = auditCorpus();
   if (findings.length > 0) {
     console.error("opened-root golden audit failed:");
     for (const finding of findings) console.error(`- ${finding}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`opened-root goldens ok: 5 sessions, ${totalLines} records, ${totalBytes} bytes`);
+  console.log(`opened-root goldens ok: ${expected.length} sessions, ${totalLines} records, ${totalBytes} bytes`);
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main();

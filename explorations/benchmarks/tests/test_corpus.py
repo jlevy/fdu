@@ -3,16 +3,26 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import struct
+import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from benchmarks import corpus
 from benchmarks.corpus import (
     CorpusError,
+    _engine_record_bytes,
+    _fold_windows_file_id,
     _metadata_for_observation,
+    _observe_corpus,
     _set_path_times_ns,
+    _windows_engine_attrs,
+    _windows_listed_attrs,
+    _windows_time_to_unix_ns,
     apply_transition,
     cleanup_run_directory,
     create_corpus,
@@ -23,6 +33,144 @@ from benchmarks.corpus import (
 
 
 class CorpusGenerationTests(unittest.TestCase):
+    def test_windows_time_conversion_matches_the_unix_epoch(self) -> None:
+        self.assertEqual(_windows_time_to_unix_ns(116_444_736_000_000_000), 0)
+        self.assertEqual(_windows_time_to_unix_ns(116_444_735_999_999_999), -100)
+        self.assertEqual(_windows_time_to_unix_ns(0), 0)
+        self.assertEqual(_windows_time_to_unix_ns(1), -(1 << 63))
+        self.assertEqual(_windows_time_to_unix_ns((1 << 63) - 1), (1 << 63) - 1)
+
+    def test_windows_boundary_times_are_serializable(self) -> None:
+        for ticks in (0, 1, (1 << 63) - 1):
+            with self.subTest(ticks=ticks):
+                attrs = (4, 4, 0, _windows_time_to_unix_ns(ticks), 1, 2)
+                with (
+                    mock.patch("benchmarks.corpus.os.name", "nt"),
+                    mock.patch("benchmarks.corpus._windows_engine_attrs", return_value=attrs),
+                ):
+                    record = _engine_record_bytes("entry", "file", object(), path=Path("entry"))
+                self.assertEqual(struct.unpack(">QQqqQQ", record[-48:]), attrs)
+
+    def test_windows_file_id_fold_uses_both_halves(self) -> None:
+        def identifier(low: int, high: int) -> bytes:
+            return low.to_bytes(8, "little") + high.to_bytes(8, "little")
+
+        self.assertEqual(_fold_windows_file_id(identifier(0x1234, 0)), 0x1234)
+        folded = _fold_windows_file_id(identifier(7, 5))
+        self.assertNotEqual(folded, 7)
+        self.assertNotEqual(folded, _fold_windows_file_id(identifier(7, 6)))
+        self.assertNotEqual(folded, _fold_windows_file_id(identifier(8, 5)))
+        self.assertNotEqual(folded, _fold_windows_file_id(identifier(5, 7)))
+
+    def test_windows_listing_fallback_keeps_available_facts_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "entry"
+            path.write_bytes(b"1234")
+            listed = path.lstat()
+        attrs = _windows_listed_attrs(listed)
+        self.assertEqual(attrs, (4, 4, listed.st_mtime_ns // 100 * 100, 0, 0, 0))
+
+    def test_windows_locked_and_denied_opens_use_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "entry"
+            path.write_bytes(b"1234")
+            listed = path.lstat()
+
+            for error_code in (5, 32, 2):
+                with self.subTest(error_code=error_code):
+                    kernel32 = mock.Mock()
+                    kernel32.CreateFileW.return_value = -1
+                    with (
+                        mock.patch.object(corpus.os, "name", "nt"),
+                        mock.patch.object(corpus, "_KERNEL32", kernel32, create=True),
+                        mock.patch.object(corpus, "_INVALID_HANDLE_VALUE", -1, create=True),
+                        mock.patch.object(corpus, "_FILE_SHARE_READ", 1, create=True),
+                        mock.patch.object(corpus, "_FILE_SHARE_WRITE", 2, create=True),
+                        mock.patch.object(corpus, "_FILE_SHARE_DELETE", 4, create=True),
+                        mock.patch.object(corpus, "_OPEN_EXISTING", 3, create=True),
+                        mock.patch.object(
+                            corpus, "_FILE_FLAG_OPEN_REPARSE_POINT", 0x20, create=True
+                        ),
+                        mock.patch.object(corpus, "_FILE_FLAG_BACKUP_SEMANTICS", 0x40, create=True),
+                        mock.patch.object(corpus, "_ERROR_ACCESS_DENIED", 5, create=True),
+                        mock.patch.object(corpus, "_ERROR_SHARING_VIOLATION", 32, create=True),
+                        mock.patch.object(
+                            corpus.ctypes, "get_last_error", return_value=error_code, create=True
+                        ),
+                        mock.patch.object(
+                            corpus, "_raise_windows_error", side_effect=OSError(error_code)
+                        ),
+                    ):
+                        if error_code == 2:
+                            with self.assertRaises(OSError):
+                                _windows_engine_attrs(path, listed=listed)
+                        else:
+                            self.assertEqual(
+                                _windows_engine_attrs(path, listed=listed),
+                                _windows_listed_attrs(listed),
+                            )
+                    self.assertEqual(kernel32.CreateFileW.call_args.args[1], 0)
+
+    @unittest.skipUnless(os.name == "nt", "requires native Windows metadata")
+    def test_windows_oracle_detects_same_size_rewrite_with_restored_mtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            path = root / "entry.txt"
+            path.write_bytes(b"aaaa")
+            fixed_mtime = 10_000_000_000
+            os.utime(path, ns=(fixed_mtime, fixed_mtime))
+            before_attrs = _windows_engine_attrs(path)
+            before, _capability = _observe_corpus(root, capture_records=False)
+
+            # NTFS stamps change time from the system clock, which advances in ticks of up
+            # to 15.625 ms, so a rewrite stamped in the same tick as the first write is
+            # indistinguishable from it. Wait for the clock to leave that tick rather than
+            # for a fixed interval; the precise clock runs at most one tick ahead.
+            while time.time_ns() <= before_attrs[3] + 20_000_000:
+                time.sleep(0.005)
+
+            path.write_bytes(b"bbbb")
+            os.utime(path, ns=(fixed_mtime, fixed_mtime))
+            after_attrs = _windows_engine_attrs(path)
+            after, _capability = _observe_corpus(root, capture_records=False)
+
+        self.assertEqual(after_attrs[0], before_attrs[0])
+        self.assertEqual(after_attrs[2], before_attrs[2])
+        self.assertNotEqual(after_attrs[3], before_attrs[3])
+        self.assertNotEqual(after["engine_digest"], before["engine_digest"])
+
+    @unittest.skipUnless(os.name == "nt", "requires native Windows metadata")
+    def test_windows_oracle_does_not_follow_name_surrogate_reparse_points(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            target = root / "target"
+            link = root / "link"
+            target.mkdir()
+            made_junction = False
+            try:
+                os.symlink(target, link, target_is_directory=True)
+            except OSError:
+                completed = subprocess.run(
+                    ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if completed.returncode != 0:
+                    self.fail(f"cannot create a Windows name-surrogate fixture: {completed.stderr}")
+                made_junction = True
+            try:
+                before = _windows_engine_attrs(link)
+                target_identity = _windows_engine_attrs(target)
+                (target / "child.txt").write_bytes(b"changed target")
+                after = _windows_engine_attrs(link)
+            finally:
+                if made_junction and link.exists():
+                    os.rmdir(link)
+
+        self.assertEqual(after, before)
+        self.assertNotEqual((before[4], before[5]), (target_identity[4], target_identity[5]))
+
     def test_non_authoritative_directory_identity_uses_a_fresh_path_stat(self) -> None:
         class CachedEntry:
             def __init__(self, path: Path) -> None:

@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -25,7 +26,17 @@ from fdu import _native
 def _stable(text: str) -> str:
     """Blank the fields that differ between any two runs, and only those."""
 
-    return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
+    text = re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
+    # Long's age column uses each read's own instant too. Keep size and path exact;
+    # signed age arithmetic is checked on typed rows and the path-independence oracle.
+    text = re.sub(
+        r"^(\s*[\d.]+ (?:B|KiB|MiB|GiB|TiB|PiB) +)-?\d+[smhd](?= )",
+        r"\1[AGE]",
+        text,
+        flags=re.MULTILINE,
+    )
+    text = re.sub(r'(age_reference_ns|age_ns)("?:\s*)-?\d+', r"\1\2[TIME]", text)
+    return re.sub(r'(observed_at_ns"?:\s*)\d+', r"\1[TIME]", text)
 
 
 def check_watch_reports_its_own_index(root: Path) -> None:
@@ -41,12 +52,12 @@ def check_watch_reports_its_own_index(root: Path) -> None:
         live = watch.report()
         # A snapshot: rendering twice gives the same answer both times.
         assert live.render(fdu.Format.TEXT) == live.render(fdu.Format.TEXT)
-        assert live.status.source is not None
+        assert live.provenance.source is not None
 
     # And a change record renders as the CLI streams it, rather than as repr().
     record = fdu.Change(clock=1, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
     line = record.render(fdu.Format.JSONL)
-    assert '"schema": "fdu.stream/1"' in line, line
+    assert '"schema": "fdu.stream/2"' in line, line
     assert '"op": "upsert"' in line, line
     assert "\t" in record.render(fdu.Format.TEXT)
 
@@ -62,7 +73,7 @@ def check_the_one_shot_retains_nothing(root: Path) -> None:
 
     blind = fdu.ScanOptions(read_controls=False)
     report = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)), scan=blind)
-    assert report.status.source is not None
+    assert report.provenance.source is not None
 
     # Rendering twice must not cost a second walk: the handle owns the finished report.
     text = report.render(fdu.Format.TEXT)
@@ -124,9 +135,17 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
     # Both surfaces read `.gitignore` by default, and a report's `ignore_rules` field and
     # every row's `ignored` share say so, so the default index is the one to compare.
     index = fdu.scan(str(root))
-    for view in (fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
-        report = index.report(fdu.Query(views=(view,)))
+    for view in (fdu.View.LIST, fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
         for fmt in fdu.Format:
+            if fmt in (fdu.Format.TREE, fdu.Format.PATHS, fdu.Format.LONG) and (
+                view is fdu.View.SUMMARY or (view is fdu.View.LARGEST and fmt is fdu.Format.TREE)
+            ):
+                try:
+                    index.report(fdu.Query(views=(view,), format=fmt))
+                except fdu.InvalidArgumentError:
+                    continue
+                raise AssertionError("incompatible view/format must be rejected")
+            report = index.report(fdu.Query(views=(view,), format=fmt))
             rendered = report.render(fmt)
             # Rust writes UTF-8 when stdout is a pipe. Windows' locale codec can decode
             # those bytes into different code points that round-trip to the same log
@@ -310,15 +329,34 @@ def check_every_view(root: Path) -> None:
     # a directory tree containing none of the results -- the defect the content axis
     # removed from the CLI, still live here because nothing tested the two together.
     for analyze, expected in (
-        (fdu.Analysis.NONE, fdu.View.TREE),
+        (fdu.Analysis.NONE, fdu.View.LIST),
         (fdu.Analysis.LINES, fdu.View.FAMILIES),
         (fdu.Analysis.CODE, fdu.View.LANGUAGES),
         (fdu.Analysis.WORDS, fdu.View.DOCUMENTS),
         (fdu.Analysis.ALL, fdu.View.FAMILIES),
     ):
         derived = fdu.scan(str(root), analysis=fdu.AnalysisOptions(analyze=analyze))
-        section = derived.report(fdu.Query()).sections[0]
+        answer = derived.report(fdu.Query())
+        section = answer.sections[0]
         assert section.view is expected, (analyze, section.view, expected)
+        wire = json.loads(answer.render(fdu.Format.JSON))
+        assert answer.as_dict() == wire
+        if isinstance(section, fdu.MetricsSection):
+            native_rows = wire["reports"][0]["metrics"]
+            for row, raw in zip(
+                (section.total, *section.rows),
+                (native_rows["total"], *native_rows["rows"]),
+                strict=True,
+            ):
+                assert {
+                    key: value for key, value in asdict(row.metrics).items() if value is not None
+                } == raw["metrics"]
+                for unit in ("lines", "code", "words"):
+                    coverage = getattr(row, f"{unit}_coverage")
+                    assert (None if coverage is None else dict(coverage)) == raw["coverage"].get(
+                        unit
+                    )
+                assert (None if row.pages is None else asdict(row.pages)) == raw.get("pages")
 
     # `full` is a total the enum offers, so the binding must honour it: it once listed
     # `full` as valid in its own error message while rejecting it.
@@ -389,16 +427,21 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     )
     assert lifted.report().notes == ()
 
-    # A default report and a default open share one snapshot scope, so that open starts
-    # warm; an opted-out open wants a scope the report's snapshot is not, and scans cold.
+    # A default report and a default open share one snapshot scope. An opted-out open
+    # projects that snapshot's equal entry tier into a blind index on every cache route.
     (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
     assert fdu.cache_path(root) is not None
     try:
         fdu.report(root, fdu.Query(views=(fdu.View.TREE,)))
-        assert fdu.open(root).status.source is fdu.ReportSource.WARM_REVALIDATE
+        assert fdu.open(root).report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
         cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
-        assert cached.status.source is fdu.ReportSource.CACHE_ONLY
-        assert fdu.open(root, scan=opted_out).status.source is fdu.ReportSource.COLD_SCAN
+        assert cached.report().provenance.source is fdu.ReportSource.CACHE_ONLY
+        projected = fdu.open(root, scan=opted_out)
+        assert projected.report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
+        assert projected.status.ignore_rules is None
+        projected_only = fdu.open(root, cache=fdu.CachePolicy.ONLY, scan=opted_out)
+        assert projected_only.report().provenance.source is fdu.ReportSource.CACHE_ONLY
+        assert projected_only.status.ignore_rules is None
     finally:
         fdu.clear_cache(root)
 
@@ -512,12 +555,38 @@ def check_a_one_shot_report_forwards_every_control_knob() -> None:
     assert rules(fdu.ScanOptions(read_controls=False)) is None
 
 
+def check_refresh_and_watch_persist() -> None:
+    """A later cache-only reader sees updates delivered through either retained route."""
+    with tempfile.TemporaryDirectory(prefix="fdu-persistence-") as directory:
+        root = Path(directory)
+        path = root / "note.txt"
+        path.write_text("old\n", encoding="utf-8")
+        analysis = fdu.AnalysisOptions(analyze=fdu.Analysis.LINES)
+        index = fdu.open(root, analysis=analysis)
+        path.write_text("new longer text\nsecond line\n", encoding="utf-8")
+        refreshed = index.refresh()
+        assert refreshed.status.complete
+        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY, analysis=analysis)
+        assert cached.total().bytes == index.total().bytes
+        assert cached.total().files == index.total().files
+        query = fdu.Query(views=(fdu.View.TYPES,))
+        assert cached.report(query).sections == index.report(query).sections
+
+        watched = fdu.open(root)
+        path.write_text("changed before watcher registration\n", encoding="utf-8")
+        with watched.watch(fdu.WatchOptions(interval=0.01)) as feed:
+            next(feed)
+            cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
+            assert cached.total().bytes == path.stat().st_size
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
     (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
     (root / "notes.md").write_text("release notes", encoding="utf-8")
 
+    check_refresh_and_watch_persist()
     check_every_view(root)
     check_a_report_is_a_snapshot(root)
     check_a_report_states_its_own_omissions(root)
@@ -536,7 +605,6 @@ def main() -> None:
     index = fdu.scan(root, scan=fdu.ScanOptions(max_depth=3))
     assert os.path.samefile(index.root, root)
     assert index.status.complete is True
-    assert index.status.freshness is fdu.Freshness.FRESH
     assert not index.status.errors
 
     try:
@@ -566,14 +634,14 @@ def main() -> None:
         )
     )
     assert report.status.complete is True
-    assert report.status.freshness is fdu.Freshness.FRESH
+    assert report.provenance.freshness is fdu.Freshness.FRESH
     assert [section.view for section in report.sections] == [
         fdu.View.SUMMARY,
         fdu.View.EXTENSIONS,
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/5"
+    assert wire["schema"] == "fdu.report/7"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 
@@ -648,7 +716,7 @@ def main() -> None:
     # Coverage and currency are independent: a snapshot can cover the complete scope
     # while remaining deliberately stale until revalidation.
     assert cached.status.complete is True
-    assert cached.status.freshness is fdu.Freshness.STALE
+    assert cached.report().provenance.freshness is fdu.Freshness.STALE
     status = fdu.cache_status(cache_root)
     assert status is not None and status.state is fdu.CacheState.CURRENT
     assert status.stale_reason is None and status.root is not None
@@ -742,6 +810,8 @@ def main() -> None:
             "summary,extensions,files",
             "--size",
             "apparent",
+            "--scan-depth",
+            "3",
             str(root),
         ],
         check=False,
@@ -750,11 +820,20 @@ def main() -> None:
     )
     assert cli_report.returncode == 0, cli_report
     cli_wire = json.loads(cli_report.stdout)
-    assert wire["source"] == "warm_revalidate"
-    assert cli_wire["source"] == "cold_scan"
-    for volatile in ("scan_started_at", "generated_at", "source"):
-        cli_wire.pop(volatile)
-        wire.pop(volatile)
+    assert wire["provenance"]["source"] in {
+        "cold_scan",
+        "warm_revalidate",
+        "cache_only",
+    }
+    assert cli_wire["provenance"]["source"] == "cold_scan"
+    for value in (wire, cli_wire):
+        provenance = value["provenance"]
+        for volatile in ("scan_started_at", "generated_at", "source"):
+            provenance.pop(volatile)
+        for tier in provenance["tiers"].values():
+            if tier is not None:
+                tier.pop("observed_at_ns")
+        value.pop("age_reference_ns", None)
     # Both surfaces read `.gitignore` control state by default, under the same limits, so
     # the envelopes agree on it as they agree on every row's ignored share.
     assert wire["ignore_rules"] == {
@@ -763,7 +842,9 @@ def main() -> None:
         "refused": 0,
         "refusals": [],
     }, wire
-    assert wire == cli_wire, (wire, cli_wire)
+    assert _stable(json.dumps(wire, sort_keys=True)) == _stable(
+        json.dumps(cli_wire, sort_keys=True)
+    ), (wire, cli_wire)
 
     print(f"fdu {fdu.__version__} public API ok")
 

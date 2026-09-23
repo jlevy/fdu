@@ -10,23 +10,37 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
-use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::content::AnalysisSet;
 use fdu_core::query::{
-    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, ViewSpec,
-    WatchDelivery,
+    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, SizeMetric,
+    ViewSpec, WatchDelivery,
 };
 // The module's own `Delivery` is how a change reached this process; the request model's is
 // how an answer is carried out. Two different questions, so the import names the crate.
 use fdu_core::query::Delivery as RequestDelivery;
 use fdu_core::session::{ChangeKind, Session};
 use fdu_core::watch::WatchConfig;
-use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
+use fdu_core::{CachePolicy, IndexHandle};
+
+fn open(
+    root: &Path,
+    delivery: &RequestDelivery,
+) -> fdu_core::Result<(fdu_core::Index, fdu_core::OpenReport)> {
+    fdu_core::open(
+        &Basis {
+            root: root.to_path_buf(),
+            scope: fdu_core::query::Scope::default(),
+            content: AnalysisSet::NONE,
+        },
+        delivery,
+    )
+}
 
 /// Long enough for a backend to deliver and coalesce, short enough to fail fast.
 const SETTLE: Duration = Duration::from_secs(60);
 
 fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = open(root, &config).expect("open");
     Session::new(
         IndexHandle::new(index),
@@ -41,18 +55,17 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
 ///
 /// Named rather than defaulted, because the cache policy is what a session validates the
 /// cache-only rule against and a fabricated one always read `auto` (fdu-i18y).
-fn watching(config: &OpenConfig) -> RequestDelivery {
-    let (_basis, delivery) = config.split(Path::new("/unused"));
+fn watching(delivery: &RequestDelivery) -> RequestDelivery {
     RequestDelivery {
         watch: Some(WatchDelivery { interval: Duration::from_millis(200) }),
-        ..delivery
+        ..delivery.clone()
     }
 }
 
 /// The request a watch answers: the basis its index was opened under, and this query.
 fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
     Request::new(
-        Basis { root: root.to_path_buf(), scope: ScanConfig::default(), content },
+        Basis { root: root.to_path_buf(), scope: fdu_core::query::Scope::default(), content },
         query,
         std::time::SystemTime::now(),
     )
@@ -74,10 +87,33 @@ fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
 /// so a test may still assert totals afterwards, and it leaves nothing to clean up. A
 /// create-then-delete warm-up cannot serve, because the engine coalesces that pair into
 /// no net change and the wait would burn its whole deadline for nothing.
-fn establish_watch(session: &mut Session, warm: &Path, contents: &[u8]) {
+///
+/// Returns `false` only for a host explicitly declared unable to deliver native watch
+/// events, with `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`. Without that declaration, silence
+/// during the warm-up is an actionable precondition failure rather than a passing test.
+fn establish_watch(session: &mut Session, warm: &Path, contents: &[u8]) -> bool {
     fs::write(warm, contents).expect("warm-up rewrite");
     let name = warm.file_name().expect("warm-up name").to_owned();
-    let _ = wait_for_delivery(session, |change| change.path.ends_with(&name));
+    match wait_for_delivery(session, |change| change.path.ends_with(&name)) {
+        Delivery::Delivered(_) => true,
+        Delivery::Mismatched(seen) => mismatched("native watch warm-up", seen),
+        Delivery::Silent => {
+            if std::env::var_os("FDU_TEST_ALLOW_NO_NATIVE_WATCH").as_deref()
+                == Some(std::ffi::OsStr::new("1"))
+            {
+                eprintln!(
+                    "skipped by FDU_TEST_ALLOW_NO_NATIVE_WATCH=1: the host event service \
+                     delivered no changes to this session"
+                );
+                return false;
+            }
+            panic!(
+                "native watch precondition failed because the host delivered no changes in \
+                 {SETTLE:?}; run on a host with event delivery, or explicitly opt out with \
+                 FDU_TEST_ALLOW_NO_NATIVE_WATCH=1"
+            )
+        }
+    }
 }
 
 /// Collect changes until `wanted` matches one, separating three outcomes.
@@ -87,12 +123,11 @@ fn establish_watch(session: &mut Session, warm: &Path, contents: &[u8]) {
 /// `Mismatched` — batches arrived but never carried the awaited change. A real
 /// disagreement about content, and the caller must fail.
 ///
-/// `Silent` — no batch arrived at all. That says nothing about fdu: the host's event
-/// service delivered nothing to this stream, so the precondition was never established.
-/// A working backend delivers this test's own write in milliseconds, so silence for a
-/// full minute means the stream is dead rather than slow, and the caller declines the way
-/// `permission_bits_are_enforced` lets a fixture decline a host that cannot supply what
-/// it needs.
+/// `Silent` — no batch arrived at all. What that means depends on whether the watch was
+/// already known to deliver, so the caller decides: [`establish_watch`] may read it as
+/// the host's silence, and [`wait_for`] reads it as fdu's. A working backend delivers
+/// this test's own write in milliseconds, so silence for a full minute means the stream
+/// is dead rather than slow.
 enum Delivery {
     Delivered(Box<fdu_core::Change>),
     Mismatched(usize),
@@ -117,29 +152,33 @@ fn wait_for_delivery(
     if seen == 0 { Delivery::Silent } else { Delivery::Mismatched(seen) }
 }
 
-/// Resolve a delivery, or decline the test when the host delivered nothing.
+/// Wait on a session whose watch [`establish_watch`] has already proven live.
 ///
-/// Returns `None` only for `Silent`, having reported the skip; a mismatch panics, because
-/// events that arrived and were wrong are evidence about fdu.
+/// Silence here is evidence about fdu rather than about the host: the backend delivered
+/// the warm-up, so a later change it never reports is a lost event. No opt-out applies,
+/// which is why the message offers none; a mismatch is a disagreement about content and
+/// fails the same way.
 fn wait_for(
     session: &mut Session,
     test: &str,
     wanted: impl Fn(&fdu_core::Change) -> bool,
-) -> Option<fdu_core::Change> {
+) -> fdu_core::Change {
     match wait_for_delivery(session, wanted) {
-        Delivery::Delivered(change) => Some(*change),
-        Delivery::Mismatched(seen) => panic!(
-            "{test}: {seen} change(s) arrived in {SETTLE:?} but never the awaited one, so this \
-             is a disagreement about content rather than a delivery failure"
+        Delivery::Delivered(change) => *change,
+        Delivery::Mismatched(seen) => mismatched(test, seen),
+        Delivery::Silent => panic!(
+            "{test}: the watch was established and then delivered nothing in {SETTLE:?}, so \
+             this is a lost event rather than a host precondition; \
+             FDU_TEST_ALLOW_NO_NATIVE_WATCH does not apply here"
         ),
-        Delivery::Silent => {
-            eprintln!(
-                "skipped: {test}: the host event service delivered no changes to this session, \
-                 so the precondition could not be established"
-            );
-            None
-        }
     }
+}
+
+fn mismatched(test: &str, seen: usize) -> ! {
+    panic!(
+        "{test}: {seen} change(s) arrived in {SETTLE:?} but never the awaited one, so this is \
+         a disagreement about content rather than a delivery failure"
+    )
 }
 
 #[test]
@@ -147,18 +186,53 @@ fn a_created_file_arrives_as_an_upsert() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("existing.txt"), b"hello").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
-    establish_watch(&mut session, &dir.path().join("existing.txt"), b"hello");
+    if !establish_watch(&mut session, &dir.path().join("existing.txt"), b"hello") {
+        return;
+    }
 
     fs::write(dir.path().join("created.rs"), b"fn main() {}").expect("create");
 
-    let Some(change) = wait_for(&mut session, "a_created_file_arrives_as_an_upsert", |change| {
+    let change = wait_for(&mut session, "a_created_file_arrives_as_an_upsert", |change| {
         change.path.ends_with("created.rs")
-    }) else {
-        return;
-    };
+    });
     assert_eq!(change.kind, ChangeKind::Upsert);
     assert_eq!(change.bytes, Some(12));
     assert!(change.mtime_ns.is_some(), "an upsert carries verified metadata, not just a path");
+}
+
+#[test]
+fn session_reconciles_a_mutation_that_precedes_watcher_binding() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("before-bind.txt");
+    fs::write(&path, b"old").expect("seed");
+    let config = RequestDelivery::new(CachePolicy::Off, None);
+    let (index, _) = open(dir.path(), &config).expect("open baseline");
+
+    fs::write(&path, b"changed before binding").expect("mutate before session");
+    let session = Session::new(
+        IndexHandle::new(index),
+        request(
+            dir.path(),
+            AnalysisSet::NONE,
+            Query { views: vec![ViewSpec::Files], ..Query::default() },
+        ),
+        &watching(&config),
+        WatchConfig::default(),
+    )
+    .expect("session closes scan-to-bind gap");
+
+    let report = session.report(SystemTime::now()).expect("initial report");
+    let row = report
+        .sections
+        .iter()
+        .find_map(|section| match section {
+            fdu_core::query::Section::Files { rows, .. } => {
+                rows.iter().find(|row| row.path == Path::new("before-bind.txt"))
+            }
+            _ => None,
+        })
+        .expect("file row");
+    assert_eq!(row.bytes, 22);
 }
 
 #[test]
@@ -166,17 +240,49 @@ fn a_deleted_file_arrives_as_a_remove() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("doomed.txt"), b"hello").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
-    establish_watch(&mut session, &dir.path().join("doomed.txt"), b"hello");
+    if !establish_watch(&mut session, &dir.path().join("doomed.txt"), b"hello") {
+        return;
+    }
 
     fs::remove_file(dir.path().join("doomed.txt")).expect("remove");
 
-    let Some(change) = wait_for(&mut session, "a_deleted_file_arrives_as_a_remove", |change| {
+    let change = wait_for(&mut session, "a_deleted_file_arrives_as_a_remove", |change| {
         change.path.ends_with("doomed.txt")
-    }) else {
-        return;
-    };
+    });
     assert_eq!(change.kind, ChangeKind::Remove);
     assert_eq!(change.bytes, None, "a removed entry has no attributes to report");
+}
+
+#[test]
+fn a_file_that_leaves_attribute_selection_arrives_as_a_remove() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("shrinking.txt");
+    let warm = dir.path().join("warm.txt");
+    fs::write(&path, b"12345678").expect("seed");
+    fs::write(&warm, b"ready").expect("warm-up seed");
+    let selection =
+        Selection { min_size: Some(4), size: SizeMetric::Apparent, ..Selection::default() };
+    let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
+    establish_watch(&mut session, &warm, b"ready");
+
+    fs::write(&path, b"x").expect("shrink below selection");
+
+    let change = wait_for(
+        &mut session,
+        "a_file_that_leaves_attribute_selection_arrives_as_a_remove",
+        |change| change.path.ends_with("shrinking.txt") && change.kind == ChangeKind::Remove,
+    );
+    assert_eq!(change.kind, ChangeKind::Remove);
+    let report = session.report(SystemTime::now()).expect("report after shrink");
+    let files = report
+        .sections
+        .iter()
+        .find_map(|section| match section {
+            fdu_core::query::Section::Files { rows, .. } => Some(rows),
+            _ => None,
+        })
+        .expect("files section");
+    assert!(files.iter().all(|row| row.path != Path::new("shrinking.txt")));
 }
 
 #[test]
@@ -192,16 +298,16 @@ fn the_run_selection_filters_the_stream() {
     // The selection admits only `*.rs`, so the warm-up has to be one or it is filtered
     // out of the stream and proves nothing about delivery.
     fs::write(dir.path().join("warmup.rs"), b"fn warm() {}").expect("seed");
-    establish_watch(&mut session, &dir.path().join("warmup.rs"), b"fn warm() {}");
+    if !establish_watch(&mut session, &dir.path().join("warmup.rs"), b"fn warm() {}") {
+        return;
+    }
 
     fs::write(dir.path().join("ignored.txt"), b"no").expect("create");
     fs::write(dir.path().join("watched.rs"), b"yes").expect("create");
 
-    let Some(change) = wait_for(&mut session, "the_run_selection_filters_the_stream", |change| {
+    let change = wait_for(&mut session, "the_run_selection_filters_the_stream", |change| {
         change.path.ends_with("watched.rs")
-    }) else {
-        return;
-    };
+    });
     assert_eq!(change.kind, ChangeKind::Upsert);
 
     // Drain briefly and confirm the excluded path never appears.
@@ -223,7 +329,9 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("still.txt"), b"unchanged").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
-    establish_watch(&mut session, &dir.path().join("still.txt"), b"unchanged");
+    if !establish_watch(&mut session, &dir.path().join("still.txt"), b"unchanged") {
+        return;
+    }
 
     // Establish quiet by *positive confirmation*, not by waiting for silence.
     //
@@ -241,13 +349,9 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     // backend has demonstrably drained everything older, and any further batch is
     // genuinely spurious — which is exactly the claim the assertion wants to make.
     fs::write(dir.path().join("sentinel.txt"), b"sentinel").expect("sentinel");
-    if wait_for(&mut session, "an_idle_tree_yields_nothing_and_costs_nothing", |change| {
+    wait_for(&mut session, "an_idle_tree_yields_nothing_and_costs_nothing", |change| {
         change.path.ends_with("sentinel.txt")
-    })
-    .is_none()
-    {
-        return;
-    }
+    });
 
     // Nothing has changed since the sentinel, so nothing should arrive. A polling
     // implementation would still return work here.
@@ -268,11 +372,11 @@ fn a_live_report_is_the_same_query_re_evaluated() {
         Selection { depth: Some(Bound::All), ..Selection::default() },
         vec![ViewSpec::Summary],
     );
-    establish_watch(&mut session, &dir.path().join("a.txt"), b"12345");
+    if !establish_watch(&mut session, &dir.path().join("a.txt"), b"12345") {
+        return;
+    }
 
-    let before = session
-        .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
-        .expect("report");
+    let before = session.report(std::time::SystemTime::UNIX_EPOCH).expect("report");
     let first = match &before.sections[0] {
         fdu_core::query::Section::Summary(row) => *row,
         other => panic!("expected a summary, got {other:?}"),
@@ -280,17 +384,11 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     assert_eq!(first.files, 1);
 
     fs::write(dir.path().join("b.txt"), b"678").expect("create");
-    if wait_for(&mut session, "a_live_report_is_the_same_query_re_evaluated", |change| {
+    wait_for(&mut session, "a_live_report_is_the_same_query_re_evaluated", |change| {
         change.path.ends_with("b.txt")
-    })
-    .is_none()
-    {
-        return;
-    }
+    });
 
-    let after = session
-        .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
-        .expect("report");
+    let after = session.report(std::time::SystemTime::UNIX_EPOCH).expect("report");
     let second = match &after.sections[0] {
         fdu_core::query::Section::Summary(row) => *row,
         other => panic!("expected a summary, got {other:?}"),
@@ -309,12 +407,16 @@ fn a_session_refuses_an_analyzed_index() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"one two\n").expect("seed");
     let lines = AnalysisSet::NONE.with_lines();
-    let config = OpenConfig {
-        policy: CachePolicy::Off,
-        analysis: AnalysisRequest { profile: lines, ..AnalysisRequest::default() },
-        ..OpenConfig::default()
-    };
-    let (index, _report) = open(dir.path(), &config).expect("open");
+    let config = RequestDelivery::new(CachePolicy::Off, None);
+    let (index, _report) = fdu_core::open(
+        &Basis {
+            root: dir.path().to_path_buf(),
+            scope: fdu_core::query::Scope::default(),
+            content: lines,
+        },
+        &config,
+    )
+    .expect("open");
     let handle = IndexHandle::new(index);
 
     let refused = Session::new(
@@ -362,7 +464,7 @@ fn a_session_refuses_an_analyzed_index() {
 fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = open(dir.path(), &config).expect("open");
     let handle = IndexHandle::new(index);
 
@@ -387,7 +489,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
     let narrowed = Request::new(
         Basis {
             root: dir.path().to_path_buf(),
-            scope: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+            scope: fdu_core::query::Scope { max_depth: Some(2), ..Default::default() },
             content: AnalysisSet::NONE,
         },
         Query::default(),
@@ -415,7 +517,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
 fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = open(dir.path(), &config).expect("open");
 
     let started = SystemTime::now();
@@ -432,9 +534,9 @@ fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     assert_eq!(session.request().now, started, "the session keeps the instant it was built at");
 
     // Two repaints, separated by a change the session applies.
-    let first = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    let first = session.report(SystemTime::now()).expect("report");
     fs::write(dir.path().join("b.txt"), b"two\n").expect("write");
-    let second = session.report(&session.live_provenance(SystemTime::now())).expect("report");
+    let second = session.report(SystemTime::now()).expect("report");
     assert!(!first.sections.is_empty() && !second.sections.is_empty());
 
     assert_eq!(session.request().now, started, "a repaint does not re-read the clock");

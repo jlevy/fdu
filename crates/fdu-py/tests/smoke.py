@@ -26,6 +26,7 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from fdu import Bound, EntryKind, FilesSection, Format, InvalidArgumentError, Query, Selection, View
 from fdu import _native as fdu_py
@@ -51,6 +52,11 @@ from fdu.opened import (
     Tree,
     VersionUnavailableError,
 )
+
+
+def report_dict(index: fdu_py.Index, **kwargs: object) -> dict[str, Any]:
+    """Exercise the same frozen report and wire schema used by the public package."""
+    return json.loads(index.report_handle(**kwargs).render("json", False))
 
 
 def main() -> None:
@@ -156,6 +162,12 @@ def main() -> None:
     cli_scan = subprocess.run(
         [
             entrypoint,
+            # The metadata default is now the flat list, whose sections carry `files`
+            # and `bound`. This case is about tree truncation, so it asks for the tree
+            # projection by name: `--view tree --format json` retains the hierarchy and
+            # its per-node `truncated` flags (docs/machine-output.md).
+            "--view",
+            "tree",
             "--cache",
             "off",
             "--format",
@@ -172,8 +184,8 @@ def main() -> None:
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
-    assert cli_data["schema"] == "fdu.report/5", cli_data
-    assert cli_data["complete"] is True, cli_data
+    assert cli_data["schema"] == "fdu.report/7", cli_data
+    assert cli_data["status"]["complete"] is True, cli_data
     tree = cli_data["reports"][0]["tree"]
     assert tree["bytes"] == 17, cli_data
     # Truncation describes omitted tree rows. A file is already represented in its
@@ -294,8 +306,8 @@ def main() -> None:
     assert stats["removed"] == 1, stats
     assert stats["unchanged"] == 2, stats
     assert stats["complete"] is True, stats
-    assert stats["freshness"] == "fresh", stats
-    assert stats["error_count"] == 0 and stats["errors"] == [], stats
+    assert index.freshness == "fresh", index.freshness
+    assert stats["errors"] == [] and stats["errors_omitted"] == 0, stats
 
     after = index.total()
     assert after["files"] == 2, after
@@ -339,22 +351,22 @@ def main() -> None:
     (query_root / "notes.md").write_text("notes")
     index = fdu_py.scan(str(query_root))
 
-    summary = index.report(views=["summary"])["reports"][0]["summary"]
+    summary = report_dict(index, views=["summary"])["reports"][0]["summary"]
     assert summary["files"] == 3, summary
     assert summary["dirs"] == 1, summary
 
     # Selection narrows without rescanning, and every view is reachable.
-    rust_only = index.report(views=["files"], include=["*.rs"], kind=["file"])
+    rust_only = report_dict(index, views=["files"], include=["*.rs"], kind=["file"])
     # Reported paths carry native separators, so compare in a separator-agnostic way
     # rather than narrowing what the engine reports to satisfy a string.
     paths = sorted(row["path"].replace(os.sep, "/") for row in rust_only["reports"][0]["files"])
     assert paths == ["src/lib.rs", "src/main.rs"], paths
 
-    extension_rows = index.report(views=["extensions"])["reports"][0]["extensions"]
+    extension_rows = report_dict(index, views=["extensions"])["reports"][0]["extensions"]
     extensions = sorted(row["extension"] for row in extension_rows)
     assert extensions == [".md", ".rs"], extensions
 
-    types = index.report(views=["types"])["reports"][0]["metrics"]
+    types = report_dict(index, views=["types"])["reports"][0]["metrics"]
     assert sorted(row["id"] for row in types["rows"]) == ["markdown", "rust"], types
     assert types["total"]["detection"] == {
         "sources": {"extension": 3},
@@ -362,22 +374,22 @@ def main() -> None:
         "flags": {"generated": 0, "vendored": 0, "documentation": 0},
     }, types
 
-    languages_report = index.report(views=["languages"])
+    languages_report = report_dict(index, views=["languages"])
     assert languages_report["analysis"] is None, languages_report
     languages = languages_report["reports"][0]["metrics"]
     assert languages["share_metric"] == "allocated_bytes", languages
     assert [(row["id"], row["files"]) for row in languages["rows"]] == [("rust", 2)], languages
 
     analyzed = fdu_py.scan(str(query_root), analyze="lines")
-    documents = analyzed.report(views=["documents"], words_per_page=250)
+    documents = report_dict(analyzed, views=["documents"], words_per_page=250)
     assert documents["analysis"]["analyze"] == ["lines"], documents
     document_metrics = documents["reports"][0]["metrics"]
     markdown = document_metrics["rows"][0]
-    assert markdown["physical_lines"] == 1, markdown
-    assert markdown["raw_words"] == 1, markdown
-    assert markdown["words_per_page"] == 250, markdown
+    assert markdown["metrics"]["physical_lines"] == 1, markdown
+    assert markdown["metrics"]["raw_words"] == 1, markdown
+    assert "pages" not in markdown, markdown
     try:
-        analyzed.report(views=["docs"], words_per_page=250)
+        report_dict(analyzed, views=["docs"], words_per_page=250)
     except ValueError:
         pass
     else:
@@ -385,18 +397,18 @@ def main() -> None:
     # The page denominator is the request model's, so it is refused by the one grammar
     # rather than by a check this package keeps of its own.
     try:
-        analyzed.report(views=["documents"], words_per_page=0)
+        report_dict(analyzed, views=["documents"], words_per_page=0)
     except ValueError as error:
         assert "words_per_page" in str(error), error
     else:
         raise AssertionError("expected a zero page denominator to be rejected")
 
-    tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
-    assert tree["name"] == ".", tree
+    tree = report_dict(index, views=["tree"], depth="all")["reports"][0]["tree"]
+    assert tree["name"] == "." and tree["kind"] == "dir", tree
     assert any(child["name"] == "src" for child in tree["children"]), tree
 
     # Several views come back in request order, from one index.
-    ordered = index.report(views=["extensions", "types", "summary"])["reports"]
+    ordered = report_dict(index, views=["extensions", "types", "summary"])["reports"]
     assert [section["view"] for section in ordered] == [
         "extensions",
         "types",
@@ -412,7 +424,7 @@ def main() -> None:
         {"sort": "sideways"},
     ]:
         try:
-            index.report(**bad)
+            report_dict(index, **bad)
         except ValueError:
             pass
         else:
@@ -429,7 +441,7 @@ def main() -> None:
     # though this cache-only open deliberately did not revalidate it.
     assert cached_index.complete is True, cached_index.freshness
     assert cached_index.freshness == "stale", cached_index.freshness
-    assert cached_index.report(views=["summary"])["complete"] is True
+    assert report_dict(cached_index, views=["summary"])["status"]["complete"] is True
     # Rust keeps Windows verbatim paths (\\?\); compare filesystem identity rather than
     # weakening native long-path behavior to satisfy a string.
     assert os.path.samefile(status["root"], cache_root), status
@@ -447,14 +459,32 @@ def main() -> None:
     assert cached_partial.complete is True, cached_partial.errors
     assert cached_partial.freshness == "stale", cached_partial.freshness
     assert cached_partial.errors == [], cached_partial.errors
-    partial_report = cached_partial.report(views=["types"], size="apparent")
-    assert partial_report["complete"] is True, partial_report
-    assert partial_report["errors"] == [], partial_report
+    partial_report = report_dict(cached_partial, views=["types"], size="apparent")
+    assert partial_report["status"]["complete"] is True, partial_report
+    assert partial_report["status"]["errors"] == [], partial_report
     coverage = partial_report["reports"][0]["metrics"]["total"]["coverage"]
-    assert coverage == {"invalid_utf8": 1}, coverage
-    refreshed = cached_partial.refresh()
+    assert coverage == {"lines": {"invalid_utf8": 1}}, coverage
+    # Cache-only delivery never verifies filesystem state, including explicit refresh.
+    # A refused refresh must leave the cached coverage and currency unchanged.
+    try:
+        cached_partial.refresh()
+    except ValueError as error:
+        assert "only" in str(error) and "refresh" in str(error), str(error)
+    else:
+        raise AssertionError("cache-only refresh must be refused")
+    assert cached_partial.complete is True, cached_partial.errors
+    assert cached_partial.freshness == "stale", cached_partial.freshness
+    refused_report = report_dict(cached_partial, views=["types"], size="apparent")
+    assert refused_report["status"] == partial_report["status"]
+    assert refused_report["reports"] == partial_report["reports"]
+
+    # The write-permitting holder can refresh; invalid UTF-8 remains an expected
+    # coverage exclusion, not an operational failure, before and after persistence.
+    refreshed = partial.refresh()
     assert refreshed["complete"] is True, refreshed
     assert refreshed["errors"] == [], refreshed
+    refreshed_report = report_dict(partial, views=["types"], size="apparent")
+    assert refreshed_report["reports"][0]["metrics"]["total"]["coverage"] == coverage
 
     # Cache policy is the same closed vocabulary the CLI accepts.
     for bad_cache in ["sometimes", "readonly"]:

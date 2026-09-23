@@ -131,9 +131,35 @@ $ fdu --cache-status --format json project
 {
   "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null}
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": [BYTES],
+      "state": "current",
+      "root": "[SCAN_PATH]",
+      "entries": 11,
+      "identity": {
+        "entries": {
+          "engine": [FINGERPRINT],
+          "max_depth": null,
+          "follow_symlinks": false,
+          "one_filesystem": false,
+          "hidden_fingerprint": 0,
+          "exclude_special": false,
+          "type_rules_fingerprint": [FINGERPRINT],
+          "reducers_fingerprint": 1
+        },
+        "ignore_rules": {
+          "limits": {
+            "budget": 4194304,
+            "line_limit": 16384
+          }
+        }
+      },
+      "content": null
+    }
   ]
 }
+
 ? 0
 ```
 
@@ -144,7 +170,8 @@ every machine format.
 $ fdu --cache-status --format yaml project
 schema: fdu.cache/2
 caches:
-  - path: [CACHE_FILE_SCALAR]
+  -
+    path: [CACHE_FILE_SCALAR]
     bytes: [BYTES]
     state: current
     root: [SCAN_PATH]
@@ -164,6 +191,7 @@ caches:
           budget: 4194304
           line_limit: 16384
     content: null
+
 ? 0
 ```
 
@@ -179,9 +207,9 @@ analyzer with its version.
 ```console
 $ fdu --analyze lines --view families --size apparent project
      128 B   47.6%  binary             1 file, 1 binary
-      71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 13 words (0.0 pages), 2 documentation
-      64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank), 12 words (0.0 pages)
-       6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank), 1 words (0.0 pages)
+      71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 2 documentation
+      64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank)
+       6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank)
 Performance: walked 7 files / 269 B; ignore rules 1 file; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
 ? 0
 ```
@@ -197,9 +225,61 @@ $ fdu --cache-status --format json project
 {
   "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": {"bytes": [BYTES], "state": "current", "records": 7, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "analyze": ["lines"], "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}}
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": [BYTES],
+      "state": "current",
+      "root": "[SCAN_PATH]",
+      "entries": 11,
+      "identity": {
+        "entries": {
+          "engine": [FINGERPRINT],
+          "max_depth": null,
+          "follow_symlinks": false,
+          "one_filesystem": false,
+          "hidden_fingerprint": 0,
+          "exclude_special": false,
+          "type_rules_fingerprint": [FINGERPRINT],
+          "reducers_fingerprint": 1
+        },
+        "ignore_rules": {
+          "limits": {
+            "budget": 4194304,
+            "line_limit": 16384
+          }
+        }
+      },
+      "content": {
+        "bytes": [BYTES],
+        "state": "current",
+        "records": 7,
+        "identity": {
+          "entries": {
+            "engine": [FINGERPRINT],
+            "max_depth": null,
+            "follow_symlinks": false,
+            "one_filesystem": false,
+            "hidden_fingerprint": 0,
+            "exclude_special": false,
+            "type_rules_fingerprint": [FINGERPRINT],
+            "reducers_fingerprint": 1
+          },
+          "analyze": [
+            "lines"
+          ],
+          "options_fingerprint": 12638152016183539244,
+          "analyzers": [
+            {
+              "id": "content-basic-v1",
+              "version": 1
+            }
+          ]
+        }
+      }
+    }
   ]
 }
+
 ? 0
 ```
 
@@ -207,7 +287,8 @@ $ fdu --cache-status --format json project
 $ fdu --cache-status --format yaml project
 schema: fdu.cache/2
 caches:
-  - path: [CACHE_FILE_SCALAR]
+  -
+    path: [CACHE_FILE_SCALAR]
     bytes: [BYTES]
     state: current
     root: [SCAN_PATH]
@@ -244,8 +325,10 @@ caches:
           - lines
         options_fingerprint: 12638152016183539244
         analyzers:
-          - id: content-basic-v1
+          -
+            id: content-basic-v1
             version: 1
+
 ? 0
 ```
 
@@ -340,14 +423,71 @@ $ fdu --cache-status=all --format json project
 {
   "schema": "fdu.cache/2",
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": 12, "state": "stale", "stale_reason": "older_format", "format_version": 1, "content": null},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "other_engine", "format_version": null, "content": null},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "stale", "stale_reason": "unreadable", "format_version": null, "content": null},
-    {"path": "[CACHE_FILE]", "bytes": 0, "state": "unrecognized", "content": null},
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "state": "current", "root": "[SCAN_PATH]", "entries": 11, "identity": {"entries": {"engine": [FINGERPRINT], "max_depth": null, "follow_symlinks": false, "one_filesystem": false, "hidden_fingerprint": 0, "exclude_special": false, "type_rules_fingerprint": [FINGERPRINT], "reducers_fingerprint": 1}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}}}, "content": null},
-    {"path": "[CACHE_DIR]notes.txt", "bytes": 15, "state": "unrecognized", "content": null}
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": 12,
+      "state": "stale",
+      "stale_reason": "older_format",
+      "format_version": 1,
+      "content": null
+    },
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": [BYTES],
+      "state": "stale",
+      "stale_reason": "other_engine",
+      "format_version": null,
+      "content": null
+    },
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": [BYTES],
+      "state": "stale",
+      "stale_reason": "unreadable",
+      "format_version": null,
+      "content": null
+    },
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": 0,
+      "state": "unrecognized",
+      "content": null
+    },
+    {
+      "path": "[CACHE_FILE]",
+      "bytes": [BYTES],
+      "state": "current",
+      "root": "[SCAN_PATH]",
+      "entries": 11,
+      "identity": {
+        "entries": {
+          "engine": [FINGERPRINT],
+          "max_depth": null,
+          "follow_symlinks": false,
+          "one_filesystem": false,
+          "hidden_fingerprint": 0,
+          "exclude_special": false,
+          "type_rules_fingerprint": [FINGERPRINT],
+          "reducers_fingerprint": 1
+        },
+        "ignore_rules": {
+          "limits": {
+            "budget": 4194304,
+            "line_limit": 16384
+          }
+        }
+      },
+      "content": null
+    },
+    {
+      "path": "[CACHE_DIR]notes.txt",
+      "bytes": 15,
+      "state": "unrecognized",
+      "content": null
+    }
   ]
 }
+
 ? 0
 ```
 
