@@ -3,9 +3,9 @@ type: is
 id: is-01m2pyedcc6gz25wqwmapyvp2h
 title: "P2.3.5: Core refresh(&mut Index, &Basis, &Delivery), used by Python Index.refresh"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - core-models
@@ -14,7 +14,7 @@ dependencies:
     target: is-01m2pyedpswpa393q9y6req1gz
 parent_id: is-01m2pmrbxvnerxyhnjhrswy1ye
 created_at: 2026-09-17T05:46:46.027Z
-updated_at: 2026-09-17T05:47:00.152Z
+updated_at: 2026-09-23T02:04:44.951Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 3: The Execution Plan Model", commit 5. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

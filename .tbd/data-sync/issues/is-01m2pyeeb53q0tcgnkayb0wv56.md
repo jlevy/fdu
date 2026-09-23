@@ -3,16 +3,16 @@ type: is
 id: is-01m2pyeeb53q0tcgnkayb0wv56
 title: "P2.3.8: Opened roots take a plan (Route::Opened)"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - core-models
 dependencies: []
 parent_id: is-01m2pmrbxvnerxyhnjhrswy1ye
 created_at: 2026-09-17T05:46:47.012Z
-updated_at: 2026-09-17T05:46:47.012Z
+updated_at: 2026-09-23T02:04:50.174Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 3: The Execution Plan Model", commit 8. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

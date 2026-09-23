@@ -5,13 +5,14 @@ title: "Harness gaps: subset detects content re-widening only via --cache only, 
 kind: bug
 status: in_progress
 priority: 1
-version: 2
+version: 4
+spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:06:19.589Z
-updated_at: 2026-09-23T01:51:14.487Z
+updated_at: 2026-09-23T02:01:25.442Z
 ---
 Verified in an adversarial review, 2026-09-21.
 
@@ -29,3 +30,9 @@ Baseline subset: 884 cases, 6.2s command-line only.
 - Class membership for a new key is free-text at record time. `merge` assigns `unclassified`, but nothing checks a hand-typed class actually fits.
 - "Class has no entries" and "registered case not executed" only run under `full` (`registry.py:208-215`), so the subset cannot catch a stale waiver.
 - `verify` does not check that `known-violations.toml` matches CI's recording, so a local `--record` plus hand classification passes.
+
+## Notes
+
+Implemented in codex/alpha-cache-contract at 47a86ed7, pending composition above the execution layer. Adds 18 exact refresh-to-cache-only positive controls across CLI and Python cache-reading routes, requiring cache_only source and stale freshness. A dead cache, a cold fallback, a failed seed, and false freshness all fail retained tests. The subset now includes W_code before mutations. The production conformance judge rejects any registered exception, so recording/classifying a regression cannot produce a passing gate. Historical registry analysis remains available without waiving production acceptance.
+
+All 35 harness unit tests, Ruff checks/formatting, and diff checks pass. Independent Astra review found no remaining issue. Runtime validation against the final built engine and regeneration of the empty registry from all three CI platform recordings remain pending. The delivery specification and harness README state these obligations; no waiver was removed by guesswork.

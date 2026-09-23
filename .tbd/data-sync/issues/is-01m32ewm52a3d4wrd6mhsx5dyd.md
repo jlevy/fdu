@@ -3,14 +3,15 @@ type: is
 id: is-01m32ewm52a3d4wrd6mhsx5dyd
 title: The content tier decides reuse at five inline == sites and never touches Serves
 kind: bug
-status: open
+status: in_progress
 priority: 0
-version: 1
+version: 3
+delegate: codex@spud10
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:05:47.681Z
-updated_at: 2026-09-21T17:05:47.681Z
+updated_at: 2026-09-23T02:08:24.489Z
 ---
 Verified by reading in an adversarial review, 2026-09-21. This is the finding that invalidates the claim that equality-serve makes content reuse correct by construction.
 
@@ -29,3 +30,7 @@ Confirmed constructively: a re-widening mutant needed three edits (`lib.rs:773`,
 Fix: route all six content sites through one `serves_content` returning a value-carrying projection, so a record set cannot be consumed without the projection that makes it answer the request.
 
 Until this lands, describe fdu-gija as fixed-by-equality, not as correct by construction.
+
+## Notes
+
+Implementation in codex/alpha-content-admission: ContentTierIdentity::admit is the single borrowed identity/provenance relation, returning ContentAdmission. Its private constructors produce a ContentProjection for tier reads and AdmittedRecord for decoded records; restore cannot accept an unchecked FileAnalysis. Prepare, save/load/header parse, direct commit, pending candidates, read validation, and report metric reads use this relation. Equality-only projection remains deliberate; subset projection is deferred. for_request builds provenance once; per-record admission compares borrowed slices and introduces no allocations or cloning. Regressions cover every identity component, incompatible tiers and unit slots, forged provenance, and exact positive controls. Existing restore timing buckets preserved. Plan consumer/root export coordinated with execution owner. cargo fmt and diff check passed; Rust verification deferred to scheduled integration slot, so bead stays open. Delivery plan: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md.
