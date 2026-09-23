@@ -6,16 +6,9 @@
 //! flag and the [`TerminalFacts`] the process read once, and [`render_frame`], from a
 //! snapshot's facts, the elapsed time, the spinner step, the width, and the color flag.
 //!
-//! Nothing here writes to a stream. The ticker that does (fdu-hjjj) takes a
+//! Nothing here writes to a stream. The ticker in `progress_ticker` takes a
 //! [`ProgressPlan`] resolved before the report starts, redraws through [`render_frame`],
-//! and clears the line before anything else is written. Until it lands, the non-test
-//! build has no caller for the renderer or the gate, which the expectation below
-//! records; it stops compiling the moment the ticker consumes them, which is the cue to
-//! remove it.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the progress ticker, which is fdu-hjjj")
-)]
+//! and clears the line before anything else is written.
 
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -261,10 +254,12 @@ pub(crate) fn human_elapsed(elapsed: Duration) -> String {
 /// A whole percentage that never reaches 100 before `done` equals `total`.
 ///
 /// Truncated rather than rounded, which is what keeps `99.9%` at `99%`. Nothing of
-/// nothing is `0%`, and a count past its total is capped at the total.
+/// nothing is `100%`: the engine reports `(0, 0)` when the content sidecar answered
+/// every candidate and no file needed reading, which is analysis with nothing left to
+/// do, not analysis that has not begun. A count past its total is capped at the total.
 fn whole_percent(done: u64, total: u64) -> u64 {
     if total == 0 {
-        return 0;
+        return 100;
     }
     let done = done.min(total);
     u64::try_from(u128::from(done) * 100 / u128::from(total)).unwrap_or(100)
@@ -831,7 +826,8 @@ mod tests {
         assert_eq!(percent(999, 1_000), " 99%");
         assert_eq!(percent(99_999, 100_000), " 99%");
         assert_eq!(percent(50_110, 50_110), "100%");
-        assert_eq!(whole_percent(0, 0), 0);
+        assert_eq!(percent(0, 0), "100%", "the sidecar answered everything: nothing left to do");
+        assert_eq!(whole_percent(0, 0), 100);
         assert_eq!(whole_percent(7, 5), 100);
         assert_eq!(whole_percent(u64::MAX - 1, u64::MAX), 99);
     }

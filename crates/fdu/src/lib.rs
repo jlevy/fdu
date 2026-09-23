@@ -9,6 +9,7 @@
 
 mod cli;
 mod progress_line;
+mod progress_ticker;
 
 /// The repository README's Rust examples, compiled and run as doctests.
 ///
