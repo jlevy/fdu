@@ -121,11 +121,11 @@ model concrete.
 
 ```shell
 export XDG_CACHE_HOME="$(mktemp -d)"     # never touch your real cache while testing
-./target/debug/fdu --format json . | head -20   # first run
-./target/debug/fdu --format json . | head -20   # second run
+./target/debug/fdu --format json . | grep -m1 '"source"'   # first run
+./target/debug/fdu --format json . | grep -m1 '"source"'   # second run
 ```
 
-✅ Both runs report `"source": "cold_scan"` and the same totals.
+✅ Both runs report `"source": "cold_scan"`.
 
 A second cold scan here is correct, not a missing snapshot.
 A metadata-only report never loads one: revalidating a snapshot stats every entry
@@ -146,11 +146,13 @@ Content analysis is the one a one-shot report reuses, because an unchanged finge
 lets it skip re-reading file bodies:
 
 ```shell
-./target/debug/fdu --analyze code --view languages --format json . | grep '"source"'
-./target/debug/fdu --analyze code --view languages --format json . | grep '"source"'
+./target/debug/fdu --analyze code --view languages --format json . | grep -A2 '"content"'
+./target/debug/fdu --analyze code --view languages --format json . | grep -A2 '"content"'
 ```
 
-✅ The first run reports `"source": "cold_scan"`; the second reports `"warm_revalidate"`.
+✅ The first run’s content tier reports `"source": "scanned"`; the second reports
+`"revalidated"`. Both runs report `warm_revalidate` at the top of `provenance`, because
+that label describes the entries, which the metadata runs above already stored.
 If the second still reports a cold scan, the snapshot or its content sidecar was not
 written — check the cache directory and any warning on stderr.
 

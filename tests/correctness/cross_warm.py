@@ -15,7 +15,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+from answer import (
+    age_problems,
+    answer,
+    content_source_of,
+    reference_outside,
+    reject_unknown_flags,
+)
 
 # Repository-relative so the runbook is not tied to one checkout.
 DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
@@ -37,29 +46,21 @@ ASKS = {
 }
 
 
+STALE_REFERENCES = []
+
+
 def run(args, cache):
     env = dict(os.environ, XDG_CACHE_HOME=str(cache), NO_COLOR="1")
+    started = time.time_ns()
     p = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
+    problem = reference_outside(p.stdout, started, time.time_ns())
+    if problem:
+        STALE_REFERENCES.append(f"{' '.join(args[1:])}: {problem}")
     return p.returncode, p.stdout, p.stderr
 
 
-def scrub(node):
-    if isinstance(node, dict):
-        return {
-            k: scrub(v)
-            for k, v in node.items()
-            if k not in {"generated_at", "scan_started_at", "source", "freshness", "elapsed_ns"}
-        }
-    if isinstance(node, list):
-        return [scrub(v) for v in node]
-    return node
-
-
 def body(out):
-    try:
-        return scrub(json.loads(out))
-    except json.JSONDecodeError:
-        return out
+    return answer(out)
 
 
 def analyze_field(out):
@@ -77,7 +78,13 @@ def analyze_field(out):
     }
 
 
+def analyzers(args):
+    """The analyzer set a request asks for, or None for a metadata-only request."""
+    return args[args.index("--analyze") + 1] if "--analyze" in args else None
+
+
 def main():
+    reject_unknown_flags(sys.argv[1:], set())
     root = Path(sys.argv[1])
     # The oracle: each request answered with no cache at all.
     cold = {}
@@ -107,6 +114,14 @@ def main():
                     v.append("ANSWER!=COLD")
                 if gotf != wantf:
                     v.append(f"ANALYZE {wantf}->{gotf}")
+                if age_problems(out):
+                    v.append("AGE")
+                # A warmer that stored the same analyzer set must serve the ask's content
+                # records. A wider set may not yet (the containment deferral, fdu-7dj6),
+                # so only the matching pairs are held to serving; every pair is held to
+                # the cold answer.
+                if analyzers(wargs) == analyzers(aargs) and content_source_of(out) != "revalidated":
+                    v.append(f"NOT-WARM({content_source_of(out)})")
                 if v:
                     bad.append(f"{wname} -> {ask}: {' '.join(v)}")
                 shown = str((gotf or {}).get("analyze"))
@@ -115,6 +130,7 @@ def main():
             finally:
                 shutil.rmtree(cache, ignore_errors=True)
     print()
+    bad.extend(STALE_REFERENCES)
     print(f"cross-warm violations: {len(bad)}")
     for b in bad:
         print(f"  - {b}")

@@ -3,19 +3,32 @@
 
 Comparing warm against cold on its own cannot fail usefully: a cache that never serves
 scans cold both times and matches. So every case also records the mechanism -- the
-report's own `source` -- and a request whose warm run never reports a warm source is a
-failure even when the bytes agree.
+report's `provenance.source` -- and a request whose warm run never reports a warm source
+is a failure even when the bytes agree. `--refusals-only` runs over a tree whose refusal
+entries make every answer partial, where the check is instead that nothing was stored.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+from answer import (
+    age_problems,
+    answer,
+    content_source_of,
+    freshness_of,
+    is_complete,
+    parse,
+    reference_outside,
+    reject_unknown_flags,
+    source_of,
+)
 
 # Repository-relative so the runbook is not tied to one checkout.
 DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
@@ -49,58 +62,31 @@ CASES: list[tuple[str, list[str]]] = [
 ]
 
 
+STALE_REFERENCES: list[str] = []
+
+
 def run(args: list[str], cache_home: Path) -> tuple[int, str, str]:
     env = dict(os.environ, XDG_CACHE_HOME=str(cache_home), NO_COLOR="1")
+    started = time.time_ns()
     proc = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
+    problem = reference_outside(proc.stdout, started, time.time_ns())
+    if problem:
+        STALE_REFERENCES.append(f"{' '.join(args[1:])}: {problem}")
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def source_of(stdout: str) -> str | None:
-    """The delivery label, which sits at the envelope root rather than per report."""
-    try:
-        doc = json.loads(stdout)
-    except json.JSONDecodeError:
-        return None
-    return doc.get("source")
-
-
-def freshness_of(stdout: str) -> str | None:
-    try:
-        return json.loads(stdout).get("freshness")
-    except json.JSONDecodeError:
-        return None
-
-
-def normalise(doc: str) -> object:
-    """Drop the fields that legitimately differ between two runs of the same request."""
-    try:
-        value = json.loads(doc)
-    except json.JSONDecodeError:
-        return doc
-
-    def scrub(node: object) -> object:
-        if isinstance(node, dict):
-            return {
-                k: scrub(v)
-                for k, v in node.items()
-                # Provenance describes the delivery, not the answer; timings and source
-                # are expected to differ between a cold and a warm run of one request.
-                # `freshness` is deliberately NOT dropped here; it is compared
-                # separately below, because cache-only promises a `stale` label and an
-                # unasserted promise is not a check.
-                if k not in {"generated_at", "scan_started_at", "source", "freshness"}
-            }
-        if isinstance(node, list):
-            return [scrub(item) for item in node]
-        return node
-
-    return scrub(value)
-
-
 def main() -> int:
-    root = Path(sys.argv[1])
+    args = sys.argv[1:]
+    # A tree built with its refusal entries is partial for an unprivileged user, and a
+    # partial scan never writes the entry tier: a snapshot missing an entry would be
+    # served as the tree's totals. Such a run proves the refusal path and that nothing
+    # partial was stored; the serving proof needs a tree built --without-refusals.
+    reject_unknown_flags(args, {"--refusals-only"})
+    refusals_only = "--refusals-only" in args
+    root = Path(next(arg for arg in args if not arg.startswith("--")))
     failures: list[str] = []
     never_warm: list[str] = []
+    served = 0
 
     print(
         f"{'case':<22} {'cold':>6} {'warm':>6} {'only':>6}  "
@@ -120,12 +106,15 @@ def main() -> int:
             only_rc, only_out, _ = run([*base, "--cache", "only"], cache_home)
 
             warm_source = source_of(warm_out) or "-"
+            warm_content = content_source_of(warm_out) or "-"
             verdict = []
 
-            if normalise(cold_out) != normalise(warm_out):
+            if answer(cold_out) != answer(warm_out):
                 verdict.append("WARM!=COLD")
                 failures.append(f"{name}: warm answer differs from cold")
-            if only_rc == 0 and normalise(only_out) != normalise(cold_out):
+            # Compare whatever cache-only answered, whatever its exit: a partial answer
+            # exits 2, so guarding on 0 would skip exactly the case that matters.
+            if parse(only_out) is not None and answer(only_out) != answer(cold_out):
                 verdict.append("ONLY!=COLD")
                 failures.append(f"{name}: cache-only answer differs from cold")
             if cold_rc != warm_rc:
@@ -147,7 +136,30 @@ def main() -> int:
             only_source = source_of(only_out) or "-"
             only_freshness = freshness_of(only_out) or "-"
 
-            if only_rc != 0:
+            for label, out in (("cold", cold_out), ("warm", warm_out), ("only", only_out)):
+                problems = age_problems(out)
+                if problems:
+                    verdict.append(f"AGE({label})")
+                    failures.append(f"{name}: {label} ages disagree: {problems[0]}")
+
+            partial = is_complete(cold_out) is False
+            # A miss prints nothing on stdout and exits 1. Anything else from cache-only,
+            # including a partial answer (exit 2), means a snapshot served it.
+            withheld = only_rc == 1 and parse(only_out) is None
+            if refusals_only and not partial:
+                verdict.append("NOT-PARTIAL")
+                failures.append(f"{name}: expected a partial answer; are the refusals effective?")
+            if partial and not refusals_only:
+                verdict.append("UNEXPECTED-PARTIAL")
+                failures.append(f"{name}: partial answer over a tree built without refusals")
+            if partial:
+                # A partial scan never writes the entry tier, so cache-only must refuse.
+                if withheld:
+                    verdict.append("withheld")
+                else:
+                    verdict.append("PARTIAL-STORED")
+                    never_warm.append(f"{name}: a partial scan was served from the cache")
+            elif only_rc != 0:
                 verdict.append(f"NO-SNAPSHOT(rc={only_rc})")
                 never_warm.append(f"{name}: cache-only exited {only_rc}, so nothing was stored")
             elif only_source != "cache_only":
@@ -157,10 +169,14 @@ def main() -> int:
                 # Cache-only serves without verifying, so it must label the answer stale.
                 verdict.append(f"NOT-STALE({only_freshness})")
                 never_warm.append(f"{name}: cache-only freshness {only_freshness}")
+            else:
+                served += 1
 
-            if analyses and warm_source != "warm_revalidate":
-                verdict.append(f"NOT-WARM({warm_source})")
-                never_warm.append(f"{name}: warm source {warm_source}")
+            # A content request is served warm when its content tier is revalidated; the
+            # report-level source only says how the entries were produced.
+            if analyses and not partial and warm_content != "revalidated":
+                verdict.append(f"NOT-WARM({warm_content})")
+                never_warm.append(f"{name}: warm content tier {warm_content}")
 
             print(
                 f"{name:<22} {cold_rc:>6} {warm_rc:>6} {only_rc:>6}  "
@@ -177,6 +193,15 @@ def main() -> int:
     print(f"mechanism failures (cache did not serve): {len(never_warm)}")
     for line in never_warm:
         print(f"  - {line}")
+    print(f"stale reference instants: {len(STALE_REFERENCES)}")
+    for line in STALE_REFERENCES:
+        print(f"  - {line}")
+    failures.extend(STALE_REFERENCES)
+    print(f"cases the snapshot served: {served} of {len(CASES)}")
+    if not refusals_only and served == 0:
+        # A run that never served proved nothing about serving, whatever else matched.
+        print("the cache never served: on a tree built --without-refusals, serving is broken")
+        return 1
     return 1 if (failures or never_warm) else 0
 
 
