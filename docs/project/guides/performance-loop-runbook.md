@@ -495,11 +495,11 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-Next free unused hypothesis id is **H149** (H144–H146 reserved on the Linux iteration
-stack; H147 used for the Linux transient recycle keep; H148 used for the Linux PGO
-screen; H72 used existing id).
-Next free experiment id is **exp-155** (numbering is shared with Darwin); do not take
-exp-138–154 here. exp-113 remains reserved unused (H113 superseded).
+The next free hypothesis and experiment ids have one home: the end of
+[the Linux standing](#linux-standing-2026-09-20), because both numberings are shared
+with Darwin and the Linux stack mints them.
+Do not mint an id from this section; do not take exp-138–155 or H144–H149 here.
+exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -880,8 +880,12 @@ Read ~8–9 ms. Digest identical.
 Load/core 0.059–0.102 held.
 Do not retry H116. H83 remains format.
 
-Next free Linux experiment id is **exp-156**. Next free unused hypothesis id is
-**H150**.
+Next free experiment id is **exp-156** and next free unused hypothesis id is **H150**.
+This is the one statement of the next free ids for Darwin and Linux alike; the
+[registry header](performance-loop.md#hypotheses) agrees.
+H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
+keep, H148 the Linux PGO screen, and H149 the leftover-timer restore mix; H72 reused its
+existing id. exp-113 remains reserved unused.
 
 ## Before the First Round
 
