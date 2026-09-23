@@ -25,12 +25,13 @@ hypothetical: with snapshot serving hard-wired to refuse, the path-independence 
 ran 884 cases with zero failures, because a miss simply scans cold and compares equal.
 
 So every case records the mechanism as well as the answer, read from the report’s
-`provenance.source` and `provenance.freshness`, and the expectation differs by request:
+`provenance.source` and `provenance.freshness`, or for content from
+`provenance.tiers.content.source`, and the expectation differs by request:
 
 | Request | Second run reports | Why |
 | --- | --- | --- |
 | Metadata only | `cold_scan` | A metadata walk is cheap, so it re-walks by design. Its proof that the snapshot serves is the cache-only run, which must exit 0, report `cache_only`, and label the answer `stale`. |
-| `--analyze …` | `warm_revalidate` | The content sidecar is the expensive tier and is the one that must serve. |
+| `--analyze …` | content tier `revalidated` | The content sidecar is the expensive tier and is the one that must serve. The report-level `warm_revalidate` only says the entries came from a snapshot. |
 | `--cache only` | `cache_only` | Serves without verifying, and labels the answer stale. |
 
 A run whose answers all match but whose mechanism column is wrong has proved nothing.
@@ -73,7 +74,8 @@ comes back complete fails, which is what a run whose refusals were not effective
 like. The same kinds without their refusal bits are complete, so the second run must
 serve every case and fails any case that comes back partial.
 Every report’s `age_ns` is checked against its own `age_reference_ns` and `mtime_ns`,
-because ages move with the reference instant and are not comparable across runs.
+because ages move with the reference instant and are not comparable across runs, and the
+reference instant must fall within the invocation that produced the report.
 
 Keep the socket path short.
 A Unix socket path is limited to about 104 bytes on macOS, so a tree under a long

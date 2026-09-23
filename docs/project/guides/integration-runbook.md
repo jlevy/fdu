@@ -121,11 +121,11 @@ model concrete.
 
 ```shell
 export XDG_CACHE_HOME="$(mktemp -d)"     # never touch your real cache while testing
-./target/debug/fdu --format json . | head -20   # first run
-./target/debug/fdu --format json . | head -20   # second run
+./target/debug/fdu --format json . | grep -m1 '"source"'   # first run
+./target/debug/fdu --format json . | grep -m1 '"source"'   # second run
 ```
 
-✅ Both runs report `"source": "cold_scan"` and the same totals.
+✅ Both runs report `"source": "cold_scan"`.
 
 A second cold scan here is correct, not a missing snapshot.
 A metadata-only report never loads one: revalidating a snapshot stats every entry

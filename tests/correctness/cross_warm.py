@@ -15,9 +15,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
-from answer import age_problems, answer, content_source_of, reject_unknown_flags
+from answer import (
+    age_problems,
+    answer,
+    content_source_of,
+    reference_outside,
+    reject_unknown_flags,
+)
 
 # Repository-relative so the runbook is not tied to one checkout.
 DEFAULT_FDU = Path(__file__).resolve().parents[2] / "target" / "debug" / "fdu"
@@ -39,9 +46,16 @@ ASKS = {
 }
 
 
+STALE_REFERENCES = []
+
+
 def run(args, cache):
     env = dict(os.environ, XDG_CACHE_HOME=str(cache), NO_COLOR="1")
+    started = time.time_ns()
     p = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
+    problem = reference_outside(p.stdout, started, time.time_ns())
+    if problem:
+        STALE_REFERENCES.append(f"{' '.join(args[1:])}: {problem}")
     return p.returncode, p.stdout, p.stderr
 
 
@@ -116,6 +130,7 @@ def main():
             finally:
                 shutil.rmtree(cache, ignore_errors=True)
     print()
+    bad.extend(STALE_REFERENCES)
     print(f"cross-warm violations: {len(bad)}")
     for b in bad:
         print(f"  - {b}")

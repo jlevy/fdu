@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from answer import (
@@ -24,6 +25,7 @@ from answer import (
     freshness_of,
     is_complete,
     parse,
+    reference_outside,
     reject_unknown_flags,
     source_of,
 )
@@ -60,9 +62,16 @@ CASES: list[tuple[str, list[str]]] = [
 ]
 
 
+STALE_REFERENCES: list[str] = []
+
+
 def run(args: list[str], cache_home: Path) -> tuple[int, str, str]:
     env = dict(os.environ, XDG_CACHE_HOME=str(cache_home), NO_COLOR="1")
+    started = time.time_ns()
     proc = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
+    problem = reference_outside(proc.stdout, started, time.time_ns())
+    if problem:
+        STALE_REFERENCES.append(f"{' '.join(args[1:])}: {problem}")
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -184,6 +193,10 @@ def main() -> int:
     print(f"mechanism failures (cache did not serve): {len(never_warm)}")
     for line in never_warm:
         print(f"  - {line}")
+    print(f"stale reference instants: {len(STALE_REFERENCES)}")
+    for line in STALE_REFERENCES:
+        print(f"  - {line}")
+    failures.extend(STALE_REFERENCES)
     print(f"cases the snapshot served: {served} of {len(CASES)}")
     if not refusals_only and served == 0:
         # A run that never served proved nothing about serving, whatever else matched.

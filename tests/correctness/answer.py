@@ -71,6 +71,19 @@ def age_problems(out: str) -> list[str]:
     return problems
 
 
+def reference_outside(out: str, started_ns: int, finished_ns: int) -> str | None:
+    """Why the report's `age_reference_ns` is not the instant of this run, if it is not.
+
+    Ages are checked against the report's own reference instant, so a report measuring
+    from a stale instant (a snapshot's, say) with ages to match would pass that check.
+    The reference must fall within the invocation that produced the report.
+    """
+    reference = (parse(out) or {}).get("age_reference_ns")
+    if reference is None or started_ns <= reference <= finished_ns:
+        return None
+    return f"age_reference_ns {reference} outside the run [{started_ns}, {finished_ns}]"
+
+
 def _provenance(out: str) -> dict:
     return (parse(out) or {}).get("provenance") or {}
 
