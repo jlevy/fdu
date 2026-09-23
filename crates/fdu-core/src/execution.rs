@@ -700,6 +700,7 @@ mod tests {
     }
 
     /// The files a cache-only open of `delivery`'s snapshot answers with.
+    #[cfg(unix)]
     fn cached_files(basis: &crate::query::Basis, delivery: &Delivery) -> u64 {
         let cache_only = Delivery { cache: CachePolicy::Only, ..delivery.clone() };
         crate::open(basis, &cache_only).expect("cache-only open").0.total().files
