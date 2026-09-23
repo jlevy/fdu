@@ -5,17 +5,17 @@ title: Arbitrate overlapping reconciliation verification even when metadata is u
 kind: bug
 status: in_progress
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels: []
 dependencies: []
 parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 created_at: 2026-09-23T01:23:23.407Z
-updated_at: 2026-09-23T01:33:17.049Z
+updated_at: 2026-09-23T01:37:52.526Z
 ---
 Recovered state at abc35f96 protects newer omitted issues but an older finishing pass can reinsert errors disproved by a newer clean pass; its conditional facts can also overwrite newer unchanged verification because entry revisions do not move. Track scoped supersession only for active passes, reject stale overlapping observations, suppress only error evidence covered by a newer verification, and preserve disjoint sibling evidence. Deterministic same-scope and ancestor/child regressions plus bounded ownership review required.
 
 ## Notes
 
-2026-09-22 recovered-baseline red proof: older_pass_cannot_publish_errors_after_newer_clean_verification fails at 47dbb51c because an older pass resurrects a cause after newer clean verification. New isolated implementation uses active scope/version evidence. Each pass budgets at most one normalized shadow scope per retained entry at begin (len includes root, so root-only is one; index has no zero-entry state). Descendant scopes covered by an ancestor collapse. Distinct absent child verifications demonstrate no bound exists from current retained paths alone, so exceeding this derived budget discards proof and enters explicit Retry, never widens verification. All future batches from that pass are refused; closing preserves prior issues and newer facts, publishes partial state and an interruption issue, then returns a private retry flag. Scan uses its existing incomplete/retry protocol, without a new public error. Full newer ancestor proof can supersede an interrupted pass. Tests cover same-scope stale causes, unchanged newer facts, disjoint scopes, ancestor/child sibling cause preservation, absent-child bounded ownership, and publication before retry result; validation ongoing. Draft old worktree remains untouched.
+Implementation prepared on codex/alpha-state-fixes from recovered integration47dbb51c. Red baseline older_pass_cannot_publish_errors_after_newer_clean_verification failed by resurrecting a stale cause. ActiveReconcile now owns normalized newer scopes and an explicit Retry state. Budget is one scope per live entry at pass start (including root, minimum1); a root-only real filesystem fixture and100distinct absent-child unit verifications prove bounded retention. Full ancestor proof collapses descendants; overflow never widens verified scope, discards exact evidence, refuses later batches, preserves prior issues/newer facts, publishes partial state plus retry cause, then returns the private retry result. Existing incomplete-reconciliation retry protocol consumes it; no new public error variant. Finished passes release all evidence. Focused24reconciliation,3overflow,10newer-verification tests pass;5scripted watch handoff tests,4state integrations,10native watch integrations pass; all-features/all-targets core clippy passes. Full no-watch run ran723tests (720pass,2introduced plumbing failures,1existing ignored); both failures fixed and explicitly rerun. Parent owns full make check, stack integration, spec note, PR/CI publication. Retain bead open pending those gates.
