@@ -451,11 +451,9 @@ pub fn refresh(
     request.validate_read(&query::Basis::held_by(index)).map_err(Error::InvalidRequest)?;
     let scan = basis.scope.scan_config(delivery);
     scan.validate_for_scope(index.scope())?;
-    if plan.verify() == Verify::None {
-        return Err(Error::Snapshot(
-            "the `only` cache policy cannot refresh filesystem state".into(),
-        ));
-    }
+    // `plan` refuses the one policy that verifies nothing on this route, so there is no
+    // second refusal here to keep in step with it.
+    debug_assert_eq!(plan.verify(), Verify::Filesystem, "a refresh plan verifies the tree");
     let report = scan::reconcile(index, &scan, &mut |_| {})?;
     let cached = load_content(index, basis, delivery)?;
     let analysis = basis.content.is_enabled().then(|| {

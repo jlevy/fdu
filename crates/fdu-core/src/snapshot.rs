@@ -794,6 +794,13 @@ fn parse_stream(
         // A foreign registry cannot be attached to a served index. For a refusal,
         // reconstruct only to validate every record and the checksum, then discard it.
         // The stored identity below remains unchanged for the caller's diagnostic.
+        //
+        // That costs a full index build for a diagnostic: every record is decoded and
+        // inserted so the checksum can be verified over the bytes it covers, and the
+        // result is dropped. It is paid only under a type-rules mismatch, which a
+        // cache-only request reports and every other policy answers by scanning, so it
+        // buys a truthful refusal (valid but foreign, rather than absent) at the price of
+        // one load on a path that has no answer anyway.
         scope.type_rules_fingerprint = types.fingerprint();
     }
     let minimum_body = count
