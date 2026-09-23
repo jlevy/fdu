@@ -22,7 +22,8 @@ to a wait-state display.
 ## Goals
 
 - Show directories, files, and bytes walked, the current phase, and elapsed time during
-  a one-shot report, and analyzed files with a percentage during content analysis.
+  a one-shot report, and analyzed files with a percentage during content analysis, in
+  the same layout for every phase.
 - Draw only for a person at an interactive terminal.
   Every non-interactive run draws nothing, whatever the flag says.
 - Wait 500 ms before the first frame, so a fast run shows no indicator at all.
@@ -208,14 +209,21 @@ Each frame starts with a braille “dots” spinner that advances one cell per 8
 ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
 ```
 
+Every phase uses the same slots in the same order: spinner, root, phase word, the
+phase’s facts, elapsed time.
+The root comes first because it is what the run is about and it stays put for the whole
+run; the phase word is padded to the width of the longest one (`Revalidating`), so the
+facts do not jump when the phase changes.
+There is no bar: a walk has no known total, and the one phase that has one shows it as a
+percentage in the facts slot.
 The frame for each phase, shown here in plain text:
 
 ```text
-⠹ Loading ~/wrk/github  0.6 s
-⠼ Scanning ~/wrk/github  412,309 files · 12,041 dirs · 38.2 GiB  3.1 s
-⠼ Revalidating ~/wrk/github  412,309 files · 12,041 dirs · 38.2 GiB  1.4 s
-⠧ Analyzing ━━━━━━━━━━━━━━━━━━━━  24%  12,044 / 50,110 files  7.9 s
-⠏ Saving cache  7.9 s
+⠹ ~/wrk/github  Loading       0.6 s
+⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38.2 GiB  3.1 s
+⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38.2 GiB  1.4 s
+⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
+⠏ ~/wrk/github  Saving        8.1 s
 ```
 
 **Colors** reuse the palette the report already uses, through `anstyle`, which is
@@ -229,17 +237,15 @@ already a dependency:
 | Numbers and sizes | default | the facts |
 | Units and separators (`files`, `dirs`, `·`, `/`) | bright black | recede behind the numbers |
 | Elapsed time | bright black | the performance line’s hue |
-| Analysis bar, done cells | green | the report’s bar hue |
-| Analysis bar, remaining cells | bright black | the track |
 | Percentage | default | a number |
 
 **Numbers** use the report’s own formatters: counts with thousands separators
 (`human_count`), sizes in binary units with one decimal (`human_bytes`). Elapsed time
 has one decimal below a minute (`3.1 s`), then `1 m 04 s`, then `1 h 02 m`.
 
-**Analysis bar.** Twenty `━` cells, green up to the analyzed fraction and bright black
-after it, followed by a right-aligned whole percentage.
-It appears only during content analysis, the one phase with an exact denominator.
+**Percentage.** A whole percentage, right-aligned in four columns (` 7%`, ` 24%`,
+`100%`), shown only during content analysis, the one phase with an exact denominator.
+It never reaches `100%` before the last file is applied.
 
 **Color rule.** The frame is colored when stderr color is on under the same rule that
 colors fdu’s warnings: `--color`, then `NO_COLOR`, then `FORCE_COLOR`. With color off,
@@ -254,11 +260,11 @@ The frame is measured without its color codes, counts each non-ASCII character o
 root path as two columns, and leaves the last column empty.
 When it is wider than that, it shrinks in this order until it fits:
 
-1. The root path is elided in the middle with `…`, down to 12 columns.
-2. The `dirs` count is dropped.
-3. The bytes are dropped.
-4. The analysis bar is dropped, keeping the percentage.
-5. Below 20 columns, only the spinner and the phase word are drawn.
+1. The phase word’s padding is dropped.
+2. The root path is elided in the middle with `…`, down to 12 columns.
+3. The `dirs` count is dropped.
+4. The bytes are dropped.
+5. Below 20 columns, only the spinner and the phase word are drawn, without the root.
 
 **End of run.** The line is erased before the report or any message is written.
 No summary replaces it, because the report’s own performance line states the totals.
