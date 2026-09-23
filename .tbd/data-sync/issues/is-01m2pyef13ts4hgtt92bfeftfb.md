@@ -5,7 +5,7 @@ title: "P2.4.2: open_for_report loads through load_serving; delete SnapshotUse a
 kind: task
 status: in_progress
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -17,7 +17,7 @@ parent_id: is-01m2pmrcb8he4a8a54zt957vcs
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:47.714Z
-updated_at: 2026-09-20T07:00:51.100Z
+updated_at: 2026-09-23T01:19:29.605Z
 started_at: 2026-09-20T05:15:46.616Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 4: The `.gitignore` Observation Projection on Every Route", commit 2. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.

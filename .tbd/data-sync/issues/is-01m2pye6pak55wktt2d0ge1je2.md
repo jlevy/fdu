@@ -5,7 +5,7 @@ title: "P1.4.4: One meaning for scan_started_at, read from the snapshot's verifi
 kind: task
 status: in_progress
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -17,7 +17,7 @@ parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:39.178Z
-updated_at: 2026-09-20T04:40:17.353Z
+updated_at: 2026-09-23T01:19:29.580Z
 started_at: 2026-09-20T04:40:17.353Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 4. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.

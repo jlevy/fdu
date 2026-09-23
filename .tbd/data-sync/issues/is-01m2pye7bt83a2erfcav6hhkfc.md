@@ -5,7 +5,7 @@ title: "P1.4.6: Per-tier content provenance (TierProvenance.content)"
 kind: task
 status: in_progress
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -15,7 +15,7 @@ parent_id: is-01m2pmra8yqrcxg27kc6ezg9vd
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:39.865Z
-updated_at: 2026-09-20T06:38:37.810Z
+updated_at: 2026-09-23T01:19:29.593Z
 started_at: 2026-09-20T04:40:17.369Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", commit 6. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
