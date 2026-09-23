@@ -3,16 +3,20 @@ type: is
 id: is-01m0k512k9a6dq2k51fbfe5xn4
 title: "YAML output contract: metric-row shape, forbidden characters, number-like names, raw paths"
 kind: bug
-status: open
+status: closed
 priority: 0
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-08-21T21:53:27.657Z
-updated_at: 2026-09-17T02:57:34.929Z
+updated_at: 2026-09-23T08:14:06.938Z
+closed_at: 2026-09-23T08:14:06.938Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 A byte-stable golden proves the output has not *changed*. It does not prove the output is
 *valid*: a consistently malformed document passes forever, and the serializers here are

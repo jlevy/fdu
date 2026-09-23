@@ -3,9 +3,9 @@ type: is
 id: is-01m2pyeeppbcbq3hfepwjcthyw
 title: "P2.4.1: ProjectControlsOff in serves_snapshot, and snapshot::load_serving"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -17,8 +17,12 @@ parent_id: is-01m2pmrcb8he4a8a54zt957vcs
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:47.381Z
-updated_at: 2026-09-23T01:19:29.599Z
+updated_at: 2026-09-23T08:14:06.703Z
 started_at: 2026-09-20T05:15:46.596Z
+closed_at: 2026-09-23T08:14:06.703Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 4: The `.gitignore` Observation Projection on Every Route", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

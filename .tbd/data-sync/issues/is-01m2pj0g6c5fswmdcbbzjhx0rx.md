@@ -3,9 +3,9 @@ type: is
 id: is-01m2pj0g6c5fswmdcbbzjhx0rx
 title: One ordered value model rendered by the JSON and YAML serializers
 kind: task
-status: open
+status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
@@ -13,7 +13,11 @@ labels:
 dependencies: []
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-09-17T02:09:27.242Z
-updated_at: 2026-09-17T02:57:34.062Z
+updated_at: 2026-09-23T08:14:06.945Z
+closed_at: 2026-09-23T08:14:06.945Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Build each machine document once and render it through generic serializers, replacing the parallel
 per-field writers for reports, watch changes and cache status. Byte-stable goldens for JSON; YAML shape

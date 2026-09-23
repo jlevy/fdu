@@ -3,16 +3,20 @@ type: is
 id: is-01m32wje089vk2cwd9ds2sms2d
 title: Attribute one-shot scan errors per directory so --allow-partial rows are not all incomplete
 kind: feature
-status: in_progress
+status: closed
 priority: 2
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: codex@spud10
 labels: []
 dependencies: []
 parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 created_at: 2026-09-21T21:04:53.768Z
-updated_at: 2026-09-23T02:39:16.758Z
+updated_at: 2026-09-23T08:14:06.843Z
+closed_at: 2026-09-23T08:14:06.843Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Follow-up from the PR #96 R1 disposition (https://github.com/jlevy/fdu/pull/96#issuecomment-5765069350). A one-shot scan that finishes with errors records that the walk was partial (set_initial_freshness(false)) but not which directory each error fell in: ScanReport.errors are rendered to strings and never reach the Index, so under --allow-partial every directory row reports complete: false and an unknown age. Plumb the failing paths (ScanReport.errors carry them) into the index or Provenance so only the directories the errors fall in, and their ancestors, are marked incomplete; an opened root already gets this from children_complete. Acceptance: a fixture with one unreadable directory under --allow-partial marks that directory and its ancestors incomplete and leaves siblings complete.
 

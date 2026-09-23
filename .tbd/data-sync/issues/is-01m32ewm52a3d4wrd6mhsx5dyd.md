@@ -3,15 +3,19 @@ type: is
 id: is-01m32ewm52a3d4wrd6mhsx5dyd
 title: The content tier decides reuse at five inline == sites and never touches Serves
 kind: bug
-status: in_progress
+status: closed
 priority: 0
-version: 4
+version: 5
 delegate: codex@spud10
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:05:47.681Z
-updated_at: 2026-09-23T02:20:46.060Z
+updated_at: 2026-09-23T08:14:06.746Z
+closed_at: 2026-09-23T08:14:06.746Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Verified by reading in an adversarial review, 2026-09-21. This is the finding that invalidates the claim that equality-serve makes content reuse correct by construction.
 

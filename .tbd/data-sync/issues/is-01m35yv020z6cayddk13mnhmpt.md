@@ -3,16 +3,20 @@ type: is
 id: is-01m35yv020z6cayddk13mnhmpt
 title: Hash per-analyzer outcomes in content performance digest
 kind: bug
-status: in_progress
+status: closed
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels: []
 dependencies: []
 parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 created_at: 2026-09-23T01:42:14.847Z
-updated_at: 2026-09-23T01:43:52.592Z
+updated_at: 2026-09-23T08:14:06.781Z
+closed_at: 2026-09-23T08:14:06.781Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Metric-layer review found that content-summary-v2 retained the old flat coverage inputs. Equal numeric totals with different code or words outcomes produce the same correctness digest. Include requested units and complete per-unit coverage, with regression proving empty analyzed code differs from unsupported code and unrequested code. Parent owns final gate and publication.
 

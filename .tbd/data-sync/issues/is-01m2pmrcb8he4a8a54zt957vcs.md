@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmrcb8he4a8a54zt957vcs
 title: "Phase 2 item 4: .gitignore observation projection on every route"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -23,7 +23,11 @@ child_order_hints:
   - is-01m2pyefnttqs5rzqcwbgf2qb5
   - is-01m2pyeg0zegnzm857bvxrbpa6
 created_at: 2026-09-17T02:57:26.887Z
-updated_at: 2026-09-20T05:30:29.038Z
+updated_at: 2026-09-23T08:14:06.967Z
+closed_at: 2026-09-23T08:14:06.967Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 4: The `.gitignore` Observation Projection on Every Route", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.4.1 to P2.4.5; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

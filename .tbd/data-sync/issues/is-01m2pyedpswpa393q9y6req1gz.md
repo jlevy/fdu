@@ -3,9 +3,9 @@ type: is
 id: is-01m2pyedpswpa393q9y6req1gz
 title: "P2.3.6: Session::start and persist_due, used by the command line and Python watch"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -15,7 +15,11 @@ dependencies:
     target: is-01m2pyee0zf4meqknshjmzbz2k
 parent_id: is-01m2pmrbxvnerxyhnjhrswy1ye
 created_at: 2026-09-17T05:46:46.360Z
-updated_at: 2026-09-23T01:53:51.276Z
+updated_at: 2026-09-23T08:14:06.681Z
+closed_at: 2026-09-23T08:14:06.681Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 3: The Execution Plan Model", commit 6. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

@@ -3,15 +3,19 @@ type: is
 id: is-01m32f64vwaa0thyrc4sg5h1cm
 title: Content-sidecar identity encodes the analyzer set three times, masking partial relaxations
 kind: bug
-status: in_progress
+status: closed
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:10:59.707Z
-updated_at: 2026-09-23T02:28:50.657Z
+updated_at: 2026-09-23T08:14:06.774Z
+closed_at: 2026-09-23T08:14:06.774Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Verified by execution, 2026-09-21.
 

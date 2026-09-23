@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmra8yqrcxg27kc6ezg9vd
 title: "Phase 1 item 4: provenance and tree status computed on every route"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -23,7 +23,11 @@ child_order_hints:
   - is-01m2pye70x3nc8p6t827sywb23
   - is-01m2pye7bt83a2erfcav6hhkfc
 created_at: 2026-09-17T02:57:24.765Z
-updated_at: 2026-09-20T05:30:29.017Z
+updated_at: 2026-09-23T08:14:06.960Z
+closed_at: 2026-09-23T08:14:06.960Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 4: Provenance and Tree Status", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P1.4.1 to P1.4.6; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

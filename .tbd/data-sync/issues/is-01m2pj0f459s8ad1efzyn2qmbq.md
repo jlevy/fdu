@@ -3,9 +3,9 @@ type: is
 id: is-01m2pj0f459s8ad1efzyn2qmbq
 title: "Phase 2 item 2: answer model: one typed value per document, serialized by every writer"
 kind: epic
-status: open
+status: closed
 priority: 0
-version: 23
+version: 24
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
@@ -27,7 +27,11 @@ child_order_hints:
   - is-01m2pyebe93530evdeaw8tcxh6
   - is-01m2pyebrt6j2ghh4c4vcdvyxg
 created_at: 2026-09-17T02:09:26.148Z
-updated_at: 2026-09-23T04:01:35.021Z
+updated_at: 2026-09-23T08:14:06.952Z
+closed_at: 2026-09-23T08:14:06.952Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.2.1 to P2.2.8; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

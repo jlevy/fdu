@@ -3,16 +3,20 @@ type: is
 id: is-01m32ewkja67k8pzqate1hdmz5
 title: "Serves is not load-bearing: one call site collapses it to a bool, and its projection lives elsewhere"
 kind: bug
-status: in_progress
+status: closed
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:05:47.082Z
-updated_at: 2026-09-23T02:13:04.860Z
+updated_at: 2026-09-23T08:14:06.739Z
+closed_at: 2026-09-23T08:14:06.739Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Verified by execution in an adversarial review, 2026-09-21.
 

@@ -3,9 +3,9 @@ type: is
 id: is-01m2pyeas8avwnpbxs4tnr9rq0
 title: "P2.2.5: YAML through the walk, matching JSON's shape"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -23,8 +23,12 @@ parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:43.367Z
-updated_at: 2026-09-20T04:35:01.955Z
+updated_at: 2026-09-23T08:14:06.622Z
 started_at: 2026-09-20T04:35:01.955Z
+closed_at: 2026-09-23T08:14:06.622Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 5. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

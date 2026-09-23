@@ -3,9 +3,9 @@ type: is
 id: is-01m2pyea2jz71fks8v1zep7c21
 title: "P2.2.3: JSON Lines through the answer walk; delete collapse"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -19,8 +19,12 @@ parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:42.641Z
-updated_at: 2026-09-20T04:35:01.934Z
+updated_at: 2026-09-23T08:14:06.608Z
 started_at: 2026-09-20T04:35:01.934Z
+closed_at: 2026-09-23T08:14:06.608Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 3. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

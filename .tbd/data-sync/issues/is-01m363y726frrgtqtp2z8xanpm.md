@@ -3,15 +3,19 @@ type: is
 id: is-01m363y726frrgtqtp2z8xanpm
 title: Withdraw failed directory listing evidence consistently in cold and warm reports
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels: []
 dependencies: []
 parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 created_at: 2026-09-23T03:11:23.161Z
-updated_at: 2026-09-23T03:32:39.123Z
+updated_at: 2026-09-23T08:14:06.849Z
+closed_at: 2026-09-23T08:14:06.849Z
+close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
+resolution: null
+duplicate_of: null
 ---
 Final PR117 path-independence at 0d34e327 found 12 Linux cold/warm differences under unreadable src/nested: cached reconciliation retained children_complete=true and emitted known ages while cold emitted incomplete/unknown. Fix canonical listing evidence, preserve newer scoped verification and healthy siblings, and prove excluded failed subtrees do not taint eligible ancestor metrics. Keep registry empty; add real-permission regression and focused concurrency coverage.
 
