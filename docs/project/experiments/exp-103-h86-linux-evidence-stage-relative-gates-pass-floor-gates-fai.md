@@ -409,6 +409,7 @@ experiment:
     change_pct: -31.704
     reason: "The pre-registered Linux floor gates fail on the index tier: default-tree wall is 2.60x the parfloor syscall floor against a 1.4x gate and its peak RSS 6.59x arena_spike against a 3x gate (cold-scan-index 4.86x and 5.03x). Both floor cells are stable (max/min 1.204 and 1.391), so the ratios reject rather than abstain, even though the relative gates pass: default-tree wall -31.70% [-34.31%, -29.15%], cold-scan-index -18.16% [-24.25%, -13.72%], paired peak RSS -35.05% and -49.16%."
     commit: null
+    kept: neither
 ---
 # H86 Linux Evidence Stage: Relative Gates Pass, Floor Gates Fail
 

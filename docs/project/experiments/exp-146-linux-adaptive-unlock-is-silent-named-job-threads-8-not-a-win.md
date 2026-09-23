@@ -300,6 +300,7 @@ experiment:
     change_pct: 1.754
     reason: "unlock silent at ~2us/entry; named jobs --threads 8 no 3% win (aggregate +1.75% regression, index +0.25%); --no-controls is a warm sign not a shipped PORTABLE constant"
     commit: 0a979786
+    kept: neither
 ---
 ## What was predicted
 

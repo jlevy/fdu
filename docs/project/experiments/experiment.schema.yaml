@@ -533,6 +533,17 @@ $defs:
         - baseline
         title: Decision
         type: string
+      kept:
+        anyOf:
+        - enum:
+          - candidate
+          - control
+          - neither
+          type: string
+        - type: 'null'
+        default: null
+        description: "Which measured arm is in the product after this verdict, which is what anything plotting the product's current cost must read. Omitted means what the decision implies: an accepted candidate is kept and every other decision leaves the control in place. State it when that is wrong: 'control' for an accepted arm that never shipped, such as a build-profile screen the release profile did not adopt; 'candidate' for a rejected change that shipped anyway; 'neither' for an evidence stage whose verdict decided a claim about code that stays in the stack regardless, as exp-103 did for H86 on Linux. perf-record writes it explicitly on every new artifact so the claim is in the diff rather than implied."
+        title: Kept
       primary_job:
         description: The job the decision was taken on.
         title: Primary Job
@@ -608,4 +619,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 3a1d6234571cad843856c7839255532f3a7d21c01c5a55c0d93fcc83ddb9724f
+  schema_sha256: fc2be39af64e96b474badb3625b12b24cc5f8f80216ce306a6f3a465ab3fc4e2

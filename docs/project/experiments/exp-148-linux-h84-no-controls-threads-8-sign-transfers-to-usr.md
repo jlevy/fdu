@@ -189,6 +189,7 @@ experiment:
     change_pct: -10.064
     reason: "confirmatory --no-controls sign on nominated /usr: -10.06% quiet; still not a shipped PORTABLE constant; minor_faults inferior"
     commit: a58f9e30
+    kept: neither
 ---
 ## What was predicted
 

@@ -296,6 +296,7 @@ experiment:
     change_pct: -8.347
     reason: "quiet linux-v6.12 cold-scan-index -8.35% [-10.35%, -6.92%] and warm-revalidate -8.15% [-8.64%, -7.07%]; RSS no worse; revalidate component flat so that wall win is spawn; Cargo.toml unchanged (profdata is host-specific)"
     commit: b46edf65
+    kept: control
 ---
 ## What was predicted
 

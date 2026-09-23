@@ -188,6 +188,7 @@ experiment:
     change_pct: -4.981
     reason: "recycle does not capture mimalloc 20%: quiet linux-v6.12 -4.98% [-5.92%, -4.33%]; 450k screening -11.31% n=7; RSS flat; do not lower H85; 3% keep is H147"
     commit: 5c6e6394
+    kept: neither
 ---
 ## What was predicted
 

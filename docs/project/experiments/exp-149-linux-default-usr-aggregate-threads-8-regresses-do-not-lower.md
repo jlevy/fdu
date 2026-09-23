@@ -187,6 +187,7 @@ experiment:
     change_pct: 7.123
     reason: "default gitignore-on /usr aggregate --threads 8 is +7.12% [+3.72%, +11.30%] quiet regression; do not lower unlock or ship PORTABLE from this host"
     commit: 06b12212
+    kept: neither
 ---
 ## What was predicted
 

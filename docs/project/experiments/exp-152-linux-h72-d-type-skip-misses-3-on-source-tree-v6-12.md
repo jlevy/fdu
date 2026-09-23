@@ -187,6 +187,7 @@ experiment:
     change_pct: -1.627
     reason: "quiet linux-v6.12 --no-controls aggregate -1.63% [-3.33%, -0.72%]; under 3%; stats 92474 to 86644; RSS flat; directory-heavy keep is exp-153"
     commit: f841662c
+    kept: neither
 ---
 ## What was predicted
 

@@ -38312,7 +38312,7 @@
      "start_state": "warm"
     }
    ],
-   "kept": null,
+   "kept": "control",
    "number": 154,
    "path": "exp-154-linux-pgo-screen-clears-3-on-index-and-revalidate.md",
    "platform": "Linux",

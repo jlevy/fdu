@@ -185,6 +185,7 @@ experiment:
     change_pct: 1.986
     reason: "H111 floor/RSS gates fail: 450k index 1.78x parfloor vs 1.4x; RSS 5.20x arena_spike vs 3x; aggregate on nominated reals 1.59x and 1.86x vs 1.25x"
     commit: null
+    kept: neither
 ---
 ## What was predicted
 

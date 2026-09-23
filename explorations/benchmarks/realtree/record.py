@@ -22,8 +22,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
+from pydantic import ValidationError
+
 from benchmarks.realtree import experiment as experiment_model
-from benchmarks.realtree.summary import SummaryError, _validator
+from benchmarks.realtree.summary import SummaryError, _validator, model_error
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 SCHEMA_NAME = "experiment.schema.yaml"
@@ -48,6 +50,18 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--primary-metric", default="wall_ns")
     parser.add_argument("--reason", required=True)
     parser.add_argument("--commit", default=None)
+    parser.add_argument(
+        "--kept",
+        choices=("candidate", "control", "neither"),
+        default=None,
+        help=(
+            "which measured arm is in the product after this verdict, when it is not "
+            "what the decision implies: 'control' for an accepted arm that never shipped, "
+            "'candidate' for a rejected change that shipped anyway, 'neither' for an "
+            "evidence stage that decided a claim about code that ships regardless. The "
+            "artifact always states it; omitted, it is written as the decision implies"
+        ),
+    )
     parser.add_argument("--lines-changed", type=int, default=0)
     parser.add_argument("--new-dependency", action="append", default=[])
     parser.add_argument("--new-unsafe", type=int, default=0)
@@ -121,10 +135,22 @@ def main(argv: Sequence[str]) -> int:
             "change_pct": headline,
             "reason": arguments.reason,
             "commit": arguments.commit,
+            # Written out even when it is what the decision implies, so the claim that
+            # an arm shipped sits in the diff under the decision rather than being
+            # inferred by whoever draws the page.
+            "kept": arguments.kept or experiment_model.kept_arm({"decision": arguments.decision}),
         },
         tree_provenance=arguments.tree_provenance,
         tree_reconstructible=arguments.tree_reconstructible,
     )
+    # The model is the contract, and it checks more than shape: the headline has to be
+    # the figure the results hold, and the kept arm has to be one the verdict can name.
+    # Refused before anything is written, so a bad artifact never exists to be
+    # regenerated from.
+    try:
+        experiment_model.Experiment.model_validate(payload)
+    except ValidationError as error:
+        parser.error(model_error(error))
 
     body = (
         arguments.body.read_text(encoding="utf-8")
