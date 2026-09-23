@@ -122,6 +122,7 @@ test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
 
 yaml-selfcheck: build $(NODE_INSTALL_STAMP)
+	$(CARGO) build --locked -p fdu-core --example format_conformance --features watch
 	node scripts/check-yaml.mjs
 
 content-selfcheck: build

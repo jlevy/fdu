@@ -1084,7 +1084,7 @@ def _snapshot_identity(value: Mapping[str, Any] | None) -> SnapshotIdentity | No
 def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
     if value is None:
         return None
-    raw_identity = value["identity"]
+    raw_identity = value.get("identity")
     identity = None
     if raw_identity is not None:
         identity = ContentTierIdentity(
@@ -1099,9 +1099,9 @@ def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
     return ContentStatus(
         bytes=int(value["bytes"]),
         state=ContentState(value["state"]),
-        stale_reason=_stale_reason(value["stale_reason"]),
-        format_version=_limit(value["format_version"]),
-        records=_limit(value["records"]),
+        stale_reason=_stale_reason(value.get("stale_reason")),
+        format_version=_limit(value.get("format_version")),
+        records=_limit(value.get("records")),
         identity=identity,
     )
 
@@ -1115,15 +1115,17 @@ def cache_status_from_dict(value: Mapping[str, Any]) -> CacheStatus:
         path=_wire_path(value),
         bytes=int(value["bytes"]),
         state=CacheState(value["state"]),
-        stale_reason=_stale_reason(value["stale_reason"]),
-        format_version=_limit(value["format_version"]),
+        stale_reason=_stale_reason(value.get("stale_reason")),
+        format_version=_limit(value.get("format_version")),
         leftover_kind=(
-            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
+            LeftoverKind(value.get("leftover_kind"))
+            if value.get("leftover_kind") is not None
+            else None
         ),
-        root=_wire_path(value, "root") if value["root"] is not None else None,
-        entries=_limit(value["entries"]),
-        identity=_snapshot_identity(value["identity"]),
-        content=_content_status(value["content"]),
+        root=_wire_path(value, "root") if value.get("root") is not None else None,
+        entries=_limit(value.get("entries")),
+        identity=_snapshot_identity(value.get("identity")),
+        content=_content_status(value.get("content")),
     )
 
 

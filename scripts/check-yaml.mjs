@@ -39,7 +39,7 @@ try {
   writeFileSync(join(tree, 'docs', 'noncharacter\ufffe.txt'), 'x\n');
 } catch (error) {
   assert.equal(process.platform, 'darwin', 'only Darwin is expected to reject U+FFFE in a name');
-  assert.ok(['EPERM', 'EINVAL'].includes(error.code),
+  assert.ok(['EPERM', 'EINVAL', 'EILSEQ'].includes(error.code),
     `unexpected failure creating the platform-optional noncharacter filename: ${error}`);
 }
 try {
@@ -177,6 +177,26 @@ for (const view of [...views, 'full']) {
       `${view} --analyze ${analyze}: reconstructed JSON Lines differs from JSON`);
     compared += 1;
   }
+}
+
+const probe = process.env.FDU_FORMAT_PROBE
+  ?? join(root, 'target', 'debug', 'examples', 'format_conformance');
+for (const kind of ['cache', 'upsert', 'remove', 'invalidate', 'raw']) {
+  const run = (format) => execFileSync(probe, [kind, format], { encoding: 'utf8' });
+  const expected = exactJson(run('json'));
+  const yaml = run('yaml');
+  assert.doesNotMatch(yaml, /[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/u);
+  for (const version of ['1.1', '1.2']) {
+    assert.deepStrictEqual(parse(yaml, {
+      strict: true, uniqueKeys: true, intAsBigInt: true, version,
+    }), expected, `${kind}: YAML ${version} differs from JSON`);
+  }
+  const records = run('jsonl').trimEnd().split('\n').map(exactJson);
+  const actual = kind === 'cache'
+    ? { ...records[0], caches: records.slice(1) } : records[0];
+  assert.deepStrictEqual(actual, expected, `${kind}: JSON Lines differs from JSON`);
+  if (kind !== 'cache') assert.equal(records.length, 1);
+  compared += 1;
 }
 
 console.log(`yaml self-check passed: ${checked} views parsed, ${compared} cross-format cases`);

@@ -667,3 +667,29 @@ def test_a_scope_this_build_cannot_honour_is_a_refused_request(tmp_path: Path) -
     for route in (fdu.report, fdu.open, fdu.scan):
         with pytest.raises(InvalidArgumentError, match="one_filesystem"):
             route(tmp_path, scan=scope)
+
+
+def test_cache_models_read_wire_presence_without_native_padding() -> None:
+    absent = cache_status_from_dict(
+        {"path": "missing", "bytes": 0, "state": "absent", "content": None}
+    )
+    assert absent.root is None and absent.entries is None and absent.identity is None
+    assert absent.stale_reason is None and absent.leftover_kind is None
+    stale = cache_status_from_dict(
+        {
+            "path": "stale",
+            "bytes": 9,
+            "state": "stale",
+            "stale_reason": "other_engine",
+            "format_version": None,
+            "content": {
+                "bytes": 4,
+                "state": "stale",
+                "stale_reason": "older_format",
+                "format_version": 1,
+            },
+        }
+    )
+    assert stale.stale_reason is fdu.StaleReason.OTHER_ENGINE
+    assert stale.content is not None
+    assert stale.content.format_version == 1 and stale.content.identity is None

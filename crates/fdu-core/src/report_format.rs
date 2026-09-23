@@ -225,28 +225,28 @@ fn emit_scalar(sink: &mut impl Sink, value: Scalar<'_>) {
 
 fn emit_report(sink: &mut impl Sink, report: &Report, with_sections: bool) {
     sink.event(Event::BeginMap(Shape::Block));
-    emit_field(sink, Field::always("schema"), true, |sink| {
+    emit_field(sink, REPORT_FIELDS.schema, true, |sink| {
         emit_scalar(sink, Scalar::Str(REPORT_SCHEMA));
     });
     let generator = generator();
-    emit_field(sink, Field::always("generator"), true, |sink| {
+    emit_field(sink, REPORT_FIELDS.generator, true, |sink| {
         emit_scalar(sink, Scalar::Str(&generator));
     });
     let root = report.root.to_string_lossy();
-    emit_field(sink, Field::always("root"), true, |sink| {
+    emit_field(sink, REPORT_FIELDS.root, true, |sink| {
         emit_scalar(sink, Scalar::Str(&root));
     });
-    emit_raw_identity(sink, "root_raw", &report.root);
-    emit_field(sink, Field::always("request"), true, |sink| emit_request(sink, report));
-    emit_field(sink, Field::always("status"), true, |sink| emit_status(sink, report));
-    emit_field(sink, Field::always("provenance"), true, |sink| emit_provenance(sink, report));
-    emit_field(sink, Field::always("ignore_rules"), true, |sink| {
+    emit_raw_identity(sink, REPORT_FIELDS.root_raw.name, &report.root);
+    emit_field(sink, REPORT_FIELDS.request, true, |sink| emit_request(sink, report));
+    emit_field(sink, REPORT_FIELDS.status, true, |sink| emit_status(sink, report));
+    emit_field(sink, REPORT_FIELDS.provenance, true, |sink| emit_provenance(sink, report));
+    emit_field(sink, REPORT_FIELDS.ignore_rules, true, |sink| {
         emit_ignore_rules(sink, &report.ignore_rules);
     });
-    emit_field(sink, Field::nullable("analysis"), true, |sink| {
+    emit_field(sink, REPORT_FIELDS.analysis, true, |sink| {
         emit_analysis(sink, report.analysis.as_ref());
     });
-    emit_field(sink, Field::when_set("reports"), with_sections, |sink| {
+    emit_field(sink, REPORT_FIELDS.reports, with_sections, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
         for section in &report.sections {
             emit_section(sink, section);
@@ -766,6 +766,33 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
         }
     }
 }
+
+/// The report envelope's ordered field and presence contract.
+struct ReportFields {
+    schema: Field,
+    generator: Field,
+    root: Field,
+    root_raw: Field,
+    request: Field,
+    status: Field,
+    provenance: Field,
+    ignore_rules: Field,
+    analysis: Field,
+    reports: Field,
+}
+
+const REPORT_FIELDS: ReportFields = ReportFields {
+    schema: Field::always("schema"),
+    generator: Field::always("generator"),
+    root: Field::always("root"),
+    root_raw: Field::when_lossy("root_raw"),
+    request: Field::always("request"),
+    status: Field::always("status"),
+    provenance: Field::always("provenance"),
+    ignore_rules: Field::always("ignore_rules"),
+    analysis: Field::nullable("analysis"),
+    reports: Field::when_set("reports"),
+};
 
 /// Why a field is present in a wire document.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2398,6 +2425,99 @@ mod tests {
         ViewSpec::Summary,
     ];
 
+    /// Check a walk against its declaration without parsing or trusting a writer.
+    struct SchemaCheck<S> {
+        inner: S,
+        expected: Vec<&'static str>,
+        next: usize,
+        depth: usize,
+    }
+
+    impl<S: Sink> SchemaCheck<S> {
+        fn report(inner: S, lossy: bool, sections: bool) -> Self {
+            let fields = &REPORT_FIELDS;
+            let ordered = [
+                fields.schema,
+                fields.generator,
+                fields.root,
+                fields.root_raw,
+                fields.request,
+                fields.status,
+                fields.provenance,
+                fields.ignore_rules,
+                fields.analysis,
+                fields.reports,
+            ];
+            let expected = ordered
+                .into_iter()
+                .filter_map(|field| {
+                    let present = match field.presence {
+                        Presence::Always | Presence::Nullable => true,
+                        Presence::WhenLossy => lossy,
+                        Presence::WhenSet => sections,
+                        Presence::WhenAnalyzer(_) => panic!("envelope has no analyzer-owned field"),
+                    };
+                    present.then_some(field.name)
+                })
+                .collect();
+            Self { inner, expected, next: 0, depth: 0 }
+        }
+    }
+
+    impl<S: Sink> Sink for SchemaCheck<S> {
+        type Output = S::Output;
+
+        fn event(&mut self, event: Event<'_>) {
+            match event {
+                Event::BeginMap(_) | Event::BeginSeq(_) => self.depth += 1,
+                Event::EndMap | Event::EndSeq => self.depth -= 1,
+                Event::Key(name) if self.depth == 1 => {
+                    assert_eq!(
+                        Some(&name),
+                        self.expected.get(self.next),
+                        "wire field order/presence"
+                    );
+                    self.next += 1;
+                }
+                Event::Key(_) | Event::Scalar(_) => {}
+            }
+            self.inner.event(event);
+        }
+
+        fn finish(self) -> Self::Output {
+            assert_eq!(self.depth, 0, "unclosed collection");
+            assert_eq!(self.next, self.expected.len(), "required field missing");
+            self.inner.finish()
+        }
+    }
+
+    #[test]
+    fn report_walk_obeys_declared_field_order_and_presence_for_every_writer() {
+        for view in [ViewSpec::Summary, ViewSpec::Documents] {
+            let report = fixture(&[view]);
+            for sections in [false, true] {
+                let mut json = SchemaCheck::report(JsonSink::pretty(), false, sections);
+                emit_report(&mut json, &report, sections);
+                assert!(!json.finish().is_empty());
+                let mut line = SchemaCheck::report(JsonSink::line(), false, sections);
+                emit_report(&mut line, &report, sections);
+                assert!(!line.finish().is_empty());
+                let mut yaml = SchemaCheck::report(YamlSink::new(), false, sections);
+                emit_report(&mut yaml, &report, sections);
+                assert!(!yaml.finish().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "required field missing")]
+    fn schema_check_rejects_a_missing_required_field() {
+        let mut check = SchemaCheck::report(JsonSink::line(), false, true);
+        check.event(Event::BeginMap(Shape::Inline));
+        check.event(Event::EndMap);
+        check.finish();
+    }
+
     fn fixture(views: &[ViewSpec]) -> Report {
         fixture_for(&Query { views: views.to_vec(), ..Query::default() })
     }
@@ -3529,6 +3649,9 @@ mod tests {
             report(&index, &crate::test_support::read_of(&index, query.clone()), &provenance)
                 .expect("report");
         let rendered = render(&files_report, Format::Json, false);
+        let mut checked = SchemaCheck::report(JsonSink::pretty(), true, true);
+        emit_report(&mut checked, &files_report, true);
+        assert_eq!(checked.finish(), rendered);
 
         let lossy = first.to_string_lossy();
         assert_eq!(

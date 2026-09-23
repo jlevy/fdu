@@ -398,7 +398,7 @@ def main() -> None:
         raise AssertionError("expected a zero page denominator to be rejected")
 
     tree = report_dict(index, views=["tree"], depth="all")["reports"][0]["tree"]
-    assert tree["name"] == ".", tree
+    assert tree["name"] == "." and tree["kind"] == "dir", tree
     assert any(child["name"] == "src" for child in tree["children"]), tree
 
     # Several views come back in request order, from one index.

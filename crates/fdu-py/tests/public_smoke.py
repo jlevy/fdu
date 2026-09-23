@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -318,8 +319,27 @@ def check_every_view(root: Path) -> None:
         (fdu.Analysis.ALL, fdu.View.FAMILIES),
     ):
         derived = fdu.scan(str(root), analysis=fdu.AnalysisOptions(analyze=analyze))
-        section = derived.report(fdu.Query()).sections[0]
+        answer = derived.report(fdu.Query())
+        section = answer.sections[0]
         assert section.view is expected, (analyze, section.view, expected)
+        wire = json.loads(answer.render(fdu.Format.JSON))
+        assert answer.as_dict() == wire
+        if isinstance(section, fdu.MetricsSection):
+            native_rows = wire["reports"][0]["metrics"]
+            for row, raw in zip(
+                (section.total, *section.rows),
+                (native_rows["total"], *native_rows["rows"]),
+                strict=True,
+            ):
+                assert {
+                    key: value for key, value in asdict(row.metrics).items() if value is not None
+                } == raw["metrics"]
+                for unit in ("lines", "code", "words"):
+                    coverage = getattr(row, f"{unit}_coverage")
+                    assert (None if coverage is None else dict(coverage)) == raw["coverage"].get(
+                        unit
+                    )
+                assert (None if row.pages is None else asdict(row.pages)) == raw.get("pages")
 
     # `full` is a total the enum offers, so the binding must honour it: it once listed
     # `full` as valid in its own error message while rejecting it.

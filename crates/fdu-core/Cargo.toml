@@ -28,6 +28,10 @@ name = "watch_session"
 path = "tests/watch_session_integration.rs"
 required-features = ["watch"]
 
+[[example]]
+name = "format_conformance"
+required-features = ["watch"]
+
 [features]
 # Embedding consumers pay only for the retained one-shot engine unless they opt in.
 # The shipped CLI and Python package enable their capabilities explicitly below their

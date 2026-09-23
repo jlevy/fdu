@@ -1104,137 +1104,18 @@ fn render_cache_status(paths: Vec<PathBuf>, scope: &str, format: &str) -> PyResu
     Ok(fdu_core::report_format::render_cache_status(&statuses, scope, format))
 }
 
-/// One cache file's status as a dict.
+/// Decode the authoritative cache wire row instead of maintaining a second schema.
 fn cache_status_dict<'py>(
     py: Python<'py>,
     status: &fdu_core::CacheStatus,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let dict = PyDict::new(py);
-    dict.set_item("path", status.path.as_os_str())?;
-    dict.set_item("bytes", status.bytes)?;
-    dict.set_item("state", status.state.label())?;
-    // Named arms, not a catch-all: a new `CacheState` variant should stop here and be
-    // decided, rather than compile into a row whose reason and kind are silently `None`.
-    let stale = match &status.state {
-        fdu_core::CacheState::Stale(reason) => Some(*reason),
-        fdu_core::CacheState::Current(_)
-        | fdu_core::CacheState::Leftover(_)
-        | fdu_core::CacheState::Unrecognized
-        | fdu_core::CacheState::Absent => None,
-    };
-    set_stale_items(&dict, stale)?;
-    match &status.state {
-        fdu_core::CacheState::Leftover(kind) => dict.set_item("leftover_kind", kind.label())?,
-        fdu_core::CacheState::Current(_)
-        | fdu_core::CacheState::Stale(_)
-        | fdu_core::CacheState::Unrecognized
-        | fdu_core::CacheState::Absent => dict.set_item("leftover_kind", py.None())?,
-    }
-    if let Some(info) = status.snapshot() {
-        dict.set_item("root", info.root.as_os_str())?;
-        dict.set_item("entries", info.entries)?;
-        dict.set_item("identity", snapshot_identity_dict(py, info.identity)?)?;
-    } else {
-        dict.set_item("root", py.None())?;
-        dict.set_item("entries", py.None())?;
-        dict.set_item("identity", py.None())?;
-    }
-    match &status.content {
-        Some(content) => dict.set_item("content", content_status_dict(py, content)?)?,
-        None => dict.set_item("content", py.None())?,
-    }
-    Ok(dict)
-}
-
-/// `stale_reason` and `format_version`, both `None` unless the store is stale.
-fn set_stale_items(
-    dict: &Bound<'_, PyDict>,
-    reason: Option<fdu_core::StaleReason>,
-) -> PyResult<()> {
-    dict.set_item("stale_reason", reason.map(fdu_core::StaleReason::label))?;
-    dict.set_item("format_version", reason.and_then(fdu_core::StaleReason::format_version))
-}
-
-/// The content sidecar beside a snapshot, keyed as `fdu.cache/2` spells it.
-fn content_status_dict<'py>(
-    py: Python<'py>,
-    content: &fdu_core::ContentStatus,
-) -> PyResult<Bound<'py, PyDict>> {
-    let dict = PyDict::new(py);
-    dict.set_item("bytes", content.bytes)?;
-    dict.set_item("state", content.state.label())?;
-    match &content.state {
-        fdu_core::ContentState::Current(info) => {
-            set_stale_items(&dict, None)?;
-            dict.set_item("records", info.records)?;
-            dict.set_item("identity", content_identity_dict(py, &info.identity)?)?;
-        }
-        fdu_core::ContentState::Stale(reason) => {
-            set_stale_items(&dict, Some(*reason))?;
-            dict.set_item("records", py.None())?;
-            dict.set_item("identity", py.None())?;
-        }
-    }
-    Ok(dict)
-}
-
-/// A snapshot's entry and `.gitignore` control tiers, as `fdu.cache/2` nests them.
-fn snapshot_identity_dict(
-    py: Python<'_>,
-    identity: fdu_core::SnapshotIdentity,
-) -> PyResult<Bound<'_, PyDict>> {
-    let dict = PyDict::new(py);
-    dict.set_item("entries", entry_identity_dict(py, identity.entries)?)?;
-    match identity.controls {
-        fdu_core::ControlTierIdentity::NotObserved => dict.set_item("ignore_rules", py.None())?,
-        fdu_core::ControlTierIdentity::Observed { limits } => {
-            let bounds = PyDict::new(py);
-            bounds.set_item("budget", limits.budget)?;
-            bounds.set_item("line_limit", limits.line_limit)?;
-            let controls = PyDict::new(py);
-            controls.set_item("limits", bounds)?;
-            dict.set_item("ignore_rules", controls)?;
-        }
-    }
-    Ok(dict)
-}
-
-/// An entry tier's engine, scope, type-rules, and reducer-set identity.
-fn entry_identity_dict(
-    py: Python<'_>,
-    identity: fdu_core::EntryTierIdentity,
-) -> PyResult<Bound<'_, PyDict>> {
-    let dict = PyDict::new(py);
-    dict.set_item("engine", identity.engine)?;
-    dict.set_item("max_depth", identity.scope.max_depth)?;
-    dict.set_item("follow_symlinks", identity.scope.follow_symlinks)?;
-    dict.set_item("one_filesystem", identity.scope.one_filesystem)?;
-    dict.set_item("hidden_fingerprint", identity.scope.hidden_fingerprint)?;
-    dict.set_item("exclude_special", identity.scope.exclude_special)?;
-    dict.set_item("type_rules_fingerprint", identity.type_rules_fingerprint)?;
-    dict.set_item("reducers_fingerprint", identity.reducers_fingerprint)?;
-    Ok(dict)
-}
-
-/// A content tier's entry tier, which holds its type rules, then its analyzer set, options,
-/// and analyzers.
-fn content_identity_dict<'py>(
-    py: Python<'py>,
-    identity: &fdu_core::ContentTierIdentity,
-) -> PyResult<Bound<'py, PyDict>> {
-    let dict = PyDict::new(py);
-    dict.set_item("entries", entry_identity_dict(py, identity.entries)?)?;
-    dict.set_item("analyze", identity.analysis.labels())?;
-    dict.set_item("options_fingerprint", identity.provenance.options_fingerprint.0)?;
-    let analyzers = PyList::empty(py);
-    for (id, version) in &identity.provenance.analyzers {
-        let analyzer = PyDict::new(py);
-        analyzer.set_item("id", id.0)?;
-        analyzer.set_item("version", version.0)?;
-        analyzers.append(analyzer)?;
-    }
-    dict.set_item("analyzers", analyzers)?;
-    Ok(dict)
+    let document = fdu_core::report_format::render_cache_status(
+        std::slice::from_ref(status),
+        fdu_core::CacheScope::Root,
+        fdu_core::report_format::Format::Json,
+    );
+    let parsed = py.import("json")?.call_method1("loads", (document,))?;
+    Ok(parsed.get_item("caches")?.get_item(0)?.cast_into::<PyDict>()?)
 }
 
 /// The cache directory this build would use for a root.
