@@ -42,7 +42,7 @@ stack pass.
 | --- | --- | --- |
 | Per-analyzer values, coverage, and cache reuse | `fdu-azz3`, `fdu-ky5m`, `fdu-7dj6`, `fdu-ugom`, `fdu-h14g`, `fdu-4vbi`, `fdu-82vm`; P2.1 children | Core-model Phase 2 item 1. Every requested metric agrees in each row and total across analyzer combinations; unrequested metrics are absent; operational failures are retried. |
 | Typed answers and lossless writers | `fdu-fft9`, `fdu-bqb7`, `fdu-c2ml`, `fdu-up8j`, `fdu-b6iu`; P2.2 children | Core-model Phase 2 item 2. JSON, reconstructed JSONL, strict YAML 1.1/1.2, and public Python agree for reports, changes, and cache status, including adversarial and native paths. |
-| Truthful state, reconciliation, and watch handoff | `fdu-awjm`, `fdu-szll`, `fdu-yfb7`, `fdu-ems3`, `fdu-f9fv`, `fdu-sb82`, `fdu-08aj`, `fdu-0ywm`, `fdu-aach`, `fdu-jott`, `fdu-4239`; P1.4 children | Core-model Phase 1 item 4 and engine commit boundaries. Unverified descendants are dropped; new observations supersede only their verified scope; unrelated errors remain visible; watch capture covers registration and drain. |
+| Truthful state, reconciliation, and watch handoff | `fdu-awjm`, `fdu-szll`, `fdu-yfb7`, `fdu-ems3`, `fdu-f9fv`, `fdu-bwo2`, `fdu-sb82`, `fdu-08aj`, `fdu-0ywm`, `fdu-aach`, `fdu-jott`, `fdu-4239`; P1.4 children | Core-model Phase 1 item 4 and engine commit boundaries. Unverified descendants are dropped; new observations supersede only their verified scope; unrelated errors remain visible; watch capture covers registration and drain. |
 | Controls-off projection on every route | `fdu-ssyf`, `fdu-qsos`; P2.4 children | Core-model Phase 2 item 4. Projected cold-equivalent answers work on retained, opened, report, and initial-watch routes without overwriting the stronger snapshot. |
 | One execution plan and persistence policy | `fdu-838z`, `fdu-2o2r`, `fdu-kuev`; P2.3 children | Core-model Phase 2 item 3. All routes consume `Delivery` and `Plan`; read admission, writes, partial outcomes, refresh, and watch persistence have one owner. |
 | Windows validity and independent oracle | `fdu-6act`, `fdu-ns3o` | PR #98 and the stored-state validity contract. Oracle timestamps saturate correctly, zero remains zero, locked metadata follows the same documented fallback, and full file identity participates in validation. |
@@ -64,10 +64,10 @@ The native GitHub stack is #111. Its current lower layers are
 [typed answers (#113)](https://github.com/jlevy/fdu/pull/113), and
 [serving state (#114)](https://github.com/jlevy/fdu/pull/114),
 [execution planning (#115)](https://github.com/jlevy/fdu/pull/115), and
-[harness acceptance (#116)](https://github.com/jlevy/fdu/pull/116). The composed
-directory-query surface extends these layers.
-The core-model layers form one dependent merge group: the measured-value layer alone
-does not provide the final wire contract.
+[harness acceptance (#116)](https://github.com/jlevy/fdu/pull/116), and
+[composed directory queries (#117)](https://github.com/jlevy/fdu/pull/117). The
+core-model layers form one dependent merge group: the measured-value layer alone does
+not provide the final wire contract.
 
 PR #103 carries the opened-Python diagnostics fix.
 Its functional directory-query changes are ported into the final surface composition
@@ -148,9 +148,18 @@ with a claim of cross-set reuse.
 
 ### Remaining Acceptance
 
-- [ ] Finish `fdu-0ssl`: assign distinct golden coverage keys to each projection refusal
-  reason and require those keys, so removing one refusal case cannot leave coverage
-  green.
+- [x] Finish `fdu-0ssl`: distinct golden keys and corpus checks cover all three
+  projection refusals, including an actual oversized continuation beside a successful
+  lookup (`bdc1c7b2`, published through `3a3ad5c8`).
+- [ ] Resolve `fdu-bwo2`: the composed full matrix found 12 Linux cases where warm
+  reconciliation retained directory-listing completeness after an unreadable boundary,
+  producing known ages where a cold scan reported unknown ages.
+  Correct the canonical listing evidence, preserve newer verification, and test
+  exclusions and recovery.
+  This finding is not added to the final exception registry.
+- [x] Install the reviewed, pinned `uv` before release-plan tests (`fdu-5w7f`,
+  `c2542f55`); the planning job passes in rehearsal run `35812633721`. Packaged-artifact
+  acceptance remains separate.
 - [x] Correct cache-only directory completeness (`fdu-c22r`, `801bf7a7`) and qualify the
   machine-format depth exemption to flat projections (`fdu-93e8`, `ea7baf50`).
 - [ ] Run `make check` and `make cross-lint` on the composed candidate after all fixes.
@@ -160,7 +169,7 @@ with a claim of cross-set reuse.
 - [ ] Complete the packaged-artifact rehearsal and release end-to-end verification
   required by `fdu-tyvq`; local native-extension tests do not replace wheel evidence.
 
-The audit established no further production correctness gap in these contracts.
+The focused audit preceded the composed matrix finding `fdu-bwo2` above.
 Accepted scope deferrals and performance work remain separate; passing focused tests or
 clearing a review does not establish these final acceptance results.
 
