@@ -4556,31 +4556,30 @@ fn reconcile_target_inner(
         };
 
         #[cfg(target_os = "macos")]
-        let used_bulk = if !walk_hook_covers(&abs_dir) {
-            if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
-                report.scan.dirs_read += 1;
-                for entry in entries {
-                    let baseline = match known.remove(&entry.name) {
-                        Some(baseline) => baseline,
-                        None => target.expectation(&rel_dir.join(&entry.name))?,
-                    };
-                    process_entry(
-                        entry.name,
-                        entry.kind,
-                        entry.attrs,
-                        baseline,
-                        &mut control_seen,
-                        target,
-                        &mut queue,
-                        &mut batch,
-                        sink,
-                        &mut report,
-                    )?;
-                }
-                true
-            } else {
-                false
+        let used_bulk = if walk_hook_covers(&abs_dir) {
+            false
+        } else if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir))
+        {
+            report.scan.dirs_read += 1;
+            for entry in entries {
+                let baseline = match known.remove(&entry.name) {
+                    Some(baseline) => baseline,
+                    None => target.expectation(&rel_dir.join(&entry.name))?,
+                };
+                process_entry(
+                    entry.name,
+                    entry.kind,
+                    entry.attrs,
+                    baseline,
+                    &mut control_seen,
+                    target,
+                    &mut queue,
+                    &mut batch,
+                    sink,
+                    &mut report,
+                )?;
             }
+            true
         } else {
             false
         };

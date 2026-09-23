@@ -61,7 +61,7 @@ impl TreeStatus {
         let content_tier_partial = request.basis.content.is_enabled()
             && index
                 .content()
-                .and_then(|content| content.state())
+                .and_then(crate::content::ContentIndex::state)
                 .is_some_and(|tier| tier.freshness == Freshness::Partial);
         if content_tier_partial && content_failures == 0 {
             detail_count = detail_count.saturating_add(1);

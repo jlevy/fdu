@@ -3,8 +3,8 @@
 The invariant (see the explicit core models plan, "The Rule"): for a request, tree
 state, delivery, and any history, a run returns the cold run's content and tree status,
 a named failure, or, under `--cache only`, a labelled stale answer equal to a cold run at
-an earlier state. Provenance (`source`, `freshness`, `scan_started_at`, `generated_at`)
-is excluded from the comparison. Every route returns the same kind of outcome for the
+an earlier state. The nested `provenance` object is excluded from the comparison.
+Every route returns the same kind of outcome for the
 same request, delivery, and history.
 
 Usage:
@@ -40,8 +40,6 @@ import matrix  # noqa: E402
 import registry  # noqa: E402
 from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
 
-PROVENANCE_KEYS = ("source", "freshness", "scan_started_at", "generated_at")
-
 Outcome = Literal["complete", "partial", "failure"]
 
 # The one failure `--cache only` may answer with: no stored state serves the request.
@@ -70,7 +68,11 @@ class Invocation:
     def outcome(self) -> Outcome:
         if self.answer is None:
             return "failure"
-        return "partial" if self.answer.get("complete") is False else "complete"
+        status = self.answer.get("status")
+        complete = status.get("complete") if isinstance(status, dict) else None
+        if not isinstance(complete, bool):
+            return "failure"
+        return "complete" if complete else "partial"
 
 
 @dataclass(frozen=True)
@@ -129,7 +131,9 @@ def normalize(answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         encoded = json.dumps(answer).replace(json.dumps(root)[1:-1], ROOT_PLACEHOLDER)
         answer = json.loads(encoded)
     content = dict(answer)
-    provenance = {key: content.pop(key, None) for key in PROVENANCE_KEYS}
+    provenance = content.pop("provenance", {})
+    if not isinstance(provenance, dict):
+        raise TypeError("report provenance must be an object")
     return content, provenance
 
 
@@ -250,7 +254,11 @@ def compare(
         if earlier_content == measured_content:
             if provenance["freshness"] == "stale":
                 return Verdict("stale")
-            return Verdict("differs", ("freshness",), (f"freshness={provenance['freshness']}",))
+            return Verdict(
+                "differs",
+                ("provenance.freshness",),
+                (f"freshness={provenance['freshness']}",),
+            )
     sample = tuple(f"{p}: {json.dumps(a)} -> {json.dumps(b)}" for p, a, b in diff[:12])
     return Verdict("differs", tuple(sorted({generalize(p) for p, _, _ in diff})), sample)
 

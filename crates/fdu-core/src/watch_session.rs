@@ -432,7 +432,7 @@ impl Session {
                         ignored: Some(*current_ignored),
                         clock,
                     }),
-                    (false, true) | (true, true) => Some(Change {
+                    (_, true) => Some(Change {
                         path: path.clone(),
                         kind: ChangeKind::Upsert,
                         entry_kind: Some(entry.kind),
@@ -609,14 +609,13 @@ mod tests {
             analysis_workers: 0,
         };
 
-        let error = match Session::new(
+        let Err(error) = Session::new(
             IndexHandle::new(index.clone()),
             request.clone(),
             &delivery,
             WatchConfig::default(),
-        ) {
-            Ok(_) => panic!("a partial handoff is refused"),
-            Err(error) => error,
+        ) else {
+            panic!("a partial handoff is refused");
         };
         assert!(matches!(error, Error::ObservationHandoffIncomplete));
 

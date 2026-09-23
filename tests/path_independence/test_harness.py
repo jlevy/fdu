@@ -21,16 +21,23 @@ from runner import Invocation, case_key, compare, normalize
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/6",
-        "source": "cold_scan",
-        "freshness": "fresh",
-        "scan_started_at": "2026-01-01T00:00:00Z",
-        "generated_at": "2026-01-01T00:00:01Z",
-        "complete": True,
-        "errors": [],
+        "schema": "fdu.report/7",
+        "status": {"complete": True, "errors": []},
+        "provenance": {
+            "source": "cold_scan",
+            "freshness": "fresh",
+            "scan_started_at": "2026-01-01T00:00:00Z",
+            "generated_at": "2026-01-01T00:00:01Z",
+        },
         "reports": [{"rows": [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 2}]}],
     }
-    base.update(overrides)
+    for key, value in overrides.items():
+        if key in {"complete", "errors"}:
+            base["status"][key] = value
+        elif key in {"source", "freshness", "scan_started_at", "generated_at"}:
+            base["provenance"][key] = value
+        else:
+            base[key] = value
     return base
 
 
@@ -46,8 +53,8 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(
             set(provenance), {"source", "freshness", "scan_started_at", "generated_at"}
         )
-        self.assertIn("complete", content)
-        self.assertIn("errors", content)
+        self.assertIn("complete", content["status"])
+        self.assertIn("errors", content["status"])
         warm = answer(source="warm_revalidate", freshness="stale", generated_at="later")
         self.assertEqual(compare(cli(answer()), cli(warm), policy="auto").kind, "same")
 
@@ -55,7 +62,7 @@ class CompareTests(unittest.TestCase):
         partial = answer(complete=False, errors=["x: permission denied"])
         verdict = compare(cli(answer()), cli(partial), policy="auto")
         self.assertEqual(verdict.kind, "differs")
-        self.assertEqual(verdict.paths, ("complete", "errors[]"))
+        self.assertEqual(verdict.paths, ("status.complete", "status.errors[]"))
 
     def test_list_indices_are_generalized(self) -> None:
         swapped = answer(reports=[{"rows": [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 3}]}])
@@ -80,7 +87,9 @@ class CompareTests(unittest.TestCase):
         there = answer(root="C:\\copy\\tree", errors=["C:\\copy\\tree/src: denied"])
         self.assertEqual(compare(cli(here), cli(there), policy="auto").kind, "same")
         elsewhere = answer(root="/tmp/one/tree", errors=["/tmp/one/tree/docs: denied"])
-        self.assertEqual(compare(cli(here), cli(elsewhere), policy="auto").paths, ("errors[]",))
+        self.assertEqual(
+            compare(cli(here), cli(elsewhere), policy="auto").paths, ("status.errors[]",)
+        )
 
     def test_a_cache_only_failure_is_a_named_refusal(self) -> None:
         miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
@@ -125,7 +134,7 @@ class CompareTests(unittest.TestCase):
         unlabelled = cli(answer(freshness="fresh"))
         self.assertEqual(compare(after_change, stale, policy="only", earlier=earlier).kind, "stale")
         verdict = compare(after_change, unlabelled, policy="only", earlier=earlier)
-        self.assertEqual((verdict.kind, verdict.paths), ("differs", ("freshness",)))
+        self.assertEqual((verdict.kind, verdict.paths), ("differs", ("provenance.freshness",)))
         self.assertEqual(
             compare(after_change, stale, policy="auto", earlier=earlier).kind, "differs"
         )
