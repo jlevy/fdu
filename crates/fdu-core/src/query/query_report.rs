@@ -2509,11 +2509,11 @@ mod tests {
         assert_eq!((files[0].complete, files[0].age_ns), (None, Some(-50)));
     }
 
-    /// A one-shot walk that finished with errors records that it was partial, not where,
-    /// so no directory row can claim a complete subtree; a walk that finished records
-    /// every directory as listed.
+    /// A legacy unscoped partial marker carries no authoritative child-list evidence,
+    /// so no directory row can claim completeness. Scoped scan failures preserve healthy
+    /// siblings, as the public partial-directory integration test proves.
     #[test]
-    fn a_partial_one_shot_index_marks_every_directory_row_incomplete() {
+    fn an_unscoped_partial_marker_marks_every_directory_row_incomplete() {
         let directories = |index: &Index| {
             files_of(&run(
                 index,
