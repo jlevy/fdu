@@ -240,9 +240,9 @@ The target models are in
 | Concept | Covers | Defined today | One explicit model? |
 | --- | --- | --- | --- |
 | Request | Scope, content axis, selection, views, defaults, validation | `Request { basis: Basis { root, scope, content }, query, now }`, `RequestSpec`, `RequestError`, and one defaults table (`query/query_request.rs`); `ReportRequest` carries the read half at an opened root | Yes. Both surfaces build through `RequestSpec`, `report` and `prepare_report*` take a validated `Request`, and every route validates before it reads stored state |
-| Delivery | Cache policy, worker counts, partial acceptance, watch | `Delivery { cache, cache_path, accept_partial, watch, analysis_workers }` (`query/query_request.rs`), consumed by `prepare_report*`, the watch session, and both surfaces | Partly. One type enumerates them, and `ScanConfig`’s `threads`, `batch_size`, and `order` stay there until one `Workers` takes both counts |
-| Execution plan | Which path answers, and what each cache policy reads and writes | `plan_report` (`execution.rs`); `open_for_report`, `SaveTargets`, and `cold_scan_save_targets` (`lib.rs`); the command line’s `save_live` for watch | No. Read and write rules are coded per path |
-| Stored-state identity | Metadata snapshot, control state, classification, content sidecar, and which requests each may serve | `EntryScope`, `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity` with its `AnalyzerProvenance`, their fixed-width codecs, `serves_snapshot`, and the per-tier write rules (`stored_state.rs`), recorded in the format-5 snapshot and format-7 content-sidecar headers (`snapshot.rs`, `content_cache.rs`), which cache status reports as `fdu.cache/2`; `snapshot_scope_serves` (`lib.rs`); `ContentIndex::prepare` and `load_content_cache` | Partly. Every tier records its typed identity, serves by equality, and is written by its own rule, but the snapshot’s one report-only projection is coded in `snapshot_scope_serves` on one route |
+| Delivery | Cache policy, workers, traversal, batching, partial acceptance, watch | `Delivery`, `Workers`, and `Delivery::DEFAULTS` (`query/query_request.rs`) | Yes. Every route consumes operational choices from delivery; low-level scanner and analyzer configurations are derived executor inputs, outside semantic identity |
+| Execution plan | Which route answers, stored-state admission, verification, writes, and partial acceptance | `Plan`, `Route`, `Load`, `Verify`, `plan`, `Plan::admit`, `Plan::writes`, and `Plan::outcome` (`execution.rs`); `Session::persist_due` owns live throttling | Yes. Executors consume the plan, and the command line and Python share the engine’s persistence policy |
+| Stored-state identity | Entry, control, and content tiers and the requests they may serve | `EntryTierIdentity`, `ControlTierIdentity`, `SnapshotIdentity`, `ContentTierIdentity`, `ContentAdmission`, and `ContentProjection` (`stored_state.rs`); `snapshot::load_serving` applies snapshot projection | Yes. Snapshot loading applies the serving relation before returning an index; content reads and restores require admitted identities and records |
 | Per-item validity | When a stored entry or record is still current | `Attrs` equality in index upserts; `Fingerprint` checks in content loading, `pending_analysis_candidates`, and `apply_analysis` | Partly. Metadata compares six attributes and content five, each at its own call sites |
 | Measured value | What each metric means, and how coverage is decided | The `METRICS` registry and per-unit outcomes in `FileAnalysis`; `ReportMetricValues` and per-unit coverage in `MetricRow`; `document_words` and `pages` in `query_report.rs` | Yes. The registry owns metric names and units, each requested unit records its own outcome, and absent units stay absent from reports |
 | Provenance | Source, freshness, observation time, completeness, errors | `TreeStatus` and `ReportProvenance`, including per-tier `TierState`; per-entry `Provenance` in `engine_contract.rs` | Yes. Report status, delivery provenance, and retained-tier provenance are separate values; an unavailable observation time is `None` rather than an invented timestamp |
@@ -343,7 +343,7 @@ The synchronous Rust boundary has one constructor and five lifecycle operations:
 
 ~~~rust
 impl OpenedIndex {
-    pub fn open(root: &Path, options: OpenOptions) -> Result<Self>;
+    pub fn open(plan: &Plan, options: OpenOptions) -> Result<Self>;
     pub fn read(&self, request: ReadRequest) -> Result<ReadResponse>;
     pub fn changes(&self, request: ChangeRequest) -> Result<ChangePoll>;
     pub fn refresh(&self, paths: &[PathBuf]) -> Result<RefreshResult>;
@@ -354,7 +354,11 @@ impl OpenedIndex {
 
 Names may follow established fdu vocabulary, but the responsibilities and shared-state
 semantics are stable.
-The associated constructor preserves the existing blocking free `open()` contract.
+The associated constructor consumes a `Route::Opened` plan and preserves the blocking
+free `open(&Basis, &Delivery)` lifecycle.
+Progressive discovery accepts cache-off delivery without content analysis; observation
+is configured by `OpenOptions`. Unsupported delivery combinations fail before discovery
+starts.
 
 #### Reports and derived report plans
 
@@ -420,9 +424,9 @@ The report echoes the request, never the store; every report uses the same schem
 version.
 
 Live paths refuse what they cannot keep current.
-`watch_session::Session::new` refuses analyzed content rather than reporting the metrics
-it opened with as fresh, and an opened-root read refuses a `documents` view rather than
-answering zero words.
+`watch_session::Session::start` refuses analyzed content rather than reporting the
+metrics it opened with as fresh, and an opened-root read refuses a `documents` view
+rather than answering zero words.
 
 #### Opened and long-lived
 
@@ -967,9 +971,6 @@ the corresponding items from
 
 ### Potential Improvements
 
-- Model the request, execution plan, stored-state identity, per-item validity,
-  provenance, and answer shape once in the engine, as the explicit core models plan
-  describes, so every path and surface applies the same rules.
 - Add mixed-source progressive serving after per-subtree trust and deletion semantics
   have a reviewed composition proof.
 - Add maintained projections only when recorded read workloads show that bounded

@@ -225,9 +225,6 @@ client has proven it.
 
 ### Potential Improvements
 
-- Hold every writer to one field-level schema, delete the unused native dict, and
-  compare the Python models with the rendered formats, so writer agreement is tested
-  rather than assumed.
 - Add warm-history replays to parity, so a golden also checks that a cached answer
   equals the cold one.
 - Generalize the parity runner to register another public binding without copying the
