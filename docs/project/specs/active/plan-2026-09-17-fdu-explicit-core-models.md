@@ -372,41 +372,46 @@ These are breaking changes, and they land before 0.1.0 is published.
 
 ## Implementation Plan
 
+The implementation checks below reflect the composed candidate audit of September 22.
+They record implementation and focused validation, not merge or release acceptance.
+The [delivery plan](plan-2026-09-22-fdu-alpha-correctness-stack.md#remaining-acceptance)
+tracks remaining harness work, final platform gates, CI, and packaged-artifact evidence.
+
 ### Phase 1: The Semantic Core
 
-- [ ] Land the path-independence harness in `tests/` with a registry of known violations
-  seeded from the evidence (the warm, mutation, and cross-surface cases), which fails on
-  any new difference and on any stale entry.
+- [x] Implement the path-independence harness in `tests/` with a registry of known
+  violations seeded from the evidence (the warm, mutation, and cross-surface cases),
+  which fails on any new difference and on any stale entry.
   Add an unreadable-subtree mutation.
   A bounded subset runs in `make check` and on every pull request; the full matrix runs
   on a schedule or by label.
-- [ ] Give the content sidecar a complete identity (scope, engine fingerprint, analyzer
+- [x] Give the content sidecar a complete identity (scope, engine fingerprint, analyzer
   versions and options) and serve content by equality of analyzer sets; apply the
   per-tier write rule; give the snapshot header both tier identities.
-  Measure the registry afterwards: it should hold only the projection-route and
-  unverified-subtree classes.
-- [ ] Build the request model by composition; carry `content` and `now` to the reader;
+  The later state and projection layers address the remaining projection-route and
+  unverified-subtree classes; final all-platform conformance remains pending.
+- [x] Build the request model by composition; carry `content` and `now` to the reader;
   move validation and defaults into it (allocated sizes, tree view for watch); make
   opened reads and Python `Index` validate through it; refuse `--watch --cache only`,
   and refuse an analyzed index in the Rust `Session` and Python `Index.watch()`.
-- [ ] Build the provenance model with the tree-status split; compute tree status and
+- [x] Build the provenance model with the tree-status split; compute tree status and
   provenance on every route, including watch repaints; give `scan_started_at` one
   meaning; record every failed path during a walk; drop retained facts under a subtree a
   pass cannot verify.
 
 ### Phase 2: The Complete Design
 
-- [ ] Move metric definitions and coverage semantics into the analyzer registry; store
+- [x] Move metric definitions and coverage semantics into the analyzer registry; store
   per-analyzer results and coverage; make unrequested metrics absent; group by name and
   report probes as detection; define `document_words` and `pages` as above.
   Add the metric-independence test.
-- [ ] Build the answer model with a field schema; move every writer onto it, including
+- [x] Build the answer model with a field schema; move every writer onto it, including
   the YAML scalar policy and JSON Lines without string rewriting; build the Python
   models from it; delete the native dict; add the writer-equality test.
-- [ ] Build the execution plan model with the typed `Delivery`; route one-shot reports,
+- [x] Build the execution plan model with the typed `Delivery`; route one-shot reports,
   `open_for_report`, Python `Index` refresh and watch, the command line’s watch, and
   opened roots through it.
-- [ ] Apply the `.gitignore` observation projection on every route, at snapshot load.
+- [x] Apply the `.gitignore` observation projection on every route, at snapshot load.
 - [ ] Empty the known-violation registry; remove the Known Gaps sections from the
   architecture documents and the cache design.
 
@@ -1100,7 +1105,10 @@ convenience and none changes an answer or leaves a concept without its model:
   answer. Store headers carry tier identities now, so keying later changes file naming
   only (`fdu-w3l5`).
 - **Content subset projection.** Serving fewer analyzers from a record set holding more
-  arrives after per-analyzer records ship; until then a different analyzer set re-reads.
+  remains deferred after per-analyzer records ship; a different analyzer set re-reads.
+  Request-based metric projection and proof-bearing equality admission are implemented.
+  Widening admission requires row-level warm-versus-cold equivalence for every consumer
+  of `request.basis.content`; per-analyzer storage alone does not establish containment.
 - **Equivalent scopes.** A depth bound beyond the tree’s height, or a `.gitignore`
   budget no file reaches, stays a distinct identity.
 - **Retaining facts under an unverified subtree.** A pass drops them, which matches a

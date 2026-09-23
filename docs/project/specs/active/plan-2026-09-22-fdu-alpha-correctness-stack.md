@@ -62,8 +62,10 @@ The native GitHub stack is #111. Its current lower layers are
 [this plan (#110)](https://github.com/jlevy/fdu/pull/110),
 [measured values (#112)](https://github.com/jlevy/fdu/pull/112),
 [typed answers (#113)](https://github.com/jlevy/fdu/pull/113), and
-[serving state (#114)](https://github.com/jlevy/fdu/pull/114). Execution planning,
-harness acceptance, and surface composition extend that stack.
+[serving state (#114)](https://github.com/jlevy/fdu/pull/114),
+[execution planning (#115)](https://github.com/jlevy/fdu/pull/115), and
+[harness acceptance (#116)](https://github.com/jlevy/fdu/pull/116). The composed
+directory-query surface extends these layers.
 The core-model layers form one dependent merge group: the measured-value layer alone
 does not provide the final wire contract.
 
@@ -94,24 +96,73 @@ In particular:
   contract. Document the combined unreleased report shape under the repository’s accepted
   pre-1.0 schema policy.
 
-The execution-plan model is still required; recovering serializers and projection alone
-does not finish the core-model specification.
+The composed candidate implements the execution-plan model, including refresh and watch
+persistence.
+Its implementation status is separate from final conformance and publication
+acceptance.
 
 ## Implementation Plan
 
-### Recover and Complete the Owning Layers
+### Implemented Contracts
+
+The September 22 audit of the composed surface through `a920b393` found the following
+implementations present and independently reviewed.
+Checked items describe implemented behavior and focused evidence; they do not close the
+owning beads or final gates.
 
 - [x] Finish and independently review the Windows oracle correction on PR #98.
 - [x] Preserve PR #99’s reviewed ignore and test-precondition fixes as a prerequisite.
-- [ ] Recover independent metric records and complete row-level acceptance checks.
-- [ ] Recover typed status, provenance, and shared writers; finish all document kinds
-  and public Python consumers.
-- [ ] Finish reconciliation arbitration, watch transitions, and all-route projection.
-- [ ] Implement the remaining execution-plan and persistence-policy work.
-- [ ] Fix opened Python diagnostics on PR #103 and compose its list contract with the
-  shared answer model.
-- [ ] Strengthen positive serving and subset history checks, and require an empty
-  registry in the conformance gate.
+- [x] Implement P1.4’s six children: typed tree status and provenance, bounded path
+  errors, source transitions, writing-pass timing, removal of unverified descendants,
+  and content-tier provenance.
+- [x] Implement P2.1’s five children: per-analyzer records and coverage, name-based
+  grouping, requested metric presence, and row-level metric independence.
+- [x] Implement P2.2’s eight children: shared answer walks and scalar policy, every
+  machine document kind, text, native path identity, and Python wire-model consumers.
+- [x] Implement P2.3’s eight children: typed delivery, plan admission and writes,
+  refresh, session start and persistence, partial outcomes, and opened roots.
+- [x] Implement P2.4’s five children: controls-off projection at shared load boundaries
+  and protection of the stronger stored snapshot.
+- [x] Compose directory selection and list formats with typed answers, including
+  opened-Python diagnostics, unknown ages, and complete healthy siblings in partial
+  scans.
+- [x] Add positive cache-serving controls, code-warmed mutation histories, and an
+  empty-registry requirement to the production conformance gate.
+
+The follow-up fixes attach to those contracts as follows:
+
+| Contract | Implemented Follow-Ups | Focused Evidence |
+| --- | --- | --- |
+| Content identity and results | `fdu-ugom`, `fdu-4vbi`, `fdu-h14g`, `fdu-82vm`, `fdu-2gkh` | Operational failures retry; proof-bearing admission governs all content consumers; encoding refusals and per-unit digests are distinct; cold values match cache-history values in rows and totals. |
+| Reconciliation and watch | `fdu-yfb7`, `fdu-ems3`, `fdu-sb82`, `fdu-08aj`, `fdu-0ywm`, `fdu-aach`, `fdu-jott`, `fdu-4239` | Overlapping passes preserve newer facts and unrelated issues; overflow is captured before flush acknowledgement; registration, membership, ignored-state transitions, and finite intervals have regressions. |
+| Partial directories | `fdu-f9fv` | Serving commit `84de3685` localizes cold failures; public typed-row regression `d70fde32` passed with an actual permission refusal, proving incomplete ancestors, complete siblings, and both time-filter directions. |
+| Admission and persistence | `fdu-qsos`, `fdu-2o2r`, `fdu-kuev` | Snapshot projection carries its proof; refusals identify cache location, root, and type-rule mismatch; refresh rejects another root and reseeds incompatible stored baselines. |
+| Surface parity | `fdu-up8j`, `fdu-b6iu`, `fdu-zjjt`, `fdu-ns3o` | Native paths and bounded content errors survive shared writers; opened Python retains flat diagnostics; Windows oracle follows validity semantics. |
+
+Content analyzer-set containment remains a
+[scope deferral](plan-2026-09-17-fdu-explicit-core-models.md#scope-deferrals).
+Per-analyzer storage and request-based projection are implemented, but admission still
+requires equality of analyzer sets.
+A wider sidecar therefore misses for a narrower request; `fdu-7dj6` must not be closed
+with a claim of cross-set reuse.
+
+### Remaining Acceptance
+
+- [ ] Finish `fdu-0ssl`: assign distinct golden coverage keys to each projection refusal
+  reason and require those keys, so removing one refusal case cannot leave coverage
+  green.
+- [x] Correct cache-only directory completeness (`fdu-c22r`, `801bf7a7`) and qualify the
+  machine-format depth exemption to flat projections (`fdu-93e8`, `ea7baf50`).
+- [ ] Run `make check` and `make cross-lint` on the composed candidate after all fixes.
+- [ ] Complete Linux, macOS, and Windows path-independence with an empty registry,
+  metric independence, and parser-backed equality for every machine document kind and
+  public Python model on the final commits.
+- [ ] Complete the packaged-artifact rehearsal and release end-to-end verification
+  required by `fdu-tyvq`; local native-extension tests do not replace wheel evidence.
+
+The audit established no further production correctness gap in these contracts.
+Accepted scope deferrals and performance work remain separate; passing focused tests or
+clearing a review does not establish these final acceptance results.
 
 The dependency order is validity and request prerequisites, measured values, typed
 answers and provenance, serving-route state and projection, execution planning, then
@@ -121,11 +172,11 @@ description must state that boundary.
 
 ### Publish and Verify the Stack
 
-- [ ] Publish dependent PRs with each base set to the branch directly below it and
-  verify the GitHub stack object.
-- [ ] Give every implementation layer an independent Astra review.
-  Sol may perform mechanical recovery and conflict resolution; semantic resolutions
-  receive Astra review before acceptance.
+- [ ] Publish the final surface layer, verify every PR base against the branch directly
+  below it, and verify the GitHub stack object.
+- [ ] Complete independent Astra review of each final commit after fixes and merge
+  resolutions. The implementation reviews above do not cover subsequent edits
+  automatically; semantic resolutions receive review before acceptance.
 - [ ] Carry current main’s fixes forward without restoring obsolete test baselines,
   deleting newer guards, or rewriting commits cited by performance evidence.
 - [ ] Resolve the recorded composition work (`fdu-qx0e`, `fdu-8fax`) if the performance
