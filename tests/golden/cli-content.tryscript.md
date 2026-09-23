@@ -62,8 +62,9 @@ detection fixture prepared
 Resolved extensions remain on the fast path.
 Only unresolved or explicitly ambiguous candidates use shebangs, modelines, required
 literals, or named signatures.
-Origin flags are independent of the detected type. Type rows keep their name-based
-groups; the bounded probe remains available as separate detection evidence.
+Origin flags are independent of the detected type.
+Type rows keep their name-based groups; the bounded probe remains available as separate
+detection evidence.
 
 ```console
 $ fdu --cache off --analyze code --view types --sort count --limit all --size apparent detection-project
