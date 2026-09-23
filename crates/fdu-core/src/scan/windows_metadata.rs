@@ -152,14 +152,53 @@ fn kind_from_attributes(attributes: u32, reparse_tag: u32) -> EntryKind {
     }
 }
 
+/// Reads of one handle allowed for two consecutive ones to agree, counting the first.
+///
+/// The three queries in [`query_once`] are not atomic, so one pair of reads can straddle
+/// a write and disagree. An entry that is merely being written (a log, or a directory
+/// whose children are changing) settles within a read or two; only an entry that keeps
+/// changing across every pair is reported as changed rather than recorded torn.
+const MAX_OBSERVATION_READS: usize = 4;
+
 fn query(file: &File) -> io::Result<Observed> {
     let handle = file.as_raw_handle() as HANDLE;
-    let first = query_once(handle)?;
-    let second = query_once(handle)?;
-    if !same_observation(&first, &second) {
-        return Err(io::Error::other("file changed while Windows metadata was observed"));
+    let mut previous = query_once(handle)?;
+    for _ in 1..MAX_OBSERVATION_READS {
+        let next = query_once(handle)?;
+        if same_observation(&previous, &next) {
+            return Ok(next);
+        }
+        previous = next;
     }
-    Ok(second)
+    Err(io::Error::other("file changed while Windows metadata was observed"))
+}
+
+/// The volume serial number of the volume `path` is on.
+///
+/// This bounds a one-filesystem walk, and a volume does not change while an entry is
+/// written, so it is read once rather than through [`query`]: a root directory whose
+/// children are being created still has a volume, where demanding a consistent
+/// observation of its times would fail the whole walk. A root that is locked or denied
+/// reports zero, the same unavailable device [`observe`] records for such an entry.
+pub(super) fn volume_serial(path: &Path) -> io::Result<u64> {
+    let file = match open_for_attributes(path) {
+        Ok(file) => file,
+        Err(error) if is_locked_or_denied(&error) => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let handle = file.as_raw_handle() as HANDLE;
+    let mut identity = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    // SAFETY: the API receives a live handle borrowed from `file` and correctly sized,
+    // aligned writable storage for its documented output structure, and retains no
+    // pointer. A zero return leaves the storage uninitialized and is handled before it is
+    // read.
+    let identity = unsafe {
+        if GetFileInformationByHandle(handle, identity.as_mut_ptr()) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        identity.assume_init()
+    };
+    Ok(u64::from(identity.dwVolumeSerialNumber))
 }
 
 fn query_once(handle: HANDLE) -> io::Result<Observed> {
@@ -309,6 +348,39 @@ mod tests {
         assert!(!is_locked_or_denied(&os_error(2)));
         assert!(!is_locked_or_denied(&os_error(3)));
         assert!(!is_locked_or_denied(&io::Error::other("not an OS error")));
+    }
+
+    #[test]
+    fn a_root_changing_underneath_still_reports_its_volume() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct StopOnDrop<'a>(&'a AtomicBool);
+        impl Drop for StopOnDrop<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+        let root = tempfile::tempdir().expect("tempdir");
+        let (_, observed) = observe(root.path(), || panic!("a directory opens")).expect("observe");
+        let stop = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            // A failed assertion must stop the writer before the scope joins it.
+            let _stop_on_unwind = StopOnDrop(&stop);
+            // Creating and removing children keeps changing the root's write and change
+            // times, which is what made a consistent observation of the root fail.
+            scope.spawn(|| {
+                let mut round = 0u32;
+                while !stop.load(Ordering::Relaxed) {
+                    let child = root.path().join(format!("c{}", round % 8));
+                    let _ = std::fs::create_dir(&child);
+                    let _ = std::fs::remove_dir(&child);
+                    round = round.wrapping_add(1);
+                }
+            });
+            for _ in 0..2_000 {
+                let serial = volume_serial(root.path());
+                assert_eq!(serial.ok(), Some(observed.dev), "the volume is read, not observed");
+            }
+        });
     }
 
     #[test]
