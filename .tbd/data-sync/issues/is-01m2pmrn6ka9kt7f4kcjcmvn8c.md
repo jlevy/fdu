@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmrn6ka9kt7f4kcjcmvn8c
 title: "Close conformance: empty the violation registry and remove known-gaps sections"
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - release
@@ -14,7 +14,7 @@ dependencies:
     target: is-01m2phzegm4b3scda7d1xq3gnm
 parent_id: is-01m2pmr9aftb3vzfyjyanndny3
 created_at: 2026-09-17T02:57:35.954Z
-updated_at: 2026-09-23T04:02:52.713Z
+updated_at: 2026-09-23T04:03:24.382Z
 ---
 Acceptance for the plan: path-independence, metric-independence, and writer-equality tests pass on Linux, macOS,
 and Windows with an empty registry; no request field parsed, defaulted, or validated outside the request model; no
