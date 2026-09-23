@@ -423,7 +423,6 @@ fn prepare_report_internal(
     // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
     let scan_config = request.basis.scope.scan_config(delivery);
-    let query = &request.query;
     let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();
     let plan = plan(request, delivery, Route::OneShot).map_err(Error::InvalidRequest)?;
@@ -464,7 +463,7 @@ fn prepare_report_internal(
             let report = report_summary(
                 &root,
                 scan_config.scope(),
-                query.selection.size,
+                request,
                 summary,
                 TreeStatus::of_walk(&root, &scan),
                 ReportProvenance::of_walk(scan_started_at, generated_at, complete),
