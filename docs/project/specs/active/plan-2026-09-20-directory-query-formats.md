@@ -187,9 +187,10 @@ deliberate:
   `tree` object (a List requested in tree format, as Python can) or a `files` array;
   `full` and legacy `--view tree` keep `"view": "tree"` with a `tree` object.
   A consumer branching on `view == "tree"` stops matching the default report, which is
-  why `REPORT_SCHEMA` moves from `fdu.report/5` to `fdu.report/7` and
-  `CONTENT_REPORT_SCHEMA` from `/6` to `/8`, and why the release notes name the label
-  change.
+  why the release notes name the label change.
+  The combined unreleased alpha uses `fdu.report/7` for both metadata and content
+  reports under the accepted pre-1.0 schema policy; the shared typed answer supersedes
+  the earlier split-schema proposal.
 - List rows gain `files`, `dirs`, `complete`, and `age_ns`, and the envelope gains
   `age_reference_ns`; the same schema bump covers them.
 - `summary.newest_mtime_ns` does not change: it remains the newest mtime over admitted
@@ -249,7 +250,10 @@ only eligible contents.
 Explain that directory size and recency reflect the remaining contents after exclusion.
 
 `read_controls=false` (`--no-gitignore`) changes none of this and is a separate snapshot
-scope, so no stored tier crosses between an observing and an unobserving index.
+scope. A snapshot with matching entry identity may serve a controls-off request through
+the shared loader’s lawful projection: it discards control state, and that projected
+index cannot overwrite the stronger snapshot.
+The reverse direction is a miss; content reuse still requires its own admitted identity.
 Over an index that observed no control state, a selection by ignored state is refused
 before the walk, exactly as today, and every row’s `ignored` stays `null` rather than
 `false`, in aggregates as on list rows: a report that read no rule must not say that
@@ -261,13 +265,14 @@ A directory’s subtree is *incomplete* when any eligible directory within it, i
 included, has no authoritative child listing.
 That happens at the `--scan-depth` boundary, where a directory at the depth limit was
 retained but never listed; in an opened root, for every directory discovery has not
-listed yet; and in a one-shot scan that finished with errors, where the index records
-that the walk was partial but not which directory the error fell in, so every directory
-row is incomplete until scan errors are attributed per directory (a follow-up, tracked
-as a bead).
-A cache-only result is stale, not incomplete: a snapshot is only ever written
-from a complete index, so its rows are complete as of the snapshot, and the report-level
-`source` and `freshness` carry the staleness.
+listed yet; and in a one-shot scan whose scoped error leaves that directory, an
+ancestor, or an eligible descendant unverified.
+Cold scans attribute failures per directory (`fdu-f9fv`), so successfully listed
+siblings remain complete.
+An unscoped failure cannot prove completeness anywhere in the tree.
+A cache-only result is stale, not incomplete: a snapshot is only ever written from a
+complete index, so its rows are complete as of the snapshot, and the report-level
+`provenance.source` and `provenance.freshness` carry the staleness.
 
 Over an incomplete subtree the measured values are lower bounds, and the row must say so
 rather than present them as exact, which follows from the partial-friendly rule that
