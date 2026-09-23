@@ -8,6 +8,7 @@
 //! there is one name to know for both installing the tool and depending on it.
 
 mod cli;
+mod interrupt;
 mod progress_line;
 mod progress_ticker;
 
