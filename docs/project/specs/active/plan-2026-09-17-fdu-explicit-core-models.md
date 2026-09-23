@@ -13,11 +13,12 @@ shrink only by the deferrals this plan names.
 The [alpha correctness stack](plan-2026-09-22-fdu-alpha-correctness-stack.md) maps the
 remaining implementation beads to review and validation layers.
 Request and stored-state foundations are on main.
-Additional metric, answer, provenance, reconciliation, and projection work exists in
-unpublished branches and must be recovered and validated.
-The execution-plan model remains to be implemented.
-No conformance acceptance is claimed until the criteria below pass on the composed
-candidate.
+The dependent layers of that stack (#112 through #117) implement per-analyzer measured
+values, the typed answer and its writers, provenance and tree status on every route,
+reconciliation scope, controls-off projection, and the execution-plan model.
+Scope deferrals are listed below.
+No conformance acceptance is claimed until the criteria below pass on the merged
+candidate, and `fdu-xgjx` records that evidence.
 
 ## Overview
 
