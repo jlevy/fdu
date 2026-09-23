@@ -65,10 +65,11 @@ unscoped failure leaves the whole tree incomplete.
 Such a row’s sizes and counts are lower bounds, its `age_ns` is null, and no
 `modified_since`/`modified_before` bound matches it, because a lower-bound maximum is
 not an age; `min_size` still can, since a lower bound at or above the minimum proves the
-true size is too.
-A cache-only result is stale rather than incomplete: a snapshot is only
-written from a complete index, so its rows stay complete and report provenance carries
-the staleness. Content metric coverage remains separate from metadata completeness.
+true size is too. A cache-only result carries staleness in report provenance and
+preserves the snapshot’s directory completeness.
+A snapshot is published only from a complete scan, but an unlisted directory at its
+scan-depth boundary still has `complete: false` and unknown age.
+Content metric coverage remains separate from metadata completeness.
 
 Tree and flat List are different report projections over the same selection.
 Set format on `ReadSpec`/`Query` before reading.

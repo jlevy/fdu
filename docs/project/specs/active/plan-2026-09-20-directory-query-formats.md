@@ -270,9 +270,10 @@ ancestor, or an eligible descendant unverified.
 Cold scans attribute failures per directory (`fdu-f9fv`), so successfully listed
 siblings remain complete.
 An unscoped failure cannot prove completeness anywhere in the tree.
-A cache-only result is stale, not incomplete: a snapshot is only ever written from a
-complete index, so its rows are complete as of the snapshot, and the report-level
-`provenance.source` and `provenance.freshness` carry the staleness.
+A cache-only result preserves the snapshot’s directory completeness, while the
+report-level `provenance.source` and `provenance.freshness` carry its staleness.
+Snapshot publication requires a complete scan, but an unlisted directory at the
+scan-depth boundary still has `complete: false` and unknown age.
 
 Over an incomplete subtree the measured values are lower bounds, and the row must say so
 rather than present them as exact, which follows from the partial-friendly rule that
@@ -526,9 +527,10 @@ sort and limit, deep-tree safety, and default/explicit-format-independent metric
 Incomplete subtrees: a directory at the `--scan-depth` boundary reports
 `complete: false`, lower-bound size, and unknown age, and neither modification bound
 matches it while `--min-size` still can; a one-shot index that finished with errors
-(`--allow-partial`) marks its directory rows incomplete; an opened root marks a
-directory complete only once discovery has listed it; a cache-only read keeps rows
-complete and labels staleness at the report level.
+(`--allow-partial`) marks affected directory rows incomplete while retaining complete
+healthy siblings; an opened root marks a directory complete only once discovery has
+listed it; a cache-only read preserves each row’s completeness, including unknown ages
+at scan-depth boundaries, and labels staleness at the report level.
 
 ### fdu-ywh0: Add tree, paths, and long list formats across core and Python
 
