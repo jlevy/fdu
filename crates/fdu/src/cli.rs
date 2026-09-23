@@ -31,6 +31,10 @@ use fdu_core::report_format::human_count;
 use fdu_core::{CachePolicy, CacheScope, CacheState, default_cache_path};
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
+use crate::progress_line::{
+    ProgressMode, ProgressPlan, TerminalFacts, display_root, home_directory, should_draw,
+};
+
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
 /// Repository-measurement switch for the compact installed-command path.
@@ -202,7 +206,8 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
              --exclude-ignored, --only-ignored
   View       list,summary,tree,families,types,extensions,languages,documents,
              largest,recent,files,full
-  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
+  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
+             --color, --progress
   Mode       ",
             $mode_flags,
             r"
@@ -263,7 +268,8 @@ OUTPUT AND AUTOMATION
   JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
   Results go to stdout; warnings and errors go to stderr.
-  The command never prompts, pages, or animates progress.
+  The command never prompts or pages. A progress line is drawn on stderr only for a
+  person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
   Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
   `fdu --skill` prints a portable agent skill describing this same surface.
 
@@ -544,6 +550,16 @@ pub struct Cli {
     )]
     pub color: ColorWhen,
 
+    /// Show a progress line on stderr while a report runs: auto, always, or never. Drawn only at an interactive terminal: always, unlike --color, never draws into a pipe or file
+    #[arg(
+        long,
+        value_name = "WHEN",
+        default_value = "auto",
+        hide_possible_values = true,
+        help_heading = "OUTPUT"
+    )]
+    pub progress: ProgressMode,
+
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only (unverified), or off.
     #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
@@ -602,13 +618,18 @@ fn parse_cache_scope(value: &str, flag: &str) -> anyhow::Result<CacheScope> {
 
 impl Cli {
     /// Run the command, writing results to `out` and warnings to `diagnostic`.
+    ///
+    /// `terminal` is what the process read about stderr once, in `run_process`; every
+    /// stderr presentation decision, color and progress alike, is taken from it here
+    /// rather than from the environment, so a test can say what the terminal is.
     pub fn run(
         &self,
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
         stdout_is_terminal: bool,
-        stderr_is_terminal: bool,
+        terminal: &TerminalFacts,
     ) -> anyhow::Result<RunOutcome> {
+        let stderr_is_terminal = terminal.stderr_is_terminal;
         if self.docs {
             let color =
                 ColorContext::from_environment(self.color, false, false, stdout_is_terminal)
@@ -784,6 +805,38 @@ impl Cli {
     /// Whether the requested format is a machine format, which is never colorized.
     fn machine_format(&self) -> bool {
         self.parse_format().is_ok_and(report_format::Format::is_machine)
+    }
+
+    /// What the progress ticker needs before its first frame: whether to draw at all,
+    /// the root as the frame shows it, and whether the frame is colored.
+    ///
+    /// Resolved here beside the color decision because it is the same kind of decision:
+    /// presentation, from the flag and the terminal, never from the engine. Whether the
+    /// line is drawn is decided by `--progress`, the terminal, the format, and whether
+    /// this command walks at all; whether it is colored follows the rule that colors
+    /// warnings on stderr, `--color`, then `NO_COLOR`, then `FORCE_COLOR`, so neither
+    /// setting can turn the other on or off. The ticker (fdu-hjjj) starts from this
+    /// plan before `prepare_report` and stops before the first byte reaches either
+    /// stream; nothing in this build starts it yet.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "consumed by the progress ticker, which is fdu-hjjj")
+    )]
+    fn progress_plan(&self, terminal: &TerminalFacts) -> ProgressPlan {
+        let walks =
+            !(self.docs || self.skill || self.cache_status.is_some() || self.cache_clear.is_some());
+        let root = self.path.as_deref().unwrap_or(Path::new("."));
+        ProgressPlan {
+            draw: should_draw(self.progress, terminal, self.machine_format(), walks),
+            root: display_root(root, home_directory().as_deref()),
+            color: ColorContext::from_environment(
+                self.color,
+                false,
+                false,
+                terminal.stderr_is_terminal,
+            )
+            .enabled(),
+        }
     }
 
     /// Run the query continuously, streaming changes as they arrive.
@@ -1487,11 +1540,12 @@ where
     let stdout = io::stdout();
     let stderr = io::stderr();
     let stdout_is_terminal = stdout.is_terminal();
-    let stderr_is_terminal = stderr.is_terminal();
+    // Everything the run will ever ask about stderr, read here and only here.
+    let terminal = TerminalFacts::detect();
     let mut out = io::BufWriter::new(stdout.lock());
     let mut diagnostic = stderr.lock();
 
-    run_with_io(&args, &mut out, &mut diagnostic, stdout_is_terminal, stderr_is_terminal)
+    run_with_io(&args, &mut out, &mut diagnostic, stdout_is_terminal, &terminal)
 }
 
 fn run_with_io(
@@ -1499,8 +1553,9 @@ fn run_with_io(
     out: &mut dyn Write,
     diagnostic: &mut dyn Write,
     stdout_is_terminal: bool,
-    stderr_is_terminal: bool,
+    terminal: &TerminalFacts,
 ) -> u8 {
+    let stderr_is_terminal = terminal.stderr_is_terminal;
     // A bare invocation is the long-help discovery surface, byte for byte. Rewriting it
     // before parsing also gives it `--help`'s stdout and exit-0 behavior, rather than
     // Clap's shorter missing-argument rendering on stderr.
@@ -1551,11 +1606,10 @@ fn run_with_io(
         }
     };
 
-    let result =
-        cli.run(out, diagnostic, stdout_is_terminal, stderr_is_terminal).and_then(|outcome| {
-            out.flush()?;
-            Ok(outcome)
-        });
+    let result = cli.run(out, diagnostic, stdout_is_terminal, terminal).and_then(|outcome| {
+        out.flush()?;
+        Ok(outcome)
+    });
     let diagnostic_color = ColorContext::from_environment(
         cli.color,
         cli.machine_format(),
@@ -1862,7 +1916,7 @@ mod tests {
             "/nonexistent-root-that-must-not-be-scanned",
         ]
         .map(OsString::from);
-        let status = run_with_io(&args, &mut out, &mut err, false, false);
+        let status = run_with_io(&args, &mut out, &mut err, false, &TerminalFacts::default());
         assert_eq!(status, 2);
         assert!(out.is_empty());
         assert_eq!(
@@ -2066,6 +2120,7 @@ mod tests {
             tree: false,
             long: false,
             color: ColorWhen::Auto,
+            progress: ProgressMode::Auto,
             cache: "off".to_string(),
             cache_status: None,
             cache_clear: None,
@@ -2090,12 +2145,13 @@ mod tests {
         let mut bare_out = Vec::new();
         let mut bare_err = Vec::new();
         let bare = [OsString::from("fdu")];
-        let status = run_with_io(&bare, &mut bare_out, &mut bare_err, false, false);
+        let terminal = TerminalFacts::default();
+        let status = run_with_io(&bare, &mut bare_out, &mut bare_err, false, &terminal);
 
         let mut help_out = Vec::new();
         let mut help_err = Vec::new();
         let help = [OsString::from("fdu"), OsString::from("--help")];
-        let help_status = run_with_io(&help, &mut help_out, &mut help_err, false, false);
+        let help_status = run_with_io(&help, &mut help_out, &mut help_err, false, &terminal);
 
         assert_eq!(status, 0, "showing help is a successful discovery action");
         assert_eq!(help_status, 0);
@@ -2591,8 +2647,9 @@ mod tests {
             ..cli()
         };
         let mut output = Vec::new();
-        let outcome =
-            command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
+        let outcome = command
+            .run(&mut output, &mut Vec::new(), false, &TerminalFacts::default())
+            .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
         assert!(output.contains("\"schema\": \"fdu.report/7\""), "{output}");
@@ -2616,7 +2673,9 @@ mod tests {
         };
 
         let mut plain = Vec::new();
-        command.run(&mut plain, &mut Vec::new(), false, false).expect("plain report");
+        command
+            .run(&mut plain, &mut Vec::new(), false, &TerminalFacts::default())
+            .expect("plain report");
         let plain = String::from_utf8(plain).expect("plain UTF-8");
         // `summary` displays no content metric, so this run also earns the paid-for-
         // nothing note; the footer is the line before it rather than the last line.
@@ -2635,7 +2694,7 @@ mod tests {
 
         let mut colored = Vec::new();
         Cli { color: ColorWhen::Always, ..command }
-            .run(&mut colored, &mut Vec::new(), false, false)
+            .run(&mut colored, &mut Vec::new(), false, &TerminalFacts::default())
             .expect("colored report");
         let colored = String::from_utf8(colored).expect("colored UTF-8");
         let footer = colored
@@ -2689,7 +2748,9 @@ mod tests {
                 ..cli()
             };
             let mut output = Vec::new();
-            command.run(&mut output, &mut Vec::new(), false, false).expect("machine report");
+            command
+                .run(&mut output, &mut Vec::new(), false, &TerminalFacts::default())
+                .expect("machine report");
             let output = String::from_utf8(output).expect("machine UTF-8");
             assert!(!output.contains("Performance:"), "{format}: {output}");
         }
@@ -2849,9 +2910,178 @@ mod tests {
 
         let args = [OsString::from("fdu"), OsString::from("--help")];
         assert_eq!(
-            run_with_io(&args, &mut FailingWriter, &mut diagnostic, false, false),
+            run_with_io(
+                &args,
+                &mut FailingWriter,
+                &mut diagnostic,
+                false,
+                &TerminalFacts::default()
+            ),
             1,
             "a non-pipe help-output failure is fatal"
         );
+    }
+
+    /// The terminal a person is watching, as the gating tests describe one.
+    fn interactive_terminal() -> TerminalFacts {
+        TerminalFacts {
+            stderr_is_terminal: true,
+            term: Some(OsString::from("xterm-256color")),
+            ci: None,
+            vt_enabled: true,
+        }
+    }
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(args).expect("the command line parses")
+    }
+
+    #[test]
+    fn the_progress_flag_parses_like_color_and_defaults_to_auto() {
+        assert_eq!(parse(&["fdu", "."]).progress, ProgressMode::Auto);
+        assert_eq!(parse(&["fdu", "--progress", "always", "."]).progress, ProgressMode::Always);
+        assert_eq!(parse(&["fdu", "--progress=never", "."]).progress, ProgressMode::Never);
+        assert_eq!(parse(&["fdu", "--progress", "auto", "."]).progress, ProgressMode::Auto);
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = ["fdu", "--progress", "sometimes", "."].map(OsString::from);
+        let status = run_with_io(&args, &mut out, &mut err, false, &TerminalFacts::default());
+        assert_eq!(status, 2, "a value outside the grammar is a usage error");
+        assert!(out.is_empty());
+        let err = String::from_utf8(err).expect("UTF-8 diagnostics");
+        assert!(err.contains("invalid value 'sometimes' for '--progress <WHEN>'"), "{err}");
+    }
+
+    #[test]
+    fn help_places_progress_beside_color_and_says_always_never_reaches_a_pipe() {
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = [OsString::from("fdu"), OsString::from("--help")];
+        run_with_io(&args, &mut out, &mut err, false, &TerminalFacts::default());
+        let help = String::from_utf8(out).expect("help is UTF-8");
+        let lines: Vec<&str> = help.lines().collect();
+        let color = lines
+            .iter()
+            .position(|line| line.trim_start().starts_with("--color <WHEN>"))
+            .expect("--color is in the help");
+        assert!(
+            lines[color + 1].trim_start().starts_with("--progress <WHEN>"),
+            "--progress follows --color:\n{help}"
+        );
+        let output = help.split("OUTPUT\n").nth(1).expect("an OUTPUT section");
+        let output = output.split("\n\n").next().expect("the section ends at a blank line");
+        assert!(output.contains("--progress <WHEN>"), "{output}");
+        // Read across clap's wrapping, which is the terminal's business, not the text's.
+        let progress = output.split("--progress").nth(1).expect("the flag's help");
+        let progress = progress.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(progress.contains("unlike --color, never draws into a pipe or file"), "{progress}");
+        assert!(progress.contains("[default: auto]"), "{progress}");
+    }
+
+    /// The gating decision, resolved from the flag, the terminal, the format, and the
+    /// command, for the ticker to consume.
+    #[test]
+    fn the_progress_plan_draws_only_for_a_walking_run_at_an_interactive_terminal() {
+        let interactive = interactive_terminal();
+        let plan = |args: &[&str], terminal: &TerminalFacts| parse(args).progress_plan(terminal);
+
+        assert!(plan(&["fdu", "."], &interactive).draw);
+        assert!(plan(&["fdu", "--tree", "."], &interactive).draw);
+        assert!(plan(&["fdu", "--long", "."], &interactive).draw);
+        assert!(plan(&["fdu", "--format", "paths", "."], &interactive).draw);
+        assert!(!plan(&["fdu", "--format", "json", "."], &interactive).draw);
+        assert!(!plan(&["fdu", "--format", "jsonl", "."], &interactive).draw);
+        assert!(!plan(&["fdu", "--format", "yaml", "."], &interactive).draw);
+        assert!(plan(&["fdu", "--progress", "always", "--format", "json", "."], &interactive).draw);
+        assert!(!plan(&["fdu", "--progress", "never", "."], &interactive).draw);
+
+        for command in [
+            &["fdu", "--docs"][..],
+            &["fdu", "--skill"],
+            &["fdu", "--cache-status"],
+            &["fdu", "--cache-clear", "."],
+            &["fdu", "--progress", "always", "--docs"],
+            &["fdu", "--progress", "always", "--cache-status=all", "."],
+        ] {
+            assert!(!plan(command, &interactive).draw, "{command:?} walks nothing");
+        }
+
+        for terminal in [
+            TerminalFacts::default(),
+            TerminalFacts { stderr_is_terminal: false, ..interactive_terminal() },
+            TerminalFacts { term: None, ..interactive_terminal() },
+            TerminalFacts { term: Some(OsString::from("dumb")), ..interactive_terminal() },
+            TerminalFacts { ci: Some(OsString::from("true")), ..interactive_terminal() },
+            TerminalFacts { vt_enabled: false, ..interactive_terminal() },
+        ] {
+            for mode in ["auto", "always", "never"] {
+                assert!(
+                    !plan(&["fdu", "--progress", mode, "."], &terminal).draw,
+                    "{terminal:?} drew under --progress {mode}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_progress_plan_names_the_root_and_follows_the_color_rule() {
+        let interactive = interactive_terminal();
+        assert_eq!(parse(&["fdu", "."]).progress_plan(&interactive).root, ".");
+        assert_eq!(
+            parse(&["fdu", "--cache-status"]).progress_plan(&interactive).root,
+            ".",
+            "a lifecycle command without a path reports on the current directory"
+        );
+        let home = home_directory().expect("the test runner has a home directory");
+        let under_home = home.join("wrk").join("github");
+        let plan =
+            parse(&["fdu", under_home.to_str().expect("Unicode")]).progress_plan(&interactive);
+        assert_eq!(plan.root, Path::new("~").join("wrk").join("github").display().to_string());
+
+        assert!(!parse(&["fdu", "--color", "never", "."]).progress_plan(&interactive).color);
+        assert!(parse(&["fdu", "--color", "always", "."]).progress_plan(&interactive).color);
+        assert!(
+            parse(&["fdu", "--color", "always", "."])
+                .progress_plan(&TerminalFacts::default())
+                .color,
+            "--color always colors a frame it will never draw; drawing is --progress's call"
+        );
+        assert!(
+            !parse(&["fdu", "--color", "never", "--format", "json", "."])
+                .progress_plan(&interactive)
+                .draw
+        );
+    }
+
+    /// Until the ticker lands, an interactive run with the flag on writes exactly what
+    /// it wrote before: nothing on stderr for a clean run.
+    #[test]
+    fn an_interactive_run_still_writes_nothing_to_stderr() {
+        let interactive = interactive_terminal();
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = ["fdu", "--progress", "always", "--docs"].map(OsString::from);
+        assert_eq!(run_with_io(&args, &mut out, &mut err, true, &interactive), 0);
+        assert!(!out.is_empty());
+        assert!(err.is_empty(), "{:?}", String::from_utf8_lossy(&err));
+
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = [
+            "fdu",
+            "--cache",
+            "off",
+            "--color",
+            "never",
+            "--progress",
+            "always",
+            root.path().to_str().expect("Unicode"),
+        ]
+        .map(OsString::from);
+        assert_eq!(run_with_io(&args, &mut out, &mut err, true, &interactive), 0);
+        assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
+        assert!(err.is_empty(), "{:?}", String::from_utf8_lossy(&err));
     }
 }

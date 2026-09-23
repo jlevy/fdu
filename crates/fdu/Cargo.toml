@@ -69,6 +69,12 @@ fdu-core = { workspace = true, default-features = false }
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 anyhow = "1.0"
 
+# A Windows console must accept escape sequences before a progress line may be drawn
+# to it. This is the safe query clap already ships, at the version the lock already
+# holds; it adds no tree and is unused off Windows.
+[target.'cfg(windows)'.dependencies]
+anstyle-query = "1.1.5"
+
 [dev-dependencies]
 tempfile = "3.26"
 
