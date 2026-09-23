@@ -173,3 +173,44 @@ def test_opened_reports_use_the_same_directory_query_contract(builds: Path) -> N
         result = response.results[2]
         assert result.kind == "report"
         assert isinstance(result.value.sections[0], fdu.TreeSection)
+
+
+def test_opened_flat_reports_preserve_bound_diagnostics(builds: Path) -> None:
+    retained = fdu.scan(builds)
+    with opened.OpenedIndex.open(builds) as index:
+        state = index.state()
+        for _ in range(40):
+            if state.state.phase is opened.LifecyclePhase.READY:
+                break
+            index.changes(state.change_cursor, timeout=0.25)
+            state = index.state()
+        assert state.state.coverage.kind is opened.CoverageKind.COMPLETE
+        for format in (fdu.Format.PATHS, fdu.Format.LONG):
+            query = inventory(format)
+            query = replace(query, selection=replace(query.selection, limit=1))
+            expected = retained.report(query)
+            result = index.read(opened.ReportProjection(query=query)).results[0]
+            assert result.kind == "report"
+            report = result.value
+            assert expected.notes
+            assert report.notes == expected.notes
+            assert len(report.render().splitlines()) == 1
+
+
+def test_opened_flat_reports_preserve_partial_diagnostics(builds: Path) -> None:
+    with opened.OpenedIndex.open(builds, opened.OpenedOptions(max_files=1)) as index:
+        state = index.state()
+        for _ in range(40):
+            if state.state.phase is opened.LifecyclePhase.STOPPED:
+                break
+            index.changes(state.change_cursor, timeout=0.25)
+            state = index.state()
+        assert state.state.phase is opened.LifecyclePhase.STOPPED
+        assert state.state.coverage.kind is opened.CoverageKind.PARTIAL
+        for format in (fdu.Format.PATHS, fdu.Format.LONG):
+            result = index.read(opened.ReportProjection(query=fdu.Query(format=format))).results[0]
+            assert result.kind == "report"
+            report = result.value
+            assert not report.status.complete
+            assert any("complete: false" in note for note in report.notes)
+            assert "complete: false" not in report.render()
