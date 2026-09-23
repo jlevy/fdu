@@ -2,7 +2,8 @@
 
 **Date:** 2026-09-23
 
-**Status:** Approved design, not yet implemented
+**Status:** Approved design, implemented; the real-terminal smoke test (`fdu-3xiz`) and
+the documentation (`fdu-n6bd`) are outstanding
 
 **Tracking:** `fdu-vngp`
 
@@ -121,15 +122,21 @@ pub struct ProgressSnapshot {
     pub analysis: Option<(u64, u64)>,
 }
 
-pub enum ProgressPhase { Loading, Scanning, Revalidating, Analyzing, Saving }
+pub enum ProgressPhase { Starting, Loading, Scanning, Revalidating, Analyzing, Saving }
 ```
+
+A fresh handle reports `Starting` until the route enters its first phase, and the last
+phase entered persists after the route returns.
 
 It enters through variants beside today’s entry points rather than through `Delivery`,
 which stays a plain comparable value:
 `prepare_report_with_progress(request, delivery, &progress)`, following
-`prepare_report_with_scan_diagnostics`, plus a progress argument on `Session::start` for
-the watch’s initial scan.
-`refresh` is left for the Python callback that would use it.
+`prepare_report_with_scan_diagnostics`, and `Session::start_with_progress` for the
+watch’s initial scan.
+Inside the engine the handle rides on `ScanConfig::progress`, an observer field that
+changes neither what a walk produces nor how it produces it, so it is no part of the
+scan scope or of any snapshot identity: a run with a handle and one without are the same
+scan. `refresh` is left for the Python callback that would use it.
 
 **What it counts:** work done, never index state.
 The engine architecture keeps an in-progress cold build unobservable, and progress does
@@ -173,6 +180,8 @@ and a later Python binding can poll the same way across the FFI boundary.
   The wait is a timed receive on the stop channel, not a sleep, so stopping returns at
   once and a fast run never pays the delay on exit.
   After that the ticker redraws every 80 ms, one spinner frame per redraw.
+  A snapshot still in `Starting` draws nothing: the ticker keeps waiting until the
+  engine names a phase, rather than show one it invented.
 - **Frame.** One line on stderr, written as `\r\x1b[2K` plus the frame, exactly as
   specified under [Appearance](#appearance).
   The cursor is never hidden.
@@ -193,12 +202,22 @@ and a later Python binding can poll the same way across the FFI boundary.
   Ctrl-C handling does.
   A Ctrl-C after the indicator has stopped, while the report is written, skips the
   message and takes the same default action.
-  The handler adds no `unsafe` code to fdu: `signal-hook` offers safe registration and a
-  safe `emulate_default_handler`, and `ctrlc` is the alternative dust uses; the
-  implementation picks one after confirming its Windows behavior, in a release more than
-  14 days old, and adds it to the command-line crate only.
-  An interruption can leave the report cut short on stdout and a cache staging file,
-  which the cache already recognizes and removes; no snapshot is partially published.
+  The handler adds no `unsafe` code to fdu, and each platform gets the crate whose safe
+  API reproduces its default action, both in the command-line crate only and both in
+  releases more than 14 days old.
+  On Unix it is `signal-hook` 0.4.4 (published 2026-04-04): its `Signals` iterator hands
+  `SIGINT` to a thread of fdu’s own, which may write to stderr, and its
+  `emulate_default_handler` restores the default disposition and raises the signal
+  again, which is death by `SIGINT` exactly; `ctrlc` there would add `nix` and, on
+  macOS, a Grand Central Dispatch binding, for the same signal.
+  On Windows it is `ctrlc` 3.5.2 (published 2026-02-10), what dust uses: its console
+  handler runs a closure on a thread of its own, and the closure exits with
+  `STATUS_CONTROL_C_EXIT`, the status the console’s default handling ends a process
+  with; `signal-hook` there reaches only the C runtime’s `SIGINT`, whose default is an
+  exit status of 3 rather than the console’s, and gives a handler no thread to write
+  from. An interruption can leave the report cut short on stdout and a cache staging
+  file, which the cache already recognizes and removes; no snapshot is partially
+  published.
 
 ### Appearance
 
@@ -220,8 +239,8 @@ The frame for each phase, shown here in plain text:
 
 ```text
 ⠹ ~/wrk/github  Loading       0.6 s
-⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38.2 GiB  3.1 s
-⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38.2 GiB  1.4 s
+⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
+⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
 ```
@@ -240,12 +259,15 @@ already a dependency:
 | Percentage | default | a number |
 
 **Numbers** use the report’s own formatters: counts with thousands separators
-(`human_count`), sizes in binary units with one decimal (`human_bytes`). Elapsed time
-has one decimal below a minute (`3.1 s`), then `1 m 04 s`, then `1 h 02 m`.
+(`human_count`), sizes in binary units (`human_bytes`), which shows a decimal only below
+ten of a unit, so `3.2 GiB` but `38 GiB`, exactly as the report’s rows do.
+Elapsed time has one decimal below a minute (`3.1 s`), then `1 m 04 s`, then `1 h 02 m`.
 
 **Percentage.** A whole percentage, right-aligned in four columns (` 7%`, ` 24%`,
 `100%`), shown only during content analysis, the one phase with an exact denominator.
 It never reaches `100%` before the last file is applied.
+An analysis of nothing, which the engine reports as `0 / 0` when the content sidecar
+answered every candidate, is `100%`: there is nothing left to do.
 
 **Color rule.** The frame is colored when stderr color is on under the same rule that
 colors fdu’s warnings: `--color`, then `NO_COLOR`, then `FORCE_COLOR`. With color off,
@@ -294,7 +316,7 @@ pieces can proceed in parallel; the ticker joins them.
 | Bead | Work | Depends on |
 | --- | --- | --- |
 | `fdu-hlb1` | `Progress` handle and walk counters (cold, summary, warm), with the equality invariant | — |
-| `fdu-mhx0` | Load, analyze, and save phases; `prepare_report_with_progress`; `Session::start` argument | `fdu-hlb1` |
+| `fdu-mhx0` | Load, analyze, and save phases; `prepare_report_with_progress`; `Session::start_with_progress` | `fdu-hlb1` |
 | `fdu-p1gr` | Interactive detection, injected terminal facts, `--progress`, gating tests | — |
 | `fdu-vpdw` | Frame renderer, exactly per [Appearance](#appearance) | — |
 | `fdu-hjjj` | Ticker, 500 ms delay, clearing and ordering, one-shot and watch wiring | `fdu-mhx0`, `fdu-p1gr`, `fdu-vpdw` |
