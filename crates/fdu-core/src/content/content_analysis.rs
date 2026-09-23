@@ -719,9 +719,15 @@ mod tests {
             };
             let mut groups: Vec<_> = summary.rows.iter().map(|row| row.id.clone()).collect();
             groups.sort();
-            let values: Vec<_> = crate::content::METRICS
-                .iter()
-                .map(|metric| summary.total.metric_value(metric))
+            let values: std::collections::BTreeMap<_, _> = std::iter::once(&summary.total)
+                .chain(&summary.rows)
+                .map(|row| {
+                    let metrics: Vec<_> = crate::content::METRICS
+                        .iter()
+                        .map(|metric| row.metric_value(metric))
+                        .collect();
+                    (row.id.clone(), metrics)
+                })
                 .collect();
             observed.push((profile, groups, values));
         }
@@ -730,23 +736,21 @@ mod tests {
             assert_eq!(groups, &observed[0].1, "requested analyzers must not change type groups");
         }
         for (metric_index, metric) in crate::content::METRICS.iter().enumerate() {
-            let expected = observed
+            let (_, _, baseline) = observed
                 .iter()
                 .find(|(profile, _, _)| profile.contains(metric.owner))
-                .and_then(|(_, _, values)| values[metric_index])
-                .expect("an owning profile exposes every registry metric");
-            for (profile, _, values) in &observed {
-                if profile.contains(metric.owner) {
+                .expect("an owning profile exists");
+            for (profile, _, rows) in &observed {
+                assert_eq!(rows.keys().collect::<Vec<_>>(), baseline.keys().collect::<Vec<_>>());
+                for (id, values) in rows {
+                    let expected = if profile.contains(metric.owner) {
+                        Some(baseline[id][metric_index].expect("owning profile exposes metric"))
+                    } else {
+                        None
+                    };
                     assert_eq!(
-                        values[metric_index],
-                        Some(expected),
-                        "{} changed under {profile:?}",
-                        metric.name
-                    );
-                } else {
-                    assert_eq!(
-                        values[metric_index], None,
-                        "{} leaked into an unrequested {profile:?} report",
+                        values[metric_index], expected,
+                        "{} changed or leaked in row {id} under {profile:?}",
                         metric.name
                     );
                 }
