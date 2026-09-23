@@ -1204,8 +1204,9 @@ mod tests {
         );
         assert!(restored.content().is_none(), "a miss leaves no content tier behind");
 
-        // Counts alone cannot prove that a wider history preserves the narrower answer.
-        // Compare every displayed metric and per-unit outcome in each row and the total
+        // The load above missed, so both indexes now analyze cold; this checks only that
+        // the rejected wider sidecar left no residue. Counts alone would not show that, so
+        // compare every displayed metric and per-unit outcome in each row and the total
         // with a fresh index that has never seen the wider sidecar.
         let (mut cold, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("cold scan");
