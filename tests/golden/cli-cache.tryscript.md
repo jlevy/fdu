@@ -688,8 +688,8 @@ $ fdu --no-gitignore --cache only --view tree --format json --size apparent --de
 ? 0
 ```
 
-A read-only projected open revalidates the same entries without installing control
-state. The stronger snapshot remains usable by a subsequent default cache-only request.
+A read-only one-shot metadata report scans cold without installing control state.
+It leaves the stronger snapshot usable by a subsequent default cache-only request.
 
 ```console
 $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 --limit 0 project
