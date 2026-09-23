@@ -5,12 +5,13 @@ title: Terminal multi-path reconciliation clears unvisited issues
 kind: bug
 status: closed
 priority: 1
-version: 3
+version: 4
+spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels: []
 dependencies: []
 parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 created_at: 2026-09-20T06:58:47.666Z
-updated_at: 2026-09-20T07:05:19.406Z
+updated_at: 2026-09-23T01:27:17.842Z
 closed_at: 2026-09-20T07:05:19.403Z
 close_reason: Fixed by distinguishing visited evidence from incomplete closure
 resolution: null

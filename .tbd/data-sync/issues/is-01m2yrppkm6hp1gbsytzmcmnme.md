@@ -5,12 +5,13 @@ title: Reconciliation closure overwrites budget and removes metadata-error entri
 kind: bug
 status: closed
 priority: 1
-version: 3
+version: 4
+spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels: []
 dependencies: []
 parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 created_at: 2026-09-20T06:40:21.618Z
-updated_at: 2026-09-20T06:52:16.641Z
+updated_at: 2026-09-23T01:27:17.842Z
 closed_at: 2026-09-20T06:52:16.636Z
 close_reason: Fixed and regression-tested in release-state transition slice
 resolution: null

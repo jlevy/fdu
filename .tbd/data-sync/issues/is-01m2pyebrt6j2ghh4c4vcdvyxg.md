@@ -5,7 +5,7 @@ title: "P2.2.8: Python models from the wire schema; migrate smoke.py; delete the
 kind: task
 status: in_progress
 priority: 0
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 delegate: codex@spud10
 labels:
@@ -15,7 +15,7 @@ parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:44.377Z
-updated_at: 2026-09-20T05:13:36.256Z
+updated_at: 2026-09-23T01:31:40.272Z
 started_at: 2026-09-20T05:13:36.256Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", commit 8. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
@@ -39,3 +39,7 @@ Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, s
 - Every golden diff is read and attributed to this commit; none is regenerated blind.
 
 Risk: `render` still materializes a string for Python, and YAML indentation still grows with tree depth.
+
+## Notes
+
+Resumed on codex/alpha-answer-fixes from preserved integration47dbb51c. Local commit7edd44b0 removes unused native report method/dictionary and migrates private smoke to frozen report JSON. Native cargo check, installed native smoke, public smoke, and model tests pass. Followup replaces independent native cache dictionary with core wire decoding; parser and typed-model contract validation in progress. Parent owns final integration, full gate, PR, and CI before closure.

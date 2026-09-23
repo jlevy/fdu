@@ -5,7 +5,8 @@ title: Legacy watch Session misses changes made before watcher registration
 kind: bug
 status: in_progress
 priority: 1
-version: 4
+version: 5
+spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex@spud10
 labels: []
 dependencies: []
@@ -13,7 +14,7 @@ parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:35:39.615Z
-updated_at: 2026-09-23T01:19:29.645Z
+updated_at: 2026-09-23T01:27:17.842Z
 started_at: 2026-09-20T04:40:17.391Z
 ---
 At 937f9445 Session binds observation after accepting a supplied Index and returns without closing the scan-to-bind gap. A completed mutation between scan and Session construction may remain stale indefinitely. Bind capture, reconcile baseline, consume captured verified hints before initial report using shared engine lifecycle; deterministic pre-construction mutation regression.
