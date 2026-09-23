@@ -5,29 +5,38 @@ None of these tests runs fdu, so they hold on a machine with no build.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import registry
 from fixture import build_fixture, copy_fixture
-from runner import Invocation, case_key, compare, normalize
+from runner import Invocation, _read_jsonl_report, case_key, compare, normalize
 
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/6",
-        "source": "cold_scan",
-        "freshness": "fresh",
-        "scan_started_at": "2026-01-01T00:00:00Z",
-        "generated_at": "2026-01-01T00:00:01Z",
-        "complete": True,
-        "errors": [],
+        "schema": "fdu.report/7",
+        "request": {
+            "scope": {"read_controls": True},
+            "analyze": [],
+            "views": ["summary"],
+        },
+        "status": {"complete": True, "coverage": {"kind": "complete"}, "errors": []},
+        "provenance": {
+            "source": "cold_scan",
+            "freshness": "fresh",
+            "scan_started_at": "2026-01-01T00:00:00Z",
+            "generated_at": "2026-01-01T00:00:01Z",
+        },
         "reports": [{"rows": [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 2}]}],
     }
     base.update(overrides)
@@ -38,24 +47,129 @@ def cli(result: dict[str, Any] | None, *, exit: int = 0, stderr: str = "") -> In
     return Invocation("cli-report", "fdu", exit, stderr, result)
 
 
+class WatchEligibilityTests(unittest.TestCase):
+    def test_watch_compares_supported_metadata_requests(self) -> None:
+        import matrix
+        from runner import watch_can_serve
+
+        for policy in ("off", "auto", "read-only"):
+            self.assertTrue(watch_can_serve(matrix.spec(no_gitignore=True), policy))
+            self.assertTrue(watch_can_serve(matrix.spec(analyze="none"), policy))
+        for request, policy in (
+            (matrix.spec(), "only"),
+            (matrix.spec(analyze="lines"), "auto"),
+            (matrix.spec(scan_depth=1), "auto"),
+            (matrix.spec(one_fs=True), "auto"),
+        ):
+            self.assertFalse(watch_can_serve(request, policy))
+
+
 class CompareTests(unittest.TestCase):
     """What counts as the same answer, and which differences are allowed outcomes."""
 
     def test_provenance_is_excluded_and_nothing_else(self) -> None:
         content, provenance = normalize(answer())
         self.assertEqual(
-            set(provenance), {"source", "freshness", "scan_started_at", "generated_at"}
+            set(provenance),
+            {"source", "freshness", "scan_started_at", "generated_at"},
         )
-        self.assertIn("complete", content)
-        self.assertIn("errors", content)
-        warm = answer(source="warm_revalidate", freshness="stale", generated_at="later")
+        self.assertIn("status", content)
+        self.assertIn("request", content)
+        warm = answer(
+            provenance={
+                "source": "warm_revalidate",
+                "freshness": "stale",
+                "scan_started_at": "earlier",
+                "generated_at": "later",
+                "tiers": {"entries": {"source": "revalidated"}},
+            }
+        )
         self.assertEqual(compare(cli(answer()), cli(warm), policy="auto").kind, "same")
 
     def test_tree_status_is_compared(self) -> None:
-        partial = answer(complete=False, errors=["x: permission denied"])
+        partial = answer(
+            status={
+                "complete": False,
+                "coverage": {"kind": "partial", "reason": "unavailable"},
+                "errors": [{"message": "permission denied", "path": "x"}],
+            }
+        )
         verdict = compare(cli(answer()), cli(partial), policy="auto")
         self.assertEqual(verdict.kind, "differs")
-        self.assertEqual(verdict.paths, ("complete", "errors[]"))
+        self.assertEqual(
+            verdict.paths,
+            (
+                "status.complete",
+                "status.coverage.kind",
+                "status.coverage.reason",
+                "status.errors[]",
+            ),
+        )
+
+    def test_request_is_compared(self) -> None:
+        changed = answer(
+            request={
+                "scope": {"read_controls": False},
+                "analyze": [],
+                "views": ["summary"],
+            }
+        )
+        verdict = compare(cli(answer()), cli(changed), policy="auto")
+        self.assertEqual(verdict.paths, ("request.scope.read_controls",))
+
+    def test_missing_or_invalid_report_status_is_a_failure(self) -> None:
+        for malformed in (
+            answer(status={}),
+            answer(status={"complete": "yes"}),
+            answer(schema="not-an-fdu-report"),
+        ):
+            with self.subTest(malformed=malformed):
+                self.assertEqual(cli(malformed).outcome, "failure")
+
+    def test_watch_jsonl_reader_reassembles_every_requested_section(self) -> None:
+        envelope = answer(reports=[])
+        envelope["request"]["views"] = ["summary", "types"]
+        summary = {"view": "summary", "summary": {"files": 1}}
+        types = {"view": "types", "metrics": {"rows": []}}
+        later_change = {"schema": "fdu.stream/2", "record": "change"}
+        stream = StringIO(
+            "\n".join(json.dumps(value) for value in (envelope, summary, types, later_change))
+            + "\n"
+        )
+
+        parsed = _read_jsonl_report(stream)
+
+        self.assertEqual(parsed["reports"], [summary, types])
+        self.assertEqual(json.loads(stream.readline()), later_change)
+
+    def test_watch_jsonl_reader_refuses_a_missing_or_wrong_section(self) -> None:
+        envelope = answer(reports=[])
+        envelope["request"]["views"] = ["summary"]
+        for section in (None, {"view": "types"}):
+            values = [envelope] + ([] if section is None else [section])
+            with (
+                self.subTest(section=section),
+                self.assertRaises((EOFError, ValueError)),
+            ):
+                _read_jsonl_report(
+                    StringIO("\n".join(json.dumps(value) for value in values) + "\n")
+                )
+
+    def test_age_normalization_keeps_metric_errors_and_does_not_mutate_evidence(self) -> None:
+        def timed(reference: int, age: int) -> dict[str, Any]:
+            return answer(
+                age_reference_ns=reference,
+                reports=[{"files": [{"path": "env", "mtime_ns": -10, "age_ns": age}]}],
+            )
+
+        earlier = timed(100, 110)
+        later = timed(200, 210)
+        self.assertEqual(compare(cli(earlier), cli(later), policy="auto").kind, "same")
+        self.assertEqual(earlier["reports"][0]["files"][0]["age_ns"], 110)
+        wrong = timed(200, 209)
+        self.assertEqual(
+            compare(cli(earlier), cli(wrong), policy="auto").paths, ("reports[].files[].age_ns",)
+        )
 
     def test_list_indices_are_generalized(self) -> None:
         swapped = answer(reports=[{"rows": [{"name": "a", "bytes": 1}, {"name": "b", "bytes": 3}]}])
@@ -76,11 +190,23 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(verdict.paths, ("reports[].rows<order>",))
 
     def test_the_root_is_compared_by_placeholder(self) -> None:
-        here = answer(root="/tmp/one/tree", errors=["/tmp/one/tree/src: denied"])
-        there = answer(root="C:\\copy\\tree", errors=["C:\\copy\\tree/src: denied"])
+        here = answer(
+            root="/tmp/one/tree",
+            status={"complete": True, "errors": ["/tmp/one/tree/src: denied"]},
+        )
+        there = answer(
+            root="C:\\copy\\tree",
+            status={"complete": True, "errors": ["C:\\copy\\tree/src: denied"]},
+        )
         self.assertEqual(compare(cli(here), cli(there), policy="auto").kind, "same")
-        elsewhere = answer(root="/tmp/one/tree", errors=["/tmp/one/tree/docs: denied"])
-        self.assertEqual(compare(cli(here), cli(elsewhere), policy="auto").paths, ("errors[]",))
+        elsewhere = answer(
+            root="/tmp/one/tree",
+            status={"complete": True, "errors": ["/tmp/one/tree/docs: denied"]},
+        )
+        self.assertEqual(
+            compare(cli(here), cli(elsewhere), policy="auto").paths,
+            ("status.errors[]",),
+        )
 
     def test_a_cache_only_failure_is_a_named_refusal(self) -> None:
         miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
@@ -101,6 +227,60 @@ class CompareTests(unittest.TestCase):
                 verdict = compare(cli(answer()), crash, policy="only")
                 self.assertEqual(verdict.kind, "outcome_class")
 
+    def test_an_exact_seed_must_serve_instead_of_refusing_or_scanning(self) -> None:
+        oracle = cli(answer())
+        miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+        cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+        fresh = cli(answer(provenance={"source": "cache_only", "freshness": "fresh"}))
+        self.assertFalse(compare(oracle, miss, policy="only", must_serve=True).allowed)
+        self.assertFalse(compare(oracle, oracle, policy="only", must_serve=True).allowed)
+        self.assertFalse(compare(oracle, fresh, policy="only", must_serve=True).allowed)
+        self.assertEqual(compare(oracle, cached, policy="only", must_serve=True).kind, "same")
+
+    def test_a_serving_control_fails_when_both_runs_fail_identically(self) -> None:
+        # Two identical failures are `same` for ordinary cases, but a serving control
+        # that never served has not shown the cache works, whatever the oracle did.
+        crash = cli(None, exit=101, stderr="thread 'main' panicked at src/lib.rs")
+        miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+        cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+        for failure in (crash, miss):
+            with self.subTest(failure.stderr):
+                self.assertEqual(compare(failure, failure, policy="only").kind, "same")
+                verdict = compare(failure, failure, policy="only", must_serve=True)
+                self.assertEqual(verdict.kind, "outcome_class")
+                self.assertFalse(compare(failure, cached, policy="only", must_serve=True).allowed)
+
+    def test_cache_contract_phase_catches_a_cache_that_never_serves(self) -> None:
+        import matrix
+        from fixture import FixtureFacts
+        from runner import MatrixRun, Surfaces, Workspace
+
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = MatrixRun(
+                matrix.SUBSET,
+                Surfaces(Path("unused-fdu"), Path("unused-python")),
+                Workspace(base),
+                FixtureFacts(base / "tree", False, False),
+            )
+            run.cold = {request: cli(answer()) for request in matrix.SUBSET.requests}
+            cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
+            miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
+            with patch("runner.run_cli", return_value=cli(answer())):
+                with patch("runner.run_route", return_value=cached):
+                    healthy = run.phase_cache_contract()
+                with patch("runner.run_route", return_value=miss):
+                    broken = run.phase_cache_contract()
+            self.assertEqual(len(healthy), 18)
+            self.assertEqual(len(broken), len(healthy))
+            self.assertTrue(all(case.verdict.allowed for case in healthy))
+            self.assertTrue(all(not case.verdict.allowed for case in broken))
+            with patch("runner.run_cli", return_value=miss), patch("runner.run_route") as measured:
+                unseeded = run.phase_cache_contract()
+                measured.assert_not_called()
+            self.assertEqual(len(unseeded), len(healthy))
+            self.assertTrue(all(not case.verdict.allowed for case in unseeded))
+
     def test_an_answer_where_cold_refused_is_an_outcome_difference(self) -> None:
         refused = cli(None, exit=2, stderr="fdu: requires content analysis")
         verdict = compare(refused, cli(answer()), policy="only")
@@ -109,7 +289,8 @@ class CompareTests(unittest.TestCase):
     def test_refusals_compare_wording_only_on_the_same_surface(self) -> None:
         cold = cli(None, exit=2, stderr="fdu: requires content analysis")
         self.assertEqual(
-            compare(cold, cli(None, exit=2, stderr=cold.stderr), policy="auto").kind, "same"
+            compare(cold, cli(None, exit=2, stderr=cold.stderr), policy="auto").kind,
+            "same",
         )
         reworded = cli(None, exit=2, stderr="fdu: needs analysis")
         self.assertEqual(compare(cold, reworded, policy="auto").paths, ("<error>",))
@@ -121,11 +302,11 @@ class CompareTests(unittest.TestCase):
     def test_stale_needs_cache_only_the_earlier_answer_and_its_label(self) -> None:
         earlier = cli(answer())
         after_change = cli(answer(reports=[]))
-        stale = cli(answer(freshness="stale"))
-        unlabelled = cli(answer(freshness="fresh"))
+        stale = cli(answer(provenance={"freshness": "stale"}))
+        unlabelled = cli(answer(provenance={"freshness": "fresh"}))
         self.assertEqual(compare(after_change, stale, policy="only", earlier=earlier).kind, "stale")
         verdict = compare(after_change, unlabelled, policy="only", earlier=earlier)
-        self.assertEqual((verdict.kind, verdict.paths), ("differs", ("freshness",)))
+        self.assertEqual((verdict.kind, verdict.paths), ("differs", ("provenance.freshness",)))
         self.assertEqual(
             compare(after_change, stale, policy="auto", earlier=earlier).kind, "differs"
         )
@@ -166,7 +347,11 @@ class RegistryTests(unittest.TestCase):
     """Each way a run and the registry can disagree fails the run."""
 
     def verify(self, judged: list[registry.Judged], text: str = REGISTRY, **kw: Any) -> list[str]:
-        options: dict[str, Any] = {"full": False, "platform": "linux", "cold_answers": 1} | kw
+        options: dict[str, Any] = {
+            "full": False,
+            "platform": "linux",
+            "cold_answers": 1,
+        } | kw
         failures = registry.verify(registry.parse(text), judged, **options)
         return [failure.reason for failure in failures]
 
@@ -175,6 +360,17 @@ class RegistryTests(unittest.TestCase):
 
     def test_a_conforming_run_passes(self) -> None:
         self.assertEqual(self.verify(self.conforming(), full=True), [])
+
+    def test_the_conformance_gate_rejects_even_matching_registered_failures(self) -> None:
+        from runner import CaseResult, RunResult, Verdict, judge
+
+        result = RunResult(tier="subset", cold_answers=1)
+        result.cases = [
+            CaseResult(key, Verdict("same" if allowed else "differs", paths))
+            for key, allowed, paths in self.conforming()
+        ]
+        reasons = [failure.reason for failure in judge(result, registry.parse(REGISTRY))]
+        self.assertEqual(reasons, ["known violations are not allowed by the conformance gate"])
 
     def test_an_unregistered_difference_fails(self) -> None:
         judged = [*self.conforming(), (D, False, ("reports[]",))]
@@ -194,7 +390,10 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(self.verify(judged, REGISTRY + unused), [])
         self.assertEqual(
             sorted(self.verify(judged, REGISTRY + unused, full=True)),
-            ["class has no entries; remove it", "registered case is not in the full matrix"],
+            [
+                "class has no entries; remove it",
+                "registered case is not in the full matrix",
+            ],
         )
 
     def test_unclassified_and_undefined_classes_fail(self) -> None:
@@ -205,14 +404,16 @@ class RegistryTests(unittest.TestCase):
 
     def test_an_empty_run_fails(self) -> None:
         self.assertEqual(
-            self.verify([], cold_answers=0), ["run executed no cases", "run parsed no cold answers"]
+            self.verify([], cold_answers=0),
+            ["run executed no cases", "run parsed no cold answers"],
         )
 
     def test_platform_entries_apply_only_on_their_platform(self) -> None:
         text = REGISTRY.replace("keys =", 'platforms = ["win32"]\nkeys =')
         self.assertEqual(self.verify(self.conforming(), text, platform="win32"), [])
         self.assertEqual(
-            self.verify(self.conforming(), text, platform="linux"), ["unregistered difference"] * 2
+            self.verify(self.conforming(), text, platform="linux"),
+            ["unregistered difference"] * 2,
         )
 
     def test_one_case_may_take_a_different_shape_per_platform(self) -> None:
@@ -254,7 +455,10 @@ class RegistryTests(unittest.TestCase):
         known = registry.parse(REGISTRY)
         runs = {
             "linux": [(A, False, SHAPE), (NEW, False, ("reports[]",))],
-            "darwin": [(A, False, ("reports[].bytes", *SHAPE)), (NEW, False, ("reports[]",))],
+            "darwin": [
+                (A, False, ("reports[].bytes", *SHAPE)),
+                (NEW, False, ("reports[]",)),
+            ],
             "win32": [(A, False, SHAPE), (NEW, False, ("reports[]",))],
         }
         merged = registry.merge(known, runs)

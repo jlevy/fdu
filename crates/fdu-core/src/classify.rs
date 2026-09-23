@@ -12,8 +12,10 @@
 //! functions:
 //!
 //! - **Raw**: [`derive_ext`], and [`ext_bucket`], which labels its `None` as
-//!   [`NO_EXTENSION`]. Any final dotted component counts, whatever its bytes or length,
-//!   and a `.tar` before it is kept. The extension view, per-directory extension tallies,
+//!   [`NO_EXTENSION`]. Any final dotted component counts if that extension is valid
+//!   Unicode, with no character or length restriction; a `.tar` before it is kept.
+//!   An invalid native extension has no bucketable string and maps to `None`.
+//!   The extension view, per-directory extension tallies,
 //!   and an unrecognized type's label use this level. It is the answer fdu gave before
 //!   registries existed.
 //! - **Logical**: [`logical_ext`] and [`NameClassification::logical_extension`]. This is
@@ -928,10 +930,13 @@ pub fn logical_ext(name: &OsStr) -> Option<String> {
 /// `.gitignore` — a leading dot marks a hidden file, it does not introduce an extension.
 ///
 /// This is the raw extension, and it is deliberately not the File Rollup one: any final
-/// component counts, whatever its bytes or length, so `file.c++` is `.c++` here while
+/// valid-Unicode component counts without a character or length restriction, so
+/// `file.c++` is `.c++` here while
 /// [`logical_ext`] and [`TypeRegistry::canonical_ext`] give it none. It names the extension
 /// view's piles and the label of an unrecognized type, and it keeps the answer it had
 /// before registries existed for the detached and command-line callers that depend on it.
+/// An invalid UTF-8 or UTF-16 extension returns `None`. On Unix and Windows an invalid
+/// native stem does not prevent a valid extension from being extracted.
 ///
 /// ```
 /// use std::ffi::OsStr;

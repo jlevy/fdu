@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ctypes
 import hashlib
 import json
 import math
@@ -15,6 +16,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+
+if os.name == "nt":
+    from ctypes import wintypes
 
 
 RECIPE_SCHEMA = "fdu-corpus-recipes-v1"
@@ -36,6 +40,78 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Windows directory-enumeration metadata omits file identity and may be stale. The
 # independent oracle needs fresh identity to distinguish hardlinks from unrelated files.
 _DIRENTRY_METADATA_IS_AUTHORITATIVE = os.name != "nt"
+
+_WINDOWS_TO_UNIX_EPOCH_100NS = 116_444_736_000_000_000
+_I64_MIN = -(1 << 63)
+_I64_MAX = (1 << 63) - 1
+
+if os.name == "nt":
+    _FILE_SHARE_READ = 0x0001
+    _FILE_SHARE_WRITE = 0x0002
+    _FILE_SHARE_DELETE = 0x0004
+    _OPEN_EXISTING = 3
+    _FILE_FLAG_OPEN_REPARSE_POINT = 0x0020_0000
+    _FILE_FLAG_BACKUP_SEMANTICS = 0x0200_0000
+    _FILE_BASIC_INFO_CLASS = 0
+    _FILE_ID_INFO_CLASS = 18
+    _ERROR_ACCESS_DENIED = 5
+    _ERROR_SHARING_VIOLATION = 32
+
+    class _FileBasicInfo(ctypes.Structure):
+        _fields_ = [
+            ("creation_time", ctypes.c_longlong),
+            ("last_access_time", ctypes.c_longlong),
+            ("last_write_time", ctypes.c_longlong),
+            ("change_time", ctypes.c_longlong),
+            ("file_attributes", wintypes.DWORD),
+        ]
+
+    class _ByHandleFileInformation(ctypes.Structure):
+        _fields_ = [
+            ("file_attributes", wintypes.DWORD),
+            ("creation_time", wintypes.FILETIME),
+            ("last_access_time", wintypes.FILETIME),
+            ("last_write_time", wintypes.FILETIME),
+            ("volume_serial_number", wintypes.DWORD),
+            ("file_size_high", wintypes.DWORD),
+            ("file_size_low", wintypes.DWORD),
+            ("number_of_links", wintypes.DWORD),
+            ("file_index_high", wintypes.DWORD),
+            ("file_index_low", wintypes.DWORD),
+        ]
+
+    class _FileIdInfo(ctypes.Structure):
+        _fields_ = [
+            ("volume_serial_number", ctypes.c_ulonglong),
+            ("file_id", ctypes.c_ubyte * 16),
+        ]
+
+    _KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _KERNEL32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    _KERNEL32.CreateFileW.restype = wintypes.HANDLE
+    _KERNEL32.GetFileInformationByHandleEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    _KERNEL32.GetFileInformationByHandleEx.restype = wintypes.BOOL
+    _KERNEL32.GetFileInformationByHandle.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_ByHandleFileInformation),
+    ]
+    _KERNEL32.GetFileInformationByHandle.restype = wintypes.BOOL
+    _KERNEL32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _KERNEL32.CloseHandle.restype = wintypes.BOOL
+    _INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 _RECIPE_KEYS = {
     "default_target_entries",
@@ -1146,7 +1222,7 @@ def _observe_corpus(root: Path, *, capture_records: bool) -> Tuple[Dict[str, Any
         else:
             engine_kind = "other"
             record = {"kind": "other", "path": relative}
-        engine_digest.add_bytes(_engine_record_bytes(relative, engine_kind, metadata))
+        engine_digest.add_bytes(_engine_record_bytes(relative, engine_kind, metadata, path=path))
         builder.add(record)
 
     summary = builder.summary()
@@ -1171,6 +1247,8 @@ def _engine_record_bytes(
     relative: str,
     kind: str,
     metadata: Optional[os.stat_result],
+    *,
+    path: Optional[Path] = None,
 ) -> bytes:
     path_bytes = relative.encode("utf-8")
     if len(path_bytes) > (1 << 32) - 1:
@@ -1183,6 +1261,15 @@ def _engine_record_bytes(
     }[kind]
     if metadata is None:
         attrs = (0, 0, 0, 0, 0, 0)
+    elif os.name == "nt":
+        if path is None:
+            raise CorpusError("Windows engine oracle requires an absolute entry path")
+        try:
+            attrs = _windows_engine_attrs(path, listed=metadata)
+        except OSError as error:
+            raise CorpusError(
+                f"cannot observe Windows engine metadata for {relative!r}: {error}"
+            ) from error
     else:
         size = int(metadata.st_size)
         allocated = (
@@ -1206,6 +1293,103 @@ def _engine_record_bytes(
             struct.pack(">QQqqQQ", *attrs),
         )
     )
+
+
+def _windows_engine_attrs(
+    path: Path, *, listed: Optional[os.stat_result] = None
+) -> Tuple[int, int, int, int, int, int]:
+    """Read the six engine attributes through an independent non-following handle."""
+    if os.name != "nt":
+        raise OSError("Windows metadata is unavailable on this platform")
+
+    handle = _KERNEL32.CreateFileW(
+        str(path),
+        0,
+        _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+        None,
+        _OPEN_EXISTING,
+        _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_BACKUP_SEMANTICS,
+        None,
+    )
+    if handle == _INVALID_HANDLE_VALUE:
+        if ctypes.get_last_error() in (_ERROR_ACCESS_DENIED, _ERROR_SHARING_VIOLATION):
+            if listed is None:
+                listed = path.lstat()
+            return _windows_listed_attrs(listed)
+        _raise_windows_error(path)
+    try:
+        first = _query_windows_engine_attrs(handle, path)
+        second = _query_windows_engine_attrs(handle, path)
+        if first != second:
+            raise OSError(f"Windows metadata changed while observing {path}")
+        return second
+    finally:
+        _KERNEL32.CloseHandle(handle)
+
+
+def _query_windows_engine_attrs(
+    handle: Any,
+    path: Path,
+) -> Tuple[int, int, int, int, int, int]:
+    basic = _FileBasicInfo()
+    identity = _ByHandleFileInformation()
+    if not _KERNEL32.GetFileInformationByHandleEx(
+        handle,
+        _FILE_BASIC_INFO_CLASS,
+        ctypes.byref(basic),
+        ctypes.sizeof(basic),
+    ):
+        _raise_windows_error(path)
+    if not _KERNEL32.GetFileInformationByHandle(handle, ctypes.byref(identity)):
+        _raise_windows_error(path)
+    size = (int(identity.file_size_high) << 32) | int(identity.file_size_low)
+    inode = (int(identity.file_index_high) << 32) | int(identity.file_index_low)
+    file_id = _FileIdInfo()
+    if _KERNEL32.GetFileInformationByHandleEx(
+        handle,
+        _FILE_ID_INFO_CLASS,
+        ctypes.byref(file_id),
+        ctypes.sizeof(file_id),
+    ):
+        inode = _fold_windows_file_id(bytes(file_id.file_id))
+    return (
+        size,
+        size,
+        _windows_time_to_unix_ns(int(basic.last_write_time)),
+        _windows_time_to_unix_ns(int(basic.change_time)),
+        inode,
+        int(identity.volume_serial_number),
+    )
+
+
+def _windows_time_to_unix_ns(ticks: int) -> int:
+    if ticks == 0:
+        return 0
+    return max(_I64_MIN, min(_I64_MAX, (ticks - _WINDOWS_TO_UNIX_EPOCH_100NS) * 100))
+
+
+def _windows_listed_attrs(
+    listed: os.stat_result,
+) -> Tuple[int, int, int, int, int, int]:
+    size = int(listed.st_size)
+    # Python exposes the listing's write time in Unix nanoseconds. Recover its
+    # FILETIME ticks so an unavailable zero keeps the same meaning as a handle query.
+    write_ticks = int(listed.st_mtime_ns) // 100 + _WINDOWS_TO_UNIX_EPOCH_100NS
+    return (size, size, _windows_time_to_unix_ns(write_ticks), 0, 0, 0)
+
+
+def _fold_windows_file_id(identifier: bytes) -> int:
+    low = int.from_bytes(identifier[:8], "little")
+    high = int.from_bytes(identifier[8:], "little")
+    if high == 0:
+        return low
+    rotated = ((high << 32) | (high >> 32)) & ((1 << 64) - 1)
+    return (low ^ (rotated * 0x9E37_79B9_7F4A_7C15)) & ((1 << 64) - 1)
+
+
+def _raise_windows_error(path: Path) -> None:
+    code = ctypes.get_last_error()
+    raise OSError(code, ctypes.FormatError(code), str(path))
 
 
 def _walk_corpus(root: Path) -> Iterator[Tuple[Path, str, os.stat_result]]:

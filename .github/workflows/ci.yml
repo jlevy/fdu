@@ -105,8 +105,9 @@ jobs:
         run: npm run test:golden
       # The subset of the path-independence matrix that reaches the command line alone:
       # every answer after other requests, cache policies, and file changes must equal a
-      # cold run's, or be a registered known violation. The Python routes run in the
-      # parity job, which builds the wheel. The full matrix is its own workflow.
+      # cold run's. The known-violation registry is diagnostic evidence, not a waiver:
+      # the gate fails while it is nonempty. The Python routes run in the parity job,
+      # which builds the wheel. The full matrix is its own workflow.
       - name: Check answers against cold runs across cache histories
         env:
           FDU_PI_SURFACES: cli
@@ -163,6 +164,13 @@ jobs:
     name: MSRV (1.85)
     needs: supply-chain
     runs-on: ubuntu-latest
+    env:
+      # rust-toolchain.toml pins the workspace to the current release, and a directory
+      # override outranks the default the toolchain action sets, so without this every
+      # cargo step below ran on that release and the job checked nothing at the MSRV;
+      # rustup said as much in its output. The variable outranks the file, as
+      # `cargo +1.85.0` does in `make msrv`.
+      RUSTUP_TOOLCHAIN: 1.85.0
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -170,9 +178,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.85.0
         with:
           toolchain: 1.85.0
+          targets: x86_64-pc-windows-msvc
       - run: cargo check --locked --all-features
       # Compile success alone misses behavioral and test-only MSRV regressions.
       - run: cargo test --locked -p fdu-core --no-default-features
+      # Platform-gated code is invisible to a check on the host target, and this job
+      # runs on ubuntu, so the Windows-only metadata module was MSRV-checked by nothing
+      # required: two of its paths once used an API stable since 1.87 against an MSRV
+      # of 1.85. Checking rather than building needs no linker, and `--all-targets`
+      # covers the Windows-only tests too.
+      - run: cargo check --locked --all-features --all-targets --target x86_64-pc-windows-msvc
 
   docs:
     name: Documentation

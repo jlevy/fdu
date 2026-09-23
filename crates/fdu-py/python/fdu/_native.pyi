@@ -1,4 +1,9 @@
-"""Private native-extension contract used by the typed public package."""
+"""Private native-extension contract used by the typed public package.
+
+Report and watch keyword arguments include ``format``: text, tree, paths, long,
+json, jsonl, or yaml. The query chooses the retained report projection. Rendering
+an incompatible tree/flat shape raises ValueError rather than inventing missing rows.
+"""
 
 from collections.abc import Iterator
 from os import PathLike
@@ -7,9 +12,12 @@ from typing import Any
 __version__: str
 
 #: The request model's defaults, so this package states them once rather than twice.
+DEFAULT_WATCH_INTERVAL_SECONDS: float
 DEFAULT_WORDS_PER_PAGE: int
 DEFAULT_SIZE: str
 DEFAULT_READ_CONTROLS: bool
+MIN_WATCH_INTERVAL_SECONDS: float
+MAX_WATCH_INTERVAL_SECONDS: float
 
 class Index:
     @property
@@ -24,7 +32,6 @@ class Index:
     def errors(self) -> list[str]: ...
     def __len__(self) -> int: ...
     def status(self) -> dict[str, Any]: ...
-    def report(self, **kwargs: object) -> dict[str, Any]: ...
     def report_handle(self, **kwargs: object) -> OneShot: ...
     def total(self) -> dict[str, Any]: ...
     def rollup(self, path: str | PathLike[str]) -> dict[str, Any] | None: ...

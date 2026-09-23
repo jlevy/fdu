@@ -10,28 +10,29 @@ mod query_glob;
 mod query_report;
 mod query_request;
 mod query_selection;
+mod query_status;
+mod query_subtrees;
 mod query_values;
 
 pub use query_glob::Pattern;
 pub use query_report::{
     AxisNames, ContentReportMetadata, FileRow, IgnoredTally, MetricGroup, MetricRow, MetricShare,
-    MetricSummary, Provenance, Query, Report, ReportSource, Section, ShareMetric, SummaryRow,
-    TreeNode, TypeRow, ViewSpec, document_words, report,
+    MetricSummary, Pages, Query, Report, ReportMetricValues, ReportSource, Section, ShareMetric,
+    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, pages, report,
 };
-pub(crate) use query_report::{
-    display_notes, forget_ignore_classification, report_in, report_summary,
-};
+pub(crate) use query_report::{report_in, report_summary};
 pub(crate) use query_request::Rejection;
 pub use query_request::{
-    Basis, Delivery, ReadSpec, Request, RequestDefaults, RequestError, RequestSpec, ScopeAxis,
-    WatchDelivery, bound_nanos, parse_bound, parse_cache_policy, parse_kind, parse_kinds,
-    parse_size_metric, parse_sort,
+    Basis, Delivery, ReadSpec, Request, RequestDefaults, RequestError, RequestSpec, Scope,
+    ScopeAxis, WatchDelivery, Workers, bound_nanos, parse_bound, parse_cache_policy, parse_kind,
+    parse_kinds, parse_size_metric, parse_sort,
 };
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
     Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, SizeMetric,
     SortKey,
 };
+pub use query_status::{ReportProvenance, TierProvenance, TierState, TreeStatus};
 pub(crate) use query_values::format_rfc3339_nanos;
 pub use query_values::{
     format_rfc3339, parse_control_budget, parse_control_line_limit, parse_size, parse_when,

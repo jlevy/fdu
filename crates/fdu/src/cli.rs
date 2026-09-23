@@ -19,10 +19,6 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use fdu_core::content::AnalysisSet;
-// The open configuration and the age grammar are the watch path's alone now: everything
-// else composes a request and a delivery and hands them to the engine.
-#[cfg(feature = "watch")]
-use fdu_core::OpenConfig;
 use fdu_core::control::ControlCoverage;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
@@ -97,6 +93,9 @@ const DOCS_POINTER: &str = r"Examples:
   fdu . --exclude-ignored   omit entries covered by .gitignore
   fdu . --view=summary      one total for the tree
   fdu . --analyze=code      standard lines of code by language
+  fdu . --kind dir --include .venv --modified-before 7d --long
+  fdu . --kind dir --include node_modules --modified-before 30d --long
+  fdu . --kind dir --include target --modified-before 30d --format paths
 
 Run `fdu --docs` for more commands, cache behavior, and the full usage guide.";
 
@@ -153,7 +152,7 @@ MORE COMPOSITIONS
   fdu . --view=types,families --format=json
   fdu . --analyze=words --view=documents
   fdu PATH --view=largest --limit=100                        the 100 largest files
-  fdu PATH --view=files --modified-since=1h --sort=mtime     recent changes
+  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
   fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
 ",
             $watch_composition,
@@ -162,7 +161,38 @@ MORE COMPOSITIONS
     largest = files --sort size --limit 20, regular files only
     recent  = files --sort mtime --limit 20, regular files only
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full is every view except files.
+  matching entry, in name order. full keeps its bounded digest, without list/files.
+
+LIST FORMATS AND OLD BUILD DIRECTORIES
+  The metadata default view is list; its default format is tree. These agree:
+    fdu PATH
+    fdu PATH --view list --format tree
+  Tree keeps the current directory roll-ups, depth 2, ten children per directory.
+  Files contribute to totals without new leaf rows. --depth all expands levels;
+  --limit all removes row caps. Flat list limits apply to the whole result.
+
+  --format paths gives matching paths only; --long adds size, age, and path.
+  Flat lists are complete and size-ranked by default; --sort name lists by name.
+  JSON, JSONL, and YAML give exact metrics. text keeps automatic human tables.
+  Tree/paths/long require a single list view; use text or machine formats for
+  grouped/mixed views and full. largest/recent accept paths/long, keeping file ranks.
+  Legacy files keeps name order; legacy tree keeps structured tree output.
+  Explicit paths/long overrides the legacy tree presentation. Format flags conflict.
+
+  fdu PATH --kind dir --include .venv --modified-before 7d --long
+  fdu PATH --kind dir --include node_modules --modified-before 30d --format long
+  fdu PATH --kind dir --include target --modified-before 30d --format paths
+  fdu PATH --kind dir --include .venv --include venv --include node_modules --include target --modified-before 30d --long --sort mtime --reverse
+  fdu PATH --kind dir --include .venv --modified-before 30d --format json
+
+  Kind, name/path, size, and age are filters. Repeated includes form a union.
+  Directory sizes sum eligible regular-file contents, excluding inode/symlink bytes.
+  Age uses the newest modification of the root or an eligible descendant, including
+  directories and symlinks. Empty directories use their own time; future age is negative.
+  This is modification activity, not access or last use. target is a naming convention.
+  Exclusions win throughout the subtree before size/age filtering. Nested matching
+  roots can overlap; aggregate views count the covered contents once. --size apparent
+  selects logical bytes. Paths/long omit the footer and send bound notices to stderr.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
@@ -170,9 +200,9 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
              --exclude-ignored, --only-ignored
-  View       summary,tree,families,types,extensions,languages,documents,
+  View       list,summary,tree,families,types,extensions,languages,documents,
              largest,recent,files,full
-  Format     --format text|json|jsonl|yaml, --color
+  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
   Mode       ",
             $mode_flags,
             r"
@@ -224,7 +254,7 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/5; metric summaries use fdu.report/6.
+  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/2.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -292,46 +322,6 @@ impl std::fmt::Display for UsageError {
 }
 
 impl std::error::Error for UsageError {}
-
-/// The result of one attempt to persist a watching session's index.
-///
-/// Named rather than folded into a `Result<bool>` at the decision site, because the three
-/// cases update the loop's state differently and conflating any two of them has already
-/// caused a defect: an early return that wrote nothing was once indistinguishable from a
-/// completed write.
-#[cfg(feature = "watch")]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum SaveOutcome {
-    /// A snapshot reached disk.
-    Written,
-    /// Nothing was written: the index is not `Fresh` yet, or policy forbids writes.
-    Skipped,
-    /// The write was attempted and failed.
-    Failed,
-}
-
-/// Whether a throttled save is due.
-///
-/// Pure so the throttle can be tested without a filesystem, a clock, or a watcher. The
-/// case worth stating: a pending change that arrives inside the interval is *not* due
-/// now, but stays pending, and the caller's idle path is what eventually saves it. Losing
-/// that second half is what made a burst-then-quiet session never persist at all.
-#[cfg(feature = "watch")]
-fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
-    pending && since_last_save >= interval
-}
-
-/// Whether a change still needs persisting after an attempt.
-///
-/// Only a completed write clears the flag. A skip and a failure both leave the change
-/// unpersisted, and on a quiet tree the retry is the only thing that will ever save it.
-#[cfg(feature = "watch")]
-fn pending_after(outcome: SaveOutcome) -> bool {
-    match outcome {
-        SaveOutcome::Written => false,
-        SaveOutcome::Skipped | SaveOutcome::Failed => true,
-    }
-}
 
 /// The default size metric, as the defaults table spells it.
 ///
@@ -480,7 +470,7 @@ pub struct Cli {
     #[arg(short, long, value_name = "N", help_heading = "SELECTION")]
     pub depth: Option<String>,
 
-    /// Rows to show, per group. Accepts `all`.
+    /// Rows to show, per group, or in all for a flat list. Accepts `all`.
     ///
     /// Each view brings its own default, because one number does not suit them all: a
     /// tree shows ten per directory, `largest` and `recent` show twenty, and `files`
@@ -501,8 +491,8 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, largest, recent,
-    /// files, summary, or full. Defaults to tree with no analysis, otherwise to a view
+    /// Views: list, extensions, types, families, languages, documents, largest, recent,
+    /// summary, or full; tree/files are compatibility presets. Defaults to list with no analysis, otherwise to a view
     /// that displays the requested analysis.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
@@ -532,9 +522,17 @@ pub struct Cli {
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
-    /// Output format: text, json, jsonl, or yaml.
+    /// Format: tree (list default), paths, long (size/age/path), json, jsonl, yaml, or automatic text.
     #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "OUTPUT")]
     pub format: String,
+
+    /// Display the list as the default directory tree.
+    #[arg(long, conflicts_with_all = ["format", "long"], help_heading = "OUTPUT")]
+    pub tree: bool,
+
+    /// Display flat matching paths with size and modification age.
+    #[arg(long, conflicts_with_all = ["format", "tree"], help_heading = "OUTPUT")]
+    pub long: bool,
 
     /// Colorize human output: auto, always, or never.
     #[arg(
@@ -572,7 +570,7 @@ pub struct Cli {
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "EXECUTION")]
+    #[arg(long, value_name = "DUR", default_value_t = format!("{}s", WatchDelivery::DEFAULT_INTERVAL.as_secs()), help_heading = "EXECUTION")]
     pub interval: String,
 
     /// Print help.
@@ -649,7 +647,12 @@ impl Cli {
         let delivery = Delivery {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
             cache_path: default_cache_path(path),
-            analysis_workers: self.analysis_workers,
+            workers: fdu_core::query::Workers {
+                analysis: self.analysis_workers,
+                ..Default::default()
+            },
+            batch_size: fdu_core::ScanConfig::default().batch_size,
+            order: fdu_core::ScanOrder::default(),
             watch: self.watch_delivery().map_err(|error| usage(&error))?,
             // What `--allow-partial` says: a partial answer is a success. Only this
             // command's exit mapping reads it today, and the execution plan model will.
@@ -669,7 +672,7 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return self.run_watch(out, diagnostic, format, &request, &delivery, color);
+            return Self::run_watch(out, diagnostic, format, &request, &delivery, color);
         }
 
         let report_started = Instant::now();
@@ -699,8 +702,24 @@ impl Cli {
         // that buffer, and the user would see nothing until the snapshot's fsync and the
         // index teardown had finished (fdu-n75m). Same bytes in the same order; only
         // when they arrive changes.
-        let rendered = report_format::render(&report, format, color);
-        let render_result = write!(out, "{rendered}").and_then(|()| out.flush());
+        let rendered_text =
+            matches!(format, report_format::Format::Text | report_format::Format::Tree)
+                .then(|| report_format::render(&report, format, color));
+        let (rendered_text, render_result): (Option<String>, anyhow::Result<()>) =
+            match rendered_text {
+                Some(Ok(rendered)) => {
+                    let result =
+                        write!(out, "{rendered}").and_then(|()| out.flush()).map_err(Into::into);
+                    (Some(rendered), result)
+                }
+                Some(Err(error)) => (None, Err(error.into())),
+                None => (
+                    None,
+                    report_format::write(&report, format, color, out)
+                        .and_then(|()| out.flush())
+                        .map_err(Into::into),
+                ),
+            };
 
         // Joined before returning, and before the render error is raised: a broken pipe
         // must not abandon a finished scan's snapshot, because the next run would then
@@ -714,7 +733,8 @@ impl Cli {
         }
         render_result?;
 
-        if format == report_format::Format::Text {
+        if matches!(format, report_format::Format::Text | report_format::Format::Tree) {
+            let rendered = rendered_text.as_deref().unwrap_or_default();
             if !rendered.is_empty() && !rendered.ends_with('\n') {
                 writeln!(out)?;
             }
@@ -738,28 +758,32 @@ impl Cli {
             }
         }
 
-        if format == report_format::Format::Text && !report.complete {
+        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+            for note in report_format::flat_diagnostics(&report) {
+                writeln!(diagnostic, "{note}")?;
+            }
+        }
+        if matches!(format, report_format::Format::Text | report_format::Format::Tree)
+            && !report.status.complete
+        {
             let color =
                 ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
                     .enabled();
-            for error in &report.errors {
-                let _ = writeln!(
-                    diagnostic,
-                    "{}",
-                    paint(&format!("warning: {error}"), STYLE_WARNING, color)
-                );
+            for warning in status_warnings(&report.status) {
+                let _ = writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color));
             }
         }
 
-        Ok(if report.complete { RunOutcome::Complete } else { RunOutcome::Partial })
+        let plan = fdu_core::plan(&request, &delivery, fdu_core::Route::OneShot)?;
+        Ok(match plan.outcome(&report.status) {
+            fdu_core::OutcomeClass::Success => RunOutcome::Complete,
+            fdu_core::OutcomeClass::Partial => RunOutcome::Partial,
+        })
     }
 
     /// Whether the requested format is a machine format, which is never colorized.
     fn machine_format(&self) -> bool {
-        !matches!(
-            report_format::Format::parse(&self.format),
-            None | Some(report_format::Format::Text)
-        )
+        self.parse_format().is_ok_and(report_format::Format::is_machine)
     }
 
     /// Run the query continuously, streaming changes as they arrive.
@@ -770,7 +794,6 @@ impl Cli {
     /// aggregate views repaint.
     #[cfg(feature = "watch")]
     fn run_watch(
-        &self,
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
         format: report_format::Format,
@@ -778,12 +801,9 @@ impl Cli {
         delivery: &Delivery,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use fdu_core::open_with_pending_save;
-        use fdu_core::query::{Provenance, ViewSpec};
-        use fdu_core::watch::WatchConfig;
-        use fdu_core::watch_session::{ChangeKind, Session};
+        use fdu_core::query::ViewSpec;
+        use fdu_core::watch_session::Session;
 
-        let path = self.path.as_deref().expect("run() validates the report path first");
         // The repaint interval the delivery already carries, rather than a second reading
         // of `--interval`: `run` refused an unparseable one before it opened anything, and
         // a value parsed twice is a value that can mean two things.
@@ -792,58 +812,43 @@ impl Cli {
             .expect("run() builds a watch delivery before it takes the watch path")
             .interval;
 
-        let scan_started_at = SystemTime::now();
-        // The one splice of the two models back into today's open configuration, made
-        // here rather than by the caller: the watch path is its only remaining user on
-        // this surface.
-        let config = &OpenConfig::of(&request.basis, delivery);
-        let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
-        if let Err(error) = pending_save.join() {
-            let _ = writeln!(
-                diagnostic,
-                "{}",
-                paint(&format!("warning: {error}"), STYLE_WARNING, color)
-            );
-        }
+        let mut session = Session::start(request.clone(), delivery.clone())?;
+        Self::persist_live(&mut session, diagnostic, color);
 
         // A streaming run keeps only the views it can render incrementally plus the
         // aggregates it repaints; both come from the same query, so nothing here is a
         // second grammar.
-        let streams_changes = request.query.views.contains(&ViewSpec::Files);
-        let has_aggregates = request.query.views.iter().any(|view| *view != ViewSpec::Files);
-
-        // The save above was joined, so the writer has dropped its reference and this
-        // is the only one left; the watch session needs the index by value.
-        let index = std::sync::Arc::into_inner(index)
-            .expect("the joined writer released the only other reference");
-        let handle = fdu_core::IndexHandle::new(index);
-        let mut session = Session::new(handle, request.clone(), delivery, WatchConfig::default())?;
+        let streams_changes = request.query.views.contains(&ViewSpec::Files)
+            && !matches!(
+                format,
+                report_format::Format::Tree
+                    | report_format::Format::Paths
+                    | report_format::Format::Long
+            );
+        let has_aggregates =
+            !streams_changes || request.query.views.iter().any(|view| *view != ViewSpec::Files);
 
         // The initial answer, identical to a one-shot run's.
-        let provenance = Provenance {
-            scan_started_at: Some(scan_started_at),
-            generated_at: SystemTime::now(),
-            source: match open_report.path_taken {
-                fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
-                fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                fdu_core::OpenPath::CacheOnly => ReportSource::CacheOnly,
-            },
-            complete: open_report.is_complete(),
-            errors: open_report.error_messages(),
-        };
-        write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
+        if format == report_format::Format::Yaml {
+            write!(out, "{}", report_format::document_start(format))?;
+        }
+        let initial = session.report(SystemTime::now())?;
+        report_format::write(&initial, format, color, out)?;
+        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+            for note in report_format::flat_diagnostics(&initial) {
+                writeln!(diagnostic, "{note}")?;
+            }
+        }
         out.flush()?;
 
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
-        let mut last_save = SystemTime::now();
-        let mut dirty_since_save = false;
         loop {
             let Some(batch) = session.next_batch(interval)? else {
                 // Nothing arrived in the window. Repaint only if something is pending,
                 // so a quiet tree produces no output and no work at all.
                 if has_aggregates && dirty_since_render {
-                    Self::render_live(out, &session, format, color)?;
+                    Self::render_live(out, diagnostic, &session, format, color)?;
                     dirty_since_render = false;
                     last_render = SystemTime::now();
                 }
@@ -851,32 +856,17 @@ impl Cli {
                 // arrived too soon after the last save would otherwise wait for the next
                 // change to persist it, and the next change may never come: a burst
                 // followed by silence is the single most likely way a watch session ends.
-                Self::save_if_pending(
-                    &session,
-                    config,
-                    &mut dirty_since_save,
-                    &mut last_save,
-                    interval,
-                    diagnostic,
-                    color,
-                );
+                Self::persist_live(&mut session, diagnostic, color);
                 continue;
             };
 
-            for change in &batch.changes {
-                if change.kind == ChangeKind::Invalidate {
-                    // Never dropped: an escalation says the consumer's view may have gaps.
-                    writeln!(out, "{}", report_format::render_change(change, format))?;
-                } else if streams_changes {
-                    writeln!(out, "{}", report_format::render_change(change, format))?;
-                }
-            }
+            Self::render_watch_changes(out, diagnostic, &batch.changes, format, streams_changes)?;
             out.flush()?;
 
             dirty_since_render |= batch.dirty;
             let elapsed = last_render.elapsed().unwrap_or_default();
             if has_aggregates && dirty_since_render && elapsed >= interval {
-                Self::render_live(out, &session, format, color)?;
+                Self::render_live(out, diagnostic, &session, format, color)?;
                 dirty_since_render = false;
                 last_render = SystemTime::now();
             }
@@ -887,89 +877,51 @@ impl Cli {
             // to the render interval so a churny tree does not rewrite constantly; the
             // pending flag is what guarantees a throttled change still reaches disk once
             // the tree goes quiet.
-            dirty_since_save |= batch.dirty;
-            Self::save_if_pending(
-                &session,
-                config,
-                &mut dirty_since_save,
-                &mut last_save,
-                interval,
+            Self::persist_live(&mut session, diagnostic, color);
+        }
+    }
+
+    /// Surface a persistence failure without interrupting the live answer.
+    #[cfg(feature = "watch")]
+    fn persist_live(
+        session: &mut fdu_core::watch_session::Session,
+        diagnostic: &mut dyn Write,
+        color: bool,
+    ) {
+        if let fdu_core::watch_session::SaveOutcome::Failed(error) =
+            session.persist_due(Instant::now())
+        {
+            let _ = writeln!(
                 diagnostic,
-                color,
+                "{}",
+                paint(&format!("warning: {error}"), STYLE_WARNING, color)
             );
         }
     }
 
-    /// Persist a pending change, if one is due.
-    ///
-    /// The pending flag clears only when a snapshot actually reached disk. An index that
-    /// is not yet `Fresh`, a policy that forbids writes, and a failed write all leave the
-    /// change unpersisted, and clearing the flag for any of them would mean the idle
-    /// branch never retries -- which on a quiet tree is never at all.
+    /// Preserve invalidation notices without putting diagnostic text in flat rows.
     #[cfg(feature = "watch")]
-    #[allow(clippy::too_many_arguments)]
-    fn save_if_pending(
-        session: &fdu_core::watch_session::Session,
-        config: &OpenConfig,
-        pending: &mut bool,
-        last_save: &mut SystemTime,
-        interval: Duration,
+    fn render_watch_changes(
+        out: &mut dyn Write,
         diagnostic: &mut dyn Write,
-        color: bool,
-    ) {
-        if !save_is_due(*pending, last_save.elapsed().unwrap_or_default(), interval) {
-            return;
-        }
-        let outcome = match Self::save_live(session, config) {
-            Ok(true) => SaveOutcome::Written,
-            Ok(false) => SaveOutcome::Skipped,
-            Err(error) => {
-                Self::warn_save_failed(&error, diagnostic, color);
-                SaveOutcome::Failed
+        changes: &[fdu_core::watch_session::Change],
+        format: report_format::Format,
+        streams_changes: bool,
+    ) -> std::io::Result<()> {
+        for change in changes {
+            if change.kind == fdu_core::watch_session::ChangeKind::Invalidate
+                && matches!(format, report_format::Format::Paths | report_format::Format::Long)
+            {
+                writeln!(diagnostic, "{}", report_format::render_change(change, format))?;
+            } else if streams_changes
+                || change.kind == fdu_core::watch_session::ChangeKind::Invalidate
+            {
+                writeln!(out, "{}", report_format::render_change(change, format))?;
             }
-        };
-        *pending = pending_after(outcome);
-        // Throttled whether or not it worked, so a persistently failing save warns at the
-        // interval rather than spinning.
-        *last_save = SystemTime::now();
-    }
-
-    /// Warn about a failed save without disturbing the stream.
-    ///
-    /// A save failure costs the next run its warm start and nothing else, so it must not
-    /// interrupt a watch that is otherwise working.
-    #[cfg(feature = "watch")]
-    fn warn_save_failed(error: &anyhow::Error, diagnostic: &mut dyn Write, color: bool) {
-        let _ =
-            writeln!(diagnostic, "{}", paint(&format!("warning: {error}"), STYLE_WARNING, color));
-    }
-
-    /// Persist a live session's index, when policy allows it.
-    ///
-    /// Keeps the warm cache current during a long watch instead of betting on a clean
-    /// exit. A failure here is a warning: the stream is still correct, and only the next
-    /// run's warmth is lost.
-    #[cfg(feature = "watch")]
-    fn save_live(
-        session: &fdu_core::watch_session::Session,
-        config: &OpenConfig,
-    ) -> anyhow::Result<bool> {
-        let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
-        else {
-            return Ok(false);
-        };
-        let index = session.index_snapshot()?;
-        if index.freshness() != fdu_core::Freshness::Fresh {
-            // Only a trustworthy index is worth persisting; a partial one would be
-            // served as fact on the next run. Reported as "not written" so the caller
-            // keeps the change pending and tries again once the index settles.
-            return Ok(false);
         }
-        fdu_core::snapshot::save(&index, cache_path)?;
-        Ok(true)
+        Ok(())
     }
 
-    /// Re-render the aggregate views of a live session.
     #[cfg(feature = "watch")]
     /// Repaint the aggregate views after a change.
     ///
@@ -977,24 +929,32 @@ impl Cli {
     /// the loop — so the rule below can be unconditional.
     fn render_live(
         out: &mut dyn Write,
+        diagnostic: &mut dyn Write,
         session: &fdu_core::watch_session::Session,
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {
-        let provenance = session.live_provenance(SystemTime::now());
-        let report = session.report(&provenance)?;
+        let generated_at = SystemTime::now();
+        let report = session.report(generated_at)?;
         // A watch run has no final answer and so no performance footer, which left text
         // repaints with nothing between them: the last row of one and the first row of
         // the next were adjacent lines. A blank line alone would not do, because that is
         // already what separates two views inside a single report.
-        if format == report_format::Format::Text {
+        if matches!(format, report_format::Format::Text | report_format::Format::Tree) {
             writeln!(
                 out,
                 "\n{}",
-                paint(&report_format::watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
+                paint(&report_format::watch_rule(generated_at), STYLE_WATCH_RULE, color)
             )?;
+        } else if format == report_format::Format::Yaml {
+            write!(out, "{}", report_format::document_start(format))?;
         }
-        write!(out, "{}", report_format::render(&report, format, color))?;
+        report_format::write(&report, format, color, out)?;
+        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+            for note in report_format::flat_diagnostics(&report) {
+                writeln!(diagnostic, "{note}")?;
+            }
+        }
         out.flush()?;
         Ok(())
     }
@@ -1172,6 +1132,7 @@ impl Cli {
             analyze: Some(&self.analyze),
             read: ReadSpec {
                 views: self.view.as_deref(),
+                format: Some(self.parse_format()?.label()),
                 words_per_page: Some(&typed.words_per_page),
                 include: &self.include,
                 exclude: &self.exclude,
@@ -1231,6 +1192,12 @@ impl Cli {
 
     /// Translate the format flag, naming every accepted value on a miss.
     fn parse_format(&self) -> anyhow::Result<report_format::Format> {
+        if self.tree {
+            return Ok(report_format::Format::Tree);
+        }
+        if self.long {
+            return Ok(report_format::Format::Long);
+        }
         report_format::Format::parse(&self.format).ok_or_else(|| {
             anyhow::anyhow!(
                 "invalid --format {:?}: expected one of {}",
@@ -1442,6 +1409,49 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
     Ok(ResolvedViews { selected, omitted })
 }
 
+/// The text-mode warnings for an incomplete report, one per retained issue.
+///
+/// The retention bound keeps the first [`fdu_core::MAX_RETAINED_ISSUES`] details, and the
+/// last line says how many it dropped, so the terminal is never told less than the
+/// machine formats' `errors_omitted`. An issue whose message does not name its path (a
+/// content read failure carries only the operating system's text) is prefixed with it.
+fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
+    let mut warnings: Vec<String> = status
+        .errors
+        .iter()
+        .map(|issue| match &issue.path {
+            Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
+                format!("warning: {}: {}", path.display(), issue.message)
+            }
+            _ => format!("warning: {}", issue.message),
+        })
+        .collect();
+    if status.errors_omitted > 0 {
+        warnings.push(format!(
+            "warning: {} more {} omitted; details are kept for the first {}",
+            human_count(status.errors_omitted),
+            if status.errors_omitted == 1 { "error" } else { "errors" },
+            fdu_core::MAX_RETAINED_ISSUES,
+        ));
+    }
+    warnings
+}
+
+/// Whether `message` already names `path`, as a whole path rather than as a substring.
+///
+/// A short relative path such as `d` occurs inside most operating-system messages
+/// ("Permission denied"), so a match must end the path at a separator or the start of
+/// the message on the left and at a delimiter or the end of the message on the right.
+fn names_path(message: &str, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    message.match_indices(&*path).any(|(start, found)| {
+        let before = message[..start].chars().next_back();
+        let after = message[start + found.len()..].chars().next();
+        matches!(before, None | Some('/' | '\\' | ' ' | '"' | '\'' | '`'))
+            && matches!(after, None | Some(':' | ' ' | '"' | '\'' | '`' | ')' | ','))
+    })
+}
+
 /// Notes that keep the display contract legible in human output.
 ///
 /// Both are the same rule read in opposite directions: a run displays what it paid for,
@@ -1553,7 +1563,7 @@ fn run_with_io(
         stderr_is_terminal,
     )
     .enabled();
-    finish(result, cli.allow_partial, diagnostic, diagnostic_color)
+    finish(result, diagnostic, diagnostic_color)
 }
 
 fn write_styled(
@@ -1619,15 +1629,9 @@ fn strip_ansi(line: &str) -> String {
     out
 }
 
-fn finish(
-    result: anyhow::Result<RunOutcome>,
-    allow_partial: bool,
-    diagnostic: &mut dyn Write,
-    color: bool,
-) -> u8 {
+fn finish(result: anyhow::Result<RunOutcome>, diagnostic: &mut dyn Write, color: bool) -> u8 {
     match result {
         Ok(RunOutcome::Complete) => 0,
-        Ok(RunOutcome::Partial) if allow_partial => 0,
         Ok(RunOutcome::Partial) => 2,
         Err(error) if is_broken_pipe(&error) => 0,
         Err(error) if is_usage_error(&error) => {
@@ -1785,6 +1789,49 @@ mod tests {
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
 
+    /// A warning names the path its message leaves out, and the count the retention
+    /// bound dropped closes the list (fdu-peil).
+    #[test]
+    fn status_warnings_name_missing_paths_and_the_omitted_count() {
+        let issue = |path: Option<&str>, message: &str| fdu_core::Issue {
+            kind: fdu_core::IssueKind::ProviderFailure,
+            path: path.map(PathBuf::from),
+            message: message.to_string(),
+            os_error: None,
+        };
+        let status = |errors, errors_omitted| fdu_core::query::TreeStatus {
+            complete: false,
+            coverage: fdu_core::Coverage::Partial(fdu_core::CoverageReason::Failed),
+            errors,
+            errors_omitted,
+        };
+        let complete = status_warnings(&status(
+            vec![
+                issue(Some("docs/a.md"), "Permission denied (os error 13)"),
+                issue(Some("src"), "I/O error at /abs/src: Permission denied (os error 13)"),
+                issue(None, "content analysis results became stale"),
+                issue(Some("d"), "Permission denied (os error 13)"),
+            ],
+            0,
+        ));
+        assert_eq!(
+            complete,
+            [
+                "warning: docs/a.md: Permission denied (os error 13)",
+                "warning: I/O error at /abs/src: Permission denied (os error 13)",
+                "warning: content analysis results became stale",
+                "warning: d: Permission denied (os error 13)",
+            ]
+        );
+        let one = status_warnings(&status(vec![issue(None, "x")], 1));
+        assert_eq!(
+            one.last().map(String::as_str),
+            Some("warning: 1 more error omitted; details are kept for the first 64")
+        );
+        let many = status_warnings(&status(Vec::new(), 1_234));
+        assert_eq!(many, ["warning: 1,234 more errors omitted; details are kept for the first 64"]);
+    }
+
     /// The two flags select opposite partitions, so asking for both is a usage error.
     #[test]
     fn the_ignored_selection_flags_pick_one_side_and_refuse_both() {
@@ -1872,8 +1919,8 @@ mod tests {
                 .map(|request| request.basis.scope)
         };
         let defaults = fdu_core::ControlLimits::default();
-        let unobserved = |config: &fdu_core::ScanConfig| {
-            fdu_core::ScanConfig { read_controls: false, ..config.clone() }.scope()
+        let unobserved = |config: &fdu_core::query::Scope| {
+            fdu_core::query::Scope { read_controls: false, ..config.clone() }.scope()
         };
         let default = scan_config(&[]).expect("defaults");
         assert_eq!(default.control_limits, defaults);
@@ -1941,6 +1988,32 @@ mod tests {
 
     #[cfg(feature = "watch")]
     #[test]
+    fn flat_watch_invalidations_are_visible_without_becoming_path_rows() {
+        use fdu_core::watch_session::{Change, ChangeKind};
+        let changes = [Change {
+            path: "builds".into(),
+            kind: ChangeKind::Invalidate,
+            clock: 1,
+            entry_kind: None,
+            bytes: None,
+            allocated: None,
+            mtime_ns: None,
+            ignored: None,
+        }];
+        for format in [report_format::Format::Paths, report_format::Format::Long] {
+            let (mut out, mut diagnostic) = (Vec::new(), Vec::new());
+            Cli::render_watch_changes(&mut out, &mut diagnostic, &changes, format, false)
+                .expect("invalidation");
+            assert!(out.is_empty(), "stdout is reserved for flat data rows");
+            assert_eq!(
+                String::from_utf8(diagnostic).expect("diagnostic"),
+                format!("{}\n", report_format::render_change(&changes[0], format))
+            );
+        }
+    }
+
+    #[cfg(feature = "watch")]
+    #[test]
     fn an_interval_parses_without_overflowing_any_platforms_clock() {
         assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));
         assert_eq!(parse_duration("1h30m").expect("compound"), Duration::from_secs(5_400));
@@ -1948,69 +2021,6 @@ mod tests {
         assert_eq!(parse_duration("200ms").expect("milliseconds"), Duration::from_millis(200));
         assert!(parse_duration("0.2s").is_err(), "a fractional age stays rejected");
         assert!(parse_duration("banana").is_err(), "a non-duration must be rejected, not parsed");
-    }
-
-    /// The watch loop's save throttle, as a table over every state that reaches it.
-    ///
-    /// Two of the three defects review found on this branch were transitions in here, and
-    /// the second was introduced by fixing the first. End-to-end tests could not catch
-    /// either: they observe whether a file changed on disk, which cannot distinguish "not
-    /// due yet" from "due and skipped", nor a cleared flag from a retained one.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn a_save_is_due_only_when_a_change_is_pending_and_the_throttle_has_elapsed() {
-        let interval = Duration::from_secs(1);
-        let cases = [
-            // (pending, since last save, due, what this case is)
-            (true, Duration::from_secs(2), true, "pending and past the interval"),
-            (true, interval, true, "pending, exactly at the interval: inclusive"),
-            // The R5 case. Not due *now* -- and the flag stays set, which is the half that
-            // was missing: the idle path saves it once the interval passes.
-            (true, Duration::from_millis(1), false, "pending but throttled"),
-            (false, Duration::from_secs(60), false, "nothing pending, however long it has been"),
-            (false, Duration::ZERO, false, "nothing pending and just saved"),
-        ];
-
-        for (pending, since, want, case) in cases {
-            assert_eq!(save_is_due(pending, since, interval), want, "{case}");
-        }
-    }
-
-    /// A throttled change must survive every outcome except a completed write.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn only_a_completed_write_clears_the_pending_change() {
-        // The R7 case is Skipped and Failed: clearing the flag for either means the idle
-        // path never retries, so on a quiet tree the change is never persisted at all.
-        assert!(!pending_after(SaveOutcome::Written), "a completed write persists the change");
-        assert!(
-            pending_after(SaveOutcome::Skipped),
-            "a skipped save wrote nothing, so the change is still owed to disk",
-        );
-        assert!(pending_after(SaveOutcome::Failed), "a failed save must be retried, not forgotten");
-    }
-
-    /// The sequence that defeated the feature in its most common shape.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn a_burst_then_a_quiet_tree_still_persists() {
-        let interval = Duration::from_secs(1);
-
-        // A change arrives too soon after the last save, so nothing is written yet.
-        let mut pending = true;
-        assert!(!save_is_due(pending, Duration::from_millis(50), interval));
-        assert!(pending, "the throttle must not consume the change");
-
-        // The tree goes quiet: no further batches will ever arrive. The idle path is the
-        // only remaining caller, and once the interval passes the save must happen.
-        assert!(save_is_due(pending, Duration::from_secs(3), interval));
-
-        // A skip at that point keeps it pending for the next idle tick rather than
-        // silently dropping the session's work.
-        pending = pending_after(SaveOutcome::Skipped);
-        assert!(pending);
-        pending = pending_after(SaveOutcome::Written);
-        assert!(!pending, "once written, the loop stops rewriting an unchanged index");
     }
 
     struct FailingWriter;
@@ -2053,6 +2063,8 @@ mod tests {
             analysis_workers: 0,
             words_per_page: Request::DEFAULTS.words_per_page,
             format: "text".to_string(),
+            tree: false,
+            long: false,
             color: ColorWhen::Auto,
             cache: "off".to_string(),
             cache_status: None,
@@ -2123,7 +2135,7 @@ mod tests {
             assert!(is_usage_error(&error), "{axis:?} must exit like the bad argument it is");
 
             let mut diagnostic = Vec::new();
-            assert_eq!(finish(Err(error), false, &mut diagnostic, false), 2);
+            assert_eq!(finish(Err(error), &mut diagnostic, false), 2);
             assert_eq!(
                 String::from_utf8(diagnostic).expect("diagnostics are UTF-8"),
                 format!("fdu: unsupported scan configuration: {printed}\n")
@@ -2430,7 +2442,7 @@ mod tests {
     #[test]
     fn requesting_analysis_selects_a_view_that_displays_it() {
         let cases = [
-            (AnalysisSet::NONE, ViewSpec::Tree),
+            (AnalysisSet::NONE, ViewSpec::List),
             (AnalysisSet::NONE.with_lines(), ViewSpec::Families),
             (AnalysisSet::NONE.with_code(), ViewSpec::Languages),
             (AnalysisSet::NONE.with_words(), ViewSpec::Documents),
@@ -2567,12 +2579,12 @@ mod tests {
     }
 
     #[test]
-    fn real_basic_documents_report_exposes_lines_words_pages_and_schema_two() {
+    fn real_documents_report_exposes_requested_lines_words_pages_and_current_schema() {
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "lines".to_string(),
+            analyze: "lines,words".to_string(),
             view: Some("documents".to_string()),
             format: "json".to_string(),
             size: "apparent".to_string(),
@@ -2583,7 +2595,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/6\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/7\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -2687,19 +2699,22 @@ mod tests {
     fn formats_parse_and_machine_formats_are_never_colorized() {
         for (value, expected) in [
             ("text", report_format::Format::Text),
+            ("tree", report_format::Format::Tree),
+            ("paths", report_format::Format::Paths),
+            ("long", report_format::Format::Long),
             ("json", report_format::Format::Json),
             ("jsonl", report_format::Format::Jsonl),
             ("yaml", report_format::Format::Yaml),
         ] {
             let cli = Cli { format: value.to_string(), ..cli() };
             assert_eq!(cli.parse_format().expect("format parses"), expected);
-            assert_eq!(cli.machine_format(), value != "text");
+            assert_eq!(cli.machine_format(), expected.is_machine());
         }
         let message = Cli { format: "xml".to_string(), ..cli() }
             .parse_format()
             .expect_err("rejected")
             .to_string();
-        assert!(message.contains("text, json, jsonl, yaml"), "{message}");
+        assert!(message.contains("text, tree, paths, long, json, jsonl, yaml"), "{message}");
     }
 
     #[test]
@@ -2823,14 +2838,13 @@ mod tests {
     #[test]
     fn run_outcomes_and_broken_pipes_have_stable_exit_codes() {
         let mut diagnostic = Vec::new();
-        assert_eq!(finish(Ok(RunOutcome::Complete), false, &mut diagnostic, false), 0);
-        assert_eq!(finish(Ok(RunOutcome::Partial), false, &mut diagnostic, false), 2);
-        assert_eq!(finish(Ok(RunOutcome::Partial), true, &mut diagnostic, false), 0);
+        assert_eq!(finish(Ok(RunOutcome::Complete), &mut diagnostic, false), 0);
+        assert_eq!(finish(Ok(RunOutcome::Partial), &mut diagnostic, false), 2);
 
         let broken_pipe =
             anyhow::Error::new(io::Error::new(io::ErrorKind::BrokenPipe, "reader closed"))
                 .context("render output");
-        assert_eq!(finish(Err(broken_pipe), false, &mut diagnostic, false), 0);
+        assert_eq!(finish(Err(broken_pipe), &mut diagnostic, false), 0);
         assert!(diagnostic.is_empty());
 
         let args = [OsString::from("fdu"), OsString::from("--help")];

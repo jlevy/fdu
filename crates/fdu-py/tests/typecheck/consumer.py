@@ -18,7 +18,7 @@ report: fdu.Report = index.report(
 )
 
 complete: bool = report.status.complete
-freshness: fdu.Freshness = report.status.freshness
+freshness: fdu.Freshness = report.provenance.freshness
 for section in report.sections:
     view: fdu.View = section.view
     print(view, complete, freshness)

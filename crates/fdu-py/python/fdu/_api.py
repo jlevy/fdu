@@ -33,6 +33,7 @@ from ._models import (
     ScanOptions,
     Status,
     WatchOptions,
+    _wire_path,
     cache_status_from_dict,
     provenance_from_dict,
     report_from_dict,
@@ -45,6 +46,147 @@ _SECONDS_PER_DAY = 86_400
 _NANOS_PER_SECOND = 1_000_000_000
 _NANOS_PER_MICROSECOND = 1_000
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_MISSING = object()
+
+
+def _json_error(message: str, document: str, position: int) -> json.JSONDecodeError:
+    return json.JSONDecodeError(message, document, position)
+
+
+def _loads_json(document: str) -> Any:
+    """Decode native JSON, falling back to an iterative container parser for deep trees."""
+
+    try:
+        return json.loads(document)
+    except RecursionError:
+        pass
+
+    decoder = json.JSONDecoder()
+    length = len(document)
+    position: int = 0
+    root: object = _MISSING
+    # Each frame is [container, state, pending map key]. Advancing the parent before
+    # pushing a child keeps completion iterative: closing a child needs only a pop.
+    stack: list[list[object]] = []
+
+    def whitespace(at: int) -> int:
+        while at < length and document[at] in " \t\r\n":
+            at += 1
+        return at
+
+    def attach(value: object) -> None:
+        nonlocal root
+        if not stack:
+            if root is not _MISSING:
+                raise _json_error("Extra data", document, position)
+            root = value
+            return
+        container, state, key = stack[-1]
+        if isinstance(container, list):
+            if state != "array-value":
+                raise _json_error("Expecting ',' delimiter", document, position)
+            cast(list[object], container).append(value)
+            stack[-1][1] = "array-comma"
+        else:
+            if state != "map-value" or not isinstance(key, str):
+                raise _json_error("Expecting property value", document, position)
+            cast(dict[str, object], container)[key] = value
+            stack[-1][1] = "map-comma"
+            stack[-1][2] = None
+
+    def value(at: int) -> int:
+        if at >= length:
+            raise _json_error("Expecting value", document, at)
+        token = document[at]
+        if token == "{":
+            container: dict[str, object] = {}
+            attach(container)
+            stack.append([container, "map-first", None])
+            return at + 1
+        if token == "[":
+            sequence: list[object] = []
+            attach(sequence)
+            stack.append([sequence, "array-first", None])
+            return at + 1
+        parsed, raw_end = decoder.raw_decode(document, at)
+        end = int(raw_end)
+        if isinstance(parsed, (dict, list)):
+            raise _json_error("Unexpected container", document, at)
+        attach(parsed)
+        return end
+
+    while True:
+        position = whitespace(position)
+        if not stack:
+            if root is _MISSING:
+                position = value(position)
+                continue
+            if position != length:
+                raise _json_error("Extra data", document, position)
+            return root
+
+        container, state, _key = stack[-1]
+        if isinstance(container, list):
+            if state in ("array-first", "array-value"):
+                if state == "array-first" and position < length and document[position] == "]":
+                    stack.pop()
+                    position += 1
+                else:
+                    stack[-1][1] = "array-value"
+                    position = value(position)
+            else:
+                if position >= length or document[position] not in ",]":
+                    raise _json_error("Expecting ',' delimiter", document, position)
+                if document[position] == "]":
+                    stack.pop()
+                else:
+                    stack[-1][1] = "array-value"
+                position += 1
+            continue
+
+        if state in ("map-first", "map-key"):
+            if state == "map-first" and position < length and document[position] == "}":
+                stack.pop()
+                position += 1
+                continue
+            if position >= length or document[position] != '"':
+                raise _json_error(
+                    "Expecting property name enclosed in double quotes", document, position
+                )
+            try:
+                key, raw_position = decoder.raw_decode(document, position)
+                position = int(raw_position)
+            except json.JSONDecodeError as error:
+                raise _json_error(
+                    "Expecting property name enclosed in double quotes", document, position
+                ) from error
+            if not isinstance(key, str):
+                raise _json_error(
+                    "Expecting property name enclosed in double quotes", document, position
+                )
+            stack[-1][2] = key
+            position = whitespace(position)
+            if position >= length or document[position] != ":":
+                raise _json_error("Expecting ':' delimiter", document, position)
+            stack[-1][1] = "map-value"
+            position += 1
+        elif state == "map-value":
+            position = value(position)
+        else:
+            if position >= length or document[position] not in ",}":
+                raise _json_error("Expecting ',' delimiter", document, position)
+            if document[position] == "}":
+                stack.pop()
+            else:
+                stack[-1][1] = "map-key"
+            position += 1
+
+
+def _loads_object(document: str) -> dict[str, Any]:
+    value = _loads_json(document)
+    if not isinstance(value, dict):
+        raise TypeError("native JSON report must be an object")
+    return cast(dict[str, Any], value)
 
 
 class FduError(RuntimeError):
@@ -144,6 +286,7 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "size": selection.size.value,
         "ignored": selection.ignored.value,
         "words_per_page": query.words_per_page,
+        "format": query.format.value,
     }
 
 
@@ -171,7 +314,7 @@ class Watch(Iterator[tuple[Change, ...]]):
         """
 
         handle = _call(self._native.report)
-        wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+        wire = _loads_object(_call(handle.render, "json", False))
         notes = tuple(_call(handle.notes))
 
         def renderer(format: str, color: bool) -> str:
@@ -230,9 +373,8 @@ class Index:
 
         selected = query if query is not None else Query()
         handle = _call(self._native.report_handle, **_query_kwargs(selected))
-        wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+        wire = _loads_object(_call(handle.render, "json", False))
         report = report_from_dict(wire, tuple(_call(handle.notes)))
-        errors = self.status.errors
 
         # Bound to the finished report, not to the query: re-projecting the index per
         # format would let one `Report` answer differently each time it was rendered
@@ -240,11 +382,7 @@ class Index:
         def renderer(format: str, color: bool) -> str:
             return cast(str, _call(handle.render, format, color))
 
-        return replace(
-            report,
-            status=replace(report.status, errors=errors),
-            _renderer=renderer,
-        )
+        return replace(report, _renderer=renderer)
 
     def total(self) -> RollUp:
         return rollup_from_dict(_call(self._native.total), self.provenance())
@@ -279,6 +417,11 @@ class Index:
         return None if value is None else provenance_from_dict(value)
 
     def refresh(self) -> RefreshResult:
+        """Reverify metadata and content, then persist according to this index's cache policy.
+
+        Under ``auto``, a later cache-only open sees the refreshed facts. Partial scans
+        preserve the complete snapshot and save only verified compatible content.
+        """
         value = _call(self._native.refresh)
         return RefreshResult(
             inserted=int(value["inserted"]),
@@ -303,7 +446,8 @@ class Index:
 
         The watch continues the scan that built the index under the same scope, so it
         observes ``.gitignore`` control state unless the index was opened with
-        ``ScanOptions(read_controls=False)``.
+        ``ScanOptions(read_controls=False)``. Iterating the feed persists verified
+        changes under ``auto``; cache write failures warn without ending the feed.
         """
 
         selected = options if options is not None else WatchOptions()
@@ -320,7 +464,7 @@ def _change(value: dict[str, Any]) -> Change:
     raw_kind = str(value["op"])
     return Change(
         clock=int(value["clock"]),
-        path=Path(value["path"]),
+        path=_wire_path(value),
         kind=ChangeKind(raw_kind),
         entry_kind=EntryKind(value["kind"]) if value.get("kind") is not None else None,
         bytes=int(value["bytes"]) if value.get("bytes") is not None else None,
@@ -436,7 +580,7 @@ def report(
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),
     )
-    wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+    wire = _loads_object(_call(handle.render, "json", False))
     parsed = report_from_dict(wire, tuple(_call(handle.notes)))
 
     def renderer(format: str, color: bool) -> str:

@@ -8,8 +8,9 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
+import math
+import os
 from collections.abc import Callable, Mapping
-from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -21,6 +22,57 @@ from . import _native
 
 type JsonScalar = bool | int | float | str | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
+
+
+def _wire_path(value: Mapping[str, Any], name: str = "path") -> Path:
+    """Decode a display path, preferring its lossless machine companion when present."""
+
+    raw = value.get(f"{name}_raw")
+    if raw is None:
+        return Path(str(value[name]))
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"{name}_raw must be an object")
+    raw = cast(Mapping[str, Any], raw)
+    encoding = str(raw.get("encoding"))
+    try:
+        payload = bytes.fromhex(str(raw["hex"]))
+    except (KeyError, ValueError) as error:
+        raise ValueError(f"{name}_raw must contain hexadecimal bytes") from error
+    if encoding == "unix-bytes":
+        return Path(os.fsdecode(payload))
+    if encoding == "windows-wtf16le":
+        if len(payload) % 2:
+            raise ValueError(f"{name}_raw has an odd-length UTF-16 payload")
+        return Path(payload.decode("utf-16-le", errors="surrogatepass"))
+    raise ValueError(f"unsupported {name}_raw encoding: {encoding}")
+
+
+def _copy_json(value: JsonValue) -> JsonValue:
+    """Copy a JSON value without consuming Python's call stack."""
+
+    if not isinstance(value, (dict, list)):
+        return value
+    root: dict[str, JsonValue] | list[JsonValue] = {} if isinstance(value, dict) else []
+    stack: list[
+        tuple[dict[str, JsonValue] | list[JsonValue], dict[str, JsonValue] | list[JsonValue]]
+    ] = [(value, root)]
+    while stack:
+        source, target = stack.pop()
+        items = source.items() if isinstance(source, dict) else enumerate(source)
+        for key, item in items:
+            if isinstance(item, dict):
+                copied: JsonValue = {}
+            elif isinstance(item, list):
+                copied = []
+            else:
+                copied = item
+            if isinstance(target, dict):
+                target[str(key)] = copied
+            else:
+                target.append(copied)
+            if isinstance(item, (dict, list)):
+                stack.append((item, cast(dict[str, JsonValue] | list[JsonValue], copied)))
+    return root
 
 
 class CachePolicy(StrEnum):
@@ -75,6 +127,7 @@ class View(StrEnum):
     own view list must give the same sequence, and a parity run compares them (fdu-ggux).
     """
 
+    LIST = "list"
     SUMMARY = "summary"
     TREE = "tree"
     FAMILIES = "families"
@@ -211,6 +264,9 @@ class Format(StrEnum):
     """
 
     TEXT = "text"
+    TREE = "tree"
+    PATHS = "paths"
+    LONG = "long"
     JSON = "json"
     JSONL = "jsonl"
     YAML = "yaml"
@@ -326,7 +382,7 @@ def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservatio
         applied=int(value["applied"]),
         refused=int(value["refused"]),
         refusals=tuple(
-            RefusedControl(path=Path(item["path"]), reason=ControlRefusalReason(item["reason"]))
+            RefusedControl(path=_wire_path(item), reason=ControlRefusalReason(item["reason"]))
             for item in value["refusals"]
         ),
     )
@@ -431,6 +487,8 @@ class Query:
     views: tuple[View, ...] | str = ()
     selection: Selection = field(default_factory=Selection)
     words_per_page: int = _native.DEFAULT_WORDS_PER_PAGE
+    #: Select the report projection before reading; the default retains the directory tree.
+    format: Format = Format.TEXT
 
     def __post_init__(self) -> None:
         # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
@@ -446,15 +504,19 @@ class Query:
 class WatchOptions:
     """Configuration for an event-driven change feed."""
 
-    interval: float = 2.0
+    interval: float = _native.DEFAULT_WATCH_INTERVAL_SECONDS
     #: What the watch answers. A default `Query` takes the request model's own defaults, so
     #: a watch shows what a report of the same index shows; this named `files` of its own,
     #: which made one request mean two things depending on which door it came through.
     query: Query = field(default_factory=Query)
 
     def __post_init__(self) -> None:
-        if self.interval <= 0:
-            raise ValueError("interval must be positive")
+        if (
+            not math.isfinite(self.interval)
+            or self.interval < _native.MIN_WATCH_INTERVAL_SECONDS
+            or self.interval > _native.MAX_WATCH_INTERVAL_SECONDS
+        ):
+            raise ValueError("interval must be finite, positive, and within the supported range")
 
 
 @dataclass(frozen=True, slots=True)
@@ -469,16 +531,43 @@ class OperationError:
 
 @dataclass(frozen=True, slots=True)
 class Status:
-    """Independent coverage, currency, origin, and error facts."""
+    """Completeness and bounded operational failure detail."""
 
     complete: bool
-    freshness: Freshness
-    source: ReportSource
+    coverage: Coverage
+    coverage_reason: str | None
     errors: tuple[OperationError, ...] = ()
+    errors_omitted: int = 0
     #: Which ``.gitignore`` files apply, or ``None`` when none was read. A refused file
     #: leaves ``complete`` true and every size exact; only the ignored and unignored split
     #: below it is not.
     ignore_rules: ControlObservation | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TierState:
+    """Source, currency, and observation time for one retained tier."""
+
+    source: ValueSource
+    freshness: Freshness
+    observed_at_ns: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class TierProvenance:
+    entries: TierState
+    content: TierState | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReportProvenance:
+    """Delivery facts for one coherent report answer."""
+
+    source: ReportSource
+    freshness: Freshness
+    scan_started_at: datetime | None
+    generated_at: datetime
+    tiers: TierProvenance
 
 
 @dataclass(frozen=True, slots=True)
@@ -574,6 +663,17 @@ class FileRow:
     mtime_ns: int
     #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
     ignored: bool | None = None
+    #: Directory subtree counts, excluding its root; absent for other entry kinds.
+    files: int | None = None
+    dirs: int | None = None
+    #: Whether a directory's eligible subtree was listed in full. ``False`` makes its
+    #: bytes, counts, and ``mtime_ns`` lower bounds and its ``age_ns`` ``None``: a
+    #: scan-depth boundary, a partial scan, or a directory discovery has not listed yet.
+    #: Absent for other entry kinds.
+    complete: bool | None = None
+    #: Signed modification age relative to Report.age_reference_ns; future is negative,
+    #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
+    age_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -594,18 +694,18 @@ class TreeNode:
 
 @dataclass(frozen=True, slots=True)
 class MetricValues:
-    physical_lines: int
-    blank_lines: int
-    nonblank_lines: int
-    code_lines: int
-    comment_lines: int
-    code_blank_lines: int
-    raw_words: int
-    logical_words: int
-    paragraphs: int
-    visible_words: int
-    visible_logical_words: int
-    document_words: int
+    physical_lines: int | None = None
+    blank_lines: int | None = None
+    nonblank_lines: int | None = None
+    raw_words: int | None = None
+    code_lines: int | None = None
+    comment_lines: int | None = None
+    code_blank_lines: int | None = None
+    logical_words: int | None = None
+    paragraphs: int | None = None
+    visible_words: int | None = None
+    visible_logical_words: int | None = None
+    document_words: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -624,19 +724,25 @@ class Detection:
 
 
 @dataclass(frozen=True, slots=True)
+class Pages:
+    words: int
+    words_per_page: int
+
+
+@dataclass(frozen=True, slots=True)
 class MetricRow:
     id: str
     family: str
     files: int
     bytes: int
     allocated: int
-    analyzed_files: int
     share: MetricShare
     metrics: MetricValues
-    coverage: MappingProxyType[str, int]
+    lines_coverage: MappingProxyType[str, int] | None
+    code_coverage: MappingProxyType[str, int] | None
+    words_coverage: MappingProxyType[str, int] | None
     detection: Detection
-    page_words: int
-    words_per_page: int
+    pages: Pages | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -652,6 +758,24 @@ class AnalysisMetadata:
     type_rules_fingerprint: int
     options_fingerprint: int
     analyzers: tuple[Analyzer, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReportScope:
+    max_depth: int | None
+    follow_symlinks: bool
+    one_filesystem: bool
+    exclude_special: bool
+    read_controls: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ReportRequest:
+    scope: ReportScope
+    analyze: tuple[Analysis, ...]
+    size: SizeMetric
+    views: tuple[View, ...]
+    omitted_views: tuple[View, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,9 +809,10 @@ class ExtensionsSection:
 
 @dataclass(frozen=True, slots=True)
 class FilesSection:
-    """A flat listing: ``files``, or one of its bounded presets.
+    """A flat list of matching files and directories, with subtree metrics for directories.
 
-    ``view`` distinguishes them, because ``largest`` and ``recent`` produce this shape too.
+    ``view`` preserves the requested list or legacy preset. ``largest`` and ``recent``
+    produce this shape with their bounded regular-file selection.
     """
 
     view: View
@@ -706,7 +831,6 @@ class MetricsSection:
     view: View
     group: str
     share_metric: str
-    words_per_page: int
     total: MetricRow
     rows: tuple[MetricRow, ...]
     bound: SectionBound | None = None
@@ -724,9 +848,9 @@ class Report:
     schema: str
     generator: str
     root: Path
-    scan_started_at: datetime | None
-    generated_at: datetime
+    request: ReportRequest
     status: Status
+    provenance: ReportProvenance
     analysis: AnalysisMetadata | None
     sections: tuple[ReportSection, ...]
     #: Remarks the report makes about itself, in the order a renderer prints them --
@@ -738,13 +862,14 @@ class Report:
     #: present and the refusals from ``status.ignore_rules``.
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    age_reference_ns: int | None = None
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
     _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
 
-        return deepcopy(self._wire)
+        return cast(dict[str, JsonValue], _copy_json(self._wire))
 
     def render(self, format: Format = Format.TEXT, *, color: bool = False) -> str:
         """Serialize this report the way the command line does.
@@ -760,6 +885,11 @@ class Report:
 
         The report only. The command line appends a performance footer, which is transient
         telemetry the schema excludes and whose counts are not on a `Report`.
+
+        ``TEXT`` uses the query's requested presentation. Machine formats serialize this
+        stored projection; PATHS and LONG require a flat projection, and TREE requires
+        a tree. To change between a folded tree and a complete list, request another
+        report from the retained index with the desired ``Query.format``.
         """
 
         if self._renderer is None:
@@ -978,7 +1108,7 @@ def _snapshot_identity(value: Mapping[str, Any] | None) -> SnapshotIdentity | No
 def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
     if value is None:
         return None
-    raw_identity = value["identity"]
+    raw_identity = value.get("identity")
     identity = None
     if raw_identity is not None:
         identity = ContentTierIdentity(
@@ -993,9 +1123,9 @@ def _content_status(value: Mapping[str, Any] | None) -> ContentStatus | None:
     return ContentStatus(
         bytes=int(value["bytes"]),
         state=ContentState(value["state"]),
-        stale_reason=_stale_reason(value["stale_reason"]),
-        format_version=_limit(value["format_version"]),
-        records=_limit(value["records"]),
+        stale_reason=_stale_reason(value.get("stale_reason")),
+        format_version=_limit(value.get("format_version")),
+        records=_limit(value.get("records")),
         identity=identity,
     )
 
@@ -1006,18 +1136,20 @@ def _stale_reason(value: object) -> StaleReason | None:
 
 def cache_status_from_dict(value: Mapping[str, Any]) -> CacheStatus:
     return CacheStatus(
-        path=Path(value["path"]),
+        path=_wire_path(value),
         bytes=int(value["bytes"]),
         state=CacheState(value["state"]),
-        stale_reason=_stale_reason(value["stale_reason"]),
-        format_version=_limit(value["format_version"]),
+        stale_reason=_stale_reason(value.get("stale_reason")),
+        format_version=_limit(value.get("format_version")),
         leftover_kind=(
-            LeftoverKind(value["leftover_kind"]) if value["leftover_kind"] is not None else None
+            LeftoverKind(value.get("leftover_kind"))
+            if value.get("leftover_kind") is not None
+            else None
         ),
-        root=Path(value["root"]) if value["root"] is not None else None,
-        entries=_limit(value["entries"]),
-        identity=_snapshot_identity(value["identity"]),
-        content=_content_status(value["content"]),
+        root=_wire_path(value, "root") if value.get("root") is not None else None,
+        entries=_limit(value.get("entries")),
+        identity=_snapshot_identity(value.get("identity")),
+        content=_content_status(value.get("content")),
     )
 
 
@@ -1033,7 +1165,7 @@ def _operation_error(value: object) -> OperationError:
     error = cast(dict[str, Any], value)
     path = error.get("path")
     return OperationError(
-        Path(str(path)) if path is not None else None,
+        _wire_path(error) if path is not None else None,
         str(error.get("kind", "operation")),
         str(error.get("message", "")),
         int(error["os_error"]) if error.get("os_error") is not None else None,
@@ -1049,12 +1181,52 @@ def _ignore_rules(value: object) -> ControlObservation | None:
 
 
 def status_from_dict(value: dict[str, Any]) -> Status:
+    raw_coverage = value["coverage"]
+    if not isinstance(raw_coverage, dict):
+        raise TypeError("status coverage must be an object")
+    raw_coverage = cast(dict[str, Any], raw_coverage)
     return Status(
         complete=bool(value["complete"]),
-        freshness=Freshness(str(value["freshness"])),
-        source=ReportSource(str(value["source"])),
+        coverage=Coverage(str(raw_coverage["kind"])),
+        coverage_reason=(
+            str(raw_coverage["reason"]) if raw_coverage.get("reason") is not None else None
+        ),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
-        ignore_rules=_ignore_rules(value["ignore_rules"]),
+        errors_omitted=int(value.get("errors_omitted", 0)),
+        ignore_rules=_ignore_rules(value.get("ignore_rules")),
+    )
+
+
+def _tier_state(value: dict[str, Any]) -> TierState:
+    return TierState(
+        source=ValueSource(str(value["source"])),
+        freshness=Freshness(str(value["freshness"])),
+        observed_at_ns=(
+            int(value["observed_at_ns"]) if value.get("observed_at_ns") is not None else None
+        ),
+    )
+
+
+def _report_provenance(value: dict[str, Any]) -> ReportProvenance:
+    tiers = value["tiers"]
+    if not isinstance(tiers, dict):
+        raise TypeError("report provenance tiers must contain entries")
+    tiers = cast(dict[str, Any], tiers)
+    if not isinstance(tiers.get("entries"), dict):
+        raise TypeError("report provenance tiers must contain entries")
+    generated_at = _datetime(value["generated_at"])
+    if generated_at is None:
+        raise TypeError("report generated_at must be present")
+    raw_content = tiers.get("content")
+    return ReportProvenance(
+        source=ReportSource(str(value["source"])),
+        freshness=Freshness(str(value["freshness"])),
+        scan_started_at=_datetime(value.get("scan_started_at")),
+        generated_at=generated_at,
+        tiers=TierProvenance(
+            entries=_tier_state(tiers["entries"]),
+            content=_tier_state(raw_content) if isinstance(raw_content, dict) else None,
+        ),
     )
 
 
@@ -1088,19 +1260,37 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
 
 def _metric_row(value: dict[str, Any]) -> MetricRow:
     metrics = value["metrics"]
+    coverage = value["coverage"]
     detection = value["detection"]
     flags = detection["flags"]
-    pages = value["pages"]
+    raw_pages = value.get("pages")
+    names = (
+        "physical_lines",
+        "blank_lines",
+        "nonblank_lines",
+        "raw_words",
+        "code_lines",
+        "comment_lines",
+        "code_blank_lines",
+        "logical_words",
+        "paragraphs",
+        "visible_words",
+        "visible_logical_words",
+        "document_words",
+    )
     return MetricRow(
         id=str(value["id"]),
         family=str(value["family"]),
         files=int(value["files"]),
         bytes=int(value["bytes"]),
         allocated=int(value["allocated"]),
-        analyzed_files=int(value["analyzed_files"]),
         share=MetricShare(int(value["share"]["numerator"]), int(value["share"]["denominator"])),
-        metrics=MetricValues(**{name: int(item) for name, item in metrics.items()}),
-        coverage=_int_map(value["coverage"]),
+        metrics=MetricValues(
+            **{name: int(metrics[name]) if name in metrics else None for name in names}
+        ),
+        lines_coverage=_int_map(coverage["lines"]) if "lines" in coverage else None,
+        code_coverage=_int_map(coverage["code"]) if "code" in coverage else None,
+        words_coverage=_int_map(coverage["words"]) if "words" in coverage else None,
         detection=Detection(
             sources=_int_map(detection["sources"]),
             confidence=_int_map(detection["confidence"]),
@@ -1108,8 +1298,11 @@ def _metric_row(value: dict[str, Any]) -> MetricRow:
             vendored=int(flags["vendored"]),
             documentation=int(flags["documentation"]),
         ),
-        page_words=int(pages["words"]),
-        words_per_page=int(pages["words_per_page"]),
+        pages=(
+            Pages(words=int(raw_pages["words"]), words_per_page=int(raw_pages["words_per_page"]))
+            if raw_pages is not None
+            else None
+        ),
     )
 
 
@@ -1147,21 +1340,36 @@ def _ignored_flag(value: object) -> bool | None:
 
 
 def _tree(value: dict[str, Any]) -> TreeNode:
-    return TreeNode(
-        name=str(value["name"]),
-        path=Path(str(value["path"])),
-        kind=EntryKind(str(value["kind"])),
-        bytes=int(value["bytes"]),
-        allocated=int(value["allocated"]),
-        files=int(value["files"]),
-        dirs=int(value["dirs"]),
-        newest_mtime_ns=(
-            int(value["newest_mtime_ns"]) if value.get("newest_mtime_ns") is not None else None
-        ),
-        truncated=bool(value["truncated"]),
-        children=tuple(_tree(child) for child in value["children"]),
-        ignored=_ignored_tally(value["ignored"]),
-    )
+    stack: list[tuple[dict[str, Any], bool]] = [(value, False)]
+    built: dict[int, TreeNode] = {}
+    while stack:
+        raw, visited = stack.pop()
+        children = raw["children"]
+        if not isinstance(children, list):
+            raise TypeError("tree children must be a list")
+        if not visited:
+            stack.append((raw, True))
+            for child in reversed(children):
+                if not isinstance(child, dict):
+                    raise TypeError("tree child must be an object")
+                stack.append((child, False))
+            continue
+        built[id(raw)] = TreeNode(
+            name=str(raw["name"]),
+            path=_wire_path(raw),
+            kind=EntryKind(str(raw["kind"])),
+            bytes=int(raw["bytes"]),
+            allocated=int(raw["allocated"]),
+            files=int(raw["files"]),
+            dirs=int(raw["dirs"]),
+            newest_mtime_ns=(
+                int(raw["newest_mtime_ns"]) if raw.get("newest_mtime_ns") is not None else None
+            ),
+            truncated=bool(raw["truncated"]),
+            children=tuple(built[id(child)] for child in children),
+            ignored=_ignored_tally(raw["ignored"]),
+        )
+    return built[id(value)]
 
 
 def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
@@ -1233,7 +1441,13 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     _bound(raw),
                 )
             )
-        elif view in (View.FILES, View.LARGEST, View.RECENT):
+        elif "files" in raw and view in (
+            View.LIST,
+            View.TREE,
+            View.FILES,
+            View.LARGEST,
+            View.RECENT,
+        ):
             rows = raw["files"]
             if not isinstance(rows, list):
                 raise TypeError("files section must be a list")
@@ -1242,11 +1456,15 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     view,
                     tuple(
                         FileRow(
-                            path=Path(str(row["path"])),
+                            path=_wire_path(row),
                             kind=EntryKind(str(row["kind"])),
                             bytes=int(row["bytes"]),
                             allocated=int(row["allocated"]),
                             mtime_ns=int(row["mtime_ns"]),
+                            files=_optional_int(row["files"]) if "files" in row else None,
+                            dirs=_optional_int(row["dirs"]) if "dirs" in row else None,
+                            complete=_optional_bool(row["complete"]) if "complete" in row else None,
+                            age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
                             ignored=_ignored_flag(row["ignored"]),
                         )
                         for row in rows
@@ -1254,7 +1472,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     _bound(raw),
                 )
             )
-        elif view is View.TREE:
+        elif "tree" in raw and view in (View.LIST, View.TREE, View.FILES):
             tree = raw["tree"]
             if not isinstance(tree, dict):
                 raise TypeError("tree section must be an object")
@@ -1272,22 +1490,41 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     view=view,
                     group=str(metrics["group"]),
                     share_metric=str(metrics["share_metric"]),
-                    words_per_page=int(metrics["words_per_page"]),
                     total=_metric_row(total),
                     rows=tuple(_metric_row(row) for row in rows),
                     bound=_bound(metrics),
                 )
             )
 
-    raw_errors = wire.get("errors", [])
-    if not isinstance(raw_errors, list):
-        raise TypeError("report errors must be a list")
-    status = Status(
-        complete=bool(wire["complete"]),
-        freshness=Freshness(str(wire["freshness"])),
-        source=ReportSource(str(wire["source"])),
-        errors=tuple(_operation_error(item) for item in raw_errors),
-        ignore_rules=_ignore_rules(wire["ignore_rules"]),
+    raw_status = wire["status"]
+    raw_provenance = wire["provenance"]
+    raw_request = wire["request"]
+    if not isinstance(raw_status, dict) or not isinstance(raw_provenance, dict):
+        raise TypeError("report status and provenance must be objects")
+    if not isinstance(raw_request, dict):
+        raise TypeError("report request and scope must be objects")
+    raw_request = cast(dict[str, Any], raw_request)
+    if not isinstance(raw_request.get("scope"), dict):
+        raise TypeError("report request and scope must be objects")
+    raw_status = cast(dict[str, Any], raw_status)
+    raw_provenance = cast(dict[str, Any], raw_provenance)
+    status = status_from_dict({**raw_status, "ignore_rules": wire["ignore_rules"]})
+    provenance = _report_provenance(raw_provenance)
+    raw_scope = cast(dict[str, Any], raw_request["scope"])
+    request = ReportRequest(
+        scope=ReportScope(
+            max_depth=(
+                int(raw_scope["max_depth"]) if raw_scope.get("max_depth") is not None else None
+            ),
+            follow_symlinks=bool(raw_scope["follow_symlinks"]),
+            one_filesystem=bool(raw_scope["one_filesystem"]),
+            exclude_special=bool(raw_scope["exclude_special"]),
+            read_controls=bool(raw_scope["read_controls"]),
+        ),
+        analyze=tuple(Analysis(str(name)) for name in raw_request["analyze"]),
+        size=SizeMetric(str(raw_request["size"])),
+        views=tuple(View(str(name)) for name in raw_request["views"]),
+        omitted_views=tuple(View(str(name)) for name in raw_request["omitted_views"]),
     )
     raw_analysis = wire.get("analysis")
     analysis = None
@@ -1303,18 +1540,30 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                 Analyzer(str(item["id"]), int(item["version"])) for item in raw_analyzers
             ),
         )
-    generated_at = _datetime(wire["generated_at"])
-    if generated_at is None:
-        raise TypeError("report generated_at must be present")
     return Report(
         notes=notes,
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
-        root=Path(str(wire["root"])),
-        scan_started_at=_datetime(wire.get("scan_started_at")),
-        generated_at=generated_at,
+        root=_wire_path(wire, "root"),
+        request=request,
+        age_reference_ns=_optional_int(wire.get("age_reference_ns")),
         status=status,
+        provenance=provenance,
         analysis=analysis,
         sections=tuple(sections),
         _wire=cast(dict[str, JsonValue], wire),
     )
+
+
+def _optional_int(value: Any) -> int | None:
+    """Decode a nullable exact integer from the native wire report."""
+    return None if value is None else int(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    """Decode a nullable boolean, refusing anything that merely looks true or false."""
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError("a file row's complete flag must be a boolean or null")
+    return value

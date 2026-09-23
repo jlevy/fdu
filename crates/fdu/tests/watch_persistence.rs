@@ -8,8 +8,10 @@
 #![cfg(all(feature = "watch", unix))]
 
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -143,6 +145,95 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
         listed.contains("second.txt"),
         "a warm-started watch did not persist what it observed. Listing was: {listed}",
     );
+}
+
+#[test]
+fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let cache = tempfile::tempdir().expect("cache tempdir");
+    let tree = root.path().join("tree");
+    fs::create_dir(&tree).expect("create tree");
+    fs::write(tree.join(".gitignore"), b"*.log\n").expect("write controls");
+    fs::write(tree.join("ignored.log"), b"ignored").expect("write ignored file");
+    fs::write(tree.join("first.txt"), b"first").expect("write first file");
+
+    report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
+    let stronger = snapshot_fingerprint(cache.path()).expect("controls-on snapshot");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .args([
+            "--watch",
+            "--no-gitignore",
+            "--view",
+            "files",
+            "--format",
+            "jsonl",
+            "--interval",
+            "1s",
+        ])
+        .arg(&tree)
+        .env("XDG_CACHE_HOME", cache.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn projected watcher");
+    let stdout = child.stdout.take().expect("watch stdout");
+    let (sent, received) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if sent.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    let initial = received
+        .recv_timeout(DEADLINE)
+        .expect("watch initial report")
+        .expect("read initial report");
+    assert!(initial.contains("fdu.report/"), "unexpected initial report: {initial}");
+    let started = Instant::now();
+    loop {
+        let line = received
+            .recv_timeout(DEADLINE.saturating_sub(started.elapsed()))
+            .expect("watch initial files section")
+            .expect("read initial files section");
+        if line.contains("\"view\": \"files\"") {
+            break;
+        }
+    }
+
+    // `Session::new` binds the observer before the initial report is rendered, and the
+    // files section proves that rendering completed. Seeing this change record then
+    // proves the projected CLI route reached its incremental save path.
+    fs::write(tree.join("warmup.txt"), b"warmup").expect("write warm-up file");
+    let started = Instant::now();
+    let mut observed = false;
+    while started.elapsed() < DEADLINE {
+        let Ok(line) = received.recv_timeout(DEADLINE.saturating_sub(started.elapsed())) else {
+            break;
+        };
+        let Ok(line) = line else { break };
+        if line.contains("\"record\": \"change\"") && line.contains("\"path\": \"warmup.txt\"") {
+            observed = true;
+            break;
+        }
+    }
+
+    // The dirty warm-up batch may arrive before the one-second save throttle. Let the
+    // idle path attempt its deferred save, then prove the projection guard kept the
+    // stronger image.
+    sleep(Duration::from_millis(1_500));
+    let after = snapshot_fingerprint(cache.path()).expect("snapshot remains");
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        observed,
+        "the projected watcher did not report the change used to test its save guard"
+    );
+    assert_eq!(after, stronger, "the projected watch replaced the controls-on snapshot");
 }
 
 #[test]

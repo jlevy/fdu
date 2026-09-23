@@ -235,6 +235,10 @@ def parse_args(argv: list[str]) -> Args:
             args.analysis_workers = int(take())
         elif flag == "--format":
             args.format = parse_format(take())
+        elif flag == "--tree":
+            args.format = fdu.Format.TREE
+        elif flag == "--long":
+            args.format = fdu.Format.LONG
         elif flag == "--color":
             args.color = take()
         elif flag == "--cache":
@@ -321,6 +325,7 @@ def build_query(args: Args) -> fdu.Query:
         views=args.views,
         selection=selection,
         words_per_page=args.words_per_page,
+        format=args.format,
     )
 
 
@@ -407,13 +412,17 @@ def run_watch(args: Args) -> int:
     with index.watch(options) as watch:
         # Then the initial answer, identical to a run without --watch. A stream that opens
         # with its changes tells a reader nothing about what it is watching.
-        sys.stdout.write(render(args, index.report(query)))
+        sys.stdout.write(render(args, watch.report()))
         sys.stdout.flush()
         # Views that stream per entry are emitted as records; anything aggregate has to be
         # repainted, because a total cannot be expressed as a change. Both come from the
         # one query, so nothing here is a second grammar.
-        streams_changes = fdu.View.FILES in query.views
-        has_aggregates = any(view != fdu.View.FILES for view in query.views)
+        streams_changes = fdu.View.FILES in query.views and args.format not in (
+            fdu.Format.TREE,
+            fdu.Format.PATHS,
+            fdu.Format.LONG,
+        )
+        has_aggregates = not streams_changes or any(view != fdu.View.FILES for view in query.views)
         dirty = False
 
         for batch in watch:
@@ -424,7 +433,12 @@ def run_watch(args: Args) -> int:
                     dirty = False
                 continue
             for change in batch:
-                if streams_changes:
+                if change.kind is fdu.ChangeKind.INVALIDATE and args.format in (
+                    fdu.Format.PATHS,
+                    fdu.Format.LONG,
+                ):
+                    print(change.render(args.format), file=sys.stderr, flush=True)
+                elif streams_changes or change.kind is fdu.ChangeKind.INVALIDATE:
                     # The one renderer, so the stream is fdu's bytes and not the shim's
                     # idea of them. This printed repr() until Change.render (fdu-m66a).
                     print(change.render(args.format), flush=True)
@@ -440,7 +454,7 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
     never change while claiming to be live.
     """
 
-    if args.format is fdu.Format.TEXT:
+    if args.format in (fdu.Format.TEXT, fdu.Format.TREE):
         print(f"\n{fdu.watch_rule(datetime.now(tz=UTC))}", flush=True)
     sys.stdout.write(render(args, watch.report()))
     sys.stdout.flush()
@@ -455,6 +469,9 @@ def render(args: Args, report: fdu.Report) -> str:
     # The one renderer, reached through the API rather than reimplemented. A shim that
     # drew its own bars and padding would be testing the reimplementation.
     color = args.color == "always"
+    if args.format in (fdu.Format.PATHS, fdu.Format.LONG):
+        for note in report.notes:
+            print(note, file=sys.stderr)
     return report.render(args.format, color=color)
 
 

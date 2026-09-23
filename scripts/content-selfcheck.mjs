@@ -58,8 +58,8 @@ try {
     tree,
   ]);
   const report = JSON.parse(output);
-  assert.equal(report.schema, "fdu.report/6");
-  assert.equal(report.complete, true);
+  assert.equal(report.schema, "fdu.report/7");
+  assert.equal(report.status.complete, true);
   assert.deepEqual(report.analysis.analyze, ["lines", "words"]);
   assert.deepEqual(report.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
@@ -83,7 +83,7 @@ try {
   assert.equal(documents.total.family, "unknown");
   assert.ok(documents.total.files >= typeRows.get("markdown").files);
   assert.equal(documents.share_metric, "document_words");
-  assert.equal(documents.words_per_page, 250);
+  assert.equal(documents.total.pages.words_per_page, 250);
   assert.equal(documents.total.pages.words, documents.total.metrics.document_words);
   assert.ok(documents.total.metrics.raw_words > 0);
   assert.ok(documents.total.metrics.logical_words > 0);
@@ -103,21 +103,22 @@ try {
       summary.total.metrics.blank_lines + summary.total.metrics.nonblank_lines,
       `${summary.group} line partition`,
     );
-    const covered = Object.values(summary.total.coverage).reduce((sum, count) => sum + count, 0);
-    assert.equal(covered, summary.total.files, `${summary.group} coverage partition`);
+    assert.deepEqual(Object.keys(summary.total.coverage), ["lines", "words"]);
+    for (const [unit, coverage] of Object.entries(summary.total.coverage)) {
+      const covered = Object.values(coverage).reduce((sum, count) => sum + count, 0);
+      assert.equal(covered, summary.total.files, `${summary.group} ${unit} coverage partition`);
+    }
+    assert.ok(!("code_lines" in summary.total.metrics), "unrequested code metric is absent");
   }
 
   const binary = familyRows.get("binary");
   if (binary) {
-    assert.equal(binary.analyzed_files, 0);
-    assert.equal(binary.coverage.binary, binary.files);
+    assert.equal(binary.coverage.lines.binary, binary.files);
+    assert.equal(binary.coverage.words.binary, binary.files);
     assert.deepEqual(binary.metrics, {
       physical_lines: 0,
       blank_lines: 0,
       nonblank_lines: 0,
-      code_lines: 0,
-      comment_lines: 0,
-      code_blank_lines: 0,
       raw_words: 0,
       logical_words: 0,
       paragraphs: 0,
@@ -142,7 +143,7 @@ try {
     tree,
   ]);
   const codeReport = JSON.parse(codeOutput);
-  assert.equal(codeReport.schema, "fdu.report/6");
+  assert.equal(codeReport.schema, "fdu.report/7");
   assert.deepEqual(codeReport.analysis.analyze, ["lines", "code"]);
   assert.deepEqual(codeReport.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
@@ -153,12 +154,20 @@ try {
   assert.equal(code.total.share.numerator, code.total.metrics.code_lines);
   assert.equal(code.total.share.denominator, code.total.metrics.code_lines);
   assert.ok(code.total.metrics.code_lines > 0);
-  assert.ok(code.total.coverage.unsupported > 0, "self-host should expose unsupported code");
+  assert.ok(code.total.coverage.code.unsupported > 0, "self-host should expose unsupported code");
+  assert.deepEqual(Object.keys(code.total.coverage), ["lines", "code"]);
+  assert.ok(!("pages" in code.total), "unrequested word pages are absent");
+  assert.ok(!("document_words" in code.total.metrics), "unrequested word metric is absent");
+  for (const [unit, coverage] of Object.entries(code.total.coverage)) {
+    const covered = Object.values(coverage).reduce((sum, count) => sum + count, 0);
+    assert.equal(covered, code.total.files, `code ${unit} coverage partition`);
+  }
   const codeRows = new Map(code.rows.map((row) => [row.id, row]));
   for (const id of ["rust", "python", "javascript"]) {
     const row = codeRows.get(id);
     assert.ok(row, `missing self-host SLOC row ${id}`);
-    assert.equal(row.coverage.analyzed, row.files);
+    assert.equal(row.coverage.lines.analyzed, row.files);
+    assert.equal(row.coverage.code.analyzed, row.files);
     assert.equal(
       row.metrics.physical_lines,
       row.metrics.code_lines + row.metrics.comment_lines + row.metrics.code_blank_lines,

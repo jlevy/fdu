@@ -19,6 +19,7 @@ fn opened_root_session_goldens() {
     let traces = [
         cold_progressive_knowledge(),
         exact_mutation_and_refresh(),
+        failed_listing_and_recovery(),
         coherent_projections_and_continuations(),
         journal_and_observation_recovery(),
         ownership_races_and_shutdown(),
@@ -68,6 +69,9 @@ const REQUIRED_CONTRACT_OUTCOMES: &[&str] = &[
     "projection.diagnostics",
     "projection.limit",
     "projection.refused",
+    "projection.refused.not_a_directory",
+    "projection.refused.continuation_record_limit",
+    "projection.refused.continuation_unavailable",
     "change.inserted",
     "change.updated",
     "change.removed",
@@ -77,6 +81,7 @@ const REQUIRED_CONTRACT_OUTCOMES: &[&str] = &[
     "transition.freshness",
     "transition.verified",
     "transition.directory_complete",
+    "transition.directory_incomplete",
     "transition.index_state",
     "error.closed",
     "error.continuation_unavailable",
@@ -190,6 +195,43 @@ fn exact_mutation_and_refresh() -> SessionTrace {
     refresh(&opened, &mut trace, &[PathBuf::from("same")]);
     let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
     final_read(&opened, &mut trace);
+    close(&opened, &mut trace);
+    record_final(&mut trace, &[&opened]);
+    trace
+}
+
+fn failed_listing_and_recovery() -> SessionTrace {
+    let root = tempfile::tempdir().expect("listing root");
+    std::fs::create_dir(root.path().join("dir")).expect("directory");
+    std::fs::write(root.path().join("dir/kept"), b"kept").expect("child");
+    let mut trace = SessionTrace::new("failed-listing-and-recovery", root.path());
+    let options = OpenOptions::default();
+    trace.record("action.open", &options);
+    let opened = OpenedIndex::open_for_test(root.path(), options, deterministic_controls())
+        .expect("open listing session");
+    trace.bind_session(opened.state.session);
+    trace.record("result.open", &opened);
+    wait_for_phase(&opened, &mut trace, LifecyclePhase::Ready);
+    let cursor = zero_cursor(&opened, &mut trace);
+    let cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
+    let hook = crate::scan::install_child_metadata_hook(root.path(), |path| {
+        (path.file_name() == Some(std::ffi::OsStr::new("kept"))).then(|| {
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "injected listing failure")
+        })
+    });
+    refresh(&opened, &mut trace, &[PathBuf::new()]);
+    drop(hook);
+    let cursor = poll(&opened, &mut trace, cursor, Duration::ZERO);
+    assert_eq!(
+        opened.state.index.directory_complete(Path::new("dir")).expect("listing"),
+        Some(false)
+    );
+    refresh(&opened, &mut trace, &[PathBuf::new()]);
+    let _ = poll(&opened, &mut trace, cursor, Duration::ZERO);
+    assert_eq!(
+        opened.state.index.directory_complete(Path::new("dir")).expect("listing"),
+        Some(true)
+    );
     close(&opened, &mut trace);
     record_final(&mut trace, &[&opened]);
     trace
@@ -313,7 +355,7 @@ fn coherent_projections_and_continuations() -> SessionTrace {
     let foreign = continuation(&foreign_source, 0);
     let other_root = tempfile::tempdir().expect("foreign root");
     trace.alias_path(other_root.path(), "$OTHER_ROOT");
-    let other = OpenedIndex::open(other_root.path(), OpenOptions::default()).expect("other open");
+    let other = super::open_fixture(other_root.path(), OpenOptions::default()).expect("other open");
     trace.bind_session(other.state.session);
     trace.record("action.read.foreign", &foreign);
     let foreign_result = other.read(ReadRequest {
@@ -380,6 +422,32 @@ fn coherent_projections_and_continuations() -> SessionTrace {
             ]
         )
     ));
+    // A valid selection can exceed the continuation payload bound even though its
+    // first page is tiny. Record the exact generator instead of thousands of repetitive
+    // strings; the response below is still the unmodified production read result.
+    let mut exact_names = vec!["a.txt".to_string(), "b.txt".to_string()];
+    exact_names.extend((0..4_000).map(|number| format!("unused-{number:05}.txt")));
+    trace.record_text("action.read.record-limit", "Flat { exact_names: [a.txt, b.txt] + unused-{00000..03999}.txt, shape: Compact, page: { limit: 1, max_work: 16 } }, Lookup { path: b.txt }");
+    let oversized = opened.read(ReadRequest {
+        projections: vec![
+            ReadProjection::Flat {
+                selection: crate::query::EntrySelection { exact_names, ..Default::default() },
+                shape: RowShape::Compact,
+                page,
+            },
+            ReadProjection::Lookup { path: PathBuf::from("b.txt") },
+        ],
+        expected: None,
+    });
+    assert!(
+        matches!(&oversized, Ok(ReadResponse { results, .. }) if matches!(results.as_slice(), [
+        ProjectionResult::Refused(crate::ProjectionRefusal::ContinuationRecordLimit { attempted, limit }),
+        ProjectionResult::Lookup(Knowledge::Present(_)),
+    ] if attempted > limit && *limit == crate::MAX_CONTINUATION_RECORD_BYTES))
+    );
+    trace.record("result.read.record-limit", &oversized);
+    trace.observe_read(&oversized);
+
     final_read(&opened, &mut trace);
     close(&opened, &mut trace);
     let closed = opened.read(ReadRequest::default());

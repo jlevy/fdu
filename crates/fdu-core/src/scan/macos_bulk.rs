@@ -367,7 +367,13 @@ mod tests {
             .map(|item| {
                 let item = item.expect("portable entry");
                 let metadata = metadata_for_fingerprint(&item).expect("portable metadata");
-                (item.file_name(), (kind_from(&metadata), attrs_from(&metadata)))
+                (
+                    item.file_name(),
+                    (
+                        kind_from(&metadata),
+                        attrs_from(&item.path(), &metadata).expect("Unix metadata conversion"),
+                    ),
+                )
             })
             .collect();
 

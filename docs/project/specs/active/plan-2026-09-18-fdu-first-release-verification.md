@@ -112,7 +112,7 @@ Work in a scratch directory that is not the checkout.
 
 3. **Watch.** Start
    `fdu --watch --view files --format jsonl --cache off --interval 1s TREE`, create a
-   file in `TREE`, and confirm a `fdu.stream/1` upsert arrives.
+   file in `TREE`, and confirm a `fdu.stream/2` upsert arrives.
    This simulation used `--interval 1s`. On `98379c76`, `200ms` and `0.2s` are usage
    errors. Pull request #87 accepts whole milliseconds (`200ms`; `0.2s` stays rejected,
    `fdu-8o7g`). Interrupt with Ctrl-C. On that revision a wheel-installed command
