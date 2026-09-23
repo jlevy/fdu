@@ -136,7 +136,8 @@ pub use crate::opened::{
 // strategy, not a front end. A caller wanting one report without retaining an index was
 // previously required to compile the command line to get it (fdu-z7sp).
 pub use crate::execution::{
-    PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
+    Load, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
+    prepare_report_with_scan_diagnostics,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::stored_state::{
@@ -417,7 +418,10 @@ pub fn open_with_pending_save(
     root: &Path,
     config: &OpenConfig,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
-    open_for_report(root, config, true, false)
+    let (basis, delivery) = config.split(root);
+    let request = query::Request::new(basis, query::Query::default(), std::time::SystemTime::now());
+    let plan = plan(&request, &delivery, Route::Retained).map_err(Error::InvalidRequest)?;
+    execute(&plan, &request.basis, false)
         .map(|(index, report, pending, _diagnostics)| (index, report, pending))
 }
 
@@ -509,25 +513,24 @@ fn changed_control_limits(
 ///
 /// A policy that cannot scan reads regardless of the flag — for [`CachePolicy::Only`]
 /// the snapshot is the contract, not a cost choice.
-pub(crate) fn open_for_report(
-    root: &Path,
-    config: &OpenConfig,
-    read_snapshot: bool,
+pub(crate) fn execute(
+    plan: &Plan,
+    basis: &query::Basis,
     collect_scan_diagnostics: bool,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
+    let config = &OpenConfig::of(basis, plan.delivery());
+    let root = &basis.root;
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     // Before the snapshot, not at the scan that may never happen: a scope this build cannot
     // honour has no answer at any delivery, and checking it where the scan runs made
     // `--cache only` report a snapshot miss for a request every other policy refuses --
     // which failure a run named then depended on how it was delivered (`refusal-order`).
     config.scan.validate()?;
-    let policy = config.policy;
-
     // A snapshot for this root that could not serve, kept so a policy that cannot scan says
     // why it has no answer rather than only that it has none.
     let mut refused_snapshot = None;
     let mut projected = false;
-    let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
+    let loaded = match (plan.load() == Load::Snapshot, &config.cache_path) {
         (true, Some(cache_path)) => {
             match snapshot::load_serving(
                 cache_path,
@@ -548,7 +551,7 @@ pub(crate) fn open_for_report(
         _ => None,
     };
 
-    if !policy.scans() {
+    if plan.verify() == Verify::None {
         let Some(mut index) = loaded else {
             return Err(Error::Snapshot(unusable_snapshot_message(refused_snapshot, &config.scan)));
         };
