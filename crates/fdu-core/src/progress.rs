@@ -204,6 +204,18 @@ impl Progress {
         walk.files.fetch_add(files, Ordering::Relaxed);
         walk.bytes.fetch_add(bytes, Ordering::Relaxed);
     }
+
+    /// Record the candidate total content analysis will work through.
+    pub(crate) fn begin_analysis(&self, total: u64) {
+        let analysis = &self.cells.analysis;
+        analysis.total.store(total, Ordering::Relaxed);
+        analysis.known.store(true, Ordering::Release);
+    }
+
+    /// Record one analyzed candidate.
+    pub(crate) fn add_analyzed(&self, files: u64) {
+        self.cells.analysis.done.fetch_add(files, Ordering::Relaxed);
+    }
 }
 
 impl fmt::Debug for Progress {
@@ -257,6 +269,17 @@ mod tests {
     }
 
     #[test]
+    fn analysis_is_unknown_until_a_total_is_recorded() {
+        let progress = Progress::new();
+        progress.add_analyzed(1);
+        assert_eq!(progress.snapshot().analysis, None, "a count without a denominator");
+        progress.begin_analysis(4);
+        assert_eq!(progress.snapshot().analysis, Some((1, 4)));
+        progress.add_analyzed(3);
+        assert_eq!(progress.snapshot().analysis, Some((4, 4)));
+    }
+
+    #[test]
     fn every_phase_survives_the_cell_round_trip() {
         let progress = Progress::new();
         for phase in ProgressPhase::ALL {
@@ -270,11 +293,11 @@ mod tests {
     #[test]
     fn debug_shows_the_snapshot_rather_than_the_cells() {
         let progress = Progress::new();
-        progress.enter(ProgressPhase::Scanning);
-        progress.add_walked(1, 2, 3);
+        progress.enter(ProgressPhase::Analyzing);
+        progress.begin_analysis(2);
         assert_eq!(
             format!("{progress:?}"),
-            "Progress { phase: Scanning, directories: 1, files: 2, bytes: 3, analysis: None }"
+            "Progress { phase: Analyzing, directories: 0, files: 0, bytes: 0, analysis: Some((0, 2)) }"
         );
     }
 

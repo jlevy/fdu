@@ -10,6 +10,7 @@ mod content_index;
 mod content_markdown_metrics;
 mod content_model;
 
+pub(crate) use content_analysis::analyze_index_observed;
 pub use content_analysis::{AnalysisReport, AnalyzerCoverage, analyze_index};
 pub use content_basic_metrics::{BasicAccumulator, TextAdmission};
 pub use content_cache::{
