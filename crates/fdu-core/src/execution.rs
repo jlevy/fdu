@@ -93,6 +93,44 @@ impl Plan {
     }
 }
 
+/// Facts observed by execution, independent of the route that observed them.
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct RunFacts {
+    pub(crate) entries_verified: bool,
+    pub(crate) entries_changed: bool,
+    pub(crate) content_changed: bool,
+    pub(crate) content_requested: bool,
+    pub(crate) projected: bool,
+    pub(crate) paired_entries: bool,
+}
+
+/// Artifacts the plan authorizes its executor to write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SaveTargets {
+    pub(crate) metadata: bool,
+    pub(crate) content: bool,
+}
+
+impl SaveTargets {
+    pub(crate) const fn none(self) -> bool {
+        !self.metadata && !self.content
+    }
+}
+
+impl Plan {
+    pub(crate) fn writes(&self, run: &RunFacts) -> SaveTargets {
+        let allowed = self.delivery.cache.writes() && self.delivery.cache_path.is_some();
+        SaveTargets {
+            metadata: allowed && run.entries_verified && run.entries_changed && !run.projected,
+            content: allowed
+                && run.content_requested
+                && run.content_changed
+                && (run.entries_verified || run.paired_entries),
+        }
+    }
+}
+
 /// Operational work behind one one-shot report.
 ///
 /// This is deliberately separate from [`Report`]: it is transient CLI telemetry, not
@@ -199,6 +237,10 @@ pub fn plan(
         CachePolicy::Refresh => delivery.cache_path.is_some(),
         CachePolicy::Off | CachePolicy::Auto | CachePolicy::ReadOnly => false,
     };
+    // A one-shot metadata query cannot amortize loading and reconciling a snapshot:
+    // both paths stat every entry. On macOS/APFS (494,031 entries), warm revalidation
+    // cost 4.8 s versus 3.6 s cold, while the write it might avoid cost only ~50 ms.
+    // Content avoids body reads, and retained routes amortize their reusable index.
     let read_snapshot = match delivery.cache {
         CachePolicy::Only => true,
         CachePolicy::Off | CachePolicy::Refresh => false,
@@ -357,6 +399,49 @@ mod tests {
     use super::*;
     use crate::ScanConfig;
     use crate::query::{IgnoredEntries, Pattern, Query, Section};
+
+    #[test]
+    fn write_policy_depends_only_on_delivery_and_observed_facts() {
+        let routes = [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened];
+        for delivery in Delivery::enumerate() {
+            for bits in 0_u8..64 {
+                let facts = RunFacts {
+                    entries_verified: bits & 1 != 0,
+                    entries_changed: bits & 2 != 0,
+                    content_changed: bits & 4 != 0,
+                    content_requested: bits & 8 != 0,
+                    projected: bits & 16 != 0,
+                    paired_entries: bits & 32 != 0,
+                };
+                let allowed = delivery.cache.writes();
+                let expected = SaveTargets {
+                    metadata: allowed
+                        && facts.entries_verified
+                        && facts.entries_changed
+                        && !facts.projected,
+                    content: allowed
+                        && facts.content_requested
+                        && facts.content_changed
+                        && (facts.entries_verified || facts.paired_entries),
+                };
+                for route in routes {
+                    let plan = Plan {
+                        route,
+                        retained: RetainedState::FullIndex,
+                        load: Load::Snapshot,
+                        verify: Verify::Filesystem,
+                        delivery: delivery.clone(),
+                    };
+                    assert_eq!(plan.writes(&facts), expected, "{route:?} {delivery:?} {facts:?}");
+                    let unavailable = Plan {
+                        delivery: Delivery { cache_path: None, ..delivery.clone() },
+                        ..plan
+                    };
+                    assert!(unavailable.writes(&facts).none());
+                }
+            }
+        }
+    }
 
     fn planned(config: &OpenConfig, query: &Query) -> Plan {
         let (request, delivery) = split(Path::new("."), config, query);

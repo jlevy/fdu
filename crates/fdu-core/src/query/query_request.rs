@@ -133,6 +133,35 @@ pub struct Delivery {
     pub analysis_workers: usize,
 }
 
+impl Delivery {
+    /// Representative deliveries for checking policy independently of route.
+    /// Worker counts and cache location are fixed; every cache, partial-answer, and
+    /// watch choice is represented.
+    pub fn enumerate() -> impl Iterator<Item = Self> {
+        [
+            CachePolicy::Auto,
+            CachePolicy::Refresh,
+            CachePolicy::ReadOnly,
+            CachePolicy::Only,
+            CachePolicy::Off,
+        ]
+        .into_iter()
+        .flat_map(|cache| {
+            [false, true].into_iter().flat_map(move |accept_partial| {
+                [None, Some(WatchDelivery { interval: Duration::from_secs(2) })].into_iter().map(
+                    move |watch| Self {
+                        cache,
+                        cache_path: Some(PathBuf::from("cache.fdu")),
+                        accept_partial,
+                        watch,
+                        analysis_workers: 1,
+                    },
+                )
+            })
+        })
+    }
+}
+
 /// How a watch repeats its answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WatchDelivery {
