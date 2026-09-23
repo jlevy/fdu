@@ -984,13 +984,14 @@ impl ActiveReconcile {
         }
     }
 
-    fn refuses(&self, observation: &Observation) -> bool {
+    fn refuses(&self, observation: &Observation, index: &Index) -> bool {
         match &self.evidence {
             ReconcileEvidence::Retry => true,
             ReconcileEvidence::Scopes(scopes) => observation.ops.iter().any(|op| {
                 scopes
                     .iter()
                     .any(|path| op.op.path().starts_with(path) || path.starts_with(op.op.path()))
+                    && !index.holds_target(&op.op, index.path_state(op.op.path()))
             }),
         }
     }
@@ -1488,7 +1489,7 @@ impl IndexHandle {
         if index
             .active_reconciles
             .get(&started_at)
-            .is_some_and(|active| active.refuses(observation))
+            .is_some_and(|active| active.refuses(observation, &index))
         {
             let stats = ApplyStats {
                 stale: u64::try_from(observation.len()).unwrap_or(u64::MAX),
@@ -2921,6 +2922,60 @@ impl Index {
         }
     }
 
+    /// Finish a cold walk using all of its failures, before diagnostic retention bounds
+    /// discard any paths. A scoped failure withdraws only its subtree and ancestors;
+    /// an unscoped failure cannot establish completeness anywhere in the walk.
+    pub(crate) fn set_initial_scan_freshness(&mut self, errors: &[crate::Error]) {
+        self.set_initial_freshness(errors.is_empty());
+        if errors.is_empty() {
+            return;
+        }
+        for slot in &mut self.arena {
+            if let Slot::Occupied { entry, .. } = slot {
+                if entry.kind.is_dir() {
+                    entry.directory_mut().children_complete = false;
+                }
+            }
+        }
+        let mut failed = Vec::with_capacity(errors.len());
+        for error in errors {
+            let Some(path) = Issue::from_error_under(&self.root_path, error).path else {
+                return;
+            };
+            if path.is_absolute() || path.as_os_str().is_empty() {
+                return;
+            }
+            failed.push(path);
+        }
+        failed.sort();
+        failed.dedup();
+        self.freshness_marks.clear();
+        for path in &failed {
+            self.mark_unfresh(path, Freshness::Partial);
+        }
+        // The walk has terminated and each failure is scoped above. Every retained
+        // directory outside those boundaries therefore has its complete in-scope
+        // listing. In particular, never promote descendants of a failed listing.
+        for slot in 0..self.arena.len() {
+            let Slot::Occupied { generation, entry } = &self.arena[slot] else {
+                continue;
+            };
+            if !entry.kind.is_dir() {
+                continue;
+            }
+            let id = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: *generation,
+            };
+            let Some(path) = self.path_of(id) else {
+                continue;
+            };
+            self.entry_mut(id).directory_mut().children_complete = !failed
+                .iter()
+                .any(|failure| path.starts_with(failure) || failure.starts_with(&path));
+        }
+    }
+
     pub(crate) fn record_walk_errors(&mut self, errors: &mut Vec<crate::Error>) {
         self.issues.clear();
         self.issue_epochs.clear();
@@ -3127,7 +3182,12 @@ impl Index {
             }
         }
         let mut state = Vec::new();
-        if superseded.is_empty() && (complete || !scoped_failures.is_empty()) {
+        // A complete older walk plus successful newer child verification still proves
+        // the entire scope. A newer failed child must keep its own evidence and mark.
+        let verified_scope = superseded.is_empty()
+            || (complete
+                && superseded.iter().all(|newer| self.freshness_at(newer) == Freshness::Fresh));
+        if verified_scope && (complete || !scoped_failures.is_empty()) {
             // A sweep stat'd every entry beneath `path` except the precise failure paths,
             // which carry stronger `Partial` marks below. Record the successful interval
             // once rather than manufacturing millions of unchanged entry updates.
@@ -9787,6 +9847,71 @@ mod tests {
         assert_eq!(index.freshness_at(Path::new("a")), Freshness::Fresh);
         assert_eq!(index.freshness_at(Path::new("b/blocked")), Freshness::Partial);
     }
+    #[test]
+    fn cold_scan_failure_does_not_verify_unknown_descendants_or_unscoped_work() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(
+            ["blocked", "blocked/nested", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        let error = crate::Error::io(
+            PathBuf::from("/root/blocked"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+        );
+        index.set_initial_scan_freshness(&[error]);
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(true));
+        for path in ["", "blocked", "blocked/nested"] {
+            assert_eq!(index.directory_complete(Path::new(path)), Some(false), "{path}");
+            assert_eq!(index.freshness_at(Path::new(path)), Freshness::Partial, "{path}");
+        }
+        index.set_initial_scan_freshness(&[crate::Error::Snapshot("unscoped failure".into())]);
+        assert_eq!(index.directory_complete(Path::new("healthy")), Some(false));
+        assert_eq!(index.freshness_at(Path::new("healthy")), Freshness::Partial);
+    }
+
+    #[test]
+    fn complete_older_root_does_not_verify_a_newer_failed_child() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer, _) = index.begin_reconcile(Path::new("child")).expect("newer child");
+        let error = crate::Error::io(
+            root.join("child"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "new failure"),
+        );
+        index
+            .finish_reconcile(
+                Path::new("child"),
+                newer,
+                false,
+                &[],
+                &[PathBuf::from("child")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("failed child");
+        let finish = index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("complete older walk");
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.freshness_at(Path::new("child")), Freshness::Partial);
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert!(!finish.commit.iter().flat_map(|commit| commit.state.iter()).any(|state| {
+            matches!(state, StateTransition::Verified { path } if path.as_os_str().is_empty())
+        }));
+    }
+
     #[test]
     fn reconciliation_scope_budget_preserves_issues_and_newer_facts() {
         let mut index = Index::new("/root");

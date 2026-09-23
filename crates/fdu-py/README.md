@@ -51,7 +51,6 @@ index = fdu.open(
     analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL),
 )
 print(index.status.complete)
-print(index.status.freshness)
 print(index.total().by_extension)
 
 report = index.report(
@@ -60,6 +59,7 @@ report = index.report(
         selection=fdu.Selection(limit=20, size=fdu.SizeMetric.APPARENT),
     )
 )
+print(report.provenance.freshness)
 print(report.sections)
 print(report.as_dict())
 

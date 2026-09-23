@@ -978,6 +978,22 @@ mod tests {
             summary.total.detection_sources.get(&crate::classify::DetectionSource::FormatSignature),
             Some(&1)
         );
+        let header_row = summary.rows.iter().find(|row| row.id == "c").expect("name group");
+        assert_eq!(
+            header_row.detection_sources.get(&crate::classify::DetectionSource::AmbiguousContent),
+            Some(&1),
+            "content evidence remains visible without reassigning the .h name group"
+        );
+        let script_row = summary
+            .rows
+            .iter()
+            .find(|row| row.id == "unknown:.inc")
+            .expect("unresolved name group");
+        assert_eq!(
+            script_row.detection_sources.get(&crate::classify::DetectionSource::Modeline),
+            Some(&1),
+            "the modeline is evidence even though grouping follows the filename"
+        );
     }
 
     #[test]

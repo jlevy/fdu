@@ -1203,6 +1203,45 @@ mod tests {
             "a missed request reads every file"
         );
         assert!(restored.content().is_none(), "a miss leaves no content tier behind");
+
+        // Counts alone cannot prove that a wider history preserves the narrower answer.
+        // Compare every displayed metric and per-unit outcome in each row and the total
+        // with a fresh index that has never seen the wider sidecar.
+        let (mut cold, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("cold scan");
+        super::super::analyze_index(&mut cold, narrower);
+        super::super::analyze_index(&mut restored, narrower);
+        let values = |index: &Index| {
+            let query = crate::query::Query {
+                views: vec![crate::query::ViewSpec::Types],
+                ..crate::query::Query::default()
+            };
+            let report = crate::query::report(
+                index,
+                &crate::test_support::read_of(index, query),
+                std::time::UNIX_EPOCH,
+            )
+            .expect("metric report");
+            let crate::query::Section::Metrics { summary, .. } = &report.sections[0] else {
+                panic!("expected type metrics");
+            };
+            std::iter::once(&summary.total)
+                .chain(&summary.rows)
+                .map(|row| {
+                    (
+                        row.id.clone(),
+                        (
+                            row.analysis,
+                            row.metrics,
+                            row.lines_coverage.clone(),
+                            row.code_coverage.clone(),
+                            row.words_coverage.clone(),
+                        ),
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        assert_eq!(values(&restored), values(&cold), "wider cache history changes no row value");
     }
 
     /// Neither a narrower sidecar nor one of an incomparable set answers a request: each

@@ -175,13 +175,13 @@ impl Session {
         delivery.watch.get_or_insert_with(WatchDelivery::default);
         let plan =
             crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
-        let (index, _report, pending, _diagnostics) = crate::execute(&plan, &request.basis, false)?;
+        let (index, report, pending, _diagnostics) = crate::execute(&plan, &request.basis, false)?;
         let startup_save_error = pending.join().err();
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
         let mut session =
             Self::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())?;
-        session.persistence.pending |= startup_save_error.is_some();
+        session.persistence.pending |= startup_save_error.is_some() || !report.is_complete();
         session.startup_save_error = startup_save_error;
         Ok(session)
     }
@@ -198,6 +198,9 @@ impl Session {
         }
         let interval = self.plan.delivery().watch.expect("watch plan").interval;
         self.persistence.persist_due(now, interval, || {
+            if !self.plan.delivery().cache.writes() || self.plan.delivery().cache_path.is_none() {
+                return Ok(false);
+            }
             let index = self.index.snapshot()?;
             crate::persist_index(&index, &self.plan)
         })
@@ -243,6 +246,7 @@ impl Session {
         let delivery =
             Delivery { watch: Some(delivery.watch.unwrap_or_default()), ..delivery.clone() };
         crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
+        crate::validate_basis_root(&root, &request.basis)?;
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_scope(index.scope()?)?;
@@ -622,6 +626,31 @@ mod tests {
     /// the second was introduced by fixing the first. End-to-end tests could not catch
     /// either: they observe whether a file changed on disk, which cannot distinguish "not
     /// due yet" from "due and skipped", nor a cleared flag from a retained one.
+    #[test]
+    fn a_retained_session_rejects_a_request_for_another_root_before_binding() {
+        let a = tempfile::tempdir().expect("root a");
+        let b = tempfile::tempdir().expect("root b");
+        let basis = Basis {
+            root: a.path().into(),
+            scope: crate::query::Scope::default(),
+            content: crate::content::AnalysisSet::NONE,
+        };
+        let delivery = Delivery::new(crate::CachePolicy::Off, None);
+        let (index, _) = crate::open(&basis, &delivery).expect("open a");
+        let handle = IndexHandle::new(index);
+        let before = handle.clock().expect("clock");
+        let request = Request::new(
+            Basis { root: b.path().into(), ..basis },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        assert!(matches!(
+            Session::new(handle.clone(), request, &delivery, WatchConfig::default()),
+            Err(Error::InvalidRequest(crate::query::RequestError::RootMismatch { .. }))
+        ));
+        assert_eq!(handle.clock().expect("clock"), before);
+    }
+
     #[test]
     fn a_save_is_due_only_when_a_change_is_pending_and_the_throttle_has_elapsed() {
         let interval = Duration::from_secs(1);

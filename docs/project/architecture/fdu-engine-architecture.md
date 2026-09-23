@@ -516,7 +516,9 @@ A file name has up to three extensions, one per question, and the public API kee
 apart:
 
 - **Raw**, from `classify::derive_ext` and `classify::ext_bucket`, is any final dotted
-  component, whatever its bytes or length, with a `.tar` before it kept.
+  component that is valid Unicode, without a character or length restriction, with a
+  `.tar` before it kept.
+  An invalid native extension maps to the `(none)` bucket.
   The extension view, per-directory extension tallies, and an unrecognized type’s label
   use it, so detached and command-line answers stay the ones fdu gave before registries
   existed.
@@ -962,14 +964,6 @@ No page retains a historical index image, no subscriber owns an engine queue, an
 idle native observer performs no filesystem work.
 
 ## Future Considerations
-
-### Known Gaps
-
-Store identity, compatibility, policy, and write-rule gaps are listed once, in
-[the cache design’s Known Gaps](../guides/cache-design.md#known-gaps).
-The explicit request, measured-value, provenance, and answer-shape models above close
-the corresponding items from
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md).
 
 ### Open Questions
 
