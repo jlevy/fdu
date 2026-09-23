@@ -5,7 +5,7 @@ title: "Phase 2 item 2: answer model: one typed value per document, serialized b
 kind: epic
 status: open
 priority: 0
-version: 22
+version: 23
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
@@ -27,7 +27,7 @@ child_order_hints:
   - is-01m2pyebe93530evdeaw8tcxh6
   - is-01m2pyebrt6j2ghh4c4vcdvyxg
 created_at: 2026-09-17T02:09:26.148Z
-updated_at: 2026-09-20T05:30:29.029Z
+updated_at: 2026-09-23T04:01:35.021Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 2: The Answer Model and Writers", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.2.1 to P2.2.8; their blockers carry the ordering, so this bead only groups them and closes when they do.
 
@@ -107,3 +107,5 @@ and YAML cannot diverge structurally; conformance proven against real YAML 1.1 a
 ## Notes
 
 2026-09-17 (PR #78 review): Answer model includes tree status and provenance as separate parts; four formats plus Python models; the unused native dict (fdu-py lib.rs:719-803) is deleted rather than migrated.
+
+2026-09-22 typed-answer fixture followup staged, not yet published: CLI guide/golden now names report/7 and stream/2, the document-page test requests words before checking words_per_page, and the one native JSON file path uses the existing [JSON_SEP] pattern on Windows. The lower parity guide line is synchronized from reviewed Linux evidence; the final composed parity artifact remains byte-identical to its actual Linux recording. No production behavior changed after the published ff2b07da head; current-head CI remains pending.
