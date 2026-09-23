@@ -68,8 +68,8 @@ impl AnalysisReport {
     pub fn is_complete(&self) -> bool {
         self.stale == 0
             && self.lines.is_complete()
-            && self.code.is_none_or(|coverage| coverage.is_complete())
-            && self.words.is_none_or(|coverage| coverage.is_complete())
+            && self.code.is_none_or(AnalyzerCoverage::is_complete)
+            && self.words.is_none_or(AnalyzerCoverage::is_complete)
     }
 
     /// Explain operational failures without presenting expected coverage as an error.
@@ -200,9 +200,9 @@ fn finish_content_tier(
         crate::Freshness::Partial
     };
     let observed_at_ns = if source == crate::Source::Cached {
-        previous.map_or(pass_started_at_ns, |state| state.observed_at_ns)
+        previous.and_then(|state| state.observed_at_ns)
     } else {
-        pass_started_at_ns
+        Some(pass_started_at_ns)
     };
     index.set_content_tier_state(source, freshness, observed_at_ns);
 }
@@ -473,14 +473,14 @@ fn analyze_open_file(
                 raw_words: metrics.raw_words,
             };
             let code = request.profile.includes_code().then(|| {
-                if !code_supported {
-                    AnalyzerOutcome::unavailable(CoverageReason::Unsupported)
-                } else {
+                if code_supported {
                     AnalyzerOutcome::analyzed(CodeMetrics {
                         code_lines: metrics.code_lines,
                         comment_lines: metrics.comment_lines,
                         code_blank_lines: metrics.code_blank_lines,
                     })
+                } else {
+                    AnalyzerOutcome::unavailable(CoverageReason::Unsupported)
                 }
             });
             let words = request.profile.includes_words().then_some(AnalyzerOutcome::analyzed(
@@ -1053,6 +1053,39 @@ mod tests {
         assert_eq!(report.words.expect("word coverage").unsupported_encoding, 3);
         assert_eq!(report.lines.binary, 0);
         assert_eq!(report.lines.invalid_utf8, 0);
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::Types],
+            ..crate::query::Query::default()
+        };
+        let rendered = crate::query::report(
+            &index,
+            &crate::test_support::read_of(&index, query),
+            std::time::UNIX_EPOCH,
+        )
+        .expect("report");
+        for format in [crate::report_format::Format::Json, crate::report_format::Format::Yaml] {
+            let output = crate::report_format::render(&rendered, format, false);
+            let total = match format {
+                crate::report_format::Format::Json => {
+                    output.split("\"rows\":").next().expect("metrics total")
+                }
+                crate::report_format::Format::Yaml => {
+                    output.split("\n      rows:").next().expect("metrics total")
+                }
+                _ => unreachable!("only machine document formats are tested"),
+            };
+            assert_eq!(
+                total.matches("unsupported_encoding").count(),
+                3,
+                "each requested analyzer unit has its own total coverage map: {output}"
+            );
+        }
+        let text =
+            crate::report_format::render(&rendered, crate::report_format::Format::Text, false);
+        assert!(
+            text.contains("1 lines (1 nonblank, 0 blank), 2 words"),
+            "unsupported code coverage cannot turn prose lines into a zero code partition: {text}"
+        );
         let content = index.content().expect("content");
         for path in ["little.rs", "big.txt", "wide"] {
             let record = content.file(Path::new(path)).expect("encoding record");
@@ -1091,8 +1124,7 @@ mod tests {
                 assert_eq!(
                     has_unsupported_encoding_bom(&bom[..length]),
                     length >= recognized_at,
-                    "{} byte prefix of {bom:?}",
-                    length
+                    "{length} byte prefix of {bom:?}"
                 );
             }
         }
@@ -1193,7 +1225,7 @@ mod tests {
         .expect("report");
         let json =
             crate::report_format::render(&summary, crate::report_format::Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/6\""), "{json}");
+        assert!(json.contains("\"schema\": \"fdu.report/7\""), "{json}");
         assert!(json.contains("\"analyze\": [\"lines\"]"), "{json}");
 
         let unsupported = tempfile::tempdir().expect("unsupported tempdir");
@@ -1222,7 +1254,10 @@ mod tests {
         let text =
             crate::report_format::render(&languages, crate::report_format::Format::Text, false);
         assert!(text.contains("—"), "an unavailable 0/0 share needs a distinct marker: {text}");
-        assert!(text.contains("1 unsupported"), "coverage must remain visible: {text}");
+        assert!(
+            text.contains("1 lines (1 nonblank, 0 blank), 1 unsupported"),
+            "unsupported code falls back to the valid line partition: {text}"
+        );
         assert!(!text.contains("0.0%"), "unmeasured is not a zero percentage: {text}");
     }
 }

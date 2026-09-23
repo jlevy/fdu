@@ -3563,7 +3563,7 @@ impl Index {
         &mut self,
         source: Source,
         freshness: Freshness,
-        observed_at_ns: i64,
+        observed_at_ns: Option<i64>,
     ) {
         if let Some(content) = self.content.as_deref_mut() {
             content.set_state(crate::content::ContentTierState {

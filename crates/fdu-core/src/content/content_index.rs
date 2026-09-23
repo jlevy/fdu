@@ -300,7 +300,7 @@ pub struct ContentIndex {
 pub(crate) struct ContentTierState {
     pub source: Source,
     pub freshness: Freshness,
-    pub observed_at_ns: i64,
+    pub observed_at_ns: Option<i64>,
 }
 
 impl ContentIndex {
