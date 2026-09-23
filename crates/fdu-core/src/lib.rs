@@ -469,9 +469,10 @@ pub(crate) fn validate_basis_root(held: &Path, basis: &query::Basis) -> Result<(
 /// Why a policy that cannot scan has no snapshot to answer from, and what recovers.
 ///
 /// [`CachePolicy::Only`] is the one policy that cannot fall back to a scan, so its failure
-/// is the only place a caller learns that the snapshot is missing or of another scope. Two
-/// mismatches are common enough to name. Control state: every default request observes it,
-/// so a snapshot without it was written by a request that turned observation off, or by a
+/// is the only place a caller learns that the snapshot is missing or of another scope.
+/// Type rules determine each file's category, so attaching another registry would make a
+/// cache-only answer false. Control state is another common difference: a snapshot
+/// without it was written by a request that turned observation off, or by a
 /// release from before observation was the default, and a default cache-only request after
 /// it would otherwise fail with no hint that a snapshot exists at all. Control limits: both
 /// scopes observe, and their identities are hashes, so "a different scan scope" would
@@ -491,6 +492,12 @@ fn unusable_snapshot_message(refused: Option<SnapshotIdentity>, wanted: &ScanCon
         return format!("{PREFIX}; {NEVER_SCANS}, so use `auto`, which scans when none serves");
     };
     let stored = refused.scan_scope();
+    if stored.type_rules_fingerprint != wanted_scope.type_rules_fingerprint {
+        return format!(
+            "{PREFIX}: the cached snapshot was taken under different file type rules; \
+             {NEVER_SCANS}, so use the snapshot's type registry or use `auto`, which scans under this request's rules"
+        );
+    }
     if differs_only_in_ignore_rules(stored) {
         // Named without a knob, because the command line and the library spell the switch
         // differently and this message is the engine's.
@@ -588,8 +595,9 @@ pub(crate) fn execute(
                     projected = serves == Serves::ProjectControlsOff;
                     Some(index)
                 }
-                snapshot::LoadOutcome::Refused(identity) => {
+                snapshot::LoadOutcome::Refused { identity, root: stored_root } => {
                     refused_snapshot = Some(identity);
+                    wrong_root = stored_root != root;
                     None
                 }
                 snapshot::LoadOutcome::Served(_, _) => {
@@ -1124,6 +1132,62 @@ mod tests {
         assert!(report.projected);
         assert_eq!(index.scope(), controls_off.scan.scope());
         assert!(matches!(index.controls(), Err(Error::ControlStateNotObserved)));
+    }
+
+    #[test]
+    fn cache_only_names_foreign_type_rules_after_validating_the_snapshot_and_root() {
+        let root = tempfile::tempdir().expect("root");
+        let other_root = tempfile::tempdir().expect("other root");
+        let cache = tempfile::tempdir().expect("cache");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&root.path().join("main.rs"), b"fn main() {}\n");
+        let custom_types = std::sync::Arc::new(
+            classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+            )
+            .expect("custom rules"),
+        );
+        let custom = OpenFixture {
+            scan: ScanConfig::default().with_types(custom_types.clone()),
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            ..OpenFixture::default()
+        };
+        open_fixture(root.path(), &custom).expect("write custom snapshot");
+
+        let default_only = OpenFixture {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Only,
+            ..OpenFixture::default()
+        };
+        let Err(Error::Snapshot(message)) = open_fixture(root.path(), &default_only) else {
+            panic!("foreign type rules must not serve cache-only");
+        };
+        assert!(message.contains("different file type rules"), "{message}");
+        assert!(message.contains("type registry") && message.contains("`auto`"), "{message}");
+        assert!(
+            snapshot::load(&snapshot_path).expect("direct default-registry load").is_none(),
+            "a direct load cannot attach the compiled registry to foreign rules"
+        );
+        let (_, report) =
+            open_fixture(root.path(), &OpenFixture { policy: CachePolicy::Only, ..custom.clone() })
+                .expect("matching registry can use the snapshot");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+
+        let Err(Error::Snapshot(message)) = open_fixture(other_root.path(), &default_only) else {
+            panic!("a foreign root and rules must not serve cache-only");
+        };
+        assert!(message.contains("different root"), "root refusal takes precedence: {message}");
+        assert!(!message.contains("type rules"), "wrong-root identity must not leak: {message}");
+
+        let mut corrupt = fs::read(&snapshot_path).expect("snapshot bytes");
+        let middle = corrupt.len() / 2;
+        corrupt[middle] ^= 1;
+        fs::write(&snapshot_path, corrupt).expect("corrupt payload without updating checksum");
+        let Err(Error::Snapshot(message)) = open_fixture(root.path(), &default_only) else {
+            panic!("corrupt snapshot must not yield a type-rules refusal");
+        };
+        assert!(!message.contains("type rules"), "corruption is an absent snapshot: {message}");
     }
 
     /// Supplied rules reach the answer, and invalidate a snapshot taken under others.

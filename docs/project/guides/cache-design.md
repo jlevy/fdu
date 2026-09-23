@@ -374,8 +374,6 @@ tracks them.
   behaves as `off` for a one-shot metadata report, and `auto` reads for `open` but not
   for that report. Write rules differ by path as listed above, so whether a later
   `--cache only` succeeds depends on which command ran last.
-- **A type-rules mismatch is silent.** A snapshot taken under another type registry
-  parses as absent, so a `--cache only` failure cannot name the registry as the cause.
 
 ### Potential Improvements
 
