@@ -5,12 +5,16 @@ title: "PR #105 review pass: Linux sidecar restore mix after apply-timer expansi
 kind: task
 status: in_progress
 priority: 1
-version: 2
+version: 5
 labels: []
 dependencies: []
 parent_id: is-01m32h5emeefrv7vx5yrx70fga
+child_order_hints:
+  - is-01m35t5cc15exbx9s5x1xkt8fr
+  - is-01m35t5dddf8v2xh1vpkk59tm3
+  - is-01m35t5ejkkm51txyb026xevqe
 created_at: 2026-09-21T17:46:08.272Z
-updated_at: 2026-09-21T18:12:27.148Z
+updated_at: 2026-09-23T00:20:34.512Z
 ---
 Branch `cursor/linux-sidecar-load-de1b`, based on #97. Reviewer model: Fable.
 
