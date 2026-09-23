@@ -28,7 +28,8 @@ use crate::engine_contract::{
     Result, ScanScope,
 };
 use crate::index::{
-    DetachedIndexBuilder, Index, IndexHandle, ReconcileErrors, collect_child_expectations,
+    DetachedIndexBuilder, Index, IndexHandle, ReconcileErrors, ReconcileFinish,
+    collect_child_expectations,
 };
 use crate::query::ScopeAxis;
 use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, SnapshotIdentity};
@@ -947,13 +948,20 @@ pub struct ReconcileReport {
     /// elsewhere used to keep every directory the pass listed incomplete, and a directory
     /// first listed by such a pass stayed `Unknown { Building }` under a complete root.
     pub(crate) listed_incomplete: Vec<PathBuf>,
+    /// Ownership epoch for conditional reconciliation batches.
+    reconcile_epoch: Option<u64>,
+    /// Retry after bounded verification evidence was superseded.
+    retry_required: bool,
 }
 
 impl ReconcileReport {
     /// True when the filesystem walk was complete and no conditional observation lost
     /// a race with another producer.
     pub fn is_complete(&self) -> bool {
-        self.scan.is_complete() && self.apply.stale == 0 && self.apply.resource_refused == 0
+        self.scan.is_complete()
+            && self.apply.stale == 0
+            && self.apply.resource_refused == 0
+            && !self.retry_required
     }
 
     /// The directories whose listings this pass can vouch for, taken out of the report.
@@ -1040,13 +1048,13 @@ impl ReconcileTarget<'_> {
         }
     }
 
-    fn apply(&mut self, observation: &Observation) -> Result<crate::ApplyOutcome> {
+    fn apply(&mut self, started_at: u64, observation: &Observation) -> Result<crate::ApplyOutcome> {
         match self {
             Self::Direct(index) => index.apply(observation),
-            Self::Shared(handle) => handle.apply(observation),
+            Self::Shared(handle) => handle.apply_reconcile(started_at, observation),
             Self::Controlled { handle, control } => {
                 control.before_conditional_commit()?;
-                handle.apply_opened(observation, control.max_files())
+                handle.apply_opened_reconcile(started_at, observation, control.max_files())
             }
         }
     }
@@ -1096,7 +1104,7 @@ impl ReconcileTarget<'_> {
         match self {
             Self::Direct(_) => !report.is_complete(),
             Self::Shared(_) | Self::Controlled { .. } => {
-                report.apply.stale > 0 || report.apply.resource_refused > 0
+                report.apply.stale > 0 || report.apply.resource_refused > 0 || report.retry_required
             }
         }
     }
@@ -1120,7 +1128,7 @@ impl ReconcileTarget<'_> {
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
         errors: ReconcileErrors<'_>,
-    ) -> Result<Option<Commit>> {
+    ) -> Result<ReconcileFinish> {
         match self {
             Self::Direct(index) => index.finish_reconcile(
                 path,
@@ -4272,14 +4280,24 @@ fn reconcile_paths_target(
     // earned.
     let mut failure = None;
     let mut outcomes = Vec::with_capacity(opened.len());
-    for (subtree, _) in &opened {
+    for (subtree, started_at) in &opened {
         if failure.is_some() {
             outcomes.push((false, false));
             continue;
         }
-        match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
+        match reconcile_target_inner(
+            target,
+            subtree,
+            *started_at,
+            config,
+            MAX_DEFERRED_RECONCILE_OPS,
+            sink,
+        ) {
             Ok(mut reconciliation) => {
-                outcomes.push((reconciliation.is_complete(), true));
+                outcomes.push((
+                    reconciliation.is_complete(),
+                    reconciliation.apply.stale == 0 && reconciliation.apply.resource_refused == 0,
+                ));
                 reconciliation.listed_incomplete = reconciliation.take_recordable_completeness();
                 merge_reconcile_report(&mut report.reconciliation, reconciliation);
             }
@@ -4307,9 +4325,10 @@ fn reconcile_paths_target(
                 disproves_old,
             },
         )?;
-        if let Some(commit) = commit.as_ref() {
+        if let Some(commit) = commit.commit.as_ref() {
             sink(commit);
         }
+        report.reconciliation.retry_required |= commit.retry;
     }
 
     match failure {
@@ -4410,7 +4429,14 @@ fn reconcile_target(
     if let Some(commit) = started.as_ref() {
         sink(commit);
     }
-    match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
+    match reconcile_target_inner(
+        target,
+        &subtree,
+        started_at,
+        config,
+        MAX_DEFERRED_RECONCILE_OPS,
+        sink,
+    ) {
         Ok(mut report) => {
             let root = target.root_path()?;
             normalize_walk_errors(&root, &mut report.scan.errors);
@@ -4425,12 +4451,13 @@ fn reconcile_target(
                 ReconcileErrors {
                     errors: &report.scan.errors,
                     terminal: None,
-                    disproves_old: true,
+                    disproves_old: report.apply.stale == 0 && report.apply.resource_refused == 0,
                 },
             )?;
-            if let Some(commit) = finished.as_ref() {
+            if let Some(commit) = finished.commit.as_ref() {
                 sink(commit);
             }
+            report.retry_required |= finished.retry;
             Ok(report)
         }
         Err(error) => {
@@ -4442,7 +4469,7 @@ fn reconcile_target(
                 &[],
                 ReconcileErrors { errors: &[], terminal: Some(&error), disproves_old: false },
             )?;
-            if let Some(commit) = finished.as_ref() {
+            if let Some(commit) = finished.commit.as_ref() {
                 sink(commit);
             }
             Err(error)
@@ -4453,6 +4480,7 @@ fn reconcile_target(
 fn reconcile_target_inner(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
+    started_at: u64,
     config: &ScanConfig,
     max_deferred_ops: usize,
     sink: &mut dyn FnMut(&Commit),
@@ -4474,7 +4502,8 @@ fn reconcile_target_inner(
     }
     let root_dev = attrs_from(&root, &root_meta).map_err(|error| Error::io(&root, error))?.dev;
     let start_depth = subtree.components().count();
-    let mut report = ReconcileReport::default();
+    let mut report =
+        ReconcileReport { reconcile_epoch: Some(started_at), ..ReconcileReport::default() };
     let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
@@ -4592,6 +4621,7 @@ fn reconcile_target_inner(
                 DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
                 DirectParallelOutcome::RetrySerial { prefix, remaining } => {
                     report = prefix;
+                    report.reconcile_epoch = Some(started_at);
                     retry_frontier = Some(remaining);
                 }
             }
@@ -5470,7 +5500,8 @@ fn flush_reconcile_batch(
     }
     report.observations =
         report.observations.saturating_add(u64::try_from(batch.len()).unwrap_or(u64::MAX));
-    let outcome = target.apply(&Observation::from_ops(std::mem::take(batch)))?;
+    let started_at = report.reconcile_epoch.expect("reconciliation report has an owner");
+    let outcome = target.apply(started_at, &Observation::from_ops(std::mem::take(batch)))?;
     merge_apply_stats(&mut report.apply, outcome.stats);
     if let Some(commit) = outcome.commit.as_ref() {
         sink(commit);
@@ -5491,6 +5522,7 @@ fn merge_apply_stats(total: &mut ApplyStats, addition: ApplyStats) {
 }
 
 fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport) {
+    total.retry_required |= addition.retry_required;
     total.scan.dirs_read += addition.scan.dirs_read;
     total.scan.entries += addition.scan.entries;
     total.scan.files_walked += addition.scan.files_walked;
@@ -8049,12 +8081,49 @@ mod tests {
     }
 
     #[test]
+    fn reconciliation_scope_budget_publishes_before_returning_retry() {
+        let directory = tempfile::tempdir().expect("root");
+        let config = ScanConfig::default();
+        let (index, _) = scan_into_index(directory.path(), &config).expect("scan root-only tree");
+        let handle = IndexHandle::new(index);
+        let mut started = false;
+        let mut published_partial = false;
+        let report = reconcile_handle(&handle, &config, &mut |commit| {
+            if !started {
+                started = true;
+                // No entries are added: distinct absent children must not grow history
+                // for the paused root pass without bound.
+                for child in ["missing-a", "missing-b", "missing-c"] {
+                    let nested = reconcile_subtree_handle(&handle, Path::new(child), &config, &mut |_| {}).expect("newer absent scope");
+                    assert!(nested.is_complete());
+                }
+            }
+            if commit.state.iter().any(|state| matches!(state,
+                crate::StateTransition::IndexState { current, .. }
+                    if current.coverage == crate::Coverage::Partial(crate::CoverageReason::Inaccessible))) {
+                assert_eq!(handle.read_with(Index::state).expect("coherent state").coverage,
+                    crate::Coverage::Partial(crate::CoverageReason::Inaccessible));
+                published_partial = true;
+            }
+        }).expect("interrupted pass returns retryable report");
+        assert!(!report.is_complete());
+        assert!(report.retry_required);
+        assert!(published_partial, "the transition precedes the caller's retry result");
+        let recovered = reconcile_handle(&handle, &config, &mut |_| {}).expect("retry");
+        assert!(recovered.is_complete());
+        assert_eq!(
+            handle.read_with(Index::state).expect("recovered state").coverage,
+            crate::Coverage::Complete
+        );
+    }
+
+    #[test]
     fn stale_arbitration_keeps_a_reconciliation_incomplete() {
         let report = ReconcileReport {
             scan: ScanReport::default(),
             apply: ApplyStats { stale: 1, ..ApplyStats::default() },
             observations: 1,
-            listed_incomplete: Vec::new(),
+            ..ReconcileReport::default()
         };
 
         assert!(!report.is_complete());
@@ -8515,6 +8584,7 @@ mod tests {
         let candidate_report = reconcile_target_inner(
             &mut ReconcileTarget::Direct(&mut candidate),
             Path::new(""),
+            0,
             &parallel,
             0,
             &mut |_| {},

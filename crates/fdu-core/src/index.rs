@@ -885,8 +885,8 @@ pub struct Index {
     writing_pass_started_at_ns: i64,
     /// Wall-clock starts of in-flight full-root passes, keyed by their freshness epoch.
     active_root_reconciles: BTreeMap<u64, i64>,
-    /// Reconciliation epochs whose filesystem work has not closed yet.
-    active_reconciles: BTreeSet<u64>,
+    /// Scopes and newer verification evidence for filesystem passes still in flight.
+    active_reconciles: BTreeMap<u64, ActiveReconcile>,
     /// Subtrees a completed reconciliation has verified, with when it finished.
     ///
     /// Kept as intervals rather than per-entry flags because a sweep verifies
@@ -946,6 +946,59 @@ pub(crate) struct ReconcileErrors<'a> {
     pub(crate) errors: &'a [crate::Error],
     pub(crate) terminal: Option<&'a crate::Error>,
     pub(crate) disproves_old: bool,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveReconcile {
+    path: PathBuf,
+    // One scope per entry present when this pass began. This bounds concurrent
+    // verification history by retained state, including on a root-only index.
+    scope_budget: usize,
+    evidence: ReconcileEvidence,
+}
+
+#[derive(Clone, Debug)]
+enum ReconcileEvidence {
+    Scopes(BTreeSet<PathBuf>),
+    Retry,
+}
+
+impl ActiveReconcile {
+    fn supersede(&mut self, path: &Path) {
+        if self.path.starts_with(path) {
+            self.evidence = ReconcileEvidence::Scopes(BTreeSet::from([path.to_path_buf()]));
+            return;
+        }
+        let ReconcileEvidence::Scopes(scopes) = &mut self.evidence else {
+            return;
+        };
+        if scopes.iter().any(|newer| path.starts_with(newer)) {
+            return;
+        }
+        scopes.retain(|newer| !newer.starts_with(path));
+        if scopes.len() == self.scope_budget {
+            // Discard proof, never widen it: the caller must retry this pass.
+            self.evidence = ReconcileEvidence::Retry;
+        } else {
+            scopes.insert(path.to_path_buf());
+        }
+    }
+
+    fn refuses(&self, observation: &Observation) -> bool {
+        match &self.evidence {
+            ReconcileEvidence::Retry => true,
+            ReconcileEvidence::Scopes(scopes) => observation.ops.iter().any(|op| {
+                scopes
+                    .iter()
+                    .any(|path| op.op.path().starts_with(path) || path.starts_with(op.op.path()))
+            }),
+        }
+    }
+}
+
+pub(crate) struct ReconcileFinish {
+    pub(crate) commit: Option<Commit>,
+    pub(crate) retry: bool,
 }
 
 enum ChildIds<'a> {
@@ -1163,6 +1216,7 @@ impl IndexHandle {
         Ok(outcome)
     }
 
+    #[cfg(feature = "watch")]
     pub(crate) fn apply_opened(
         &self,
         observation: &Observation,
@@ -1394,7 +1448,7 @@ impl IndexHandle {
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
         errors: ReconcileErrors<'_>,
-    ) -> crate::Result<Option<Commit>> {
+    ) -> crate::Result<ReconcileFinish> {
         self.write_index()?.finish_reconcile(
             path,
             started_at,
@@ -1403,6 +1457,56 @@ impl IndexHandle {
             failed_paths,
             errors,
         )
+    }
+
+    pub(crate) fn apply_reconcile(
+        &self,
+        started_at: u64,
+        observation: &Observation,
+    ) -> crate::Result<ApplyOutcome> {
+        self.apply_reconcile_with(started_at, observation, None, BatchProvenance::Public)
+    }
+
+    pub(crate) fn apply_opened_reconcile(
+        &self,
+        started_at: u64,
+        observation: &Observation,
+        max_files: Option<u64>,
+    ) -> crate::Result<ApplyOutcome> {
+        self.apply_reconcile_with(started_at, observation, max_files, BatchProvenance::Opened)
+    }
+
+    fn apply_reconcile_with(
+        &self,
+        started_at: u64,
+        observation: &Observation,
+        max_files: Option<u64>,
+        provenance: BatchProvenance,
+    ) -> crate::Result<ApplyOutcome> {
+        let prepared = prepare_observation(observation)?;
+        let mut index = self.write_index()?;
+        if index
+            .active_reconciles
+            .get(&started_at)
+            .is_some_and(|active| active.refuses(observation))
+        {
+            let stats = ApplyStats {
+                stale: u64::try_from(observation.len()).unwrap_or(u64::MAX),
+                ..ApplyStats::default()
+            };
+            record_batch(provenance, observation.len(), stats);
+            return Ok(ApplyOutcome { stats, commit: None });
+        }
+        let outcome = index.commit_prepared_with(
+            prepared,
+            true,
+            None,
+            None,
+            max_files,
+            matches!(provenance, BatchProvenance::Opened),
+        )?;
+        record_batch(provenance, observation.len(), outcome.stats);
+        Ok(outcome)
     }
 
     #[cfg(feature = "watch")]
@@ -1763,7 +1867,7 @@ impl Index {
             captured_at_ns: 0,
             writing_pass_started_at_ns: constructed_at_ns,
             active_root_reconciles: BTreeMap::new(),
-            active_reconciles: BTreeSet::new(),
+            active_reconciles: BTreeMap::new(),
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
@@ -2590,7 +2694,8 @@ impl Index {
         if count == 0 {
             return;
         }
-        let epoch = self.active_reconciles.last().copied().unwrap_or(self.freshness_epoch);
+        let epoch =
+            self.active_reconciles.keys().next_back().copied().unwrap_or(self.freshness_epoch);
         self.retain_omitted_at(count, epoch);
     }
 
@@ -2609,7 +2714,8 @@ impl Index {
     fn compact_omitted_epochs(&mut self) {
         let mut compact = BTreeMap::new();
         for (epoch, count) in std::mem::take(&mut self.omitted_issue_epochs) {
-            let owner = self.active_reconciles.range(..=epoch).next_back().copied().unwrap_or(0);
+            let owner =
+                self.active_reconciles.range(..=epoch).next_back().map_or(0, |(epoch, _)| *epoch);
             let retained = compact.entry(owner).or_insert(0_u64);
             *retained = retained.saturating_add(count);
         }
@@ -2833,7 +2939,14 @@ impl Index {
         let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
         let epoch = self.mark_unfresh(&path, Freshness::Reconciling);
-        self.active_reconciles.insert(epoch);
+        self.active_reconciles.insert(
+            epoch,
+            ActiveReconcile {
+                path: path.clone(),
+                scope_budget: usize::try_from(self.len()).unwrap_or(usize::MAX),
+                evidence: ReconcileEvidence::Scopes(BTreeSet::new()),
+            },
+        );
         if path.as_os_str().is_empty() {
             self.active_root_reconciles.insert(epoch, Self::now_unix_nanos());
         }
@@ -2874,13 +2987,94 @@ impl Index {
         listed_incomplete: &[PathBuf],
         failed_paths: &[PathBuf],
         errors: ReconcileErrors<'_>,
-    ) -> crate::Result<Option<Commit>> {
+    ) -> crate::Result<ReconcileFinish> {
         let path = canonical_relative_path(path)?;
         let next_clock = self.clock.checked_next().ok_or(crate::Error::ClockExhausted)?;
         let previous_index_state = self.state;
         let previous = self.freshness_at(&path);
+        // Retired evidence is needed only until every older overlapping pass closes.
+        let evidence = self.active_reconciles.get(&started_at).map_or_else(
+            || ReconcileEvidence::Scopes(BTreeSet::new()),
+            |active| active.evidence.clone(),
+        );
+        let superseded = match evidence {
+            ReconcileEvidence::Scopes(scopes) => scopes,
+            ReconcileEvidence::Retry => {
+                self.active_root_reconciles.remove(&started_at);
+                self.active_reconciles.remove(&started_at);
+                self.compact_omitted_epochs();
+                self.mark_unfresh(&path, Freshness::Partial);
+                if self.state.coverage == Coverage::Complete {
+                    self.state.coverage = Coverage::Partial(CoverageReason::Inaccessible);
+                }
+                self.state.freshness = self.published_freshness();
+                self.retain_issue(Issue::provider_failure(
+                    Some(&path),
+                    "reconciliation interrupted by newer verification; retry this scope"
+                        .to_string(),
+                ));
+                let current = self.freshness_at(&path);
+                let mut state = Vec::new();
+                if previous != current {
+                    state.push(StateTransition::Freshness { path, previous, current });
+                }
+                if previous_index_state != self.state {
+                    state.push(StateTransition::IndexState {
+                        previous: previous_index_state,
+                        current: self.state,
+                    });
+                }
+                let commit = if state.is_empty() {
+                    None
+                } else {
+                    let effects = ExactConsequences { state, ..ExactConsequences::default() };
+                    Some(self.publish_effects(next_clock, effects, Work::default(), true))
+                };
+                return Ok(ReconcileFinish { commit, retry: true });
+            }
+        };
+        let fully_superseded = superseded.iter().any(|newer| path.starts_with(newer));
+        if errors.disproves_old && !fully_superseded {
+            for (epoch, active) in &mut self.active_reconciles {
+                if *epoch < started_at
+                    && (active.path.starts_with(&path) || path.starts_with(&active.path))
+                {
+                    active.supersede(&path);
+                }
+            }
+        }
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(&path) || mark.epoch > started_at);
+        if fully_superseded {
+            self.active_root_reconciles.remove(&started_at);
+            self.active_reconciles.remove(&started_at);
+            self.compact_omitted_epochs();
+            let current = self.freshness_at(&path);
+            self.state.freshness = self.published_freshness();
+            if self.state.coverage == Coverage::Partial(CoverageReason::Inaccessible) {
+                self.state.freshness = Freshness::Partial;
+            }
+            let mut state = Vec::new();
+            if previous != current {
+                state.push(StateTransition::Freshness { path, previous, current });
+            }
+            if previous_index_state != self.state {
+                state.push(StateTransition::IndexState {
+                    previous: previous_index_state,
+                    current: self.state,
+                });
+            }
+            if state.is_empty() {
+                return Ok(ReconcileFinish { commit: None, retry: false });
+            }
+            let effects = ExactConsequences { state, ..ExactConsequences::default() };
+            return Ok(ReconcileFinish {
+                commit: Some(self.publish_effects(next_clock, effects, Work::default(), true)),
+                retry: false,
+            });
+        }
+        let still_owned =
+            |candidate: &Path| !superseded.iter().any(|newer| candidate.starts_with(newer));
         // Each listed directory is recorded on its own listing, complete pass or not: the
         // walk names only those it listed in full with no error inside them, as discovery
         // decides per directory, and the caller passes none when a commit lost a race. A
@@ -2891,13 +3085,28 @@ impl Index {
             .iter()
             .filter(|directory| {
                 directory.starts_with(&path)
+                    && still_owned(directory)
                     && !self.freshness_marks.iter().any(|(marked, mark)| {
                         mark.epoch > started_at && directory.starts_with(marked)
                     })
             })
             .collect();
-        let scoped_failures: Vec<&PathBuf> =
-            failed_paths.iter().filter(|failed| failed.starts_with(&path)).collect();
+        let scoped_failures: Vec<&PathBuf> = failed_paths
+            .iter()
+            .filter(|failed| failed.starts_with(&path) && still_owned(failed))
+            .collect();
+        // If every failure in this scope was subsequently verified, the older
+        // pass's remaining evidence is complete. Arbitration/resource refusals do
+        // not qualify: their caller cannot disprove prior state.
+        let complete = complete
+            || (errors.disproves_old
+                && failed_paths.iter().any(|failed| failed.starts_with(&path))
+                && scoped_failures.is_empty()
+                && errors.errors.iter().chain(errors.terminal).all(|error| {
+                    Issue::from_error_under(&self.root_path, error)
+                        .path
+                        .is_some_and(|failed| !failed.starts_with(&path) || !still_owned(&failed))
+                }));
         if errors.disproves_old && self.state.phase != LifecyclePhase::Failed {
             self.drop_disproven_issues(&path, started_at);
         }
@@ -2909,12 +3118,16 @@ impl Index {
         }
         for error in errors.errors.iter().chain(errors.terminal) {
             let issue = Issue::from_error_under(&self.root_path, error);
-            if issue.path.as_deref().is_none_or(|issue_path| issue_path.starts_with(&path)) {
+            if issue
+                .path
+                .as_deref()
+                .is_none_or(|issue_path| issue_path.starts_with(&path) && still_owned(issue_path))
+            {
                 self.retain_issue_at(issue, started_at);
             }
         }
         let mut state = Vec::new();
-        if complete || !scoped_failures.is_empty() {
+        if superseded.is_empty() && (complete || !scoped_failures.is_empty()) {
             // A sweep stat'd every entry beneath `path` except the precise failure paths,
             // which carry stronger `Partial` marks below. Record the successful interval
             // once rather than manufacturing millions of unchanged entry updates.
@@ -2998,10 +3211,13 @@ impl Index {
             });
         }
         if state.is_empty() {
-            return Ok(None);
+            return Ok(ReconcileFinish { commit: None, retry: false });
         }
         let effects = ExactConsequences { state, ..ExactConsequences::default() };
-        Ok(Some(self.publish_effects(next_clock, effects, Work::default(), true)))
+        Ok(ReconcileFinish {
+            commit: Some(self.publish_effects(next_clock, effects, Work::default(), true)),
+            retry: false,
+        })
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -7657,6 +7873,7 @@ mod tests {
                 ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
             )
             .expect("finish")
+            .commit
             .expect("finish commit");
         assert!(finish.changes.is_empty());
         assert_eq!(
@@ -9414,5 +9631,226 @@ mod tests {
 
         assert_eq!(index.issues().len(), 1);
         assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("later/blocked")));
+    }
+    #[test]
+    fn older_pass_cannot_publish_errors_after_newer_clean_verification() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("begin older pass");
+        let (newer, _) = index.begin_reconcile(Path::new("")).expect("begin newer pass");
+        index
+            .finish_reconcile(
+                Path::new(""),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish newer pass");
+        let stale_error = crate::Error::io(
+            root.join("stale"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "older failure"),
+        );
+
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                false,
+                &[],
+                &[PathBuf::from("stale")],
+                ReconcileErrors { errors: &[stale_error], terminal: None, disproves_old: true },
+            )
+            .expect("finish superseded older pass");
+
+        assert!(index.issues().is_empty());
+        assert_eq!(index.state.coverage, Coverage::Complete);
+        assert_eq!(index.state.freshness, Freshness::Fresh);
+    }
+
+    #[test]
+    fn newer_unchanged_verification_refuses_an_older_conditional_fact() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("same"),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, 1),
+            }]))
+            .expect("fixture");
+        let handle = IndexHandle::new(index);
+        let baseline = handle.expectation(Path::new("same")).expect("baseline");
+        let (older, _) = handle.begin_reconcile(Path::new("")).expect("begin older pass");
+        let (newer, _) = handle.begin_reconcile(Path::new("")).expect("begin newer pass");
+        handle
+            .finish_reconcile(
+                Path::new(""),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish unchanged newer pass");
+
+        let stale = handle
+            .apply_reconcile(
+                older,
+                &Observation::from_ops(vec![ObservationOp::if_state(
+                    Op::Remove { path: PathBuf::from("same") },
+                    baseline,
+                )]),
+            )
+            .expect("arbitrate older fact");
+
+        assert_eq!(stale.stats.stale, 1);
+        assert!(stale.commit.is_none());
+        assert!(handle.attrs(Path::new("same")).expect("attrs").is_some());
+    }
+
+    #[test]
+    fn newer_disjoint_verification_does_not_refuse_an_older_fact() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::File,
+                    attrs: file_attrs(1, 1),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::File,
+                    attrs: file_attrs(1, 1),
+                },
+            ]))
+            .expect("fixture");
+        let handle = IndexHandle::new(index);
+        let baseline = handle.expectation(Path::new("a")).expect("baseline");
+        let (older, _) = handle.begin_reconcile(Path::new("a")).expect("begin a");
+        let (newer, _) = handle.begin_reconcile(Path::new("b")).expect("begin b");
+        handle
+            .finish_reconcile(
+                Path::new("b"),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("finish b");
+
+        let applied = handle
+            .apply_reconcile(
+                older,
+                &Observation::from_ops(vec![ObservationOp::if_state(
+                    Op::Remove { path: PathBuf::from("a") },
+                    baseline,
+                )]),
+            )
+            .expect("apply disjoint a fact");
+
+        assert_eq!(applied.stats.removed, 1);
+        assert_eq!(applied.stats.stale, 0);
+        assert!(handle.attrs(Path::new("a")).expect("attrs").is_none());
+    }
+    #[test]
+    fn newer_child_verification_preserves_older_sibling_failure() {
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer, _) = index.begin_reconcile(Path::new("a")).expect("newer child");
+        index
+            .finish_reconcile(
+                Path::new("a"),
+                newer,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("verify a");
+        let errors = ["a/old", "b/blocked"].map(|path| {
+            crate::Error::io(
+                root.join(path),
+                std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed read"),
+            )
+        });
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                false,
+                &[],
+                &[PathBuf::from("a/old"), PathBuf::from("b/blocked")],
+                ReconcileErrors { errors: &errors, terminal: None, disproves_old: true },
+            )
+            .expect("finish older root");
+        assert_eq!(index.issues().len(), 1);
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("b/blocked")));
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert_eq!(index.freshness_at(Path::new("a")), Freshness::Fresh);
+        assert_eq!(index.freshness_at(Path::new("b/blocked")), Freshness::Partial);
+    }
+    #[test]
+    fn reconciliation_scope_budget_preserves_issues_and_newer_facts() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("kept"),
+            kind: EntryKind::File,
+            attrs: file_attrs(1, 1),
+        }]));
+        index.retain_issue(Issue::provider_failure(
+            Some(Path::new("unvisited")),
+            "earlier failure".into(),
+        ));
+        let (older, _) = index.begin_reconcile(Path::new("")).expect("older pass");
+        let budget = index.active_reconciles[&older].scope_budget;
+        assert_eq!(budget, 2, "root and kept file define the evidence budget");
+        for number in 0..100 {
+            let path = PathBuf::from(format!("missing-{number}"));
+            let (newer, _) = index.begin_reconcile(&path).expect("newer pass");
+            index
+                .finish_reconcile(
+                    &path,
+                    newer,
+                    true,
+                    &[],
+                    &[],
+                    ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+                )
+                .expect("newer verification");
+            if let ReconcileEvidence::Scopes(scopes) = &index.active_reconciles[&older].evidence {
+                assert!(scopes.len() <= budget);
+            }
+        }
+        assert!(matches!(index.active_reconciles[&older].evidence, ReconcileEvidence::Retry));
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("kept"),
+            kind: EntryKind::File,
+            attrs: file_attrs(9, 2),
+        }]));
+        let finished = index
+            .finish_reconcile(
+                Path::new(""),
+                older,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("close interrupted pass");
+        assert!(finished.retry);
+        assert!(finished.commit.is_some());
+        assert_eq!(index.total_scalars().bytes, 9);
+        assert!(
+            index
+                .issues()
+                .iter()
+                .any(|issue| issue.path.as_deref() == Some(Path::new("unvisited")))
+        );
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert!(index.active_reconciles.is_empty(), "closed passes retain no shadow history");
     }
 }
