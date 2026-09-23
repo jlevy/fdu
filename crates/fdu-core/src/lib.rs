@@ -438,14 +438,21 @@ pub fn refresh(
         ));
     }
     let report = scan::reconcile(index, &scan, &mut |_| {})?;
-    load_content(index, basis, delivery)?;
-    if basis.content.is_enabled() {
+    let cached = load_content(index, basis, delivery)?;
+    let analysis = basis.content.is_enabled().then(|| {
         content::analyze_index(
             index,
             content::AnalysisRequest { profile: basis.content, workers: delivery.workers.analysis },
-        );
-    }
-    persist_index(index, &plan)?;
+        )
+    });
+    persist_index_changes(
+        index,
+        &plan,
+        report.apply.mutated(),
+        !cached.usable
+            || cached.stale > 0
+            || analysis.as_ref().is_some_and(|report| report.applied > 0),
+    )?;
     Ok(report)
 }
 
@@ -735,16 +742,36 @@ fn run_facts(
 }
 
 /// Execute the persistence policy for a live index without retaining a lock while writing.
+#[cfg(feature = "watch")]
 pub(crate) fn persist_index(index: &Index, plan: &Plan) -> Result<bool> {
+    persist_index_changes(index, plan, true, true)
+}
+
+fn persist_index_changes(
+    index: &Index,
+    plan: &Plan,
+    entries_changed: bool,
+    content_changed: bool,
+) -> Result<bool> {
     let basis = query::Basis::held_by(index);
     let delivery = plan.delivery();
+    if !delivery.cache.writes() || delivery.cache_path.is_none() {
+        return Ok(false);
+    }
     let stored = delivery.cache_path.as_deref().map(snapshot::read_header).transpose()?.flatten();
     let projected = stored.as_ref().is_some_and(|header| {
         header.root == index.root_path()
             && serves_snapshot(header.identity, index.snapshot_identity())
                 == Serves::ProjectControlsOff
     });
-    let writes = plan.writes(run_facts(index, &basis, delivery, true, true, projected));
+    let writes = plan.writes(run_facts(
+        index,
+        &basis,
+        delivery,
+        entries_changed || stored.is_none(),
+        content_changed,
+        projected,
+    ));
     let Some(path) = delivery.cache_path.as_ref() else {
         return Ok(false);
     };
