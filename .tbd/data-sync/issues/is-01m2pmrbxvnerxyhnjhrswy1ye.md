@@ -3,9 +3,9 @@ type: is
 id: is-01m2pmrbxvnerxyhnjhrswy1ye
 title: "Phase 2 item 3: execution plan model: one planner and one write rule for every route"
 kind: epic
-status: open
+status: in_progress
 priority: 0
-version: 17
+version: 19
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -23,8 +23,9 @@ child_order_hints:
   - is-01m2pyedpswpa393q9y6req1gz
   - is-01m2pyee0zf4meqknshjmzbz2k
   - is-01m2pyeeb53q0tcgnkayb0wv56
+  - is-01m360rycaafcmq5rgkatcvmjm
 created_at: 2026-09-17T02:57:26.458Z
-updated_at: 2026-09-17T05:47:43.591Z
+updated_at: 2026-09-23T02:16:21.248Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 3: The Execution Plan Model", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.3.1 to P2.3.8; their blockers carry the ordering, so this bead only groups them and closes when they do.
 

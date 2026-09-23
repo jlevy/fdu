@@ -3,14 +3,16 @@ type: is
 id: is-01m32ewkja67k8pzqate1hdmz5
 title: "Serves is not load-bearing: one call site collapses it to a bool, and its projection lives elsewhere"
 kind: bug
-status: open
+status: in_progress
 priority: 0
-version: 1
+version: 2
+spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
+delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:05:47.082Z
-updated_at: 2026-09-21T17:05:47.082Z
+updated_at: 2026-09-23T02:13:04.860Z
 ---
 Verified by execution in an adversarial review, 2026-09-21.
 
@@ -25,3 +27,7 @@ Proof: with `serves_snapshot` hard-wired to `Refuse` for every input, `fdu <root
 Also: `Serves::Exact` carries no value, so a future `ProjectControlsOff` variant is a tag every call site must handle. The one existing site uses `== Serves::Exact`, which silently treats any new variant as a miss — reproducing `projection-route`: served on the route that was updated, refused on the one that was not.
 
 Fix direction from the review: `serves_*` returns `Option<Projection>` where `Projection` carries `fn apply(self, Index) -> Index`, applied inside `snapshot::load` so no route can obtain an index without the projection; `#[must_use]`; no `== Serves::Exact` comparisons.
+
+## Notes
+
+Recovered serving layer PR114 routes snapshot admission through load_serving, applying controls-off projection at load; no inline fallback can bypass Refuse. Independently reviewed recovered implementation; Linux full matrix at 5e9f6061 reports 16254 cases with zero semantic failures. Final composed-head three-platform evidence and publication/merge acceptance remain pending. Execution Plan::admit consumes the same stored-state relation.
