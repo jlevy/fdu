@@ -989,18 +989,18 @@ fn projection_result_dict<'py>(
         }
         ProjectionResult::Report(value) => {
             out.set_item("kind", "report")?;
-            let rendered = fdu_core::report_format::render(
+            let encoded = fdu_core::report_format::render(
                 value,
                 fdu_core::report_format::Format::Json,
                 false,
             )
             .map_err(super::to_py_err)?;
-            let wire = py.import("json")?.call_method1("loads", (rendered,))?;
+            let wire = py.import("json")?.call_method1("loads", (encoded,))?;
             let report = PyDict::new(py);
             report.set_item("wire", wire)?;
-            report.set_item("notes", &value.notes)?;
-            report
-                .set_item("renderer", Py::new(py, super::PyOneShot { report: value.clone() })?)?;
+            let renderer = super::PyOneShot { report: value.clone() };
+            report.set_item("notes", renderer.notes())?;
+            report.set_item("renderer", Py::new(py, renderer)?)?;
             out.set_item("value", report)?;
         }
         ProjectionResult::Diagnostics(value) => {
