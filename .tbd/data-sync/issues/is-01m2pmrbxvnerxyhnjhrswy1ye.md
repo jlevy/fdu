@@ -5,7 +5,7 @@ title: "Phase 2 item 3: execution plan model: one planner and one write rule for
 kind: epic
 status: in_progress
 priority: 0
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - design
@@ -25,7 +25,7 @@ child_order_hints:
   - is-01m2pyeeb53q0tcgnkayb0wv56
   - is-01m360rycaafcmq5rgkatcvmjm
 created_at: 2026-09-17T02:57:26.458Z
-updated_at: 2026-09-23T02:16:21.248Z
+updated_at: 2026-09-23T02:21:29.484Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 2, Item 3: The Execution Plan Model", moved here when the item became beads (PR #78 at `e52383d4`; locators verified at `5f2d36d`). The commits are this bead's children, P2.3.1 to P2.3.8; their blockers carry the ordering, so this bead only groups them and closes when they do.
 
@@ -101,4 +101,5 @@ entry with narrower data.
 
 ## Notes
 
-2026-09-17 (PR #78 review): Phase 2. Typed Delivery {cache, workers, accept_partial, watch} is this model's second input; format and colour belong to the answer model. The harness iterates deliveries through the type.
+Implemented on codex/alpha-execution-plan through fba4730c, awaiting independent review and integrated PR/CI gate. Plan covers OneShot/Retained/Refresh/Watch/Opened, load/admission/persistence/outcome, explicit semantic Scope plus Delivery scheduling, no production OpenConfig, core refresh and Session persistence used by Python/CLI. Low-level ScanConfig/AnalysisRequest are derived executor inputs; specification records this boundary. Opened plans retain cold progressive semantics and reject unsupported cache/content/watch delivery rather than ignore it. Cache-only no-location/wrong-root/absence now have distinct remedies (fdu-2o2r). Content admission proof supplied by state agent c2cfe480/e9c90ed7 and independently reviewed by parent.
+Evidence before latest no-write guard: fresh workspace all-features/all-targets check; clippy clean; core no-default-features check; Plan24, content66, stored_state10, query103, Session11, persistence6 tests; installed native public smoke including refresh/cache-only-content and watch-handoff persistence; models56, basedpyright0, ruff; docs-format. Latest no-write-cache regression rerunning now. Full make check/cross-lint and final stack integration are parent-coordinated; do not close until those pass.

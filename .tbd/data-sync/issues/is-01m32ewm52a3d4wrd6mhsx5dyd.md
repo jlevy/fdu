@@ -5,13 +5,13 @@ title: The content tier decides reuse at five inline == sites and never touches 
 kind: bug
 status: in_progress
 priority: 0
-version: 3
+version: 4
 delegate: codex@spud10
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:05:47.681Z
-updated_at: 2026-09-23T02:08:24.489Z
+updated_at: 2026-09-23T02:20:46.060Z
 ---
 Verified by reading in an adversarial review, 2026-09-21. This is the finding that invalidates the claim that equality-serve makes content reuse correct by construction.
 
@@ -34,3 +34,5 @@ Until this lands, describe fdu-gija as fixed-by-equality, not as correct by cons
 ## Notes
 
 Implementation in codex/alpha-content-admission: ContentTierIdentity::admit is the single borrowed identity/provenance relation, returning ContentAdmission. Its private constructors produce a ContentProjection for tier reads and AdmittedRecord for decoded records; restore cannot accept an unchecked FileAnalysis. Prepare, save/load/header parse, direct commit, pending candidates, read validation, and report metric reads use this relation. Equality-only projection remains deliberate; subset projection is deferred. for_request builds provenance once; per-record admission compares borrowed slices and introduces no allocations or cloning. Regressions cover every identity component, incompatible tiers and unit slots, forged provenance, and exact positive controls. Existing restore timing buckets preserved. Plan consumer/root export coordinated with execution owner. cargo fmt and diff check passed; Rust verification deferred to scheduled integration slot, so bead stays open. Delivery plan: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md.
+
+Validation update: c2cfe480 and status follow-up e9c90ed7 integrated as54c4930a/174cb174. Parent independent Astra review found no findings. Execution owner ran content66, stored-state10, query103; all passed; workspace/all-build-features/all-targets clippy passed after mechanical lint fixes. No full gate claimed; publication pending execution layer. The shared relation is applied to cache records and to TreeStatus/ReportProvenance as well as metric reads.
