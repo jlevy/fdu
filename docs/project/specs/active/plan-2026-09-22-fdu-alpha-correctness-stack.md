@@ -47,7 +47,7 @@ stack pass.
 | One execution plan and persistence policy | `fdu-838z`, `fdu-2o2r`, `fdu-kuev`; P2.3 children | Core-model Phase 2 item 3. All routes consume `Delivery` and `Plan`; read admission, writes, partial outcomes, refresh, and watch persistence have one owner. |
 | Windows validity and independent oracle | `fdu-6act`, `fdu-ns3o` | PR #98 and the stored-state validity contract. Oracle timestamps saturate correctly, zero remains zero, locked metadata follows the same documented fallback, and full file identity participates in validation. |
 | Opened Python diagnostic parity | `fdu-zjjt` | [Directory query formats](https://github.com/jlevy/fdu/blob/c3aeed8a0a04cecfc18c5719d93e61dbbe4ba449/docs/project/specs/active/plan-2026-09-20-directory-query-formats.md). Bounded Paths and Long reports, including incomplete discovery, expose the same diagnostics through opened and retained Python. |
-| Conformance harness integrity | `fdu-j7go`, `fdu-laeo`, `fdu-8whh`, `fdu-k3ca`, `fdu-0ssl` | Positive exact-cache serving controls reject a cache that never serves; the subset includes code-warmed mutations; registered exceptions cannot pass the gate; builds must establish artifact identity after changing worktrees. |
+| Conformance harness integrity | `fdu-j7go`, `fdu-laeo`, `fdu-8whh`, `fdu-k3ca`, `fdu-0ssl` | Positive exact-cache serving controls reject a cache that never serves; the subset includes code-warmed mutations; registered exceptions cannot pass the gate. `fdu-8whh` (artifact identity after changing worktrees) is addressed only by AGENTS.md guidance, with no mechanical check; `fdu-k3ca` has no change in this stack. |
 | Final conformance | `fdu-xgjx`, `fdu-fjh1`, `fdu-tyvq` | Empty known-violation registry, independent metric and writer checks, all-platform validation, and a final packaged-artifact rehearsal. |
 
 The implementation beads already exist.
@@ -112,6 +112,9 @@ does not finish the core-model specification.
   shared answer model.
 - [ ] Strengthen positive serving and subset history checks, and require an empty
   registry in the conformance gate.
+- [x] Correct the raw-extension documentation (`fdu-tp2p`) with the architecture update:
+  only a valid-Unicode extension has a string bucket, while Unix and Windows can extract
+  it from a native stem that is not valid Unicode.
 
 The dependency order is validity and request prerequisites, measured values, typed
 answers and provenance, serving-route state and projection, execution planning, then
@@ -162,10 +165,6 @@ merge; release acceptance remains open until the composed candidate meets its co
 Release publication remains a separate maintainer action.
 
 ## Open Questions
-
-The raw-extension documentation correction (`fdu-tp2p`) also ships with the architecture
-update: only a valid-Unicode extension has a string bucket, while Unix and Windows can
-extract it from a native stem that is not valid Unicode.
 
 No product decision blocks the confirmed fixes.
 Resolve implementation choices against the owning core-model and directory-query
