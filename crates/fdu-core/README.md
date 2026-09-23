@@ -62,7 +62,7 @@ config.analysis.profile = AnalysisSet::ALL;
 let (index, report) = open(Path::new("."), &config)?;
 let lines = index
     .content_rollup(Path::new(""))
-    .map_or(0, |root| root.total.metrics.physical_lines);
+    .map_or(0, |root| root.total.lines.metrics.physical_lines);
 println!("{} lines", lines);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu_core::Error>(())
