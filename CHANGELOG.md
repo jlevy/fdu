@@ -14,7 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   contents once. Without an explicit kind filter, size and modification bounds now test
   directory subtrees rather than only the directory inode.
 - Explicit tree, paths, and long presentation formats expose directory and file
-  inventories on the command line and Python surface.
+  inventories on the command line and Python surface: `--format tree|paths|long`, with
+  `--tree` and `--long` as shorthands.
   Flat rows include subtree counts and signed modification ages measured against one
   report reference instant.
 
@@ -30,6 +31,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Metadata machine output defaults to the list view while the default human tree
   presentation stays the same.
   Directory query fields are part of the unreleased `fdu.report/7` contract.
+- Rust `report_format::render` now returns `Result<String>`, refusing a conversion
+  between a folded tree and a flat inventory that the report cannot answer; Python maps
+  the refusal to `InvalidArgumentError`.
 
 ## [0.1.0] - 2026-09-16
 

@@ -573,7 +573,7 @@ Each of these must be one invocation:
 | `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` |
 | `fd -e rs`, `find -name` | `fdu --view files --include '*.rs' PATH` |
 | biggest files | `fdu --view files --sort size -n 100 PATH` |
-| `find -mmin -60` | `fdu --view files --modified-since 1h PATH` |
+| `find -mmin -60` | `fdu --view files --kind file --modified-since 1h PATH` |
 | `du` by type | `fdu --view types PATH` |
 | two reports, one scan | `fdu --view types,tree PATH` |
 | `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` |

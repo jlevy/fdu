@@ -84,7 +84,7 @@ leaves.
 | --- | --- |
 | `tree` or `--tree` | Directory hierarchy; default depth 2 and ten children per directory |
 | `paths` | Every matching path, safely escaped, one per line |
-| `long` or `--long` | Every match with allocated size, modification age, and path |
+| `long` or `--long` | Every match with its size (allocated unless `--size` says otherwise), modification age, and path |
 | `json`, `jsonl`, `yaml` | Structured matching entries with exact metrics and bounds |
 | `text` | Automatic human presentation: tree for List, existing tables for grouped views |
 

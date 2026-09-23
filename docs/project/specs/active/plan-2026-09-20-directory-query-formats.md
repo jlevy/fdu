@@ -190,8 +190,9 @@ deliberate:
   A consumer branching on `view == "tree"` stops matching the default report, which is
   why the release notes name the label change.
   The combined unreleased alpha uses `fdu.report/7` for both metadata and content
-  reports under the accepted pre-1.0 schema policy; the shared typed answer supersedes
-  the earlier split-schema proposal.
+  reports under the draft-schema rule in
+  [the release process](../../guides/release-process.md), since no release has emitted
+  `/7`; the shared typed answer supersedes the earlier split-schema proposal.
 - List rows gain `files`, `dirs`, `complete`, and `age_ns`, and the envelope gains
   `age_reference_ns`; the same schema bump covers them.
 - `summary.newest_mtime_ns` does not change: it remains the newest mtime over admitted

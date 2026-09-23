@@ -383,7 +383,7 @@ changed after that scan began, which is what makes incremental follow-up sound:
 
 ```bash
 fdu --view summary --format json PATH              # record provenance.scan_started_at
-fdu --view files --format jsonl --modified-since <that> PATH
+fdu --view files --kind file --format jsonl --modified-since <that> PATH
 ```
 
 Use the scan’s *start*, not its end: a file modified mid-scan may have been observed

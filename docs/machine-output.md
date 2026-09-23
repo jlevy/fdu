@@ -3,8 +3,10 @@
 All reports use `fdu.report/7`, including metadata-only and content-analyzed reports.
 Cache status uses `fdu.cache/2`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
-The combined unreleased alpha report shape follows the accepted pre-1.0 schema policy;
-content analysis does not select another schema.
+None of these versions has been published yet, so under
+[the draft-schema rule](project/guides/release-process.md) their shape may still change
+until the first release that emits them; content analysis does not select another
+schema.
 
 ## List Rows
 
