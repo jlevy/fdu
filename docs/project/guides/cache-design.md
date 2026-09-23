@@ -304,7 +304,7 @@ belongs.
 | `auto` (default) | per path, below | full scan or full revalidation | per path, below |
 | `refresh` | no | full scan | complete indexed scans |
 | `read-only` | per path, below | full scan or full revalidation | never |
-| `only` | yes | never, except under `--watch` | never |
+| `only` | yes | never; watch is refused | never |
 | `off` | no | full scan | never |
 
 What a policy reads and writes also depends on the path that answers:
@@ -317,8 +317,8 @@ What a policy reads and writes also depends on the path that answers:
   The summary-reducer path retains nothing and writes nothing, so
   `--view summary --no-gitignore` under `auto` never leaves a snapshot.
 - **`open` and the first answer of `--watch`.** Under `auto` and `read-only`, both load
-  a usable snapshot and reconcile it; `off` and `refresh` start cold, and `only` loads
-  without revalidation before the watch handoff.
+  a usable snapshot and reconcile it; `off` and `refresh` start cold.
+  A retained `open` under `only` loads without revalidation; a watch refuses `only`.
   Under a write-permitting policy, a warm open writes when reconciliation changes
   something, and a cold open writes after a complete scan.
 - **Live updates.** Under a write-permitting policy, both command-line and Python
@@ -341,9 +341,10 @@ What a policy reads and writes also depends on the path that answers:
 `source: cache_only` and `freshness: stale`. It fails outright when no usable snapshot
 exists rather than quietly scanning, because a fast path that is sometimes a full walk —
 with nothing in the output to say which happened — is worse than no fast path.
-`--watch --cache only` is accepted: it starts from the snapshot, establishes
-observation, and drains the capture gap before publishing its first report.
-It then applies live filesystem events.
+`--watch --cache only` is refused: starting observation cannot verify the interval
+between snapshot capture and observation registration.
+Use `auto` or `read-only` for a watch whose initial answer is revalidated before the
+handoff.
 
 Every machine-format report carries `status` with `complete`, `coverage`, `errors`, and
 `errors_omitted`, plus `provenance` with source, freshness, timestamps, and per-tier
