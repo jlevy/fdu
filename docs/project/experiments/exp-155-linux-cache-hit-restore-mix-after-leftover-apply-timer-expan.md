@@ -191,7 +191,7 @@ experiment:
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
-    notes: ""
+    notes: "same-binary attachment: both arms ran the 065175ee probe, so 0 lines is the attachment's cost, not that commit's; 065175ee (apply-timer expansion plus a dead-branch removal, 35 production lines added in content_cache.rs and index.rs, tests excluded) was never paired against its parent e95167b9, so its wall effect is unmeasured; the timers are Option-gated and off by default"
   verdict:
     decision: accepted
     primary_job: content-cache-hit
@@ -203,11 +203,11 @@ experiment:
 ## What was predicted
 
 H149 is the Linux cache-hit restore mix after leftover `fdu-2pct` moved apply start to
-`candidates.remove`. H144 (exp-144) named the leftover under the narrower post-H112
-bucket: apply ~80–84 ms, parse and candidates ~27 ms, read ~9 ms; no new ≥3% userspace
-cut.
-H121 said not to judge another apply/install cut until the four restore rows can sum
-to the load.
+`candidates.remove`. H144 (exp-144) named the leftover under the narrower apply-only
+bucket that arrived with `e667b739` (HashMap remove and fingerprint outside apply):
+apply ~80–84 ms, parse and candidates ~27 ms, read ~9 ms; no new ≥3% userspace cut.
+H121 said not to judge another apply/install cut until the four restore rows can sum to
+the load.
 
 Named before measuring:
 
@@ -256,6 +256,7 @@ Parse and candidates stay ~24–26 ms each (~4% of wall).
 Read is ~8–9 ms, under 3% of wall.
 Versus H144, apply grew about 10–15 ms and the other three rows did not; that is the
 previously unbucketed HashMap remove plus fingerprint.
+This is unpaired attribution across two sessions and two binaries, not a measured delta.
 438,021 roll-up merges.
 File opens 0. Walk 0.
 

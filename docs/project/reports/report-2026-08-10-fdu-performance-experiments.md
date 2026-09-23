@@ -5203,6 +5203,12 @@ Candidate: same probe leftover restore-mix profile
 
 Cost to carry: 0 lines; no new dependencies.
 
+same-binary attachment: both arms ran the 065175ee probe, so 0 lines is the attachment’s
+cost, not that commit’s; 065175ee (apply-timer expansion plus a dead-branch removal, 35
+production lines added in content_cache.rs and index.rs, tests excluded) was never
+paired against its parent e95167b9, so its wall effect is unmeasured; the timers are
+Option-gated and off by default
+
 **Accepted:** same leftover identity as H144: apply 60-62% of restore after timer
 expansion is H116 HashMap now in-bucket; no new compileable cut; do not retry H116.
 

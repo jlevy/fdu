@@ -38334,7 +38334,7 @@
     "new_dependencies": [],
     "new_failure_modes": [],
     "new_unsafe_blocks": 0,
-    "notes": ""
+    "notes": "same-binary attachment: both arms ran the 065175ee probe, so 0 lines is the attachment's cost, not that commit's; 065175ee (apply-timer expansion plus a dead-branch removal, 35 production lines added in content_cache.rs and index.rs, tests excluded) was never paired against its parent e95167b9, so its wall effect is unmeasured; the timers are Option-gated and off by default"
    },
    "control": "same leftover-timer release probe both arms",
    "date": "2026-09-21",
