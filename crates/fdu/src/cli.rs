@@ -19,10 +19,6 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use fdu_core::content::AnalysisSet;
-// The open configuration and the age grammar are the watch path's alone now: everything
-// else composes a request and a delivery and hands them to the engine.
-#[cfg(feature = "watch")]
-use fdu_core::OpenConfig;
 use fdu_core::control::ControlCoverage;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
@@ -293,46 +289,6 @@ impl std::fmt::Display for UsageError {
 
 impl std::error::Error for UsageError {}
 
-/// The result of one attempt to persist a watching session's index.
-///
-/// Named rather than folded into a `Result<bool>` at the decision site, because the three
-/// cases update the loop's state differently and conflating any two of them has already
-/// caused a defect: an early return that wrote nothing was once indistinguishable from a
-/// completed write.
-#[cfg(feature = "watch")]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum SaveOutcome {
-    /// A snapshot reached disk.
-    Written,
-    /// Nothing was written: the index is not `Fresh` yet, or policy forbids writes.
-    Skipped,
-    /// The write was attempted and failed.
-    Failed,
-}
-
-/// Whether a throttled save is due.
-///
-/// Pure so the throttle can be tested without a filesystem, a clock, or a watcher. The
-/// case worth stating: a pending change that arrives inside the interval is *not* due
-/// now, but stays pending, and the caller's idle path is what eventually saves it. Losing
-/// that second half is what made a burst-then-quiet session never persist at all.
-#[cfg(feature = "watch")]
-fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
-    pending && since_last_save >= interval
-}
-
-/// Whether a change still needs persisting after an attempt.
-///
-/// Only a completed write clears the flag. A skip and a failure both leave the change
-/// unpersisted, and on a quiet tree the retry is the only thing that will ever save it.
-#[cfg(feature = "watch")]
-fn pending_after(outcome: SaveOutcome) -> bool {
-    match outcome {
-        SaveOutcome::Written => false,
-        SaveOutcome::Skipped | SaveOutcome::Failed => true,
-    }
-}
-
 /// The default size metric, as the defaults table spells it.
 ///
 /// Read from the model rather than written out here, so `--help` cannot say one metric
@@ -572,7 +528,7 @@ pub struct Cli {
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "EXECUTION")]
+    #[arg(long, value_name = "DUR", default_value_t = format!("{}s", WatchDelivery::DEFAULT_INTERVAL.as_secs()), help_heading = "EXECUTION")]
     pub interval: String,
 
     /// Print help.
@@ -649,7 +605,12 @@ impl Cli {
         let delivery = Delivery {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
             cache_path: default_cache_path(path),
-            analysis_workers: self.analysis_workers,
+            workers: fdu_core::query::Workers {
+                analysis: self.analysis_workers,
+                ..Default::default()
+            },
+            batch_size: fdu_core::ScanConfig::default().batch_size,
+            order: fdu_core::ScanOrder::default(),
             watch: self.watch_delivery().map_err(|error| usage(&error))?,
             // What `--allow-partial` says: a partial answer is a success. Only this
             // command's exit mapping reads it today, and the execution plan model will.
@@ -669,7 +630,7 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
-            return self.run_watch(out, diagnostic, format, &request, &delivery, color);
+            return Self::run_watch(out, diagnostic, format, &request, &delivery, color);
         }
 
         let report_started = Instant::now();
@@ -758,7 +719,11 @@ impl Cli {
             }
         }
 
-        Ok(if report.status.complete { RunOutcome::Complete } else { RunOutcome::Partial })
+        let plan = fdu_core::plan(&request, &delivery, fdu_core::Route::OneShot)?;
+        Ok(match plan.outcome(&report.status) {
+            fdu_core::OutcomeClass::Success => RunOutcome::Complete,
+            fdu_core::OutcomeClass::Partial => RunOutcome::Partial,
+        })
     }
 
     /// Whether the requested format is a machine format, which is never colorized.
@@ -777,7 +742,6 @@ impl Cli {
     /// aggregate views repaint.
     #[cfg(feature = "watch")]
     fn run_watch(
-        &self,
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,
         format: report_format::Format,
@@ -785,12 +749,9 @@ impl Cli {
         delivery: &Delivery,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use fdu_core::open_with_pending_save;
         use fdu_core::query::ViewSpec;
-        use fdu_core::watch::WatchConfig;
         use fdu_core::watch_session::{ChangeKind, Session};
 
-        let path = self.path.as_deref().expect("run() validates the report path first");
         // The repaint interval the delivery already carries, rather than a second reading
         // of `--interval`: `run` refused an unparseable one before it opened anything, and
         // a value parsed twice is a value that can mean two things.
@@ -799,32 +760,14 @@ impl Cli {
             .expect("run() builds a watch delivery before it takes the watch path")
             .interval;
 
-        // The one splice of the two models back into today's open configuration, made
-        // here rather than by the caller: the watch path is its only remaining user on
-        // this surface.
-        let config = &OpenConfig::of(&request.basis, delivery);
-        let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
-        let projected = open_report.projected;
-        if let Err(error) = pending_save.join() {
-            let _ = writeln!(
-                diagnostic,
-                "{}",
-                paint(&format!("warning: {error}"), STYLE_WARNING, color)
-            );
-        }
+        let mut session = Session::start(request.clone(), delivery.clone())?;
+        Self::persist_live(&mut session, diagnostic, color);
 
         // A streaming run keeps only the views it can render incrementally plus the
         // aggregates it repaints; both come from the same query, so nothing here is a
         // second grammar.
         let streams_changes = request.query.views.contains(&ViewSpec::Files);
         let has_aggregates = request.query.views.iter().any(|view| *view != ViewSpec::Files);
-
-        // The save above was joined, so the writer has dropped its reference and this
-        // is the only one left; the watch session needs the index by value.
-        let index = std::sync::Arc::into_inner(index)
-            .expect("the joined writer released the only other reference");
-        let handle = fdu_core::IndexHandle::new(index);
-        let mut session = Session::new(handle, request.clone(), delivery, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
         if format == report_format::Format::Yaml {
@@ -835,8 +778,6 @@ impl Cli {
 
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
-        let mut last_save = SystemTime::now();
-        let mut dirty_since_save = false;
         loop {
             let Some(batch) = session.next_batch(interval)? else {
                 // Nothing arrived in the window. Repaint only if something is pending,
@@ -850,16 +791,7 @@ impl Cli {
                 // arrived too soon after the last save would otherwise wait for the next
                 // change to persist it, and the next change may never come: a burst
                 // followed by silence is the single most likely way a watch session ends.
-                Self::save_if_pending(
-                    &session,
-                    config,
-                    projected,
-                    &mut dirty_since_save,
-                    &mut last_save,
-                    interval,
-                    diagnostic,
-                    color,
-                );
+                Self::persist_live(&mut session, diagnostic, color);
                 continue;
             };
 
@@ -887,92 +819,26 @@ impl Cli {
             // to the render interval so a churny tree does not rewrite constantly; the
             // pending flag is what guarantees a throttled change still reaches disk once
             // the tree goes quiet.
-            dirty_since_save |= batch.dirty;
-            Self::save_if_pending(
-                &session,
-                config,
-                projected,
-                &mut dirty_since_save,
-                &mut last_save,
-                interval,
-                diagnostic,
-                color,
-            );
+            Self::persist_live(&mut session, diagnostic, color);
         }
     }
 
-    /// Persist a pending change, if one is due.
-    ///
-    /// The pending flag clears only when a snapshot actually reached disk. An index that
-    /// is not yet `Fresh`, a policy that forbids writes, and a failed write all leave the
-    /// change unpersisted, and clearing the flag for any of them would mean the idle
-    /// branch never retries -- which on a quiet tree is never at all.
+    /// Surface a persistence failure without interrupting the live answer.
     #[cfg(feature = "watch")]
-    #[allow(clippy::too_many_arguments)]
-    fn save_if_pending(
-        session: &fdu_core::watch_session::Session,
-        config: &OpenConfig,
-        projected: bool,
-        pending: &mut bool,
-        last_save: &mut SystemTime,
-        interval: Duration,
+    fn persist_live(
+        session: &mut fdu_core::watch_session::Session,
         diagnostic: &mut dyn Write,
         color: bool,
     ) {
-        if !save_is_due(*pending, last_save.elapsed().unwrap_or_default(), interval) {
-            return;
+        if let fdu_core::watch_session::SaveOutcome::Failed(error) =
+            session.persist_due(Instant::now())
+        {
+            let _ = writeln!(
+                diagnostic,
+                "{}",
+                paint(&format!("warning: {error}"), STYLE_WARNING, color)
+            );
         }
-        let outcome = match Self::save_live(session, config, projected) {
-            Ok(true) => SaveOutcome::Written,
-            Ok(false) => SaveOutcome::Skipped,
-            Err(error) => {
-                Self::warn_save_failed(&error, diagnostic, color);
-                SaveOutcome::Failed
-            }
-        };
-        *pending = pending_after(outcome);
-        // Throttled whether or not it worked, so a persistently failing save warns at the
-        // interval rather than spinning.
-        *last_save = SystemTime::now();
-    }
-
-    /// Warn about a failed save without disturbing the stream.
-    ///
-    /// A save failure costs the next run its warm start and nothing else, so it must not
-    /// interrupt a watch that is otherwise working.
-    #[cfg(feature = "watch")]
-    fn warn_save_failed(error: &anyhow::Error, diagnostic: &mut dyn Write, color: bool) {
-        let _ =
-            writeln!(diagnostic, "{}", paint(&format!("warning: {error}"), STYLE_WARNING, color));
-    }
-
-    /// Persist a live session's index, when policy allows it.
-    ///
-    /// Keeps the warm cache current during a long watch instead of betting on a clean
-    /// exit. A failure here is a warning: the stream is still correct, and only the next
-    /// run's warmth is lost.
-    #[cfg(feature = "watch")]
-    fn save_live(
-        session: &fdu_core::watch_session::Session,
-        config: &OpenConfig,
-        projected: bool,
-    ) -> anyhow::Result<bool> {
-        if projected {
-            return Ok(false);
-        }
-        let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
-        else {
-            return Ok(false);
-        };
-        let index = session.index_snapshot()?;
-        if index.freshness() != fdu_core::Freshness::Fresh {
-            // Only a trustworthy index is worth persisting; a partial one would be
-            // served as fact on the next run. Reported as "not written" so the caller
-            // keeps the change pending and tries again once the index settles.
-            return Ok(false);
-        }
-        fdu_core::snapshot::save(&index, cache_path)?;
-        Ok(true)
     }
 
     /// Re-render the aggregate views of a live session.
@@ -1561,7 +1427,7 @@ fn run_with_io(
         stderr_is_terminal,
     )
     .enabled();
-    finish(result, cli.allow_partial, diagnostic, diagnostic_color)
+    finish(result, diagnostic, diagnostic_color)
 }
 
 fn write_styled(
@@ -1627,15 +1493,9 @@ fn strip_ansi(line: &str) -> String {
     out
 }
 
-fn finish(
-    result: anyhow::Result<RunOutcome>,
-    allow_partial: bool,
-    diagnostic: &mut dyn Write,
-    color: bool,
-) -> u8 {
+fn finish(result: anyhow::Result<RunOutcome>, diagnostic: &mut dyn Write, color: bool) -> u8 {
     match result {
         Ok(RunOutcome::Complete) => 0,
-        Ok(RunOutcome::Partial) if allow_partial => 0,
         Ok(RunOutcome::Partial) => 2,
         Err(error) if is_broken_pipe(&error) => 0,
         Err(error) if is_usage_error(&error) => {
@@ -1880,8 +1740,8 @@ mod tests {
                 .map(|request| request.basis.scope)
         };
         let defaults = fdu_core::ControlLimits::default();
-        let unobserved = |config: &fdu_core::ScanConfig| {
-            fdu_core::ScanConfig { read_controls: false, ..config.clone() }.scope()
+        let unobserved = |config: &fdu_core::query::Scope| {
+            fdu_core::query::Scope { read_controls: false, ..config.clone() }.scope()
         };
         let default = scan_config(&[]).expect("defaults");
         assert_eq!(default.control_limits, defaults);
@@ -1956,69 +1816,6 @@ mod tests {
         assert_eq!(parse_duration("200ms").expect("milliseconds"), Duration::from_millis(200));
         assert!(parse_duration("0.2s").is_err(), "a fractional age stays rejected");
         assert!(parse_duration("banana").is_err(), "a non-duration must be rejected, not parsed");
-    }
-
-    /// The watch loop's save throttle, as a table over every state that reaches it.
-    ///
-    /// Two of the three defects review found on this branch were transitions in here, and
-    /// the second was introduced by fixing the first. End-to-end tests could not catch
-    /// either: they observe whether a file changed on disk, which cannot distinguish "not
-    /// due yet" from "due and skipped", nor a cleared flag from a retained one.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn a_save_is_due_only_when_a_change_is_pending_and_the_throttle_has_elapsed() {
-        let interval = Duration::from_secs(1);
-        let cases = [
-            // (pending, since last save, due, what this case is)
-            (true, Duration::from_secs(2), true, "pending and past the interval"),
-            (true, interval, true, "pending, exactly at the interval: inclusive"),
-            // The R5 case. Not due *now* -- and the flag stays set, which is the half that
-            // was missing: the idle path saves it once the interval passes.
-            (true, Duration::from_millis(1), false, "pending but throttled"),
-            (false, Duration::from_secs(60), false, "nothing pending, however long it has been"),
-            (false, Duration::ZERO, false, "nothing pending and just saved"),
-        ];
-
-        for (pending, since, want, case) in cases {
-            assert_eq!(save_is_due(pending, since, interval), want, "{case}");
-        }
-    }
-
-    /// A throttled change must survive every outcome except a completed write.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn only_a_completed_write_clears_the_pending_change() {
-        // The R7 case is Skipped and Failed: clearing the flag for either means the idle
-        // path never retries, so on a quiet tree the change is never persisted at all.
-        assert!(!pending_after(SaveOutcome::Written), "a completed write persists the change");
-        assert!(
-            pending_after(SaveOutcome::Skipped),
-            "a skipped save wrote nothing, so the change is still owed to disk",
-        );
-        assert!(pending_after(SaveOutcome::Failed), "a failed save must be retried, not forgotten");
-    }
-
-    /// The sequence that defeated the feature in its most common shape.
-    #[cfg(feature = "watch")]
-    #[test]
-    fn a_burst_then_a_quiet_tree_still_persists() {
-        let interval = Duration::from_secs(1);
-
-        // A change arrives too soon after the last save, so nothing is written yet.
-        let mut pending = true;
-        assert!(!save_is_due(pending, Duration::from_millis(50), interval));
-        assert!(pending, "the throttle must not consume the change");
-
-        // The tree goes quiet: no further batches will ever arrive. The idle path is the
-        // only remaining caller, and once the interval passes the save must happen.
-        assert!(save_is_due(pending, Duration::from_secs(3), interval));
-
-        // A skip at that point keeps it pending for the next idle tick rather than
-        // silently dropping the session's work.
-        pending = pending_after(SaveOutcome::Skipped);
-        assert!(pending);
-        pending = pending_after(SaveOutcome::Written);
-        assert!(!pending, "once written, the loop stops rewriting an unchanged index");
     }
 
     struct FailingWriter;
@@ -2131,7 +1928,7 @@ mod tests {
             assert!(is_usage_error(&error), "{axis:?} must exit like the bad argument it is");
 
             let mut diagnostic = Vec::new();
-            assert_eq!(finish(Err(error), false, &mut diagnostic, false), 2);
+            assert_eq!(finish(Err(error), &mut diagnostic, false), 2);
             assert_eq!(
                 String::from_utf8(diagnostic).expect("diagnostics are UTF-8"),
                 format!("fdu: unsupported scan configuration: {printed}\n")
@@ -2831,14 +2628,13 @@ mod tests {
     #[test]
     fn run_outcomes_and_broken_pipes_have_stable_exit_codes() {
         let mut diagnostic = Vec::new();
-        assert_eq!(finish(Ok(RunOutcome::Complete), false, &mut diagnostic, false), 0);
-        assert_eq!(finish(Ok(RunOutcome::Partial), false, &mut diagnostic, false), 2);
-        assert_eq!(finish(Ok(RunOutcome::Partial), true, &mut diagnostic, false), 0);
+        assert_eq!(finish(Ok(RunOutcome::Complete), &mut diagnostic, false), 0);
+        assert_eq!(finish(Ok(RunOutcome::Partial), &mut diagnostic, false), 2);
 
         let broken_pipe =
             anyhow::Error::new(io::Error::new(io::ErrorKind::BrokenPipe, "reader closed"))
                 .context("render output");
-        assert_eq!(finish(Err(broken_pipe), false, &mut diagnostic, false), 0);
+        assert_eq!(finish(Err(broken_pipe), &mut diagnostic, false), 0);
         assert!(diagnostic.is_empty());
 
         let args = [OsString::from("fdu"), OsString::from("--help")];

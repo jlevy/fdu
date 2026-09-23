@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Engine execution plans now carry cache policy, scheduling, partial-answer acceptance,
+  and route selection.
+  Rust callers open with `Basis` and `Delivery`.
+- Python `Index.refresh()` writes refreshed metadata and content under `auto`. Iterating
+  `Index.watch()` persists verified changes under the same policy; cache write failures
+  warn without ending the feed.
+- Watch repaint defaults come from the engine on every surface.
+
 ## [0.1.0] - 2026-09-16
 
 <!-- Release date: 2026-09-16 is a placeholder. Set it to the tag date if v0.1.0 is cut

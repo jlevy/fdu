@@ -538,12 +538,38 @@ def check_a_one_shot_report_forwards_every_control_knob() -> None:
     assert rules(fdu.ScanOptions(read_controls=False)) is None
 
 
+def check_refresh_and_watch_persist() -> None:
+    """A later cache-only reader sees updates delivered through either retained route."""
+    with tempfile.TemporaryDirectory(prefix="fdu-persistence-") as directory:
+        root = Path(directory)
+        path = root / "note.txt"
+        path.write_text("old\n", encoding="utf-8")
+        analysis = fdu.AnalysisOptions(analyze=fdu.Analysis.LINES)
+        index = fdu.open(root, analysis=analysis)
+        path.write_text("new longer text\nsecond line\n", encoding="utf-8")
+        refreshed = index.refresh()
+        assert refreshed.status.complete
+        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY, analysis=analysis)
+        assert cached.total().bytes == index.total().bytes
+        assert cached.total().files == index.total().files
+        query = fdu.Query(views=(fdu.View.TYPES,))
+        assert cached.report(query).sections == index.report(query).sections
+
+        watched = fdu.open(root)
+        path.write_text("changed before watcher registration\n", encoding="utf-8")
+        with watched.watch(fdu.WatchOptions(interval=0.01)) as feed:
+            next(feed)
+            cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
+            assert cached.total().bytes == path.stat().st_size
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
     (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
     (root / "notes.md").write_text("release notes", encoding="utf-8")
 
+    check_refresh_and_watch_persist()
     check_every_view(root)
     check_a_report_is_a_snapshot(root)
     check_a_report_states_its_own_omissions(root)

@@ -1511,16 +1511,16 @@ mod tests {
         fs::write(root.join("a"), b"one two\n").expect("write first");
         fs::write(root.join("bb"), b"one two\n").expect("write second");
         let snapshot_path = dir.path().join("snapshot.fdu");
-        let config = crate::OpenConfig {
+        let config = crate::OpenFixture {
             cache_path: Some(snapshot_path.clone()),
             policy: crate::CachePolicy::Auto,
             analysis: crate::content::AnalysisRequest {
                 profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..crate::content::AnalysisRequest::default()
             },
-            ..crate::OpenConfig::default()
+            ..crate::OpenFixture::default()
         };
-        crate::open(&root, &config).expect("seed snapshot and sidecar");
+        crate::open_fixture(&root, &config).expect("seed snapshot and sidecar");
 
         let mut image = fs::read(&snapshot_path).expect("read snapshot");
         let fields = entry_record_fields(&image);
@@ -1530,9 +1530,9 @@ mod tests {
         let forged = replace_entry_name(&image, 2, OsStr::new("a/"));
         fs::write(&snapshot_path, forged).expect("write checksummed alias");
 
-        let only = crate::OpenConfig { policy: crate::CachePolicy::Only, ..config };
+        let only = crate::OpenFixture { policy: crate::CachePolicy::Only, ..config };
         assert!(
-            matches!(crate::open(&root, &only), Err(Error::Snapshot(_))),
+            matches!(crate::open_fixture(&root, &only), Err(Error::Snapshot(_))),
             "a malformed snapshot cannot shrink the cache-only completeness denominator"
         );
     }

@@ -8,6 +8,13 @@
 // Measurement scaffolding, kept out of the library so the engine's unsafe-free
 // guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
 // probe is the right place to pay for that.
+fn open_planned(root: &std::path::Path, options: OpenOptions) -> fdu_core::Result<OpenedIndex> {
+    let mut delivery = fdu_core::query::Delivery::new(fdu_core::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -17,12 +24,12 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu_core::query::{Basis, Bound, Delivery, Query, Request, Selection, ViewSpec};
+use fdu_core::query::{Basis, Bound, Delivery, Query, Request, Selection, ViewSpec, Workers};
 use fdu_core::{
     Attrs, CachePolicy, ChangeOutcome, ChangeRequest, Clock, Commit, Coverage, EffectiveChange,
     EngineVersion, EntryId, EntryKind, Index, IndexState, Knowledge, LifecyclePhase, Observation,
-    Op, OpenConfig, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection,
-    ReadRequest, ReportRequest, RowShape, ScanConfig, ScanOrder,
+    Op, OpenOptions, OpenedIndex, PageRequest, ProjectionResult, ReadProjection, ReadRequest,
+    ReportRequest, RowShape, ScanConfig, ScanOrder,
 };
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
@@ -536,7 +543,7 @@ fn report_for_render(arguments: &Arguments) -> ProbeResult<(Index, fdu_core::que
     let request = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
@@ -606,11 +613,22 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
     Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
 }
 
-/// The request and the delivery one probe mode asks for, composed from the configuration
-/// it measures exactly as the command line composes them.
-fn asked(root: &Path, config: &OpenConfig, query: Query) -> (Request, Delivery) {
-    let (basis, delivery) = config.split(root);
-    (Request::new(basis, query, std::time::SystemTime::now()), delivery)
+/// Keep the scanner's semantic scope and its operational settings on their respective
+/// execution-plan axes, matching the command line's one-shot route.
+fn open_plan(
+    root: &Path,
+    scan: &ScanConfig,
+    policy: CachePolicy,
+    cache_path: Option<PathBuf>,
+    analysis: AnalysisRequest,
+) -> (Basis, Delivery) {
+    let basis =
+        Basis { root: root.to_path_buf(), scope: scan.clone().into(), content: analysis.profile };
+    let mut delivery = Delivery::new(policy, cache_path);
+    delivery.workers = Workers { scan: scan.threads, analysis: analysis.workers };
+    delivery.batch_size = scan.batch_size;
+    delivery.order = scan.order;
+    (basis, delivery)
 }
 
 fn basic_request() -> AnalysisRequest {
@@ -649,14 +667,10 @@ fn content_open(
     analysis: AnalysisRequest,
 ) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    let config = OpenConfig {
-        scan: arguments.scan.clone(),
-        cache_path: Some(snapshot.clone()),
-        policy,
-        analysis,
-    };
+    let (basis, delivery) =
+        open_plan(&arguments.root, &arguments.scan, policy, Some(snapshot.clone()), analysis);
     let started = Instant::now();
-    let (index, report) = fdu_core::open(&arguments.root, &config)?;
+    let (index, report) = fdu_core::open(&basis, &delivery)?;
     let component = started.elapsed();
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
@@ -689,7 +703,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let read = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
@@ -826,15 +840,16 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // with `CachePolicy::Off` is what keeps the planner on the transient tier: `Refresh`
     // would demand an index to write, and `Only` would demand a snapshot to read. Off is
     // also what the measured invocation uses.
-    let config = OpenConfig {
-        scan: arguments.scan.clone(),
-        cache_path: None,
-        policy: CachePolicy::Off,
-        analysis: AnalysisRequest::default(),
-    };
+    let (basis, delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Off,
+        None,
+        AnalysisRequest::default(),
+    );
     let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
 
-    let (request, delivery) = asked(&arguments.root, &config, query);
+    let request = Request::new(basis, query, std::time::SystemTime::now());
     let started = Instant::now();
     // `_performance` is what the command line prints in its footer; this tier's tallies
     // come out of the report itself, so it is deliberately unused here.
@@ -896,18 +911,18 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let identity_before = snapshot_identity(&snapshot);
-    let config = OpenConfig {
-        // Passed through unchanged, as the command line passes its own: observing
-        // `.gitignore` by default, and not under `--no-controls`, which is the probe's
-        // spelling of `--no-gitignore`.
-        scan: arguments.scan.clone(),
-        cache_path: Some(snapshot.clone()),
-        policy: CachePolicy::Auto,
-        analysis: AnalysisRequest::default(),
-    };
+    // Preserve `.gitignore` observation (or `--no-controls`) from the probe's scan
+    // settings, matching the command line's `--no-gitignore` scope.
+    let (basis, delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Auto,
+        Some(snapshot.clone()),
+        AnalysisRequest::default(),
+    );
     let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
-    let (request, delivery) = asked(&arguments.root, &config, query);
+    let request = Request::new(basis, query, std::time::SystemTime::now());
     let counters = begin_component_counters();
     let started = Instant::now();
     let (report, pending, _performance, scan_diagnostics) = if arguments.diagnostics {
@@ -987,16 +1002,17 @@ fn snapshot_identity(path: &Path) -> Option<(u64, Option<std::time::SystemTime>)
 /// unmeasurable under the accept rule until this job existed.
 fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    let config = OpenConfig {
-        scan: arguments.scan.clone(),
-        cache_path: Some(snapshot.clone()),
-        // Refresh rather than Auto: the job must always walk and always write, or a
-        // stray snapshot would silently turn one trial into a warm open.
-        policy: CachePolicy::Refresh,
-        analysis: AnalysisRequest::default(),
-    };
+    // Refresh rather than Auto: the job must always walk and always write, or a
+    // stray snapshot would silently turn one trial into a warm open.
+    let (basis, delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Refresh,
+        Some(snapshot.clone()),
+        AnalysisRequest::default(),
+    );
     let started = Instant::now();
-    let (index, report, pending) = fdu_core::open_with_pending_save(&arguments.root, &config)?;
+    let (index, report, pending) = fdu_core::open_with_pending_save(&basis, &delivery)?;
     pending.join()?;
     let component = started.elapsed();
     if !report.is_complete() {
@@ -1188,7 +1204,7 @@ fn opened_discovery_with_options(
 ) -> ProbeResult<ProbeOutput> {
     let counters = begin_component_counters();
     let started = Instant::now();
-    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let opened = open_planned(&arguments.root, options)?;
     let initial = opened.read(ReadRequest::default())?;
     let cursor = fdu_core::EngineVersion { sequence: Clock::ZERO, ..initial.version };
     let (terminal, cursor, commits) = settle_opened(
@@ -1266,7 +1282,7 @@ fn opened_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         journal_capacity_bytes: OPENED_PROBE_JOURNAL_CAPACITY_BYTES,
         ..OpenOptions::default()
     };
-    let opened = OpenedIndex::open(&arguments.root, options)?;
+    let opened = open_planned(&arguments.root, options)?;
     let initial = match opened.read(ReadRequest::default()) {
         Ok(initial) => initial,
         Err(error) => {
@@ -1361,7 +1377,7 @@ fn index_second_report(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let request = Request::new(
         Basis {
             root: index.root_path().to_path_buf(),
-            scope: arguments.scan.clone(),
+            scope: arguments.scan.clone().into(),
             content: index.content_set(),
         },
         query,
@@ -2495,7 +2511,7 @@ mod tests {
     #[test]
     fn opened_oracle_rejects_an_unavailable_version() {
         let root = tempfile::tempdir().expect("opened oracle root");
-        let opened = OpenedIndex::open(root.path(), OpenOptions::default()).expect("open");
+        let opened = open_planned(root.path(), OpenOptions::default()).expect("open");
         let initial = opened.read(ReadRequest::default()).expect("initial read");
         let unavailable = EngineVersion { sequence: Clock(u64::MAX), ..initial.version };
 
@@ -2728,19 +2744,20 @@ mod tests {
         // The probe observes control state by default, as the command line does, so the
         // snapshot it writes carries that scope.
         assert!(arguments.scan.read_controls, "the default command observes .gitignore");
-        let mut config = OpenConfig {
-            scan: arguments.scan.clone(),
-            cache_path: Some(snapshot),
-            policy: CachePolicy::Only,
-            analysis: AnalysisRequest::default(),
-        };
+        let (mut basis, delivery) = open_plan(
+            root.path(),
+            &arguments.scan,
+            CachePolicy::Only,
+            Some(snapshot),
+            AnalysisRequest::default(),
+        );
         // Index-returning cache-only open requires the exact stored scope. Report-only
         // projection would let a controls-off request read it and fail to test the CLI path.
-        let (index, report) = fdu_core::open(root.path(), &config).expect("the CLI scope");
+        let (index, report) = fdu_core::open(&basis, &delivery).expect("the CLI scope");
         assert!(report.is_complete());
         assert_eq!(index.is_ignored(std::path::Path::new("ignored.txt")).ok(), Some(Some(true)));
-        config.scan.read_controls = false;
-        assert!(fdu_core::open(root.path(), &config).is_err(), "controls were observed");
+        basis.scope.read_controls = false;
+        assert!(fdu_core::open(&basis, &delivery).is_err(), "controls were observed");
     }
 
     #[test]

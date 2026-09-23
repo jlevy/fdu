@@ -40,7 +40,7 @@ Whether a request reads `.gitignore` files is decided at runtime by its
 separate snapshot scope.
 
 Content inspection is optional and disabled by default.
-`OpenConfig::analysis` enables bounded streaming line, prose, and common-language SLOC
+`Basis::content` enables bounded streaming line, prose, and common-language SLOC
 metrics; sparse type, family, and language summaries; and independently versioned
 sidecar reuse without changing the metadata snapshot format or cost model for
 metadata-only consumers.
@@ -54,12 +54,13 @@ confidence are retained in reports and sidecars.
 
 ```rust
 use fdu_core::content::AnalysisSet;
-use fdu_core::{OpenConfig, open};
+use fdu_core::{CachePolicy, open};
+use fdu_core::query::{Basis, Delivery, Scope};
 use std::path::Path;
 
-let mut config = OpenConfig::default();
-config.analysis.profile = AnalysisSet::ALL;
-let (index, report) = open(Path::new("."), &config)?;
+let basis = Basis { root: Path::new(".").into(), scope: Scope::default(), content: AnalysisSet::ALL };
+let delivery = Delivery::new(CachePolicy::Auto, None);
+let (index, report) = open(&basis, &delivery)?;
 let lines = index
     .content_rollup(Path::new(""))
     .map_or(0, |root| root.total.lines.metrics.physical_lines);

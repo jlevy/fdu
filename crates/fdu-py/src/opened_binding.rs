@@ -4,6 +4,13 @@
 //! releases the GIL for every engine operation, and converts complete engine results
 //! back to ordinary Python values. It owns no scheduler, cache, or duplicate lifecycle.
 
+fn open_planned(root: &std::path::Path, options: OpenOptions) -> fdu_core::Result<OpenedIndex> {
+    let mut delivery = fdu_core::query::Delivery::new(fdu_core::CachePolicy::Off, None);
+    delivery.batch_size = options.batch_size;
+    let plan = options.plan(root, &delivery)?;
+    OpenedIndex::open(&plan, options)
+}
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1184,7 +1191,7 @@ impl PyOpenedIndex {
                     options.types =
                         Some(Arc::new(fdu_core::classify::TypeRegistry::from_manifest(&source)?));
                 }
-                OpenedIndex::open(&root, options)
+                open_planned(&root, options)
             })
             .map_err(opened_py_err)?;
         Ok(Self { inner })
@@ -1322,7 +1329,7 @@ mod tests {
         Python::initialize();
         let root = TestRoot::new();
         std::fs::write(root.0.join("seed.txt"), b"seed").expect("write seed");
-        let opened = OpenedIndex::open(&root.0, OpenOptions::default()).expect("open test root");
+        let opened = open_planned(&root.0, OpenOptions::default()).expect("open test root");
         let cursor = ready(&opened).change_cursor;
         let producer = opened.clone();
         let changed_path = root.0.join("changed.txt");

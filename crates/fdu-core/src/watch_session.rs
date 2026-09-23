@@ -11,12 +11,11 @@
 //! polling: `FSEvents` on macOS, inotify on Linux, `ReadDirectoryChangesW` on Windows. An
 //! idle tree costs no filesystem work at all. Events are hints, so each coalesced path is
 //! verified with one fresh stat before it becomes a delta, and the interval a caller
-//! passes throttles only how often aggregate views are re-rendered — it plays no part in
-//! detection.
+//! passes throttles aggregate repaints and persistence — it plays no part in detection.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::engine_contract::{Commit, EffectiveChange, EntryKind, Error, Result};
 use crate::index::IndexHandle;
@@ -109,15 +108,101 @@ struct EntryFacts {
     mtime_ns: i64,
 }
 
+/// The result of a throttled attempt to persist a live session.
+#[derive(Debug)]
+pub enum SaveOutcome {
+    /// The metadata snapshot reached disk.
+    Written,
+    /// No write was due, or the plan could not yet persist the current state.
+    Skipped,
+    /// Persistence failed; the live session remains usable and will retry.
+    Failed(Error),
+}
+
+struct Persistence {
+    pending: bool,
+    last_attempt: Instant,
+}
+
+impl Persistence {
+    fn persist_due(
+        &mut self,
+        now: Instant,
+        interval: Duration,
+        save: impl FnOnce() -> Result<bool>,
+    ) -> SaveOutcome {
+        if !save_is_due(self.pending, now.saturating_duration_since(self.last_attempt), interval) {
+            return SaveOutcome::Skipped;
+        }
+        let outcome = match save() {
+            Ok(true) => SaveOutcome::Written,
+            Ok(false) => SaveOutcome::Skipped,
+            Err(error) => SaveOutcome::Failed(error),
+        };
+        self.pending = pending_after(&outcome);
+        // Skips and failures are throttled too, while retaining the pending work.
+        self.last_attempt = now;
+        outcome
+    }
+}
+
+fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
+    pending && since_last_save >= interval
+}
+
+fn pending_after(outcome: &SaveOutcome) -> bool {
+    !matches!(outcome, SaveOutcome::Written)
+}
+
 /// An index paired with a watcher, answering one request continuously.
 pub struct Session {
     index: IndexHandle,
     watcher: Watcher,
     scan: ScanConfig,
     request: Request,
+    plan: crate::Plan,
+    persistence: Persistence,
+    startup_save_error: Option<Error>,
 }
 
 impl Session {
+    /// Open a tree and bind observation under the shared execution plan.
+    ///
+    /// Startup persistence is joined before binding the session. A save failure is
+    /// returned by the first `persist_due` call, so it does not discard a valid live
+    /// answer. Filesystem and observation failures still fail startup.
+    pub fn start(request: Request, mut delivery: Delivery) -> Result<Self> {
+        delivery.watch.get_or_insert_with(WatchDelivery::default);
+        let plan =
+            crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
+        let (index, _report, pending, _diagnostics) = crate::execute(&plan, &request.basis, false)?;
+        let startup_save_error = pending.join().err();
+        let index = std::sync::Arc::into_inner(index)
+            .expect("the joined writer released the only other reference");
+        let mut session =
+            Self::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())?;
+        session.persistence.pending |= startup_save_error.is_some();
+        session.startup_save_error = startup_save_error;
+        Ok(session)
+    }
+
+    /// Persist pending changes when the watch delivery's interval has elapsed.
+    ///
+    /// Call this after batches and idle timeouts. Only a completed write clears pending
+    /// changes; a refused or failed write is retried on a later interval. `now` is a
+    /// monotonic caller-supplied clock so wall-clock corrections cannot postpone saves.
+    pub fn persist_due(&mut self, now: Instant) -> SaveOutcome {
+        if let Some(error) = self.startup_save_error.take() {
+            self.persistence.last_attempt = now;
+            return SaveOutcome::Failed(error);
+        }
+        let interval = self.plan.delivery().watch.expect("watch plan").interval;
+        self.persistence.persist_due(now, interval, || {
+            let index = self.index.snapshot()?;
+            crate::persist_index(&index, &self.plan)
+        })
+    }
+
     /// Start watching an already-opened index, answering `request` as the tree changes.
     ///
     /// `request` carries its own `now`, fixed when it was built: a watch answers one
@@ -151,15 +236,13 @@ impl Session {
         watch: WatchConfig,
     ) -> Result<Self> {
         let root = index.root_path()?;
-        let scan = request.basis.scope.clone();
+        let scan = request.basis.scope.scan_config(delivery);
         // What no delivery can carry, before anything stored is read and before the
         // backend is bound: this is the rule each surface used to keep for itself, so a
         // library caller could watch what `--watch` has always refused.
-        let delivery = Delivery {
-            watch: delivery.watch.or(Some(WatchDelivery { interval: watch.settle })),
-            ..delivery.clone()
-        };
-        request.validate_delivery(&delivery).map_err(Error::InvalidRequest)?;
+        let delivery =
+            Delivery { watch: Some(delivery.watch.unwrap_or_default()), ..delivery.clone() };
+        crate::plan(&request, &delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
         // Reject an out-of-scope watch before the backend is bound, so a rejected run
         // never leaves a watcher registered on the tree.
         scan.validate_for_scope(index.scope()?)?;
@@ -167,7 +250,7 @@ impl Session {
         // identity, control tier included, so what remains is what this index holds.
         let held = Basis {
             root: root.clone(),
-            scope: scan.clone(),
+            scope: scan.clone().into(),
             content: index.read_with(crate::Index::content_set)?,
         };
         request.validate_read(&held).map_err(Error::InvalidRequest)?;
@@ -190,17 +273,30 @@ impl Session {
         watcher: Watcher,
         scan: ScanConfig,
     ) -> Result<Self> {
-        let reconciliation = crate::scan::reconcile_handle(&index, &scan, &mut |_| {})?;
+        let mut dirty = false;
+        let reconciliation = crate::scan::reconcile_handle(&index, &scan, &mut |commit| {
+            dirty |= !commit.changes.is_empty();
+        })?;
         if !reconciliation.scan.is_complete() && !delivery.accept_partial {
             return Err(Error::ObservationHandoffIncomplete);
         }
-        drain_initial_capture(&watcher, &index, &scan)?;
+        dirty |= drain_initial_capture(&watcher, &index, &scan)?;
         if !delivery.accept_partial
             && !index.read_with(|index| crate::query::TreeStatus::of(index, &request).complete)?
         {
             return Err(Error::ObservationHandoffIncomplete);
         }
-        Ok(Self { index, watcher, scan, request })
+        let plan =
+            crate::plan(&request, delivery, crate::Route::Watch).map_err(Error::InvalidRequest)?;
+        Ok(Self {
+            index,
+            watcher,
+            scan,
+            request,
+            plan,
+            persistence: Persistence { pending: dirty, last_attempt: Instant::now() },
+            startup_save_error: None,
+        })
     }
 
     /// The request this session answers.
@@ -241,9 +337,10 @@ impl Session {
         let outcome =
             self.watcher.apply_next(&self.index, &self.scan, timeout, &mut |commit: &Commit| {
                 commits.push(commit.clone());
-            })?;
+            });
 
-        let Some(_report) = outcome else {
+        self.persistence.pending |= commits.iter().any(|commit| !commit.changes.is_empty());
+        let Some(_report) = outcome? else {
             return Ok(None);
         };
 
@@ -488,12 +585,22 @@ impl Session {
     }
 }
 
-fn drain_initial_capture(watcher: &Watcher, index: &IndexHandle, scan: &ScanConfig) -> Result<()> {
+fn drain_initial_capture(
+    watcher: &Watcher,
+    index: &IndexHandle,
+    scan: &ScanConfig,
+) -> Result<bool> {
+    let mut dirty = false;
     for _ in 0..2 {
         watcher.flush_capture()?;
         let mut drained = false;
         for _ in 0..=watcher.capture_backlog_bound() {
-            if watcher.apply_next(index, scan, Duration::ZERO, &mut |_| {})?.is_none() {
+            if watcher
+                .apply_next(index, scan, Duration::ZERO, &mut |commit| {
+                    dirty |= !commit.changes.is_empty();
+                })?
+                .is_none()
+            {
                 drained = true;
                 break;
             }
@@ -502,12 +609,204 @@ fn drain_initial_capture(watcher: &Watcher, index: &IndexHandle, scan: &ScanConf
             return Err(Error::ObservationHandoffIncomplete);
         }
     }
-    Ok(())
+    Ok(dirty)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The watch loop's save throttle, as a table over every state that reaches it.
+    ///
+    /// Two of the three defects review found on this branch were transitions in here, and
+    /// the second was introduced by fixing the first. End-to-end tests could not catch
+    /// either: they observe whether a file changed on disk, which cannot distinguish "not
+    /// due yet" from "due and skipped", nor a cleared flag from a retained one.
+    #[test]
+    fn a_save_is_due_only_when_a_change_is_pending_and_the_throttle_has_elapsed() {
+        let interval = Duration::from_secs(1);
+        let cases = [
+            // (pending, since last save, due, what this case is)
+            (true, Duration::from_secs(2), true, "pending and past the interval"),
+            (true, interval, true, "pending, exactly at the interval: inclusive"),
+            // The R5 case. Not due *now* -- and the flag stays set, which is the half that
+            // was missing: the idle path saves it once the interval passes.
+            (true, Duration::from_millis(1), false, "pending but throttled"),
+            (false, Duration::from_secs(60), false, "nothing pending, however long it has been"),
+            (false, Duration::ZERO, false, "nothing pending and just saved"),
+        ];
+
+        for (pending, since, want, case) in cases {
+            assert_eq!(save_is_due(pending, since, interval), want, "{case}");
+        }
+    }
+
+    /// A throttled change must survive every outcome except a completed write.
+    #[test]
+    fn only_a_completed_write_clears_the_pending_change() {
+        // The R7 case is Skipped and Failed: clearing the flag for either means the idle
+        // path never retries, so on a quiet tree the change is never persisted at all.
+        assert!(!pending_after(&SaveOutcome::Written), "a completed write persists the change");
+        assert!(
+            pending_after(&SaveOutcome::Skipped),
+            "a skipped save wrote nothing, so the change is still owed to disk",
+        );
+        assert!(
+            pending_after(&SaveOutcome::Failed(Error::Snapshot("failed".into()))),
+            "a failed save must be retried, not forgotten"
+        );
+    }
+
+    /// The sequence that defeated persistence in its most common shape.
+    #[test]
+    fn a_burst_then_a_quiet_tree_still_persists() {
+        let interval = Duration::from_secs(1);
+
+        // A change arrives too soon after the last save, so nothing is written yet.
+        let mut pending = true;
+        assert!(!save_is_due(pending, Duration::from_millis(50), interval));
+        assert!(pending, "the throttle must not consume the change");
+
+        // The tree goes quiet: no further batches will ever arrive. The idle path is the
+        // only remaining caller, and once the interval passes the save must happen.
+        assert!(save_is_due(pending, Duration::from_secs(3), interval));
+
+        // A skip at that point keeps it pending for the next idle tick rather than
+        // silently dropping the session's work.
+        pending = pending_after(&SaveOutcome::Skipped);
+        assert!(pending);
+        pending = pending_after(&SaveOutcome::Written);
+        assert!(!pending, "once written, the loop stops rewriting an unchanged index");
+    }
+
+    #[test]
+    fn skips_and_failures_retry_only_after_another_interval() {
+        let start = Instant::now();
+        let interval = Duration::from_secs(2);
+        let mut persistence = Persistence { pending: true, last_attempt: start };
+        assert!(matches!(
+            persistence.persist_due(start + interval / 2, interval, || panic!("throttled")),
+            SaveOutcome::Skipped
+        ));
+        assert!(matches!(
+            persistence.persist_due(start + interval, interval, || Ok(false)),
+            SaveOutcome::Skipped
+        ));
+        assert!(persistence.pending);
+        assert!(matches!(
+            persistence.persist_due(start + interval, interval, || panic!("skip was throttled")),
+            SaveOutcome::Skipped
+        ));
+        assert!(matches!(
+            persistence.persist_due(start + interval * 2, interval, || {
+                Err(Error::Snapshot("disk unavailable".into()))
+            }),
+            SaveOutcome::Failed(_)
+        ));
+        assert!(persistence.pending);
+        assert!(matches!(
+            persistence
+                .persist_due(start + interval * 2, interval, || panic!("failure was throttled")),
+            SaveOutcome::Skipped
+        ));
+        assert!(matches!(
+            persistence.persist_due(start + interval * 3, interval, || Ok(true)),
+            SaveOutcome::Written
+        ));
+        assert!(!persistence.pending);
+        assert!(matches!(
+            persistence.persist_due(start + interval * 4, interval, || panic!("already persisted")),
+            SaveOutcome::Skipped
+        ));
+    }
+
+    #[test]
+    fn handoff_changes_are_persisted_after_the_tree_goes_quiet() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let cache_path = cache.path().join("snapshot");
+        let scan = ScanConfig::default();
+        std::fs::write(root.path().join("before.txt"), b"before").expect("before");
+        let (index, _) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let interval = Duration::from_secs(2);
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Auto,
+            cache_path: Some(cache_path.clone()),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let (watcher, _sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        std::fs::write(root.path().join("during-handoff.txt"), b"handoff").expect("handoff change");
+        let mut session = Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            watcher,
+            scan,
+        )
+        .expect("handoff");
+        let started = session.persistence.last_attempt;
+        assert!(session.persistence.pending, "handoff changes need persistence too");
+        assert!(matches!(session.persist_due(started), SaveOutcome::Skipped));
+        assert!(!cache_path.exists(), "throttle delays the write");
+        assert!(matches!(session.persist_due(started + interval), SaveOutcome::Written));
+        let restored = crate::snapshot::load(&cache_path).expect("load").expect("saved");
+        assert!(matches!(
+            restored.path_state(std::path::Path::new("during-handoff.txt")),
+            crate::PathState::Present { .. }
+        ));
+        assert!(matches!(session.persist_due(started + interval * 2), SaveOutcome::Skipped));
+    }
+
+    #[test]
+    fn startup_save_failure_keeps_the_session_live_and_retries() {
+        let root = tempfile::tempdir().expect("root");
+        let cache = tempfile::tempdir().expect("cache");
+        let cache_path = cache.path().join("blocked-snapshot");
+        std::fs::create_dir(&cache_path).expect("directory blocks snapshot rename");
+        std::fs::write(root.path().join("file.txt"), b"content").expect("file");
+        let interval = Duration::from_secs(2);
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: ScanConfig::default().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Refresh,
+            cache_path: Some(cache_path.clone()),
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let mut session = Session::start(request, delivery).expect("save failure is nonfatal");
+        assert!(session.report(std::time::SystemTime::now()).expect("live report").status.complete);
+        let now = Instant::now();
+        assert!(matches!(session.persist_due(now), SaveOutcome::Failed(_)));
+        std::fs::remove_dir(&cache_path).expect("restore writable destination");
+        assert!(matches!(session.persist_due(now), SaveOutcome::Skipped));
+        assert!(matches!(session.persist_due(now + interval), SaveOutcome::Written));
+        assert!(crate::snapshot::load(&cache_path).expect("read snapshot").is_some());
+    }
 
     #[test]
     fn an_update_that_leaves_attribute_selection_emits_remove() {
@@ -519,7 +818,7 @@ mod tests {
         let request = Request::new(
             Basis {
                 root: root.path().to_path_buf(),
-                scope: scan.clone(),
+                scope: scan.clone().into(),
                 content: crate::content::AnalysisSet::NONE,
             },
             Query {
@@ -533,7 +832,9 @@ mod tests {
             cache_path: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
-            analysis_workers: 0,
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
         };
         let session =
             Session::new(IndexHandle::new(index), request, &delivery, WatchConfig::default())
@@ -609,7 +910,7 @@ mod tests {
         let request = Request::new(
             Basis {
                 root: root.path().to_path_buf(),
-                scope: scan.clone(),
+                scope: scan.clone().into(),
                 content: crate::content::AnalysisSet::NONE,
             },
             Query::default(),
@@ -626,7 +927,9 @@ mod tests {
             cache_path: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
-            analysis_workers: 0,
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
         };
 
         let Err(error) = Session::new(
@@ -664,7 +967,7 @@ mod tests {
         let request = Request::new(
             Basis {
                 root: root.path().to_path_buf(),
-                scope: scan.clone(),
+                scope: scan.clone().into(),
                 content: crate::content::AnalysisSet::NONE,
             },
             Query::default(),
@@ -675,7 +978,9 @@ mod tests {
             cache_path: None,
             accept_partial: false,
             watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
-            analysis_workers: 0,
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
         };
         let script = tempfile::NamedTempFile::new().expect("script");
         let (watcher, sender) =

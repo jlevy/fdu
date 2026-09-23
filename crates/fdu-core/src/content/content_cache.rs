@@ -119,11 +119,13 @@ pub fn save_content_cache(index: &Index, path: &Path) -> Result<()> {
     // The tier states its records' type rules once, in its entry tier, and a save writes it
     // only as the identity this index gives records of that set, so records produced under
     // any other, such as other type rules, never reach a sidecar under its label.
-    if *identity != index.content_identity(identity.analysis) {
-        return Err(Error::Snapshot(
+    let wanted = index.content_identity(identity.analysis);
+    let content = content.admit(&wanted).ok_or_else(|| {
+        Error::Snapshot(
             "content records were produced under another identity than their index".into(),
-        ));
-    }
+        )
+    })?;
+    let identity = content.identity();
     // Every record the tier holds carries its identity, because the tier refuses any other,
     // so which records are written is decided per record: those this pass verified.
     let records = content
@@ -171,9 +173,11 @@ pub fn load_content_cache(
     wanted: &ContentTierIdentity,
     path: &Path,
 ) -> Result<ContentCacheLoad> {
-    if !wanted.analysis.is_enabled() || *wanted != index.content_identity(wanted.analysis) {
+    let current = index.content_identity(wanted.analysis);
+    let Some(admission) = current.admit(wanted).filter(|_| wanted.analysis.is_enabled()) else {
         return Ok(ContentCacheLoad::default());
-    }
+    };
+    let wanted = admission.identity();
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -254,13 +258,13 @@ pub fn load_content_cache(
         let apply_started = timings.as_ref().map(|_| Instant::now());
         match candidates.remove(&relative_path) {
             Some(candidate)
-                if candidate.attrs.fingerprint() == analysis.fingerprint
-                    && analysis.is_reusable() =>
+                if candidate.attrs.fingerprint() == analysis.value().fingerprint
+                    && analysis.value().is_reusable() =>
             {
-                let coverage_exclusion = analysis_outcomes(&analysis).any(|outcome| {
+                let coverage_exclusion = analysis_outcomes(analysis.value()).any(|outcome| {
                     !matches!(outcome, CoverageReason::Analyzed | CoverageReason::Binary)
                 });
-                let bytes = analysis.bytes;
+                let bytes = analysis.value().bytes;
                 match index.apply_restored_analysis(candidate, analysis) {
                     AnalysisApplyOutcome::Applied => {
                         loaded.hits = loaded.hits.saturating_add(1);
@@ -508,18 +512,18 @@ fn read_identity(reader: &mut Reader<'_>, engine: u64) -> Option<ContentTierIden
 }
 
 /// Header-only sidecar parse. Records are decoded one at a time by [`read_record`].
-struct RecordStream<'a> {
+struct RecordStream<'a, 'identity> {
     reader: Reader<'a>,
     remaining: u64,
-    profile: AnalysisSet,
+    admission: crate::stored_state::ContentAdmission<'identity>,
 }
 
 /// Parse a sidecar for `root` whose content tier identity equals `wanted`.
-fn parse_header<'a>(
+fn parse_header<'a, 'identity>(
     image: &'a [u8],
     root: &Path,
-    wanted: &ContentTierIdentity,
-) -> Option<RecordStream<'a>> {
+    wanted: &'identity ContentTierIdentity,
+) -> Option<RecordStream<'a, 'identity>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
     if reader.u32()? != FORMAT_VERSION {
@@ -533,10 +537,7 @@ fn parse_header<'a>(
     // from another engine or entry tier, which holds their type rules, or another analyzer
     // set, version, or option.
     let identity = read_identity(&mut reader, engine)?;
-    if identity != *wanted {
-        return None;
-    }
-    let profile = identity.analysis;
+    let admission = wanted.admit(&identity)?;
     if reader.os_string()?.as_os_str() != root.as_os_str() {
         return None;
     }
@@ -544,10 +545,12 @@ fn parse_header<'a>(
     if count > MAX_RECORDS {
         return None;
     }
-    Some(RecordStream { reader, remaining: count, profile })
+    Some(RecordStream { reader, remaining: count, admission })
 }
 
-fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)> {
+fn read_record<'identity>(
+    stream: &mut RecordStream<'_, 'identity>,
+) -> Option<(PathBuf, crate::stored_state::AdmittedRecord<'identity>)> {
     let relative_path = PathBuf::from(stream.reader.os_string()?);
     if !record_path_stays_inside_root(&relative_path) {
         return None;
@@ -568,16 +571,11 @@ fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)>
     let lines = read_outcome(&mut stream.reader, read_basic_metrics)?;
     let code = read_optional_outcome(&mut stream.reader, read_code_metrics)?;
     let words = read_optional_outcome(&mut stream.reader, read_word_metrics)?;
-    if code.is_some() != stream.profile.includes_code()
-        || words.is_some() != stream.profile.includes_words()
-    {
-        return None;
-    }
     let error = String::from_utf8(stream.reader.bytes(MAX_ERROR_BYTES)?).ok()?;
     stream.remaining = stream.remaining.saturating_sub(1);
     Some((
         relative_path,
-        FileAnalysis {
+        stream.admission.record(FileAnalysis {
             fingerprint,
             bytes,
             detection,
@@ -585,7 +583,7 @@ fn read_record(stream: &mut RecordStream<'_>) -> Option<(PathBuf, FileAnalysis)>
             code,
             words,
             error: (!error.is_empty()).then_some(error),
-        },
+        })?,
     ))
 }
 

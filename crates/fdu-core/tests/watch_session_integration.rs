@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime};
 
-use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::content::AnalysisSet;
 use fdu_core::query::{
     AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, SizeMetric,
     ViewSpec, WatchDelivery,
@@ -20,13 +20,27 @@ use fdu_core::query::{
 use fdu_core::query::Delivery as RequestDelivery;
 use fdu_core::session::{ChangeKind, Session};
 use fdu_core::watch::WatchConfig;
-use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
+use fdu_core::{CachePolicy, IndexHandle};
+
+fn open(
+    root: &Path,
+    delivery: &RequestDelivery,
+) -> fdu_core::Result<(fdu_core::Index, fdu_core::OpenReport)> {
+    fdu_core::open(
+        &Basis {
+            root: root.to_path_buf(),
+            scope: fdu_core::query::Scope::default(),
+            content: AnalysisSet::NONE,
+        },
+        delivery,
+    )
+}
 
 /// Long enough for a backend to deliver and coalesce, short enough to fail fast.
 const SETTLE: Duration = Duration::from_secs(60);
 
 fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = open(root, &config).expect("open");
     Session::new(
         IndexHandle::new(index),
@@ -41,18 +55,17 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
 ///
 /// Named rather than defaulted, because the cache policy is what a session validates the
 /// cache-only rule against and a fabricated one always read `auto` (fdu-i18y).
-fn watching(config: &OpenConfig) -> RequestDelivery {
-    let (_basis, delivery) = config.split(Path::new("/unused"));
+fn watching(delivery: &RequestDelivery) -> RequestDelivery {
     RequestDelivery {
         watch: Some(WatchDelivery { interval: Duration::from_millis(200) }),
-        ..delivery
+        ..delivery.clone()
     }
 }
 
 /// The request a watch answers: the basis its index was opened under, and this query.
 fn request(root: &Path, content: AnalysisSet, query: Query) -> Request {
     Request::new(
-        Basis { root: root.to_path_buf(), scope: ScanConfig::default(), content },
+        Basis { root: root.to_path_buf(), scope: fdu_core::query::Scope::default(), content },
         query,
         std::time::SystemTime::now(),
     )
@@ -192,7 +205,7 @@ fn session_reconciles_a_mutation_that_precedes_watcher_binding() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("before-bind.txt");
     fs::write(&path, b"old").expect("seed");
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _) = open(dir.path(), &config).expect("open baseline");
 
     fs::write(&path, b"changed before binding").expect("mutate before session");
@@ -394,12 +407,16 @@ fn a_session_refuses_an_analyzed_index() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"one two\n").expect("seed");
     let lines = AnalysisSet::NONE.with_lines();
-    let config = OpenConfig {
-        policy: CachePolicy::Off,
-        analysis: AnalysisRequest { profile: lines, ..AnalysisRequest::default() },
-        ..OpenConfig::default()
-    };
-    let (index, _report) = open(dir.path(), &config).expect("open");
+    let config = RequestDelivery::new(CachePolicy::Off, None);
+    let (index, _report) = fdu_core::open(
+        &Basis {
+            root: dir.path().to_path_buf(),
+            scope: fdu_core::query::Scope::default(),
+            content: lines,
+        },
+        &config,
+    )
+    .expect("open");
     let handle = IndexHandle::new(index);
 
     let refused = Session::new(
@@ -447,7 +464,7 @@ fn a_session_refuses_an_analyzed_index() {
 fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = open(dir.path(), &config).expect("open");
     let handle = IndexHandle::new(index);
 
@@ -472,7 +489,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
     let narrowed = Request::new(
         Basis {
             root: dir.path().to_path_buf(),
-            scope: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+            scope: fdu_core::query::Scope { max_depth: Some(2), ..Default::default() },
             content: AnalysisSet::NONE,
         },
         Query::default(),
@@ -500,7 +517,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
 fn a_watchs_time_window_is_fixed_when_its_request_is_built() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"one\n").expect("seed");
-    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let config = RequestDelivery::new(CachePolicy::Off, None);
     let (index, _report) = open(dir.path(), &config).expect("open");
 
     let started = SystemTime::now();
