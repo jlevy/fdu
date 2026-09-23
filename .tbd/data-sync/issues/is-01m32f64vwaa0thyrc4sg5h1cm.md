@@ -5,13 +5,13 @@ title: Content-sidecar identity encodes the analyzer set three times, masking pa
 kind: bug
 status: in_progress
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:10:59.707Z
-updated_at: 2026-09-23T02:25:14.393Z
+updated_at: 2026-09-23T02:28:50.657Z
 ---
 Verified by execution, 2026-09-21.
 
@@ -26,3 +26,5 @@ Related shape: every guard that catches the containment mutant is a hit/miss/app
 ## Notes
 
 Central ContentTierIdentity admission now compares all identity components in one relation and private projections guard consumers (fdu-4vbi). Added explicit cold-vs-wider-cache-history value assertions to a_wider_sidecar_is_a_clean_miss_for_a_narrower_request: every metric and unit coverage in every grouped row plus total. Existing analyzer independence regression compares every metric by owner across profiles, including unknown/binary/Haskell inputs. Identity format remains unchanged; redundant encoded fields are validated deliberately by central admission. New focused test awaiting serialized Rust slot; final acceptance remains open.
+
+Focused cold-versus-wider-history row-value regression passed with a fresh owning-worktree compilation; core all-build-feature/all-target Clippy clean. Independent Astra review found no issues. Commit043efc98, PR116. Full composed acceptance remains pending.
