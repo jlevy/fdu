@@ -2734,13 +2734,16 @@ impl Index {
 
     /// Drop retained issues a reconciliation that visited `path` has disproved.
     ///
-    /// An issue about a path at or below `path`, observed before the pass began, described
+    /// An issue about a path at or below `path`, published before the pass began, described
     /// something the pass has just read without an error: a directory that could not be
     /// listed, an entry whose metadata could not be read, a control the index refused. It is
-    /// no longer true, and keeping it would explain a state the root is not in. Two kinds of
-    /// issue survive. An observation gap records that the observer lost precision and had to
-    /// recover, which the recovery does not undo. And an issue without a path cannot be
-    /// placed under the pass. The omitted count stays: what it counted was never retained.
+    /// no longer true, and keeping it would explain a state the root is not in. Three kinds
+    /// of issue survive. An observation gap records that the observer lost precision and had
+    /// to recover, which the recovery does not undo. An issue without a path cannot be placed
+    /// under the pass. And an issue published at or after `started_at` came from a pass
+    /// that closed while this one ran, whose `Partial` mark this pass leaves in place: the
+    /// issue is stamped with the same epoch as that mark so the two survive together. The
+    /// omitted count stays: what it counted was never retained.
     fn drop_disproven_issues(&mut self, path: &Path, started_at: u64) {
         let mut position = 0;
         while position < self.issues.len() {
@@ -3199,16 +3202,6 @@ impl Index {
         {
             self.drop_disproven_omitted(started_at);
         }
-        for error in errors.errors.iter().chain(errors.terminal) {
-            let issue = Issue::from_error_under(&self.root_path, error);
-            if issue
-                .path
-                .as_deref()
-                .is_none_or(|issue_path| issue_path.starts_with(&path) && still_owned(issue_path))
-            {
-                self.retain_issue_at(issue, started_at);
-            }
-        }
         let mut state = Vec::new();
         // Completeness describes this directory's own listing, not its descendants.
         // Withdraw old listing evidence at failures before publishing the partial pass.
@@ -3295,6 +3288,21 @@ impl Index {
                     self.writing_pass_started_at_ns = started;
                 }
                 self.state.source = self.applying_source;
+            }
+        }
+        // Retain this pass's failures at the epoch its `Partial` marks were just minted at,
+        // not at `started_at`: a pass that began after this one and closes clean later
+        // keeps the marks (minted after it began) and must keep the issues that explain
+        // them, or a partial subtree would have no cause until the next root pass.
+        // `started_at` is only this pass's own disproof threshold, applied above.
+        for error in errors.errors.iter().chain(errors.terminal) {
+            let issue = Issue::from_error_under(&self.root_path, error);
+            if issue
+                .path
+                .as_deref()
+                .is_none_or(|issue_path| issue_path.starts_with(&path) && still_owned(issue_path))
+            {
+                self.retain_issue(issue);
             }
         }
         for directory in recordable {
@@ -9934,6 +9942,78 @@ mod tests {
         assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
         assert_eq!(index.freshness_at(Path::new("a")), Freshness::Fresh);
         assert_eq!(index.freshness_at(Path::new("b/blocked")), Freshness::Partial);
+    }
+    #[test]
+    fn failure_published_after_a_newer_pass_began_keeps_its_issue_with_its_mark() {
+        // A root pass begins, a child pass begins under it, and the root pass fails on
+        // that child and closes first. Its `Partial` mark is minted after the child pass
+        // began, so the child's clean finish leaves the mark in place; the issue that
+        // explains the mark must follow the same rule, or the root reports a partial with
+        // no explanation until another root pass runs.
+        let root = Path::new("/root");
+        let mut index = Index::new(root);
+        index.apply_ok(&Observation::new(
+            ["x", "x/deep", "healthy"]
+                .map(|path| Op::Upsert {
+                    path: PathBuf::from(path),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                })
+                .to_vec(),
+        ));
+        index.set_initial_scan_freshness(&[]);
+        let (older_root, _) = index.begin_reconcile(Path::new("")).expect("older root");
+        let (newer_child, _) = index.begin_reconcile(Path::new("x")).expect("newer child");
+        let error = crate::Error::io(
+            root.join("x"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed read"),
+        );
+        index
+            .finish_reconcile(
+                Path::new(""),
+                older_root,
+                false,
+                &[],
+                &[PathBuf::from("x")],
+                ReconcileErrors { errors: &[error], terminal: None, disproves_old: true },
+            )
+            .expect("older root fails on x");
+        assert_eq!(index.freshness_at(Path::new("x")), Freshness::Partial);
+        assert_eq!(index.issues().len(), 1);
+
+        index
+            .finish_reconcile(
+                Path::new("x"),
+                newer_child,
+                true,
+                &[],
+                &[],
+                ReconcileErrors { errors: &[], terminal: None, disproves_old: true },
+            )
+            .expect("newer child verifies clean");
+
+        let explained = !index.issues().is_empty();
+        let partial = index.freshness_at(Path::new("x")) == Freshness::Partial;
+        assert_eq!(
+            partial,
+            explained,
+            "a surviving partial mark and its issue must be kept or dropped together: \
+             partial={partial}, issues={:?}",
+            index.issues()
+        );
+        assert!(partial, "the mark minted after the child pass began is the newer claim");
+        assert_eq!(index.issues()[0].path.as_deref(), Some(Path::new("x")));
+        assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert_eq!(index.state.freshness, Freshness::Partial);
+        let request = crate::query::Request::new(
+            crate::query::Basis::held_by(&index),
+            crate::query::Query::default(),
+            std::time::UNIX_EPOCH,
+        );
+        let status = crate::query::TreeStatus::of(&index, &request);
+        assert!(!status.complete);
+        assert_eq!(status.coverage, Coverage::Partial(CoverageReason::Inaccessible));
+        assert_eq!(status.errors.len(), 1, "an incomplete status names its cause");
     }
     #[test]
     fn cold_scan_failure_does_not_verify_unknown_descendants_or_unscoped_work() {

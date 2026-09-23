@@ -434,6 +434,20 @@ impl OpenedIndex {
                 omitted_issues = omitted_issues.saturating_add(1);
             }
         }
+        // A pass retired by newer verification closed its scope partial without an
+        // error of its own: the receipt has to say so, or a caller sees a partial
+        // state with nothing to retry.
+        if report.reconciliation.retry_required() {
+            let issue = crate::Issue::provider_failure(
+                None,
+                "reconciliation interrupted by newer verification; retry this refresh".to_string(),
+            );
+            if issues.len() < crate::MAX_RETAINED_ISSUES {
+                issues.push(issue);
+            } else {
+                omitted_issues = omitted_issues.saturating_add(1);
+            }
+        }
         let work = crate::Work {
             observations: report.reconciliation.observations,
             unchanged: report.reconciliation.apply.unchanged,
@@ -1113,9 +1127,8 @@ fn run_discovery(
 ) -> Result<()> {
     let root_metadata =
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
-    let root_dev = crate::scan::attrs_from(root, &root_metadata)
-        .map_err(|source| Error::io(root, source))?
-        .dev;
+    let root_dev =
+        crate::scan::root_device(root, &root_metadata).map_err(|source| Error::io(root, source))?;
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
@@ -6036,6 +6049,56 @@ mod tests {
         assert_eq!(
             opened.state.index.attrs(Path::new("race")).expect("attrs").expect("retained").size,
             99
+        );
+        opened.close().expect("close");
+    }
+
+    #[test]
+    fn refresh_receipt_names_a_pass_retired_by_newer_verification() {
+        let controls = Arc::new(TestControls::default());
+        let (root, opened) = opened(Arc::clone(&controls));
+        std::fs::write(root.path().join("stable.txt"), b"stable").expect("fixture");
+        controls.gate(TestPoint::AfterRefreshVerification).arm();
+        let refresher = opened.clone();
+        let refresh = thread::spawn(move || refresher.refresh(&[PathBuf::from("")]));
+        controls.gate(TestPoint::AfterRefreshVerification).wait_reached();
+        // The held root pass keeps bounded evidence about newer passes: one entry per
+        // entry present when it began. One more distinct newer scope than that retires
+        // it, so its scope closes partial with no error of its own to report.
+        let budget = opened.state.index.len().expect("entry count");
+        for number in 0..=budget {
+            let path = PathBuf::from(format!("missing-{number}"));
+            let (epoch, _) = opened.state.index.begin_reconcile(&path).expect("begin newer");
+            opened
+                .state
+                .index
+                .finish_reconcile(
+                    &path,
+                    epoch,
+                    true,
+                    &[],
+                    &[],
+                    crate::index::ReconcileErrors {
+                        errors: &[],
+                        terminal: None,
+                        disproves_old: true,
+                    },
+                )
+                .expect("finish newer");
+        }
+        controls.gate(TestPoint::AfterRefreshVerification).release();
+
+        let result = refresh.join().expect("refresh thread").expect("refresh receipt");
+
+        assert_eq!(
+            result.state.coverage,
+            crate::Coverage::Partial(crate::CoverageReason::Inaccessible),
+            "the retired pass publishes its scope partial"
+        );
+        assert!(
+            result.issues.iter().any(|issue| issue.message.contains("retry")),
+            "the receipt must name the retry the retired pass earned: {:?}",
+            result.issues
         );
         opened.close().expect("close");
     }
