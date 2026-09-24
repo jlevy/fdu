@@ -5,7 +5,7 @@ title: End-to-end verification of the final 0.1.0 release candidate
 kind: task
 status: open
 priority: 0
-version: 6
+version: 7
 labels:
   - release
   - testing
@@ -19,7 +19,7 @@ dependencies:
     target: is-01m2phzkwcvz3fwk2nh150bdmj
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:52.755Z
-updated_at: 2026-09-23T08:35:19.345Z
+updated_at: 2026-09-24T19:31:50.309Z
 ---
 After the stabilization fixes merge: main CI green; dispatch the release rehearsal on main; download
 every artifact and verify SHA256SUMS; run the end-to-end harness against the CI-built macOS arm64 wheel
@@ -34,4 +34,4 @@ free-threaded interpreter choice. Harness: scratch e2e_fdu.py (consider committi
 
 ## Notes
 
-2026-09-23 post-merge QA on main 7e06e5a4 (after the alpha correctness stack #99-#117 and performance stack #94/#97/#105/#109 merged; tree identical to the one that passed an uninterrupted make check and make cross-lint). Correctness runbook (macOS arm64, bare metal, APFS, uid 502, 14/17 kinds; devices need root, APFS refuses non-UTF-8): the runbook scripts were stale for report/7 and could not prove serving on a tree with refusals; fixed in PR #118. With the fix: refusal tree 23/23 partial and withheld, 0 mismatches; complete tree 23/23 served, 0 mismatches; cross-warm 30/30; broken-cache wrapper exits 1 with 23 NO-SNAPSHOT. Integration runbook: sections 1-4 and 7 covered by make check on the identical tree; 5 cache by hand ok (runbook text for the first --analyze source is inaccurate after the metadata steps; content tier scanned then revalidated as expected; doc fix in #118); 6 watch ok (idle 0% CPU, record within 2s, snapshot survives kill -9, cache-only serves stale, scope flags exit 2). Full path-independence matrix dispatched on 7e06e5a4. This bead's post-publication items (artifact download, checksums, installed wheel, real trees) remain open.
+2026-09-24 final candidate main b06a0201 (tree afe891a8; #119/#120/#122/#124 merged): uninterrupted make check + cross-lint passed on the identical tree (12de7373); CI 19/19; full path-independence matrix run 35979726461 passed on ubuntu, macOS, Windows. Release-candidate wheel (macOS arm64) installed as the user's global fdu 0.1.0-dev+g12de73735 and smoke-tested. The five-platform release rehearsal dispatch on claude/release-publish was refused by the auto-mode classifier; the maintainer dispatches it. Post-publication items remain.
