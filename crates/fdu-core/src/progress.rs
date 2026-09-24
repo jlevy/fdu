@@ -33,8 +33,10 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 /// order, skipping the ones they do not do: a cold report over a full index goes
 /// `Scanning`, `Indexing` once the walk is over, then `Analyzing` if content was
 /// requested and `Saving` if a snapshot is written; a warm one goes `Loading`,
-/// `Revalidating`, then the same without `Indexing`. A watch's initial scan revalidates
-/// once more after its save, when it binds observation.
+/// `Revalidating`, then the same without `Indexing`. A watch's initial scan then runs a
+/// second pass: after its save it verifies the tree once more while it binds
+/// observation, and that pass begins again at `Revalidating` with the walk counters
+/// restarted, so the line shows the second walk's own progress rather than a sum.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum ProgressPhase {
     /// No route has begun work on this handle.
@@ -96,10 +98,11 @@ impl ProgressPhase {
 
 /// What a route has done so far, as read at one moment.
 ///
-/// A view for display, not a consistent cut: each counter is monotonic over the life of
-/// the handle, but the counters are read one at a time, so a snapshot taken while
-/// workers run can pair a `files` value with a `bytes` value from a moment later. The
-/// phase is the one most recently entered.
+/// A view for display, not a consistent cut: each counter is monotonic within a pass
+/// (every route is one pass, except a watch start, whose closing verification begins a
+/// second), but the counters are read one at a time, so a snapshot taken while workers
+/// run can pair a `files` value with a `bytes` value from a moment later. The phase is
+/// the one most recently entered.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ProgressSnapshot {
     /// The kind of work the route is doing.
@@ -194,7 +197,8 @@ impl Progress {
             )
         });
         ProgressSnapshot {
-            phase: ProgressPhase::from_code(cells.phase.0.load(Ordering::Relaxed)),
+            // Acquire, read before the counters: a new pass stores its phase after zeroing them.
+            phase: ProgressPhase::from_code(cells.phase.0.load(Ordering::Acquire)),
             directories: cells.walk.directories.load(Ordering::Relaxed),
             files: cells.walk.files.load(Ordering::Relaxed),
             bytes: cells.walk.bytes.load(Ordering::Relaxed),
@@ -205,6 +209,20 @@ impl Progress {
     /// Record that the route has begun `phase`.
     pub(crate) fn enter(&self, phase: ProgressPhase) {
         self.cells.phase.0.store(phase.code(), Ordering::Relaxed);
+    }
+
+    /// Begin a second pass at `phase`, with the walk counters back at zero.
+    ///
+    /// Only a watch start runs two passes: its closing verification walks the tree again,
+    /// and counting that walk on top of the first would show about twice the tree. The
+    /// phase is stored after the counters, so a poller that sees the new phase never
+    /// pairs it with the first pass's totals.
+    pub(crate) fn begin_pass(&self, phase: ProgressPhase) {
+        let walk = &self.cells.walk;
+        walk.directories.store(0, Ordering::Relaxed);
+        walk.files.store(0, Ordering::Relaxed);
+        walk.bytes.store(0, Ordering::Relaxed);
+        self.cells.phase.0.store(phase.code(), Ordering::Release);
     }
 
     /// Add one worker's share of the walk since it last added.

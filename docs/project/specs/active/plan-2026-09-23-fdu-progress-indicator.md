@@ -28,7 +28,9 @@ to a wait-state display.
   Every non-interactive run draws nothing, whatever the flag says.
 - Wait 500 ms before the first frame, so a fast run shows no indicator at all.
 - Never interleave with output: the line is cleared before any stdout or stderr write,
-  on success, on error, on panic, and on Ctrl-C.
+  on success, on error, and on Ctrl-C. On a panic, unwinding clears it, but the default
+  panic message can print first; a panic is a bug, and its message matters more than a
+  clean line.
 - Cost nothing measurable when off, and stay within noise when on.
 - Leave every report golden and machine document unchanged; the help and guide goldens,
   and the parity deviation record that embeds the guide’s text, change only by the text
@@ -152,14 +154,20 @@ not change that: it reports how much the walk has read, not what the answer is.
 Counts may include entries a retry rereads; the display calls them walked, not found.
 
 **Hot-path cost:** walker workers already keep local counts in their `ScanReport`. They
-add the deltas to shared counters once per batch they already hand to the sink, never
-per entry, and the shared counters sit on separate cache lines.
+add the deltas to shared counters once per batch they already hand to the sink (per
+directory on the revalidation and reconcile walks, which have no batch for an unchanged
+tree), never per entry, and the shared counters sit on separate cache lines.
 Without a handle, the cost is one `Option` check per batch.
 Content analysis updates its counter in the result loop that already runs on the caller
 thread, where the candidate total is known before the first file.
 
 **Invariant:** when a route completes, the handle’s files and bytes equal the report’s
 own walked totals. This makes the counters testable exactly, not merely plausibly.
+One case is exempt and pinned by its own test: a parallel reconcile wave that overflows
+its deferred-operation bound is discarded and walked again serially, and progress counts
+the discarded reads too.
+A watch start runs a second verifying pass whose counts restart, so its totals are that
+pass’s.
 
 Nothing calls back into the caller.
 A ticker thread polls, so there is no re-entrancy, no callback cost on worker threads,
@@ -170,7 +178,8 @@ and a later Python binding can poll the same way across the FFI boundary.
 `cli.rs` owns every presentation decision, as it does for color.
 
 - **Interactive.** A run is interactive only when stderr is a terminal, `TERM` is set
-  and is not `dumb`, `CI` is unset or empty, and, on Windows, virtual terminal
+  and is not `dumb` (on Windows it may be unset, since cmd, PowerShell, and Windows
+  Terminal set none), `CI` is unset or empty, and, on Windows, virtual terminal
   processing could be enabled for the console (`anstyle-query`’s safe
   `enable_ansi_colors`, already a dependency through clap).
   A legacy console that refuses it would print the erase sequence as text, so it counts
@@ -342,8 +351,8 @@ pieces can proceed in parallel; the ticker joins them.
   completion equal the report’s walked totals on the cold, warm, summary, and analysis
   routes. A run with no handle produces the same report bytes.
 - **Gating.** Following urollup, the terminal facts are injected.
-  Every non-interactive combination (stderr not a terminal, `TERM` unset or `dumb`, `CI`
-  set) writes nothing to stderr under all three flag values.
+  Every non-interactive combination (stderr not a terminal, `TERM` `dumb` or, off
+  Windows, unset, `CI` set) writes nothing to stderr under all three flag values.
   On an interactive run, `auto` draws for human formats and not for machine formats,
   `always` draws for both, and `never` draws nothing.
   Tests assert exact stderr bytes.

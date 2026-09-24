@@ -178,14 +178,14 @@ impl Session {
     /// [`Self::start`], reporting the initial scan through `progress` as it runs.
     ///
     /// The same session as [`Self::start`]; the handle observes the start and changes
-    /// nothing about it. A start is two walks, and both are counted: the open (cold, or a
-    /// load and revalidation), its save joined under
+    /// nothing about it. A start is two passes: the open (cold, or a load and
+    /// revalidation) with its save joined under
     /// [`ProgressPhase::Saving`](crate::ProgressPhase), and then the revalidation that
-    /// closes the gap between that walk and the bound watcher, under
-    /// [`ProgressPhase::Revalidating`](crate::ProgressPhase) once more. On an unchanged
-    /// tree the counters therefore end at twice the tree's totals. Once this returns
-    /// the session reports nothing further through the handle; its repaints are the
-    /// progress from there.
+    /// closes the gap between that walk and the bound watcher. The second pass begins
+    /// again at [`ProgressPhase::Revalidating`](crate::ProgressPhase) with the walk
+    /// counters restarted, so they end at the tree's totals once, not twice. Once this
+    /// returns the session reports nothing further through the handle; its repaints are
+    /// the progress from there.
     pub fn start_with_progress(
         request: Request,
         delivery: Delivery,
@@ -325,6 +325,9 @@ impl Session {
         scan: ScanConfig,
         progress: Option<&crate::Progress>,
     ) -> Result<Self> {
+        if let Some(progress) = progress {
+            progress.begin_pass(crate::ProgressPhase::Revalidating);
+        }
         let observed = ScanConfig { progress: progress.cloned(), ..scan.clone() };
         let mut dirty = false;
         let reconciliation = crate::scan::reconcile_handle(&index, &observed, &mut |commit| {
@@ -1170,9 +1173,13 @@ mod tests {
             crate::ProgressPhase::Revalidating,
             "the handoff revalidation follows the joined save"
         );
-        assert_eq!(after_start.directories, 2 * 5, "the root and four children, twice");
-        assert_eq!(after_start.files, 2 * 12);
-        assert_eq!(after_start.bytes, 2 * bytes);
+        // The closing pass restarts the counters, so they show its walk alone. A backend
+        // that reports a file created just before the watch began can make that pass
+        // read more, never less.
+        assert!(after_start.directories >= 5, "the root and four children: {after_start:?}");
+        assert!(after_start.files >= 12, "{after_start:?}");
+        assert!(after_start.bytes >= bytes, "{after_start:?}");
+        assert!(after_start.files < 2 * 12, "the first pass is not added in: {after_start:?}");
         assert_eq!(after_start.analysis, None);
 
         let plain = Session::start(request(), delivery).expect("plain start");
