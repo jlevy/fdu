@@ -457,6 +457,15 @@ Self-comparison −4.22% [−20.79%, +5.10%]. **Rejected.** Every admitted open 
 for lines; skippable share under 1% of wall.
 A larger read chunk cannot clear 3%. No engine patch.
 
+**exp-156 / H150** and **exp-157 / H151** bound the progress indicator’s engine cost
+(`fdu-2e8o`, [#120](https://github.com/jlevy/fdu/pull/120)) on
+`system-private-frameworks`, both **uncontrolled** (quiet refused at 84.6% and 100%).
+With no handle, the branch against `main` is `default-tree` −1.78% [−6.33%, +2.90%] over
+20 pairs, every metadata job’s interval including zero: **confirmed**. With a handle
+attached and polled every 80 ms (probe `--progress`), `default-tree` is +5.75%
+[−5.34%, +10.91%] over 12 pairs: **open**, since neither noninferiority nor a cost is
+established. Re-run H151 on a quiet host before calling the attached handle free.
+
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
@@ -880,12 +889,14 @@ Read ~8–9 ms. Digest identical.
 Load/core 0.059–0.102 held.
 Do not retry H116. H83 remains format.
 
-Next free experiment id is **exp-156** and next free unused hypothesis id is **H150**.
+Next free experiment id is **exp-158** and next free unused hypothesis id is **H152**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
-keep, H148 the Linux PGO screen, and H149 the leftover-timer restore mix; H72 reused its
-existing id. exp-113 remains reserved unused.
+keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
+(exp-156–157) the Darwin progress-handle cost on
+[#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
+exp-113 remains reserved unused.
 
 ## Before the First Round
 

@@ -39,7 +39,8 @@ Library steps are time-boxed and must stay bounded.
 | Phase 3: Cache × analyze | ✅ Passed | `auto` second run 3.5× faster; `off` stayed `0 cached` |
 | Phase 4: Medium tree | ✅ Passed | Whole-tree metadata only; analyze on `docs/` |
 | Phase 5: Bounded Library | ✅ Passed | Depth 2 exit 2 (TCC); no SIGKILL |
-| Phase 6: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
+| Phase 6: Terminal Progress | ⏳ Pending | Added 2026-09-23 with the progress indicator |
+| Phase 7: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
 
@@ -369,9 +370,47 @@ Distinguish “fdu returned a partial result” from “fdu exploded or was kill
 
 * * *
 
-## Phase 6: Results
+## Phase 6: Terminal Progress
 
-### 6.1 Record the Table
+Run by hand in a real terminal window (not through the harness, which captures output
+and is therefore non-interactive).
+The automated `make test-terminal` covers drawing, erasing, and Ctrl-C in a
+pseudo-terminal; this phase covers what only a person judges.
+Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
+
+**Verify**:
+
+- [ ] `fdu "$FDU_QA_MEDIUM"` shows one animated line on stderr after about half a
+  second: spinner, the root, then `Scanning` with climbing counts, `Indexing` briefly,
+  then the report, with no line left above it
+- [ ] `fdu --analyze all` on a medium subdirectory shows `Analyzing` with a climbing
+  percentage (the line is erased as soon as the work ends, so `100%` may never be seen)
+- [ ] A small tree (`fdu .` in this repository) shows no indicator at all
+- [ ] `fdu "$FDU_QA_MEDIUM" 2>/tmp/fdu-stderr` leaves `/tmp/fdu-stderr` empty
+- [ ] `fdu --format json "$FDU_QA_MEDIUM" >/dev/null` shows nothing;
+  `--progress always --format json` shows the indicator; `--progress never` shows
+  nothing for any format
+- [ ] `CI=1 fdu "$FDU_QA_MEDIUM"` and `TERM=dumb fdu "$FDU_QA_MEDIUM"` show nothing
+- [ ] Ctrl-C during the scan erases the line, prints `fdu: interrupted`, and returns to
+  a clean prompt; `echo $?` prints 130
+- [ ] Narrowing the window while it runs shrinks the frame without wrapping, dropping
+  parts in the documented order (padding, then the middle of the root, then dirs, then
+  bytes), and below 20 columns only the spinner and the phase word remain
+- [ ] `NO_COLOR=1` removes the colors but keeps the animation
+- [ ] On Windows Terminal, the same checks hold; with stdout piped (`fdu … | more`), the
+  run counts as non-interactive and shows nothing, because virtual-terminal support is
+  enabled for stdout and stderr together
+- [ ] `FDU_BIN="$(command -v fdu)" make test-terminal` passes against the installed
+  command, so a wheel’s console script erases the line and dies by `SIGINT` exactly as
+  the cargo-installed binary does
+
+A line left on screen after any of these fails the phase.
+
+* * *
+
+## Phase 7: Results
+
+### 7.1 Record the Table
 
 Copy `FDU_QA_OUT/results.md` into a dated file under `docs/project/reports/` (or replace
 the table in the current report).
@@ -395,7 +434,7 @@ make docs-format
 
 * * *
 
-## Phase 7: Cleanup
+## Phase 8: Cleanup
 
 The harness uses temp dirs for cache homes and the watch tree.
 They live under the system temp directory.
@@ -440,6 +479,7 @@ Before marking this test as **PASSED**, verify:
 - [ ] `code` and `lines` produced filled analysis slots
 - [ ] Cache-off vs cache-on first/second timings are in the dated report
 - [ ] Watch exited on SIGINT
+- [ ] The terminal progress phase passed, or was explicitly skipped with a reason
 - [ ] Medium and large phases were either run under bounds or explicitly skipped
 - [ ] No critical panic, hang, or SIGKILL on the small tree
 - [ ] Product bugs were filed as beads

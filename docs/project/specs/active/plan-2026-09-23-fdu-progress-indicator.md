@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-23
 
-**Status:** Approved design, not yet implemented
+**Status:** Implemented; the performance measurement (`fdu-2e8o`) is outstanding
 
 **Tracking:** `fdu-vngp`
 
@@ -28,7 +28,9 @@ to a wait-state display.
   Every non-interactive run draws nothing, whatever the flag says.
 - Wait 500 ms before the first frame, so a fast run shows no indicator at all.
 - Never interleave with output: the line is cleared before any stdout or stderr write,
-  on success, on error, on panic, and on Ctrl-C.
+  on success, on error, and on Ctrl-C. On a panic, unwinding clears it, but the default
+  panic message can print first; a panic is a bug, and its message matters more than a
+  clean line.
 - Cost nothing measurable when off, and stay within noise when on.
 - Leave every report golden and machine document unchanged; the help and guide goldens,
   and the parity deviation record that embeds the guide’s text, change only by the text
@@ -109,8 +111,8 @@ pub struct Progress { /* Arc<ProgressCells> */ }
 
 impl Progress {
     pub fn new() -> Self;
-    /// A consistent-enough view for display: each counter is monotonic, and the phase
-    /// is the one most recently entered.
+    /// A consistent-enough view for display: each counter is monotonic within a pass,
+    /// and the phase is the one most recently entered.
     pub fn snapshot(&self) -> ProgressSnapshot;
 }
 
@@ -123,15 +125,32 @@ pub struct ProgressSnapshot {
     pub analysis: Option<(u64, u64)>,
 }
 
-pub enum ProgressPhase { Loading, Scanning, Revalidating, Analyzing, Saving }
+pub enum ProgressPhase {
+    Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving, Summarizing,
+}
 ```
+
+A fresh handle reports `Starting` until the route enters its first phase, and the last
+phase entered persists after the route returns.
+`Summarizing` was added after review: a one-shot report over a full index starts its
+save in the background and then builds the answer, which for a heavy view (`full`, or a
+deep tree with no limit) over a large index takes seconds; showing `Saving` then
+misdescribed the work, so the answer’s construction has its own phase.
+`Indexing` was added during implementation: on an 867k-file tree the walkers finished
+about a second (release build) before the single thread assembling the index worked
+through their queued listings, and the frozen counts under `Scanning` read as a stall.
+A detached walker enters it as it leaves, which happens only once the queue is empty.
+Building the report itself took 1.4 ms there and needs no phase.
 
 It enters through variants beside today’s entry points rather than through `Delivery`,
 which stays a plain comparable value:
 `prepare_report_with_progress(request, delivery, &progress)`, following
-`prepare_report_with_scan_diagnostics`, plus a progress argument on `Session::start` for
-the watch’s initial scan.
-`refresh` is left for the Python callback that would use it.
+`prepare_report_with_scan_diagnostics`, and `Session::start_with_progress` for the
+watch’s initial scan.
+Inside the engine the handle rides on `ScanConfig::progress`, an observer field that
+changes neither what a walk produces nor how it produces it, so it is no part of the
+scan scope or of any snapshot identity: a run with a handle and one without are the same
+scan. `refresh` is left for the Python callback that would use it.
 
 **What it counts:** work done, never index state.
 The engine architecture keeps an in-progress cold build unobservable, and progress does
@@ -139,14 +158,23 @@ not change that: it reports how much the walk has read, not what the answer is.
 Counts may include entries a retry rereads; the display calls them walked, not found.
 
 **Hot-path cost:** walker workers already keep local counts in their `ScanReport`. They
-add the deltas to shared counters once per batch they already hand to the sink, never
-per entry, and the shared counters sit on separate cache lines.
+add the deltas to shared counters once per batch they already hand to the sink (per
+directory on the revalidation and reconcile walks, which have no batch for an unchanged
+tree), never per entry.
+The three walk counters share one cache line, so a worker’s addition moves one line
+rather than three; the analysis cells and the phase cell each have a line of their own,
+so a poller reading the walk never invalidates the line the analysis loop writes.
 Without a handle, the cost is one `Option` check per batch.
 Content analysis updates its counter in the result loop that already runs on the caller
 thread, where the candidate total is known before the first file.
 
 **Invariant:** when a route completes, the handle’s files and bytes equal the report’s
 own walked totals. This makes the counters testable exactly, not merely plausibly.
+One case is exempt and pinned by its own test: a parallel reconcile wave that overflows
+its deferred-operation bound is discarded and walked again serially, and progress counts
+the discarded reads too.
+A watch start runs a second verifying pass whose counts restart, so its totals are that
+pass’s.
 
 Nothing calls back into the caller.
 A ticker thread polls, so there is no re-entrancy, no callback cost on worker threads,
@@ -157,7 +185,8 @@ and a later Python binding can poll the same way across the FFI boundary.
 `cli.rs` owns every presentation decision, as it does for color.
 
 - **Interactive.** A run is interactive only when stderr is a terminal, `TERM` is set
-  and is not `dumb`, `CI` is unset or empty, and, on Windows, virtual terminal
+  and is not `dumb` (on Windows it may be unset or empty, since cmd, PowerShell, and
+  Windows Terminal set none), `CI` is unset or empty, and, on Windows, virtual terminal
   processing could be enabled for the console (`anstyle-query`’s safe
   `enable_ansi_colors`, already a dependency through clap).
   A legacy console that refuses it would print the erase sequence as text, so it counts
@@ -175,14 +204,20 @@ and a later Python binding can poll the same way across the FFI boundary.
   The wait is a timed receive on the stop channel, not a sleep, so stopping returns at
   once and a fast run never pays the delay on exit.
   After that the ticker redraws every 80 ms, one spinner frame per redraw.
+  A snapshot still in `Starting` draws nothing: the ticker keeps waiting until the
+  engine names a phase, rather than show one it invented.
 - **Frame.** One line on stderr, written as `\r\x1b[2K` plus the frame, exactly as
   specified under [Appearance](#appearance).
   The cursor is never hidden.
 - **Clearing.** Before any write to stdout or stderr (report, warning, error, or the
   performance line) the ticker is stopped and joined and the line cleared.
   A guard does the same on unwind.
-  Write errors on the progress line are ignored and never change the exit status; after
-  the first failed write the ticker stops drawing.
+  On a one-shot run the save runs in the background while the answer is built, so the
+  line shows `Saving` only briefly and then `Summarizing`, and it stops before the save
+  is joined: the report prints while the snapshot is written.
+  A watch start joins its save before returning, so it shows `Saving` for as long as the
+  write takes. Write errors on the progress line are ignored and never change the exit
+  status; after the first failed write the ticker stops drawing.
 - **Watch.** The indicator runs during the initial scan and stops when the first report
   paints; after that the watch repaint is the progress.
 - **Ctrl-C.** A handler is installed only on an interactive run that will draw, so every
@@ -195,12 +230,26 @@ and a later Python binding can poll the same way across the FFI boundary.
   Ctrl-C handling does.
   A Ctrl-C after the indicator has stopped, while the report is written, skips the
   message and takes the same default action.
-  The handler adds no `unsafe` code to fdu: `signal-hook` offers safe registration and a
-  safe `emulate_default_handler`, and `ctrlc` is the alternative dust uses; the
-  implementation picks one after confirming its Windows behavior, in a release more than
-  14 days old, and adds it to the command-line crate only.
-  An interruption can leave the report cut short on stdout and a cache staging file,
-  which the cache already recognizes and removes; no snapshot is partially published.
+  The handler adds no `unsafe` code to fdu, and each platform gets the crate whose safe
+  API reproduces its default action, both in the command-line crate only and both in
+  releases more than 14 days old.
+  On Unix it is `signal-hook` 0.4.4 (published 2026-04-04): its `Signals` iterator hands
+  `SIGINT` to a thread of fdu’s own, which may write to stderr, and its
+  `emulate_default_handler` restores the default disposition and raises the signal
+  again, which is death by `SIGINT` exactly; `ctrlc` there would add `nix` and, on
+  macOS, a Grand Central Dispatch binding, for the same signal.
+  Resetting the disposition to the default, rather than restoring the handler it
+  replaced, is what makes the guarantee hold for every caller of `run_process`: the
+  wheel’s console script runs the same function, and Python’s own `SIGINT` handler only
+  sets a flag, which is why that script restores the default disposition itself before
+  calling in (`fdu-18vk`). On Windows it is `ctrlc` 3.5.2 (published 2026-02-10), what
+  dust uses: its console handler runs a closure on a thread of its own, and the closure
+  exits with `STATUS_CONTROL_C_EXIT`, the status the console’s default handling ends a
+  process with; `signal-hook` there reaches only the C runtime’s `SIGINT`, whose default
+  is an exit status of 3 rather than the console’s, and gives a handler no thread to
+  write from. An interruption can leave the report cut short on stdout and a cache
+  staging file, which the cache already recognizes and removes; no snapshot is partially
+  published.
 
 ### Appearance
 
@@ -222,11 +271,17 @@ The frame for each phase, shown here in plain text:
 
 ```text
 ⠹ ~/wrk/github  Loading       0.6 s
-⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38.2 GiB  3.1 s
-⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38.2 GiB  1.4 s
+⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
+⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s
+⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
+⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s
+⠴ ~/wrk/github  Summarizing   1.2 s
 ```
+
+The last frame is a run that walked nothing, such as a cache-only report: it shows no
+counts rather than zeros that read as an empty tree.
 
 **Colors** reuse the palette the report already uses, through `anstyle`, which is
 already a dependency:
@@ -242,12 +297,15 @@ already a dependency:
 | Percentage | default | a number |
 
 **Numbers** use the report’s own formatters: counts with thousands separators
-(`human_count`), sizes in binary units with one decimal (`human_bytes`). Elapsed time
-has one decimal below a minute (`3.1 s`), then `1 m 04 s`, then `1 h 02 m`.
+(`human_count`), sizes in binary units (`human_bytes`), which shows a decimal only below
+ten of a unit, so `3.2 GiB` but `38 GiB`, exactly as the report’s rows do.
+Elapsed time has one decimal below a minute (`3.1 s`), then `1 m 04 s`, then `1 h 02 m`.
 
 **Percentage.** A whole percentage, right-aligned in four columns (` 7%`, ` 24%`,
 `100%`), shown only during content analysis, the one phase with an exact denominator.
 It never reaches `100%` before the last file is applied.
+An analysis of nothing, which the engine reports as `0 / 0` when the content sidecar
+answered every candidate, is `100%`: there is nothing left to do.
 
 **Color rule.** The frame is colored when stderr color is on under the same rule that
 colors fdu’s warnings: `--color`, then `NO_COLOR`, then `FORCE_COLOR`. With color off,
@@ -293,17 +351,17 @@ for them, and points to `--docs` rather than restating the rules.
 One phase, tracked as beads under `fdu-vngp`. Engine work and the pure command-line
 pieces can proceed in parallel; the ticker joins them.
 
-| Bead | Work | Depends on |
-| --- | --- | --- |
-| `fdu-hlb1` | `Progress` handle and walk counters (cold, summary, warm), with the equality invariant | — |
-| `fdu-mhx0` | Load, analyze, and save phases; `prepare_report_with_progress`; `Session::start` argument | `fdu-hlb1` |
-| `fdu-p1gr` | Interactive detection, injected terminal facts, `--progress`, gating tests | — |
-| `fdu-vpdw` | Frame renderer, exactly per [Appearance](#appearance) | — |
-| `fdu-hjjj` | Ticker, 500 ms delay, clearing and ordering, one-shot and watch wiring | `fdu-mhx0`, `fdu-p1gr`, `fdu-vpdw` |
-| `fdu-9286` | Ctrl-C handler with the default interrupt action | `fdu-hjjj` |
-| `fdu-3xiz` | Real-terminal smoke test and manual terminal QA | `fdu-hjjj`, `fdu-9286` |
-| `fdu-n6bd` | Documentation, help text, and the help golden | `fdu-hjjj`, `fdu-9286` |
-| `fdu-2e8o` | Performance comparison, recorded in the experiment ledger | `fdu-hlb1`, `fdu-mhx0` |
+| Bead | Work | Depends on | State |
+| --- | --- | --- | --- |
+| `fdu-hlb1` | `Progress` handle and walk counters (cold, summary, warm), with the equality invariant | — | done |
+| `fdu-mhx0` | Load, analyze, and save phases; `prepare_report_with_progress`; `Session::start_with_progress` | `fdu-hlb1` | done |
+| `fdu-p1gr` | Interactive detection, injected terminal facts, `--progress`, gating tests | — | done |
+| `fdu-vpdw` | Frame renderer, exactly per [Appearance](#appearance) | — | done |
+| `fdu-hjjj` | Ticker, 500 ms delay, clearing and ordering, one-shot and watch wiring | `fdu-mhx0`, `fdu-p1gr`, `fdu-vpdw` | done |
+| `fdu-9286` | Ctrl-C handler with the default interrupt action | `fdu-hjjj` | done |
+| `fdu-3xiz` | Real-terminal smoke test and manual terminal QA | `fdu-hjjj`, `fdu-9286` | done |
+| `fdu-n6bd` | Documentation, help text, and the help golden | `fdu-hjjj`, `fdu-9286` | done |
+| `fdu-2e8o` | Performance comparison, recorded in the experiment ledger | `fdu-hlb1`, `fdu-mhx0` | measured separately |
 
 `fdu-m893`’s planned flags are renamed off `--progress`, recorded in its bead.
 
@@ -313,8 +371,8 @@ pieces can proceed in parallel; the ticker joins them.
   completion equal the report’s walked totals on the cold, warm, summary, and analysis
   routes. A run with no handle produces the same report bytes.
 - **Gating.** Following urollup, the terminal facts are injected.
-  Every non-interactive combination (stderr not a terminal, `TERM` unset or `dumb`, `CI`
-  set) writes nothing to stderr under all three flag values.
+  Every non-interactive combination (stderr not a terminal, `TERM` `dumb` or, off
+  Windows, unset, `CI` set) writes nothing to stderr under all three flag values.
   On an interactive run, `auto` draws for human formats and not for machine formats,
   `always` draws for both, and `never` draws nothing.
   Tests assert exact stderr bytes.

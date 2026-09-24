@@ -68,6 +68,32 @@ fdu-core = { workspace = true, default-features = false }
 
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 anyhow = "1.0"
+# The progress line is fitted to stderr's own width, read again for every frame. This
+# is the crate clap's `wrap_help` already brings in, at the version the lock holds.
+terminal_size = "0.4.4"
+
+# Ctrl-C while the progress line draws: the line is erased and the process ends the way
+# the default action would. What that action is differs by platform, and so does the
+# crate; each is a safe registration, so neither adds `unsafe` here. On Unix it is
+# death by SIGINT, which signal-hook's `emulate_default_handler` reproduces by restoring
+# the default disposition and raising the signal again, so a calling shell script stops
+# as it would for any interrupted command. Its `iterator` hands the signal to a thread
+# of our own, where writing to stderr is allowed.
+[target.'cfg(unix)'.dependencies]
+signal-hook = { version = "0.4.4", default-features = false, features = ["iterator"] }
+
+# A Windows console must accept escape sequences before a progress line may be drawn
+# to it. This is the safe query clap already ships, at the version the lock already
+# holds; it adds no tree and is unused off Windows.
+#
+# On Windows the default Ctrl-C action is the console ending the process with
+# STATUS_CONTROL_C_EXIT, and ctrlc's console handler runs a closure on its own thread
+# from which that exit can follow the erase. It is Windows-only here: on Unix it would
+# add nix, and on macOS a Grand Central Dispatch binding, for a signal signal-hook
+# already delivers.
+[target.'cfg(windows)'.dependencies]
+anstyle-query = "1.1.5"
+ctrlc = "3.5.2"
 
 [dev-dependencies]
 tempfile = "3.26"

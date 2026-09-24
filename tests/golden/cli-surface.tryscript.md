@@ -87,6 +87,9 @@ OUTPUT
       --tree             Display the list as the default directory tree
       --long             Display flat matching paths with size and modification age
       --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
+      --progress <WHEN>  Show a progress line on stderr while a report runs: auto, always, or never.
+                         Drawn only at an interactive terminal: always, unlike --color, never draws
+                         into a pipe or file [default: auto]
 
 EXECUTION
       --cache <POLICY>  Cache policy: auto, refresh, read-only, only (unverified), or off [default:
@@ -194,7 +197,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
-| Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color` |
+| Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
@@ -280,6 +283,10 @@ Cache-only runs report zero walked files because they never consult the tree.
 The line is gray only when color is active and has no ANSI escapes otherwise.
 Paths, Long, JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit
 it.
+
+A progress line can appear on stderr for a person at a terminal.
+It is never drawn when stderr is not a terminal, `TERM` is `dumb`, or `CI` is set, so
+agents need no flag; `fdu --docs` states the full rule.
 
 Common shapes are compositions rather than dedicated flags:
 
@@ -575,7 +582,8 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
              --exclude-ignored, --only-ignored
   View       list,summary,tree,families,types,extensions,languages,documents,
              largest,recent,files,full
-  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long, --color
+  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
+             --color, --progress
   Mode       --cache, --watch, --analysis-workers
 
 CONTENT ANALYSIS
@@ -634,7 +642,8 @@ OUTPUT AND AUTOMATION
   JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
   Results go to stdout; warnings and errors go to stderr.
-  The command never prompts, pages, or animates progress.
+  The command never prompts or pages. A progress line is drawn on stderr only for a
+  person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
   Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
   `fdu --skill` prints a portable agent skill describing this same surface.
 

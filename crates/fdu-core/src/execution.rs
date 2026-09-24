@@ -13,7 +13,7 @@ use crate::query::{
     Delivery, Report, ReportProvenance, ReportSource, Request, SummaryRow, TreeStatus, ViewSpec,
     report, report_summary,
 };
-use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Result, execute};
+use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Progress, Result, execute};
 
 /// The minimum state a one-shot report plan retains while scanning.
 ///
@@ -410,7 +410,32 @@ pub fn prepare_report(
     request: &Request,
     delivery: &Delivery,
 ) -> Result<(Report, PendingSave, PerformanceSummary)> {
-    prepare_report_internal(request, delivery, false)
+    prepare_report_internal(request, delivery, false, None)
+        .map(|(report, pending, performance, _diagnostics)| (report, pending, performance))
+}
+
+/// Execute a one-shot report, reporting its progress through `progress` as it runs.
+///
+/// The same contract and the same answer as [`prepare_report`]: the handle observes the
+/// run and changes nothing about it, so a report prepared with one is byte-for-byte the
+/// report prepared without. The caller polls [`Progress::snapshot`] from another thread
+/// while this blocks, typically to draw a wait indicator. Which phases the run passes
+/// through, what the counters mean, and what holds when this returns are documented on
+/// [`Progress`]; in short, the walk counters equal the returned
+/// [`PerformanceSummary`]'s walked totals, and a run that requested content analysis
+/// leaves `analysis` at `(fresh_files, fresh_files)`.
+///
+/// A run over a full index ends in [`ProgressPhase::Summarizing`](crate::ProgressPhase)
+/// while it builds the answer; a save it started continues in the background, and the
+/// caller decides when to join it, as with [`prepare_report`]. `Saving` is therefore
+/// shown only for the moment between the save's start and the answer's, however long
+/// the write takes.
+pub fn prepare_report_with_progress(
+    request: &Request,
+    delivery: &Delivery,
+    progress: &Progress,
+) -> Result<(Report, PendingSave, PerformanceSummary)> {
+    prepare_report_internal(request, delivery, false, Some(progress))
         .map(|(report, pending, performance, _diagnostics)| (report, pending, performance))
 }
 
@@ -426,13 +451,14 @@ pub fn prepare_report_with_scan_diagnostics(
     request: &Request,
     delivery: &Delivery,
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
-    prepare_report_internal(request, delivery, true)
+    prepare_report_internal(request, delivery, true, None)
 }
 
 fn prepare_report_internal(
     request: &Request,
     delivery: &Delivery,
     collect_scan_diagnostics: bool,
+    progress: Option<&Progress>,
 ) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
     // Before anything is scanned, loaded, or reduced: a request its own basis cannot answer
     // has no answer at any cost, and the compact summary tier below never reaches a reader,
@@ -441,7 +467,10 @@ fn prepare_report_internal(
     // keeps the refusal independent of the delivery: the cache-only tier never scans and
     // the cold tier never loads, so a rule stated at either would hold for one of them.
     request.validate().map_err(Error::InvalidRequest)?;
-    let scan_config = request.basis.scope.scan_config(delivery);
+    let scan_config = crate::ScanConfig {
+        progress: progress.cloned(),
+        ..request.basis.scope.scan_config(delivery)
+    };
     let root = request.basis.root.as_path();
     let scan_started_at = SystemTime::now();
     let plan = plan(request, delivery, Route::OneShot).map_err(Error::InvalidRequest)?;
@@ -498,8 +527,11 @@ fn prepare_report_internal(
         }
         RetainedState::FullIndex => {
             let (index, open_report, pending_save, scan_diagnostics) =
-                execute(&plan, &request.basis, collect_scan_diagnostics)?;
+                execute(&plan, &request.basis, collect_scan_diagnostics, progress)?;
             let performance = PerformanceSummary::from_open_report(&open_report);
+            if let Some(progress) = progress {
+                progress.enter(crate::ProgressPhase::Summarizing);
+            }
             let answer = report(&index, request, SystemTime::now())?;
             debug_assert_eq!(answer.scope, scan_config.scope());
             Ok((answer, pending_save, performance, scan_diagnostics))
@@ -1610,5 +1642,288 @@ mod tests {
         assert_eq!(diagnostics.schema, crate::scan::SCAN_DIAGNOSTICS_SCHEMA);
         assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
         assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+    }
+
+    /// A tree of `dirs` directories under the root, each holding `files` files of
+    /// distinct sizes, with its file count and byte total.
+    fn wide_tree(dirs: usize, files: usize) -> (tempfile::TempDir, u64, u64) {
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut bytes = 0;
+        for directory in 0..dirs {
+            let path = root.path().join(format!("d{directory:03}"));
+            fs::create_dir(&path).expect("directory");
+            for file in 0..files {
+                let size = directory * files + file + 1;
+                fs::write(path.join(format!("f{file}.txt")), vec![b'.'; size]).expect("file");
+                bytes += size as u64;
+            }
+        }
+        (root, (dirs * files) as u64, bytes)
+    }
+
+    /// [`prepared`], reporting through `progress`.
+    fn prepared_with_progress(
+        root: &Path,
+        config: &OpenFixture,
+        query: &Query,
+        progress: &Progress,
+    ) -> Result<(Report, PendingSave, PerformanceSummary)> {
+        let (request, delivery) = split(root, config, query);
+        prepare_report_with_progress(&request, &delivery, progress)
+    }
+
+    fn analyzing(fixture: OpenFixture) -> OpenFixture {
+        OpenFixture {
+            analysis: crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisSet::LINES_ONLY,
+                workers: 0,
+            },
+            ..fixture
+        }
+    }
+
+    /// The invariant the plan makes testable: when a route completes, the handle's
+    /// files and bytes equal the walked totals the route's own performance summary
+    /// reports, and its directories equal the directories the route read. Every
+    /// one-shot route: the cold full index, the transient summary fold, a cold run with
+    /// content analysis, and a warm revalidation of the snapshot that run left.
+    #[test]
+    fn progress_ends_at_the_walked_totals_of_every_one_shot_route() {
+        use crate::ProgressPhase::{Scanning, Summarizing};
+        let (root, files, bytes) = wide_tree(6, 4);
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+
+        let progress = Progress::new();
+        let (_, pending, performance) =
+            prepared_with_progress(root.path(), &config(CachePolicy::Off, None), &tree, &progress)
+                .expect("cold full-index report");
+        pending.join().expect("no save");
+        let snapshot = progress.snapshot();
+        assert_eq!(performance.source, ReportSource::ColdScan);
+        assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
+        assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold full index");
+        assert_eq!(snapshot.directories, 7, "the root and its six children");
+        assert_eq!(
+            (snapshot.phase, snapshot.analysis),
+            (Summarizing, None),
+            "the walk ended, the index was assembled, then the answer was built"
+        );
+
+        let progress = Progress::new();
+        let (report, pending, performance) = prepared_with_progress(
+            root.path(),
+            &blind(CachePolicy::Off, None),
+            &summary_query(),
+            &progress,
+        )
+        .expect("compact summary report");
+        pending.join().expect("no save");
+        let Section::Summary(row) = report.sections[0] else { panic!("summary section") };
+        let snapshot = progress.snapshot();
+        assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
+        assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "summary fold");
+        assert_eq!(snapshot.directories, row.dirs + 1, "the row's directories and the root");
+        assert_eq!((snapshot.phase, snapshot.analysis), (Scanning, None));
+
+        // Outside the tree: a cache inside it is two more files for the warm walk.
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("snapshot.fdu");
+        let progress = Progress::new();
+        let (_, pending, performance) = prepared_with_progress(
+            root.path(),
+            &analyzing(config(CachePolicy::Auto, Some(cache.clone()))),
+            &tree,
+            &progress,
+        )
+        .expect("cold analyzed report");
+        let snapshot = progress.snapshot();
+        assert_eq!(snapshot.phase, Summarizing, "the answer is built while the save runs");
+        pending.join().expect("save");
+        assert_eq!(performance.source, ReportSource::ColdScan);
+        assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold with analysis");
+        assert_eq!(snapshot.directories, 7);
+        assert_eq!(performance.fresh_files, files, "every file is a lines candidate");
+        assert_eq!(snapshot.analysis, Some((files, files)));
+
+        let progress = Progress::new();
+        let (_, pending, performance) = prepared_with_progress(
+            root.path(),
+            &analyzing(config(CachePolicy::Auto, Some(cache))),
+            &tree,
+            &progress,
+        )
+        .expect("warm analyzed report");
+        pending.join().expect("nothing to save");
+        let snapshot = progress.snapshot();
+        assert_eq!(performance.source, ReportSource::WarmRevalidate);
+        assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
+        assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "warm revalidation");
+        assert_eq!(snapshot.directories, 7);
+        assert_eq!(performance.fresh_files, 0, "the sidecar answered every candidate");
+        assert_eq!((snapshot.phase, snapshot.analysis), (Summarizing, Some((0, 0))));
+    }
+
+    /// A cache-only report walks nothing: it ends building the answer, and its walk
+    /// counters stay at zero.
+    #[test]
+    fn a_cache_only_report_ends_summarizing_and_walks_nothing() {
+        use crate::ProgressPhase::Summarizing;
+        let (root, _, _) = wide_tree(3, 2);
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("snapshot.fdu");
+        let (_, pending, _) =
+            prepared(root.path(), &config(CachePolicy::Auto, Some(cache.clone())), &tree)
+                .expect("a report that writes the snapshot");
+        pending.join().expect("save");
+
+        let progress = Progress::new();
+        let (_, pending, performance) = prepared_with_progress(
+            root.path(),
+            &config(CachePolicy::Only, Some(cache)),
+            &tree,
+            &progress,
+        )
+        .expect("cache-only report");
+        pending.join().expect("nothing to save");
+        let snapshot = progress.snapshot();
+        assert_eq!(performance.source, ReportSource::CacheOnly);
+        assert_eq!(snapshot.phase, Summarizing);
+        assert_eq!((snapshot.directories, snapshot.files, snapshot.bytes), (0, 0, 0));
+    }
+
+    /// The position of `phase` in `order`, so a poller can assert phases never go back.
+    fn rank(phase: crate::ProgressPhase, order: &[crate::ProgressPhase]) -> usize {
+        order
+            .iter()
+            .position(|expected| *expected == phase)
+            .unwrap_or_else(|| panic!("{phase:?} is not a phase of this route"))
+    }
+
+    /// What a ticker thread sees: every counter non-decreasing from one snapshot to the
+    /// next, and the phase moving only forward through the route's order. Deterministic
+    /// without a timing assumption, because each claim is about consecutive reads of one
+    /// monotonic cell, whatever the interleaving; the poller just reads until the run is
+    /// over. The tree spans many worker chunks and many small batches, so the counters
+    /// are added to from several threads while the poller reads.
+    #[test]
+    fn progress_is_monotonic_and_phases_advance_in_order_while_a_report_runs() {
+        use crate::ProgressPhase::{
+            Analyzing, Indexing, Loading, Revalidating, Saving, Scanning, Starting, Summarizing,
+        };
+        let (root, files, bytes) = wide_tree(48, 6);
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        let cache = cache_dir.path().join("snapshot.fdu");
+        let fixture = OpenFixture {
+            scan: ScanConfig { threads: Some(3), batch_size: 4, ..ScanConfig::default() },
+            ..analyzing(config(CachePolicy::Auto, Some(cache)))
+        };
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+
+        let routes: [(&str, &[crate::ProgressPhase]); 2] = [
+            ("cold", &[Starting, Loading, Scanning, Indexing, Analyzing, Saving, Summarizing]),
+            ("warm", &[Starting, Loading, Revalidating, Analyzing, Saving, Summarizing]),
+        ];
+        for (route, order) in routes {
+            let progress = Progress::new();
+            // Read before the run can begin, so the first phase seen is the handle's
+            // initial one whatever the scheduler does with the poller.
+            let initial = progress.snapshot();
+            let done = std::sync::atomic::AtomicBool::new(false);
+            let (performance, seen) = std::thread::scope(|scope| {
+                let poller = scope.spawn(|| {
+                    let polled = progress.clone();
+                    let mut previous = initial;
+                    let mut seen = vec![previous.phase];
+                    loop {
+                        let finished = done.load(std::sync::atomic::Ordering::Acquire);
+                        let current = polled.snapshot();
+                        assert!(current.directories >= previous.directories, "{route}");
+                        assert!(current.files >= previous.files, "{route}");
+                        assert!(current.bytes >= previous.bytes, "{route}");
+                        assert!(
+                            rank(current.phase, order) >= rank(previous.phase, order),
+                            "{route}: {:?} after {:?}",
+                            current.phase,
+                            previous.phase
+                        );
+                        if let (Some(before), Some(after)) = (previous.analysis, current.analysis) {
+                            assert!(after.0 >= before.0 && after.0 <= after.1, "{route}");
+                            assert_eq!(after.1, before.1, "{route}: the total is fixed");
+                        }
+                        if current.phase != previous.phase {
+                            seen.push(current.phase);
+                        }
+                        previous = current;
+                        // Read once more after the run reports done, so the final state
+                        // is checked against the last mid-run read.
+                        if finished {
+                            break;
+                        }
+                        std::thread::yield_now();
+                    }
+                    seen
+                });
+                let (_, pending, performance) =
+                    prepared_with_progress(root.path(), &fixture, &tree, &progress)
+                        .expect("report");
+                pending.join().expect("save");
+                done.store(true, std::sync::atomic::Ordering::Release);
+                (performance, poller.join().expect("poller"))
+            });
+            let snapshot = progress.snapshot();
+            assert_eq!(
+                (snapshot.files, snapshot.bytes),
+                (performance.walked_files, performance.walked_bytes),
+                "{route}"
+            );
+            assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "{route}");
+            assert_eq!(snapshot.directories, 49, "{route}");
+            assert_eq!(seen.first(), Some(&Starting), "{route}: {seen:?}");
+            assert_eq!(
+                seen.last().copied(),
+                Some(snapshot.phase),
+                "{route}: the poller saw the final phase"
+            );
+            assert_eq!(snapshot.phase, Summarizing, "{route}: the answer is built last");
+            if route == "cold" {
+                assert_eq!(snapshot.analysis, Some((files, files)));
+            } else {
+                assert_eq!(snapshot.analysis, Some((0, 0)));
+                assert!(!seen.contains(&Indexing), "{route}: a warm run assembles no index");
+            }
+        }
+    }
+
+    /// The handle observes the run and changes nothing about it: the report prepared
+    /// with one renders to the bytes of the report prepared without, and the
+    /// performance summary is the same value, on the indexed and the compact routes.
+    #[test]
+    fn a_report_prepared_with_a_handle_is_the_report_prepared_without() {
+        let (root, _, _) = wide_tree(5, 3);
+        let tree = Query { views: vec![ViewSpec::Tree, ViewSpec::Files], ..Query::default() };
+        let cases = [
+            ("full index", config(CachePolicy::Off, None), tree),
+            ("compact summary", blind(CachePolicy::Off, None), summary_query()),
+        ];
+        for (route, fixture, query) in cases {
+            let (mut plain, pending, plain_performance) =
+                prepared(root.path(), &fixture, &query).expect("plain report");
+            pending.join().expect("no save");
+            let progress = Progress::new();
+            let (observed, pending, observed_performance) =
+                prepared_with_progress(root.path(), &fixture, &query, &progress)
+                    .expect("observed report");
+            pending.join().expect("no save");
+
+            assert_eq!(plain_performance, observed_performance, "{route}");
+            plain.provenance = observed.provenance.clone();
+            let json = |report: &Report| {
+                crate::report_format::render(report, crate::report_format::Format::Json, false)
+                    .expect("render")
+            };
+            assert_eq!(json(&plain), json(&observed), "{route}");
+            assert!(progress.snapshot().files > 0, "{route}: the handle did observe the run");
+        }
     }
 }

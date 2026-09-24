@@ -610,6 +610,15 @@ and admission rules, then finishes roll-ups before returning the index and its c
 It constructs no effective-change paths, impact sets, or journal entries; no consumer
 can observe the intermediate state.
 Partial scans remain explicitly partial rather than becoming a complete baseline.
+A caller that passes a `Progress` handle observes how much the walk has read, not the
+index: walkers add their directory, file, and byte counts once per batch they already
+hand off (per directory on revalidation and reconciliation), and the phase moves forward
+through loading, scanning or revalidating, indexing (the builder finishing listings the
+walkers already sent), analysis, saving, and summarizing (building the answer while the
+save continues in the background).
+The counts measure work, so a reread counts twice; they equal the report’s walked totals
+when the route returns, except after a discarded parallel reconcile wave.
+A watch start’s closing verification is a second pass that restarts the counts.
 The opened lifecycle publishes bounded parent-first commits so a client can render
 useful shallow structure while deeper work continues.
 
