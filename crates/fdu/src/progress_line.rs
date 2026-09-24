@@ -89,12 +89,14 @@ impl TerminalFacts {
     ///
     /// Stderr must be a terminal, `TERM` must be set and not `dumb` (or, on Windows,
     /// may be unset), `CI` must be unset or empty, and the console must accept escape
-    /// sequences. An agent shell observed in this repository runs with `TERM=dumb` and
+    /// sequences. A `TERM` set to nothing is an unset one: the two are the same thing
+    /// everywhere a shell exports variables, so they get the same answer on every
+    /// platform. An agent shell observed in this repository runs with `TERM=dumb` and
     /// no terminal, so no agent detection is needed beyond this rule.
     pub fn is_interactive(&self) -> bool {
-        let term_allows = match self.term.as_deref() {
+        let term_allows = match self.term.as_deref().filter(|term| !term.is_empty()) {
             None => self.term_may_be_unset,
-            Some(term) => !term.is_empty() && term != "dumb",
+            Some(term) => term != "dumb",
         };
         self.stderr_is_terminal
             && term_allows
@@ -572,8 +574,9 @@ mod tests {
                                 ci: ci.map(OsString::from),
                                 vt_enabled,
                             };
-                            let term_allows = term == Some("xterm-256color")
-                                || (term.is_none() && term_may_be_unset);
+                            let term_unset = term.is_none_or(str::is_empty);
+                            let term_allows =
+                                term == Some("xterm-256color") || (term_unset && term_may_be_unset);
                             let interactive = stderr_is_terminal
                                 && term_allows
                                 && ci != Some("true")
@@ -592,9 +595,15 @@ mod tests {
         assert!(interactive().is_interactive());
         let readings = every_terminal();
         assert_eq!(readings.len(), 96);
-        // A real TERM with CI unset or empty, on either platform (4), or an unset TERM
-        // where the platform allows it, with CI unset or empty (2).
-        assert_eq!(readings.iter().filter(|(_, interactive)| *interactive).count(), 6);
+        // A real TERM with CI unset or empty, on either platform (4), or a TERM that is
+        // unset or empty where the platform allows it, with CI unset or empty (4).
+        assert_eq!(readings.iter().filter(|(_, interactive)| *interactive).count(), 8);
+        let empty_term = TerminalFacts { term: Some(OsString::new()), ..interactive() };
+        assert!(!empty_term.is_interactive(), "off Windows an empty TERM is an unset one");
+        assert!(
+            TerminalFacts { term_may_be_unset: true, ..empty_term }.is_interactive(),
+            "on Windows an empty TERM is an unset one too"
+        );
         for (facts, interactive) in readings {
             assert_eq!(facts.is_interactive(), interactive, "{facts:?}");
         }
