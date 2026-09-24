@@ -283,9 +283,10 @@ Cache-only runs report zero walked files because they never consult the tree.
 The line is gray only when color is active and has no ANSI escapes otherwise.
 Paths, Long, JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit
 it.
-A progress line can appear on stderr for a person at a terminal. It is never drawn
-when stderr is not a terminal, `TERM` is `dumb`, or `CI` is set, so agents need no flag;
-`fdu --docs` states the full rule.
+
+A progress line can appear on stderr for a person at a terminal.
+It is never drawn when stderr is not a terminal, `TERM` is `dumb`, or `CI` is set, so
+agents need no flag; `fdu --docs` states the full rule.
 
 Common shapes are compositions rather than dedicated flags:
 
