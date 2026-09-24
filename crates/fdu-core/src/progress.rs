@@ -35,10 +35,12 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 /// order, skipping the ones they do not do: a cold report over a full index goes
 /// `Scanning`, `Indexing` once the walk is over, then `Analyzing` if content was
 /// requested, `Saving` if a snapshot is written, and `Summarizing` while the answer is
-/// built; a warm one goes `Loading`, `Revalidating`, then the same without `Indexing`;
+/// built (it enters `Loading` first when it looks for a snapshot and finds none); a
+/// warm one goes `Loading`, `Revalidating`, then the same without `Indexing`;
 /// a cache-only one walks nothing and goes `Loading`, then `Summarizing`.
 ///
-/// A watch start builds no answer through these phases and ends at its save. It then
+/// A watch start builds no answer through these phases and ends at its save, if it
+/// writes one. It then
 /// runs a second pass: it verifies the tree once more while it binds observation, and
 /// that pass begins again at `Revalidating` with the walk counters restarted, so the
 /// line shows the second walk's own progress rather than a sum.

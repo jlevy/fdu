@@ -179,7 +179,7 @@ impl Session {
     ///
     /// The same session as [`Self::start`]; the handle observes the start and changes
     /// nothing about it. A start is two passes: the open (cold, or a load and
-    /// revalidation) with its save joined under
+    /// revalidation) with its save, if it writes one, joined under
     /// [`ProgressPhase::Saving`](crate::ProgressPhase), and then the revalidation that
     /// closes the gap between that walk and the bound watcher. The second pass begins
     /// again at [`ProgressPhase::Revalidating`](crate::ProgressPhase) with the walk
