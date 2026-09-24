@@ -6,14 +6,17 @@ The Cargo package version is authoritative.
 The release tag, CLI, report generator, Python module, source distribution, wheels, and
 release evidence must all identify that same version.
 
-The current workflow is deliberately a non-publishing rehearsal.
-It builds both crates, the source distribution, and the five-wheel platform matrix;
-smoke-tests every native artifact it can run; inspects metadata, typing, licenses, and
-SBOMs; classifies each crate and the Python release on its registry as missing,
-identical, or conflicting; and retains a checksum manifest.
-`0.1.0` is published by hand from the signed tag, as
-[Publishing 0.1.0 by Hand](#publishing-010-by-hand) describes.
-Registry jobs in the workflow remain in `fdu-9cf0` and come with a later release.
+One workflow, [`release.yml`](../../../.github/workflows/release.yml), rehearses and
+publishes. It builds both crates, the source distribution, and the five-wheel platform
+matrix; smoke-tests every native artifact it can run; inspects metadata, typing,
+licenses, and SBOMs; classifies each crate and the Python release on its registry as
+missing, identical, or conflicting; and retains a checksum manifest.
+Dispatched as it is by default, that is all it does.
+Dispatched on the release tag with `publish` set, the same run then uploads exactly
+those files, from one job, once the maintainer approves the protected `release`
+environment. `0.1.0` is published that way, as
+[Publishing a Release](#publishing-a-release) describes;
+[Publishing 0.1.0 by Hand](#publishing-010-by-hand) is the fallback.
 
 ## Supported Artifacts
 
@@ -99,6 +102,8 @@ to Linux x86-64/arm64, macOS x86-64/arm64, and Windows x86-64. The Linux builds 
 controlled manylinux2014 image rather than inheriting the hosted runner’s glibc.
 Cross-built Linux arm64 receives structural artifact validation; the evidence manifest
 does not mislabel that as a native execution test.
+Its `publish` input defaults to false, and a run without it never reaches a publishing
+job.
 
 ## Account and Authentication Model
 
@@ -108,10 +113,9 @@ No Flowmark token or publisher record is reused.
 
 | Channel | Required setup |
 | --- | --- |
-| GitHub Releases | Repository `jlevy/fdu`; once automated, only the final announcement job receives `contents: write`. |
-| PyPI first release | The project `fdu` does not exist until `0.1.0` is uploaded, and a project-scoped token needs an existing project, so the maintainer uploads with a short-lived account-scoped API token. Delete the token after verification. |
-| PyPI later releases | Trusted publisher owner `jlevy`, repository `fdu`, top-level workflow `release.yml`, protected environment `release`. The narrow publish job receives `id-token: write` and no API token. |
-| crates.io first release | The same crates.io owner publishes `0.1.0` with a narrowly scoped, short-lived token because a trusted publisher cannot be attached before the crate exists. Remove the token after verification. |
+| GitHub Releases | Repository `jlevy/fdu`. The announcement stays a maintainer step, so no workflow job has `contents: write`; if it is automated, only that final job receives it. |
+| PyPI, every release | Trusted publisher owner `jlevy`, repository `fdu`, top-level workflow `release.yml`, protected environment `release`. Registered on 2026-09-24 as a *pending* publisher, so the first upload through the workflow creates the project. The publish job receives `id-token: write` and no API token. |
+| crates.io first release | The same crates.io owner creates `fdu-core` and `fdu` with a narrowly scoped, short-lived token, because a trusted publisher cannot be attached before the crate exists. The token lives only for the publishing run, as the `CARGO_REGISTRY_TOKEN` secret of the `release` environment; delete the secret and revoke the token afterwards. |
 | crates.io later releases | Trusted publisher owner `jlevy`, repository `fdu`, workflow `release.yml`, environment `release`; exchange GitHub OIDC through `rust-lang/crates-io-auth-action` only inside the publish job. |
 
 The first-time walkthrough for each row is
@@ -120,14 +124,19 @@ The first-time walkthrough for each row is
 Crates.io publishing is authenticated in both cases.
 The bootstrap uses the registry token; steady state exchanges the workflow’s OIDC
 identity for a short-lived Cargo credential.
+The publish job uses the environment secret when it is present and exchanges OIDC
+otherwise, and prints neither.
 Neither credential belongs in repository files, logs, build artifacts, or reusable
 workflows.
 
-Trusted publishers come after `0.1.0`, and only once the `release` environment exists
-and is protected: a required reviewer, and a deployment policy that admits only `v*`
-tags. GitHub creates an unprotected environment the first time a workflow job names it,
-so a publisher registered before the protection would trust any run of `release.yml`
-that names `release`, from any ref.
+A trusted publisher trusts any run of `release.yml` that names the `release`
+environment. GitHub creates an unprotected environment the first time a workflow job
+names it, so the environment has to exist and be protected before the first publishing
+run: a required reviewer, a deployment policy that admits only `v*` tags, and no
+administrator bypass.
+The pending PyPI publisher already exists, so this is not optional.
+A publishing run checks it before its publish job can start and stops if any of the
+three is missing.
 
 ## Publication Invariants
 
@@ -136,8 +145,11 @@ PyPI receives the tested source distribution and wheels without rebuilding.
 Cargo is the narrow exception because `cargo publish` repackages source: reproduce the
 validated `.crate`, compare its SHA-256 digest with the retained preview, and abort on
 any mismatch before upload.
-When registry jobs are added, they run behind the protected `release` environment and
-are approved separately; a build job never holds publication authority.
+Every registry write happens in one `publish` job behind the protected `release`
+environment, so one approval covers both registries; no build job holds publication
+authority. That job compiles nothing: both crates were built and installed by the
+rehearsal, and `--no-verify` keeps dependency build scripts and proc macros from running
+beside the credentials.
 
 Registries are independently retryable, not atomic.
 Within crates.io the two crates are not independent: publish `fdu-core`, wait for the
@@ -152,10 +164,11 @@ procedure.
 ## First-Time Channel Setup
 
 `0.1.0` is the first time the names `fdu` and `fdu-core` appear on either registry.
-The accounts and the GitHub environment can be finished days before the tag.
-The API tokens cannot: they are created in [Publish the Crates](#publish-the-crates) and
-[Publish the Python Distribution](#publish-the-python-distribution), used once, and
-revoked in those same sections.
+The accounts, the PyPI pending publisher, and the GitHub environment can be finished
+days before the tag.
+The crates.io token cannot: it is created on publish day, stored in the `release`
+environment for the one publishing run, and deleted and revoked as soon as that run
+ends, as [Publish Through the Workflow](#publish-through-the-workflow) describes.
 
 Recheck the three names immediately before the first write; availability is a race.
 Use the JSON and crates.io API curls in
@@ -163,22 +176,22 @@ Use the JSON and crates.io API curls in
 `https://pypi.org/project/fdu/` can return HTTP 200 with an anti-bot interstitial for a
 name that does not exist.
 
-### Why the First Publish Is by Hand
+### Why crates.io Needs a Token Once
 
 crates.io will not accept a
 [trusted publisher](https://crates.io/docs/trusted-publishing) until the crate exists,
 so `fdu-core` and `fdu` must be created with an API token.
+The publish job reads it from the `release` environment’s `CARGO_REGISTRY_TOKEN` secret
+when that secret exists, and otherwise exchanges OIDC, so the same workflow serves the
+first release and every later one.
 
 PyPI
-[can create a project from a pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
-This repository does not use that path for `0.1.0`:
-[`release.yml`](../../../.github/workflows/release.yml) is a rehearsal and has no
-publish job, and the first release is uploaded by hand from the signed tag.
-
-Do not register a pending PyPI publisher for `fdu` before that upload.
-A pending publisher does not reserve the name, and if `release.yml` later grows a
-publish job before the `release` environment is protected, the pending record would
-trust an unprotected subject.
+[can create a project from a pending trusted publisher](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/),
+and this repository uses that path: the pending publisher for `fdu` was registered on
+2026-09-24, and the first upload through the workflow creates the project.
+A pending publisher does not reserve the name, so the name recheck still applies.
+It also trusts whatever job names the `release` environment, which is why that
+environment has to be protected before any run can publish.
 
 ### crates.io Account
 
@@ -194,17 +207,19 @@ trust an unprotected subject.
 The token is created on publish day, at
 [New API Token](https://crates.io/settings/tokens/new):
 
-- **Scopes:** `publish-new`, `publish-update`, and `yank`. `yank` is so a conflict can
-  be contained without minting a second token.
-  Leave `change-owners` off.
+- **Scopes:** `publish-new` and `publish-update`. Leave `yank` and `change-owners` off:
+  nobody can read a token back out of a GitHub secret, so a `yank` scope there could
+  never be used. Containing a conflict takes a separate `yank`-only token, as
+  [Recover From a Partial Publication](#recover-from-a-partial-publication) step 3 says.
 - **Crates:** restrict to `fdu-core` and `fdu`. A crate-name restriction applies to
   future crates the account owns, so the names may be listed before they exist.
 - **Expiry:** the shortest preset crates.io offers, or a custom date that covers only
   the publish window.
 
-Paste it into `CARGO_REGISTRY_TOKEN` as [Publish the Crates](#publish-the-crates) step 1
-describes. Do not run `cargo login`, and do not store the token in
-`~/.cargo/credentials.toml`, a GitHub secret, or the `release` environment.
+Store it only as the `release` environment’s `CARGO_REGISTRY_TOKEN` secret, as
+[Publish Through the Workflow](#publish-through-the-workflow) step 1 describes.
+Do not run `cargo login`, and do not store it in `~/.cargo/credentials.toml` or as a
+repository secret, which every job of every workflow could read.
 
 ### PyPI Account
 
@@ -215,25 +230,19 @@ describes. Do not run `cargo login`, and do not store the token in
    Enable it under [Account settings](https://pypi.org/manage/account/) if it is not
    already on.
 3. Confirm the account email is verified.
+4. Confirm the pending publisher is listed on
+   [the account’s publishing page](https://pypi.org/manage/account/publishing/) with
+   exactly the subjects in
+   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers).
 
-The token is created on publish day, at
-[Add API token](https://pypi.org/manage/account/token/):
-
-- **Scope:** Entire account (all projects).
-  A project-scoped token cannot be created until `fdu` exists.
-- **Name:** something that names this one upload, for example `fdu-0.1.0-bootstrap`.
-
-Paste it into `UV_PUBLISH_TOKEN` as
-[Publish the Python Distribution](#publish-the-python-distribution) step 1 describes.
-`uv publish` sends it as the password with username `__token__`. Do not write a
-`.pypirc`, and do not store the token in a GitHub secret.
+No PyPI token is created for the workflow.
+Only [Publishing 0.1.0 by Hand](#publishing-010-by-hand) needs one.
 
 ### GitHub `release` Environment
 
-`0.1.0` does not use a GitHub environment.
-Create the protected `release` environment anyway, before anyone registers a trusted
-publisher, because GitHub creates an *unprotected* environment the first time a workflow
-job names one.
+Create the protected `release` environment before the first publishing run.
+GitHub creates an *unprotected* environment the first time a workflow job names one, and
+the pending PyPI publisher would trust it.
 
 In the repository: Settings → Environments → New environment, name `release`. Then:
 
@@ -247,19 +256,27 @@ In the repository: Settings → Environments → New environment, name `release`
 - If **Allow administrators to bypass configured protection rules** is selected,
   deselect it.
 
-Do not add `CARGO_REGISTRY_TOKEN` or `UV_PUBLISH_TOKEN` as environment secrets.
-Later publish jobs receive `id-token: write` and exchange OIDC; they hold no long-lived
-registry credential.
+The workflow’s `release-environment` job reads these three settings back through the
+GitHub API before the publish job can start, and stops the run if any is missing.
+
+The environment holds one secret, and only for the `0.1.0` run: `CARGO_REGISTRY_TOKEN`.
+Never add a PyPI token to it.
+Later runs exchange OIDC and hold no long-lived registry credential.
 
 ### After 0.1.0: Trusted Publishers
 
-Only after all three of these are true:
+PyPI needs nothing more: the first upload turned the pending publisher into the `fdu`
+project’s publisher.
+Confirm it is listed on
+[the project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/),
+and add no second one.
 
-1. `fdu-core` and `fdu` exist on crates.io, and `fdu` exists on PyPI.
+crates.io needs one publisher per crate, and only after all three of these are true:
+
+1. `fdu-core` and `fdu` exist on crates.io.
 2. The `release` environment exists and is protected as above.
-3. Every bootstrap token has been revoked.
+3. The `CARGO_REGISTRY_TOKEN` secret is deleted and the token revoked.
 
-Then add the publishers.
 Use these subjects on every record; they are specific to this repository, not copied
 from Flowmark:
 
@@ -271,43 +288,43 @@ from Flowmark:
 | Environment | `release` |
 
 On crates.io, open each crate’s settings and add a GitHub Actions trusted publisher with
-those fields. On PyPI, open
-[the `fdu` project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/)
-and add the same GitHub publisher.
-Do not create a pending publisher: the project already exists.
-
-Registering the publishers does not publish anything.
-[`release.yml`](../../../.github/workflows/release.yml) still has no publish job; adding
-those jobs is later work.
-The records exist so that work has a protected subject to name.
+those fields. Registering a publisher does not publish anything.
+From then on the publish job finds no secret and exchanges OIDC through
+`rust-lang/crates-io-auth-action`; a run that finds neither a secret nor a publisher
+fails before its first upload.
 
 ### Publication Sequence
 
 The first release is this order.
 Channel setup is the only block that can finish before the release commit exists.
 
-1. Finish this section: accounts, 2FA, and the protected `release` environment.
+1. Finish this section: accounts, 2FA, the pending PyPI publisher, and the protected
+   `release` environment.
 2. Merge everything the release needs onto `main`.
 3. [Rehearse the Release Commit](#rehearse-the-release-commit).
 4. [Tag the Release Commit](#tag-the-release-commit), including the name recheck.
-5. [Publish the Crates](#publish-the-crates): `fdu-core`, then `fdu`. Revoke the
-   crates.io token.
-6. [Publish the Python Distribution](#publish-the-python-distribution).
-   Revoke the PyPI token.
-7. [Announce the Release](#announce-the-release).
-8. Add [trusted publishers](#after-010-trusted-publishers).
+5. [Publish Through the Workflow](#publish-through-the-workflow): store the crates.io
+   token, dispatch on the tag with `publish` set, approve, then delete the secret and
+   revoke the token.
+6. [Announce the Release](#announce-the-release).
+7. Work through [After Publishing](#after-publishing).
+8. Add the crates.io [trusted publishers](#after-010-trusted-publishers).
 
-## Publishing 0.1.0 by Hand
+Later releases skip steps 1 and 8, and step 5 has no token.
+If the workflow cannot publish, [Publishing 0.1.0 by Hand](#publishing-010-by-hand)
+replaces step 5.
 
-A maintainer publishes `0.1.0` from the signed tag in this order: `fdu-core`, then
-`fdu`, then the Python distribution.
-[First-Time Channel Setup](#first-time-channel-setup) must already be done: the accounts
-exist, 2FA is on, and the `release` environment is protected.
+## Publishing a Release
+
+A maintainer publishes from the signed tag: `fdu-core`, then `fdu`, then the Python
+distribution.
+[First-Time Channel Setup](#first-time-channel-setup) must already be done:
+the accounts exist, 2FA is on, and the `release` environment is protected.
 Every upload carries bytes the rehearsal validated, and each registry is checked against
 the rehearsal’s manifest before the next write.
 
-The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the token
-prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
+The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the by-hand
+token prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 `RELEASE` is an empty scratch directory outside any checkout, and `<run-id>` and
 `<release-commit>` are recorded in
 [Rehearse the Release Commit](#rehearse-the-release-commit).
@@ -368,7 +385,8 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
    the run’s own checksums.
    `gh run download` writes each artifact to its own subdirectory.
    Artifacts expire (90 days by default), so keep this directory until the release is
-   announced.
+   announced: it is what [Publishing 0.1.0 by Hand](#publishing-010-by-hand) uploads if
+   the workflow cannot publish at all.
 
    ```shell
    gh run download <run-id> --repo jlevy/fdu --dir "$RELEASE/download"
@@ -459,11 +477,262 @@ prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 Every remaining command runs in `$RELEASE/fdu`, whose `rust-toolchain.toml` selects the
 pinned Rust.
 
+### Publish Through the Workflow
+
+The publishing run rebuilds, smoke-tests, and inspects every artifact from the tag, then
+uploads exactly those files from one job once you approve the `release` environment.
+Before each upload the job proves what it is about to send:
+
+| Before | The job checks |
+| --- | --- |
+| Anything | Its own checkout is the tag and the commit the plan resolved, the environment check passed, and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
+| The first write | Both registries are audited. An `identical` version is skipped, a `missing` one is published, and any conflict on either registry stops the job, so a PyPI conflict stops crates.io from being written first. |
+| Each crate | `cargo package --locked --no-verify` reproduces it from the tag, and its digest must equal the manifest’s. `fdu` is reproduced again against the published `fdu-core`. |
+| `fdu` and PyPI | For up to ten minutes, the job waits for crates.io to serve the manifest’s digest for the crate just published, in both the API record and the sparse index Cargo resolves from. Another digest in either stops the job. |
+| The end | PyPI lists exactly the manifest’s files and digests, and `registry_state.py --require-identical` passes for every registry. |
+
+1. **`0.1.0` only: store the crates.io token.** Create it as
+   [crates.io Account](#cratesio-account) describes, and add it as the `release`
+   environment’s `CARGO_REGISTRY_TOKEN` secret: Settings → Environments → `release` →
+   Add environment secret.
+   Or run the command below and paste the token when `gh` prompts for it, so it never
+   reaches shell history.
+   Later releases skip this step: with no secret, the job exchanges OIDC.
+
+   ```shell
+   gh secret set CARGO_REGISTRY_TOKEN --env release --repo jlevy/fdu
+   ```
+
+2. **Dispatch the publishing run on the tag**, and record its ID as `<publish-run-id>`.
+   The plan job fails at once unless the ref is `refs/tags/v0.1.0`, that tag names the
+   checked-out commit, and the Cargo version is `0.1.0`.
+
+   ```shell
+   gh workflow run release.yml --repo jlevy/fdu --ref v0.1.0 -f publish=true
+   gh run list --repo jlevy/fdu --workflow release.yml --limit 1
+   ```
+
+3. **Check the run, then approve it once.** When the `Publish to crates.io and PyPI` job
+   is *Waiting*, the builds, smoke tests, inspection, and the `release-environment`
+   check have passed. Confirm the run is the tag and the release commit: the command must
+   print `workflow_dispatch`, `v0.1.0`, and `<release-commit>`.
+
+   ```shell
+   gh run view <publish-run-id> --repo jlevy/fdu --json event,headBranch,headSha \
+     --jq '[.event, .headBranch, .headSha] | join(" ")'
+   ```
+
+   Then open the run on GitHub, choose Review deployments, select `release`, and
+   approve. That one approval covers both registries; nothing is uploaded before it.
+
+4. **Watch the job to the end:**
+
+   ```shell
+   gh run watch <publish-run-id> --repo jlevy/fdu --exit-status
+   ```
+
+   If it fails, go to
+   [Recover From a Partial Publication](#recover-from-a-partial-publication) before
+   anything else.
+
+5. **`0.1.0` only: remove the token.** Once the job has passed
+   `Wait until crates.io serves the rehearsed fdu`, both crates are published and no
+   rerun needs the token again: a rerun finds them `identical` and skips the credential
+   step. Delete the secret, then revoke the token in the
+   [crates.io token settings](https://crates.io/settings/tokens):
+
+   ```shell
+   gh secret delete CARGO_REGISTRY_TOKEN --env release --repo jlevy/fdu
+   ```
+
+6. **Keep the published files.** Download the publishing run’s artifacts, as in
+   [Rehearse the Release Commit](#rehearse-the-release-commit) step 3, into
+   `$RELEASE/published`. They are what the registries hold, and what the announcement
+   attaches. Each run builds its own wheels and source distribution, so these need not
+   match the rehearsal’s in `$RELEASE/files`.
+
+   ```shell
+   gh run download <publish-run-id> --repo jlevy/fdu --dir "$RELEASE/published-download"
+   mkdir "$RELEASE/published"
+   find "$RELEASE/published-download" -type f -exec cp {} "$RELEASE/published/" \;
+   (cd "$RELEASE/published" && shasum -a 256 -c SHA256SUMS)
+   ```
+
+### Announce the Release
+
+Once every channel verifies, record the final registry state and attach it with the
+evidence and artifacts to a GitHub release on the tag.
+This stays a maintainer step; the workflow never writes to the repository.
+The files are `$RELEASE/published`, the set the registries hold.
+The body is `$RELEASE/notes.md`, derived from the release commit’s notes and checked in
+step 1 of [Tag the Release Commit](#tag-the-release-commit); step 4 confirmed that the
+tag names that commit, so the body is the tagged text.
+The release is created only if the audit exits 0, which with `--require-identical` means
+every channel holds exactly the rehearsal’s files:
+
+```shell
+uv run --no-project --python 3.12 python scripts/release/registry_state.py \
+  --manifest "$RELEASE/published/release-manifest.json" --version 0.1.0 \
+  --require-identical --output "$RELEASE/registry-state.json" &&
+  gh release create v0.1.0 --repo jlevy/fdu --verify-tag --title "fdu 0.1.0" \
+    --notes-file "$RELEASE/notes.md" \
+    "$RELEASE/registry-state.json" "$RELEASE"/published/release-manifest.json \
+    "$RELEASE"/published/SHA256SUMS "$RELEASE"/published/*.crate \
+    "$RELEASE"/published/*.whl "$RELEASE"/published/fdu-0.1.0.tar.gz
+```
+
+### After Publishing
+
+Check what users see first:
+
+- [ ] docs.rs built both crates: [fdu-core](https://docs.rs/crate/fdu-core/0.1.0/builds)
+  and [fdu](https://docs.rs/crate/fdu/0.1.0/builds) each show a successful build.
+- [ ] The crates.io pages for [fdu-core](https://crates.io/crates/fdu-core) and
+  [fdu](https://crates.io/crates/fdu) render their READMEs, and their links resolve.
+- [ ] The [PyPI page](https://pypi.org/project/fdu/0.1.0/) renders the package README
+  and lists the source distribution and five wheels.
+- [ ] The [GitHub release](https://github.com/jlevy/fdu/releases/tag/v0.1.0) carries the
+  eight artifacts (two crates, the source distribution, and five wheels) and the
+  evidence: `registry-state.json`, `release-manifest.json`, and `SHA256SUMS`.
+  `gh release view v0.1.0 --repo jlevy/fdu --json assets --jq '.assets | length'` prints
+  `11`.
+
+Then install it the ways a user does, from outside any checkout.
+Each command must print `fdu 0.1.0`. If your uv configuration sets an `exclude-newer`
+cool-off, add `--no-config` to the `uv` commands, or the cool-off hides a release
+published minutes ago.
+
+- [ ] `uvx` runs the newest release: `uvx fdu@latest --version`.
+- [ ] `uv tool install fdu` installs it:
+  `uv tool install fdu && "$(uv tool dir --bin)/fdu" --version`, then
+  `uv tool uninstall fdu`.
+- [ ] `cargo install --locked fdu` builds it from crates.io:
+  `cargo install --locked fdu --root "$RELEASE/cargo-user" && "$RELEASE/cargo-user/bin/fdu" --version`.
+- [ ] `fdu --install-skill`, run from one of those installs, installs the agent skill.
+  The installer lands in its own pull request; skip this line if that did not merge
+  before the tag.
+
+### Recover From a Partial Publication
+
+Neither crates.io nor PyPI lets a version’s files be replaced, even after a yank or a
+deletion. So when any step fails, first audit the registries against the manifest of the
+files being published, and let the verdict decide what comes next.
+The publish job’s log already holds one: its audit steps print each registry’s state,
+and a guard that stops prints `conflict:` or `timeout:` with the digests it saw.
+Confirm it from `$RELEASE/fdu`, with `$RELEASE/published` from
+[Publish Through the Workflow](#publish-through-the-workflow) step 6 (download it now if
+the run failed before that step):
+
+```shell
+uv run --no-project --python 3.12 python scripts/release/registry_state.py \
+  --manifest "$RELEASE/published/release-manifest.json" --version 0.1.0
+```
+
+An audit that cannot read a registry stops with an error naming the URL and exits 1.
+That is no verdict: rerun the audit, and never read it as `missing`.
+
+| Audit reports | Meaning | Next step |
+| --- | --- | --- |
+| `missing`, after the lag retry in step 3 of Publish the Crates | Nothing reached the registry. | Fix the cause, then rerun: the failed publish job, or by hand the failed step from its start, so a crate is compared again before it is published. |
+| `identical` | The upload landed, though the command reported a failure. | Rerun the failed publish job, which skips it; by hand, continue with the next step. |
+| `conflict` whose detail lists only `missing:` files | PyPI holds part of the release, from an interrupted upload or a JSON API that has not caught up. Nothing it holds is wrong. | Wait a few minutes and rerun the audit. If files are still missing, rerun the failed publish job, or by hand the `uv publish` command from step 2 of Publish the Python Distribution; either way `--check-url` uploads only what PyPI lacks. |
+| `conflict` listing a `hash mismatch:` or an `unexpected:` file | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
+
+Rerun a failed publish job with Re-run failed jobs on the same workflow run, and approve
+it again.
+The rerun uploads the files that run inspected, so it can finish what the first
+attempt started. Never dispatch a new publishing run once PyPI holds any file of the
+version: a new run builds its own wheels and source distribution, which need not match
+the uploaded ones, and its evidence job stops on a partially published PyPI release in
+any case. Artifacts expire after 90 days; past that, finish by hand from
+`$RELEASE/published`. A failure whose fix changes `release.yml` cannot be rerun either,
+because the tag runs the workflow it names; finish that release by hand as well.
+
+A `conflict` with a hash mismatch or an unexpected file, on any channel, or any failure
+whose fix needs a new commit, ends `0.1.0`: a published file cannot be replaced, the
+pushed tag cannot move, and every channel carries one version.
+Nothing this process writes can conflict before `fdu-core` is on crates.io.
+
+1. **Publish nothing more under `0.1.0`.** Run no later step.
+   Above all, never publish `fdu` against an `fdu-core` that conflicts.
+
+2. **Record what happened while the evidence is fresh**, in a bead or a GitHub issue:
+
+   - the audit’s output;
+   - the published digest of each conflicting crate beside the manifest’s, from
+     `curl -fsSL -A 'fdu-release (https://github.com/jlevy/fdu)' https://crates.io/api/v1/crates/<crate>/0.1.0/download | shasum -a 256`;
+   - where it was published: the publishing run’s ID and its log, or by hand the host
+     and toolchain (`uname -a`, `cargo -V`) and the digests step 2 of Publish the Crates
+     printed;
+   - the release commit, the rehearsal’s run ID, and every version yanked.
+
+   Keep `$RELEASE`, including a hand publication’s `target/package`, which holds the
+   archives `cargo publish` built and uploaded.
+
+3. **Yank each version whose published bytes are wrong, and only those.**
+   `cargo yank fdu-core@0.1.0` (or `fdu@0.1.0`) needs a token with the `yank` scope: by
+   hand, the one from step 1 of Publish the Crates; after a workflow publication, a new
+   token limited to `yank` on `fdu-core` and `fdu` with the shortest expiry, revoked
+   afterwards. On PyPI, yank the release from the project’s settings.
+   A version the audit reports as `identical` holds the tested bytes and stays.
+   A yank stops new resolution; it deletes nothing and does not break an existing
+   lockfile.
+
+4. **Never retag.** `v0.1.0` keeps naming the release commit, and nothing is published
+   again under `0.1.0` on any channel.
+
+5. **Release `0.1.1` instead.** Bump the version in a pull request, including every
+   manifest and the expected version in `tests/release/test_metadata.py`, and give the
+   CHANGELOG a `0.1.1` entry that says which `0.1.0` artifacts exist and which were
+   yanked. Once it merges, repeat [Publishing a Release](#publishing-a-release) from
+   [Rehearse the Release Commit](#rehearse-the-release-commit) with `0.1.1` in place of
+   `0.1.0`. Both crates are published at `0.1.1`, `fdu-core` included, even if its
+   source did not change.
+
+   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 2 still requires
+   `404` for a name `0.1.0` never reached.
+   A name it did reach now prints `200`, so check that name’s new version instead; for
+   each such name, its command here must print `404`:
+
+   ```shell
+   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
+     https://crates.io/api/v1/crates/fdu-core/0.1.1
+   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
+     https://crates.io/api/v1/crates/fdu/0.1.1
+   curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/fdu/0.1.1/json
+   ```
+
+Whatever the outcome, delete the `CARGO_REGISTRY_TOKEN` environment secret if it still
+exists, and unset and revoke every token as the steps above describe.
+
+## Publishing 0.1.0 by Hand
+
+This is the fallback for when the workflow cannot publish: the `release` environment
+cannot be set up in time, or the publish job fails in a way a rerun cannot fix, such as
+a fix that changes `release.yml`, which the tag cannot pick up without a new commit and
+so a new version. It holds registry tokens in a shell instead of the environment.
+
+It uploads the files any registry may already hold, so that nothing published twice can
+differ. If a publishing run uploaded anything, those are its files in
+`$RELEASE/published`, from [Publish Through the Workflow](#publish-through-the-workflow)
+step 6; a crate it published is then `identical` and skipped.
+Otherwise they are the rehearsal’s files from
+[Rehearse the Release Commit](#rehearse-the-release-commit) step 3:
+
+```shell
+[ -d "$RELEASE/published" ] || cp -R "$RELEASE/files" "$RELEASE/published"
+```
+
+Every command below runs in `$RELEASE/fdu`, from
+[Tag the Release Commit](#tag-the-release-commit) step 4. Afterwards, continue with
+[Announce the Release](#announce-the-release).
+
 ### Publish the Crates
 
-1. Create the crates.io API token as [crates.io Account](#cratesio-account) describes:
-   `publish-new`, `publish-update`, and `yank`, limited to `fdu-core` and `fdu`, with
-   the shortest expiry crates.io offers.
+1. Create a crates.io API token as [crates.io Account](#cratesio-account) describes,
+   adding the `yank` scope so a conflict can be contained without minting a second
+   token: `publish-new`, `publish-update`, and `yank`, limited to `fdu-core` and `fdu`,
+   with the shortest expiry crates.io offers.
    Read the token without echoing it or writing it to shell history:
 
    ```shell
@@ -483,7 +752,7 @@ pinned Rust.
 
    ```shell
    cargo package --locked -p fdu-core -p fdu
-   (cd target/package && grep '\.crate$' "$RELEASE/files/SHA256SUMS" | shasum -a 256 -c -)
+   (cd target/package && grep '\.crate$' "$RELEASE/published/SHA256SUMS" | shasum -a 256 -c -)
    ```
 
    A match is evidence about this host and this tree only, and Cargo cannot upload
@@ -491,7 +760,7 @@ pinned Rust.
    checkout every time.
    So the host whose digests matched is the host that publishes.
    If only a Linux reproduction matches, do all of Publish the Crates on that Linux
-   host: download and check the rehearsal’s files there as in
+   host: download and check the files being published there, as in
    [Rehearse the Release Commit](#rehearse-the-release-commit) step 3, clone and
    validate the tag as in [Tag the Release Commit](#tag-the-release-commit) step 4, then
    run steps 1 to 6 of this section in that clone.
@@ -507,7 +776,7 @@ pinned Rust.
    ```shell
    cargo publish --locked -p fdu-core
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
-     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel crates.io
+     --manifest "$RELEASE/published/release-manifest.json" --version 0.1.0 --channel crates.io
    ```
 
    If `cargo publish` succeeded but the audit still reports `fdu-core` as `missing`, the
@@ -523,10 +792,10 @@ pinned Rust.
 
    ```shell
    cargo package --locked -p fdu
-   (cd target/package && grep ' fdu-0\.1\.0\.crate$' "$RELEASE/files/SHA256SUMS" | shasum -a 256 -c -)
+   (cd target/package && grep ' fdu-0\.1\.0\.crate$' "$RELEASE/published/SHA256SUMS" | shasum -a 256 -c -)
    cargo publish --locked -p fdu
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
-     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel crates.io \
+     --manifest "$RELEASE/published/release-manifest.json" --version 0.1.0 --channel crates.io \
      --require-identical
    ```
 
@@ -546,8 +815,13 @@ pinned Rust.
 
 ### Publish the Python Distribution
 
-1. Create the account-scoped PyPI API token as [PyPI Account](#pypi-account) describes,
-   and read it the same way:
+1. Create a PyPI API token at [Add API token](https://pypi.org/manage/account/token/),
+   named for this one upload, for example `fdu-0.1.0-bootstrap`. Scope it to the `fdu`
+   project if the project exists; otherwise it has to be Entire account, because a
+   project-scoped token needs an existing project.
+   `uv publish` sends it as the password with username `__token__`. Do not write a
+   `.pypirc`, and do not store it in a GitHub secret.
+   Read it the same way:
 
    ```shell
    read -rs UV_PUBLISH_TOKEN && export UV_PUBLISH_TOKEN
@@ -558,7 +832,7 @@ pinned Rust.
 
    ```shell
    uv publish --trusted-publishing never --check-url https://pypi.org/simple/ \
-     "$RELEASE"/files/fdu-0.1.0.tar.gz "$RELEASE"/files/fdu-0.1.0-*.whl
+     "$RELEASE"/published/fdu-0.1.0.tar.gz "$RELEASE"/published/fdu-0.1.0-*.whl
    unset UV_PUBLISH_TOKEN
    ```
 
@@ -574,7 +848,7 @@ pinned Rust.
 
    ```shell
    uv run --no-project --python 3.12 python scripts/release/registry_state.py \
-     --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 --channel pypi \
+     --manifest "$RELEASE/published/release-manifest.json" --version 0.1.0 --channel pypi \
      --require-identical &&
      (cd "$RELEASE" &&
        uv tool run --no-config --no-build --python 3.12 --from fdu==0.1.0 fdu --version &&
@@ -582,115 +856,11 @@ pinned Rust.
    ```
 
 4. Delete the token in the PyPI account settings.
-   The trusted publisher waits for the protected `release` environment, as
-   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers) describes.
-
-### Announce the Release
-
-Once every channel verifies, record the final registry state and attach it with the
-evidence and artifacts to a GitHub release on the tag.
-The body is `$RELEASE/notes.md`, derived from the release commit’s notes and checked in
-step 1 of [Tag the Release Commit](#tag-the-release-commit); step 4 confirmed that the
-tag names that commit, so the body is the tagged text.
-The release is created only if the audit exits 0, which with `--require-identical` means
-every channel holds exactly the rehearsal’s files:
-
-```shell
-uv run --no-project --python 3.12 python scripts/release/registry_state.py \
-  --manifest "$RELEASE/files/release-manifest.json" --version 0.1.0 \
-  --require-identical --output "$RELEASE/registry-state.json" &&
-  gh release create v0.1.0 --repo jlevy/fdu --verify-tag --title "fdu 0.1.0" \
-    --notes-file "$RELEASE/notes.md" \
-    "$RELEASE/registry-state.json" "$RELEASE"/files/release-manifest.json \
-    "$RELEASE"/files/SHA256SUMS "$RELEASE"/files/*.crate "$RELEASE"/files/*.whl \
-    "$RELEASE"/files/fdu-0.1.0.tar.gz
-```
-
-### After Publishing
-
-Check what users see first:
-
-- [ ] docs.rs built both crates: [fdu-core](https://docs.rs/crate/fdu-core/0.1.0/builds)
-  and [fdu](https://docs.rs/crate/fdu/0.1.0/builds) each show a successful build.
-- [ ] The crates.io pages for [fdu-core](https://crates.io/crates/fdu-core) and
-  [fdu](https://crates.io/crates/fdu) render their READMEs, and their links resolve.
-- [ ] The [PyPI page](https://pypi.org/project/fdu/0.1.0/) renders the package README
-  and lists the source distribution and five wheels.
-- [ ] The [GitHub release](https://github.com/jlevy/fdu/releases/tag/v0.1.0) carries the
-  eight artifacts (two crates, the source distribution, and five wheels) and the
-  evidence: `registry-state.json`, `release-manifest.json`, and `SHA256SUMS`.
-  `gh release view v0.1.0 --repo jlevy/fdu --json assets --jq '.assets | length'` prints
-  `11`.
-
-### Recover From a Partial Publication
-
-Neither crates.io nor PyPI lets a version’s files be replaced, even after a yank or a
-deletion.
-So when any step fails, first run that channel’s audit, the `registry_state.py`
-command from the step that failed, and let its verdict decide what comes next.
-An audit that cannot read a registry stops with an error naming the URL and exits 1.
-That is no verdict: rerun the audit, and never read it as `missing`.
-
-| Audit reports | Meaning | Next step |
-| --- | --- | --- |
-| `missing`, after the lag retry in step 3 of Publish the Crates | Nothing reached the registry. | Fix the cause, then rerun the failed step from its start, so a crate is compared again before it is published. |
-| `identical` | The upload landed, though the command reported a failure. | Continue with the next step. |
-| `conflict` whose detail lists only `missing:` files | PyPI holds part of the release, from an interrupted upload or a JSON API that has not caught up. Nothing it holds is wrong. | Wait a few minutes and rerun the audit. If files are still missing, rerun the `uv publish` command from step 2 of Publish the Python Distribution; `--check-url` uploads only what PyPI lacks. |
-| `conflict` listing a `hash mismatch:` or an `unexpected:` file | The registry holds bytes nothing tested, under a version that cannot be reused. | Follow the procedure below. |
-
-A `conflict` with a hash mismatch or an unexpected file, on any channel, or any failure
-whose fix needs a new commit, ends `0.1.0`: a published file cannot be replaced, the
-pushed tag cannot move, and every channel carries one version.
-The first case can only arise from step 3 of Publish the Crates onward, once `fdu-core`
-is on crates.io.
-
-1. **Publish nothing more under `0.1.0`.** Run no later step.
-   Above all, never publish `fdu` against an `fdu-core` that conflicts.
-
-2. **Record what happened while the evidence is fresh**, in a bead or a GitHub issue:
-
-   - the audit’s output;
-   - the published digest of each conflicting crate beside the manifest’s, from
-     `curl -fsSL -A 'fdu-release (https://github.com/jlevy/fdu)' https://crates.io/api/v1/crates/<crate>/0.1.0/download | shasum -a 256`;
-   - the host and toolchain that published (`uname -a`, `cargo -V`) and the digests step
-     2 of Publish the Crates printed;
-   - the release commit, the rehearsal’s run ID, and every version yanked.
-
-   Keep `$RELEASE`, including the clone’s `target/package`, which holds the archives
-   `cargo publish` built and uploaded.
-
-3. **Yank each version whose published bytes are wrong, and only those.**
-   `cargo yank fdu-core@0.1.0` (or `fdu@0.1.0`) uses the token from step 1 of Publish
-   the Crates; on PyPI, yank the release from the project’s settings.
-   A version the audit reports as `identical` holds the tested bytes and stays.
-   A yank stops new resolution; it deletes nothing and does not break an existing
-   lockfile.
-
-4. **Never retag.** `v0.1.0` keeps naming the release commit, and nothing is published
-   again under `0.1.0` on any channel.
-
-5. **Release `0.1.1` instead.** Bump the version in a pull request, including every
-   manifest and the expected version in `tests/release/test_metadata.py`, and give the
-   CHANGELOG a `0.1.1` entry that says which `0.1.0` artifacts exist and which were
-   yanked. Once it merges, repeat this section from
-   [Rehearse the Release Commit](#rehearse-the-release-commit) with `0.1.1` in place of
-   `0.1.0`. Both crates are published at `0.1.1`, `fdu-core` included, even if its
-   source did not change.
-
-   On that pass, [Tag the Release Commit](#tag-the-release-commit) step 2 still requires
-   `404` for a name `0.1.0` never reached.
-   A name it did reach now prints `200`, so check that name’s new version instead; for
-   each such name, its command here must print `404`:
-
-   ```shell
-   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
-     https://crates.io/api/v1/crates/fdu-core/0.1.1
-   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
-     https://crates.io/api/v1/crates/fdu/0.1.1
-   curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/fdu/0.1.1/json
-   ```
-
-Whatever the outcome, unset and revoke every token as the steps above describe.
+   Then open
+   [the project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/):
+   if a hand upload created the project, the pending publisher may not have carried
+   over. If it is not listed, add it there with the subjects in
+   [After 0.1.0: Trusted Publishers](#after-010-trusted-publishers).
 
 The implementation audit, Flowmark comparison, deliberate divergences, and proposed
 upstream improvements live in the
