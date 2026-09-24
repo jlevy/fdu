@@ -2,8 +2,7 @@
 
 **Date:** 2026-09-23
 
-**Status:** Approved design, implemented; the real-terminal smoke test (`fdu-3xiz`) and
-the documentation (`fdu-n6bd`) are outstanding
+**Status:** Implemented; the performance measurement (`fdu-2e8o`) is outstanding
 
 **Tracking:** `fdu-vngp`
 
@@ -124,11 +123,18 @@ pub struct ProgressSnapshot {
     pub analysis: Option<(u64, u64)>,
 }
 
-pub enum ProgressPhase { Starting, Loading, Scanning, Revalidating, Analyzing, Saving }
+pub enum ProgressPhase {
+    Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving,
+}
 ```
 
 A fresh handle reports `Starting` until the route enters its first phase, and the last
 phase entered persists after the route returns.
+`Indexing` was added during implementation: on an 867k-file tree the walkers finished
+about a second (release build) before the single thread assembling the index worked
+through their queued listings, and the frozen counts under `Scanning` read as a stall.
+A detached walker enters it as it leaves, which happens only once the queue is empty.
+Building the report itself took 1.4 ms there and needs no phase.
 
 It enters through variants beside today’s entry points rather than through `Delivery`,
 which stays a plain comparable value:
@@ -243,6 +249,7 @@ The frame for each phase, shown here in plain text:
 ⠹ ~/wrk/github  Loading       0.6 s
 ⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
 ⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s
+⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
 ```
@@ -315,17 +322,17 @@ for them, and points to `--docs` rather than restating the rules.
 One phase, tracked as beads under `fdu-vngp`. Engine work and the pure command-line
 pieces can proceed in parallel; the ticker joins them.
 
-| Bead | Work | Depends on |
-| --- | --- | --- |
-| `fdu-hlb1` | `Progress` handle and walk counters (cold, summary, warm), with the equality invariant | — |
-| `fdu-mhx0` | Load, analyze, and save phases; `prepare_report_with_progress`; `Session::start_with_progress` | `fdu-hlb1` |
-| `fdu-p1gr` | Interactive detection, injected terminal facts, `--progress`, gating tests | — |
-| `fdu-vpdw` | Frame renderer, exactly per [Appearance](#appearance) | — |
-| `fdu-hjjj` | Ticker, 500 ms delay, clearing and ordering, one-shot and watch wiring | `fdu-mhx0`, `fdu-p1gr`, `fdu-vpdw` |
-| `fdu-9286` | Ctrl-C handler with the default interrupt action | `fdu-hjjj` |
-| `fdu-3xiz` | Real-terminal smoke test and manual terminal QA | `fdu-hjjj`, `fdu-9286` |
-| `fdu-n6bd` | Documentation, help text, and the help golden | `fdu-hjjj`, `fdu-9286` |
-| `fdu-2e8o` | Performance comparison, recorded in the experiment ledger | `fdu-hlb1`, `fdu-mhx0` |
+| Bead | Work | Depends on | State |
+| --- | --- | --- | --- |
+| `fdu-hlb1` | `Progress` handle and walk counters (cold, summary, warm), with the equality invariant | — | done |
+| `fdu-mhx0` | Load, analyze, and save phases; `prepare_report_with_progress`; `Session::start_with_progress` | `fdu-hlb1` | done |
+| `fdu-p1gr` | Interactive detection, injected terminal facts, `--progress`, gating tests | — | done |
+| `fdu-vpdw` | Frame renderer, exactly per [Appearance](#appearance) | — | done |
+| `fdu-hjjj` | Ticker, 500 ms delay, clearing and ordering, one-shot and watch wiring | `fdu-mhx0`, `fdu-p1gr`, `fdu-vpdw` | done |
+| `fdu-9286` | Ctrl-C handler with the default interrupt action | `fdu-hjjj` | done |
+| `fdu-3xiz` | Real-terminal smoke test and manual terminal QA | `fdu-hjjj`, `fdu-9286` | done |
+| `fdu-n6bd` | Documentation, help text, and the help golden | `fdu-hjjj`, `fdu-9286` | done |
+| `fdu-2e8o` | Performance comparison, recorded in the experiment ledger | `fdu-hlb1`, `fdu-mhx0` | measured separately |
 
 `fdu-m893`’s planned flags are renamed off `--progress`, recorded in its bead.
 

@@ -293,6 +293,25 @@ Read them as strings, or use a parser that preserves integers, if exact identity
 matters. Results go to stdout; diagnostics go to stderr.
 The command never prompts or pages.
 
+A run that takes longer than half a second shows one progress line on stderr while it
+works, and erases it before anything else is written:
+
+```text
+⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
+⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
+```
+
+It is drawn only for a person at an interactive terminal: stderr must be a terminal,
+`TERM` must be set and not `dumb`, and `CI` must be unset.
+Otherwise nothing is drawn, whatever the flag says, so pipes, files, logs, CI, and
+agents never see it and need no flag.
+`--progress=auto` (the default) also skips it for JSON, JSON Lines, and YAML;
+`--progress=always` draws it for those too, and `--progress=never` turns it off.
+`--color` and `NO_COLOR` decide only whether it is colored.
+Ctrl-C while it is drawn erases the line, prints `fdu: interrupted`, and ends the
+process by the interrupt signal, so the shell reports status 130 and a calling script
+stops.
+
 Check `complete` and `errors` before trusting totals, `freshness` and `source` before
 presenting them as current, row or section bounds before assuming exhaustiveness, and
 metric `coverage` before presenting analysis as complete.
