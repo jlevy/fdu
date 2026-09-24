@@ -39,7 +39,7 @@ Library steps are time-boxed and must stay bounded.
 | Phase 3: Cache × analyze | ✅ Passed | `auto` second run 3.5× faster; `off` stayed `0 cached` |
 | Phase 4: Medium tree | ✅ Passed | Whole-tree metadata only; analyze on `docs/` |
 | Phase 5: Bounded Library | ✅ Passed | Depth 2 exit 2 (TCC); no SIGKILL |
-| Phase 6: Terminal Progress | ⬜ Not run | Added 2026-09-23 with the progress indicator |
+| Phase 6: Terminal Progress | ⏳ Pending | Added 2026-09-23 with the progress indicator |
 | Phase 7: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked

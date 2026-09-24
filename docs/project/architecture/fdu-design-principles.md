@@ -559,6 +559,9 @@ that exists only at the CLI layer is misplaced.
 
 What legitimately lives only in `cli.rs`: flag parsing, terminal and colour decisions,
 exit-code mapping, and the human text layout.
+The progress indicator shows where that line falls: what a run has walked is an engine
+fact, a `Progress` handle any library caller can poll, while whether to draw it, when,
+and how is a terminal decision the command line owns.
 Everything else — value grammars, selection semantics, view construction, cache policy,
 session coordination — is library code.
 
