@@ -472,6 +472,14 @@ class EnvironmentTests(unittest.TestCase):
         # A listing that does not say how many rules there are cannot show none was missed.
         uncounted = self.answers()
         uncounted[self.POLICIES] = self.listing(("v*", "tag"), counted=False)
+        # A branch rule named like a tag is still a branch rule.
+        v_branch = self.answers()
+        v_branch[self.POLICIES] = self.listing(("v*", "branch"))
+        # A record that does not say whether administrators can bypass is not proof they cannot.
+        silent = self.answers()
+        silent_record = silent[self.BASE]
+        assert isinstance(silent_record, dict)
+        del silent_record["can_admins_bypass"]
         cases = {
             "does not exist": missing,
             "no required reviewer": self.answers(protection_rules=[{"type": "branch_policy"}]),
@@ -481,7 +489,21 @@ class EnvironmentTests(unittest.TestCase):
             "admits tag 'release-\\*'": tag,
             "reports 3 deployment rules but listed 1": unread,
             "reports None deployment rules but listed 1": uncounted,
+            "admits branch 'v\\*'": v_branch,
+            "lets administrators bypass": silent,
         }
+        # Each deployment-policy flag is required on its own: protected branches instead of
+        # selected rules, or neither.
+        for policy in (
+            {"protected_branches": True, "custom_branch_policies": True},
+            {"protected_branches": True, "custom_branch_policies": False},
+            {"protected_branches": False, "custom_branch_policies": False},
+        ):
+            with (
+                self.subTest(policy=policy),
+                self.assertRaisesRegex(ValueError, "only from selected tags"),
+            ):
+                self.check(self.answers(deployment_branch_policy=policy))
         for message, answers in cases.items():
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 self.check(answers)

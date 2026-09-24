@@ -66,17 +66,28 @@ class MetadataTests(unittest.TestCase):
                     else:
                         self.assertNotIn(marker, body)
         self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read\n\n")
-        # The GitHub release stays a maintainer step, so nothing may write the repository.
-        self.assertNotIn("contents: write", workflow)
+        # The one write grant is the publish job's `id-token: write`: the GitHub release stays
+        # a maintainer step, so nothing may write the repository, and a build job that ran
+        # dependency build scripts under `write-all` could push or move a tag. Matched as a
+        # word, so a doubled space or a `write-all` cannot slip past a substring.
+        self.assertEqual(re.findall(r"(?i)\bwrite(?:-all)?\b", code(workflow)), ["write"])
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("gh-action-pypi-publish", workflow)
+        # The bootstrap token is read by the step that reports which credential applies and
+        # by the two uploads, never in the job's `env`, where every action would see it.
+        steps = workflow_steps(jobs[PUBLISH_JOB])
+        holders = [name for name, text in steps.items() if "secrets.CARGO_REGISTRY_TOKEN" in text]
+        self.assertEqual(
+            holders, ["Choose the crates.io credential", "Publish fdu-core", "Publish fdu"]
+        )
+        self.assertEqual(workflow.count("secrets.CARGO_REGISTRY_TOKEN"), 3)
 
     def test_the_publish_job_runs_only_on_the_planned_tag_after_the_rehearsal(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = workflow_jobs(workflow)[PUBLISH_JOB]
         self.assertIn("    environment: release\n", publish)
         self.assertIn(
-            "    permissions:\n      contents: read\n      id-token: write\n    ", publish
+            "    permissions:\n      contents: read\n      id-token: write\n    env:\n", publish
         )
         self.assertIn(
             "    needs: [plan, crate, sdist, wheels, evidence, release-environment]\n", publish
@@ -92,24 +103,27 @@ class MetadataTests(unittest.TestCase):
             " && needs.plan.outputs.publish == 'true'"
             " && github.ref == format('refs/tags/{0}', needs.plan.outputs.release_tag)",
         )
-        # Nor may any step outlive a failure before it: a status function in any condition,
-        # or a step that fails without failing the job, would carry an upload past a check.
-        self.assertNotRegex(publish, r"\b(?:always|cancelled|failure|success)\s*\(")
-        self.assertNotIn("continue-on-error", publish)
+        # Nor may anything outlive a failure before it: a status function in any condition,
+        # or a step or job that fails without failing what depends on it, would carry an
+        # upload past a check, the environment check included. Expression functions are
+        # case-insensitive, so `Always()` is refused as well.
+        self.assertNotRegex(code(workflow), r"(?i)\b(?:always|cancelled|failure|success)\s*\(")
+        self.assertNotRegex(code(workflow), r"(?i)continue-on-error")
         # A dispatch rehearses unless publishing is asked for explicitly, and nothing but
         # a dispatch runs the workflow at all. The trigger is compared whole, less its
         # prose, so `push: {}`, `push: # note`, or an inline mapping cannot slip in.
         self.assertEqual(len(re.findall(r"(?m)^[\"']?on[\"']?\s*:", workflow)), 1)
-        trigger = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+        trigger = re.search(r"(?ms)^on:\n(.*?)^(?=\S)", workflow)
+        assert trigger is not None
         shape, prose = [], False
-        for line in trigger.splitlines():
+        for line in trigger[1].splitlines():
             if line.startswith("        description:"):
                 prose = True
             elif prose and line.startswith("          "):
                 continue
             else:
                 prose = False
-                if line.strip():
+                if line.strip() and not line.lstrip().startswith("#"):
                     shape.append(line)
         self.assertEqual(
             shape,
@@ -121,6 +135,22 @@ class MetadataTests(unittest.TestCase):
                 "        default: false",
             ],
         )
+
+    def test_the_publish_jobs_guards_are_exactly_as_reviewed(self) -> None:
+        # A presence check passes `|| true` on a comparison, `--package-dir "${FILES}"` (the
+        # rehearsal crate compared with itself), or `A && B || A` in an upload's condition. So
+        # the steps that guard an upload, and the job that checks the environment, are
+        # compared whole, whitespace aside; the step order is pinned so a wait or the final
+        # audit cannot be dropped. Editing one in release.yml means editing it here as well.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        jobs = workflow_jobs(workflow)
+        publish = jobs[PUBLISH_JOB]
+        self.assertEqual(step_keys(publish), PUBLISH_STEP_ORDER)
+        steps = workflow_steps(publish)
+        for name, reviewed in workflow_steps(REVIEWED_PUBLISH_STEPS).items():
+            with self.subTest(step=name):
+                self.assertEqual(flat(steps[name]), flat(reviewed))
+        self.assertEqual(flat(jobs["release-environment"]), flat(REVIEWED_ENVIRONMENT_JOB))
 
     def test_each_cargo_publish_waits_for_its_own_comparison(self) -> None:
         # The audit says what is missing, but an upload must also see its comparison step
@@ -190,9 +220,11 @@ class MetadataTests(unittest.TestCase):
         self.assertIn("publish_gate.py verify-files", publish)
         self.assertIn("uv publish\n          --trusted-publishing always\n", publish)
         self.assertIn("--check-url https://pypi.org/simple/", publish)
-        self.assertNotIn("cargo build", publish)
-        self.assertNotIn("uv build", publish)
-        self.assertNotIn("maturin", publish)
+        # An allow-list rather than a deny-list: any build or test step would run dependency
+        # code in a job whose OIDC token the pending PyPI publisher trusts.
+        self.assertEqual(set(re.findall(r"\bcargo\s+([a-z-]+)", publish)), {"package", "publish"})
+        self.assertEqual(set(re.findall(r"\buvx?\s+([a-z-]+)", publish)), {"publish"})
+        self.assertNotRegex(publish, r"\b(?:uvx|pip|pip3|npm|npx|make|rustc|maturin)\b")
 
     def test_every_release_checkout_drops_its_credentials(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -214,6 +246,130 @@ class MetadataTests(unittest.TestCase):
 
 PUBLISH_JOB = "publish"
 
+# The publish job's steps in order, an action named without its pinned revision so that a
+# reviewed action update does not read as a reordering.
+PUBLISH_STEP_ORDER = [
+    "actions/checkout",
+    "Confirm the checkout is the planned release tag",
+    "Locate the rehearsal's files",
+    "actions/download-artifact",
+    "actions/download-artifact",
+    "actions/download-artifact",
+    "actions/download-artifact",
+    "Verify the downloaded files against the manifest and SHA256SUMS",
+    "Audit both registries before publishing",
+    "dtolnay/rust-toolchain",
+    "astral-sh/setup-uv",
+    "Reproduce both crates and compare them with the rehearsal",
+    "Choose the crates.io credential",
+    "Exchange GitHub OIDC for a short-lived crates.io token",
+    "Publish fdu-core",
+    "Wait until crates.io serves the rehearsed fdu-core",
+    "Reproduce fdu against the published fdu-core and compare it",
+    "Publish fdu",
+    "Wait until crates.io serves the rehearsed fdu",
+    "Audit PyPI before uploading",
+    "Upload the rehearsed source distribution and wheels to PyPI",
+    "Wait until PyPI serves exactly the rehearsed files",
+    "Audit every registry against the manifest",
+]
+
+# The steps that guard an upload, exactly as reviewed, compared with release.yml whitespace
+# aside. Changing one there is a change to publishing safety, so it is made here too.
+REVIEWED_PUBLISH_STEPS = """
+      - name: Confirm the checkout is the planned release tag
+        run: >-
+          python3 scripts/release/resolve_plan.py
+          --root .
+          --mode release
+          --ref "${GITHUB_REF}"
+          --commit "${GITHUB_SHA}"
+          --validate-checkout
+      - name: Verify the downloaded files against the manifest and SHA256SUMS
+        run: >-
+          python3 scripts/release/publish_gate.py verify-files "${FILES}"
+          --manifest "${MANIFEST}"
+          --checksums "${EVIDENCE}/SHA256SUMS"
+          --version "${VERSION}"
+      - name: Audit both registries before publishing
+        id: audit
+        run: >-
+          python3 scripts/release/publish_gate.py audit
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --github-output "${GITHUB_OUTPUT}"
+      - name: Reproduce both crates and compare them with the rehearsal
+        id: reproduce-both
+        if: steps.audit.outputs.crates == 'true'
+        run: |
+          cargo package --locked --no-verify -p fdu-core -p fdu
+          python3 scripts/release/publish_gate.py compare-crates \\
+            --package-dir target/package \\
+            --manifest "${MANIFEST}" \\
+            --version "${VERSION}" \\
+            --package fdu-core \\
+            --package fdu
+      - name: Publish fdu-core
+        if: steps.audit.outputs.fdu_core == 'missing' && steps.reproduce-both.outcome == 'success'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN
+            || steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked --no-verify -p fdu-core
+      - name: Reproduce fdu against the published fdu-core and compare it
+        id: reproduce-fdu
+        if: steps.audit.outputs.fdu == 'missing'
+        run: |
+          cargo package --locked --no-verify -p fdu
+          python3 scripts/release/publish_gate.py compare-crates \\
+            --package-dir target/package \\
+            --manifest "${MANIFEST}" \\
+            --version "${VERSION}" \\
+            --package fdu
+      - name: Publish fdu
+        if: steps.audit.outputs.fdu == 'missing' && steps.reproduce-fdu.outcome == 'success'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN
+            || steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked --no-verify -p fdu
+      - name: Audit PyPI before uploading
+        id: pypi
+        run: >-
+          python3 scripts/release/publish_gate.py audit
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --github-output "${GITHUB_OUTPUT}"
+      - name: Upload the rehearsed source distribution and wheels to PyPI
+        if: steps.pypi.outputs.upload == 'true'
+        run: >-
+          uv publish
+          --trusted-publishing always
+          --check-url https://pypi.org/simple/
+          "${FILES}/fdu-${VERSION}.tar.gz"
+          "${FILES}"/fdu-${VERSION}-*.whl
+"""
+
+# The job whose failure stops publishing when the `release` environment is not protected.
+REVIEWED_ENVIRONMENT_JOB = """
+    name: Confirm the release environment is protected
+    needs: plan
+    if: inputs.publish && needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Require a reviewer, v* tag deployments only, and no administrator bypass
+        run: >-
+          python3 scripts/release/publish_gate.py check-environment
+          --repository "${GITHUB_REPOSITORY}"
+          --environment release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+"""
+
 
 def workflow_jobs(workflow: str) -> dict[str, str]:
     """Split a workflow's `jobs:` mapping into each job's text, keyed by job ID."""
@@ -227,6 +383,27 @@ def workflow_jobs(workflow: str) -> dict[str, str]:
         elif current is not None and not line.lstrip().startswith("#"):
             jobs[current] += line + "\n"
     return jobs
+
+
+def code(text: str) -> str:
+    """The text less its full-line comments, which may mention anything."""
+    return "".join(line + "\n" for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def flat(text: str) -> str:
+    """The text with every run of whitespace made one space."""
+    return " ".join(text.split())
+
+
+def step_keys(job: str) -> list[str]:
+    """Each step's `name:`, or its `uses:` less the pinned revision, in order."""
+    keys = []
+    for text in job.split("\n      - ")[1:]:
+        key = re.search(r"(?m)^\s*(?:name|uses): (.+)$", text)
+        if key is None:
+            raise ValueError(f"step without a name or uses: {text!r}")
+        keys.append(key[1].split("@", 1)[0])
+    return keys
 
 
 def workflow_steps(job: str) -> dict[str, str]:

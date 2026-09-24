@@ -543,7 +543,8 @@ experience.
 
 ### Release Pipeline
 
-Use one top-level workflow, one tag, and independently retryable registry jobs.
+Use one top-level workflow, one tag, and one publish job whose every step is idempotent,
+so a rerun sends only what a registry lacks.
 Registry uploads cannot be atomic, and published versions cannot be replaced, so the
 workflow models partial success instead of hiding it.
 
@@ -800,15 +801,16 @@ racing path. It then:
 
 - trusted-publisher owner, repository, top-level workflow, protected environment, and
   workflow-permission assertions
-- no mutable action tags, unpinned tool installs, inherited secrets, or source checkout
-  in the PyPI publisher job
+- no mutable action tags, unpinned tool installs, or inherited secrets in the publish
+  job, which checks out the tag only to repackage the crates and compiles nothing
 - artifact checksums unchanged between build, test, and upload jobs
 - crates.io package preview checksum reproduced from the exact source bundle and matched
   against the published registry checksum
 - registry-state tests distinguish missing, identical, and conflicting immutable
   versions
 - TestPyPI install rehearsal for the Python artifact: not scheduled
-- crates.io package reproduction and manual first-release bootstrap checklist
+- crates.io package reproduction, and the first release’s bootstrap token held only as
+  the `release` environment’s secret
 - fresh registry installs, docs.rs build, PyPI metadata, and `uvx` verification after
   publication, as the release process’s after-publishing checklist lists
 - documented retry and incident paths exercised without overwriting a version
