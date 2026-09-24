@@ -81,25 +81,46 @@ class MetadataTests(unittest.TestCase):
         self.assertIn(
             "    needs: [plan, crate, sdist, wheels, evidence, release-environment]\n", publish
         )
+        # The whole condition, exactly: a presence check on each clause would pass
+        # `a || b`, `!startsWith(...)`, or `inputs.publish != true` while letting the job
+        # run on a ref it must not.
         condition = publish.split("    if: >-\n", 1)[1].split("\n    runs-on:", 1)[0]
-        for clause in (
-            "inputs.publish",
-            "startsWith(github.ref, 'refs/tags/v')",
-            "needs.plan.outputs.publish == 'true'",
-            "github.ref == format('refs/tags/{0}', needs.plan.outputs.release_tag)",
-        ):
-            self.assertIn(clause, condition)
-        # Conjoined, and never widened: `a || b`, `always() ||`, and `!cancelled()` would
-        # each pass a presence check while letting the job run on a ref it must not.
-        for widening in ("||", "always()", "!cancelled()"):
-            self.assertNotIn(widening, condition)
-        self.assertEqual(condition.count("&&"), 3)
+        self.assertEqual(
+            " ".join(condition.split()),
+            "inputs.publish"
+            " && startsWith(github.ref, 'refs/tags/v')"
+            " && needs.plan.outputs.publish == 'true'"
+            " && github.ref == format('refs/tags/{0}', needs.plan.outputs.release_tag)",
+        )
+        # Nor may any step outlive a failure before it: a status function in any condition,
+        # or a step that fails without failing the job, would carry an upload past a check.
+        self.assertNotRegex(publish, r"\b(?:always|cancelled|failure|success)\s*\(")
+        self.assertNotIn("continue-on-error", publish)
         # A dispatch rehearses unless publishing is asked for explicitly, and nothing but
-        # a dispatch runs the workflow at all.
+        # a dispatch runs the workflow at all. The trigger is compared whole, less its
+        # prose, so `push: {}`, `push: # note`, or an inline mapping cannot slip in.
+        self.assertEqual(len(re.findall(r"(?m)^[\"']?on[\"']?\s*:", workflow)), 1)
         trigger = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
-        self.assertEqual(re.findall(r"(?m)^  ([a-z_]+):$", trigger), ["workflow_dispatch"])
-        self.assertIn("      publish:\n", trigger)
-        self.assertIn("        type: boolean\n        default: false\n", trigger)
+        shape, prose = [], False
+        for line in trigger.splitlines():
+            if line.startswith("        description:"):
+                prose = True
+            elif prose and line.startswith("          "):
+                continue
+            else:
+                prose = False
+                if line.strip():
+                    shape.append(line)
+        self.assertEqual(
+            shape,
+            [
+                "  workflow_dispatch:",
+                "    inputs:",
+                "      publish:",
+                "        type: boolean",
+                "        default: false",
+            ],
+        )
 
     def test_each_cargo_publish_waits_for_its_own_comparison(self) -> None:
         # The audit says what is missing, but an upload must also see its comparison step
@@ -107,11 +128,21 @@ class MetadataTests(unittest.TestCase):
         # reference) skips the comparison, and that has to skip the upload as well.
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         steps = workflow_steps(workflow_jobs(workflow)[PUBLISH_JOB])
-        for crate, reproduce in (("fdu-core", "reproduce-both"), ("fdu", "reproduce-fdu")):
+        for crate, reproduce, packaged in (
+            ("fdu-core", "reproduce-both", ["fdu-core", "fdu"]),
+            ("fdu", "reproduce-fdu", ["fdu"]),
+        ):
             with self.subTest(crate=crate):
                 comparisons = [text for text in steps.values() if f"id: {reproduce}\n" in text]
                 self.assertEqual(len(comparisons), 1)
-                self.assertIn(f"--package {crate}", comparisons[0])
+                # Exactly what is packaged and exactly what is compared: `--package fdu`
+                # as a substring also matches `--package fdu-core`, which would let `fdu`
+                # upload without a comparison of its own.
+                self.assertEqual(
+                    re.findall(r"(?m)^\s*(cargo package .*)$", comparisons[0]),
+                    ["cargo package --locked --no-verify " + " ".join(f"-p {p}" for p in packaged)],
+                )
+                self.assertEqual(re.findall(r"--package (\S+)", comparisons[0]), packaged)
                 upload = steps[f"Publish {crate}"]
                 self.assertRegex(
                     upload,
@@ -124,8 +155,11 @@ class MetadataTests(unittest.TestCase):
         # names the workflow reads are held to the keys `audit` returns.
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = workflow_jobs(workflow)[PUBLISH_JOB]
-        referenced = set(re.findall(r"steps\.(?:audit|pypi)\.outputs\.([A-Za-z0-9_]+)", publish))
+        # `-` is part of the name, so `outputs.fdu-core` is read as the key it names rather
+        # than as `fdu`; the index form would dodge the pattern, so it is refused outright.
+        referenced = set(re.findall(r"steps\.(?:audit|pypi)\.outputs\.([A-Za-z0-9_-]+)", publish))
         self.assertTrue(referenced)
+        self.assertNotRegex(publish, r"\.outputs\s*\[")
         artifacts = [
             {"filename": "fdu-core-0.1.0.crate", "kind": "crate", "sha256": "a" * 64},
             {"filename": "fdu-0.1.0.crate", "kind": "crate", "sha256": "b" * 64},

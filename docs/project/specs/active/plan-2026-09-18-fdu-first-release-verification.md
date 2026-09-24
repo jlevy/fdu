@@ -251,7 +251,7 @@ Both checklists still record the result.
 - `fdu-wpxu`: post-publish first-user verification checklist
 - `fdu-bqb7`, `fdu-c2ml`: machine-output conformance blockers
 - `fdu-tyvq`: final-candidate verification
-- `fdu-9cf0`: publish 0.1.0 by hand
+- `fdu-9cf0`: publish 0.1.0
 - `fdu-18vk`: wheel `--watch` ignores SIGINT (fixed in pull request #87)
 - `fdu-i142`: crates.io README relative links (fixed in pull request #87)
 - `fdu-8o7g`: whole-millisecond `--interval` (`200ms`)

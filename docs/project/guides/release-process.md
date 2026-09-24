@@ -442,15 +442,13 @@ token prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 
 2. Recheck that both crate names and the Python name are still free, before a pushed tag
    commits the version.
-   crates.io also refuses a new crate whose name differs from an existing one only by
-   `-` against `_`, so `fdu_core` is checked as well.
+   crates.io treats `-` and `_` as the same name and its API answers either spelling, so
+   the `fdu-core` probe covers `fdu_core` too.
    Each command must print `404`:
 
    ```shell
    curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
      https://crates.io/api/v1/crates/fdu-core
-   curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
-     https://crates.io/api/v1/crates/fdu_core
    curl -sS -o /dev/null -w '%{http_code}\n' -A 'fdu-release (https://github.com/jlevy/fdu)' \
      https://crates.io/api/v1/crates/fdu
    curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/fdu/json

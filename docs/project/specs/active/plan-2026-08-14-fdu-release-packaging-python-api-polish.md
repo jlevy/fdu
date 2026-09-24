@@ -308,11 +308,11 @@ sharing one project’s publisher subject with another project.
 
 | Channel | fdu setup |
 | --- | --- |
-| GitHub Releases | Publish from `jlevy/fdu` with the workflow’s built-in token, granting `contents: write` only to the announcement job. |
-| PyPI bootstrap | A maintainer uploads `0.1.0` by hand with a short-lived account-scoped API token, because a project-scoped token needs an existing project. Delete the token after verifying the release. |
-| PyPI steady state | After `0.1.0`, once the `release` environment exists and is protected, register the trusted publisher for repository `jlevy/fdu`, top-level workflow `release.yml`, and environment `release`. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
-| crates.io bootstrap | Publish `fdu-core 0.1.0`, then `fdu 0.1.0`, by hand from the same crates.io owner account with a narrowly scoped, short-lived token, because trusted publishing cannot be configured until a crate exists. Remove the token after verifying the release. |
-| crates.io steady state | After `0.1.0`, once the `release` environment is protected, configure both crates’ trusted publishers for `jlevy/fdu`, `release.yml`, and environment `release`; exchange OIDC only inside the publish job. |
+| GitHub Releases | A maintainer publishes the release from the verified evidence; no job receives `contents: write` (`fdu-kqa4` tracks automating it). |
+| PyPI bootstrap | The workflow’s `publish` job uploads `0.1.0` through the pending trusted publisher registered on 2026-09-24 for `jlevy/fdu`, `release.yml`, and environment `release`, which creates the project on first upload. No API token exists. |
+| PyPI steady state | The same publisher, now attached to the project. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
+| crates.io bootstrap | The `publish` job uploads `fdu-core 0.1.0`, then `fdu 0.1.0`, with a narrowly scoped, short-lived token held only as the `release` environment’s `CARGO_REGISTRY_TOKEN` secret, because trusted publishing cannot be configured until a crate exists. Delete the secret and revoke the token after verifying the release. |
+| crates.io steady state | After `0.1.0`, configure both crates’ trusted publishers for `jlevy/fdu`, `release.yml`, and environment `release`; the publish job exchanges OIDC when the secret is absent. |
 
 No credential is committed, inherited across workflows, printed, or retained in an
 artifact. The protected environment separates approval from build jobs.
@@ -837,9 +837,9 @@ outstanding Phase 1 CLI, agent-schema, watch, or performance dependencies.
 | A pure-Python facade adds conversion overhead | Keep the boundary bulk, use frozen slotted records, benchmark representative large reports, and avoid converting the retained index itself. |
 | Python models drift from Rust and CLI concepts | Generate or mechanically compare enum vocabulary, defaults, schemas, and normalized fixture output. |
 | The platform matrix becomes expensive | Build one abi3 wheel per OS/architecture rather than per Python minor; smoke the oldest and current stable interpreters. |
-| One registry publishes while the other fails | Use independent idempotent jobs, immutable versions, checksum verification, and a documented resume path. |
+| One registry publishes while the other fails | Audit both registries before the first write, keep every step idempotent so a rerun of the one publish job sends only what is missing, and verify checksums; the runbook documents the resume path. |
 | A retry silently accepts a different artifact under the same version | Compare registry hashes and metadata; treat existence with disagreement as an unrecoverable conflict requiring a new version. |
-| Publication authority leaks into a build step | Put OIDC or the one-time bootstrap token only in protected, single-purpose publisher jobs and install no mutable tools there. |
+| Publication authority leaks into a build step | Put OIDC or the one-time bootstrap token only in the one protected `publish` job, which compiles nothing and installs no mutable tools. |
 | PyPI publisher configuration points at a reusable workflow | Register the top-level `release.yml` identity and keep its minimal publish job direct until PyPI documents support for reusable workflow identities. |
 | Cargo cannot promote a prebuilt `.crate` through `cargo publish` | Reproduce it from the exact source bundle, compare with the validated preview, and verify the resulting registry checksum. |
 | A package name is claimed before release | Re-check through authoritative APIs at the protected approval boundary; stop rather than silently renaming one ecosystem. |

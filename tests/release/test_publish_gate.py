@@ -427,13 +427,15 @@ class EnvironmentTests(unittest.TestCase):
     POLICIES = f"{BASE}/deployment-branch-policies?per_page=100"
 
     @staticmethod
-    def listing(*rules: tuple[str, str], total: int | None = None) -> dict[str, object]:
+    def listing(
+        *rules: tuple[str, str], total: int | None = None, counted: bool = True
+    ) -> dict[str, object]:
         """A deployment-policy listing of `(name, type)` rules, as the API pages it."""
         policies = [{"name": name, "type": kind} for name, kind in rules]
-        return {
-            "total_count": len(policies) if total is None else total,
-            "branch_policies": policies,
-        }
+        listing: dict[str, object] = {"branch_policies": policies}
+        if counted:
+            listing["total_count"] = len(policies) if total is None else total
+        return listing
 
     def answers(self, **overrides: object) -> dict[str, object]:
         record: dict[str, object] = {
@@ -467,6 +469,9 @@ class EnvironmentTests(unittest.TestCase):
         # A rule the listing counts but did not return is a rule the check never saw.
         unread = self.answers()
         unread[self.POLICIES] = self.listing(("v*", "tag"), total=3)
+        # A listing that does not say how many rules there are cannot show none was missed.
+        uncounted = self.answers()
+        uncounted[self.POLICIES] = self.listing(("v*", "tag"), counted=False)
         cases = {
             "does not exist": missing,
             "no required reviewer": self.answers(protection_rules=[{"type": "branch_policy"}]),
@@ -475,6 +480,7 @@ class EnvironmentTests(unittest.TestCase):
             "admits branch 'main'": branch,
             "admits tag 'release-\\*'": tag,
             "reports 3 deployment rules but listed 1": unread,
+            "reports None deployment rules but listed 1": uncounted,
         }
         for message, answers in cases.items():
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
