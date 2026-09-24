@@ -89,12 +89,14 @@ impl TerminalFacts {
     ///
     /// Stderr must be a terminal, `TERM` must be set and not `dumb` (or, on Windows,
     /// may be unset), `CI` must be unset or empty, and the console must accept escape
-    /// sequences. An agent shell observed in this repository runs with `TERM=dumb` and
+    /// sequences. A `TERM` set to nothing is an unset one: the two are the same thing
+    /// everywhere a shell exports variables, so they get the same answer on every
+    /// platform. An agent shell observed in this repository runs with `TERM=dumb` and
     /// no terminal, so no agent detection is needed beyond this rule.
     pub fn is_interactive(&self) -> bool {
-        let term_allows = match self.term.as_deref() {
+        let term_allows = match self.term.as_deref().filter(|term| !term.is_empty()) {
             None => self.term_may_be_unset,
-            Some(term) => !term.is_empty() && term != "dumb",
+            Some(term) => term != "dumb",
         };
         self.stderr_is_terminal
             && term_allows
@@ -199,6 +201,8 @@ pub(crate) enum Phase {
     Saving,
     /// Assembling the index once the walk is over.
     Indexing,
+    /// Building the answer from the index.
+    Summarizing,
 }
 
 impl Phase {
@@ -213,6 +217,7 @@ impl Phase {
             Self::Analyzing => "Analyzing",
             Self::Saving => "Saving",
             Self::Indexing => "Indexing",
+            Self::Summarizing => "Summarizing",
         }
     }
 }
@@ -377,13 +382,18 @@ struct Slots {
 impl Slots {
     fn full(root: &str, facts: &FrameFacts, elapsed: Duration, step: usize) -> Self {
         let facts_slot = match (facts.phase, facts.analysis) {
-            // Indexing keeps the walk's final counts: the walk is over, and the phase word
-            // is what changes.
-            (Phase::Scanning | Phase::Revalidating | Phase::Indexing, _) => FactsSlot::Walk {
-                files: human_count(facts.files),
-                dirs: Some(human_count(facts.directories)),
-                bytes: Some(human_bytes(facts.bytes)),
-            },
+            // A cache-only run walks nothing, and zeros there would read as an empty
+            // tree rather than as no walk.
+            (Phase::Summarizing, _) if facts.directories == 0 => FactsSlot::None,
+            // Indexing and Summarizing keep the walk's final counts: the walk is over,
+            // and the phase word is what changes.
+            (Phase::Scanning | Phase::Revalidating | Phase::Indexing | Phase::Summarizing, _) => {
+                FactsSlot::Walk {
+                    files: human_count(facts.files),
+                    dirs: Some(human_count(facts.directories)),
+                    bytes: Some(human_bytes(facts.bytes)),
+                }
+            }
             (Phase::Analyzing, Some((done, total))) => FactsSlot::Analysis {
                 percent: format!("{:>3}%", whole_percent(done, total)),
                 done: human_count(done),
@@ -572,8 +582,9 @@ mod tests {
                                 ci: ci.map(OsString::from),
                                 vt_enabled,
                             };
-                            let term_allows = term == Some("xterm-256color")
-                                || (term.is_none() && term_may_be_unset);
+                            let term_unset = term.is_none_or(str::is_empty);
+                            let term_allows =
+                                term == Some("xterm-256color") || (term_unset && term_may_be_unset);
                             let interactive = stderr_is_terminal
                                 && term_allows
                                 && ci != Some("true")
@@ -592,9 +603,15 @@ mod tests {
         assert!(interactive().is_interactive());
         let readings = every_terminal();
         assert_eq!(readings.len(), 96);
-        // A real TERM with CI unset or empty, on either platform (4), or an unset TERM
-        // where the platform allows it, with CI unset or empty (2).
-        assert_eq!(readings.iter().filter(|(_, interactive)| *interactive).count(), 6);
+        // A real TERM with CI unset or empty, on either platform (4), or a TERM that is
+        // unset or empty where the platform allows it, with CI unset or empty (4).
+        assert_eq!(readings.iter().filter(|(_, interactive)| *interactive).count(), 8);
+        let empty_term = TerminalFacts { term: Some(OsString::new()), ..interactive() };
+        assert!(!empty_term.is_interactive(), "off Windows an empty TERM is an unset one");
+        assert!(
+            TerminalFacts { term_may_be_unset: true, ..empty_term }.is_interactive(),
+            "on Windows an empty TERM is an unset one too"
+        );
         for (facts, interactive) in readings {
             assert_eq!(facts.is_interactive(), interactive, "{facts:?}");
         }
@@ -723,6 +740,17 @@ mod tests {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Indexing), ms(3_800), 3, 100, false),
             "⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s"
+        );
+        assert_eq!(
+            render_frame(ROOT, &walk(Phase::Summarizing), ms(8_600), 5, 100, false),
+            "⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s"
+        );
+        // A cache-only run walked nothing: no zeros that read as an empty tree.
+        let unwalked =
+            FrameFacts { directories: 0, files: 0, bytes: 0, ..walk(Phase::Summarizing) };
+        assert_eq!(
+            render_frame(ROOT, &unwalked, ms(1_200), 5, 100, false),
+            "⠴ ~/wrk/github  Summarizing   1.2 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),

@@ -400,6 +400,9 @@ Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 - [ ] On Windows Terminal, the same checks hold; with stdout piped (`fdu … | more`), the
   run counts as non-interactive and shows nothing, because virtual-terminal support is
   enabled for stdout and stderr together
+- [ ] `FDU_BIN="$(command -v fdu)" make test-terminal` passes against the installed
+  command, so a wheel’s console script erases the line and dies by `SIGINT` exactly as
+  the cargo-installed binary does
 
 A line left on screen after any of these fails the phase.
 

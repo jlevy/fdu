@@ -21,7 +21,9 @@
 //!
 //! **Cost.** Walker workers already keep local counts; they add the difference since
 //! their last addition to the shared cells once per chunk of directories they hand over,
-//! never per entry. Without a handle attached, a walk pays one `Option` check per chunk.
+//! never per entry. Without a handle attached, a walk pays one `Option` check per chunk
+//! (per directory on the revalidation and reconcile walks, which fill no batch for an
+//! unchanged tree).
 
 use std::fmt;
 use std::sync::Arc;
@@ -32,11 +34,14 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 /// A snapshot carries the phase most recently entered. Routes enter phases in this
 /// order, skipping the ones they do not do: a cold report over a full index goes
 /// `Scanning`, `Indexing` once the walk is over, then `Analyzing` if content was
-/// requested and `Saving` if a snapshot is written; a warm one goes `Loading`,
-/// `Revalidating`, then the same without `Indexing`. A watch's initial scan then runs a
-/// second pass: after its save it verifies the tree once more while it binds
-/// observation, and that pass begins again at `Revalidating` with the walk counters
-/// restarted, so the line shows the second walk's own progress rather than a sum.
+/// requested, `Saving` if a snapshot is written, and `Summarizing` while the answer is
+/// built; a warm one goes `Loading`, `Revalidating`, then the same without `Indexing`;
+/// a cache-only one walks nothing and goes `Loading`, then `Summarizing`.
+///
+/// A watch start builds no answer through these phases and ends at its save. It then
+/// runs a second pass: it verifies the tree once more while it binds observation, and
+/// that pass begins again at `Revalidating` with the walk counters restarted, so the
+/// line shows the second walk's own progress rather than a sum.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum ProgressPhase {
     /// No route has begun work on this handle.
@@ -62,11 +67,18 @@ pub enum ProgressPhase {
     Analyzing,
     /// A snapshot or content sidecar is being written.
     Saving,
+    /// The answer is being built from the index.
+    ///
+    /// The last phase of a one-shot report over a full index. A save entered before it
+    /// continues in the background, so the phase names the work in the foreground:
+    /// building a heavy view (`full`, or a deep tree with no limit) over a large index
+    /// takes seconds, which `Saving` would misdescribe.
+    Summarizing,
 }
 
 impl ProgressPhase {
     /// Every phase, indexed by the code a cell stores.
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Starting,
         Self::Loading,
         Self::Scanning,
@@ -74,6 +86,7 @@ impl ProgressPhase {
         Self::Indexing,
         Self::Analyzing,
         Self::Saving,
+        Self::Summarizing,
     ];
 
     const fn code(self) -> u8 {
@@ -85,6 +98,7 @@ impl ProgressPhase {
             Self::Indexing => 4,
             Self::Analyzing => 5,
             Self::Saving => 6,
+            Self::Summarizing => 7,
         }
     }
 

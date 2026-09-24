@@ -302,8 +302,9 @@ works, and erases it before anything else is written:
 ```
 
 It is drawn only for a person at an interactive terminal: stderr must be a terminal,
-`TERM` must be set and not `dumb` (Windows consoles set no `TERM`, and there the
-console’s escape-sequence support is the test), and `CI` must be unset.
+`TERM` must be set and not `dumb` (Windows consoles set no `TERM`, so there an unset or
+empty one is accepted and the console’s escape-sequence support is the test), and `CI`
+must be unset or empty.
 Otherwise nothing is drawn, whatever the flag says, so pipes, files, logs, CI, and
 agents never see it and need no flag.
 `--progress=auto` (the default) also skips it for JSON, JSON Lines, and YAML;

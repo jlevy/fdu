@@ -126,12 +126,16 @@ pub struct ProgressSnapshot {
 }
 
 pub enum ProgressPhase {
-    Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving,
+    Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving, Summarizing,
 }
 ```
 
 A fresh handle reports `Starting` until the route enters its first phase, and the last
 phase entered persists after the route returns.
+`Summarizing` was added after review: a one-shot report over a full index starts its
+save in the background and then builds the answer, which for a heavy view (`full`, or a
+deep tree with no limit) over a large index takes seconds; showing `Saving` then
+misdescribed the work, so the answer’s construction has its own phase.
 `Indexing` was added during implementation: on an 867k-file tree the walkers finished
 about a second (release build) before the single thread assembling the index worked
 through their queued listings, and the frozen counts under `Scanning` read as a stall.
@@ -156,7 +160,10 @@ Counts may include entries a retry rereads; the display calls them walked, not f
 **Hot-path cost:** walker workers already keep local counts in their `ScanReport`. They
 add the deltas to shared counters once per batch they already hand to the sink (per
 directory on the revalidation and reconcile walks, which have no batch for an unchanged
-tree), never per entry, and the shared counters sit on separate cache lines.
+tree), never per entry.
+The three walk counters share one cache line, so a worker’s addition moves one line
+rather than three; the analysis cells and the phase cell each have a line of their own,
+so a poller reading the walk never invalidates the line the analysis loop writes.
 Without a handle, the cost is one `Option` check per batch.
 Content analysis updates its counter in the result loop that already runs on the caller
 thread, where the candidate total is known before the first file.
@@ -178,8 +185,8 @@ and a later Python binding can poll the same way across the FFI boundary.
 `cli.rs` owns every presentation decision, as it does for color.
 
 - **Interactive.** A run is interactive only when stderr is a terminal, `TERM` is set
-  and is not `dumb` (on Windows it may be unset, since cmd, PowerShell, and Windows
-  Terminal set none), `CI` is unset or empty, and, on Windows, virtual terminal
+  and is not `dumb` (on Windows it may be unset or empty, since cmd, PowerShell, and
+  Windows Terminal set none), `CI` is unset or empty, and, on Windows, virtual terminal
   processing could be enabled for the console (`anstyle-query`’s safe
   `enable_ansi_colors`, already a dependency through clap).
   A legacy console that refuses it would print the erase sequence as text, so it counts
@@ -205,8 +212,12 @@ and a later Python binding can poll the same way across the FFI boundary.
 - **Clearing.** Before any write to stdout or stderr (report, warning, error, or the
   performance line) the ticker is stopped and joined and the line cleared.
   A guard does the same on unwind.
-  Write errors on the progress line are ignored and never change the exit status; after
-  the first failed write the ticker stops drawing.
+  On a one-shot run the save runs in the background while the answer is built, so the
+  line shows `Saving` only briefly and then `Summarizing`, and it stops before the save
+  is joined: the report prints while the snapshot is written.
+  A watch start joins its save before returning, so it shows `Saving` for as long as the
+  write takes. Write errors on the progress line are ignored and never change the exit
+  status; after the first failed write the ticker stops drawing.
 - **Watch.** The indicator runs during the initial scan and stops when the first report
   paints; after that the watch repaint is the progress.
 - **Ctrl-C.** A handler is installed only on an interactive run that will draw, so every
@@ -227,13 +238,17 @@ and a later Python binding can poll the same way across the FFI boundary.
   `emulate_default_handler` restores the default disposition and raises the signal
   again, which is death by `SIGINT` exactly; `ctrlc` there would add `nix` and, on
   macOS, a Grand Central Dispatch binding, for the same signal.
-  On Windows it is `ctrlc` 3.5.2 (published 2026-02-10), what dust uses: its console
-  handler runs a closure on a thread of its own, and the closure exits with
-  `STATUS_CONTROL_C_EXIT`, the status the console’s default handling ends a process
-  with; `signal-hook` there reaches only the C runtime’s `SIGINT`, whose default is an
-  exit status of 3 rather than the console’s, and gives a handler no thread to write
-  from. An interruption can leave the report cut short on stdout and a cache staging
-  file, which the cache already recognizes and removes; no snapshot is partially
+  Resetting the disposition to the default, rather than restoring the handler it
+  replaced, is what makes the guarantee hold for every caller of `run_process`: the
+  wheel’s console script runs the same function, and Python’s own `SIGINT` handler only
+  sets a flag, which is why that script restores the default disposition itself before
+  calling in (`fdu-18vk`). On Windows it is `ctrlc` 3.5.2 (published 2026-02-10), what
+  dust uses: its console handler runs a closure on a thread of its own, and the closure
+  exits with `STATUS_CONTROL_C_EXIT`, the status the console’s default handling ends a
+  process with; `signal-hook` there reaches only the C runtime’s `SIGINT`, whose default
+  is an exit status of 3 rather than the console’s, and gives a handler no thread to
+  write from. An interruption can leave the report cut short on stdout and a cache
+  staging file, which the cache already recognizes and removes; no snapshot is partially
   published.
 
 ### Appearance
@@ -261,6 +276,7 @@ The frame for each phase, shown here in plain text:
 ⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
+⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s
 ```
 
 **Colors** reuse the palette the report already uses, through `anstyle`, which is

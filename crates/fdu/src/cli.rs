@@ -3393,4 +3393,70 @@ mod tests {
             }
         }
     }
+
+    /// A stdout whose reader has left, as `head` leaves once it has seen enough.
+    ///
+    /// It also records what stderr held the first time the report tried to write, so a
+    /// test can check the line was already erased by then: after a stdout write fails,
+    /// the ticker's drop erases the line anyway, so stderr's final bytes alone cannot
+    /// tell a stop before the report from a stop after it.
+    struct ClosedPipe {
+        stderr: SharedBuffer,
+        stderr_at_first_write: Option<String>,
+    }
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            self.stderr_at_first_write.get_or_insert_with(|| self.stderr.text());
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "reader closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The broken-pipe rule with the indicator active: a drawing run whose stdout
+    /// closes early still ends quietly with status 0, and the line is erased with
+    /// nothing written after it, so a person who piped into `head` gets a clean prompt.
+    #[test]
+    fn a_drawing_run_whose_stdout_closes_early_ends_quietly_with_a_clean_line() {
+        let root = wide_tree();
+        let args = [
+            "fdu",
+            "--cache",
+            "off",
+            "--color",
+            "never",
+            "--progress",
+            "always",
+            root.path().to_str().expect("Unicode"),
+        ]
+        .map(OsString::from);
+        let mut at_first_write = None;
+        let (status, _, text) = run_until_drawn(|err| {
+            let mut stdout = ClosedPipe { stderr: err.clone(), stderr_at_first_write: None };
+            let status = run_with_io(
+                &args,
+                &mut stdout,
+                &mut err.clone(),
+                false,
+                &interactive_terminal(),
+                drawing_io(err),
+            );
+            at_first_write = stdout.stderr_at_first_write;
+            (status, Vec::new())
+        });
+        assert_eq!(status, 0, "a consumer that has seen enough is not a failure");
+        assert_eq!(
+            at_first_write.as_deref(),
+            Some(text.as_str()),
+            "the line was erased, and nothing more drawn, before the report touched stdout"
+        );
+        assert!(text.starts_with(&format!("{ERASE_LINE}⠋ ")), "{text:?}");
+        assert!(text.ends_with(ERASE_LINE), "the erase is the last thing on stderr:\n{text:?}");
+        let after_last_frame = text.rsplit_once(ERASE_LINE).map(|(_, rest)| rest);
+        assert_eq!(after_last_frame, Some(""), "nothing follows the erase:\n{text:?}");
+        assert!(!text.contains("fdu:"), "a closed pipe is reported to nobody:\n{text:?}");
+    }
 }
