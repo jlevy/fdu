@@ -32,7 +32,14 @@ bypasses the review and release cool-off
 applies to the dependency set.
 
 The [`fdu` Python package](https://pypi.org/project/fdu/) carries the same command line
-in prebuilt wheels, so `uv tool install fdu` installs it without a Rust toolchain.
+in prebuilt wheels, so `uv tool install fdu` installs it without a Rust toolchain,
+`uv tool upgrade fdu` updates it, and `uvx fdu@latest` runs the latest release without
+installing anything.
+
+For coding agents, `fdu --install-skill` writes the agent skill to
+`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root
+(`--agent-base DIR` for one agent’s user scope, such as `~/.claude`), and `fdu --skill`
+prints it.
 
 ## Use
 

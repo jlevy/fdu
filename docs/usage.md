@@ -335,6 +335,15 @@ Content analysis is one-shot and cannot be combined with watch mode.
 
 Run `fdu --docs` for the offline guide, `fdu --help` for every flag, and `fdu --skill`
 for the portable agent-facing contract.
+`fdu --install-skill` writes that contract to `.agents/skills/fdu/SKILL.md` and
+`.claude/skills/fdu/SKILL.md` under the git root of the current directory, or under the
+current directory when it is not in a repository; `--agent-base DIR` writes
+`DIR/skills/fdu/SKILL.md` instead, for one agent’s user scope such as `~/.claude`. It
+reports each file as installed, updated, or unchanged, replaces only files it generated,
+and refuses a `SKILL.md` written by hand with exit 2. Deleting those directories
+uninstalls it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`;
+it names the build that wrote it, so re-run `fdu --install-skill` when `fdu --version`
+differs.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

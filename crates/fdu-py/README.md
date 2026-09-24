@@ -6,13 +6,16 @@ roll-up engine.
 ## Install
 
 ```shell
-uv tool install fdu   # put the fdu command on your PATH
-uvx fdu .             # or run the command once without installing it
+uvx fdu@latest .      # run the latest release once, without installing it
+uv tool install fdu   # put the fdu command on your PATH; uv tool upgrade fdu updates it
 uv add fdu            # use the library in a uv project
 pip install fdu       # or install the library with pip
 ```
 
 `uvx fdu@<version> --help` runs one exact release.
+For coding agents, `fdu --install-skill` writes the agent skill under the project root
+and `fdu --skill` prints it; the
+[repository README](https://github.com/jlevy/fdu#install) has the details.
 Prebuilt `abi3` wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
 and arm64), macOS (x86-64 and arm64), and Windows x86-64, so installing needs no Rust
 toolchain. Free-threaded CPython, such as `3.14t`, cannot install them and is not
@@ -189,7 +192,7 @@ CLI reimplementation.
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
 Building and testing the package from a checkout is covered in
-[the repository README](https://github.com/jlevy/fdu#install).
+[the repository README](https://github.com/jlevy/fdu#development).
 
 License: MIT.
 
