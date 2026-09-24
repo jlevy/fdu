@@ -1763,10 +1763,10 @@ mod tests {
         assert_eq!((snapshot.phase, snapshot.analysis), (Summarizing, Some((0, 0))));
     }
 
-    /// A cache-only report walks nothing: it loads the snapshot, then builds the answer,
-    /// and its walk counters stay at zero.
+    /// A cache-only report walks nothing: it ends building the answer, and its walk
+    /// counters stay at zero.
     #[test]
-    fn a_cache_only_report_loads_then_summarizes_and_walks_nothing() {
+    fn a_cache_only_report_ends_summarizing_and_walks_nothing() {
         use crate::ProgressPhase::Summarizing;
         let (root, _, _) = wide_tree(3, 2);
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };

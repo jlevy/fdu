@@ -382,8 +382,8 @@ struct Slots {
 impl Slots {
     fn full(root: &str, facts: &FrameFacts, elapsed: Duration, step: usize) -> Self {
         let facts_slot = match (facts.phase, facts.analysis) {
-            // A cache-only run walks nothing, and zeros there would read as an empty
-            // tree rather than as no walk.
+            // A run that walked nothing (a cache-only report, or a root it could not
+            // list) would show zeros that read as an empty tree rather than as no walk.
             (Phase::Summarizing, _) if facts.directories == 0 => FactsSlot::None,
             // Indexing and Summarizing keep the walk's final counts: the walk is over,
             // and the phase word is what changes.

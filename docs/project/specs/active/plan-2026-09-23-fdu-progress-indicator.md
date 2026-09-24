@@ -277,7 +277,11 @@ The frame for each phase, shown here in plain text:
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
 ⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s
+⠴ ~/wrk/github  Summarizing   1.2 s
 ```
+
+The last frame is a run that walked nothing, such as a cache-only report: it shows no
+counts rather than zeros that read as an empty tree.
 
 **Colors** reuse the palette the report already uses, through `anstyle`, which is
 already a dependency:
