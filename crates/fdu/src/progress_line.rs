@@ -51,6 +51,12 @@ pub struct TerminalFacts {
     pub stderr_is_terminal: bool,
     /// `TERM` as set, or `None` when unset.
     pub term: Option<OsString>,
+    /// Whether an unset `TERM` still allows drawing.
+    ///
+    /// True on Windows, whose consoles (cmd, PowerShell, Windows Terminal) set no `TERM`;
+    /// there whether the console accepts escape sequences is the terminal test. `dumb`
+    /// still means non-interactive everywhere.
+    pub term_may_be_unset: bool,
     /// `CI` as set, or `None` when unset.
     pub ci: Option<OsString>,
     /// Whether the console will interpret the escape sequences a frame is drawn with.
@@ -73,6 +79,7 @@ impl TerminalFacts {
         Self {
             stderr_is_terminal,
             term: env::var_os("TERM"),
+            term_may_be_unset: cfg!(windows),
             ci: env::var_os("CI"),
             vt_enabled: virtual_terminal_enabled(stderr_is_terminal),
         }
@@ -80,13 +87,17 @@ impl TerminalFacts {
 
     /// Whether a person is watching stderr at a terminal that will render a frame.
     ///
-    /// Stderr must be a terminal, `TERM` must be set and not `dumb`, `CI` must be unset
-    /// or empty, and the console must accept escape sequences. An agent shell observed
-    /// in this repository runs with `TERM=dumb` and no terminal, so no agent detection
-    /// is needed beyond this rule.
+    /// Stderr must be a terminal, `TERM` must be set and not `dumb` (or, on Windows,
+    /// may be unset), `CI` must be unset or empty, and the console must accept escape
+    /// sequences. An agent shell observed in this repository runs with `TERM=dumb` and
+    /// no terminal, so no agent detection is needed beyond this rule.
     pub fn is_interactive(&self) -> bool {
+        let term_allows = match self.term.as_deref() {
+            None => self.term_may_be_unset,
+            Some(term) => !term.is_empty() && term != "dumb",
+        };
         self.stderr_is_terminal
-            && self.term.as_deref().is_some_and(|term| !term.is_empty() && term != "dumb")
+            && term_allows
             && self.ci.as_deref().is_none_or(OsStr::is_empty)
             && self.vt_enabled
     }
@@ -540,29 +551,35 @@ mod tests {
         TerminalFacts {
             stderr_is_terminal: true,
             term: Some(OsString::from("xterm-256color")),
+            term_may_be_unset: false,
             ci: None,
             vt_enabled: true,
         }
     }
 
-    /// Every reading of the four facts, and whether that reading is interactive.
+    /// Every reading of the five facts, and whether that reading is interactive.
     fn every_terminal() -> Vec<(TerminalFacts, bool)> {
         let mut readings = Vec::new();
         for stderr_is_terminal in [false, true] {
             for term in [None, Some("dumb"), Some(""), Some("xterm-256color")] {
-                for ci in [None, Some(""), Some("true")] {
-                    for vt_enabled in [false, true] {
-                        let facts = TerminalFacts {
-                            stderr_is_terminal,
-                            term: term.map(OsString::from),
-                            ci: ci.map(OsString::from),
-                            vt_enabled,
-                        };
-                        let interactive = stderr_is_terminal
-                            && term == Some("xterm-256color")
-                            && ci != Some("true")
-                            && vt_enabled;
-                        readings.push((facts, interactive));
+                for term_may_be_unset in [false, true] {
+                    for ci in [None, Some(""), Some("true")] {
+                        for vt_enabled in [false, true] {
+                            let facts = TerminalFacts {
+                                stderr_is_terminal,
+                                term: term.map(OsString::from),
+                                term_may_be_unset,
+                                ci: ci.map(OsString::from),
+                                vt_enabled,
+                            };
+                            let term_allows = term == Some("xterm-256color")
+                                || (term.is_none() && term_may_be_unset);
+                            let interactive = stderr_is_terminal
+                                && term_allows
+                                && ci != Some("true")
+                                && vt_enabled;
+                            readings.push((facts, interactive));
+                        }
                     }
                 }
             }
@@ -574,8 +591,10 @@ mod tests {
     fn interactive_needs_a_terminal_a_real_term_no_ci_and_escape_support() {
         assert!(interactive().is_interactive());
         let readings = every_terminal();
-        assert_eq!(readings.len(), 48);
-        assert_eq!(readings.iter().filter(|(_, interactive)| *interactive).count(), 2);
+        assert_eq!(readings.len(), 96);
+        // A real TERM with CI unset or empty, on either platform (4), or an unset TERM
+        // where the platform allows it, with CI unset or empty (2).
+        assert_eq!(readings.iter().filter(|(_, interactive)| *interactive).count(), 6);
         for (facts, interactive) in readings {
             assert_eq!(facts.is_interactive(), interactive, "{facts:?}");
         }

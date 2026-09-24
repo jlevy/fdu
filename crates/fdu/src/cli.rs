@@ -1573,6 +1573,12 @@ fn display_notes(views: &[ViewSpec], profile: AnalysisSet, bytes_read: u64) -> V
 ///
 /// This is shared by the native binary and the Python wheel's console entry point so
 /// parsing, streams, color, diagnostics, broken pipes, and exit semantics cannot drift.
+///
+/// A run that draws the progress indicator installs a process-wide Ctrl-C handler and
+/// never removes it: from then on, Ctrl-C erases a visible line and ends the process by
+/// the default interrupt action, even if the caller had set the signal to be ignored.
+/// A process that embeds this function and keeps running afterwards should call it
+/// only where that is acceptable; both callers above exit when it returns.
 pub fn run_process<I, T>(args: I) -> u8
 where
     I: IntoIterator<Item = T>,
@@ -3011,6 +3017,7 @@ mod tests {
         TerminalFacts {
             stderr_is_terminal: true,
             term: Some(OsString::from("xterm-256color")),
+            term_may_be_unset: false,
             ci: None,
             vt_enabled: true,
         }
@@ -3227,6 +3234,26 @@ mod tests {
         text.matches(ERASE_LINE).count().saturating_sub(1)
     }
 
+    /// Run `run` until the ticker has drawn at least one frame into its buffer, a few
+    /// times at most, and return the run's status, stdout, and stderr text.
+    ///
+    /// Whether the ticker thread is scheduled during a short walk is up to the OS. The
+    /// orderings these tests assert are only meaningful once a frame exists, and a
+    /// runner that never schedules it in five runs is a result worth failing on.
+    fn run_until_drawn(
+        mut run: impl FnMut(&SharedBuffer) -> (u8, Vec<u8>),
+    ) -> (u8, Vec<u8>, String) {
+        for _ in 0..5 {
+            let err = SharedBuffer::default();
+            let (status, out) = run(&err);
+            let text = err.text();
+            if drawn_frames(&text) >= 1 {
+                return (status, out, text);
+            }
+        }
+        panic!("the ticker drew no frame in five runs");
+    }
+
     /// The frames drawn while the tree was walked, then the erase, then the report's
     /// warning: the erase is the last thing on stderr before the warning, and nothing
     /// of the line follows it.
@@ -3248,8 +3275,6 @@ mod tests {
             return;
         }
 
-        let err = SharedBuffer::default();
-        let mut out = Vec::new();
         let args = [
             "fdu",
             "--cache",
@@ -3261,22 +3286,24 @@ mod tests {
             root.path().to_str().expect("Unicode"),
         ]
         .map(OsString::from);
-        let status = run_with_io(
-            &args,
-            &mut out,
-            &mut err.clone(),
-            false,
-            &interactive_terminal(),
-            drawing_io(&err),
-        );
+        let (status, out, text) = run_until_drawn(|err| {
+            let mut out = Vec::new();
+            let status = run_with_io(
+                &args,
+                &mut out,
+                &mut err.clone(),
+                false,
+                &interactive_terminal(),
+                drawing_io(err),
+            );
+            (status, out)
+        });
         std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755))
             .expect("restore permissions so the directory can be removed");
         assert_eq!(status, 2, "a partial scan");
         assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
 
-        let text = err.text();
         let warning = text.find("warning:").expect("a status warning on stderr");
-        assert!(drawn_frames(&text) >= 1, "no frame was drawn:\n{text:?}");
         assert!(
             text[..warning].ends_with(ERASE_LINE),
             "the erase is the last thing before the warning:\n{text:?}"
@@ -3291,7 +3318,6 @@ mod tests {
     #[test]
     fn the_line_is_erased_before_an_error() {
         let root = wide_tree();
-        let err = SharedBuffer::default();
         let args = [
             "fdu",
             "--cache",
@@ -3303,19 +3329,20 @@ mod tests {
             root.path().to_str().expect("Unicode"),
         ]
         .map(OsString::from);
-        let status = run_with_io(
-            &args,
-            &mut FailingWriter,
-            &mut err.clone(),
-            false,
-            &interactive_terminal(),
-            drawing_io(&err),
-        );
+        let (status, _, text) = run_until_drawn(|err| {
+            let status = run_with_io(
+                &args,
+                &mut FailingWriter,
+                &mut err.clone(),
+                false,
+                &interactive_terminal(),
+                drawing_io(err),
+            );
+            (status, Vec::new())
+        });
         assert_eq!(status, 1, "a report that cannot be written is fatal");
 
-        let text = err.text();
         let error = text.find("fdu: ").expect("the error on stderr");
-        assert!(drawn_frames(&text) >= 1, "no frame was drawn:\n{text:?}");
         assert!(
             text[..error].ends_with(ERASE_LINE),
             "the erase is the last thing before the error:\n{text:?}"

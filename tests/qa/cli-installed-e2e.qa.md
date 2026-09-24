@@ -383,8 +383,8 @@ Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 - [ ] `fdu "$FDU_QA_MEDIUM"` shows one animated line on stderr after about half a
   second: spinner, the root, then `Scanning` with climbing counts, `Indexing` briefly,
   then the report, with no line left above it
-- [ ] `fdu --analyze all` on a medium subdirectory shows `Analyzing` with a percentage
-  that ends at `100%`
+- [ ] `fdu --analyze all` on a medium subdirectory shows `Analyzing` with a climbing
+  percentage (the line is erased as soon as the work ends, so `100%` may never be seen)
 - [ ] A small tree (`fdu .` in this repository) shows no indicator at all
 - [ ] `fdu "$FDU_QA_MEDIUM" 2>/tmp/fdu-stderr` leaves `/tmp/fdu-stderr` empty
 - [ ] `fdu --format json "$FDU_QA_MEDIUM" >/dev/null` shows nothing;
@@ -407,7 +407,7 @@ A line left on screen after any of these fails the phase.
 
 ## Phase 7: Results
 
-### 6.1 Record the Table
+### 7.1 Record the Table
 
 Copy `FDU_QA_OUT/results.md` into a dated file under `docs/project/reports/` (or replace
 the table in the current report).

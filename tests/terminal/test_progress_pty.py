@@ -5,9 +5,11 @@ built binary where a person would, and checks what only a terminal shows: a fram
 drawn, the line is erased before the report, Ctrl-C erases it and the process dies by
 the signal, and nothing is drawn when stderr is not a terminal.
 
-The indicator waits 500 ms before its first frame, so the tree must take longer than
-that to answer. Content analysis over many small files does on every CI runner seen so
-far; if a run still finishes inside the delay, the tree doubles and the run repeats.
+The indicator waits 500 ms before its first frame, so the tree must take well longer
+than that to answer: the interrupt test sends SIGINT after the first frame and needs the
+run to still be working when it lands. Content analysis over many small files is slow
+enough on every runner seen so far; the tree doubles until one run takes at least
+MIN_RUN_S, so a fast runner or a release binary still leaves that margin.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ ERASE = b"\r\x1b[2K"
 SPINNER_LEAD = "⠋".encode()[:2]  # every braille spinner cell starts with these bytes
 INTERRUPTED = b"fdu: interrupted"
 TIMEOUT_S = 120.0
+MIN_RUN_S = 3.0
 
 
 def environment(cache: Path) -> dict[str, str]:
@@ -93,16 +96,22 @@ class ProgressInATerminal(unittest.TestCase):
         cls.tree.mkdir()
         cls.env = environment(base / "cache")
         cls.args = ["--cache", "off", "--analyze", "all", str(cls.tree)]
-        # Grow the tree until one run draws a frame, so a fast runner still exercises
-        # the indicator rather than passing on a run that never drew.
-        directories = 40
-        for _ in range(5):
-            grow_tree(cls.tree, directories, 250)
+        # Grow the tree until one run lasts MIN_RUN_S, so every test below has seconds
+        # of margin after the first frame rather than a run that barely drew.
+        # Each step grows the tree by the factor the last run's time suggests, so the
+        # usual case is one small run and one right-sized run.
+        total, added = 0, 40
+        for _ in range(6):
+            grow_tree(cls.tree, added, 250)
+            total += added
+            started = time.monotonic()
             cls.output, cls.status = run_in_pty(cls.args, cls.env)
-            if ERASE + SPINNER_LEAD in cls.output:
+            elapsed = time.monotonic() - started
+            if elapsed >= MIN_RUN_S and ERASE + SPINNER_LEAD in cls.output:
                 return
-            directories *= 2
-        raise AssertionError("no tree finished slowly enough to draw a frame")
+            factor = min(8.0, max(2.0, 1.3 * MIN_RUN_S / max(elapsed, 0.05)))
+            added = int(total * (factor - 1)) + 1
+        raise AssertionError(f"no tree took {MIN_RUN_S} s to answer")
 
     @classmethod
     def tearDownClass(cls) -> None:
