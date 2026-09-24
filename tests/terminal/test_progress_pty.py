@@ -10,6 +10,12 @@ than that to answer: the interrupt test sends SIGINT after the first frame and n
 run to still be working when it lands. Content analysis over many small files is slow
 enough on every runner seen so far; the tree doubles until one run takes at least
 MIN_RUN_S, so a fast runner or a release binary still leaves that margin.
+
+The binary comes from FDU_BIN when set, so the same checks run against another build
+of the same command, such as the wheel's console script:
+`FDU_BIN=<venv>/bin/fdu make test-terminal`. A missing binary fails the suite rather
+than skipping it: every caller of this tier builds first, so an absent binary is a
+misordered pipeline, not a host that cannot run the test.
 """
 
 from __future__ import annotations
@@ -78,6 +84,8 @@ def run_in_pty(args: list[str], env: dict[str, str], interrupt_after_frame: bool
             interrupted = True
     else:
         os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+        os.close(fd)
         raise AssertionError(f"fdu did not finish within {TIMEOUT_S} s")
     _, status = os.waitpid(pid, 0)
     os.close(fd)
@@ -89,7 +97,7 @@ class ProgressInATerminal(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if not Path(FDU).is_file():
-            raise unittest.SkipTest(f"no fdu binary at {FDU}; run `make build` first")
+            raise AssertionError(f"no fdu binary at {FDU}; run `make build` first")
         cls._tmp = tempfile.TemporaryDirectory(prefix="fdu-progress-pty-")
         base = Path(cls._tmp.name)
         cls.tree = base / "tree"

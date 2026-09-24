@@ -21,7 +21,9 @@
 //!
 //! **Cost.** Walker workers already keep local counts; they add the difference since
 //! their last addition to the shared cells once per chunk of directories they hand over,
-//! never per entry. Without a handle attached, a walk pays one `Option` check per chunk.
+//! never per entry. Without a handle attached, a walk pays one `Option` check per chunk
+//! (per directory on the revalidation and reconcile walks, which fill no batch for an
+//! unchanged tree).
 
 use std::fmt;
 use std::sync::Arc;

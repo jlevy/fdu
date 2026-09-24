@@ -3393,4 +3393,53 @@ mod tests {
             }
         }
     }
+
+    /// A stdout whose reader has left, as `head` leaves once it has seen enough.
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::BrokenPipe, "reader closed"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The broken-pipe rule with the indicator active: a drawing run whose stdout
+    /// closes early still ends quietly with status 0, and the line is erased with
+    /// nothing written after it, so a person who piped into `head` gets a clean prompt.
+    #[test]
+    fn a_drawing_run_whose_stdout_closes_early_ends_quietly_with_a_clean_line() {
+        let root = wide_tree();
+        let args = [
+            "fdu",
+            "--cache",
+            "off",
+            "--color",
+            "never",
+            "--progress",
+            "always",
+            root.path().to_str().expect("Unicode"),
+        ]
+        .map(OsString::from);
+        let (status, _, text) = run_until_drawn(|err| {
+            let status = run_with_io(
+                &args,
+                &mut ClosedPipe,
+                &mut err.clone(),
+                false,
+                &interactive_terminal(),
+                drawing_io(err),
+            );
+            (status, Vec::new())
+        });
+        assert_eq!(status, 0, "a consumer that has seen enough is not a failure");
+        assert!(text.starts_with(&format!("{ERASE_LINE}⠋ ")), "{text:?}");
+        assert!(text.ends_with(ERASE_LINE), "the erase is the last thing on stderr:\n{text:?}");
+        let after_last_frame = text.rsplit_once(ERASE_LINE).map(|(_, rest)| rest);
+        assert_eq!(after_last_frame, Some(""), "nothing follows the erase:\n{text:?}");
+        assert!(!text.contains("fdu:"), "a closed pipe is reported to nobody:\n{text:?}");
+    }
 }

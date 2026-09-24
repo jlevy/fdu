@@ -427,7 +427,9 @@ pub fn prepare_report(
 ///
 /// A run that returns with a save still pending has entered
 /// [`ProgressPhase::Saving`](crate::ProgressPhase); the caller decides when to join it,
-/// as with [`prepare_report`].
+/// as with [`prepare_report`]. A caller that stops polling when this returns, as the
+/// command line does before it prints the report, sees `Saving` for at most the moment
+/// between the save's start and the return.
 pub fn prepare_report_with_progress(
     request: &Request,
     delivery: &Delivery,
