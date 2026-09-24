@@ -5,7 +5,7 @@ title: Add an automatic interactive CLI progress indicator
 kind: feature
 status: in_progress
 priority: 2
-version: 12
+version: 15
 spec_path: docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md
 labels:
   - cli
@@ -21,11 +21,15 @@ child_order_hints:
   - is-01m37nx80t02jdgc65nqdt1tqa
   - is-01m37nx941bb680s8bm713qy6c
   - is-01m37nxa8vshzngyvzw9ax67a0
+  - is-01m38zd02aamagph2hxgq8548d
+  - is-01m38zd0fgqycxzrgtyps04zsx
 created_at: 2026-09-16T19:02:11.183Z
-updated_at: 2026-09-23T17:44:50.783Z
+updated_at: 2026-09-24T05:52:29.656Z
 ---
 Adopt the reusable progress-indicator baseline being added to tbd rust-cli-rules. For noticeably long one-shot CLI operations, show progress by default only when stderr is an interactive terminal; render only on stderr so report stdout remains composable; suppress automatically for non-TTY, redirected, piped and machine-oriented workflows; provide --no-progress as an unconditional disable; and guarantee cleanup on success, error and interruption. Add deterministic terminal-capability or PTY tests for default-on interactive behavior, non-TTY default-off behavior, --no-progress, stdout separation, machine output without control sequences, and cleanup. Keep this distinct from fdu-m893: that bead emits opt-in reproducible intermediate report frames, while this bead is the ordinary human wait-state indicator. Reconcile design docs that currently say animated progress is never shown, and use the generic tbd guidance rather than copying a project-specific renderer.
 
 ## Notes
 
 2026-09-23 design approved with the maintainer and written as docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md: engine Progress handle polled by the CLI; --progress auto|always|never (auto: stderr TTY, TERM!=dumb, human formats only); dust-style Ctrl-C handler (ctrlc, CLI crate only, installed only when drawing) that clears the line, writes 'fdu: interrupted' to stderr, exits 130; fdu-m893 moves off --progress.
+
+2026-09-23, review of #119/#120 (A-4): the note above and the description predate the plan's final Decisions and are superseded by them. As specified and implemented: the flag is --progress auto|always|never (there is no --no-progress); Ctrl-C erases the line, writes 'fdu: interrupted', and the process dies by SIGINT (signal-hook on Unix, ctrlc on Windows only), not a normal exit with status 130, so a calling shell script stops. Phases are Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving. See the plan's Decisions section.
