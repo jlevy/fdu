@@ -221,6 +221,9 @@ struct Arguments {
     oracle_enabled: bool,
     diagnostics: bool,
     worker_policy: fdu_core::scan::WorkerPolicyExperiment,
+    /// Attach a [`fdu_core::Progress`] handle and poll it as the command line's ticker
+    /// does; see [`prepare_one_shot`].
+    progress: bool,
     scan: ScanConfig,
 }
 
@@ -253,6 +256,7 @@ impl Arguments {
         // (fdu-unv3). Every other mode reads neither.
         let mut saw_diagnostics_flag = false;
         let mut saw_worker_policy_flag = false;
+        let mut progress = false;
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
                 Some("--root") => root = Some(next_path(&mut arguments, "--root")?),
@@ -296,6 +300,7 @@ impl Arguments {
                     walk_only_flag = Some("--worker-policy");
                     saw_worker_policy_flag = true;
                 }
+                Some("--progress") => progress = true,
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
                 }
@@ -370,6 +375,25 @@ impl Arguments {
                 mode.name()
             )));
         }
+        if progress && !matches!(mode, Mode::DefaultTree | Mode::Summary) {
+            // The handle enters a one-shot report through `prepare_report_with_progress`,
+            // and only these two modes prepare one. Every other mode would run without a
+            // handle while the record said it had one.
+            return Err(ProbeError(format!(
+                "--progress does not apply to {}: only default-tree and summary prepare a \
+                 one-shot report a progress handle can observe",
+                mode.name()
+            )));
+        }
+        if progress && diagnostics {
+            // No public entry point takes both, so a run asking for both would silently
+            // drop one of them.
+            return Err(ProbeError(
+                "--progress cannot be combined with --diagnostics: \
+                 prepare_report_with_scan_diagnostics takes no progress handle"
+                    .into(),
+            ));
+        }
         Ok(Self {
             mode,
             root,
@@ -380,6 +404,7 @@ impl Arguments {
             oracle_enabled,
             diagnostics,
             worker_policy,
+            progress,
             scan,
         })
     }
@@ -851,10 +876,12 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
     let request = Request::new(basis, query, std::time::SystemTime::now());
     let started = Instant::now();
-    // `_performance` is what the command line prints in its footer; this tier's tallies
-    // come out of the report itself, so it is deliberately unused here.
-    let (report, pending, _performance) = fdu_core::prepare_report(&request, &delivery)?;
+    // `performance` is what the command line prints in its footer; this tier's tallies
+    // come out of the report itself, so it is read only to check an attached handle.
+    let (report, pending, performance, progress) =
+        prepare_one_shot(arguments, &request, &delivery)?;
     let component = started.elapsed();
+    verify_progress(progress.as_ref(), &performance)?;
     // Nothing to join on this tier -- it writes no cache -- but joining is what the
     // command line does, and a mode that skipped it would stop measuring the same thing
     // the moment the tier ever gained a write.
@@ -925,11 +952,14 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let request = Request::new(basis, query, std::time::SystemTime::now());
     let counters = begin_component_counters();
     let started = Instant::now();
-    let (report, pending, _performance, scan_diagnostics) = if arguments.diagnostics {
-        fdu_core::prepare_report_with_scan_diagnostics(&request, &delivery)?
+    let (report, pending, performance, scan_diagnostics, progress) = if arguments.diagnostics {
+        let (report, pending, performance, diagnostics) =
+            fdu_core::prepare_report_with_scan_diagnostics(&request, &delivery)?;
+        (report, pending, performance, diagnostics, None)
     } else {
-        let (report, pending, performance) = fdu_core::prepare_report(&request, &delivery)?;
-        (report, pending, performance, None)
+        let (report, pending, performance, progress) =
+            prepare_one_shot(arguments, &request, &delivery)?;
+        (report, pending, performance, None, progress)
     };
     // Rendered to a string the way the command line renders into its writer; the bytes
     // are not printed because stdout carries this probe's JSON, and `black_box` keeps the
@@ -940,6 +970,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     pending.join()?;
     let component = started.elapsed();
     let counters = finish_component_counters(counters.as_ref());
+    verify_progress(progress.as_ref(), &performance)?;
 
     let root = report
         .sections
@@ -975,6 +1006,102 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // the number a reader of this job wants beside the wall time.
     summary.snapshot_written = Some(identity_after.is_some() && identity_after != identity_before);
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// How often the poller reads the handle: the command line ticker's redraw interval
+/// (`REDRAW_INTERVAL` in the `fdu` crate's `progress_ticker`).
+const PROGRESS_POLL_INTERVAL: Duration = Duration::from_millis(80);
+
+/// A one-shot report prepared as the command line prepares it, with or without a progress
+/// handle attached.
+///
+/// Without `--progress` this is `prepare_report`, which every existing record measured.
+/// With it, the report goes through `prepare_report_with_progress` while a second thread
+/// polls the handle every [`PROGRESS_POLL_INTERVAL`] and is stopped and joined as soon as
+/// the report is prepared, before rendering or the save join -- the order the command
+/// line's ticker follows. The poller reads snapshots and draws nothing, so the pair
+/// measures the engine's share of the indicator: the counting in the walkers, the phase
+/// stores, the thread, and the polls. It polls from the start, where the ticker waits
+/// 500 ms before its first frame, so it reads the handle at least as often as the command
+/// line does.
+fn prepare_one_shot(
+    arguments: &Arguments,
+    request: &Request,
+    delivery: &Delivery,
+) -> ProbeResult<(
+    fdu_core::query::Report,
+    fdu_core::PendingSave,
+    fdu_core::PerformanceSummary,
+    Option<fdu_core::Progress>,
+)> {
+    if !arguments.progress {
+        let (report, pending, performance) = fdu_core::prepare_report(request, delivery)?;
+        return Ok((report, pending, performance, None));
+    }
+    let progress = fdu_core::Progress::new();
+    let poller = ProgressPoller::start(progress.clone())?;
+    let prepared = fdu_core::prepare_report_with_progress(request, delivery, &progress);
+    poller.stop()?;
+    let (report, pending, performance) = prepared?;
+    Ok((report, pending, performance, Some(progress)))
+}
+
+/// Refuse a `--progress` run whose handle did not observe the walk it was attached to.
+///
+/// Read after the component timer stops. The engine promises that a completed walk leaves
+/// the handle's files and bytes equal to the report's walked totals, so a handle that was
+/// never wired in -- still `Starting`, or short of the totals -- would otherwise be
+/// recorded as the cost of one that was.
+fn verify_progress(
+    progress: Option<&fdu_core::Progress>,
+    performance: &fdu_core::PerformanceSummary,
+) -> ProbeResult<()> {
+    let Some(progress) = progress else { return Ok(()) };
+    let snapshot = progress.snapshot();
+    if snapshot.phase == fdu_core::ProgressPhase::Starting
+        || snapshot.files != performance.walked_files
+        || snapshot.bytes != performance.walked_bytes
+    {
+        return Err(ProbeError(format!(
+            "the progress handle did not observe the walk: {snapshot:?} after a report that \
+             walked {} files and {} bytes",
+            performance.walked_files, performance.walked_bytes
+        )));
+    }
+    Ok(())
+}
+
+/// A thread that reads a progress handle on the command line ticker's cadence.
+struct ProgressPoller {
+    /// Dropped to stop: the timed receive returns at once when the sender is gone.
+    stop: std::sync::mpsc::Sender<()>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl ProgressPoller {
+    fn start(progress: fdu_core::Progress) -> ProbeResult<Self> {
+        use std::sync::mpsc::RecvTimeoutError;
+
+        let (stop, stopped) = std::sync::mpsc::channel::<()>();
+        let thread = std::thread::Builder::new().name("perf-probe-progress".to_string()).spawn(
+            move || {
+                loop {
+                    match stopped.recv_timeout(PROGRESS_POLL_INTERVAL) {
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
+                    }
+                    black_box(progress.snapshot());
+                }
+            },
+        )?;
+        Ok(Self { stop, thread })
+    }
+
+    fn stop(self) -> ProbeResult<()> {
+        let Self { stop, thread } = self;
+        drop(stop);
+        thread.join().map_err(|_| ProbeError("the progress poller panicked".into()))
+    }
 }
 
 /// Something that changes when a file is replaced and survives when it is left alone.
@@ -2618,6 +2745,48 @@ mod tests {
         assert!(!arguments.scan.read_controls);
     }
 
+    /// Every probe mode but opened-discovery, which refuses walk flags on its own terms.
+    const ALL_MODES: &[&str] = &[
+        "code-sloc",
+        "code-sloc-cache-hit",
+        "code-sloc-seed",
+        "content-basic",
+        "content-binary-gate",
+        "content-cache-hit",
+        "content-disabled",
+        "content-open",
+        "content-query",
+        "content-seed",
+        "detect-ambiguous",
+        "detect-resolved",
+        "document-cache-hit",
+        "document-seed",
+        "delta-apply",
+        "delta-apply-batched",
+        "delta-apply-large",
+        "markdown-prose",
+        "query",
+        "render-json",
+        "render-json-string",
+        "render-jsonl",
+        "render-jsonl-string",
+        "render-yaml",
+        "render-yaml-string",
+        "revalidate",
+        "cold-open-save",
+        "default-tree",
+        "scan-index",
+        "scan-producer",
+        "snapshot-load",
+        "snapshot-save",
+        "summary",
+        "text-prose",
+        "validate-index",
+        "opened-second-report",
+        "index-second-report",
+        // opened-discovery is covered by opened_discovery_refuses_walk_flags_it_cannot_apply.
+    ];
+
     #[test]
     fn every_mode_refuses_diagnostics_and_worker_policy_it_cannot_apply() {
         // Mirrors `execute`'s dispatch, not the bead that reported this: `scan_producer`
@@ -2629,46 +2798,6 @@ mod tests {
         const DIAGNOSTICS_MODES: &[&str] =
             &["scan-producer", "scan-index", "validate-index", "default-tree"];
         const WORKER_POLICY_MODES: &[&str] = &["scan-producer", "scan-index", "validate-index"];
-        const ALL_MODES: &[&str] = &[
-            "code-sloc",
-            "code-sloc-cache-hit",
-            "code-sloc-seed",
-            "content-basic",
-            "content-binary-gate",
-            "content-cache-hit",
-            "content-disabled",
-            "content-open",
-            "content-query",
-            "content-seed",
-            "detect-ambiguous",
-            "detect-resolved",
-            "document-cache-hit",
-            "document-seed",
-            "delta-apply",
-            "delta-apply-batched",
-            "delta-apply-large",
-            "markdown-prose",
-            "query",
-            "render-json",
-            "render-json-string",
-            "render-jsonl",
-            "render-jsonl-string",
-            "render-yaml",
-            "render-yaml-string",
-            "revalidate",
-            "cold-open-save",
-            "default-tree",
-            "scan-index",
-            "scan-producer",
-            "snapshot-load",
-            "snapshot-save",
-            "summary",
-            "text-prose",
-            "validate-index",
-            "opened-second-report",
-            "index-second-report",
-            // opened-discovery is covered by opened_discovery_refuses_walk_flags_it_cannot_apply.
-        ];
 
         for mode in ALL_MODES.iter().copied() {
             let diagnostics_result = Arguments::parse(
@@ -2701,6 +2830,101 @@ mod tests {
                 assert!(error.0.contains(mode), "{}", error.0);
             }
         }
+    }
+
+    #[test]
+    fn every_mode_refuses_a_progress_handle_it_cannot_attach() {
+        // Mirrors `execute`'s dispatch: only `default_tree` and `summary_tier` prepare a
+        // one-shot report, which is where `prepare_report_with_progress` attaches a handle.
+        const PROGRESS_MODES: &[&str] = &["default-tree", "summary"];
+
+        for mode in ALL_MODES.iter().copied().chain(["opened-discovery"]) {
+            let result = Arguments::parse(
+                [mode, "--root", "/root", "--snapshot", "/snapshot", "--progress"]
+                    .into_iter()
+                    .map(OsString::from),
+            );
+            if PROGRESS_MODES.contains(&mode) {
+                let arguments =
+                    result.unwrap_or_else(|error| panic!("{mode} applies --progress: {}", error.0));
+                assert!(arguments.progress, "{mode}");
+            } else {
+                let error = result.expect_err(&format!("{mode} has no one-shot report to observe"));
+                assert!(error.0.contains("--progress"), "{}", error.0);
+                assert!(error.0.contains(mode), "{}", error.0);
+            }
+        }
+
+        // No entry point takes a handle and retains scan diagnostics, in either order.
+        for flags in [["--progress", "--diagnostics"], ["--diagnostics", "--progress"]] {
+            let error = Arguments::parse(
+                ["default-tree", "--root", "/root", "--snapshot", "/snapshot"]
+                    .into_iter()
+                    .chain(flags)
+                    .map(OsString::from),
+            )
+            .expect_err("a handle and diagnostics have no common entry point");
+            assert!(error.0.contains("--progress"), "{}", error.0);
+            assert!(error.0.contains("--diagnostics"), "{}", error.0);
+        }
+    }
+
+    #[test]
+    fn one_shot_report_modes_count_the_walk_through_an_attached_handle() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        let scratch = tempfile::tempdir().expect("scratch tempdir");
+        std::fs::create_dir(root.path().join("nested")).expect("nested directory");
+        std::fs::write(root.path().join("nested/one.txt"), b"one").expect("file");
+        std::fs::write(root.path().join("two.txt"), b"two!").expect("file");
+        for mode in ["default-tree", "summary"] {
+            let parse = |extra: &[&str]| {
+                Arguments::parse(
+                    [
+                        OsString::from(mode),
+                        OsString::from("--root"),
+                        root.path().as_os_str().to_owned(),
+                        OsString::from("--snapshot"),
+                        scratch.path().join(format!("{mode}.fdu")).into_os_string(),
+                    ]
+                    .into_iter()
+                    .chain(extra.iter().map(OsString::from)),
+                )
+                .expect("probe arguments")
+            };
+            let plain = execute(&parse(&[])).expect("without a handle").summary;
+            let observed = parse(&["--progress"]);
+            let (basis, delivery) = open_plan(
+                &observed.root,
+                &observed.scan,
+                CachePolicy::Off,
+                None,
+                AnalysisRequest::default(),
+            );
+            let request = Request::new(
+                basis,
+                Query { views: vec![ViewSpec::Summary], ..Query::default() },
+                std::time::SystemTime::now(),
+            );
+            let (_, _, performance, progress) =
+                prepare_one_shot(&observed, &request, &delivery).expect("with a handle");
+            let progress = progress.expect("--progress attaches a handle");
+            assert_eq!(progress.snapshot().files, 2, "{mode}: both files walked");
+            verify_progress(Some(&progress), &performance).expect("the handle counted the walk");
+
+            let summary = execute(&observed).expect("the mode with a handle").summary;
+            assert_eq!(
+                (summary.files, summary.dirs, summary.apparent_bytes, summary.complete),
+                (plain.files, plain.dirs, plain.apparent_bytes, plain.complete),
+                "{mode}: a handle observes the run and changes nothing about it"
+            );
+        }
+
+        // A handle nothing reported through is refused rather than recorded as attached.
+        let performance = fdu_core::PerformanceSummary { walked_files: 2, ..Default::default() };
+        let error = verify_progress(Some(&fdu_core::Progress::new()), &performance)
+            .expect_err("an unobserved handle");
+        assert!(error.0.contains("did not observe"), "{}", error.0);
+        verify_progress(None, &performance).expect("no handle, nothing to check");
     }
 
     #[test]
