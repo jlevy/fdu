@@ -39,7 +39,7 @@ pub enum ViewSpec {
     Tree,
     /// One row per stable detected file type.
     Types,
-    /// One row per raw derived extension (the original `types` behavior).
+    /// One row per raw derived extension.
     Extensions,
     /// One row per broad content family.
     Families,

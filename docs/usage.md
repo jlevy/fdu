@@ -47,7 +47,7 @@ repeated filesystem walks.
 | View | Answer |
 | --- | --- |
 | `list` | Matching entries; directory tree by default, flat paths or details on request |
-| `tree` | Compatibility preset for the directory hierarchy, including structured output |
+| `tree` | The directory hierarchy, in structured output too |
 | `summary` | One total for the selected tree |
 | `families` | Broad code, prose, markup, data, binary, and unknown groups |
 | `types` | Detected file types |
@@ -56,8 +56,8 @@ repeated filesystem walks.
 | `documents` | Prose metrics; requires an enabled analyzer |
 | `largest` | Twenty largest regular files by default |
 | `recent` | Twenty most recently modified regular files by default |
-| `files` | Compatibility preset: every selected entry in name order |
-| `full` | The existing bounded digest, excluding unbounded List/Files inventories |
+| `files` | Every selected entry in name order |
+| `full` | A bounded digest of every view but `list` and `files` |
 
 `largest` and `recent` are presets over `files`. `--sort` and `--limit` override their
 defaults. Use `--limit=all` where a bounded view should print every row.
@@ -75,7 +75,7 @@ exact `share_metric`, numerator, and denominator.
 
 ## Choose a Format
 
-The ordinary output is unchanged: `fdu .`, `fdu . --view list`, and
+The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
 Files contribute to their directory’s totals; tree output does not add individual file
 leaves.
@@ -86,7 +86,7 @@ leaves.
 | `paths` | Every matching path, safely escaped, one per line |
 | `long` or `--long` | Every match with its size (allocated unless `--size` says otherwise), modification age, and path |
 | `json`, `jsonl`, `yaml` | Structured matching entries with exact metrics and bounds |
-| `text` | Automatic human presentation: tree for List, existing tables for grouped views |
+| `text` | Automatic human presentation: tree for List, tables for grouped views |
 
 Flat lists use size-descending order with deterministic path ties; `--sort name` gives
 an alphabetic inventory.
@@ -106,9 +106,8 @@ accept automatic Text and machine formats.
 Largest/recent keep regular-file ranking and support Paths and Long; use List with Tree
 for directory roll-ups.
 Conflicting format flags are usage errors.
-Legacy Files keeps name ordering in flat formats; explicit Tree uses tree ordering.
-Legacy Tree preserves structured hierarchy output; explicit Paths/Long overrides that
-old tree presentation.
+Files keeps name ordering in flat formats; explicit Tree uses tree ordering.
+The Tree view keeps its structured hierarchy output; explicit Paths/Long overrides it.
 Full keeps its bounded digest and does not acquire an unbounded listing.
 
 ## Select Entries
@@ -169,7 +168,7 @@ Flat output emits matching entries only.
 Nested matching roots are all shown, so their sizes can overlap; summary/grouped totals
 count the covered union once.
 The scan root provides context and is not itself a selectable descendant.
-Hard links and shared extents keep fdu’s existing accounting; sizes do not promise
+Hard links and shared extents are counted once for each path; sizes do not promise
 uniquely reclaimable space.
 Symlinks are never followed.
 
