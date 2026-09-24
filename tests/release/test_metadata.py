@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+
+from scripts.release import publish_gate
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -85,11 +89,56 @@ class MetadataTests(unittest.TestCase):
             "github.ref == format('refs/tags/{0}', needs.plan.outputs.release_tag)",
         ):
             self.assertIn(clause, condition)
-        # A dispatch rehearses unless publishing is asked for explicitly.
+        # Conjoined, and never widened: `a || b`, `always() ||`, and `!cancelled()` would
+        # each pass a presence check while letting the job run on a ref it must not.
+        for widening in ("||", "always()", "!cancelled()"):
+            self.assertNotIn(widening, condition)
+        self.assertEqual(condition.count("&&"), 3)
+        # A dispatch rehearses unless publishing is asked for explicitly, and nothing but
+        # a dispatch runs the workflow at all.
         trigger = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertEqual(re.findall(r"(?m)^  ([a-z_]+):$", trigger), ["workflow_dispatch"])
         self.assertIn("      publish:\n", trigger)
         self.assertIn("        type: boolean\n        default: false\n", trigger)
-        self.assertNotIn("push:", trigger)
+
+    def test_each_cargo_publish_waits_for_its_own_comparison(self) -> None:
+        # The audit says what is missing, but an upload must also see its comparison step
+        # run and pass. An audit output that came back empty (a renamed key, a mistyped
+        # reference) skips the comparison, and that has to skip the upload as well.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        steps = workflow_steps(workflow_jobs(workflow)[PUBLISH_JOB])
+        for crate, reproduce in (("fdu-core", "reproduce-both"), ("fdu", "reproduce-fdu")):
+            with self.subTest(crate=crate):
+                comparisons = [text for text in steps.values() if f"id: {reproduce}\n" in text]
+                self.assertEqual(len(comparisons), 1)
+                self.assertIn(f"--package {crate}", comparisons[0])
+                upload = steps[f"Publish {crate}"]
+                self.assertRegex(
+                    upload,
+                    rf"(?m)^\s*run: cargo publish --locked --no-verify -p {re.escape(crate)}$",
+                )
+                self.assertIn(f"&& steps.{reproduce}.outcome == 'success'", upload)
+
+    def test_every_audit_output_the_publish_job_reads_is_one_the_gate_writes(self) -> None:
+        # A step condition on an output the gate never writes is silently false, so the
+        # names the workflow reads are held to the keys `audit` returns.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = workflow_jobs(workflow)[PUBLISH_JOB]
+        referenced = set(re.findall(r"steps\.(?:audit|pypi)\.outputs\.([A-Za-z0-9_]+)", publish))
+        self.assertTrue(referenced)
+        artifacts = [
+            {"filename": "fdu-core-0.1.0.crate", "kind": "crate", "sha256": "a" * 64},
+            {"filename": "fdu-0.1.0.crate", "kind": "crate", "sha256": "b" * 64},
+            {"filename": "fdu-0.1.0.tar.gz", "kind": "sdist", "sha256": "c" * 64},
+            {"filename": "fdu-0.1.0-cp312-abi3-win_amd64.whl", "kind": "wheel", "sha256": "d" * 64},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "manifest.json"
+            manifest.write_text(
+                json.dumps({"version": "0.1.0", "artifacts": artifacts}), encoding="utf-8"
+            )
+            written = publish_gate.audit(manifest, "0.1.0", lambda _url: None)
+        self.assertLessEqual(referenced, written.keys())
 
     def test_the_publish_job_runs_no_dependency_code_and_uploads_only_rehearsed_bytes(
         self,
@@ -144,6 +193,17 @@ def workflow_jobs(workflow: str) -> dict[str, str]:
         elif current is not None and not line.lstrip().startswith("#"):
             jobs[current] += line + "\n"
     return jobs
+
+
+def workflow_steps(job: str) -> dict[str, str]:
+    """Split one job's text into its steps, keyed by `name:` (or `uses:` for an unnamed one)."""
+    steps: dict[str, str] = {}
+    for text in job.split("\n      - ")[1:]:
+        key = re.search(r"(?m)^\s*(?:name|uses): (.+)$", text)
+        if key is None:
+            raise ValueError(f"step without a name or uses: {text!r}")
+        steps[key[1]] = text
+    return steps
 
 
 if __name__ == "__main__":

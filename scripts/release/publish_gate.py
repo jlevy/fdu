@@ -366,10 +366,17 @@ def check_environment(
         and policy.get("protected_branches") is False,
         f"environment {environment} must deploy only from selected tags",
     )
-    listing = read(f"{base}/deployment-branch-policies")
+    # One page, sized past any plausible rule count, and its count checked against what
+    # came back: a rule on a page the check never read would be a rule it never saw.
+    listing = read(f"{base}/deployment-branch-policies?per_page=100")
     policies = listing.get("branch_policies") if isinstance(listing, dict) else None
     if not isinstance(policies, list) or not policies:
         raise ValueError(f"environment {environment} has no deployment tag rule")
+    require(
+        listing.get("total_count") == len(policies),
+        f"environment {environment} reports {listing.get('total_count')!r} deployment rules "
+        f"but listed {len(policies)}",
+    )
     for item in policies:
         name = item.get("name") if isinstance(item, dict) else None
         kind = item.get("type") if isinstance(item, dict) else None

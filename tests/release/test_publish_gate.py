@@ -424,6 +424,16 @@ class EnvironmentTests(unittest.TestCase):
     """The publish job never names an environment that is missing or unprotected."""
 
     BASE = "https://api.github.com/repos/jlevy/fdu/environments/release"
+    POLICIES = f"{BASE}/deployment-branch-policies?per_page=100"
+
+    @staticmethod
+    def listing(*rules: tuple[str, str], total: int | None = None) -> dict[str, object]:
+        """A deployment-policy listing of `(name, type)` rules, as the API pages it."""
+        policies = [{"name": name, "type": kind} for name, kind in rules]
+        return {
+            "total_count": len(policies) if total is None else total,
+            "branch_policies": policies,
+        }
 
     def answers(self, **overrides: object) -> dict[str, object]:
         record: dict[str, object] = {
@@ -439,8 +449,7 @@ class EnvironmentTests(unittest.TestCase):
             },
         }
         record.update(overrides)
-        policies = {"branch_policies": [{"name": "v*", "type": "tag"}]}
-        return {self.BASE: record, f"{self.BASE}/deployment-branch-policies": policies}
+        return {self.BASE: record, self.POLICIES: self.listing(("v*", "tag"))}
 
     def check(self, answers: dict[str, object]) -> list[str]:
         return check_environment("jlevy/fdu", "release", answers.__getitem__)
@@ -452,15 +461,20 @@ class EnvironmentTests(unittest.TestCase):
         missing = self.answers()
         missing[self.BASE] = None
         branch = self.answers()
-        branch[f"{self.BASE}/deployment-branch-policies"] = {
-            "branch_policies": [{"name": "v*", "type": "tag"}, {"name": "main", "type": "branch"}]
-        }
+        branch[self.POLICIES] = self.listing(("v*", "tag"), ("main", "branch"))
+        tag = self.answers()
+        tag[self.POLICIES] = self.listing(("release-*", "tag"))
+        # A rule the listing counts but did not return is a rule the check never saw.
+        unread = self.answers()
+        unread[self.POLICIES] = self.listing(("v*", "tag"), total=3)
         cases = {
             "does not exist": missing,
             "no required reviewer": self.answers(protection_rules=[{"type": "branch_policy"}]),
             "bypass": self.answers(can_admins_bypass=True),
             "only from selected tags": self.answers(deployment_branch_policy=None),
             "admits branch 'main'": branch,
+            "admits tag 'release-\\*'": tag,
+            "reports 3 deployment rules but listed 1": unread,
         }
         for message, answers in cases.items():
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
