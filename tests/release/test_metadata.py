@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 import unittest
 from pathlib import Path
@@ -40,12 +41,82 @@ class MetadataTests(unittest.TestCase):
         self.assertIn("scripts/release/release_body.py", runbook)
         self.assertNotIn('re.sub(r"<!--.*?-->', runbook)
 
-    def test_rehearsal_workflow_has_no_publication_authority(self) -> None:
+    def test_publication_authority_is_confined_to_the_gated_publish_job(self) -> None:
+        # Every credential, OIDC grant, and registry write sits in the one job that names
+        # the protected environment; every build job keeps the read-only default.
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        self.assertNotIn("id-token: write", workflow)
+        jobs = workflow_jobs(workflow)
+        authority = (
+            "id-token: write",
+            "environment:",
+            "secrets.CARGO_REGISTRY_TOKEN",
+            "crates-io-auth-action",
+            "cargo publish",
+            "uv publish",
+        )
+        for name, body in jobs.items():
+            for marker in authority:
+                with self.subTest(job=name, marker=marker):
+                    if name == PUBLISH_JOB:
+                        self.assertIn(marker, body)
+                    else:
+                        self.assertNotIn(marker, body)
+        self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read\n\n")
+        # The GitHub release stays a maintainer step, so nothing may write the repository.
         self.assertNotIn("contents: write", workflow)
-        self.assertNotIn("cargo publish", workflow)
+        self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("gh-action-pypi-publish", workflow)
+
+    def test_the_publish_job_runs_only_on_the_planned_tag_after_the_rehearsal(self) -> None:
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = workflow_jobs(workflow)[PUBLISH_JOB]
+        self.assertIn("    environment: release\n", publish)
+        self.assertIn(
+            "    permissions:\n      contents: read\n      id-token: write\n    ", publish
+        )
+        self.assertIn(
+            "    needs: [plan, crate, sdist, wheels, evidence, release-environment]\n", publish
+        )
+        condition = publish.split("    if: >-\n", 1)[1].split("\n    runs-on:", 1)[0]
+        for clause in (
+            "inputs.publish",
+            "startsWith(github.ref, 'refs/tags/v')",
+            "needs.plan.outputs.publish == 'true'",
+            "github.ref == format('refs/tags/{0}', needs.plan.outputs.release_tag)",
+        ):
+            self.assertIn(clause, condition)
+        # A dispatch rehearses unless publishing is asked for explicitly.
+        trigger = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertIn("      publish:\n", trigger)
+        self.assertIn("        type: boolean\n        default: false\n", trigger)
+        self.assertNotIn("push:", trigger)
+
+    def test_the_publish_job_runs_no_dependency_code_and_uploads_only_rehearsed_bytes(
+        self,
+    ) -> None:
+        # `--no-verify` keeps build scripts and proc macros away from the credentials; the
+        # rehearsal's crate job already built and installed both crates.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = workflow_jobs(workflow)[PUBLISH_JOB]
+        cargo = [line.strip() for line in publish.splitlines() if "cargo p" in line]
+        self.assertTrue(cargo)
+        for line in cargo:
+            with self.subTest(line=line):
+                self.assertIn("--locked --no-verify", line)
+        self.assertEqual(publish.count("compare-crates"), 2)
+        self.assertIn("publish_gate.py verify-files", publish)
+        self.assertIn("uv publish\n          --trusted-publishing always\n", publish)
+        self.assertIn("--check-url https://pypi.org/simple/", publish)
+        self.assertNotIn("cargo build", publish)
+        self.assertNotIn("uv build", publish)
+        self.assertNotIn("maturin", publish)
+
+    def test_every_release_checkout_drops_its_credentials(self) -> None:
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        checkouts = workflow.split("uses: actions/checkout@")[1:]
+        self.assertTrue(checkouts)
+        for checkout in checkouts:
+            self.assertIn("persist-credentials: false", checkout.split("\n      - ", 1)[0])
 
     def test_workflow_and_local_rehearsal_run_the_same_crate_smoke(self) -> None:
         # A plain `cargo install --locked` of the packaged `fdu` cannot resolve an
@@ -56,6 +127,23 @@ class MetadataTests(unittest.TestCase):
         for text in (workflow, rehearsal):
             self.assertIn("scripts/release/smoke_crate.py", text)
         self.assertNotIn("cargo install", workflow)
+
+
+PUBLISH_JOB = "publish"
+
+
+def workflow_jobs(workflow: str) -> dict[str, str]:
+    """Split a workflow's `jobs:` mapping into each job's text, keyed by job ID."""
+    jobs: dict[str, str] = {}
+    current = None
+    for line in workflow.split("\njobs:\n", 1)[1].splitlines():
+        header = re.fullmatch(r"  ([A-Za-z0-9_-]+):", line)
+        if header is not None:
+            current = header[1]
+            jobs[current] = ""
+        elif current is not None and not line.lstrip().startswith("#"):
+            jobs[current] += line + "\n"
+    return jobs
 
 
 if __name__ == "__main__":
