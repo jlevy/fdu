@@ -10,8 +10,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - An interactive run shows one progress line on stderr after half a second: the root,
-  the phase (`Loading`, `Scanning`, `Revalidating`, `Indexing`, `Analyzing`, `Saving`),
-  counts walked, and elapsed time, erased before any output.
+  the phase (`Loading`, `Scanning`, `Revalidating`, `Indexing`, `Analyzing`, `Saving`,
+  `Summarizing`), counts walked, and elapsed time, erased before any output.
   It never draws when stderr is not a terminal, `TERM` is `dumb` (or unset, except on
   Windows), or `CI` is set; `--progress=auto|always|never` controls it on a terminal,
   and Ctrl-C while it draws erases it and ends the run by the interrupt signal.

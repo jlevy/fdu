@@ -201,6 +201,8 @@ pub(crate) enum Phase {
     Saving,
     /// Assembling the index once the walk is over.
     Indexing,
+    /// Building the answer from the index.
+    Summarizing,
 }
 
 impl Phase {
@@ -215,6 +217,7 @@ impl Phase {
             Self::Analyzing => "Analyzing",
             Self::Saving => "Saving",
             Self::Indexing => "Indexing",
+            Self::Summarizing => "Summarizing",
         }
     }
 }
@@ -381,11 +384,13 @@ impl Slots {
         let facts_slot = match (facts.phase, facts.analysis) {
             // Indexing keeps the walk's final counts: the walk is over, and the phase word
             // is what changes.
-            (Phase::Scanning | Phase::Revalidating | Phase::Indexing, _) => FactsSlot::Walk {
-                files: human_count(facts.files),
-                dirs: Some(human_count(facts.directories)),
-                bytes: Some(human_bytes(facts.bytes)),
-            },
+            (Phase::Scanning | Phase::Revalidating | Phase::Indexing | Phase::Summarizing, _) => {
+                FactsSlot::Walk {
+                    files: human_count(facts.files),
+                    dirs: Some(human_count(facts.directories)),
+                    bytes: Some(human_bytes(facts.bytes)),
+                }
+            }
             (Phase::Analyzing, Some((done, total))) => FactsSlot::Analysis {
                 percent: format!("{:>3}%", whole_percent(done, total)),
                 done: human_count(done),
@@ -732,6 +737,10 @@ mod tests {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Indexing), ms(3_800), 3, 100, false),
             "⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s"
+        );
+        assert_eq!(
+            render_frame(ROOT, &walk(Phase::Summarizing), ms(8_600), 5, 100, false),
+            "⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),

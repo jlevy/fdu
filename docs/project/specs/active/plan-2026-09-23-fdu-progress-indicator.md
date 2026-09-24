@@ -124,12 +124,16 @@ pub struct ProgressSnapshot {
 }
 
 pub enum ProgressPhase {
-    Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving,
+    Starting, Loading, Scanning, Revalidating, Indexing, Analyzing, Saving, Summarizing,
 }
 ```
 
 A fresh handle reports `Starting` until the route enters its first phase, and the last
 phase entered persists after the route returns.
+`Summarizing` was added after review: a one-shot report over a full index starts its
+save in the background and then builds the answer, which for a heavy view (`full`, or a
+deep tree with no limit) over a large index takes seconds; showing `Saving` then
+misdescribed the work, so the answer’s construction has its own phase.
 `Indexing` was added during implementation: on an 867k-file tree the walkers finished
 about a second (release build) before the single thread assembling the index worked
 through their queued listings, and the frozen counts under `Scanning` read as a stall.
@@ -179,8 +183,8 @@ and a later Python binding can poll the same way across the FFI boundary.
 `cli.rs` owns every presentation decision, as it does for color.
 
 - **Interactive.** A run is interactive only when stderr is a terminal, `TERM` is set
-  and is not `dumb` (on Windows it may be unset, since cmd, PowerShell, and Windows
-  Terminal set none), `CI` is unset or empty, and, on Windows, virtual terminal
+  and is not `dumb` (on Windows it may be unset or empty, since cmd, PowerShell, and
+  Windows Terminal set none), `CI` is unset or empty, and, on Windows, virtual terminal
   processing could be enabled for the console (`anstyle-query`’s safe
   `enable_ansi_colors`, already a dependency through clap).
   A legacy console that refuses it would print the erase sequence as text, so it counts
@@ -206,12 +210,12 @@ and a later Python binding can poll the same way across the FFI boundary.
 - **Clearing.** Before any write to stdout or stderr (report, warning, error, or the
   performance line) the ticker is stopped and joined and the line cleared.
   A guard does the same on unwind.
-  On a one-shot run the engine returns, and the line stops, before the pending save is
-  joined: the report prints while the snapshot is written, so `Saving` is at most one
-  frame there. A watch start joins its save before returning, so it shows `Saving` for as
-  long as the write takes.
-  Write errors on the progress line are ignored and never change the exit status; after
-  the first failed write the ticker stops drawing.
+  On a one-shot run the save runs in the background while the answer is built, so the
+  line shows `Saving` only briefly and then `Summarizing`, and it stops before the save
+  is joined: the report prints while the snapshot is written.
+  A watch start joins its save before returning, so it shows `Saving` for as long as the
+  write takes. Write errors on the progress line are ignored and never change the exit
+  status; after the first failed write the ticker stops drawing.
 - **Watch.** The indicator runs during the initial scan and stops when the first report
   paints; after that the watch repaint is the progress.
 - **Ctrl-C.** A handler is installed only on an interactive run that will draw, so every
@@ -270,6 +274,7 @@ The frame for each phase, shown here in plain text:
 ⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
+⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s
 ```
 
 **Colors** reuse the palette the report already uses, through `anstyle`, which is
