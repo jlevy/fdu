@@ -1,6 +1,6 @@
 # Feature: First-Release Verification
 
-**Date:** 2026-09-18
+**Date:** 2026-09-18 (last updated 2026-09-24)
 
 **Author:** fdu project
 
@@ -15,8 +15,7 @@ channels.
 
 Two checklists for the first public `0.1.0`. The first can be run before either registry
 exists. The second can run only after
-[Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand)
-finishes.
+[Publishing a Release](../../guides/release-process.md#publishing-a-release) finishes.
 
 The subject is the stranger path: install and run the command, the Rust library, and the
 Python package the way a first-time user would, not the way a checkout of this
@@ -34,8 +33,9 @@ repository would.
 ## Non-Goals
 
 - Publishing `0.1.0`. That procedure is
-  [Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand),
-  tracked on `fdu-9cf0`.
+  [Publishing a Release](../../guides/release-process.md#publishing-a-release), with
+  [Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand) as
+  its fallback, tracked on `fdu-9cf0`.
 - Replacing `make release-rehearse`. Rehearsal already packages and inspects artifacts;
   this plan is the stranger path on top of them.
 - Contacting crates.io or PyPI during the first checklist.
@@ -230,7 +230,7 @@ measures the runner and the publisher’s credentials.
 ## Rollout Plan
 
 Publishing is
-[Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand).
+[Publishing a Release](../../guides/release-process.md#publishing-a-release).
 This plan does not publish.
 Run Phase 1 before that procedure, then Phase 2 from a separate machine after the
 channels exist.
