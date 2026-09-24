@@ -15,9 +15,10 @@
 //! Two things those rules do not promise. A write that fails on a later target leaves
 //! the earlier ones installed: the error names them so the caller can say so, and a
 //! rerun reports them `unchanged`. And links are not special: a symbolic link at a
-//! target is read through, so it counts as generated when the file it points to is, and
-//! the rename then replaces the link itself with a regular file, leaving that other file
-//! as it was; a link on the way to a target is followed like any directory.
+//! target is read through, so it counts as generated when the file it points to is; an
+//! update then renames over the link, replacing it with a regular file and leaving that
+//! other file as it was, while an unchanged target writes nothing and the link stays. A
+//! link on the way to a target is followed like any directory.
 
 use std::fmt;
 use std::fs;
@@ -67,8 +68,9 @@ pub(crate) enum InstallError {
     /// A `SKILL.md` at this target lacks fdu's marker, so fdu did not write it. No
     /// target was written, this one or any other.
     Foreign(PathBuf),
-    /// Reading or writing this target failed. `completed` holds the targets written
-    /// before it, in order; it is empty when the failure was found before any write.
+    /// Reading or writing this target failed. `completed` holds the targets finished
+    /// before it (written or found unchanged), in order; it is empty when the failure
+    /// was found before any target was finished.
     Io { path: PathBuf, source: io::Error, completed: Vec<Outcome> },
 }
 
@@ -154,7 +156,8 @@ fn is_generated(bytes: &[u8]) -> bool {
 /// Replace `target` with `content` through a staged sibling and one rename, so a
 /// reader sees the old file or the new one and never a prefix of the new one. The new
 /// file has the process's default permissions; a mode set on the old file does not
-/// carry over. A staged file that could not be renamed is removed rather than left
+/// carry over (on Unix; a read-only file on Windows is expected to refuse the rename
+/// instead, which is reported as a failed install). A staged file that could not be renamed is removed rather than left
 /// behind.
 fn replace(target: &Path, content: &str) -> io::Result<()> {
     let directory = target.parent().ok_or_else(|| {

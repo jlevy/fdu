@@ -1109,10 +1109,12 @@ impl Cli {
                 skill_install::GENERATED_MARKER_PREFIX,
             ))),
             Err(skill_install::InstallError::Io { path, source, completed }) => {
-                // What was installed before the failure is said before the failure is:
+                // What was finished before the failure is said before the failure is:
                 // flushed here so the lines reach stdout before the error reaches stderr.
-                report(out, &completed)?;
-                out.flush()?;
+                // Best effort: a stdout that cannot take them (a closed pipe, a full disk)
+                // must not replace the install error, or a failed install would exit 0
+                // through the broken-pipe rule with nothing on stderr.
+                let _ = report(out, &completed).and_then(|()| out.flush());
                 Err(anyhow::Error::new(source).context(format!(
                     "cannot install the skill at {}",
                     skill_install::display_path(&path, cwd)
@@ -2227,6 +2229,19 @@ mod tests {
         }
     }
 
+    /// A stdout whose reader is gone, as after `| head`.
+    struct ClosedStdout;
+
+    impl Write for ClosedStdout {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+    }
+
     /// A CLI with every axis at its default, so a test can vary exactly one.
     fn cli() -> Cli {
         Cli {
@@ -3165,6 +3180,22 @@ mod tests {
         );
         assert!(!is_usage_error(&error), "a write failure is not a usage error");
         assert_eq!(error.to_string(), "cannot install the skill at .claude/skills/fdu/SKILL.md");
+
+        // A stdout that cannot take the report (its reader gone, as after `| head`) must
+        // not replace the install error: the broken-pipe rule would turn it into exit 0
+        // with nothing on stderr.
+        let rerun = tempfile::tempdir().expect("tempdir");
+        let targets = skill_install::targets(rerun.path(), None);
+        std::fs::create_dir_all(skill_install::staged_path(targets[1].parent().expect("parent")))
+            .expect("block the second target's staged path");
+        let error = parse(&["fdu", "--install-skill"])
+            .install_skill_from(&mut ClosedStdout, rerun.path())
+            .expect_err("the second write fails");
+        assert_eq!(
+            error.to_string(),
+            "cannot install the skill at .claude/skills/fdu/SKILL.md",
+            "the install error survives a closed stdout"
+        );
 
         // User scope, through the process boundary: exit 1 and the same headline.
         let base = sandbox.path().join("home");
