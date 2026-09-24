@@ -71,10 +71,9 @@ SELECTION
                                 allocated]
 
 VIEWS
-      --view <LIST>         Views: list, extensions, types, families, languages, documents, largest,
-                            recent, summary, or full; tree/files are compatibility presets. Defaults
-                            to list with no analysis, otherwise to a view that displays the
-                            requested analysis
+      --view <LIST>         Views: list, tree, files, extensions, types, families, languages,
+                            documents, largest, recent, summary, or full. Defaults to list with no
+                            analysis, otherwise to a view that displays the requested analysis
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
@@ -240,11 +239,10 @@ metadata visible but does not retain a separate lower-level metric record for th
 
 ## Pick the View, Then Shape It
 
-- `--view list` (default), with `--format tree` for current directory roll-ups,
-  `--format paths` for complete flat matching paths, or `--long` for size, age, and
-  path.
-- `--view tree` is the compatibility preset for the hierarchy, including machine output.
-- `--view extensions` for the original raw-extension breakdown.
+- `--view list` (default), with `--format tree` for directory roll-ups, `--format paths`
+  for complete flat matching paths, or `--long` for size, age, and path.
+- `--view tree` for the directory hierarchy, in machine output too.
+- `--view extensions` for the raw-extension breakdown.
   Rows partition the tree and so sum to its total; a derived extension always carries a
   leading dot, and names having none are tallied under the literal `(none)`.
 - `--view types` for stable detected file types and exact byte shares.
@@ -259,7 +257,7 @@ metadata visible but does not retain a separate lower-level metric record for th
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
-- `--view full` for the existing bounded digest, excluding unbounded List/Files.
+- `--view full` for the bounded digest of every view but List and Files.
 - Several views in one run share one scan: `--view summary,types,families`. Text then
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
@@ -289,7 +287,7 @@ Analysis never truncates a file or excludes it because of size.
 Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.
-Content analysis is currently one-shot and cannot be combined with `--watch`.
+Content analysis is one-shot and cannot be combined with `--watch`.
 
 One-shot text reports end with a compact performance line.
 It reports regular files and apparent bytes walked, content bytes actually read,
@@ -340,7 +338,7 @@ Exclusions win throughout selected subtrees before size/age bounds; ignored-only
 traverse structural ancestors.
 Flat output lists matching entries, including nested roots whose sizes overlap.
 Aggregate views count the covered union once.
-The default directory tree stays unchanged; `--tree` makes its format explicit.
+The default is the directory tree; `--tree` makes its format explicit.
 Flat lists are complete, size-ranked by default, with global row limits; tree limits
 remain per-directory and depth only folds the tree.
 Paths escapes control characters only and keeps stdout to paths; bound and rule notices
@@ -351,7 +349,7 @@ report’s `age_reference_ns`; unknown ages are null.
 Tree/Paths/Long require one compatible list view.
 Use automatic Text or machine output for grouped/mixed views and Full.
 Largest/recent retain regular-file ranks with Paths or Long.
-Explicit Paths/Long overrides legacy Tree presentation.
+Explicit Paths/Long overrides the Tree view’s presentation.
 Format flags conflict.
 Rust/Python callers select format on the query before reading; a detached Report cannot
 turn a folded tree into a complete flat inventory.
@@ -564,7 +562,7 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   The metadata default view is list; its default format is tree. These agree:
     fdu PATH
     fdu PATH --view list --format tree
-  Tree keeps the current directory roll-ups, depth 2, ten children per directory.
+  Tree shows directory roll-ups, depth 2, ten children per directory.
   Files contribute to totals without new leaf rows. --depth all expands levels;
   --limit all removes row caps. Flat list limits apply to the whole result.
 
@@ -573,8 +571,8 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   JSON, JSONL, and YAML give exact metrics. text keeps automatic human tables.
   Tree/paths/long require a single list view; use text or machine formats for
   grouped/mixed views and full. largest/recent accept paths/long, keeping file ranks.
-  Legacy files keeps name order; legacy tree keeps structured tree output.
-  Explicit paths/long overrides the legacy tree presentation. Format flags conflict.
+  files keeps name order; the tree view keeps structured tree output.
+  Explicit paths/long overrides the tree presentation. Format flags conflict.
 
   fdu PATH --kind dir --include .venv --modified-before 7d --long
   fdu PATH --kind dir --include node_modules --modified-before 30d --format long

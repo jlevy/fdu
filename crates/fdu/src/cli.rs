@@ -176,7 +176,7 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   The metadata default view is list; its default format is tree. These agree:
     fdu PATH
     fdu PATH --view list --format tree
-  Tree keeps the current directory roll-ups, depth 2, ten children per directory.
+  Tree shows directory roll-ups, depth 2, ten children per directory.
   Files contribute to totals without new leaf rows. --depth all expands levels;
   --limit all removes row caps. Flat list limits apply to the whole result.
 
@@ -185,8 +185,8 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
   JSON, JSONL, and YAML give exact metrics. text keeps automatic human tables.
   Tree/paths/long require a single list view; use text or machine formats for
   grouped/mixed views and full. largest/recent accept paths/long, keeping file ranks.
-  Legacy files keeps name order; legacy tree keeps structured tree output.
-  Explicit paths/long overrides the legacy tree presentation. Format flags conflict.
+  files keeps name order; the tree view keeps structured tree output.
+  Explicit paths/long overrides the tree presentation. Format flags conflict.
 
   fdu PATH --kind dir --include .venv --modified-before 7d --long
   fdu PATH --kind dir --include node_modules --modified-before 30d --format long
@@ -503,9 +503,9 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: list, extensions, types, families, languages, documents, largest, recent,
-    /// summary, or full; tree/files are compatibility presets. Defaults to list with no analysis, otherwise to a view
-    /// that displays the requested analysis.
+    /// Views: list, tree, files, extensions, types, families, languages, documents,
+    /// largest, recent, summary, or full. Defaults to list with no analysis, otherwise to
+    /// a view that displays the requested analysis.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
 

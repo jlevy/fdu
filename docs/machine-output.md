@@ -3,10 +3,10 @@
 All reports use `fdu.report/7`, including metadata-only and content-analyzed reports.
 Cache status uses `fdu.cache/2`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
-None of these versions has been published yet, so under
-[the draft-schema rule](project/guides/release-process.md) their shape may still change
-until the first release that emits them; content analysis does not select another
-schema.
+`0.1.0` is the first release to emit these versions, so under
+[the schema rule](project/guides/release-process.md) their shape is fixed from it on: a
+field change bumps the version.
+Content analysis does not select another schema.
 
 ## List Rows
 
@@ -16,11 +16,10 @@ fdu ~/projects --kind dir --include node_modules --modified-before 30d --format 
 
 The default List in JSON, JSONL, or YAML exposes complete matching rows unless an
 explicit limit bounds them.
-A flat section has `view: list`, a `files` array (the existing row collection name), and
-`bound`, which is null when no rows were omitted.
-A bounded section gives shown/total counts.
-Full retains its bounded digest; the legacy `--view tree --format json` preset retains
-the `tree` hierarchy and its per-node `truncated` flags.
+A flat section has `view: list`, a `files` array, and `bound`, which is null when no
+rows were omitted. A bounded section gives shown/total counts.
+Full retains its bounded digest; `--view tree --format json` gives the `tree` hierarchy
+and its per-node `truncated` flags.
 A Python List requested in Tree format also serializes its stored tree projection as a
 `tree` object, so inspect the payload key as well as `view`.
 
@@ -90,10 +89,10 @@ The exact nanoseconds and native path identity belong to machine output.
 Automatic Text and machine formats support grouped/mixed views; explicit Tree/Paths/Long
 require one compatible list section.
 Largest/recent retain their file ranking and support Paths and Long.
-Cache-status human aliases render its existing table.
-New List watch requests repaint snapshots.
-Legacy Files watch requests retain raw change streams with Text or machine formats;
-explicit Tree, Paths, and Long repaint snapshots instead.
+Cache-status human aliases render its table.
+A List watch repaints snapshots.
+A Files watch streams raw changes in Text or machine formats; explicit Tree, Paths, and
+Long repaint snapshots instead.
 
 See [the usage guide](usage.md) for filter grammar and examples, and
 [the surface architecture](project/architecture/fdu-surface-architecture.md) for schema
