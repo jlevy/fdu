@@ -34,8 +34,9 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 /// A snapshot carries the phase most recently entered. Routes enter phases in this
 /// order, skipping the ones they do not do: a cold report over a full index goes
 /// `Scanning`, `Indexing` once the walk is over, then `Analyzing` if content was
-/// requested and `Saving` if a snapshot is written; a warm one goes `Loading`,
-/// `Revalidating`, then the same without `Indexing`. A watch's initial scan then runs a
+/// requested, `Saving` if a snapshot is written, and `Summarizing` while the answer is
+/// built; a warm one goes `Loading`, `Revalidating`, then the same without `Indexing`.
+/// A watch's initial scan then runs a
 /// second pass: after its save it verifies the tree once more while it binds
 /// observation, and that pass begins again at `Revalidating` with the walk counters
 /// restarted, so the line shows the second walk's own progress rather than a sum.
@@ -64,11 +65,18 @@ pub enum ProgressPhase {
     Analyzing,
     /// A snapshot or content sidecar is being written.
     Saving,
+    /// The answer is being built from the index.
+    ///
+    /// The last phase of a one-shot report over a full index. A save entered before it
+    /// continues in the background, so the phase names the work in the foreground:
+    /// building a heavy view (`full`, or a deep tree with no limit) over a large index
+    /// takes seconds, which `Saving` would misdescribe.
+    Summarizing,
 }
 
 impl ProgressPhase {
     /// Every phase, indexed by the code a cell stores.
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Starting,
         Self::Loading,
         Self::Scanning,
@@ -76,6 +84,7 @@ impl ProgressPhase {
         Self::Indexing,
         Self::Analyzing,
         Self::Saving,
+        Self::Summarizing,
     ];
 
     const fn code(self) -> u8 {
@@ -87,6 +96,7 @@ impl ProgressPhase {
             Self::Indexing => 4,
             Self::Analyzing => 5,
             Self::Saving => 6,
+            Self::Summarizing => 7,
         }
     }
 

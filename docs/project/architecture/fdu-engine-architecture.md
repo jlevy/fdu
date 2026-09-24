@@ -614,7 +614,8 @@ A caller that passes a `Progress` handle observes how much the walk has read, no
 index: walkers add their directory, file, and byte counts once per batch they already
 hand off (per directory on revalidation and reconciliation), and the phase moves forward
 through loading, scanning or revalidating, indexing (the builder finishing listings the
-walkers already sent), analysis, and saving.
+walkers already sent), analysis, saving, and summarizing (building the answer while the
+save continues in the background).
 The counts measure work, so a reread counts twice; they equal the report’s walked totals
 when the route returns, except after a discarded parallel reconcile wave.
 A watch start’s closing verification is a second pass that restarts the counts.

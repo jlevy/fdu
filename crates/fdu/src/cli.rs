@@ -3395,10 +3395,19 @@ mod tests {
     }
 
     /// A stdout whose reader has left, as `head` leaves once it has seen enough.
-    struct ClosedPipe;
+    ///
+    /// It also records what stderr held the first time the report tried to write, so a
+    /// test can check the line was already erased by then: after a stdout write fails,
+    /// the ticker's drop erases the line anyway, so stderr's final bytes alone cannot
+    /// tell a stop before the report from a stop after it.
+    struct ClosedPipe {
+        stderr: SharedBuffer,
+        stderr_at_first_write: Option<String>,
+    }
 
     impl Write for ClosedPipe {
         fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            self.stderr_at_first_write.get_or_insert_with(|| self.stderr.text());
             Err(io::Error::new(io::ErrorKind::BrokenPipe, "reader closed"))
         }
 
@@ -3424,18 +3433,26 @@ mod tests {
             root.path().to_str().expect("Unicode"),
         ]
         .map(OsString::from);
+        let mut at_first_write = None;
         let (status, _, text) = run_until_drawn(|err| {
+            let mut stdout = ClosedPipe { stderr: err.clone(), stderr_at_first_write: None };
             let status = run_with_io(
                 &args,
-                &mut ClosedPipe,
+                &mut stdout,
                 &mut err.clone(),
                 false,
                 &interactive_terminal(),
                 drawing_io(err),
             );
+            at_first_write = stdout.stderr_at_first_write;
             (status, Vec::new())
         });
         assert_eq!(status, 0, "a consumer that has seen enough is not a failure");
+        assert_eq!(
+            at_first_write.as_deref(),
+            Some(text.as_str()),
+            "the line was erased, and nothing more drawn, before the report touched stdout"
+        );
         assert!(text.starts_with(&format!("{ERASE_LINE}⠋ ")), "{text:?}");
         assert!(text.ends_with(ERASE_LINE), "the erase is the last thing on stderr:\n{text:?}");
         let after_last_frame = text.rsplit_once(ERASE_LINE).map(|(_, rest)| rest);

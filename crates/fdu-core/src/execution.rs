@@ -425,11 +425,11 @@ pub fn prepare_report(
 /// [`PerformanceSummary`]'s walked totals, and a run that requested content analysis
 /// leaves `analysis` at `(fresh_files, fresh_files)`.
 ///
-/// A run that returns with a save still pending has entered
-/// [`ProgressPhase::Saving`](crate::ProgressPhase); the caller decides when to join it,
-/// as with [`prepare_report`]. A caller that stops polling when this returns, as the
-/// command line does before it prints the report, sees `Saving` for at most the moment
-/// between the save's start and the return.
+/// A run over a full index ends in [`ProgressPhase::Summarizing`](crate::ProgressPhase)
+/// while it builds the answer; a save it started continues in the background, and the
+/// caller decides when to join it, as with [`prepare_report`]. `Saving` is therefore
+/// shown only for the moment between the save's start and the answer's, however long
+/// the write takes.
 pub fn prepare_report_with_progress(
     request: &Request,
     delivery: &Delivery,
@@ -529,6 +529,9 @@ fn prepare_report_internal(
             let (index, open_report, pending_save, scan_diagnostics) =
                 execute(&plan, &request.basis, collect_scan_diagnostics, progress)?;
             let performance = PerformanceSummary::from_open_report(&open_report);
+            if let Some(progress) = progress {
+                progress.enter(crate::ProgressPhase::Summarizing);
+            }
             let answer = report(&index, request, SystemTime::now())?;
             debug_assert_eq!(answer.scope, scan_config.scope());
             Ok((answer, pending_save, performance, scan_diagnostics))
@@ -1686,7 +1689,7 @@ mod tests {
     /// content analysis, and a warm revalidation of the snapshot that run left.
     #[test]
     fn progress_ends_at_the_walked_totals_of_every_one_shot_route() {
-        use crate::ProgressPhase::{Analyzing, Indexing, Saving, Scanning};
+        use crate::ProgressPhase::{Scanning, Summarizing};
         let (root, files, bytes) = wide_tree(6, 4);
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
@@ -1702,8 +1705,8 @@ mod tests {
         assert_eq!(snapshot.directories, 7, "the root and its six children");
         assert_eq!(
             (snapshot.phase, snapshot.analysis),
-            (Indexing, None),
-            "the walk ended, then the index was assembled"
+            (Summarizing, None),
+            "the walk ended, the index was assembled, then the answer was built"
         );
 
         let progress = Progress::new();
@@ -1734,7 +1737,7 @@ mod tests {
         )
         .expect("cold analyzed report");
         let snapshot = progress.snapshot();
-        assert_eq!(snapshot.phase, Saving, "returned with a save pending");
+        assert_eq!(snapshot.phase, Summarizing, "the answer is built while the save runs");
         pending.join().expect("save");
         assert_eq!(performance.source, ReportSource::ColdScan);
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold with analysis");
@@ -1757,11 +1760,7 @@ mod tests {
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "warm revalidation");
         assert_eq!(snapshot.directories, 7);
         assert_eq!(performance.fresh_files, 0, "the sidecar answered every candidate");
-        assert_eq!(
-            (snapshot.phase, snapshot.analysis),
-            (Analyzing, Some((0, 0))),
-            "an unchanged tree writes nothing, so analysis is the last phase"
-        );
+        assert_eq!((snapshot.phase, snapshot.analysis), (Summarizing, Some((0, 0))));
     }
 
     /// The position of `phase` in `order`, so a poller can assert phases never go back.
@@ -1781,7 +1780,7 @@ mod tests {
     #[test]
     fn progress_is_monotonic_and_phases_advance_in_order_while_a_report_runs() {
         use crate::ProgressPhase::{
-            Analyzing, Indexing, Loading, Revalidating, Saving, Scanning, Starting,
+            Analyzing, Indexing, Loading, Revalidating, Saving, Scanning, Starting, Summarizing,
         };
         let (root, files, bytes) = wide_tree(48, 6);
         let cache_dir = tempfile::tempdir().expect("cache dir");
@@ -1793,8 +1792,8 @@ mod tests {
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
         let routes: [(&str, &[crate::ProgressPhase]); 2] = [
-            ("cold", &[Starting, Loading, Scanning, Indexing, Analyzing, Saving]),
-            ("warm", &[Starting, Loading, Revalidating, Analyzing, Saving]),
+            ("cold", &[Starting, Loading, Scanning, Indexing, Analyzing, Saving, Summarizing]),
+            ("warm", &[Starting, Loading, Revalidating, Analyzing, Saving, Summarizing]),
         ];
         for (route, order) in routes {
             let progress = Progress::new();
@@ -1857,12 +1856,11 @@ mod tests {
                 Some(snapshot.phase),
                 "{route}: the poller saw the final phase"
             );
+            assert_eq!(snapshot.phase, Summarizing, "{route}: the answer is built last");
             if route == "cold" {
                 assert_eq!(snapshot.analysis, Some((files, files)));
-                assert_eq!(snapshot.phase, Saving, "a cold run writes the snapshot");
             } else {
                 assert_eq!(snapshot.analysis, Some((0, 0)));
-                assert_eq!(snapshot.phase, Analyzing, "an unchanged tree writes nothing");
                 assert!(!seen.contains(&Indexing), "{route}: a warm run assembles no index");
             }
         }

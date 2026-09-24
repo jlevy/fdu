@@ -203,6 +203,7 @@ pub(crate) fn frame_facts(snapshot: &ProgressSnapshot) -> Option<FrameFacts> {
         ProgressPhase::Analyzing => Phase::Analyzing,
         ProgressPhase::Saving => Phase::Saving,
         ProgressPhase::Indexing => Phase::Indexing,
+        ProgressPhase::Summarizing => Phase::Summarizing,
     };
     Some(FrameFacts {
         phase,
@@ -354,7 +355,7 @@ impl Write for SharedBuffer {
 ///
 /// The engine keeps phase changes to itself, so this is the one way a test in this
 /// crate gets a handle past `Starting`: run a real report over `root` with the cache
-/// off, which leaves the handle in `Indexing` with the tree's counts.
+/// off, which leaves the handle in `Summarizing` with the tree's counts.
 #[cfg(test)]
 pub(crate) fn scanned(root: &std::path::Path) -> Progress {
     use std::time::SystemTime;
@@ -377,7 +378,7 @@ pub(crate) fn scanned(root: &std::path::Path) -> Progress {
     let (_, pending, _) =
         prepare_report_with_progress(&request, &delivery, &progress).expect("a report");
     pending.join().expect("no save to fail");
-    assert_eq!(progress.snapshot().phase, ProgressPhase::Indexing);
+    assert_eq!(progress.snapshot().phase, ProgressPhase::Summarizing);
     progress
 }
 
@@ -435,6 +436,7 @@ mod tests {
             (ProgressPhase::Analyzing, Phase::Analyzing),
             (ProgressPhase::Saving, Phase::Saving),
             (ProgressPhase::Indexing, Phase::Indexing),
+            (ProgressPhase::Summarizing, Phase::Summarizing),
         ] {
             let snapshot = ProgressSnapshot { phase: engine, ..snapshot };
             assert_eq!(frame_facts(&snapshot).map(|facts| facts.phase), Some(frame));
@@ -471,7 +473,7 @@ mod tests {
         let frames: Vec<&str> = text.split(ERASE_LINE).collect();
         assert_eq!(frames[0], "", "the first bytes are the erase sequence");
         assert!(
-            frames[1].starts_with(&format!("⠋ {ROOT}  Indexing      0 files · 1 dirs · 0 B  ")),
+            frames[1].starts_with(&format!("⠋ {ROOT}  Summarizing   0 files · 1 dirs · 0 B  ")),
             "{:?}",
             frames[1]
         );
@@ -543,7 +545,7 @@ mod tests {
         }
         let first_frame = accepted.text();
         assert!(
-            first_frame.starts_with(&format!("{ERASE_LINE}⠋ {ROOT}  Indexing")),
+            first_frame.starts_with(&format!("{ERASE_LINE}⠋ {ROOT}  Summarizing")),
             "{first_frame:?}"
         );
         assert_eq!(first_frame.matches(ERASE_LINE).count(), 1, "exactly one frame got through");
