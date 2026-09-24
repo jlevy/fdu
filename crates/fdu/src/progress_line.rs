@@ -382,8 +382,11 @@ struct Slots {
 impl Slots {
     fn full(root: &str, facts: &FrameFacts, elapsed: Duration, step: usize) -> Self {
         let facts_slot = match (facts.phase, facts.analysis) {
-            // Indexing keeps the walk's final counts: the walk is over, and the phase word
-            // is what changes.
+            // A cache-only run walks nothing, and zeros there would read as an empty
+            // tree rather than as no walk.
+            (Phase::Summarizing, _) if facts.directories == 0 => FactsSlot::None,
+            // Indexing and Summarizing keep the walk's final counts: the walk is over,
+            // and the phase word is what changes.
             (Phase::Scanning | Phase::Revalidating | Phase::Indexing | Phase::Summarizing, _) => {
                 FactsSlot::Walk {
                     files: human_count(facts.files),
@@ -741,6 +744,13 @@ mod tests {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Summarizing), ms(8_600), 5, 100, false),
             "⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s"
+        );
+        // A cache-only run walked nothing: no zeros that read as an empty tree.
+        let unwalked =
+            FrameFacts { directories: 0, files: 0, bytes: 0, ..walk(Phase::Summarizing) };
+        assert_eq!(
+            render_frame(ROOT, &unwalked, ms(1_200), 5, 100, false),
+            "⠴ ~/wrk/github  Summarizing   1.2 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),
