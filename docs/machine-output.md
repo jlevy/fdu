@@ -16,11 +16,10 @@ fdu ~/projects --kind dir --include node_modules --modified-before 30d --format 
 
 The default List in JSON, JSONL, or YAML exposes complete matching rows unless an
 explicit limit bounds them.
-A flat section has `view: list`, a `files` array (the existing row collection name), and
-`bound`, which is null when no rows were omitted.
-A bounded section gives shown/total counts.
-Full retains its bounded digest; the legacy `--view tree --format json` preset retains
-the `tree` hierarchy and its per-node `truncated` flags.
+A flat section has `view: list`, a `files` array, and `bound`, which is null when no
+rows were omitted. A bounded section gives shown/total counts.
+Full retains its bounded digest; `--view tree --format json` gives the `tree` hierarchy
+and its per-node `truncated` flags.
 A Python List requested in Tree format also serializes its stored tree projection as a
 `tree` object, so inspect the payload key as well as `view`.
 
@@ -90,10 +89,10 @@ The exact nanoseconds and native path identity belong to machine output.
 Automatic Text and machine formats support grouped/mixed views; explicit Tree/Paths/Long
 require one compatible list section.
 Largest/recent retain their file ranking and support Paths and Long.
-Cache-status human aliases render its existing table.
-New List watch requests repaint snapshots.
-Legacy Files watch requests retain raw change streams with Text or machine formats;
-explicit Tree, Paths, and Long repaint snapshots instead.
+Cache-status human aliases render its table.
+A List watch repaints snapshots.
+A Files watch streams raw changes in Text or machine formats; explicit Tree, Paths, and
+Long repaint snapshots instead.
 
 See [the usage guide](usage.md) for filter grammar and examples, and
 [the surface architecture](project/architecture/fdu-surface-architecture.md) for schema

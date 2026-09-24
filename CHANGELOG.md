@@ -65,10 +65,10 @@ The GitHub release text is
     `FORCE_COLOR`. `tree` is the bounded directory tree; `paths` prints every matching
     path, one per line; `long` adds each one’s size and signed modification age,
     measured against one instant for the whole report.
-    Flat lists are complete and size-ranked unless `--limit` or `--sort` says otherwise.
-    `tree` applies to the `list`, `files`, and `tree` views, and `paths` and `long` to
-    those and to `largest` and `recent`; grouped and mixed views, and `full`, use `text`
-    or a machine format.
+    A flat `list` is complete and size-ranked unless `--limit` or `--sort` says
+    otherwise. `tree` applies to the `list`, `files`, and `tree` views, and `paths` and
+    `long` to those and to `largest` and `recent`; grouped and mixed views, and `full`,
+    use `text` or a machine format.
     Results go to stdout, warnings and errors to stderr, and a one-shot report in `text`
     or `tree` format ends with a gray performance line.
   - A run at an interactive terminal that takes longer than half a second shows one
@@ -76,11 +76,12 @@ The GitHub release text is
     `Indexing`, `Analyzing`, `Saving`, `Summarizing`), the counts so far, and elapsed
     time, erased before any output.
     It is never drawn when stderr is not a terminal, `TERM` is `dumb` (or unset, except
-    on Windows), or `CI` is set.
+    on Windows), or `CI` is set to a non-empty value.
     `--progress=auto`, the default, also skips JSON, JSON Lines, and YAML;
     `--progress=always` draws it for those too, and `--progress=never` turns it off.
-    Ctrl-C while it is drawn erases it, prints `fdu: interrupted`, and ends the run by
-    the interrupt signal.
+    Ctrl-C while it is drawn erases it, prints `fdu: interrupted`, and ends the run as
+    an unhandled Ctrl-C would: by `SIGINT` on Unix, with `STATUS_CONTROL_C_EXIT` on
+    Windows.
   - Exit status 0 means a complete result, 1 a failed command, and 2 a partial result or
     a usage error. `--allow-partial` accepts a partial result as success.
   - `fdu --docs` prints the usage guide and `fdu --skill` prints a portable agent skill,
@@ -264,6 +265,8 @@ The GitHub release text is
     `Report.render()` serializes a report as the command line does.
     Rendering a folded tree as a flat list, or a flat list as a tree, raises
     `InvalidArgumentError`; request another report from the index instead.
+    A default `Query` keeps the directory tree, so its `as_dict()` carries a `tree`; set
+    `Query.format` to `Format.JSON` for the flat rows `fdu PATH --format json` prints.
   - `cache_path`, `cache_status`, `list_caches`, `clear_cache`, and `clear_all_caches`
     manage snapshots. A `CacheStatus` carries `state`, with `stale_reason`,
     `format_version`, and `leftover_kind` where they apply.
@@ -336,13 +339,15 @@ This applies only to anyone who ran fdu built from a development checkout.
   Development builds already carried version `0.1.0`, but the per-entry facts version
   was raised on every platform, not only Windows, when Windows validation gained change
   time and file identity.
-  A snapshot from any development build without that change (on `main`, anything built
-  before 2026-09-23) therefore does not serve 0.1.0, whatever its format, and
-  `--cache-status` lists it as `stale`, with `older_format` or `other_engine` as the
-  reason. A snapshot written under other type-rule or `.gitignore` settings is not served
-  either. That tree’s first run scans cold and replaces the snapshot when the run saves
-  one. The content sidecar, now format 7, carries the same engine fingerprint, so the
-  first analyzed run on such a tree reads every file again.
+  A snapshot from any development build without that change (anything built from `main`
+  before pull request #117 merged on 2026-09-23) therefore does not serve 0.1.0,
+  whatever its format, and `--cache-status` lists it as `stale`, with `older_format` or
+  `other_engine` as the reason.
+  Nor is a snapshot written under other type rules or `.gitignore` limits, or one that
+  read no `.gitignore`, for a run that reads it.
+  That tree’s first run scans cold and replaces the snapshot when the run saves one.
+  The content sidecar, now format 7, carries the same engine fingerprint, so the first
+  analyzed run on such a tree reads every file again.
   The crate version moves at every release, so each later upgrade costs one cold run per
   cached tree.
 - **`fdu --cache-clear=all` reclaims the rest.** A root that is never scanned again
@@ -367,9 +372,10 @@ This applies only to anyone who ran fdu built from a development checkout.
 0.1.x may add fields and variants to public Rust types such as `ReadProjection`,
 `ProjectionResult`, `ProjectionRefusal`, `LimitedProjection`, `IssueKind`,
 `ImpactDomain`, `Error`, `ReportRequest`, `TreePage`, `ReadResponse`, `RollUp`,
-`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, and `Query`. Those additions
-are breaking under Cargo’s semver rules for exhaustive types; they land in 0.2 rather
-than behind `#[non_exhaustive]` on 0.1.0.
+`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, `Query`, `Basis`, `Delivery`,
+`WatchDelivery`, `Route`, `ProgressPhase`, `ProgressSnapshot`, and `FileRow`. Those
+additions are breaking under Cargo’s semver rules for exhaustive types; they land in 0.2
+rather than behind `#[non_exhaustive]` on 0.1.0.
 
 ### Known limitations
 
