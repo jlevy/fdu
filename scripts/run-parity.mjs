@@ -42,7 +42,7 @@ const update = process.argv.includes('--update');
 // parity-classes.mjs explains it under discovery-surface.
 const DECLINED = [
   'A Bare Invocation Is Safe and Shows the Complete Contract',
-  'The Portable Skill Is Complete and Version-Pinned',
+  'The Portable Skill Is Complete and Names the Build That Wrote It',
   'Unknown Options Are Usage Errors on Stderr',
 ];
 
