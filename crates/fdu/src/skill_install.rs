@@ -100,7 +100,7 @@ fn skill_file(base: &Path) -> PathBuf {
 
 /// Write `content` to every target, in order.
 ///
-/// A refusal writes nothing. A write that fails leaves the targets before it written
+/// A refusal writes nothing. A write that fails leaves the targets before it finished
 /// and names them in the error; a rerun reports those `unchanged` and finishes the rest.
 ///
 /// # Errors
@@ -157,8 +157,8 @@ fn is_generated(bytes: &[u8]) -> bool {
 /// reader sees the old file or the new one and never a prefix of the new one. The new
 /// file has the process's default permissions; a mode set on the old file does not
 /// carry over (on Unix; a read-only file on Windows is expected to refuse the rename
-/// instead, which is reported as a failed install). A staged file that could not be renamed is removed rather than left
-/// behind.
+/// instead, which is reported as a failed install). A staged file that could not be
+/// renamed is removed rather than left behind.
 fn replace(target: &Path, content: &str) -> io::Result<()> {
     let directory = target.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "the skill path has no parent directory")

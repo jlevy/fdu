@@ -1076,7 +1076,7 @@ impl Cli {
     /// One line per file on stdout, `installed`, `updated`, or `unchanged`, with the
     /// path relative when it is under the current directory. A `SKILL.md` fdu did not
     /// generate is a usage error, exit 2, and nothing is written; a filesystem failure
-    /// is exit 1 like any other, after the lines for whatever was written before it.
+    /// is exit 1 like any other, after the lines for whatever was finished before it.
     fn run_install_skill(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
         let cwd = std::env::current_dir()
             .map_err(|error| anyhow::anyhow!("cannot read the current directory: {error}"))?;
@@ -3158,12 +3158,15 @@ mod tests {
         assert!(String::from_utf8(err).expect("utf-8").contains("--install-skill"));
     }
 
-    /// A write that fails partway is exit 1 after the lines for what was installed, so
+    /// A write that fails partway is exit 1 after the lines for what was finished, so
     /// a partial install is never reported as nothing. The failure is the staged
-    /// sibling being a directory, which fails the write on every platform.
+    /// sibling being a directory, which fails the write on every platform. Each sandbox
+    /// is its own project root, so a temporary directory inside a checkout cannot send
+    /// the install to that checkout.
     #[test]
     fn install_skill_says_what_it_installed_before_a_write_fails() {
         let sandbox = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(sandbox.path().join(".git")).expect("mark the project root");
 
         // Project scope, through the seam that takes the directory instead of reading
         // it from the process: the first target's line precedes the second's failure.
@@ -3185,6 +3188,7 @@ mod tests {
         // not replace the install error: the broken-pipe rule would turn it into exit 0
         // with nothing on stderr.
         let rerun = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(rerun.path().join(".git")).expect("mark the project root");
         let targets = skill_install::targets(rerun.path(), None);
         std::fs::create_dir_all(skill_install::staged_path(targets[1].parent().expect("parent")))
             .expect("block the second target's staged path");
@@ -3195,6 +3199,15 @@ mod tests {
             error.to_string(),
             "cannot install the skill at .claude/skills/fdu/SKILL.md",
             "the install error survives a closed stdout"
+        );
+        // And nothing in its chain is a broken pipe, which `finish` would turn into a
+        // silent exit 0 even with the headline intact.
+        let mut diagnostic = Vec::new();
+        assert_eq!(finish(Err(error), &mut diagnostic, false), 1, "exit 1, not the broken-pipe 0");
+        assert!(
+            String::from_utf8(diagnostic)
+                .expect("utf-8")
+                .starts_with("fdu: cannot install the skill at .claude/skills/fdu/SKILL.md\n")
         );
 
         // User scope, through the process boundary: exit 1 and the same headline.
