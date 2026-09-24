@@ -768,8 +768,15 @@ $ fdu --cache off plain-file
 
 `--install-skill` writes the document `--skill` prints to `.agents/skills/fdu/` and
 `.claude/skills/fdu/` under the git root of the current directory, or under the current
-directory itself when no ancestor is a repository, as in this sandbox.
+directory itself when no ancestor is a repository.
+The sandbox is made a repository root first, so the install lands here whatever lies
+above the temporary directory.
 Each file is reported once, and a second run finds nothing to do.
+
+```console
+$ node -e "require('node:fs').mkdirSync('.git')"
+? 0
+```
 
 ```console
 $ fdu --install-skill

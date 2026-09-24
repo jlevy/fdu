@@ -1076,34 +1076,49 @@ impl Cli {
     /// One line per file on stdout, `installed`, `updated`, or `unchanged`, with the
     /// path relative when it is under the current directory. A `SKILL.md` fdu did not
     /// generate is a usage error, exit 2, and nothing is written; a filesystem failure
-    /// is exit 1 like any other.
+    /// is exit 1 like any other, after the lines for whatever was written before it.
     fn run_install_skill(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
         let cwd = std::env::current_dir()
             .map_err(|error| anyhow::anyhow!("cannot read the current directory: {error}"))?;
-        let targets = skill_install::targets(&cwd, self.agent_base.as_deref());
-        let outcomes = skill_install::install(&compose_skill(), &targets).map_err(|error| {
-            match error {
-                skill_install::InstallError::Foreign(path) => usage(&anyhow::anyhow!(
-                    "refusing to overwrite {}: fdu did not generate it (no `{}` marker); move it aside, then re-run fdu --install-skill",
-                    skill_install::display_path(&path, &cwd),
-                    skill_install::GENERATED_MARKER_PREFIX,
-                )),
-                skill_install::InstallError::Io { path, source } => anyhow::Error::new(source)
-                    .context(format!(
-                        "cannot install the skill at {}",
-                        skill_install::display_path(&path, &cwd)
-                    )),
+        self.install_skill_from(out, &cwd)
+    }
+
+    /// `run_install_skill` with the current directory passed in, so a test can install
+    /// at project scope without changing the process's directory.
+    fn install_skill_from(&self, out: &mut dyn Write, cwd: &Path) -> anyhow::Result<RunOutcome> {
+        let targets = skill_install::targets(cwd, self.agent_base.as_deref());
+        let report = |out: &mut dyn Write, outcomes: &[skill_install::Outcome]| {
+            for outcome in outcomes {
+                writeln!(
+                    out,
+                    "{} {}",
+                    outcome.action,
+                    skill_install::display_path(&outcome.path, cwd)
+                )?;
             }
-        })?;
-        for outcome in outcomes {
-            writeln!(
-                out,
-                "{} {}",
-                outcome.action,
-                skill_install::display_path(&outcome.path, &cwd)
-            )?;
+            io::Result::Ok(())
+        };
+        match skill_install::install(&compose_skill(), &targets) {
+            Ok(outcomes) => {
+                report(out, &outcomes)?;
+                Ok(RunOutcome::Complete)
+            }
+            Err(skill_install::InstallError::Foreign(path)) => Err(usage(&anyhow::anyhow!(
+                "refusing to overwrite {}: fdu did not generate it (no `{}` marker); move it aside, then re-run fdu --install-skill",
+                skill_install::display_path(&path, cwd),
+                skill_install::GENERATED_MARKER_PREFIX,
+            ))),
+            Err(skill_install::InstallError::Io { path, source, completed }) => {
+                // What was installed before the failure is said before the failure is:
+                // flushed here so the lines reach stdout before the error reaches stderr.
+                report(out, &completed)?;
+                out.flush()?;
+                Err(anyhow::Error::new(source).context(format!(
+                    "cannot install the skill at {}",
+                    skill_install::display_path(&path, cwd)
+                )))
+            }
         }
-        Ok(RunOutcome::Complete)
     }
 
     /// Run the cache lifecycle flags and report what they found or removed.
@@ -3126,6 +3141,59 @@ mod tests {
         );
         assert_eq!(status, 2);
         assert!(String::from_utf8(err).expect("utf-8").contains("--install-skill"));
+    }
+
+    /// A write that fails partway is exit 1 after the lines for what was installed, so
+    /// a partial install is never reported as nothing. The failure is the staged
+    /// sibling being a directory, which fails the write on every platform.
+    #[test]
+    fn install_skill_says_what_it_installed_before_a_write_fails() {
+        let sandbox = tempfile::tempdir().expect("tempdir");
+
+        // Project scope, through the seam that takes the directory instead of reading
+        // it from the process: the first target's line precedes the second's failure.
+        let targets = skill_install::targets(sandbox.path(), None);
+        let staged = skill_install::staged_path(targets[1].parent().expect("parent"));
+        std::fs::create_dir_all(&staged).expect("block the second target's staged path");
+        let mut out = Vec::new();
+        let error = parse(&["fdu", "--install-skill"])
+            .install_skill_from(&mut out, sandbox.path())
+            .expect_err("the second write fails");
+        assert_eq!(
+            String::from_utf8(out).expect("utf-8"),
+            "installed .agents/skills/fdu/SKILL.md\n"
+        );
+        assert!(!is_usage_error(&error), "a write failure is not a usage error");
+        assert_eq!(error.to_string(), "cannot install the skill at .claude/skills/fdu/SKILL.md");
+
+        // User scope, through the process boundary: exit 1 and the same headline.
+        let base = sandbox.path().join("home");
+        let skill_dir = base.join("skills").join("fdu");
+        std::fs::create_dir_all(skill_install::staged_path(&skill_dir))
+            .expect("block the staged path");
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = [
+            OsString::from("fdu"),
+            OsString::from("--install-skill"),
+            OsString::from("--agent-base"),
+            base.into_os_string(),
+        ];
+        let status = run_with_io(
+            &args,
+            &mut out,
+            &mut err,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        );
+        assert_eq!(status, 1);
+        assert!(out.is_empty(), "nothing was installed, so nothing is reported: {out:?}");
+        let err = String::from_utf8(err).expect("utf-8");
+        let headline =
+            format!("fdu: cannot install the skill at {}\n", skill_dir.join("SKILL.md").display());
+        assert!(err.starts_with(&headline), "{err}");
+        assert!(!skill_dir.join("SKILL.md").exists(), "the failed target never became visible");
     }
 
     #[test]
