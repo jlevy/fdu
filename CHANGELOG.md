@@ -9,6 +9,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- An interactive run shows one progress line on stderr after half a second: the root,
+  the phase (`Loading`, `Scanning`, `Revalidating`, `Indexing`, `Analyzing`, `Saving`,
+  `Summarizing`), counts walked, and elapsed time, erased before any output.
+  It never draws when stderr is not a terminal, `TERM` is `dumb` (or unset, except on
+  Windows), or `CI` is set; `--progress=auto|always|never` controls it on a terminal,
+  and Ctrl-C while it draws erases it and ends the run by the interrupt signal.
+  Library callers observe the same work through `fdu_core::Progress`, passed to
+  `prepare_report_with_progress` or `Session::start_with_progress`.
+- `fdu --install-skill` writes the agent skill to `.agents/skills/fdu/SKILL.md` and
+  `.claude/skills/fdu/SKILL.md` under the git root of the current directory, or under
+  `--agent-base DIR` (as `DIR/skills/fdu/SKILL.md`) for one agent’s user scope.
+  It reports each file as installed, updated, or unchanged, writes through a staged file
+  and a rename, replaces only files carrying its own marker, and refuses a `SKILL.md`
+  written by hand with exit 2 before writing anything.
+  The Python wheel’s `fdu` command carries the same flag.
 - Directory filters measure eligible subtree bytes and modification activity, including
   nested directories. Exclusions win throughout a subtree; aggregate totals count covered
   contents once. Without an explicit kind filter, size and modification bounds now test
@@ -21,6 +36,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The agent skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`,
+  replacing the exact `uvx --from fdu==<version>` pin and the rule against `latest`; it
+  names the persistent installs (`uv tool install fdu`, `uv tool upgrade fdu`,
+  `cargo install --locked fdu`), carries a generated-by marker after its frontmatter,
+  and states the build version that wrote it, asking to be re-installed when
+  `fdu --version` differs.
 - Engine execution plans now carry cache policy, scheduling, partial-answer acceptance,
   and route selection.
   Rust callers open with `Basis` and `Delivery`.

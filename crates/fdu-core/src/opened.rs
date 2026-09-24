@@ -183,6 +183,9 @@ impl OpenOptions {
             // always observed, and this scan is what makes that true.
             read_controls: OpenedIndex::basis().scope.read_controls,
             control_limits: self.control_limits,
+            // An opened root reports through its own `DiscoveryProgress`, which is
+            // state the lifecycle publishes rather than a count of work done.
+            progress: None,
         };
         (scan, self.budget, self.journal_capacity_bytes)
     }

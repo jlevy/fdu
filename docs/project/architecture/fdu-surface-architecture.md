@@ -130,8 +130,9 @@ still match, so it would silently absorb the next real regression.
   `control_budget`, `--only-ignored` and `--no-gitignore` against `ignored=only` and
   `read_controls`, and the other pairs `KNOBS` in `parity-classes.mjs` elides, from
   `AxisNames`.
-- **Discovery surfaces.** `--docs` and `--skill` are static documents; `--version` names
-  the surface deliberately, which is what keeps the artifact non-empty.
+- **Discovery surfaces.** `--docs` and `--skill` are static documents, and
+  `--install-skill` writes the second to disk; `--version` names the surface
+  deliberately, which is what keeps the artifact non-empty.
 
 ## One Behavioural Difference Worth Knowing
 

@@ -293,6 +293,27 @@ Read them as strings, or use a parser that preserves integers, if exact identity
 matters. Results go to stdout; diagnostics go to stderr.
 The command never prompts or pages.
 
+A run that takes longer than half a second shows one progress line on stderr while it
+works, and erases it before anything else is written:
+
+```text
+⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
+⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
+```
+
+It is drawn only for a person at an interactive terminal: stderr must be a terminal,
+`TERM` must be set and not `dumb` (Windows consoles set no `TERM`, so there an unset or
+empty one is accepted and the console’s escape-sequence support is the test), and `CI`
+must be unset or empty.
+Otherwise nothing is drawn, whatever the flag says, so pipes, files, logs, CI, and
+agents never see it and need no flag.
+`--progress=auto` (the default) also skips it for JSON, JSON Lines, and YAML;
+`--progress=always` draws it for those too, and `--progress=never` turns it off.
+`--color` and `NO_COLOR` decide only whether it is colored.
+Ctrl-C while it is drawn erases the line, prints `fdu: interrupted`, and ends the
+process by the interrupt signal, so the shell reports status 130 and a calling script
+stops.
+
 Check `complete` and `errors` before trusting totals, `freshness` and `source` before
 presenting them as current, row or section bounds before assuming exhaustiveness, and
 metric `coverage` before presenting analysis as complete.
@@ -314,6 +335,15 @@ Content analysis is one-shot and cannot be combined with watch mode.
 
 Run `fdu --docs` for the offline guide, `fdu --help` for every flag, and `fdu --skill`
 for the portable agent-facing contract.
+`fdu --install-skill` writes that contract to `.agents/skills/fdu/SKILL.md` and
+`.claude/skills/fdu/SKILL.md` under the git root of the current directory, or under the
+current directory when it is not in a repository; `--agent-base DIR` writes
+`DIR/skills/fdu/SKILL.md` instead, for one agent’s user scope such as `~/.claude`. It
+reports each file as installed, updated, or unchanged, replaces only files it generated,
+and refuses a `SKILL.md` written by hand with exit 2. Deleting those directories
+uninstalls it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`;
+it names the build that wrote it, so re-run `fdu --install-skill` when `fdu --version`
+differs.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

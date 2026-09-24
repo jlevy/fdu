@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -147,7 +147,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test
+check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -197,7 +197,7 @@ uv-version:
 
 # Standalone entry points must fail before any recipe asks uv to parse repository
 # configuration. Keep this list aligned with the recipe-coverage test.
-UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
+UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
@@ -421,7 +421,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
+PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
@@ -458,6 +458,12 @@ python-sdist-smoke:
 # python3, whose version nothing else checks (the scripts need tomllib, so 3.11+).
 release-test:
 	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/release -p 'test_*.py'
+
+# The progress indicator in a real pseudo-terminal: drawn, erased before the report,
+# cleared on Ctrl-C with death by the signal, and absent when stderr is not a terminal.
+# Unix only; Python has no pty on Windows, so the test skips itself there.
+test-terminal: build
+	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/terminal -p 'test_*.py'
 
 # Build and inspect the host artifacts without contacting either registry. The explicit
 # release tag exercises exact-version behavior even though a rehearsal runs on a branch.

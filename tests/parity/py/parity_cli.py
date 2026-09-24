@@ -31,10 +31,11 @@ import fdu
 
 PROGRAM = "fdu"
 
-# Discovery surfaces the package does not carry: clap's own help rendering, and two
-# static documents that live in the binary. Declining them is a decision, not an
-# oversight, and any growth in this list is a regression worth arguing about.
-DECLINED = frozenset({"--help", "-h", "--docs", "--skill"})
+# Discovery surfaces the package does not carry: clap's own help rendering, two static
+# documents that live in the binary, and the installer that writes one of them.
+# Declining them is a decision, not an oversight, and any growth in this list is a
+# regression worth arguing about.
+DECLINED = frozenset({"--help", "-h", "--docs", "--skill", "--install-skill", "--agent-base"})
 
 
 class UsageError(Exception):
@@ -149,6 +150,9 @@ class Args:
         self.analysis_workers = 0
         self.format = fdu.Format.TEXT
         self.color = "auto"
+        # Accepted for grammar parity only: the shim never draws, and neither does the
+        # binary anywhere the parity harness runs it.
+        self.progress = "auto"
         self.cache = fdu.CachePolicy.AUTO
         self.allow_partial = False
         self.watch = False
@@ -241,6 +245,8 @@ def parse_args(argv: list[str]) -> Args:
             args.format = fdu.Format.LONG
         elif flag == "--color":
             args.color = take()
+        elif flag == "--progress":
+            args.progress = take()
         elif flag == "--cache":
             args.cache = parse_cache(take())
         elif flag == "--allow-partial":
