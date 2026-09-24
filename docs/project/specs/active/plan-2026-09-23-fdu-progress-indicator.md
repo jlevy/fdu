@@ -30,8 +30,9 @@ to a wait-state display.
 - Never interleave with output: the line is cleared before any stdout or stderr write,
   on success, on error, on panic, and on Ctrl-C.
 - Cost nothing measurable when off, and stay within noise when on.
-- Leave every report golden, parity recording, and machine document unchanged; the help
-  and guide goldens change only by the text this plan adds to them.
+- Leave every report golden and machine document unchanged; the help and guide goldens,
+  and the parity deviation record that embeds the guide’s text, change only by the text
+  this plan adds to them.
 
 ## Non-Goals
 
