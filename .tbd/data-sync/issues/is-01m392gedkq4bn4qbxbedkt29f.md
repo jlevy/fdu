@@ -5,7 +5,7 @@ title: Self-installing agent skill and aligned install docs (uvx fdu@latest, uv 
 kind: epic
 status: open
 priority: 1
-version: 5
+version: 7
 labels:
   - release
   - skill
@@ -15,7 +15,9 @@ child_order_hints:
   - is-01m392gm0je55zdmd5eavz0pzf
   - is-01m392gn7x58wqkjdzxng113py
   - is-01m395mzh0amwcywtecm7m1zkh
+  - is-01m396f0haghcmgc4h67kpgw16
+  - is-01m396f1gp8fxsnx3w65vq1q15
 created_at: 2026-09-24T06:44:06.701Z
-updated_at: 2026-09-24T07:39:01.024Z
+updated_at: 2026-09-24T07:53:15.018Z
 ---
 Decision (user, 2026-09-24): the skill tells agents to prefer an installed fdu on PATH, else run uvx fdu@latest; persistent installs use uv tool install fdu and uv tool upgrade fdu; fdu gains a flowmark-style --install-skill. Reverses fdu-gxvl (non-goal) and SKILL.md's 'never latest' line; overrides the tbd cli-agent-skill-patterns pin rule by the user's choice. Research (2026-09-24) compared tbd guidelines, flowmark (skill.py:118-150, 203-212, 381-387, 454-473) and flowmark-rs (skills/mod.rs:72-76,117-135). fdu is not yet on PyPI/crates.io, so zero-install works only after 0.1.0 publishes.
