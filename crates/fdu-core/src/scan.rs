@@ -3040,7 +3040,7 @@ fn walk_detached_worker(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
 ) -> ScanReport {
-    walk_worker_with(
+    let report = walk_worker_with(
         root,
         config,
         root_dev,
@@ -3048,7 +3048,14 @@ fn walk_detached_worker(
         sender,
         diagnostics,
         DetachedEmission::default(),
-    )
+    );
+    // A walker leaves only when the queue is empty with nothing in flight, or when its
+    // consumer is gone, so the walk is over. The index may still be assembling the
+    // listings already sent; the counters have stopped, and the phase says why.
+    if let Some(progress) = &config.progress {
+        progress.enter(crate::ProgressPhase::Indexing);
+    }
+    report
 }
 
 /// One worker's share of the public observation walk.
@@ -4150,6 +4157,11 @@ fn scan_detached_directories(
     let walk_started = crate::counters::enabled().then(std::time::Instant::now);
     let (output, builder) =
         scan_concurrent_detached(root, config, root_dev, pool, diagnostics.as_ref(), policy)?;
+    // Also reached by a walk no worker left, such as a single-threaded one, so every
+    // cold index ends its walk in the same phase.
+    if let Some(progress) = &config.progress {
+        progress.enter(crate::ProgressPhase::Indexing);
+    }
     if let Some(started) = walk_started {
         let elapsed = elapsed_ns(started) / 1_000;
         crate::counters::bump(|counts| {
@@ -9180,7 +9192,11 @@ mod tests {
             };
             let (mut index, cold) = scan_into_index(dir.path(), &cold_config).expect("cold scan");
             assert_eq!(cold.dirs_read, 13, "{context}: the root and twelve children");
-            assert_eq!(progress.snapshot().phase, crate::ProgressPhase::Scanning, "{context}");
+            assert_eq!(
+                progress.snapshot().phase,
+                crate::ProgressPhase::Indexing,
+                "{context}: the detached walk ends by assembling the index"
+            );
             assert_eq!(reported(&progress), walked(&cold), "{context}: detached cold walk");
 
             let progress = crate::Progress::new();

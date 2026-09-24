@@ -1684,7 +1684,7 @@ mod tests {
     /// content analysis, and a warm revalidation of the snapshot that run left.
     #[test]
     fn progress_ends_at_the_walked_totals_of_every_one_shot_route() {
-        use crate::ProgressPhase::{Analyzing, Scanning};
+        use crate::ProgressPhase::{Analyzing, Indexing, Saving, Scanning};
         let (root, files, bytes) = wide_tree(6, 4);
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
@@ -1698,7 +1698,11 @@ mod tests {
         assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold full index");
         assert_eq!(snapshot.directories, 7, "the root and its six children");
-        assert_eq!((snapshot.phase, snapshot.analysis), (Scanning, None));
+        assert_eq!(
+            (snapshot.phase, snapshot.analysis),
+            (Indexing, None),
+            "the walk ended, then the index was assembled"
+        );
 
         let progress = Progress::new();
         let (report, pending, performance) = prepared_with_progress(
@@ -1728,7 +1732,7 @@ mod tests {
         )
         .expect("cold analyzed report");
         let snapshot = progress.snapshot();
-        assert_eq!(snapshot.phase, crate::ProgressPhase::Saving, "returned with a save pending");
+        assert_eq!(snapshot.phase, Saving, "returned with a save pending");
         pending.join().expect("save");
         assert_eq!(performance.source, ReportSource::ColdScan);
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold with analysis");
@@ -1774,7 +1778,9 @@ mod tests {
     /// are added to from several threads while the poller reads.
     #[test]
     fn progress_is_monotonic_and_phases_advance_in_order_while_a_report_runs() {
-        use crate::ProgressPhase::{Analyzing, Loading, Revalidating, Saving, Scanning, Starting};
+        use crate::ProgressPhase::{
+            Analyzing, Indexing, Loading, Revalidating, Saving, Scanning, Starting,
+        };
         let (root, files, bytes) = wide_tree(48, 6);
         let cache_dir = tempfile::tempdir().expect("cache dir");
         let cache = cache_dir.path().join("snapshot.fdu");
@@ -1785,7 +1791,7 @@ mod tests {
         let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
 
         let routes: [(&str, &[crate::ProgressPhase]); 2] = [
-            ("cold", &[Starting, Loading, Scanning, Analyzing, Saving]),
+            ("cold", &[Starting, Loading, Scanning, Indexing, Analyzing, Saving]),
             ("warm", &[Starting, Loading, Revalidating, Analyzing, Saving]),
         ];
         for (route, order) in routes {
@@ -1852,9 +1858,11 @@ mod tests {
             if route == "cold" {
                 assert_eq!(snapshot.analysis, Some((files, files)));
                 assert_eq!(snapshot.phase, Saving, "a cold run writes the snapshot");
+                assert!(seen.contains(&Scanning), "{route}: {seen:?}");
             } else {
                 assert_eq!(snapshot.analysis, Some((0, 0)));
                 assert_eq!(snapshot.phase, Analyzing, "an unchanged tree writes nothing");
+                assert!(!seen.contains(&Indexing), "{route}: a warm run assembles no index");
             }
         }
     }

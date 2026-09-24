@@ -186,6 +186,8 @@ pub(crate) enum Phase {
     Analyzing,
     /// Writing the snapshot.
     Saving,
+    /// Assembling the index once the walk is over.
+    Indexing,
 }
 
 impl Phase {
@@ -199,6 +201,7 @@ impl Phase {
             Self::Revalidating => "Revalidating",
             Self::Analyzing => "Analyzing",
             Self::Saving => "Saving",
+            Self::Indexing => "Indexing",
         }
     }
 }
@@ -363,7 +366,9 @@ struct Slots {
 impl Slots {
     fn full(root: &str, facts: &FrameFacts, elapsed: Duration, step: usize) -> Self {
         let facts_slot = match (facts.phase, facts.analysis) {
-            (Phase::Scanning | Phase::Revalidating, _) => FactsSlot::Walk {
+            // Indexing keeps the walk's final counts: the walk is over, and the phase word
+            // is what changes.
+            (Phase::Scanning | Phase::Revalidating | Phase::Indexing, _) => FactsSlot::Walk {
                 files: human_count(facts.files),
                 dirs: Some(human_count(facts.directories)),
                 bytes: Some(human_bytes(facts.bytes)),
@@ -695,6 +700,10 @@ mod tests {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Saving), ms(8_100), 9, 100, false),
             "⠏ ~/wrk/github  Saving        8.1 s"
+        );
+        assert_eq!(
+            render_frame(ROOT, &walk(Phase::Indexing), ms(3_800), 3, 100, false),
+            "⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),

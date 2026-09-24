@@ -30,9 +30,10 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 /// Which kind of work a route is doing.
 ///
 /// A snapshot carries the phase most recently entered. Routes enter phases in this
-/// order, skipping the ones they do not do: a cold report goes `Scanning`, then
-/// `Analyzing` if content was requested, then `Saving` if a snapshot is written; a warm
-/// one goes `Loading`, `Revalidating`, then the same; a watch's initial scan revalidates
+/// order, skipping the ones they do not do: a cold report over a full index goes
+/// `Scanning`, `Indexing` once the walk is over, then `Analyzing` if content was
+/// requested and `Saving` if a snapshot is written; a warm one goes `Loading`,
+/// `Revalidating`, then the same without `Indexing`. A watch's initial scan revalidates
 /// once more after its save, when it binds observation.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub enum ProgressPhase {
@@ -48,6 +49,13 @@ pub enum ProgressPhase {
     Scanning,
     /// A loaded snapshot is being verified against the tree.
     Revalidating,
+    /// The walk is over and the index is being assembled from the listings it read.
+    ///
+    /// The walkers count as they read, and the thread that assembles the index can
+    /// still be working through their listings when the last one finishes, so the
+    /// counters stop moving before the route returns. This phase is what tells a person
+    /// the walk has finished rather than stalled.
+    Indexing,
     /// File contents are being read and analyzed.
     Analyzing,
     /// A snapshot or content sidecar is being written.
@@ -56,11 +64,12 @@ pub enum ProgressPhase {
 
 impl ProgressPhase {
     /// Every phase, indexed by the code a cell stores.
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Starting,
         Self::Loading,
         Self::Scanning,
         Self::Revalidating,
+        Self::Indexing,
         Self::Analyzing,
         Self::Saving,
     ];
@@ -71,8 +80,9 @@ impl ProgressPhase {
             Self::Loading => 1,
             Self::Scanning => 2,
             Self::Revalidating => 3,
-            Self::Analyzing => 4,
-            Self::Saving => 5,
+            Self::Indexing => 4,
+            Self::Analyzing => 5,
+            Self::Saving => 6,
         }
     }
 
