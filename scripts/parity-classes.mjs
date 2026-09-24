@@ -113,8 +113,8 @@ export const CLASSES = [
     why: [
       '--docs is a static document that lives in the binary, so the package does not carry',
       'it and the session is recorded here rather than skipped. The skip list is a separate',
-      'set -- clap help and usage errors, and --skill -- and lives in DECLINED in',
-      'run-parity.mjs (fdu-2b53).',
+      'set -- clap help and usage errors, --skill, and --install-skill -- and lives in',
+      'DECLINED in run-parity.mjs (fdu-2b53).',
       '',
       '--version is the deliberate one, and it is load-bearing: the shim names itself so',
       'it can never be mistaken for the binary, which is what keeps this artifact',

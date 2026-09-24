@@ -31,10 +31,11 @@ import fdu
 
 PROGRAM = "fdu"
 
-# Discovery surfaces the package does not carry: clap's own help rendering, and two
-# static documents that live in the binary. Declining them is a decision, not an
-# oversight, and any growth in this list is a regression worth arguing about.
-DECLINED = frozenset({"--help", "-h", "--docs", "--skill"})
+# Discovery surfaces the package does not carry: clap's own help rendering, two static
+# documents that live in the binary, and the installer that writes one of them.
+# Declining them is a decision, not an oversight, and any growth in this list is a
+# regression worth arguing about.
+DECLINED = frozenset({"--help", "-h", "--docs", "--skill", "--install-skill", "--agent-base"})
 
 
 class UsageError(Exception):

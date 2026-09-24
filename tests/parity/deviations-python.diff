@@ -27,12 +27,13 @@
 #
 # 1. --version names the surface. Deliberate, and load-bearing: it is what keeps this
 #    file non-empty, so an empty diff means the shim never ran.
-# 2. Three sessions are skipped by name rather than diffed, because ~350 lines of clap
+# 2. Five sessions are skipped by name rather than diffed, because ~350 lines of clap
 #    help text would bury the parity content this artifact exists to show: the bare
 #    invocation and unknown-option sessions, which render clap's own help and usage
-#    errors, and --skill, a static document that lives in the binary (fdu-2b53). --docs is
-#    NOT skipped -- it is recorded below like any other deviation. The skip list lives in
-#    DECLINED in scripts/run-parity.mjs; growth in it is a regression worth arguing over.
+#    errors, --skill, a static document that lives in the binary (fdu-2b53), and the two
+#    --install-skill sessions, which write that document to disk. --docs is NOT skipped
+#    -- it is recorded below like any other deviation. The skip list lives in DECLINED
+#    in scripts/run-parity.mjs; growth in it is a regression worth arguing over.
 #
 # The performance footer is excluded from comparison rather than recorded: it reports
 # walk telemetry the report schema deliberately excludes, so the Python surface cannot
@@ -70,8 +71,8 @@
 #   2  A discovery surface the package does not carry  [discovery-surface]
 #      --docs is a static document that lives in the binary, so the package does not carry
 #      it and the session is recorded here rather than skipped. The skip list is a separate
-#      set -- clap help and usage errors, and --skill -- and lives in DECLINED in
-#      run-parity.mjs (fdu-2b53).
+#      set -- clap help and usage errors, --skill, and --install-skill -- and lives in
+#      DECLINED in run-parity.mjs (fdu-2b53).
 #
 #      --version is the deliberate one, and it is load-bearing: the shim names itself so
 #      it can never be mistaken for the binary, which is what keeps this artifact
@@ -326,7 +327,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,163 +1,1 @@
+@@ -1,164 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -START HERE
@@ -484,7 +485,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  The command never prompts or pages. A progress line is drawn on stderr only for a
 -  person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
 -  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
--  `fdu --skill` prints a portable agent skill describing this same surface.
+-  `fdu --install-skill` writes a portable agent skill describing this same surface
+-  under the project root, and `fdu --skill` prints it.
 -
 -EXIT STATUS
 -  0  Complete result, or a partial result accepted with --allow-partial

@@ -27,17 +27,25 @@ See [Speed](#speed).
 Once `0.1.0` is on the registries:
 
 ```shell
-cargo install --locked fdu          # command line; Rust 1.85 or newer
-uv tool install fdu                 # same command, prebuilt wheel
-uvx fdu@0.1.0 --help                # run that release without installing
+uvx fdu@latest --help               # run the latest release without installing
+uv tool install fdu                 # command line, prebuilt wheel; uv tool upgrade fdu
+cargo install --locked fdu          # command line from source; Rust 1.85 or newer
 uv add fdu                          # Python library in a uv project
-pip install fdu==0.1.0              # Python library in the current environment
+pip install fdu                     # Python library in the current environment
 cargo add fdu                       # Rust library (re-exports the engine)
 cargo add fdu-core --features watch # engine only, with the watch layer
 ```
 
 `--locked` keeps the reviewed dependency set; see
 [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+For coding agents, `fdu --install-skill` writes the agent skill to
+`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root,
+or to `DIR/skills/fdu/SKILL.md` with `--agent-base DIR` for one agent’s user scope, such
+as `~/.claude`. Re-run it after upgrading; it replaces only files it generated and
+reports each as installed, updated, or unchanged.
+`fdu --skill` prints the same document, and deleting those two directories uninstalls
+it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`.
 
 Wheels are `abi3` for GIL-enabled CPython 3.12 and newer.
 Free-threaded CPython cannot load them; pass a standard interpreter (`--python 3.12` or
@@ -86,8 +94,9 @@ A view never turns analysis on.
 Exit status 0 is a complete result, 1 a failure, and 2 a partial result or a usage
 error.
 
-`fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --skill` prints
-a portable skill for coding agents.
+`fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --install-skill`
+writes a portable skill for coding agents where they look for it (`fdu --skill` prints
+it); see [Install](#install).
 The full grammar is in the [usage guide](docs/usage.md).
 
 ## Find Stale Build Directories

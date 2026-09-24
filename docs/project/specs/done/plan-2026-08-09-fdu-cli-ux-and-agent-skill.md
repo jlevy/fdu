@@ -51,6 +51,13 @@ has no command entry point, and no portable skill describes safe agent use.
 
 ## Non-Goals
 
+**2026-09-24:** the installer non-goal below was reversed by the user’s decision under
+the skill epic `fdu-8e1b`: `fdu --install-skill` now writes the skill to
+`.agents/skills/fdu/` and `.claude/skills/fdu/` under the project root, or under
+`--agent-base DIR`, and the skill runs `uvx fdu@latest` when no `fdu` is on `PATH`
+instead of the exact pin this plan chose.
+The managed `AGENTS.md` block, hooks, and plugin framework remain non-goals.
+
 - Publish to PyPI or crates.io in this pull request; name availability, performance
   evidence, release workflows, and trusted publishing remain under `fdu-9cf0`
 - Claim that `uvx fdu` works from the public registry before a release exists

@@ -195,9 +195,10 @@ and a later Python binding can poll the same way across the FFI boundary.
   behaves exactly as today, whatever `--progress` says.
 - **Gating.** On an interactive run, `auto` draws for text, tree, paths, and long output
   and not for machine formats; `always` draws for every format; `never` never draws.
-  Commands that do no walk (`--docs`, `--skill`, `--cache-status`, `--cache-clear`)
-  never draw. `NO_COLOR`, `FORCE_COLOR`, and `--color` never turn the indicator on or
-  off; they decide only whether it is colored, as under [Appearance](#appearance).
+  Commands that do no walk (`--docs`, `--skill`, `--install-skill`, `--cache-status`,
+  `--cache-clear`) never draw.
+  `NO_COLOR`, `FORCE_COLOR`, and `--color` never turn the indicator on or off; they
+  decide only whether it is colored, as under [Appearance](#appearance).
 - **Timing.** A ticker thread waits 500 ms before the first frame.
   A run that finishes sooner stops the ticker before it draws, so it shows no indicator
   and writes no bytes to stderr.

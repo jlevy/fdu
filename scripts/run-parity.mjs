@@ -42,7 +42,9 @@ const update = process.argv.includes('--update');
 // parity-classes.mjs explains it under discovery-surface.
 const DECLINED = [
   'A Bare Invocation Is Safe and Shows the Complete Contract',
-  'The Portable Skill Is Complete and Version-Pinned',
+  'The Portable Skill Is Complete and Names the Build That Wrote It',
+  'The Skill Installs Where Agents Look, and a Rerun Changes Nothing',
+  'A Skill fdu Did Not Generate Is Refused, Not Overwritten',
   'Unknown Options Are Usage Errors on Stderr',
 ];
 
@@ -125,12 +127,13 @@ const HEADER = `# Deviations: the Python surface against the Rust CLI's recorded
 #
 # 1. --version names the surface. Deliberate, and load-bearing: it is what keeps this
 #    file non-empty, so an empty diff means the shim never ran.
-# 2. Three sessions are skipped by name rather than diffed, because ~350 lines of clap
+# 2. Five sessions are skipped by name rather than diffed, because ~350 lines of clap
 #    help text would bury the parity content this artifact exists to show: the bare
 #    invocation and unknown-option sessions, which render clap's own help and usage
-#    errors, and --skill, a static document that lives in the binary (fdu-2b53). --docs is
-#    NOT skipped -- it is recorded below like any other deviation. The skip list lives in
-#    DECLINED in scripts/run-parity.mjs; growth in it is a regression worth arguing over.
+#    errors, --skill, a static document that lives in the binary (fdu-2b53), and the two
+#    --install-skill sessions, which write that document to disk. --docs is NOT skipped
+#    -- it is recorded below like any other deviation. The skip list lives in DECLINED
+#    in scripts/run-parity.mjs; growth in it is a regression worth arguing over.
 #
 # The performance footer is excluded from comparison rather than recorded: it reports
 # walk telemetry the report schema deliberately excludes, so the Python surface cannot
