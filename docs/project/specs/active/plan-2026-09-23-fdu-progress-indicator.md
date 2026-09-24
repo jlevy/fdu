@@ -32,7 +32,9 @@ to a wait-state display.
   panic message can print first; a panic is a bug, and its message matters more than a
   clean line.
 - Cost nothing measurable when off, and stay within noise when on.
-- Leave every golden, parity recording, and machine document unchanged.
+- Leave every report golden and machine document unchanged; the help and guide goldens,
+  and the parity deviation record that embeds the guide’s text, change only by the text
+  this plan adds to them.
 
 ## Non-Goals
 
@@ -354,8 +356,10 @@ pieces can proceed in parallel; the ticker joins them.
   On an interactive run, `auto` draws for human formats and not for machine formats,
   `always` draws for both, and `never` draws nothing.
   Tests assert exact stderr bytes.
-- **Delay.** With an injected clock, a run that finishes before 500 ms writes no
-  progress bytes, and one that finishes after writes its first frame at 500 ms.
+- **Delay.** With injected timings, a run that finishes inside the first-frame delay
+  writes no progress bytes and never waits the delay out, and one with no delay draws
+  its first frame. The timings, not a clock, are the seam, because the wait is a timed
+  receive; nothing asserts wall-clock time.
 - **Appearance.** Frame rendering is a pure function of a snapshot, elapsed time,
   spinner step, width, and color flag; unit tests pin each phase’s exact text, the
   styled bytes, the width fallbacks in order, and the elapsed-time formats.
@@ -368,13 +372,16 @@ pieces can proceed in parallel; the ticker joins them.
 - **Real terminal.** One Python `pty` smoke test runs the built binary in a
   pseudo-terminal, with `TERM` set and `CI` removed from its environment and under a
   timeout, and asserts a drawn frame, a clean final line, and death by `SIGINT` after an
-  interrupt. It is skipped on Windows, where Python has no `pty`.
+  interrupt. It is skipped on Windows, where Python has no `pty`. The binary comes from
+  `FDU_BIN`, so the same test runs against the wheel’s console script, the other caller
+  of `run_process`.
 - **Manual QA.** `tests/qa/cli-installed-e2e.qa.md` gains a terminal phase: a large tree
   shows the indicator, a small one shows nothing, redirected stderr shows nothing,
   Ctrl-C leaves a clean prompt, a resized window shrinks the frame, and no line is left
   on screen. A leftover line fails the check.
-- **Unchanged surfaces.** Goldens run with piped streams and must not change; the
-  existing tests that require empty stderr under `--color always` keep passing.
+- **Unchanged surfaces.** Report goldens run with piped streams and must not change, and
+  the help and guide goldens change only by their new text; the existing tests that
+  require empty stderr under `--color always` keep passing.
 - **Performance.** Interleaved, paired `make perf-compare` on a real tree.
   A run with no progress handle must be indistinguishable from main, and the performance
   probe with a handle attached (the engine’s share of the cost, since measured runs are
