@@ -7,59 +7,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+## [0.1.0] - 2026-09-24
 
-- An interactive run shows one progress line on stderr after half a second: the root,
-  the phase (`Loading`, `Scanning`, `Revalidating`, `Indexing`, `Analyzing`, `Saving`,
-  `Summarizing`), counts walked, and elapsed time, erased before any output.
-  It never draws when stderr is not a terminal, `TERM` is `dumb` (or unset, except on
-  Windows), or `CI` is set; `--progress=auto|always|never` controls it on a terminal,
-  and Ctrl-C while it draws erases it and ends the run by the interrupt signal.
-  Library callers observe the same work through `fdu_core::Progress`, passed to
-  `prepare_report_with_progress` or `Session::start_with_progress`.
-- `fdu --install-skill` writes the agent skill to `.agents/skills/fdu/SKILL.md` and
-  `.claude/skills/fdu/SKILL.md` under the git root of the current directory, or under
-  `--agent-base DIR` (as `DIR/skills/fdu/SKILL.md`) for one agent’s user scope.
-  It reports each file as installed, updated, or unchanged, writes through a staged file
-  and a rename, replaces only files carrying its own marker, and refuses a `SKILL.md`
-  written by hand with exit 2 before writing anything.
-  The Python wheel’s `fdu` command carries the same flag.
-- Directory filters measure eligible subtree bytes and modification activity, including
-  nested directories. Exclusions win throughout a subtree; aggregate totals count covered
-  contents once. Without an explicit kind filter, size and modification bounds now test
-  directory subtrees rather than only the directory inode.
-- Explicit tree, paths, and long presentation formats expose directory and file
-  inventories on the command line and Python surface: `--format tree|paths|long`, with
-  `--tree` and `--long` as shorthands.
-  Flat rows include subtree counts and signed modification ages measured against one
-  report reference instant.
-
-### Changed
-
-- The agent skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`,
-  replacing the exact `uvx --from fdu==<version>` pin and the rule against `latest`; it
-  names the persistent installs (`uv tool install fdu`, `uv tool upgrade fdu`,
-  `cargo install --locked fdu`), carries a generated-by marker after its frontmatter,
-  and states the build version that wrote it, asking to be re-installed when
-  `fdu --version` differs.
-- Engine execution plans now carry cache policy, scheduling, partial-answer acceptance,
-  and route selection.
-  Rust callers open with `Basis` and `Delivery`.
-- Python `Index.refresh()` writes refreshed metadata and content under `auto`. Iterating
-  `Index.watch()` persists verified changes under the same policy; cache write failures
-  warn without ending the feed.
-- Watch repaint defaults come from the engine on every surface.
-- Metadata machine output defaults to the list view while the default human tree
-  presentation stays the same.
-  Directory query fields are part of the unreleased `fdu.report/7` contract.
-- Rust `report_format::render` now returns `Result<String>`, refusing a conversion
-  between a folded tree and a flat inventory that the report cannot answer; Python maps
-  the refusal to `InvalidArgumentError`.
-
-## [0.1.0] - 2026-09-16
-
-<!-- Release date: 2026-09-16 is a placeholder. Set it to the tag date if v0.1.0 is cut
-on a later day.
+<!-- Release date: 2026-09-24 is the planned tag date. Set it to the actual tag date if
+v0.1.0 is cut later.
 -->
 
 The first release. fdu walks a directory tree once and answers, for every directory at
@@ -75,15 +26,15 @@ The GitHub release text is
 
 - **Request model.** The command line, the Python package, and the Rust library share
   one typed `Request` (`Basis`, `Query`, `now`), one `Delivery`, the axis grammars, and
-  `Request::DEFAULTS`. Allocated size is the default everywhere: `SizeMetric::default`
-  and an opened selection that names no metric answer in allocated bytes, as `--size`
-  and Python `size` already did.
+  `Request::DEFAULTS`. Allocated size is the default everywhere, including
+  `SizeMetric::default` and an opened selection that names no metric.
   A refused request is a usage error: exit status 2 on the command line,
   `InvalidArgumentError` (a `ValueError`) in Python.
   `Query.axes` is `&'static AxisNames`, so a refusal names flags or fields in the
   caller’s vocabulary.
 - **Command line.** `fdu PATH` prints a size-sorted tree two levels deep with ten rows
-  per directory; bare `fdu` prints help and scans nothing.
+  per directory: the default `list` view in `tree` format.
+  Bare `fdu` prints help and scans nothing.
   Sizes are allocated bytes unless `--size apparent` asks for file lengths.
   - Every option belongs to one axis: scope (`PATH`, `--scan-depth`,
     `--one-filesystem`), content (`--analyze`), selection (`--include`, `--exclude`,
@@ -91,17 +42,62 @@ The GitHub release text is
     `--limit`, `--sort`, `--reverse`, `--size`), view, format, and mode (`--cache`,
     `--watch`, `--analysis-workers`). `--depth` and `--limit` bound only what is
     rendered; `--scan-depth` bounds what is scanned.
-  - `--view` takes `summary`, `tree`, `families`, `types`, `extensions`, `languages`,
-    `documents`, `largest`, `recent`, `files`, or `full`. Several views in one run share
-    one walk. `largest` and `recent` are the 20 largest and most recently modified
-    regular files; `files` lists every matching entry; `full` is every view but `files`.
-  - `--format text|json|jsonl|yaml`, with color decided by `--color auto|always|never`,
-    `NO_COLOR`, and `FORCE_COLOR`. Results go to stdout, warnings and errors to stderr,
-    and one-shot text reports end with a gray performance line.
+  - `--view` takes `list`, `summary`, `tree`, `families`, `types`, `extensions`,
+    `languages`, `documents`, `largest`, `recent`, `files`, or `full`. Several views in
+    one run share one walk.
+    `list`, the default when nothing is analyzed, is every matching entry: text draws it
+    as the directory tree, and JSON, JSON Lines, and YAML give it as flat rows.
+    `tree` is the directory hierarchy, in machine formats too.
+    `largest` and `recent` are the 20 largest and most recently modified regular files;
+    `files` lists every matching entry in name order; `full` is every view but `list`
+    and `files`.
+  - Directories are selected like files.
+    `--kind dir --include node_modules --modified-before 30d` finds stale build and
+    environment directories: a directory’s size is the eligible regular-file bytes below
+    it, and its modification time is the newest on it or any eligible descendant,
+    directories and symbolic links included.
+    Size and modification bounds test that subtree rather than the directory inode, so
+    without `--kind` a time bound also matches every directory with activity in range.
+    Exclusions win throughout a subtree, nested matching directories are each listed,
+    and aggregate totals count covered contents once.
+  - `--format text|tree|paths|long|json|jsonl|yaml`, with `--tree` and `--long` as
+    shorthands, and color decided by `--color auto|always|never`, `NO_COLOR`, and
+    `FORCE_COLOR`. `tree` is the bounded directory tree; `paths` prints every matching
+    path, one per line; `long` adds each one’s size and signed modification age,
+    measured against one instant for the whole report.
+    A flat `list` is complete and size-ranked unless `--limit` or `--sort` says
+    otherwise. `tree` applies to the `list`, `files`, and `tree` views, and `paths` and
+    `long` to those and to `largest` and `recent`; grouped and mixed views, and `full`,
+    use `text` or a machine format.
+    Results go to stdout, warnings and errors to stderr, and a one-shot report in `text`
+    or `tree` format ends with a gray performance line.
+  - A run at an interactive terminal that takes longer than half a second shows one
+    progress line on stderr: the root, the phase (`Loading`, `Scanning`, `Revalidating`,
+    `Indexing`, `Analyzing`, `Saving`, `Summarizing`), the counts so far, and elapsed
+    time, erased before any output.
+    It is never drawn when stderr is not a terminal, `TERM` is `dumb` (or unset, except
+    on Windows), or `CI` is set to a non-empty value.
+    `--progress=auto`, the default, also skips JSON, JSON Lines, and YAML;
+    `--progress=always` draws it for those too, and `--progress=never` turns it off.
+    Ctrl-C while it is drawn erases it, prints `fdu: interrupted`, and ends the run as
+    an unhandled Ctrl-C would: by `SIGINT` on Unix, with `STATUS_CONTROL_C_EXIT` on
+    Windows.
   - Exit status 0 means a complete result, 1 a failed command, and 2 a partial result or
     a usage error. `--allow-partial` accepts a partial result as success.
   - `fdu --docs` prints the usage guide and `fdu --skill` prints a portable agent skill,
     both without a `PATH` and without scanning.
+    The skill runs an `fdu` on `PATH` and otherwise `uvx fdu@latest`, names the
+    persistent installs (`uv tool install fdu`, `uv tool upgrade fdu`,
+    `cargo install --locked fdu`), and states the build that wrote it, asking to be
+    re-installed when `fdu --version` differs.
+  - `fdu --install-skill` writes the skill to `.agents/skills/fdu/SKILL.md` and
+    `.claude/skills/fdu/SKILL.md` under the git root of the current directory, or the
+    current directory outside a repository; `--agent-base DIR` writes
+    `DIR/skills/fdu/SKILL.md` instead, for one agent’s user scope.
+    It reports each file as installed, updated, or unchanged, and writes through a
+    staged file and a rename.
+    It replaces only files carrying its generated-by marker, and refuses a `SKILL.md`
+    written by hand with exit status 2 before writing anything.
 - **Machine output.** Every report uses `fdu.report/7`, watch changes use
   `fdu.stream/2`, and `--cache-status` uses the separate `fdu.cache/2` document.
   Reports carry the effective `request`, structural `status`, and per-tier `provenance`.
@@ -112,6 +108,15 @@ The GitHub release text is
   JSON, JSON Lines, YAML, and Python models share the answer shape, including lossless
   platform-tagged identities for paths that are not valid Unicode.
   A field change bumps the schema version.
+  - Without `--view` or `--analyze`, a machine-format report is the `list` view: a
+    `files` array holding every matching entry, unless `--limit` bounds it.
+    `--view tree` gives the directory hierarchy instead.
+  - A list row carries `path`, `kind`, `bytes`, `allocated`, a directory’s descendant
+    `files` and `dirs`, `complete`, `mtime_ns`, `ignored`, and a signed `age_ns`
+    measured against the report’s `age_reference_ns`. A directory whose subtree was not
+    listed in full, at a `--scan-depth` boundary or where the scan failed inside it, has
+    `complete: false`, lower-bound sizes and counts, and a null age, and matches no
+    modification bound.
 - **Content analysis**, opt-in with `--analyze`, which takes `lines`, `code`, `words`, a
   comma-separated set of them, `none`, or `all`.
   - `lines` counts physical, blank, and nonblank lines and raw words; `code` adds
@@ -171,9 +176,10 @@ The GitHub release text is
     [performance evidence](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
     preserves each workload and interval.
 - **Watch.** `fdu --watch` repeats the same query as the tree changes.
-  Aggregate views repaint at most every `--interval` (2 seconds by default; the age
-  grammar, including `200ms`), and `--view files --format jsonl` emits one
-  `fdu.stream/2` record per change.
+  Aggregate views repaint at most every `--interval`, which takes the age grammar,
+  including `200ms`; the 2-second default is the engine’s
+  `WatchDelivery::DEFAULT_INTERVAL`, which Python `WatchOptions` uses too.
+  `--view files --format jsonl` emits one `fdu.stream/2` record per change.
   Events are verified by stat, and a backend overflow or rescan request becomes a
   reconcile of the affected subtree rather than a dropped event.
   An upsert carries `ignored`, and so does a removal a rule edit caused; an ordinary
@@ -247,10 +253,20 @@ The GitHub release text is
   - `fdu.report` answers one query while retaining the least state it needs; `fdu.open`
     and `fdu.scan` return an `Index` with `total`, `rollup`, `children`, `provenance`,
     `report`, `refresh`, `since`, and `watch`.
+  - Under the default `auto` cache policy, `Index.refresh()` saves the refreshed
+    metadata and content, and iterating `Index.watch()` saves verified changes.
+    A save that fails during a watch issues a Python warning rather than ending the
+    feed.
   - `Report.as_dict()` returns the command line’s JSON. A row’s `ignored` is an
     `IgnoredTally` on `SummaryRow` and `TreeNode`, an `ExtensionTally` on
     `ExtensionRow`, and a `bool` on `FileRow`, each `None` where no rule was read.
     `Status.ignore_rules` reports the limits, what was applied, and what was refused.
+  - `Query.format` chooses `Format.TREE`, `PATHS`, or `LONG` before reading, and
+    `Report.render()` serializes a report as the command line does.
+    Rendering a folded tree as a flat list, or a flat list as a tree, raises
+    `InvalidArgumentError`; request another report from the index instead.
+    A default `Query` keeps the directory tree, so its `as_dict()` carries a `tree`; set
+    `Query.format` to `Format.JSON` for the flat rows `fdu PATH --format json` prints.
   - `cache_path`, `cache_status`, `list_caches`, `clear_cache`, and `clear_all_caches`
     manage snapshots. A `CacheStatus` carries `state`, with `stale_reason`,
     `format_version`, and `leftover_kind` where they apply.
@@ -259,7 +275,8 @@ The GitHub release text is
   - Native calls are bulk, and open, scan, and refresh release the GIL. A failure that
     stops an operation raises an `FduError` subclass, and one that makes a scan partial
     is reported on `Status`.
-  - The wheel installs an `fdu` console script that runs the native command line.
+  - The wheel installs an `fdu` console script that runs the native command line,
+    `--install-skill` and `--progress` included.
     The script restores `SIGINT` to the default disposition before entering the native
     CLI, so Ctrl-C interrupts `--watch` the way it does a `cargo install` binary.
 - **Opened roots for interactive clients.** `OpenedIndex::open` in Rust, and
@@ -286,8 +303,18 @@ The GitHub release text is
     budget, and a custom file-type registry (File Rollup registry schema 3 or 4).
 - **Rust library.** `fdu-core` is the engine, and `fdu` re-exports it alongside the
   command line.
+  - `open` takes a `Basis`, what to scan and read, and a `Delivery`, how to carry it
+    out: cache policy and location, partial-answer acceptance, workers, and traversal
+    scheduling. `plan` validates a request and delivery for one route into a `Plan`,
+    which fixes how much state the run retains, whether it loads a snapshot, and whether
+    it verifies the filesystem.
   - `open` returns an `Index` whose per-directory roll-ups come from pre-computed state,
     and `prepare_report` answers one report without retaining an index.
+  - A `Progress` handle passed to `prepare_report_with_progress` or
+    `Session::start_with_progress` observes the phases and counts the command line’s
+    progress line draws.
+  - `report_format::render` returns `Result<String>`, refusing a conversion between a
+    folded tree and a flat list that the report cannot answer.
   - Producers submit verified observations, and the index commits exact, clocked change
     batches that `Index::since` reads.
   - `watch` is the only build feature: off by default in `fdu-core`, on by default in
@@ -305,15 +332,22 @@ The GitHub release text is
 
 This applies only to anyone who ran fdu built from a development checkout.
 
-- **A cached tree can scan cold once.** A snapshot is keyed on an engine fingerprint
-  that mixes the crate version with the snapshot format, now version 4, and on the
-  type-rule and ignore-rule fingerprints that scope it.
-  Development builds already carried version `0.1.0`, so the format and the scope
-  decide: a snapshot written before format 4, or under different type rules or
-  `.gitignore` settings, does not serve 0.1.0, and the first run on that tree scans cold
-  and replaces it when the run saves one.
-  A snapshot a development build wrote in format 4 under the same settings can be
-  served, and that tree’s first run is warm.
+- **A cached tree can scan cold once.** A snapshot serves only the engine and scope that
+  wrote it. The engine fingerprint mixes the crate version, the snapshot format (now
+  version 5), and the versions of the classification rules and of the per-entry facts
+  revalidation checks; the scope adds the type-rule and `.gitignore` settings.
+  Development builds already carried version `0.1.0`, but the per-entry facts version
+  was raised on every platform, not only Windows, when Windows validation gained change
+  time and file identity.
+  A snapshot from any development build without that change (anything built from `main`
+  before pull request #117 merged on 2026-09-23) therefore does not serve 0.1.0,
+  whatever its format, and `--cache-status` lists it as `stale`, with `older_format` or
+  `other_engine` as the reason.
+  Nor is a snapshot written under other type rules or `.gitignore` limits, or one that
+  read no `.gitignore`, for a run that reads it.
+  That tree’s first run scans cold and replaces the snapshot when the run saves one.
+  The content sidecar, now format 7, carries the same engine fingerprint, so the first
+  analyzed run on such a tree reads every file again.
   The crate version moves at every release, so each later upgrade costs one cold run per
   cached tree.
 - **`fdu --cache-clear=all` reclaims the rest.** A root that is never scanned again
@@ -328,16 +362,20 @@ This applies only to anyone who ran fdu built from a development checkout.
 - **Update names a development build used.** Flags, report schema versions, and Rust and
   Python interfaces were renamed before this release, and `### Added` gives each under
   its released name. A consumer pinned to a development build’s `fdu.report` version
-  moves to `fdu.report/7`.
+  moves to `fdu.report/7`, and a script that read the directory tree from a machine
+  format without `--view` adds `--view tree`, because the default there is the `list`
+  view. Rust callers open with a `Basis` and a `Delivery`, and handle the `Result` that
+  `report_format::render` returns.
 
 ### Compatibility
 
 0.1.x may add fields and variants to public Rust types such as `ReadProjection`,
 `ProjectionResult`, `ProjectionRefusal`, `LimitedProjection`, `IssueKind`,
 `ImpactDomain`, `Error`, `ReportRequest`, `TreePage`, `ReadResponse`, `RollUp`,
-`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, and `Query`. Those additions
-are breaking under Cargo’s semver rules for exhaustive types; they land in 0.2 rather
-than behind `#[non_exhaustive]` on 0.1.0.
+`Provenance`, `StateTransition`, `ReportSource`, `Attrs`, `Query`, `Basis`, `Delivery`,
+`WatchDelivery`, `Route`, `ProgressPhase`, `ProgressSnapshot`, and `FileRow`. Those
+additions are breaking under Cargo’s semver rules for exhaustive types; they land in 0.2
+rather than behind `#[non_exhaustive]` on 0.1.0.
 
 ### Known limitations
 

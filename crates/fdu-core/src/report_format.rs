@@ -81,7 +81,7 @@ pub enum Format {
     /// Human-readable text.
     #[default]
     Text,
-    /// The existing bounded directory hierarchy for a list.
+    /// The bounded directory hierarchy for a list.
     Tree,
     /// Matching paths, one safely escaped path per line.
     Paths,

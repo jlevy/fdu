@@ -116,11 +116,11 @@ Exclusions apply throughout the subtree.
 This is modification activity, not last use.
 Nested matches can overlap; aggregate views count their contents once.
 
-The default tree is unchanged, and `--format tree` makes it explicit.
+`fdu PATH` prints the directory tree, and `--format tree` makes that explicit.
 `--format paths` prints complete flat paths, `--long` adds size and actual age, and
 JSON/JSONL/YAML provide exact metrics.
 Flat lists default to size order and have no row cap; `--sort name` gives an alphabetic
-inventory. Tree keeps its existing depth and per-directory bounds.
+inventory. Tree keeps its depth and per-directory bounds.
 See [formats and directory selection](docs/usage.md#choose-a-format) and the
 [machine schema](docs/machine-output.md).
 

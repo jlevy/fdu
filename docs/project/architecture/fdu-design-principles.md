@@ -73,10 +73,6 @@ So when a behavior cannot be expressed as a property of an existing model, the m
 missing an element: add it to the model, not a branch where it is used.
 A rule stated in two places is a model that does not exist yet.
 
-Conformance is tracked in
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md),
-which maps each concept to its model and lists the work that closes each gap.
-
 ### Caching Improves Performance, Never Semantics
 
 A **request** determines what an answer says: the root, the scope, the content
@@ -128,10 +124,8 @@ Metadata-only requests, whose stored state already had one identity and one
 compatibility rule, gave the cold answer on every route.
 
 A path-independence test replays requests across histories, deliveries, mutations,
-surfaces, and formats against cold answers; until it passes with no registered
-violations,
-[the explicit core models plan](../specs/active/plan-2026-09-17-fdu-explicit-core-models.md)
-owns the remaining gaps.
+surfaces, and formats against cold answers.
+Its registry of known violations is empty, so any disagreement fails it.
 
 ### One Engine, and Surfaces That Cannot Disagree With It
 
