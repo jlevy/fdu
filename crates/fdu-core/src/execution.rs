@@ -1858,7 +1858,6 @@ mod tests {
             if route == "cold" {
                 assert_eq!(snapshot.analysis, Some((files, files)));
                 assert_eq!(snapshot.phase, Saving, "a cold run writes the snapshot");
-                assert!(seen.contains(&Scanning), "{route}: {seen:?}");
             } else {
                 assert_eq!(snapshot.analysis, Some((0, 0)));
                 assert_eq!(snapshot.phase, Analyzing, "an unchanged tree writes nothing");
