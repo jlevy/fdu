@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01kzg4c6vnh98mqrpkzw7ydne0
-title: "Publish fdu 0.1.0 by hand: crates.io, PyPI, GitHub Release"
+title: "Publish fdu 0.1.0: crates.io, PyPI, GitHub Release"
 kind: epic
 status: open
 priority: 1
-version: 20
+version: 21
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 labels:
   - release
@@ -31,7 +31,7 @@ child_order_hints:
   - is-01m2phzmjh2sk8fzqya61v47rd
   - is-01m2phzmxbwajz8eqrcv6rzfks
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-09-18T00:56:59.748Z
+updated_at: 2026-09-24T08:07:07.526Z
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.
