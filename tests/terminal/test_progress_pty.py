@@ -107,8 +107,13 @@ class ProgressInATerminal(unittest.TestCase):
             started = time.monotonic()
             cls.output, cls.status = run_in_pty(cls.args, cls.env)
             elapsed = time.monotonic() - started
-            if elapsed >= MIN_RUN_S and ERASE + SPINNER_LEAD in cls.output:
+            drew = ERASE + SPINNER_LEAD in cls.output
+            if elapsed >= MIN_RUN_S and drew:
                 return
+            if elapsed >= MIN_RUN_S:
+                # Long enough to have drawn many frames: growing further would only
+                # hide the regression behind minutes of setup.
+                raise AssertionError(f"a {elapsed:.1f} s run drew no frame")
             factor = min(8.0, max(2.0, 1.3 * MIN_RUN_S / max(elapsed, 0.05)))
             added = int(total * (factor - 1)) + 1
         raise AssertionError(f"no tree took {MIN_RUN_S} s to answer")

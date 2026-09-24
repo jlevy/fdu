@@ -166,12 +166,16 @@ struct Cells {
 /// A handle a route reports its progress through.
 ///
 /// Cheap to clone: clones share one set of counters, so the caller keeps one clone to
-/// poll and hands another to the route. A handle is for one run; the counters only ever
-/// grow, and a second run on the same handle would start from the first run's totals.
+/// poll and hands another to the route. A handle is for one run; within a pass the
+/// counters only grow, and a second run on the same handle would start from the first
+/// run's totals. A watch start is the one run with two passes: its closing verification
+/// restarts the walk counters.
 ///
-/// Relaxed atomics throughout, except the once-per-run flag that publishes the analysis
-/// denominator. Every counter is monotonic and each is read on its own, so no ordering
-/// between them is promised or needed; see [`ProgressSnapshot`].
+/// Relaxed atomics, except the once-per-run flag that publishes the analysis denominator
+/// (Release and Acquire) and the phase, which a new pass stores with Release after
+/// zeroing the counters and a snapshot reads with Acquire before them. Each counter is
+/// read on its own, so no other ordering between them is promised; see
+/// [`ProgressSnapshot`].
 #[derive(Clone, Default)]
 pub struct Progress {
     cells: Arc<Cells>,
@@ -186,7 +190,7 @@ impl Progress {
 
     /// Read every counter and the current phase.
     ///
-    /// Safe to call from any thread at any rate; each call is a handful of relaxed loads.
+    /// Safe to call from any thread at any rate; each call is a handful of atomic loads.
     #[must_use]
     pub fn snapshot(&self) -> ProgressSnapshot {
         let cells = &*self.cells;
@@ -217,6 +221,7 @@ impl Progress {
     /// and counting that walk on top of the first would show about twice the tree. The
     /// phase is stored after the counters, so a poller that sees the new phase never
     /// pairs it with the first pass's totals.
+    #[cfg(feature = "watch")]
     pub(crate) fn begin_pass(&self, phase: ProgressPhase) {
         let walk = &self.cells.walk;
         walk.directories.store(0, Ordering::Relaxed);

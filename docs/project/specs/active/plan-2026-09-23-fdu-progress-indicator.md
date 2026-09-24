@@ -109,8 +109,8 @@ pub struct Progress { /* Arc<ProgressCells> */ }
 
 impl Progress {
     pub fn new() -> Self;
-    /// A consistent-enough view for display: each counter is monotonic, and the phase
-    /// is the one most recently entered.
+    /// A consistent-enough view for display: each counter is monotonic within a pass,
+    /// and the phase is the one most recently entered.
     pub fn snapshot(&self) -> ProgressSnapshot;
 }
 

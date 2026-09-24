@@ -1096,6 +1096,69 @@ mod tests {
         assert!(attempts.load(Ordering::SeqCst) > 1, "the drain ran after startup reconciliation");
     }
 
+    /// The handoff pass restarts the walk counters and enters `Revalidating`, whatever
+    /// the first pass left in the handle: with a scripted watcher that reports nothing,
+    /// the counts afterwards are exactly one walk of the tree.
+    #[test]
+    fn the_handoff_pass_restarts_the_counts() {
+        let root = tempfile::tempdir().expect("root");
+        let mut bytes = 0;
+        for directory in 0..2 {
+            let dir = root.path().join(format!("d{directory}"));
+            std::fs::create_dir(&dir).expect("directory");
+            for file in 0..3 {
+                let size = directory * 3 + file + 1;
+                std::fs::write(dir.join(format!("f{file}.txt")), vec![b'.'; size]).expect("file");
+                bytes += size as u64;
+            }
+        }
+        let scan = ScanConfig::default();
+        let (index, report) = crate::scan::scan_into_index(root.path(), &scan).expect("scan");
+        assert!(report.is_complete());
+        let request = Request::new(
+            Basis {
+                root: root.path().to_path_buf(),
+                scope: scan.clone().into(),
+                content: crate::content::AnalysisSet::NONE,
+            },
+            Query::default(),
+            std::time::SystemTime::now(),
+        );
+        let delivery = Delivery {
+            cache: crate::CachePolicy::Off,
+            cache_path: None,
+            accept_partial: false,
+            watch: Some(WatchDelivery { interval: Duration::from_millis(50) }),
+            workers: crate::query::Workers::default(),
+            batch_size: ScanConfig::default().batch_size,
+            order: crate::scan::ScanOrder::default(),
+        };
+        let script = tempfile::NamedTempFile::new().expect("script");
+        let (watcher, _sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        let progress = crate::Progress::new();
+        progress.add_walked(100, 100, 100);
+        progress.enter(crate::ProgressPhase::Saving);
+
+        Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            watcher,
+            scan,
+            Some(&progress),
+        )
+        .expect("handoff");
+
+        let snapshot = progress.snapshot();
+        assert_eq!(snapshot.phase, crate::ProgressPhase::Revalidating);
+        assert_eq!(
+            (snapshot.directories, snapshot.files, snapshot.bytes),
+            (3, 6, bytes),
+            "one walk of the root and its two directories, the first pass not added in"
+        );
+    }
+
     /// A record says what the index can be asked, and nothing more.
     ///
     /// The three answers are distinct and a consumer acts on each differently: a bit, "no
@@ -1124,13 +1187,14 @@ mod tests {
         );
     }
 
-    /// A start is the open and then the handoff revalidation, and the handle counts both
-    /// walks; the second is what keeps the counters moving on a large tree after the
-    /// save, where a frozen count would look like a hang. The session it returns is the
-    /// one [`Session::start`] returns, and it reports nothing further through the
-    /// handle once started.
+    /// A start is the open and then the handoff revalidation, a second pass whose
+    /// counts restart, which keeps the line moving on a large tree after the save,
+    /// where a frozen count would look like a hang. The session it returns is the one
+    /// [`Session::start`] returns, and it reports nothing further through the handle
+    /// once started. The exact reset is pinned by the scripted test below; with a real
+    /// backend, which may replay the tree's own creation, only lower bounds hold.
     #[test]
-    fn a_started_session_reports_both_of_its_walks_and_then_nothing() {
+    fn a_started_session_reports_its_second_pass_and_then_nothing() {
         let root = tempfile::tempdir().expect("root");
         let cache = tempfile::tempdir().expect("cache");
         let mut bytes = 0;
@@ -1179,7 +1243,6 @@ mod tests {
         assert!(after_start.directories >= 5, "the root and four children: {after_start:?}");
         assert!(after_start.files >= 12, "{after_start:?}");
         assert!(after_start.bytes >= bytes, "{after_start:?}");
-        assert!(after_start.files < 2 * 12, "the first pass is not added in: {after_start:?}");
         assert_eq!(after_start.analysis, None);
 
         let plain = Session::start(request(), delivery).expect("plain start");
