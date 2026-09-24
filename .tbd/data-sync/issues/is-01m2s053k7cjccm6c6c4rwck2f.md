@@ -5,7 +5,7 @@ title: "Maintainer: crates.io and PyPI accounts, 2FA, and protected release envi
 kind: chore
 status: open
 priority: 0
-version: 6
+version: 7
 labels:
   - release
   - security
@@ -17,7 +17,9 @@ dependencies:
   - type: blocks
     target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
+child_order_hints:
+  - is-01m395wcbdbx8ndh16agfhmrhy
 created_at: 2026-09-18T00:55:07.111Z
-updated_at: 2026-09-18T00:56:45.120Z
+updated_at: 2026-09-24T07:43:03.531Z
 ---
 Human-only console work before minting 0.1.0 tokens: confirm the Flowmark maintainer crates.io and PyPI accounts have verified email and 2FA; create the GitHub environment named release with a required reviewer and v* tag policy; do not register trusted publishers or a PyPI pending publisher until after 0.1.0 exists and the environment is protected. Procedure: docs/project/guides/release-process.md#first-time-channel-setup.
