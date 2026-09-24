@@ -11,6 +11,7 @@ mod cli;
 mod interrupt;
 mod progress_line;
 mod progress_ticker;
+mod skill_install;
 
 /// The repository README's Rust examples, compiled and run as doctests.
 ///

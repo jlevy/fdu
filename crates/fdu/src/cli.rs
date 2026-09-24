@@ -38,6 +38,7 @@ use crate::progress_line::{
     ProgressMode, ProgressPlan, TerminalFacts, display_root, home_directory, should_draw,
 };
 use crate::progress_ticker::{ProgressIo, Ticker};
+use crate::skill_install;
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -275,7 +276,8 @@ OUTPUT AND AUTOMATION
   The command never prompts or pages. A progress line is drawn on stderr only for a
   person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
   Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
-  `fdu --skill` prints a portable agent skill describing this same surface.
+  `fdu --install-skill` writes a portable agent skill describing this same surface
+  under the project root, and `fdu --skill` prints it.
 
 EXIT STATUS
   0  Complete result, or a partial result accepted with --allow-partial
@@ -400,7 +402,7 @@ pub enum RunOutcome {
     disable_help_flag = true,
     disable_version_flag = true,
     arg_required_else_help = true,
-    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill"
+    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill\n       fdu --install-skill [--agent-base <DIR>]"
 )]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
@@ -410,7 +412,7 @@ pub struct Cli {
     // ---- scope: what the engine observes and retains ----
     /// Report root; optional only for the discovery and cache-lifecycle flags.
     #[arg(
-        required_unless_present_any = ["docs", "skill", "cache_status", "cache_clear"],
+        required_unless_present_any = ["docs", "skill", "install_skill", "cache_status", "cache_clear"],
         help_heading = "ARGUMENTS"
     )]
     pub path: Option<PathBuf>,
@@ -608,6 +610,14 @@ pub struct Cli {
     /// Print a portable agent skill to stdout.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub skill: bool,
+
+    /// Write that skill under the project root, to .agents/skills/fdu/ and .claude/skills/fdu/.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
+    pub install_skill: bool,
+
+    /// With --install-skill, write DIR/skills/fdu/SKILL.md instead: one agent's user scope, such as ~/.claude.
+    #[arg(long, value_name = "DIR", requires = "install_skill", help_heading = "OTHER")]
+    pub agent_base: Option<PathBuf>,
 }
 
 /// Parse the scope a lifecycle flag applies to.
@@ -648,6 +658,10 @@ impl Cli {
         if self.skill {
             write!(out, "{}", compose_skill())?;
             return Ok(RunOutcome::Complete);
+        }
+
+        if self.install_skill {
+            return self.run_install_skill(out);
         }
 
         // Lifecycle flags run before scan validation, so they need no readable tree, and
@@ -847,8 +861,11 @@ impl Cli {
     /// setting can turn the other on or off. The ticker starts from this plan before
     /// the engine is called and stops before the first byte reaches either stream.
     fn progress_plan(&self, terminal: &TerminalFacts) -> ProgressPlan {
-        let walks =
-            !(self.docs || self.skill || self.cache_status.is_some() || self.cache_clear.is_some());
+        let walks = !(self.docs
+            || self.skill
+            || self.install_skill
+            || self.cache_status.is_some()
+            || self.cache_clear.is_some());
         let root = self.path.as_deref().unwrap_or(Path::new("."));
         ProgressPlan {
             draw: should_draw(self.progress, terminal, self.machine_format(), walks),
@@ -1052,6 +1069,41 @@ impl Cli {
         }
         out.flush()?;
         Ok(())
+    }
+
+    /// Write the skill where agents look for it, and say what each file needed.
+    ///
+    /// One line per file on stdout, `installed`, `updated`, or `unchanged`, with the
+    /// path relative when it is under the current directory. A `SKILL.md` fdu did not
+    /// generate is a usage error, exit 2, and nothing is written; a filesystem failure
+    /// is exit 1 like any other.
+    fn run_install_skill(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
+        let cwd = std::env::current_dir()
+            .map_err(|error| anyhow::anyhow!("cannot read the current directory: {error}"))?;
+        let targets = skill_install::targets(&cwd, self.agent_base.as_deref());
+        let outcomes = skill_install::install(&compose_skill(), &targets).map_err(|error| {
+            match error {
+                skill_install::InstallError::Foreign(path) => usage(&anyhow::anyhow!(
+                    "refusing to overwrite {}: fdu did not generate it (no `{}` marker); move it aside, then re-run fdu --install-skill",
+                    skill_install::display_path(&path, &cwd),
+                    skill_install::GENERATED_MARKER_PREFIX,
+                )),
+                skill_install::InstallError::Io { path, source } => anyhow::Error::new(source)
+                    .context(format!(
+                        "cannot install the skill at {}",
+                        skill_install::display_path(&path, &cwd)
+                    )),
+            }
+        })?;
+        for outcome in outcomes {
+            writeln!(
+                out,
+                "{} {}",
+                outcome.action,
+                skill_install::display_path(&outcome.path, &cwd)
+            )?;
+        }
+        Ok(RunOutcome::Complete)
     }
 
     /// Run the cache lifecycle flags and report what they found or removed.
@@ -2204,6 +2256,8 @@ mod tests {
             version: None,
             docs: false,
             skill: false,
+            install_skill: false,
+            agent_base: None,
         }
     }
 
@@ -3003,6 +3057,77 @@ mod tests {
         );
     }
 
+    /// `--install-skill` through the process boundary: the reported lines, the exit
+    /// codes, and the refusal, against a user-scope base so no test changes directory.
+    #[test]
+    fn install_skill_reports_each_file_and_refuses_a_foreign_one_with_exit_two() {
+        let sandbox = tempfile::tempdir().expect("tempdir");
+        let base = sandbox.path().join(".claude");
+        let skill = base.join("skills").join("fdu").join("SKILL.md");
+        let run = || {
+            let mut out = Vec::new();
+            let mut err = Vec::new();
+            let args = [
+                OsString::from("fdu"),
+                OsString::from("--install-skill"),
+                OsString::from("--agent-base"),
+                base.clone().into_os_string(),
+            ];
+            let status = run_with_io(
+                &args,
+                &mut out,
+                &mut err,
+                false,
+                &TerminalFacts::default(),
+                ProgressIo::inert(),
+            );
+            (status, String::from_utf8(out).expect("utf-8"), String::from_utf8(err).expect("utf-8"))
+        };
+
+        let (status, out, err) = run();
+        assert_eq!(status, 0);
+        assert_eq!(out, format!("installed {}\n", skill.display()));
+        assert!(err.is_empty(), "{err}");
+        assert_eq!(std::fs::read_to_string(&skill).expect("read"), compose_skill());
+
+        let (status, out, err) = run();
+        assert_eq!(status, 0);
+        assert_eq!(out, format!("unchanged {}\n", skill.display()));
+        assert!(err.is_empty(), "{err}");
+
+        std::fs::write(&skill, "---\nname: fdu\n---\n# Written by hand\n").expect("write foreign");
+        let (status, out, err) = run();
+        assert_eq!(status, 2, "a foreign file is refused as a usage error");
+        assert!(out.is_empty(), "nothing is reported installed: {out}");
+        assert_eq!(
+            err,
+            format!(
+                "fdu: refusing to overwrite {}: fdu did not generate it (no `<!-- generated by fdu` marker); move it aside, then re-run fdu --install-skill\n",
+                skill.display()
+            )
+        );
+        assert_eq!(
+            std::fs::read_to_string(&skill).expect("read"),
+            "---\nname: fdu\n---\n# Written by hand\n",
+            "the foreign file is untouched"
+        );
+
+        // `--agent-base` is meaningless without `--install-skill`, and says so.
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let args = ["fdu", "--agent-base", "x", "."].map(OsString::from);
+        let status = run_with_io(
+            &args,
+            &mut out,
+            &mut err,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        );
+        assert_eq!(status, 2);
+        assert!(String::from_utf8(err).expect("utf-8").contains("--install-skill"));
+    }
+
     #[test]
     fn run_outcomes_and_broken_pipes_have_stable_exit_codes() {
         let mut diagnostic = Vec::new();
@@ -3122,9 +3247,11 @@ mod tests {
         for command in [
             &["fdu", "--docs"][..],
             &["fdu", "--skill"],
+            &["fdu", "--install-skill"],
             &["fdu", "--cache-status"],
             &["fdu", "--cache-clear", "."],
             &["fdu", "--progress", "always", "--docs"],
+            &["fdu", "--progress", "always", "--install-skill", "--agent-base", "x"],
             &["fdu", "--progress", "always", "--cache-status=all", "."],
         ] {
             assert!(!plan(command, &interactive).draw, "{command:?} walks nothing");
