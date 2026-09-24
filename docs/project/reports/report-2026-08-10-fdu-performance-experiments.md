@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 69 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 71 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
@@ -234,6 +234,8 @@ dead end.
 | 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp153--linux-h72-dtype-skip-clears-3-on-symlinkheavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
 | 154 | [Linux PGO screen clears 3% on cold-scan-index and warm-revalidate](#exp154--linux-pgo-screen-clears-3-on-coldscanindex-and-warmrevalidate) | H148 | `cold-scan-index` | -8.3% | ✅ accepted |
 | 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
+| 156 | [Progress indicator without a handle against main](#exp156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
+| 157 | [Progress handle attached against no handle](#exp157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
 
 ## The experiments
 
@@ -5215,6 +5217,72 @@ expansion is H116 HashMap now in-bucket; no new compileable cut; do not retry H1
 Full record:
 [`exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md`](../experiments/exp-155-linux-cache-hit-restore-mix-after-leftover-apply-timer-expan.md)
 
+### exp-156 — Progress indicator without a handle against main
+
+✅ accepted · 2026-09-24 · H150 · commit `ead98807`
+
+Control: main at 0059ddd5
+
+Candidate: progress-indicator branch at ead98807 with no handle attached
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2469.4 | 2457.6 | -1.78% (n.s.) | [-6.33%, +2.90%] |
+| component (ms) | 2461.1 | 2449.5 | -1.82% (n.s.) | [-6.35%, +2.91%] |
+| cpu (ms) | 18300.9 | 17995.3 | -6.73% (n.s.) | [-10.24%, +4.25%] |
+| user (ms) | 361.9 | 356.6 | -4.06% | [-5.29%, -1.02%] |
+| system (ms) | 17944.1 | 17646.4 | -6.78% (n.s.) | [-10.41%, +4.42%] |
+| peak rss (MiB) | 84.2 | 85.2 | +1.58% (regression) | [+0.90%, +2.23%] |
+
+Other jobs, wall time: `aggregate-summary` -3.0% (n.s.), `cold-scan-index` -1.7% (n.s.),
+`cold-scan-producer` -1.1% (n.s.), `cold-snapshot-save` -0.6% (n.s.), `warm-revalidate`
+-4.7% (n.s.), `warm-snapshot-load` +5.8% (n.s.).
+
+Cost to carry: 1173 lines; no new dependencies.
+
+Whole engine diff against main in crates/fdu-core/src (1139 insertions, 34 deletions),
+tests and docs included; the no-handle path adds one Option check per walker chunk or
+directory.
+
+**Accepted:** default-tree wall -1.78% [-6.33%, +2.90%], noninferior at +3%; all seven
+metadata job intervals include zero; uncontrolled, busy host.
+
+Full record:
+[`exp-156-progress-indicator-without-a-handle-against-main.md`](../experiments/exp-156-progress-indicator-without-a-handle-against-main.md)
+
+### exp-157 — Progress handle attached against no handle
+
+⏳ in progress · 2026-09-24 · H151 · commit `ead98807`
+
+Control: progress-indicator probe at ead98807 with no handle
+
+Candidate: the same probe with --progress: a handle attached and polled every 80 ms
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2289.7 | 2323.0 | +5.75% (n.s.) | [-5.34%, +10.91%] |
+| component (ms) | 2283.4 | 2316.6 | +5.80% (n.s.) | [-5.29%, +11.08%] |
+| cpu (ms) | 15143.6 | 14643.1 | +11.48% (n.s.) | [-17.55%, +30.68%] |
+| user (ms) | 343.2 | 340.7 | -0.63% (n.s.) | [-1.45%, +6.73%] |
+| system (ms) | 14805.0 | 14298.4 | +11.64% (n.s.) | [-17.90%, +31.53%] |
+| peak rss (MiB) | 85.2 | 85.4 | +0.54% (n.s.) | [-0.35%, +1.05%] |
+
+Cost to carry: 318 lines; no new dependencies.
+
+The probe flag, poller, and handle check (271 insertions, 47 deletions in perf_probe.rs,
+tests included); the engine handle itself is exp-156.
+
+**In-progress:** default-tree wall +5.75% [-5.34%, +10.91%]: upper bound past the +3%
+gate, lower bound below it, so neither noninferiority nor a cost is established;
+uncontrolled cell at 100% to 72% busy, user CPU -0.63%; needs a quiet re-run.
+
+Full record:
+[`exp-157-progress-handle-attached-against-no-handle.md`](../experiments/exp-157-progress-handle-attached-against-no-handle.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5321,6 +5389,18 @@ Baselines show one value because they measure a state rather than a change.
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
+| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
+| 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
+| 156 | Progress indicator without a handle against main | `default-tree` | 2,469.4 | 2,457.6 | -1.8% | ✅ accepted |
+| 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
+
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5351,16 +5431,6 @@ Baselines show one value because they measure a state rather than a change.
 | 093 | Use transient hashed parents and unique child insertion | `cold-scan-index` | 573.3 | 578.7 | +0.8% | ✅ accepted |
 | 094 | Borrow completed directory roll-ups | `cold-scan-index` | 581.0 | 579.1 | +0.2% | ✅ accepted |
 | 095 | Move incoming names and retire consumed paths | `cold-scan-index` | 574.0 | 572.1 | -0.3% | ✅ accepted |
-
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
-| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
-| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
-| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
-| 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
