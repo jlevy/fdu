@@ -157,9 +157,9 @@ analysis operationally partial.
 Content analysis is one-shot and cannot be combined with `--watch`.
 
 One-shot text reports end with a compact performance line.
-It reports regular files and apparent bytes walked, content bytes actually read,
-fresh-analysis file and byte rates, content-sidecar files and apparent bytes restored
-from cache, the metadata cache tier, and total report time.
+It reports regular files walked and their bytes in the report’s size metric, content
+bytes actually read, fresh-analysis file and byte rates, content-sidecar files and
+apparent bytes restored from cache, the metadata cache tier, and total report time.
 Known binary files can contribute walked bytes but zero read bytes.
 Cache-only runs report zero walked files because they never consult the tree.
 The line is gray only when color is active and has no ANSI escapes otherwise.

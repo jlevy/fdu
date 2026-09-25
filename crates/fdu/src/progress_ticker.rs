@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use fdu_core::query::SizeMetric;
 use fdu_core::{Progress, ProgressPhase, ProgressSnapshot};
 
 use crate::progress_line::{FrameFacts, Phase, ProgressPlan, render_frame};
@@ -192,9 +193,10 @@ impl Line {
 /// The engine's snapshot as the renderer takes it, or `None` while no route has begun.
 ///
 /// `Starting` draws nothing: the engine has not named a phase yet, so the ticker keeps
-/// waiting rather than show one it invented. The other phases map one to one, and the
-/// counters pass through unchanged.
-pub(crate) fn frame_facts(snapshot: &ProgressSnapshot) -> Option<FrameFacts> {
+/// waiting rather than show one it invented. The other phases map one to one, the
+/// counts pass through unchanged, and the bytes are the ones `size` measures, so the
+/// line counts what the answer will.
+pub(crate) fn frame_facts(snapshot: &ProgressSnapshot, size: SizeMetric) -> Option<FrameFacts> {
     let phase = match snapshot.phase {
         ProgressPhase::Starting => return None,
         ProgressPhase::Loading => Phase::Loading,
@@ -209,7 +211,10 @@ pub(crate) fn frame_facts(snapshot: &ProgressSnapshot) -> Option<FrameFacts> {
         phase,
         directories: snapshot.directories,
         files: snapshot.files,
-        bytes: snapshot.bytes,
+        bytes: match size {
+            SizeMetric::Apparent => snapshot.bytes,
+            SizeMetric::Allocated => snapshot.allocated,
+        },
         analysis: snapshot.analysis,
     })
 }
@@ -304,7 +309,7 @@ fn redraw_until_stopped(
             Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
         }
         wait = timing.tick;
-        let Some(facts) = frame_facts(&progress.snapshot()) else {
+        let Some(facts) = frame_facts(&progress.snapshot(), plan.size) else {
             continue;
         };
         let frame =
@@ -389,7 +394,12 @@ mod tests {
     const ROOT: &str = "~/wrk/github";
 
     fn plan() -> ProgressPlan {
-        ProgressPlan { draw: true, root: ROOT.to_string(), color: false }
+        ProgressPlan {
+            draw: true,
+            root: ROOT.to_string(),
+            color: false,
+            size: SizeMetric::Allocated,
+        }
     }
 
     fn io(out: &SharedBuffer, timing: Timing) -> ProgressIo {
@@ -411,21 +421,22 @@ mod tests {
 
     #[test]
     fn a_fresh_handle_gives_no_frame_and_every_phase_maps_across() {
-        assert_eq!(frame_facts(&Progress::new().snapshot()), None);
+        assert_eq!(frame_facts(&Progress::new().snapshot(), SizeMetric::Allocated), None);
         let snapshot = ProgressSnapshot {
             phase: ProgressPhase::Analyzing,
             directories: 3,
             files: 40,
             bytes: 4_096,
+            allocated: 8_192,
             analysis: Some((2, 5)),
         };
         assert_eq!(
-            frame_facts(&snapshot),
+            frame_facts(&snapshot, SizeMetric::Allocated),
             Some(FrameFacts {
                 phase: Phase::Analyzing,
                 directories: 3,
                 files: 40,
-                bytes: 4_096,
+                bytes: 8_192,
                 analysis: Some((2, 5)),
             })
         );
@@ -439,8 +450,29 @@ mod tests {
             (ProgressPhase::Summarizing, Phase::Summarizing),
         ] {
             let snapshot = ProgressSnapshot { phase: engine, ..snapshot };
-            assert_eq!(frame_facts(&snapshot).map(|facts| facts.phase), Some(frame));
+            assert_eq!(
+                frame_facts(&snapshot, SizeMetric::Allocated).map(|facts| facts.phase),
+                Some(frame)
+            );
         }
+    }
+
+    /// The line counts bytes the way the answer does. A sparse disk image is the case
+    /// that shows the difference: 8 TiB apparent and 39 MiB allocated, so apparent bytes
+    /// beside an allocated answer read as more than the disk holds.
+    #[test]
+    fn the_bytes_follow_the_answers_size_metric() {
+        let snapshot = ProgressSnapshot {
+            phase: ProgressPhase::Scanning,
+            directories: 1,
+            files: 1,
+            bytes: 8_796_093_022_208,
+            allocated: 41_107_456,
+            analysis: None,
+        };
+        let bytes = |size| frame_facts(&snapshot, size).map(|facts| facts.bytes);
+        assert_eq!(bytes(SizeMetric::Allocated), Some(41_107_456));
+        assert_eq!(bytes(SizeMetric::Apparent), Some(8_796_093_022_208));
     }
 
     #[test]
@@ -473,7 +505,9 @@ mod tests {
         let frames: Vec<&str> = text.split(ERASE_LINE).collect();
         assert_eq!(frames[0], "", "the first bytes are the erase sequence");
         assert!(
-            frames[1].starts_with(&format!("⠋ {ROOT}  Summarizing   0 files · 1 dirs · 0 B  ")),
+            frames[1].starts_with(&format!(
+                "⠋ {ROOT}  Summarizing           0 files ·         1 dirs ·      0 B  "
+            )),
             "{:?}",
             frames[1]
         );
