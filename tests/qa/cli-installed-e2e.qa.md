@@ -42,7 +42,7 @@ Library steps are time-boxed and must stay bounded.
 | Phase 4: Medium tree | ✅ Passed | Whole-tree metadata only; analyze on `docs/` |
 | Phase 5: Bounded Library | ✅ Passed | Depth 2 exit 2 (TCC); no SIGKILL |
 | Phase 6: Terminal Progress | ⏳ Pending | Added 2026-09-23 with the progress indicator |
-| Phase 7: Peer agreement | ⏳ Pending | Added 2026-09-25; first run on four trees including `~/Library` |
+| Phase 7: Peer agreement | ✅ Passed | 2026-09-25, four trees including `~/Library`, no unexplained difference; [report-2026-09-25-peer-agreement.md](../../docs/project/reports/report-2026-09-25-peer-agreement.md) |
 | Phase 8: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
@@ -460,7 +460,7 @@ difference from the tree itself:
 | Directory blocks | du counts a directory’s blocks; fdu does not | None on APFS; on ext4, du is higher by about 4 KiB per directory |
 | Allocated or apparent | fdu, du, dust, dua, and diskus default to allocated; a sparse disk image, a cloud placeholder, or a compressed file makes the two differ | Compare like with like, never fdu’s default with a tool’s apparent figure |
 | A live tree | `~/Library` changes while it is measured | Within the range of the two fdu readings that bracket the tool, plus 0.05% |
-| Interrupted reads | GNU du and pdu on macOS give up on a directory whose read is interrupted, and leave its subtree out | The tool reads short, and says so in its errors; fdu retries the read |
+| Interrupted reads | GNU du and pdu on macOS give up on a directory whose read is interrupted, and leave its subtree out | The tool reads short, and says so in its errors; fdu’s fast macOS reader declines on any failure and its portable reader reads the directory again, and a second failure would be reported |
 
 **Verify**:
 

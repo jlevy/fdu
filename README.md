@@ -278,6 +278,13 @@ fdu returned counts, apparent and allocated bytes, newest file time, per-directo
 per-extension roll-ups, and kept the index that answers the next question without
 another walk. dumac’s 95% interval was +5.8% to +13.5%.
 
+The answers agree, too.
+On real trees, `~/Library` among them, fdu’s totals equal GNU du `--count-links` to the
+byte, and differ from du and dust only where they count differently: fdu counts a
+hard-linked file once per path and a symbolic link’s target text not at all.
+[The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
+names every difference.
+
 fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
 million-entry index and dumac retained one integer.
 `fdu --no-gitignore --view summary` keeps the aggregate-only tier, which returns the

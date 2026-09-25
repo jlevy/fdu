@@ -392,9 +392,11 @@ def judge(record: dict[str, object]) -> str:
         if reading.tool in COUNTS_SYMLINKS and links_seen[reading.metric]:
             expected += links_seen[reading.metric]
             causes.append("symbolic links")
-        # Exact when fdu read the same total on both sides of the tool; otherwise within
-        # the range those two readings span, plus 0.05% for a change that came and went.
-        quiet = low == high
+        # Exact on a quiet tree, one whose every fdu reading was the same. On a live one,
+        # within the range the two fdu readings around the tool span, plus 0.05% for a
+        # change that came and went while the tool ran: equal readings on either side of
+        # a tool do not show that nothing changed during it.
+        quiet = moved[reading.metric] == 0
         slack = 0 if quiet else low // 2000
         within = "exactly" if quiet else "within the tree's movement"
         interrupted = reading.errors.get("interrupted", 0)
