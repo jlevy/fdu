@@ -537,9 +537,9 @@ fn paint_segment(text: &str, style: Option<AnsiStyle>, color: bool) -> String {
 /// measured without its color codes, with each non-ASCII character of the root counted
 /// as two columns, and always leaves the last column empty; when it is wider than that
 /// it shrinks in order until it fits: the phase padding goes, the root is elided in the
-/// middle with `…` down to 12 columns, the alignment goes, the `dirs` count goes, the
-/// bytes go, and below 20 columns only the spinner and the phase word are drawn. A
-/// frame never wraps.
+/// middle with `…` down to 12 columns, the alignment goes (and the root is fitted again
+/// to the room that frees), the `dirs` count goes, the bytes go, and below 20 columns
+/// only the spinner and the phase word are drawn. A frame never wraps.
 ///
 /// The string excludes the leading `\r\x1b[2K`; the ticker adds it, so a frame is the
 /// same bytes whether it is drawn or pinned by a test.
@@ -554,21 +554,32 @@ pub(crate) fn render_frame(
     let limit = width.saturating_sub(1);
     let mut slots = Slots::full(root, facts, elapsed, step);
 
+    // The root as long as the rest of the frame leaves room for, and no shorter.
+    let fit_root = |slots: &mut Slots| {
+        slots.root = Some(RootSlot::new(root));
+        if slots.columns() > limit {
+            let excess = slots.columns() - limit;
+            let occupied = slots.root.as_ref().map_or(0, |root| root.columns);
+            let target = occupied.saturating_sub(excess).max(MIN_ROOT_COLUMNS);
+            if target < occupied {
+                slots.root = Some(RootSlot::elided(root, target));
+            }
+        }
+    };
+
     // The phase padding goes first: it only lines the facts up across phases, which
     // change a handful of times a run, while the counts change on every frame.
     if slots.columns() > limit {
         slots.phase_padded = false;
     }
     if slots.columns() > limit {
-        let excess = slots.columns() - limit;
-        let occupied = slots.root.as_ref().map_or(0, |root| root.columns);
-        let target = occupied.saturating_sub(excess).max(MIN_ROOT_COLUMNS);
-        if target < occupied {
-            slots.root = Some(RootSlot::elided(root, target));
-        }
+        fit_root(&mut slots);
     }
     if slots.columns() > limit {
+        // The root was elided to fit an aligned frame; without the alignment it may
+        // have room again, so it is fitted afresh rather than left shorter than needed.
         slots.aligned = false;
+        fit_root(&mut slots);
     }
     if slots.columns() > limit {
         slots.facts.drop_dirs();
@@ -865,11 +876,12 @@ mod tests {
             frame(77),
             "⠼ /Volum…itory  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
         );
-        // 3. The alignment goes.
+        // 3. The alignment goes, and the root takes back what that frees...
         assert_eq!(
             frame(76),
-            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+            "⠼ /Volumes/…pository  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
         );
+        // ...down to the same 12 columns.
         assert_eq!(
             frame(70),
             "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
@@ -883,6 +895,22 @@ mod tests {
         // 6. Nothing else can give way, so only the spinner and the phase word remain.
         assert_eq!(frame(46), "⠼ Scanning");
         assert_eq!(frame(20), "⠼ Scanning");
+    }
+
+    /// What an 80-column terminal keeps. A cold walk keeps its counts aligned over a
+    /// root of up to 14 columns for its first minute, since the phase padding goes first; a
+    /// warm run's `Revalidating` has no padding to give, so over a 12-column root it
+    /// gives up the alignment instead, and keeps every fact.
+    #[test]
+    fn an_eighty_column_terminal_keeps_what_fits() {
+        assert_eq!(
+            render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 80, false),
+            "⠼ ~/wrk/github  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
+        );
+        assert_eq!(
+            render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 80, false),
+            "⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s"
+        );
     }
 
     /// Counts and sizes hold their columns as they grow, so nothing after them moves:

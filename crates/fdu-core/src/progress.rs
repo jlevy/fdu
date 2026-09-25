@@ -14,9 +14,9 @@
 //! these entries walked, not found.
 //!
 //! **What holds at completion.** When a walking route returns, `files`, `bytes`, and
-//! `allocated` equal the walked totals its own report exposes, and `directories` equals the directories it
-//! read, except where a documented retry reread part of the tree, in which case the
-//! handle is larger by exactly the rereads. Content analysis leaves `analysis` at
+//! `allocated` equal the walked totals its own report exposes, and `directories` equals
+//! the directories it read, except where a documented retry reread part of the tree, in
+//! which case the handle is larger by exactly the rereads. Content analysis leaves `analysis` at
 //! `Some((candidates, candidates))`.
 //!
 //! **Cost.** Walker workers already keep local counts; they add the difference since
@@ -147,7 +147,7 @@ pub struct ProgressSnapshot {
 /// (Apple Silicon's L2, and the adjacent-line prefetch pairing on x86-64).
 ///
 /// The counters a walker adds to together share one line and share it with nothing
-/// else, so a worker's addition costs one line transfer rather than three, and a poller
+/// else, so a worker's addition costs one line transfer rather than four, and a poller
 /// reading the walk counters never invalidates the line the analysis loop writes.
 #[repr(align(128))]
 #[derive(Default)]
@@ -367,6 +367,6 @@ mod tests {
         assert_eq!(std::mem::align_of::<WalkCells>(), 128);
         assert_eq!(std::mem::align_of::<AnalysisCells>(), 128);
         assert_eq!(std::mem::align_of::<PhaseCell>(), 128);
-        assert!(std::mem::size_of::<WalkCells>() <= 128, "three counters fit one line");
+        assert!(std::mem::size_of::<WalkCells>() <= 128, "the four walk counters fit one line");
     }
 }

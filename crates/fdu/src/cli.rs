@@ -2901,6 +2901,43 @@ mod tests {
         assert!(note.starts_with("\u{1b}[90mnote:"), "notes share the footer style: {colored:?}");
     }
 
+    /// The footer's walked size is measured as the answer is, so it reads as the summary
+    /// row's own total under the default and under `--size apparent` alike. (On Windows
+    /// allocated falls back to apparent, and the two readings agree.)
+    #[test]
+    fn the_performance_footer_measures_walked_bytes_as_the_answer_does() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
+        std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
+        for size in [SIZE_DEFAULT, "apparent"] {
+            let command = Cli {
+                path: Some(root.path().to_path_buf()),
+                view: Some("summary".to_string()),
+                size: size.to_string(),
+                ..cli()
+            };
+            let mut out = Vec::new();
+            command
+                .run(
+                    &mut out,
+                    &mut Vec::new(),
+                    false,
+                    &TerminalFacts::default(),
+                    ProgressIo::inert(),
+                )
+                .expect("summary report");
+            let out = String::from_utf8(out).expect("UTF-8");
+            let row = out.lines().next().expect("the summary row").trim_start();
+            let answer = row.split("  ").next().expect("the row's size");
+            let footer =
+                out.lines().find(|line| line.starts_with("Performance:")).expect("the footer");
+            assert!(
+                footer.starts_with(&format!("Performance: walked 2 files / {answer}; ")),
+                "--size {size}: {out}"
+            );
+        }
+    }
+
     #[test]
     fn performance_footer_names_units_cache_work_and_metadata_tier() {
         let footer = performance_footer(

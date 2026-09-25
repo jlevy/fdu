@@ -9164,14 +9164,14 @@ mod tests {
         assert_eq!(index_fingerprint(&candidate), index_fingerprint(&serial_oracle));
     }
 
-    /// The three counts a walk reports, in the order [`crate::ProgressSnapshot`] shows them.
-    fn walked(report: &ScanReport) -> (u64, u64, u64) {
-        (report.dirs_read, report.files_walked, report.bytes_walked)
+    /// The four counts a walk reports, in the order [`crate::ProgressSnapshot`] shows them.
+    fn walked(report: &ScanReport) -> (u64, u64, u64, u64) {
+        (report.dirs_read, report.files_walked, report.bytes_walked, report.allocated_walked)
     }
 
-    fn reported(progress: &crate::Progress) -> (u64, u64, u64) {
+    fn reported(progress: &crate::Progress) -> (u64, u64, u64, u64) {
         let snapshot = progress.snapshot();
-        (snapshot.directories, snapshot.files, snapshot.bytes)
+        (snapshot.directories, snapshot.files, snapshot.bytes, snapshot.allocated)
     }
 
     /// Each walker is a separate loop with its own reporting sites, so each is checked:
@@ -9237,12 +9237,17 @@ mod tests {
             write_file(&dir.path().join(format!("d0/new{threads}.txt")), b"added");
             fs::remove_file(dir.path().join(format!("d1/f{}.txt", threads - 1))).expect("remove");
             write_file(&dir.path().join("d2/f0.txt"), &vec![b'y'; 40 + threads]);
+            // An independent walk of the changed tree. The handle and the reconcile's own
+            // report both come from the walker's counts, so agreeing with each other
+            // would not show that the walker counted anything; agreeing with this does.
+            let (_, fresh) = scan_into_index(dir.path(), &ScanConfig::default()).expect("fresh");
             let progress = crate::Progress::new();
             let config = ScanConfig { progress: Some(progress.clone()), ..cold_config.clone() };
             let reconciled = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
             assert!(reconciled.apply.mutated(), "{context}: the changes were applied");
             assert_eq!(progress.snapshot().phase, crate::ProgressPhase::Revalidating, "{context}");
             assert_eq!(reported(&progress), walked(&reconciled.scan), "{context}: reconcile");
+            assert_eq!(walked(&reconciled.scan), walked(&fresh), "{context}: the whole tree");
 
             let handle = crate::IndexHandle::new(index);
             let progress = crate::Progress::new();
@@ -9292,6 +9297,48 @@ mod tests {
         assert_eq!(
             snapshot.bytes,
             report.scan.bytes_walked + rewalked * u64::try_from(changed.len()).expect("fits")
+        );
+        let allocated = index.attrs(Path::new("d0000/file.txt")).expect("indexed").allocated;
+        assert!(allocated > 0, "a file with content occupies blocks");
+        assert_eq!(snapshot.allocated, report.scan.allocated_walked + rewalked * allocated);
+    }
+
+    /// Several invalidated roots are reconciled one at a time and their reports summed,
+    /// so every walked count has to survive the sum, allocated bytes included.
+    #[test]
+    fn a_multi_root_reconcile_sums_every_walked_count() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for directory in ["a", "b", "c"] {
+            for file in 0..3 {
+                write_file(&dir.path().join(format!("{directory}/f{file}.txt")), b"before");
+            }
+        }
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        for directory in ["a", "b"] {
+            write_file(&dir.path().join(format!("{directory}/f0.txt")), &vec![b'x'; 5_000]);
+        }
+        index.apply_ok(&Observation::new(
+            ["a", "b"]
+                .into_iter()
+                .map(|directory| Op::InvalidateSubtree {
+                    path: PathBuf::from(directory),
+                    reason: crate::InvalidateReason::Requested,
+                })
+                .collect(),
+        ));
+        let report =
+            reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        let attrs: Vec<Attrs> = ["a", "b"]
+            .into_iter()
+            .flat_map(|directory| (0..3).map(move |file| format!("{directory}/f{file}.txt")))
+            .map(|path| *index.attrs(Path::new(&path)).expect("indexed"))
+            .collect();
+        assert_eq!(report.scan.files_walked, 6, "the two roots' files, and not c's");
+        assert_eq!(report.scan.bytes_walked, attrs.iter().map(|attrs| attrs.size).sum::<u64>());
+        assert_eq!(
+            report.scan.allocated_walked,
+            attrs.iter().map(|attrs| attrs.allocated).sum::<u64>()
         );
     }
 

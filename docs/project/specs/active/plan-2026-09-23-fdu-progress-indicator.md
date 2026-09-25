@@ -335,10 +335,15 @@ When it is wider than that, it shrinks in this order until it fits:
 1. The phase word’s padding is dropped: it lines the facts up across phases, which
    change a few times a run, while the counts change every frame.
 2. The root path is elided in the middle with `…`, down to 12 columns.
-3. The counts’ alignment is dropped.
+3. The counts’ alignment is dropped, and the root is fitted again to the room that
+   frees.
 4. The `dirs` count is dropped.
 5. The bytes are dropped.
 6. Below 20 columns, only the spinner and the phase word are drawn, without the root.
+
+At 80 columns a cold walk keeps its counts aligned over a root of up to 14 columns for
+its first minute; `Revalidating` has no padding to give up, so a warm run over a longer
+root keeps every fact and loses the alignment.
 
 **End of run.** The line is erased before the report or any message is written.
 No summary replaces it, because the report’s own performance line states the totals.

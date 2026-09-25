@@ -1692,9 +1692,9 @@ mod tests {
     /// files, bytes, and allocated bytes equal the walked totals the route's own
     /// performance summary reports, and its directories equal the directories the route
     /// read. The allocated figure is also the answer's own total, which is what lets a
-    /// display put it beside the answer. Every
-    /// one-shot route: the cold full index, the transient summary fold, a cold run with
-    /// content analysis, and a warm revalidation of the snapshot that run left.
+    /// display put it beside the answer. Every one-shot route: the cold full index, the
+    /// transient summary fold, a cold run with content analysis, and a warm revalidation
+    /// of the snapshot that run left.
     #[test]
     fn progress_ends_at_the_walked_totals_of_every_one_shot_route() {
         use crate::ProgressPhase::{Scanning, Summarizing};
