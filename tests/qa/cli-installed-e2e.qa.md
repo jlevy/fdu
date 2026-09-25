@@ -10,11 +10,14 @@ a just-built `target/` binary unless `FDU` points there).
 
 **Purpose**: Prove the advertised views, analyzers, formats, cache policies, and a
 bounded watch loop behave on a small typed tree; then time the same metadata questions
-on a larger working tree; then escalate carefully on a hostile home-Library tree.
+on a larger working tree; then escalate carefully on a hostile home-Library tree; then
+check that fdu’s totals on real trees, `~/Library` among them, agree with other
+disk-usage tools, and that every difference has a named cause.
 Record wall time and peak RSS so later runs can revise the numbers.
 
 **Estimated Time**: 15–20 minutes for the small tree and cache benchmark; 20–40 more if
-the medium and large fixtures are set.
+the medium and large fixtures are set; about half an hour for peer agreement (Phase 7),
+up to an hour on a loaded machine.
 Library steps are time-boxed and must stay bounded.
 
 > This is a kind of “manual test”: it is not a strict end-to-end integration test,
@@ -30,7 +33,7 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-09-18)
+## Current Status (Last Update 2026-09-25)
 
 | Phase | Status | Notes |
 | --- | --- | --- |
@@ -40,7 +43,8 @@ Library steps are time-boxed and must stay bounded.
 | Phase 4: Medium tree | ✅ Passed | Whole-tree metadata only; analyze on `docs/` |
 | Phase 5: Bounded Library | ✅ Passed | Depth 2 exit 2 (TCC); no SIGKILL |
 | Phase 6: Terminal Progress | ⏳ Pending | Added 2026-09-23 with the progress indicator |
-| Phase 7: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
+| Phase 7: Peer agreement | ✅ Passed | 2026-09-25, four trees including `~/Library`, no unexplained difference; [report-2026-09-25-peer-agreement.md](../../docs/project/reports/report-2026-09-25-peer-agreement.md) |
+| Phase 8: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
 
@@ -343,6 +347,8 @@ bodies. The harness analyzes `FDU_QA_MEDIUM_ANALYZE` or `$FDU_QA_MEDIUM/docs` on
 
 Skip if `FDU_QA_LARGE` is unset.
 **Do not** start with an unbounded full tree or `--analyze` on the whole Library.
+Escalate here first; once these bounded runs pass, Phase 7 walks the whole of it,
+metadata only.
 
 Known risk: a home-Library scan has been SIGKILLed (137) from unbounded growth.
 Escalate only:
@@ -393,9 +399,13 @@ Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 - [ ] `CI=1 fdu "$FDU_QA_MEDIUM"` and `TERM=dumb fdu "$FDU_QA_MEDIUM"` show nothing
 - [ ] Ctrl-C during the scan erases the line, prints `fdu: interrupted`, and returns to
   a clean prompt; `echo $?` prints 130
+- [ ] The counts and the size hold their columns as they grow: nothing after them moves,
+  and the size is the one the report will print (allocated unless `--size apparent`),
+  never more than the disk holds
 - [ ] Narrowing the window while it runs shrinks the frame without wrapping, dropping
-  parts in the documented order (padding, then the middle of the root, then dirs, then
-  bytes), and below 20 columns only the spinner and the phase word remain
+  parts in the documented order (the phase padding, then the middle of the root, then
+  the counts’ alignment, then dirs, then bytes), and below 20 columns only the spinner
+  and the phase word remain
 - [ ] `NO_COLOR=1` removes the colors but keeps the animation
 - [ ] On Windows Terminal, the same checks hold; with stdout piped (`fdu … | more`), the
   run counts as non-interactive and shows nothing, because virtual-terminal support is
@@ -408,9 +418,102 @@ A line left on screen after any of these fails the phase.
 
 * * *
 
-## Phase 7: Results
+## Phase 7: Peer Agreement on Real Trees
 
-### 7.1 Record the Table
+Run on the release candidate before tagging, and after any change to how sizes are
+counted. It answers the question a user asks first: does fdu agree with the tool they
+already trust?
+Not always byte for byte, because tools count some things differently, but
+every difference must have a measured cause.
+It is written for macOS and APFS, where directories and symbolic links occupy no blocks;
+on another filesystem, run the self-test there first.
+
+**Subjects**, at least these four: this repository (a `.gitignore`, build output,
+symbolic links), `~/.rustup` or another quiet mid-size tree, `/Applications` (bundles,
+symbolic links, compressed files), and `~/Library`: permission-denied folders, sparse
+virtual-machine disks, cloud placeholders, clones, and files changing while it is
+measured. The whole `~/Library` metadata walk is required here; never `--analyze` it.
+Allow about half an hour; on a loaded machine, an hour.
+
+**Tools**: GNU du is required, as the reference (`gdu` from coreutils on macOS); the
+script refuses to run without it.
+dust, pdu, dua, diskus, and the system du run when installed, and the self-test fails if
+any is missing. dumac prints only rounded sizes, so it is not compared.
+
+```bash
+python3 scripts/qa_peer_agreement.py --self-test
+python3 scripts/qa_peer_agreement.py . ~/.rustup /Applications ~/Library \
+  --json "$FDU_QA_OUT/peer-agreement.json" | tee "$FDU_QA_OUT/peer-agreement.md"
+```
+
+The self-test builds a small tree with every case below (hard links within and across
+directories; symbolic links to a file, a directory, and nowhere, directly inside the
+root and deeper; an unreadable folder; a sparse file; a name with spaces) and requires
+all 13 tool readings to agree with their counting models exactly.
+Run it first, and after upgrading any peer tool.
+On APFS it can test the directory and link terms only in apparent size, since they
+occupy no blocks. The script exits non-zero if any reading is `UNEXPLAINED` or missing.
+`--rejudge FILE` judges saved readings again without measuring.
+
+**Privacy.** The `--json` file holds absolute paths, and directory names can identify
+people: a messaging app’s folders carry phone numbers and group identifiers, and even an
+application container’s name says what is installed.
+Keep the file out of the repository.
+The tables name only the first two path components of a folder a tool gave up on, unless
+`--full-paths` asks for more; a published report should count them rather than name
+them.
+
+**How the tools count.** fdu counts regular files once per path, and nothing else.
+GNU du with `--count-links` counts the same way apart from links’ and directories’ own
+sizes, so on a quiet APFS tree its allocated total equals fdu’s to the byte.
+Every other difference is computed from the tree itself, in one walk:
+
+| Difference | Tools | Expected difference from fdu |
+| --- | --- | --- |
+| Hard links | fdu, `du -l`, pdu, and dust’s apparent size count a hard-linked file once per path; du, dua, diskus, and dust’s allocated size count it once | Lower by what per-path counting adds, measured from the paths that share an inode |
+| Symbolic links | du, dust, pdu, and diskus count a link’s own size, which is its target text; dua does too, except for links directly inside the root, which it takes as inputs | Apparent size higher by the links’ total; allocated unchanged on APFS |
+| Directory sizes | dust `-s` and pdu’s apparent size add every directory’s own size; dua adds every directory’s but the root’s; du and diskus add none to apparent size | Apparent size higher by the directories’ total; allocated unchanged on APFS |
+| Allocated or apparent | fdu, du, dust, dua, and diskus default to allocated; a sparse disk image, a cloud placeholder, or a compressed file makes the two differ | Compare like with like, never fdu’s default with a tool’s apparent figure |
+| A live tree | `~/Library` changes while it is measured | fdu runs just before each tool and once at the end; a tool must fall within its two fdu readings, or outside them by no more than fdu moved during or next to them |
+| Folders a tool gave up on | GNU du and pdu on macOS give up on a directory whose read is interrupted, and diskus on one that fails for a moment without saying why; each leaves that subtree out | Every folder a tool reports it could not read, and that the script’s walk could list, is measured afterwards; the tool may be short by what those folders hold, within the fdu readings around it |
+| Folders skipped without a name | dua reports only a count of failures | When the count exceeds the paths no tool can read, dua is run again, twice at most; if every run skipped folders, a short reading is marked “not verifiable” and never agrees, and a reading over fdu’s readings beyond fdu’s nearby movement fails |
+
+**fdu against itself.** On a tree that otherwise moved at most once, a stretch of fdu
+readings that leaves a value and returns to it, or readings at either end that differ
+from the value most readings share, fail on their own rows with their exact bytes: fdu
+disagreed with itself, or the tree changed and changed back, so rerun.
+fdu may be denied a folder, or find one gone mid-scan; any other error it details fails
+the run, and so do more counted-but-undetailed errors than there are paths no tool can
+read. It details its first 64 errors and counts the rest.
+fdu’s fast macOS reader declines on any failure and its portable reader reads the
+directory again, and a second failure would be reported.
+
+**Verify**:
+
+- [ ] The self-test agrees exactly for all 13 readings, with no tool missing
+- [ ] The script ends with “Every reading is explained”, or with every other reading
+  explained and a dua reading that could not be checked: each tool agrees exactly on a
+  quiet tree, one whose every fdu reading was the same; within the tree’s movement or
+  fdu’s nearby movement on a live one; or short by what the folders it gave up on hold
+- [ ] Every top-level directory’s allocated size agrees with GNU du’s, exactly on a
+  quiet tree and within fdu’s readings around it on a live one, and none is present on
+  only one side
+- [ ] fdu’s error count on `~/Library` equals GNU du’s denied count and the script’s
+  walk (its unlistable directories plus the files it could not stat), and fdu exits 2
+  (partial)
+- [ ] fdu’s `~/Library` total is plausible against the volume (`df -h ~`): a figure
+  larger than the disk means a sparse file was counted by its apparent size
+- [ ] The tables are recorded in a dated report under `docs/project/reports/`
+
+An `UNEXPLAINED` row is a finding: identify the files responsible (compare the top-level
+directories, then descend with `fdu --view tree --depth 1` and `du -d 1`), and either
+extend the model and the self-test with the new case or file a bead.
+
+* * *
+
+## Phase 8: Results
+
+### 8.1 Record the Table
 
 Copy `FDU_QA_OUT/results.md` into a dated file under `docs/project/reports/` (or replace
 the table in the current report).
@@ -434,7 +537,7 @@ make docs-format
 
 * * *
 
-## Phase 8: Cleanup
+## Phase 9: Cleanup
 
 The harness uses temp dirs for cache homes and the watch tree.
 They live under the system temp directory.
@@ -480,6 +583,7 @@ Before marking this test as **PASSED**, verify:
 - [ ] Cache-off vs cache-on first/second timings are in the dated report
 - [ ] Watch exited on SIGINT
 - [ ] The terminal progress phase passed, or was explicitly skipped with a reason
+- [ ] The peer-agreement phase shows no `UNEXPLAINED` row on any of its trees
 - [ ] Medium and large phases were either run under bounds or explicitly skipped
 - [ ] No critical panic, hang, or SIGKILL on the small tree
 - [ ] Product bugs were filed as beads

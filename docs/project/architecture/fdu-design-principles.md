@@ -598,12 +598,14 @@ One-shot human text has one intentional presentation-only suffix: a compact perf
 line after the report.
 It is transient execution telemetry, not query data, so it stays outside `Report` and
 the versioned JSON, JSONL, and YAML schemas.
-The line records regular files and apparent bytes successfully walked, how many
-`.gitignore` files were applied and refused (or that none was read), bytes actually
-returned by fresh content reads, content-analysis file and byte throughput,
-content-sidecar hits and the apparent bytes they represent, the metadata cache tier, and
-total report time. A cache-only answer reports zero walked files rather than pretending
-cached inventory was filesystem work.
+The line records regular files successfully walked and their bytes in the answer’s size
+metric (allocated unless `--size apparent`, since a sparse disk image walked apparent
+can read as more than the disk holds), how many `.gitignore` files were applied and
+refused (or that none was read), bytes actually returned by fresh content reads,
+content-analysis file and byte throughput, content-sidecar hits and the apparent bytes
+they represent, the metadata cache tier, and total report time.
+A cache-only answer reports zero walked files rather than pretending cached inventory
+was filesystem work.
 Watch has no final answer and therefore has no footer, which is why a text watch run
 draws a gray rule carrying the render instant above each repaint instead: with no footer
 and no framing, the last row of one repaint and the first row of the next were adjacent

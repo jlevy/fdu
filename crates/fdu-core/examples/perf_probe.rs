@@ -1061,11 +1061,12 @@ fn verify_progress(
     if snapshot.phase == fdu_core::ProgressPhase::Starting
         || snapshot.files != performance.walked_files
         || snapshot.bytes != performance.walked_bytes
+        || snapshot.allocated != performance.walked_allocated
     {
         return Err(ProbeError(format!(
             "the progress handle did not observe the walk: {snapshot:?} after a report that \
-             walked {} files and {} bytes",
-            performance.walked_files, performance.walked_bytes
+             walked {} files, {} bytes, and {} allocated bytes",
+            performance.walked_files, performance.walked_bytes, performance.walked_allocated
         )));
     }
     Ok(())
