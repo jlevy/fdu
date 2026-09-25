@@ -476,15 +476,15 @@ Every other difference is computed from the tree itself, in one walk:
 | Allocated or apparent | fdu, du, dust, dua, and diskus default to allocated; a sparse disk image, a cloud placeholder, or a compressed file makes the two differ | Compare like with like, never fdu’s default with a tool’s apparent figure |
 | A live tree | `~/Library` changes while it is measured | fdu runs just before each tool and once at the end; a tool must fall within its two fdu readings, or outside them by no more than fdu moved during or next to them |
 | Folders a tool gave up on | GNU du and pdu on macOS give up on a directory whose read is interrupted, and diskus on one that fails for a moment without saying why; each leaves that subtree out | Every folder a tool reports it could not read, and that the script’s walk could list, is measured afterwards; the tool may be short by what those folders hold, within the fdu readings around it |
-| Folders skipped without a name | dua reports only a count of failures | When the count exceeds the paths no tool can read, dua is run again, twice at most; if every run skipped folders, a short reading is marked “not verifiable” rather than agreeing, and an over-reading fails |
+| Folders skipped without a name | dua reports only a count of failures | When the count exceeds the paths no tool can read, dua is run again, twice at most; if every run skipped folders, a short reading is marked “not verifiable” and never agrees, and a reading over fdu’s readings beyond fdu’s nearby movement fails |
 
-**fdu against itself.** On a tree that otherwise did not move, a stretch of fdu readings
-that leaves a value and returns to it, or a change at one end of the run, fails on its
-own row with its exact bytes: fdu disagreed with itself, or the tree changed and changed
-back, so rerun.
-fdu may be denied a folder, or find one gone mid-scan; any other error it
-reports fails the run.
-It details its first 64 errors and counts the rest.
+**fdu against itself.** On a tree that otherwise moved at most once, a stretch of fdu
+readings that leaves a value and returns to it, or readings at either end that differ
+from the value most readings share, fail on their own rows with their exact bytes: fdu
+disagreed with itself, or the tree changed and changed back, so rerun.
+fdu may be denied a folder, or find one gone mid-scan; any other error it details fails
+the run, and so do more counted-but-undetailed errors than there are paths no tool can
+read. It details its first 64 errors and counts the rest.
 fdu’s fast macOS reader declines on any failure and its portable reader reads the
 directory again, and a second failure would be reported.
 

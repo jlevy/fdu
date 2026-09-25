@@ -474,11 +474,11 @@ def saved(fields: dict[str, object]) -> Reading:
 def fdu_series(values: list[int]) -> tuple[list[int], list[int]]:
     """fdu's readings with any it disagreed with itself on replaced, and their positions.
 
-    On a tree that otherwise did not move, a stretch of readings that leaves a value and
-    returns to it, or a change at one end of the run, is fdu disagreeing with itself: those
-    readings fail on their own rows, and the tools are judged against the rest. A tree that
-    moved is judged as it was read, since a temporary file can take its total away and
-    back again."""
+    On a tree that otherwise moved at most once, a stretch of readings that leaves a value
+    and returns to it, or readings at either end that differ from the value most readings
+    share, are fdu disagreeing with itself: they fail on their own rows, and the tools are
+    judged against the rest. A tree that moved more is judged as it was read, since a
+    temporary file can take its total away and back again."""
     corrected, bad = list(values), set()
     changed = True
     while changed:
@@ -493,17 +493,17 @@ def fdu_series(values: list[int]) -> tuple[list[int], list[int]]:
                         corrected[k] = corrected[i]
                 changed = True
                 break
-    if len(corrected) >= 3 and len(set(corrected)) == 2 and corrected[0] != corrected[-1]:
-        split = next(i for i, v in enumerate(corrected) if v != corrected[0])
-        if all(v == corrected[-1] for v in corrected[split:]):
-            head, tail = range(split), range(split, len(corrected))
-            shorter = tail if len(tail) < len(head) else head if len(head) < len(tail) else None
-            if shorter is not None:
-                keep = corrected[0] if shorter is tail else corrected[-1]
-                for k in shorter:
-                    bad.add(k)
-                    corrected[k] = keep
-    if len(set(corrected)) == 1:
+    # Each value's readings are now contiguous, so if one value holds most of them, every
+    # other reading lies at one end of the run or both: fdu disagreeing with itself there.
+    common, count = Counter(corrected).most_common(1)[0]
+    if len(corrected) >= 3 and count > len(corrected) - count:
+        for k, v in enumerate(corrected):
+            if v != common:
+                bad.add(k)
+                corrected[k] = common
+    # A tree that moved at most once is judged against the corrected readings, so an
+    # excursion found above still fails; one that moved more is judged as it was read.
+    if len(set(corrected)) <= 2:
         return corrected, sorted(bad)
     return list(values), []
 
@@ -537,6 +537,19 @@ def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int
         if count:
             failures += 1
             notes.append(f"- UNEXPLAINED: fdu reported {count:,} {kind} errors.")
+    # fdu details only its first errors; the rest are counted. More of them than the paths
+    # no tool can read would be failures it did not name, which may be interrupted reads.
+    no_tool = set(facts.get("unlisted_paths", [])) | set(facts.get("unstatted_paths", []))
+    for k, r in enumerate(r for r in fdu_readings if r.metric == "allocated"):
+        undetailed = r.errors.get("more, not detailed", 0)
+        extra = r.errors.get("denied", 0) + undetailed - len(no_tool)
+        if undetailed and "unlisted_paths" in facts and extra > 0:
+            failures += 1
+            notes.append(
+                f"- UNEXPLAINED: fdu reading {k + 1} reported {extra:,} more errors than the "
+                f"{len(no_tool):,} paths no tool can read, among the {undetailed:,} it did not "
+                "detail; they may be interrupted reads; rerun."
+            )
     quiet = {m: len(set(v)) == 1 for m, v in series.items()}
     steps = {m: [abs(b - a) for a, b in pairwise(v)] for m, v in series.items()}
     first = fdu_readings[0]
@@ -588,7 +601,8 @@ def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int
         delta = signed(reading.total - before) if reading.total is not None else "—"
         lines.append(
             f"| {reading.tool} | {reading.metric} | {total} | {delta} | {signed(expected)} | "
-            f"{made_of} | {verdict} | {describe(reading.errors)} | {reading.seconds:.1f} s |"
+            f"{made_of} | {verdict} | {describe(reading.errors)} | {reading.seconds:.1f} s"
+            f"{f' (run {reading.attempts} times)' if reading.attempts > 1 else ''} |"
         )
     if notes:
         lines += ["", *notes]
@@ -605,7 +619,7 @@ def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int
                 f"{', not all measurable' if reading.unmeasured else ''}: "
                 f"{places(reading.gave_up, str(record['root']), full_paths)}"
             )
-    failures += top_level(readings, series["allocated"], quiet["allocated"], steps, lines)
+    failures += top_level(readings, quiet["allocated"], steps, lines)
     return "\n".join(lines), failures, unverified
 
 
@@ -616,6 +630,13 @@ def verdict_for(reading: Reading, low: int, high: int, slack: int, unnamed: int 
     within = "exactly" if slack == 0 and low == high else "within the tree's movement"
     if low <= total <= high:
         return f"agrees {within}"
+    if unnamed and total < low:
+        # It skipped folders without naming them in every run, and skipping can only lose
+        # bytes: a short reading cannot be checked, and is not taken as agreeing.
+        return (
+            f"not verifiable: short after skipping {unnamed:,} folders it did not name, "
+            f"in each of {reading.attempts} runs"
+        )
     gone = 0 if reading.unmeasured else reading.skipped
     short = f"short by what it skipped: {len(reading.gave_up):,} directories holding {human(gone)}"
     if gone and low - gone <= total <= high - gone:
@@ -624,18 +645,11 @@ def verdict_for(reading: Reading, low: int, high: int, slack: int, unnamed: int 
         return f"agrees within fdu's nearby movement ({human(slack)})"
     if gone and slack and low - gone - slack <= total <= high - gone + slack:
         return f"{short}, within fdu's nearby movement ({human(slack)})"
-    if unnamed and total < low:
-        # Skipping can only lose bytes, so only a short reading can be put down to it.
-        return (
-            f"not verifiable: short after skipping {unnamed:,} folders it did not name, "
-            f"in each of {reading.attempts} runs"
-        )
     return "UNEXPLAINED"
 
 
 def top_level(
     readings: list[Reading],
-    allocated: list[int],
     quiet: bool,
     steps: dict[str, list[int]],
     lines: list[str],
