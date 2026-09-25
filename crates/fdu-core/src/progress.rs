@@ -13,8 +13,8 @@
 //! directory a retry rereads is counted each time it is read. The display should call
 //! these entries walked, not found.
 //!
-//! **What holds at completion.** When a walking route returns, `files` and `bytes` equal
-//! the walked totals its own report exposes, and `directories` equals the directories it
+//! **What holds at completion.** When a walking route returns, `files`, `bytes`, and
+//! `allocated` equal the walked totals its own report exposes, and `directories` equals the directories it
 //! read, except where a documented retry reread part of the tree, in which case the
 //! handle is larger by exactly the rereads. Content analysis leaves `analysis` at
 //! `Some((candidates, candidates))`.
@@ -129,6 +129,10 @@ pub struct ProgressSnapshot {
     pub files: u64,
     /// Apparent bytes of those files.
     pub bytes: u64,
+    /// Allocated bytes of those files. A display should show whichever of the two its
+    /// answer is measured in: a sparse disk image can be terabytes apparent and megabytes
+    /// allocated, so apparent bytes beside an allocated answer can exceed the disk.
+    pub allocated: u64,
     /// Content files analyzed so far and the candidates known when analysis began,
     /// or `None` until a route has begun content analysis.
     ///
@@ -151,6 +155,7 @@ struct WalkCells {
     directories: AtomicU64,
     files: AtomicU64,
     bytes: AtomicU64,
+    allocated: AtomicU64,
 }
 
 /// Written by the content-analysis result loop, on the caller's thread.
@@ -222,6 +227,7 @@ impl Progress {
             directories: cells.walk.directories.load(Ordering::Relaxed),
             files: cells.walk.files.load(Ordering::Relaxed),
             bytes: cells.walk.bytes.load(Ordering::Relaxed),
+            allocated: cells.walk.allocated.load(Ordering::Relaxed),
             analysis,
         }
     }
@@ -243,15 +249,17 @@ impl Progress {
         walk.directories.store(0, Ordering::Relaxed);
         walk.files.store(0, Ordering::Relaxed);
         walk.bytes.store(0, Ordering::Relaxed);
+        walk.allocated.store(0, Ordering::Relaxed);
         self.cells.phase.0.store(phase.code(), Ordering::Release);
     }
 
     /// Add one worker's share of the walk since it last added.
-    pub(crate) fn add_walked(&self, directories: u64, files: u64, bytes: u64) {
+    pub(crate) fn add_walked(&self, directories: u64, files: u64, bytes: u64, allocated: u64) {
         let walk = &self.cells.walk;
         walk.directories.fetch_add(directories, Ordering::Relaxed);
         walk.files.fetch_add(files, Ordering::Relaxed);
         walk.bytes.fetch_add(bytes, Ordering::Relaxed);
+        walk.allocated.fetch_add(allocated, Ordering::Relaxed);
     }
 
     /// Record the candidate total content analysis will work through.
@@ -269,12 +277,14 @@ impl Progress {
 
 impl fmt::Debug for Progress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ProgressSnapshot { phase, directories, files, bytes, analysis } = self.snapshot();
+        let ProgressSnapshot { phase, directories, files, bytes, allocated, analysis } =
+            self.snapshot();
         f.debug_struct("Progress")
             .field("phase", &phase)
             .field("directories", &directories)
             .field("files", &files)
             .field("bytes", &bytes)
+            .field("allocated", &allocated)
             .field("analysis", &analysis)
             .finish()
     }
@@ -293,6 +303,7 @@ mod tests {
                 directories: 0,
                 files: 0,
                 bytes: 0,
+                allocated: 0,
                 analysis: None,
             }
         );
@@ -303,8 +314,8 @@ mod tests {
         let polled = Progress::new();
         let handed_to_route = polled.clone();
         handed_to_route.enter(ProgressPhase::Scanning);
-        handed_to_route.add_walked(2, 5, 700);
-        handed_to_route.add_walked(1, 0, 0);
+        handed_to_route.add_walked(2, 5, 700, 8_192);
+        handed_to_route.add_walked(1, 0, 0, 0);
         assert_eq!(
             polled.snapshot(),
             ProgressSnapshot {
@@ -312,6 +323,7 @@ mod tests {
                 directories: 3,
                 files: 5,
                 bytes: 700,
+                allocated: 8_192,
                 analysis: None,
             }
         );
@@ -346,7 +358,7 @@ mod tests {
         progress.begin_analysis(2);
         assert_eq!(
             format!("{progress:?}"),
-            "Progress { phase: Analyzing, directories: 0, files: 0, bytes: 0, analysis: Some((0, 2)) }"
+            "Progress { phase: Analyzing, directories: 0, files: 0, bytes: 0, allocated: 0, analysis: Some((0, 2)) }"
         );
     }
 

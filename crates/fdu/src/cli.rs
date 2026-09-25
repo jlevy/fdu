@@ -24,7 +24,7 @@ use fdu_core::control::ControlCoverage;
 use fdu_core::query::parse_when;
 use fdu_core::query::{
     AxisNames, Delivery, IgnoredEntries, ReadSpec, ReportSource, Request, RequestError,
-    RequestSpec, ViewSpec, WatchDelivery, parse_cache_policy,
+    RequestSpec, SizeMetric, ViewSpec, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -707,7 +707,7 @@ impl Cli {
 
         // Resolved before any work starts, beside the color decision; the ticker takes
         // this rather than re-deriving it deeper in.
-        let progress_plan = self.progress_plan(terminal);
+        let progress_plan = self.progress_plan(terminal, &request);
 
         #[cfg(feature = "watch")]
         if self.watch {
@@ -809,7 +809,8 @@ impl Cli {
                     &performance_footer(
                         performance,
                         &report.ignore_rules,
-                        report_started.elapsed()
+                        report_started.elapsed(),
+                        request.query.selection.size,
                     ),
                     STYLE_PERFORMANCE,
                     color,
@@ -860,7 +861,7 @@ impl Cli {
     /// warnings on stderr, `--color`, then `NO_COLOR`, then `FORCE_COLOR`, so neither
     /// setting can turn the other on or off. The ticker starts from this plan before
     /// the engine is called and stops before the first byte reaches either stream.
-    fn progress_plan(&self, terminal: &TerminalFacts) -> ProgressPlan {
+    fn progress_plan(&self, terminal: &TerminalFacts, request: &Request) -> ProgressPlan {
         let walks = !(self.docs
             || self.skill
             || self.install_skill
@@ -877,6 +878,7 @@ impl Cli {
                 terminal.stderr_is_terminal,
             )
             .enabled(),
+            size: request.query.selection.size,
         }
     }
 
@@ -1403,7 +1405,14 @@ fn performance_footer(
     performance: PerformanceSummary,
     ignore_rules: &ControlCoverage,
     total: Duration,
+    size: SizeMetric,
 ) -> String {
+    // The walked bytes in the answer's own metric: a sparse disk image is terabytes
+    // apparent and megabytes allocated, and the line sits right under the answer.
+    let walked_bytes = match size {
+        SizeMetric::Apparent => performance.walked_bytes,
+        SizeMetric::Allocated => performance.walked_allocated,
+    };
     let fresh = match (performance.fresh_files, performance.analysis_ns) {
         (0, _) | (_, 0) => format!("{} fresh", human_count(performance.fresh_files)),
         (files, elapsed_ns) => {
@@ -1449,7 +1458,7 @@ fn performance_footer(
         "Performance: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {}",
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
-        report_format::human_bytes(performance.walked_bytes),
+        report_format::human_bytes(walked_bytes),
         report_format::human_bytes(performance.bytes_read),
         read_rate,
         performance_source(performance.source),
@@ -2073,14 +2082,25 @@ mod tests {
         let performance = PerformanceSummary {
             walked_files: 7,
             walked_bytes: 269,
+            walked_allocated: 28_672,
             ..PerformanceSummary::default()
         };
         let footer = |rules: &ControlCoverage| {
-            performance_footer(performance, rules, Duration::from_millis(3))
+            performance_footer(performance, rules, Duration::from_millis(3), SizeMetric::Apparent)
         };
         assert_eq!(
             footer(&ControlCoverage::NotObserved),
             "Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms"
+        );
+        // The walked bytes are the answer's metric, allocated unless `--size apparent`.
+        assert!(
+            performance_footer(
+                performance,
+                &ControlCoverage::NotObserved,
+                Duration::from_millis(3),
+                SizeMetric::Allocated,
+            )
+            .starts_with("Performance: walked 7 files / 28 KiB; ")
         );
         let observed = |applied, refusals: Vec<RefusedControl>| {
             ControlCoverage::Observed(ControlObservation {
@@ -2887,6 +2907,7 @@ mod tests {
             PerformanceSummary {
                 walked_files: 12_345,
                 walked_bytes: 2_048,
+                walked_allocated: 50_565_120,
                 fresh_files: 3_000,
                 bytes_read: 2_048,
                 analysis_ns: 2_000_000_000,
@@ -2896,6 +2917,7 @@ mod tests {
             },
             &ControlCoverage::NotObserved,
             Duration::from_millis(2_500),
+            SizeMetric::Apparent,
         );
 
         assert_eq!(
@@ -3344,7 +3366,7 @@ mod tests {
     #[test]
     fn the_progress_plan_draws_only_for_a_walking_run_at_an_interactive_terminal() {
         let interactive = interactive_terminal();
-        let plan = |args: &[&str], terminal: &TerminalFacts| parse(args).progress_plan(terminal);
+        let plan = progress_plan_of;
 
         assert!(plan(&["fdu", "."], &interactive).draw);
         assert!(plan(&["fdu", "--tree", "."], &interactive).draw);
@@ -3389,31 +3411,38 @@ mod tests {
     #[test]
     fn the_progress_plan_names_the_root_and_follows_the_color_rule() {
         let interactive = interactive_terminal();
-        assert_eq!(parse(&["fdu", "."]).progress_plan(&interactive).root, ".");
+        let plan = |args: &[&str]| progress_plan_of(args, &interactive);
+        assert_eq!(plan(&["fdu", "."]).root, ".");
         assert_eq!(
-            parse(&["fdu", "--cache-status"]).progress_plan(&interactive).root,
+            plan(&["fdu", "--cache-status"]).root,
             ".",
             "a lifecycle command without a path reports on the current directory"
         );
         let home = home_directory().expect("the test runner has a home directory");
         let under_home = home.join("wrk").join("github");
-        let plan =
-            parse(&["fdu", under_home.to_str().expect("Unicode")]).progress_plan(&interactive);
-        assert_eq!(plan.root, Path::new("~").join("wrk").join("github").display().to_string());
+        assert_eq!(
+            plan(&["fdu", under_home.to_str().expect("Unicode")]).root,
+            Path::new("~").join("wrk").join("github").display().to_string()
+        );
 
-        assert!(!parse(&["fdu", "--color", "never", "."]).progress_plan(&interactive).color);
-        assert!(parse(&["fdu", "--color", "always", "."]).progress_plan(&interactive).color);
+        assert!(!plan(&["fdu", "--color", "never", "."]).color);
+        assert!(plan(&["fdu", "--color", "always", "."]).color);
         assert!(
-            parse(&["fdu", "--color", "always", "."])
-                .progress_plan(&TerminalFacts::default())
-                .color,
+            progress_plan_of(&["fdu", "--color", "always", "."], &TerminalFacts::default()).color,
             "--color always colors a frame it will never draw; drawing is --progress's call"
         );
-        assert!(
-            !parse(&["fdu", "--color", "never", "--format", "json", "."])
-                .progress_plan(&interactive)
-                .draw
-        );
+        assert!(!plan(&["fdu", "--color", "never", "--format", "json", "."]).draw);
+
+        // The line's bytes are measured as the answer's are.
+        assert_eq!(plan(&["fdu", "."]).size, SizeMetric::Allocated);
+        assert_eq!(plan(&["fdu", "--size", "apparent", "."]).size, SizeMetric::Apparent);
+    }
+
+    /// The plan a command resolves, from the request it would run.
+    fn progress_plan_of(args: &[&str], terminal: &TerminalFacts) -> ProgressPlan {
+        let parsed = parse(args);
+        let request = parsed.resolved_request().expect("the request resolves");
+        parsed.progress_plan(terminal, &request)
     }
 
     /// An interactive run that finishes inside the first-frame delay writes nothing on

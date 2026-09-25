@@ -19,6 +19,7 @@ use std::time::Duration;
 use clap::ValueEnum;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 
+use fdu_core::query::SizeMetric;
 use fdu_core::report_format::{human_bytes, human_count};
 
 use crate::cli::paint;
@@ -154,6 +155,10 @@ pub(crate) struct ProgressPlan {
     pub root: String,
     /// Whether the frame is colored, under the rule that colors fdu's warnings.
     pub color: bool,
+    /// The size metric the answer is measured in, which the frame's bytes follow: a
+    /// sparse disk image counted apparent beside an allocated answer can show more
+    /// bytes than the disk holds.
+    pub size: SizeMetric,
 }
 
 /// The root as a frame shows it: under `~` when the home directory is a prefix,
@@ -231,7 +236,7 @@ pub(crate) struct FrameFacts {
     pub directories: u64,
     /// Files walked so far.
     pub files: u64,
-    /// Bytes walked so far.
+    /// Bytes walked so far, in the size metric the answer is measured in.
     pub bytes: u64,
     /// Content files analyzed, and the candidates known when analysis began.
     pub analysis: Option<(u64, u64)>,
@@ -245,6 +250,14 @@ const MIN_ROOT_COLUMNS: usize = 12;
 
 /// Below this width only the spinner and the phase word are drawn.
 const MIN_FULL_WIDTH: usize = 20;
+
+/// Columns a file or directory count is right-aligned in: seven figures with their
+/// separators, `9,999,999`. A larger count widens its column rather than being cut.
+const COUNT_COLUMNS: usize = 9;
+
+/// Columns a size is right-aligned in: the widest `human_bytes` gives below 1024 PiB,
+/// `1023 GiB`.
+const BYTES_COLUMNS: usize = 8;
 
 const STYLE_SPINNER: AnsiStyle = AnsiColor::Cyan.on_default();
 const STYLE_ROOT: AnsiStyle = AnsiColor::Cyan.on_default();
@@ -374,7 +387,12 @@ struct Slots {
     spinner: char,
     root: Option<RootSlot>,
     phase: &'static str,
-    padded: bool,
+    /// Whether the phase word is padded to the longest one, so the facts start in one
+    /// column whatever the phase.
+    phase_padded: bool,
+    /// Whether each count and size is right-aligned in a fixed column, so the line does
+    /// not shift as the counts grow a digit.
+    aligned: bool,
     facts: FactsSlot,
     elapsed: Option<String>,
 }
@@ -405,7 +423,8 @@ impl Slots {
             spinner: SPINNER[step % SPINNER.len()],
             root: Some(RootSlot::new(root)),
             phase: facts.phase.word(),
-            padded: true,
+            phase_padded: true,
+            aligned: true,
             facts: facts_slot,
             elapsed: Some(human_elapsed(elapsed)),
         }
@@ -417,7 +436,8 @@ impl Slots {
             spinner: SPINNER[step % SPINNER.len()],
             root: None,
             phase: phase.word(),
-            padded: false,
+            phase_padded: false,
+            aligned: false,
             facts: FactsSlot::None,
             elapsed: None,
         }
@@ -432,26 +452,32 @@ impl Slots {
             segments.push(("  ".to_string(), None));
         }
         segments.push((self.phase.to_string(), Some(STYLE_PHASE)));
-        if self.padded {
+        if self.phase_padded {
             let padding = Phase::PADDED_WIDTH.saturating_sub(self.phase.len());
             segments.push((" ".repeat(padding), None));
         }
+        let align = |text: &str, columns: usize| {
+            if self.aligned { format!("{text:>columns$}") } else { text.to_string() }
+        };
         match &self.facts {
             FactsSlot::None => {}
             FactsSlot::Walk { files, dirs, bytes } => {
-                segments.push((format!("  {files}"), None));
+                segments.push((format!("  {}", align(files, COUNT_COLUMNS)), None));
                 segments.push((" files".to_string(), Some(STYLE_DIM)));
                 if let Some(dirs) = dirs {
                     segments.push((" · ".to_string(), Some(STYLE_DIM)));
-                    segments.push((dirs.clone(), None));
+                    segments.push((align(dirs, COUNT_COLUMNS), None));
                     segments.push((" dirs".to_string(), Some(STYLE_DIM)));
                 }
                 if let Some(bytes) = bytes {
                     segments.push((" · ".to_string(), Some(STYLE_DIM)));
-                    segments.push((bytes.clone(), None));
+                    segments.push((align(bytes, BYTES_COLUMNS), None));
                 }
             }
             FactsSlot::Analysis { percent, done, total } => {
+                // The total is fixed for the whole phase, so a count aligned to its width
+                // holds the line still while it climbs.
+                let done = align(done, total.chars().count());
                 segments.push((format!("  {percent}  {done}"), None));
                 segments.push((" / ".to_string(), Some(STYLE_DIM)));
                 segments.push((total.clone(), None));
@@ -505,12 +531,15 @@ fn paint_segment(text: &str, style: Option<AnsiStyle>, color: bool) -> String {
 /// One frame, exactly as the Appearance section of the plan specifies it.
 ///
 /// Slots in order: spinner, root, phase word padded to `Revalidating`, the phase's
-/// facts, elapsed time. The frame is measured without its color codes, with each
-/// non-ASCII character of the root counted as two columns, and always leaves the last
-/// column empty; when it is wider than that it shrinks in order until it fits: the
-/// phase padding goes, the root is elided in the middle with `…` down to 12 columns,
-/// the `dirs` count goes, the bytes go, and below 20 columns only the spinner and the
-/// phase word are drawn. A frame never wraps.
+/// facts, elapsed time. Counts are right-aligned in columns wide enough for seven
+/// figures (`9,999,999`) and sizes in columns wide enough for `1023 GiB`, so the line
+/// holds still as they grow; an analyzed count is aligned to its total. The frame is
+/// measured without its color codes, with each non-ASCII character of the root counted
+/// as two columns, and always leaves the last column empty; when it is wider than that
+/// it shrinks in order until it fits: the phase padding goes, the root is elided in the
+/// middle with `…` down to 12 columns, the alignment goes, the `dirs` count goes, the
+/// bytes go, and below 20 columns only the spinner and the phase word are drawn. A
+/// frame never wraps.
 ///
 /// The string excludes the leading `\r\x1b[2K`; the ticker adds it, so a frame is the
 /// same bytes whether it is drawn or pinned by a test.
@@ -525,8 +554,10 @@ pub(crate) fn render_frame(
     let limit = width.saturating_sub(1);
     let mut slots = Slots::full(root, facts, elapsed, step);
 
+    // The phase padding goes first: it only lines the facts up across phases, which
+    // change a handful of times a run, while the counts change on every frame.
     if slots.columns() > limit {
-        slots.padded = false;
+        slots.phase_padded = false;
     }
     if slots.columns() > limit {
         let excess = slots.columns() - limit;
@@ -535,6 +566,9 @@ pub(crate) fn render_frame(
         if target < occupied {
             slots.root = Some(RootSlot::elided(root, target));
         }
+    }
+    if slots.columns() > limit {
+        slots.aligned = false;
     }
     if slots.columns() > limit {
         slots.facts.drop_dirs();
@@ -723,11 +757,11 @@ mod tests {
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),
-            "⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+            "⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 100, false),
-            "⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s"
+            "⠼ ~/wrk/github  Revalidating    412,309 files ·    12,041 dirs ·   38 GiB  1.4 s"
         );
         assert_eq!(
             render_frame(ROOT, &analyzing(12_044, 50_110), ms(7_900), 7, 100, false),
@@ -739,11 +773,11 @@ mod tests {
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Indexing), ms(3_800), 3, 100, false),
-            "⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s"
+            "⠸ ~/wrk/github  Indexing        412,309 files ·    12,041 dirs ·   38 GiB  3.8 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Summarizing), ms(8_600), 5, 100, false),
-            "⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s"
+            "⠴ ~/wrk/github  Summarizing     412,309 files ·    12,041 dirs ·   38 GiB  8.6 s"
         );
         // A cache-only run walked nothing: no zeros that read as an empty tree.
         let unwalked =
@@ -776,15 +810,15 @@ mod tests {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, true),
             format!(
-                "{CYAN}⠼{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Scanning{RESET}      412,309\
-                 {DIM} files · {RESET}12,041{DIM} dirs · {RESET}38 GiB  {DIM}3.1 s{RESET}"
+                "{CYAN}⠼{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Scanning{RESET}        412,309\
+                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}  38 GiB  {DIM}3.1 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 100, true),
             format!(
-                "{CYAN}⠼{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Revalidating{RESET}  412,309\
-                 {DIM} files · {RESET}12,041{DIM} dirs · {RESET}38 GiB  {DIM}1.4 s{RESET}"
+                "{CYAN}⠼{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Revalidating{RESET}    412,309\
+                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}  38 GiB  {DIM}1.4 s{RESET}"
             )
         );
         assert_eq!(
@@ -803,7 +837,7 @@ mod tests {
         );
     }
 
-    /// The full Scanning frame over this root is 105 columns; each width below takes
+    /// The full Scanning frame over this root is 112 columns; each width below takes
     /// exactly one more step of the shrink order.
     #[test]
     fn a_frame_shrinks_in_the_specified_order_until_it_fits() {
@@ -811,36 +845,81 @@ mod tests {
         let facts = walk(Phase::Scanning);
         let frame = |width| render_frame(root, &facts, ms(3_100), 4, width, false);
 
-        let full = "⠼ /Volumes/archive/projects/example/repository  Scanning      \
-                    412,309 files · 12,041 dirs · 38 GiB  3.1 s";
-        assert_eq!(full.chars().count(), 105);
-        assert_eq!(frame(106), full, "fits with the last column empty");
-        // 1. The phase padding goes.
-        assert_eq!(
-            frame(105),
-            "⠼ /Volumes/archive/projects/example/repository  Scanning  \
-             412,309 files · 12,041 dirs · 38 GiB  3.1 s"
-        );
+        let full = "⠼ /Volumes/archive/projects/example/repository  Scanning        \
+                    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s";
+        assert_eq!(full.chars().count(), 112);
+        assert_eq!(frame(113), full, "fits with the last column empty");
+        // 1. The phase padding goes; the counts keep their columns.
+        let unpadded = "⠼ /Volumes/archive/projects/example/repository  Scanning    \
+                        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s";
+        assert_eq!(frame(112), unpadded);
+        assert_eq!(frame(109), unpadded);
         // 2. The root is elided in the middle, by exactly the excess...
         assert_eq!(
-            frame(100),
-            "⠼ /Volumes/archive/proj…s/example/repository  Scanning  \
-             412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+            frame(103),
+            "⠼ /Volumes/archive/pr…example/repository  Scanning    \
+             412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
         );
         // ...and no further than 12 columns.
+        assert_eq!(
+            frame(77),
+            "⠼ /Volum…itory  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
+        );
+        // 3. The alignment goes.
+        assert_eq!(
+            frame(76),
+            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+        );
         assert_eq!(
             frame(70),
             "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
         );
-        // 3. The dirs count goes.
+        // 4. The dirs count goes.
         assert_eq!(frame(69), "⠼ /Volum…itory  Scanning  412,309 files · 38 GiB  3.1 s");
         assert_eq!(frame(56), "⠼ /Volum…itory  Scanning  412,309 files · 38 GiB  3.1 s");
-        // 4. The bytes go.
+        // 5. The bytes go.
         assert_eq!(frame(55), "⠼ /Volum…itory  Scanning  412,309 files  3.1 s");
         assert_eq!(frame(47), "⠼ /Volum…itory  Scanning  412,309 files  3.1 s");
-        // 5. Nothing else can give way, so only the spinner and the phase word remain.
+        // 6. Nothing else can give way, so only the spinner and the phase word remain.
         assert_eq!(frame(46), "⠼ Scanning");
         assert_eq!(frame(20), "⠼ Scanning");
+    }
+
+    /// Counts and sizes hold their columns as they grow, so nothing after them moves:
+    /// the frame is one width from the first file to seven figures, and from bytes to
+    /// `1023 GiB`. Past that a column widens rather than cuts a number.
+    #[test]
+    fn counts_and_sizes_are_right_aligned_in_fixed_columns() {
+        let frame = |files, directories, bytes| {
+            let facts = FrameFacts { directories, files, bytes, ..walk(Phase::Scanning) };
+            render_frame(".", &facts, ms(3_100), 4, 200, false)
+        };
+        assert_eq!(
+            frame(7, 1, 512),
+            "⠼ .  Scanning              7 files ·         1 dirs ·    512 B  3.1 s"
+        );
+        assert_eq!(
+            frame(672_132, 111_897, 8_796_093_022_208),
+            "⠼ .  Scanning        672,132 files ·   111,897 dirs ·  8.0 TiB  3.1 s"
+        );
+        assert_eq!(
+            frame(9_999_999, 9_999_999, 1_098_437_885_952),
+            "⠼ .  Scanning      9,999,999 files · 9,999,999 dirs · 1023 GiB  3.1 s"
+        );
+        let widths: Vec<usize> = [(7, 1, 512), (672_132, 111_897, 41_070_624_768)]
+            .into_iter()
+            .map(|(files, dirs, bytes)| frame(files, dirs, bytes).chars().count())
+            .collect();
+        assert_eq!(widths, [69, 69]);
+        assert_eq!(
+            frame(12_345_678, 1, 1),
+            "⠼ .  Scanning      12,345,678 files ·         1 dirs ·      1 B  3.1 s"
+        );
+        // An analyzed count is aligned to its total, which is fixed for the phase.
+        assert_eq!(
+            render_frame(".", &analyzing(3_508, 50_110), ms(3_100), 4, 200, false),
+            "⠼ .  Analyzing       7%   3,508 / 50,110 files  3.1 s"
+        );
     }
 
     #[test]

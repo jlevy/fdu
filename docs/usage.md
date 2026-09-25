@@ -296,9 +296,14 @@ A run that takes longer than half a second shows one progress line on stderr whi
 works, and erases it before anything else is written:
 
 ```text
-⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
+⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ```
+
+Counts are right-aligned in columns wide enough for seven figures and sizes in columns
+wide enough for `1023 GiB`, so the line holds still as they grow.
+Its bytes are measured as the answer’s are, allocated unless `--size apparent`: a sparse
+disk image can be terabytes apparent and megabytes allocated.
 
 It is drawn only for a person at an interactive terminal: stderr must be a terminal,
 `TERM` must be set and not `dumb` (Windows consoles set no `TERM`, so there an unset or

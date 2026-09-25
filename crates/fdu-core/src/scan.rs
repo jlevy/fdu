@@ -456,6 +456,9 @@ pub struct ScanReport {
     pub files_walked: u64,
     /// Apparent bytes represented by the regular files whose metadata was observed.
     pub bytes_walked: u64,
+    /// Allocated bytes of those files: what the default size metric counts, and what a
+    /// sparse disk image or a clone makes far smaller than their apparent bytes.
+    pub allocated_walked: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
     /// Where the walk's time went, summed across workers.
@@ -474,6 +477,7 @@ impl ScanReport {
         self.entries += other.entries;
         self.files_walked += other.files_walked;
         self.bytes_walked += other.bytes_walked;
+        self.allocated_walked += other.allocated_walked;
         self.errors.extend(other.errors);
         self.attribution.absorb(other.attribution);
     }
@@ -484,6 +488,7 @@ impl ScanReport {
         if kind == EntryKind::File {
             self.files_walked += 1;
             self.bytes_walked += attrs.size;
+            self.allocated_walked += attrs.allocated;
         }
     }
 }
@@ -499,11 +504,12 @@ struct ProgressTally<'a> {
     directories: u64,
     files: u64,
     bytes: u64,
+    allocated: u64,
 }
 
 impl<'a> ProgressTally<'a> {
     const fn new(progress: Option<&'a crate::Progress>) -> Self {
-        Self { progress, directories: 0, files: 0, bytes: 0 }
+        Self { progress, directories: 0, files: 0, bytes: 0, allocated: 0 }
     }
 
     /// Add what `report` has counted since the last call.
@@ -515,11 +521,13 @@ impl<'a> ProgressTally<'a> {
         let directories = report.dirs_read - self.directories;
         let files = report.files_walked - self.files;
         let bytes = report.bytes_walked - self.bytes;
-        if directories != 0 || files != 0 || bytes != 0 {
-            progress.add_walked(directories, files, bytes);
+        let allocated = report.allocated_walked - self.allocated;
+        if directories != 0 || files != 0 || bytes != 0 || allocated != 0 {
+            progress.add_walked(directories, files, bytes, allocated);
             self.directories = report.dirs_read;
             self.files = report.files_walked;
             self.bytes = report.bytes_walked;
+            self.allocated = report.allocated_walked;
         }
     }
 
@@ -530,6 +538,7 @@ impl<'a> ProgressTally<'a> {
         self.directories = report.dirs_read;
         self.files = report.files_walked;
         self.bytes = report.bytes_walked;
+        self.allocated = report.allocated_walked;
     }
 }
 
@@ -5485,6 +5494,7 @@ fn reconcile_wave_worker(
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
                             result.scan.bytes_walked += attrs.size;
+                            result.scan.allocated_walked += attrs.allocated;
                         }
                         if baseline.state == (PathState::Present { kind, attrs }) {
                             result.unchanged += 1;
@@ -5890,6 +5900,7 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.entries += addition.scan.entries;
     total.scan.files_walked += addition.scan.files_walked;
     total.scan.bytes_walked += addition.scan.bytes_walked;
+    total.scan.allocated_walked += addition.scan.allocated_walked;
     total.scan.errors.extend(addition.scan.errors);
     total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);
