@@ -426,7 +426,7 @@ already trust?
 Not always byte for byte, because tools count some things differently, but
 every difference must have a measured cause.
 It is written for macOS and APFS, where directories and symbolic links occupy no blocks;
-on another filesystem the directory and link terms need the self-test run there first.
+on another filesystem, run the self-test there first.
 
 **Subjects**, at least these four: this repository (a `.gitignore`, build output,
 symbolic links), `~/.rustup` or another quiet mid-size tree, `/Applications` (bundles,
@@ -437,8 +437,8 @@ Allow about half an hour; on a loaded machine, an hour.
 
 **Tools**: GNU du is required, as the reference (`gdu` from coreutils on macOS); the
 script refuses to run without it.
-dust, pdu, dua, diskus, and the system du run when installed.
-dumac prints only rounded sizes, so it is not compared.
+dust, pdu, dua, diskus, and the system du run when installed, and the self-test fails if
+any is missing. dumac prints only rounded sizes, so it is not compared.
 
 ```bash
 python3 scripts/qa_peer_agreement.py --self-test
@@ -447,13 +447,19 @@ python3 scripts/qa_peer_agreement.py . ~/.rustup /Applications ~/Library \
 ```
 
 The self-test builds a small tree with every case below (hard links within and across
-directories, symbolic links to a file, a directory, and nowhere, an unreadable folder, a
-sparse file, a name with spaces) and requires every tool to agree with its counting
-model exactly; run it first, and after upgrading any peer tool.
-The script exits non-zero if any reading is `UNEXPLAINED` or missing.
-The `--json` file holds absolute paths, and the tables name `~/Library` application
-folders; keep the first out of the repository and review the second before publishing.
+directories; symbolic links to a file, a directory, and nowhere, directly inside the
+root and deeper; an unreadable folder; a sparse file; a name with spaces) and requires
+all 13 tool readings to agree with their counting models exactly.
+Run it first, and after upgrading any peer tool.
+On APFS it can test the directory and link terms only in apparent size, since they
+occupy no blocks. The script exits non-zero if any reading is `UNEXPLAINED` or missing.
 `--rejudge FILE` judges saved readings again without measuring.
+
+**Privacy.** The `--json` file holds absolute paths, and directory names can identify
+people: a messaging app’s folders carry phone numbers and group identifiers.
+Keep the file out of the repository.
+The tables name only the first two path components of a folder a tool gave up on, unless
+`--full-paths` asks for more; review a table before publishing it.
 
 **How the tools count.** fdu counts regular files once per path, and nothing else.
 GNU du with `--count-links` counts the same way apart from links’ and directories’ own
@@ -466,19 +472,21 @@ Every other difference is computed from the tree itself, in one walk:
 | Symbolic links | du, dust, pdu, and diskus count a link’s own size, which is its target text; dua does too, except for links directly inside the root, which it takes as inputs | Apparent size higher by the links’ total; allocated unchanged on APFS |
 | Directory sizes | dust `-s` and pdu’s apparent size add every directory’s own size; dua adds every directory’s but the root’s; du and diskus add none to apparent size | Apparent size higher by the directories’ total; allocated unchanged on APFS |
 | Allocated or apparent | fdu, du, dust, dua, and diskus default to allocated; a sparse disk image, a cloud placeholder, or a compressed file makes the two differ | Compare like with like, never fdu’s default with a tool’s apparent figure |
-| A live tree | `~/Library` changes while it is measured | fdu runs just before each tool and once at the end; a tool must fall within its two fdu readings, or outside them by no more than the largest change fdu saw between consecutive readings |
-| Interrupted reads | GNU du and pdu on macOS give up on a directory whose read is interrupted, and leave its subtree out | Short by no more than what those directories hold, measured afterwards, and the table lists them; fdu’s fast macOS reader declines on any failure and its portable reader reads the directory again, and a second failure would be reported |
+| A live tree | `~/Library` changes while it is measured | fdu runs just before each tool and once at the end; a tool must fall within its two fdu readings, or outside them by no more than fdu moved just before or just after them. A single fdu reading that disagrees with all the others fails on its own row |
+| Folders a tool gave up on | GNU du and pdu on macOS give up on a directory whose read is interrupted, and diskus on one that fails for a moment without saying why; each leaves that subtree out | Every folder a tool reports it could not read, and that the script’s walk could list, is measured afterwards; the tool may be short by exactly what those folders hold. dua reports only a count; when it reports more failures than there are unreadable paths, it skipped folders it did not name, and may be short by no more than what the other tools’ skipped folders hold. fdu’s fast macOS reader declines on any failure and its portable reader reads the directory again, and a second failure would be reported |
 
 **Verify**:
 
-- [ ] The self-test agrees exactly for every tool
-- [ ] Every reading of every tree agrees, and no row says `UNEXPLAINED` or `no reading`:
-  exactly on a quiet tree, one whose every fdu reading was the same; within the tree’s
-  movement or its observed churn on a live one; or short by the directories it lists
-- [ ] On a quiet tree, every top-level directory’s allocated size equals GNU du’s
-  exactly, and none is present on only one side
-- [ ] fdu’s error count on `~/Library` matches GNU du’s (fdu details its first 64 errors
-  and counts the rest), and fdu exits 2 (partial)
+- [ ] The self-test agrees exactly for all 13 readings, with no tool missing
+- [ ] The script prints “Every reading is explained”: each tool agrees exactly on a
+  quiet tree, one whose every fdu reading was the same; within the tree’s movement or
+  fdu’s nearby movement on a live one; or short by exactly the folders it gave up on
+- [ ] Every top-level directory’s allocated size agrees with GNU du’s, exactly on a
+  quiet tree and within fdu’s readings around it on a live one, and none is present on
+  only one side
+- [ ] fdu’s error count on `~/Library` equals GNU du’s denied count and the script’s
+  walk (its unlistable directories plus the files it could not stat), and fdu exits 2
+  (partial); fdu details its first 64 errors and counts the rest
 - [ ] fdu’s `~/Library` total is plausible against the volume (`df -h ~`): a figure
   larger than the disk means a sparse file was counted by its apparent size
 - [ ] The tables are recorded in a dated report under `docs/project/reports/`

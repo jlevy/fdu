@@ -280,7 +280,8 @@ another walk. dumac’s 95% interval was +5.8% to +13.5%.
 
 The answers agree, too.
 On quiet trees, fdu’s allocated totals equal GNU du `--count-links` to the byte; on
-`~/Library`, which changes while it is measured, every tool agrees within that movement.
+`~/Library`, which changes while it is measured, every tool lands within that movement,
+or short by exactly the folders it reported giving up on.
 The other differences have measured causes: fdu counts a hard-linked file once per path,
 and counts neither a symbolic link’s own size nor a directory’s.
 [The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
