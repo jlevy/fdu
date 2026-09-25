@@ -421,7 +421,7 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
+PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
