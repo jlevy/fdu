@@ -222,6 +222,9 @@ pub struct PerformanceSummary {
     pub walked_files: u64,
     /// Apparent bytes represented by those walked files.
     pub walked_bytes: u64,
+    /// Allocated bytes of those walked files, the figure to show beside an answer
+    /// measured in allocated bytes.
+    pub walked_allocated: u64,
     /// Fresh content-analysis candidates processed.
     pub fresh_files: u64,
     /// Bytes actually returned by fresh content reads.
@@ -241,6 +244,7 @@ impl Default for PerformanceSummary {
         Self {
             walked_files: 0,
             walked_bytes: 0,
+            walked_allocated: 0,
             fresh_files: 0,
             bytes_read: 0,
             analysis_ns: 0,
@@ -257,6 +261,7 @@ impl PerformanceSummary {
         Self {
             walked_files: report.scan.files_walked,
             walked_bytes: report.scan.bytes_walked,
+            walked_allocated: report.scan.allocated_walked,
             fresh_files: analysis.candidates,
             bytes_read: analysis.bytes_read,
             analysis_ns: analysis.elapsed_ns,
@@ -520,6 +525,7 @@ fn prepare_report_internal(
             let performance = PerformanceSummary {
                 walked_files: scan.files_walked,
                 walked_bytes: scan.bytes_walked,
+                walked_allocated: scan.allocated_walked,
                 source: ReportSource::ColdScan,
                 ..PerformanceSummary::default()
             };
@@ -1683,10 +1689,12 @@ mod tests {
     }
 
     /// The invariant the plan makes testable: when a route completes, the handle's
-    /// files and bytes equal the walked totals the route's own performance summary
-    /// reports, and its directories equal the directories the route read. Every
-    /// one-shot route: the cold full index, the transient summary fold, a cold run with
-    /// content analysis, and a warm revalidation of the snapshot that run left.
+    /// files, bytes, and allocated bytes equal the walked totals the route's own
+    /// performance summary reports, and its directories equal the directories the route
+    /// read. The allocated figure is also the answer's own total, which is what lets a
+    /// display put it beside the answer. Every one-shot route: the cold full index, the
+    /// transient summary fold, a cold run with content analysis, and a warm revalidation
+    /// of the snapshot that run left.
     #[test]
     fn progress_ends_at_the_walked_totals_of_every_one_shot_route() {
         use crate::ProgressPhase::{Scanning, Summarizing};
@@ -1702,6 +1710,8 @@ mod tests {
         assert_eq!(performance.source, ReportSource::ColdScan);
         assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold full index");
+        assert_eq!(snapshot.allocated, performance.walked_allocated);
+        assert!(snapshot.allocated > 0, "files with content occupy blocks");
         assert_eq!(snapshot.directories, 7, "the root and its six children");
         assert_eq!(
             (snapshot.phase, snapshot.analysis),
@@ -1722,6 +1732,8 @@ mod tests {
         let snapshot = progress.snapshot();
         assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "summary fold");
+        assert_eq!(snapshot.allocated, performance.walked_allocated);
+        assert_eq!(snapshot.allocated, row.allocated, "the progress figure is the answer's");
         assert_eq!(snapshot.directories, row.dirs + 1, "the row's directories and the root");
         assert_eq!((snapshot.phase, snapshot.analysis), (Scanning, None));
 
@@ -1741,6 +1753,7 @@ mod tests {
         pending.join().expect("save");
         assert_eq!(performance.source, ReportSource::ColdScan);
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "cold with analysis");
+        assert_eq!(snapshot.allocated, performance.walked_allocated);
         assert_eq!(snapshot.directories, 7);
         assert_eq!(performance.fresh_files, files, "every file is a lines candidate");
         assert_eq!(snapshot.analysis, Some((files, files)));
@@ -1758,6 +1771,7 @@ mod tests {
         assert_eq!(performance.source, ReportSource::WarmRevalidate);
         assert_eq!((performance.walked_files, performance.walked_bytes), (files, bytes));
         assert_eq!((snapshot.files, snapshot.bytes), (files, bytes), "warm revalidation");
+        assert_eq!(snapshot.allocated, performance.walked_allocated);
         assert_eq!(snapshot.directories, 7);
         assert_eq!(performance.fresh_files, 0, "the sidecar answered every candidate");
         assert_eq!((snapshot.phase, snapshot.analysis), (Summarizing, Some((0, 0))));

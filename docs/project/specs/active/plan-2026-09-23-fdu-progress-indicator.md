@@ -121,6 +121,8 @@ pub struct ProgressSnapshot {
     pub directories: u64,
     pub files: u64,
     pub bytes: u64,
+    /// Allocated bytes of the same files, for an answer measured in allocated bytes.
+    pub allocated: u64,
     /// Content files analyzed and the candidates known when analysis began.
     pub analysis: Option<(u64, u64)>,
 }
@@ -161,15 +163,16 @@ Counts may include entries a retry rereads; the display calls them walked, not f
 add the deltas to shared counters once per batch they already hand to the sink (per
 directory on the revalidation and reconcile walks, which have no batch for an unchanged
 tree), never per entry.
-The three walk counters share one cache line, so a worker’s addition moves one line
-rather than three; the analysis cells and the phase cell each have a line of their own,
+The four walk counters share one cache line, so a worker’s addition moves one line
+rather than four; the analysis cells and the phase cell each have a line of their own,
 so a poller reading the walk never invalidates the line the analysis loop writes.
 Without a handle, the cost is one `Option` check per batch.
 Content analysis updates its counter in the result loop that already runs on the caller
 thread, where the candidate total is known before the first file.
 
-**Invariant:** when a route completes, the handle’s files and bytes equal the report’s
-own walked totals. This makes the counters testable exactly, not merely plausibly.
+**Invariant:** when a route completes, the handle’s files, bytes, and allocated bytes
+equal the report’s own walked totals.
+This makes the counters testable exactly, not merely plausibly.
 One case is exempt and pinned by its own test: a parallel reconcile wave that overflows
 its deferred-operation bound is discarded and walked again serially, and progress counts
 the discarded reads too.
@@ -272,12 +275,12 @@ The frame for each phase, shown here in plain text:
 
 ```text
 ⠹ ~/wrk/github  Loading       0.6 s
-⠼ ~/wrk/github  Scanning      412,309 files · 12,041 dirs · 38 GiB  3.1 s
-⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s
-⠸ ~/wrk/github  Indexing      412,309 files · 12,041 dirs · 38 GiB  3.8 s
+⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s
+⠼ ~/wrk/github  Revalidating    412,309 files ·    12,041 dirs ·   38 GiB  1.4 s
+⠸ ~/wrk/github  Indexing        412,309 files ·    12,041 dirs ·   38 GiB  3.8 s
 ⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
-⠴ ~/wrk/github  Summarizing   412,309 files · 12,041 dirs · 38 GiB  8.6 s
+⠴ ~/wrk/github  Summarizing     412,309 files ·    12,041 dirs ·   38 GiB  8.6 s
 ⠴ ~/wrk/github  Summarizing   1.2 s
 ```
 
@@ -300,7 +303,15 @@ already a dependency:
 **Numbers** use the report’s own formatters: counts with thousands separators
 (`human_count`), sizes in binary units (`human_bytes`), which shows a decimal only below
 ten of a unit, so `3.2 GiB` but `38 GiB`, exactly as the report’s rows do.
-Elapsed time has one decimal below a minute (`3.1 s`), then `1 m 04 s`, then `1 h 02 m`.
+They are right-aligned in fixed columns so the line holds still as they grow: a count in
+nine columns (`9,999,999`, seven figures), a size in eight (`1023 GiB`), and an analyzed
+count in the width of its total, which is fixed for the phase.
+A larger number widens its column rather than being cut.
+The bytes are measured as the answer’s are, allocated unless `--size apparent`, from the
+snapshot’s `bytes` or `allocated`: a sparse disk image can be terabytes apparent and
+megabytes allocated, so apparent bytes beside an allocated answer can read as more than
+the disk holds. Elapsed time has one decimal below a minute (`3.1 s`), then `1 m 04 s`,
+then `1 h 02 m`.
 
 **Percentage.** A whole percentage, right-aligned in four columns (` 7%`, ` 24%`,
 `100%`), shown only during content analysis, the one phase with an exact denominator.
@@ -321,11 +332,23 @@ The frame is measured without its color codes, counts each non-ASCII character o
 root path as two columns, and leaves the last column empty.
 When it is wider than that, it shrinks in this order until it fits:
 
-1. The phase word’s padding is dropped.
+1. The phase word’s padding is dropped: it lines the facts up across phases, which
+   change a few times a run, while the counts change every frame.
 2. The root path is elided in the middle with `…`, down to 12 columns.
-3. The `dirs` count is dropped.
-4. The bytes are dropped.
-5. Below 20 columns, only the spinner and the phase word are drawn, without the root.
+3. The counts’ alignment is dropped.
+   The root keeps the length it was elided to: fitted to the room this frees, it would
+   be elided again each time a count gained a digit, and the start of the line would
+   move.
+4. The `dirs` count is dropped.
+5. The bytes are dropped.
+6. Below 20 columns, only the spinner and the phase word are drawn, without the root.
+
+At 80 columns, with counts under ten million, `Scanning` keeps its counts aligned
+whatever the root: it shows up to 14 columns of the root in full for its first minute
+(15 for the first ten seconds, 12 after the first minute) and elides a longer one.
+`Revalidating` has no padding to give up, so a warm run over a root of 12 columns or
+more drops the alignment instead and keeps every fact; `Summarizing` does the same after
+ten seconds.
 
 **End of run.** The line is erased before the report or any message is written.
 No summary replaces it, because the report’s own performance line states the totals.

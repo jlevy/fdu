@@ -158,7 +158,12 @@ mod tests {
             width: || 100,
             interrupt: |_, _| {},
         };
-        let plan = ProgressPlan { draw: true, root: "~".to_string(), color: false };
+        let plan = ProgressPlan {
+            draw: true,
+            root: "~".to_string(),
+            color: false,
+            size: fdu_core::query::SizeMetric::Allocated,
+        };
         let mut ticker = Ticker::start(plan, scanned(root.path()), Instant::now(), io);
         let deadline = Instant::now() + Duration::from_secs(10);
         while out.contents().is_empty() {

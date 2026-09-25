@@ -73,10 +73,11 @@ The GitHub release text is
     or `tree` format ends with a gray performance line.
   - A run at an interactive terminal that takes longer than half a second shows one
     progress line on stderr: the root, the phase (`Loading`, `Scanning`, `Revalidating`,
-    `Indexing`, `Analyzing`, `Saving`, `Summarizing`), the counts so far, and elapsed
-    time, erased before any output.
-    It is never drawn when stderr is not a terminal, `TERM` is `dumb` (or unset, except
-    on Windows), or `CI` is set to a non-empty value.
+    `Indexing`, `Analyzing`, `Saving`, `Summarizing`), the counts so far in
+    right-aligned columns, and elapsed time, erased before any output.
+    Its bytes, like the performance line’s, are measured as the answer’s are: allocated
+    unless `--size apparent`. It is never drawn when stderr is not a terminal, `TERM` is
+    `dumb` (or unset, except on Windows), or `CI` is set to a non-empty value.
     `--progress=auto`, the default, also skips JSON, JSON Lines, and YAML;
     `--progress=always` draws it for those too, and `--progress=never` turns it off.
     Ctrl-C while it is drawn erases it, prints `fdu: interrupted`, and ends the run as

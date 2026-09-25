@@ -1137,7 +1137,7 @@ mod tests {
         let (watcher, _sender) =
             Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
         let progress = crate::Progress::new();
-        progress.add_walked(100, 100, 100);
+        progress.add_walked(100, 100, 100, 100);
         progress.enter(crate::ProgressPhase::Saving);
 
         Session::finish_initial_handoff(
@@ -1157,6 +1157,7 @@ mod tests {
             (3, 6, bytes),
             "one walk of the root and its two directories, the first pass not added in"
         );
+        assert_eq!(snapshot.allocated, report.allocated_walked, "allocated restarts with them");
     }
 
     /// A record says what the index can be asked, and nothing more.

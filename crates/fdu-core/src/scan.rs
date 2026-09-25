@@ -456,6 +456,9 @@ pub struct ScanReport {
     pub files_walked: u64,
     /// Apparent bytes represented by the regular files whose metadata was observed.
     pub bytes_walked: u64,
+    /// Allocated bytes of those files: what the default size metric counts, and what a
+    /// sparse disk image or a clone makes far smaller than their apparent bytes.
+    pub allocated_walked: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
     /// Where the walk's time went, summed across workers.
@@ -474,6 +477,7 @@ impl ScanReport {
         self.entries += other.entries;
         self.files_walked += other.files_walked;
         self.bytes_walked += other.bytes_walked;
+        self.allocated_walked += other.allocated_walked;
         self.errors.extend(other.errors);
         self.attribution.absorb(other.attribution);
     }
@@ -484,6 +488,7 @@ impl ScanReport {
         if kind == EntryKind::File {
             self.files_walked += 1;
             self.bytes_walked += attrs.size;
+            self.allocated_walked += attrs.allocated;
         }
     }
 }
@@ -499,11 +504,12 @@ struct ProgressTally<'a> {
     directories: u64,
     files: u64,
     bytes: u64,
+    allocated: u64,
 }
 
 impl<'a> ProgressTally<'a> {
     const fn new(progress: Option<&'a crate::Progress>) -> Self {
-        Self { progress, directories: 0, files: 0, bytes: 0 }
+        Self { progress, directories: 0, files: 0, bytes: 0, allocated: 0 }
     }
 
     /// Add what `report` has counted since the last call.
@@ -515,11 +521,13 @@ impl<'a> ProgressTally<'a> {
         let directories = report.dirs_read - self.directories;
         let files = report.files_walked - self.files;
         let bytes = report.bytes_walked - self.bytes;
-        if directories != 0 || files != 0 || bytes != 0 {
-            progress.add_walked(directories, files, bytes);
+        let allocated = report.allocated_walked - self.allocated;
+        if directories != 0 || files != 0 || bytes != 0 || allocated != 0 {
+            progress.add_walked(directories, files, bytes, allocated);
             self.directories = report.dirs_read;
             self.files = report.files_walked;
             self.bytes = report.bytes_walked;
+            self.allocated = report.allocated_walked;
         }
     }
 
@@ -530,6 +538,7 @@ impl<'a> ProgressTally<'a> {
         self.directories = report.dirs_read;
         self.files = report.files_walked;
         self.bytes = report.bytes_walked;
+        self.allocated = report.allocated_walked;
     }
 }
 
@@ -5485,6 +5494,7 @@ fn reconcile_wave_worker(
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
                             result.scan.bytes_walked += attrs.size;
+                            result.scan.allocated_walked += attrs.allocated;
                         }
                         if baseline.state == (PathState::Present { kind, attrs }) {
                             result.unchanged += 1;
@@ -5890,6 +5900,7 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.entries += addition.scan.entries;
     total.scan.files_walked += addition.scan.files_walked;
     total.scan.bytes_walked += addition.scan.bytes_walked;
+    total.scan.allocated_walked += addition.scan.allocated_walked;
     total.scan.errors.extend(addition.scan.errors);
     total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);
@@ -9153,14 +9164,14 @@ mod tests {
         assert_eq!(index_fingerprint(&candidate), index_fingerprint(&serial_oracle));
     }
 
-    /// The three counts a walk reports, in the order [`crate::ProgressSnapshot`] shows them.
-    fn walked(report: &ScanReport) -> (u64, u64, u64) {
-        (report.dirs_read, report.files_walked, report.bytes_walked)
+    /// The four counts a walk reports, in the order [`crate::ProgressSnapshot`] shows them.
+    fn walked(report: &ScanReport) -> (u64, u64, u64, u64) {
+        (report.dirs_read, report.files_walked, report.bytes_walked, report.allocated_walked)
     }
 
-    fn reported(progress: &crate::Progress) -> (u64, u64, u64) {
+    fn reported(progress: &crate::Progress) -> (u64, u64, u64, u64) {
         let snapshot = progress.snapshot();
-        (snapshot.directories, snapshot.files, snapshot.bytes)
+        (snapshot.directories, snapshot.files, snapshot.bytes, snapshot.allocated)
     }
 
     /// Each walker is a separate loop with its own reporting sites, so each is checked:
@@ -9226,12 +9237,17 @@ mod tests {
             write_file(&dir.path().join(format!("d0/new{threads}.txt")), b"added");
             fs::remove_file(dir.path().join(format!("d1/f{}.txt", threads - 1))).expect("remove");
             write_file(&dir.path().join("d2/f0.txt"), &vec![b'y'; 40 + threads]);
+            // An independent walk of the changed tree. The handle and the reconcile's own
+            // report both come from the walker's counts, so agreeing with each other
+            // would not show that the walker counted anything; agreeing with this does.
+            let (_, fresh) = scan_into_index(dir.path(), &ScanConfig::default()).expect("fresh");
             let progress = crate::Progress::new();
             let config = ScanConfig { progress: Some(progress.clone()), ..cold_config.clone() };
             let reconciled = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
             assert!(reconciled.apply.mutated(), "{context}: the changes were applied");
             assert_eq!(progress.snapshot().phase, crate::ProgressPhase::Revalidating, "{context}");
             assert_eq!(reported(&progress), walked(&reconciled.scan), "{context}: reconcile");
+            assert_eq!(walked(&reconciled.scan), walked(&fresh), "{context}: the whole tree");
 
             let handle = crate::IndexHandle::new(index);
             let progress = crate::Progress::new();
@@ -9252,9 +9268,14 @@ mod tests {
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), b"unchanged");
         }
+        // A file in the wave that completes, so the serial rewalk has counts of that wave
+        // to carry forward as already added rather than add again.
+        write_file(&dir.path().join("root.txt"), b"counted by the wave that completes");
         let parallel = ScanConfig { threads: Some(2), ..ScanConfig::default() };
         let (mut index, _) = scan_into_index(dir.path(), &parallel).expect("baseline");
-        let changed = b"changed after the first wave";
+        // Larger than any filesystem stores inline in the inode, so each copy occupies
+        // blocks of its own wherever the test runs.
+        let changed = &vec![b'c'; 8_193];
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), changed);
         }
@@ -9281,6 +9302,48 @@ mod tests {
         assert_eq!(
             snapshot.bytes,
             report.scan.bytes_walked + rewalked * u64::try_from(changed.len()).expect("fits")
+        );
+        let allocated = index.attrs(Path::new("d0000/file.txt")).expect("indexed").allocated;
+        assert!(allocated > 0, "a file with content occupies blocks");
+        assert_eq!(snapshot.allocated, report.scan.allocated_walked + rewalked * allocated);
+    }
+
+    /// Several invalidated roots are reconciled one at a time and their reports summed,
+    /// so every walked count has to survive the sum, allocated bytes included.
+    #[test]
+    fn a_multi_root_reconcile_sums_every_walked_count() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for directory in ["a", "b", "c"] {
+            for file in 0..3 {
+                write_file(&dir.path().join(format!("{directory}/f{file}.txt")), b"before");
+            }
+        }
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        for directory in ["a", "b"] {
+            write_file(&dir.path().join(format!("{directory}/f0.txt")), &vec![b'x'; 5_000]);
+        }
+        index.apply_ok(&Observation::new(
+            ["a", "b"]
+                .into_iter()
+                .map(|directory| Op::InvalidateSubtree {
+                    path: PathBuf::from(directory),
+                    reason: crate::InvalidateReason::Requested,
+                })
+                .collect(),
+        ));
+        let report =
+            reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {}).expect("reconcile");
+
+        let attrs: Vec<Attrs> = ["a", "b"]
+            .into_iter()
+            .flat_map(|directory| (0..3).map(move |file| format!("{directory}/f{file}.txt")))
+            .map(|path| *index.attrs(Path::new(&path)).expect("indexed"))
+            .collect();
+        assert_eq!(report.scan.files_walked, 6, "the two roots' files, and not c's");
+        assert_eq!(report.scan.bytes_walked, attrs.iter().map(|attrs| attrs.size).sum::<u64>());
+        assert_eq!(
+            report.scan.allocated_walked,
+            attrs.iter().map(|attrs| attrs.allocated).sum::<u64>()
         );
     }
 

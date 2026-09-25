@@ -13,6 +13,7 @@ env:
 patterns:
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
   SEP: '[/\\]'
 ---
 # Human CLI Output
@@ -106,7 +107,7 @@ the property behind piping it into `xargs`.
 $ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / [HUMAN_SIZE]; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -123,7 +124,7 @@ $ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / [HUMAN_SIZE]; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
