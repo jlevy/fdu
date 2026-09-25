@@ -440,8 +440,11 @@ python3 scripts/qa_peer_agreement.py . ~/.rustup /Applications ~/Library \
   --json "$FDU_QA_OUT/peer-agreement.json" | tee "$FDU_QA_OUT/peer-agreement.md"
 ```
 
-Each tool runs once per tree, one at a time, and fdu runs first and last; the difference
-between fdu’s two readings is how much the tree moved during the comparison.
+Each tool runs once per tree, one at a time, with fdu run just before each tool and once
+more at the end, and each tool is judged against the two fdu readings that bracket it: a
+live tree such as `~/Library` moves by hundreds of megabytes during an hour of
+measurement, so a comparison with a reading taken minutes earlier would measure the tree
+rather than the tool.
 `--rejudge FILE` judges saved readings again without measuring.
 
 **What agreement means.** GNU du with `--count-links` counts a file once per path, as
@@ -456,12 +459,15 @@ difference from the tree itself:
 | Directory sizes | dust `-s`, pdu apparent, and dua `-A` add each directory’s own size | Apparent size higher by about the directories’ sizes |
 | Directory blocks | du counts a directory’s blocks; fdu does not | None on APFS; on ext4, du is higher by about 4 KiB per directory |
 | Allocated or apparent | fdu, du, dust, dua, and diskus default to allocated; a sparse disk image, a cloud placeholder, or a compressed file makes the two differ | Compare like with like, never fdu’s default with a tool’s apparent figure |
-| A live tree | `~/Library` changes while it is measured | Within fdu’s own drift, plus 0.1% for changes that came and went |
+| A live tree | `~/Library` changes while it is measured | Within the range of the two fdu readings that bracket the tool, plus 0.05% |
+| Interrupted reads | GNU du and pdu on macOS give up on a directory whose read is interrupted, and leave its subtree out | The tool reads short, and says so in its errors; fdu retries the read |
 
 **Verify**:
 
 - [ ] No row says `UNEXPLAINED`: every tool agrees exactly on a quiet tree, or within
-  drift on a live one, after its named causes
+  the tree’s movement on a live one, after its named causes; a row marked `short` names
+  the directories the tool gave up on
+- [ ] fdu reports as many unreadable directories as GNU du reports denied ones
 - [ ] On a quiet tree, no top-level directory’s allocated size differs from GNU du’s by
   more than 0.1% and 1 MiB; on `~/Library`, only directories that were changing may, and
   a rerun moves them
