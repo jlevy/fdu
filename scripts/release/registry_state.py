@@ -114,28 +114,48 @@ def parse_json(url: str, body: bytes) -> Any:
         raise RegistryError(f"{url}: response is not JSON: {error}") from error
 
 
-def pypi_state(manifest: Path, version: str) -> RegistryState:
-    """Compare the complete expected wheel/sdist set with PyPI's release metadata."""
-    expected = {
+def pypi_expected(manifest: Path) -> dict[str, str]:
+    """The complete wheel and source-distribution set one PyPI release must hold."""
+    return {
         **expected_artifacts(manifest, "wheel"),
         **expected_artifacts(manifest, "sdist"),
     }
+
+
+def pypi_published(
+    version: str,
+    fetch: Callable[[str], bytes | None] | None = None,
+) -> dict[str, str] | None:
+    """
+    Read PyPI's filename-to-SHA-256 map for one `fdu` release, or None when it is absent.
+
+    `fetch` defaults to `get`, looked up at call time so a test can patch the module's.
+    """
     url = f"https://pypi.org/pypi/fdu/{version}/json"
-    body = get(url)
+    body = (fetch or get)(url)
     if body is None:
-        return classify_files("pypi", "fdu", version, expected, None)
+        return None
     document: dict[str, Any] = parse_json(url, body)
     urls = document.get("urls")
     if not isinstance(urls, list):
         raise ValueError("PyPI response has no release file list")
-    published = {
+    return {
         str(item["filename"]): str(item["digests"]["sha256"])
         for item in urls
         if isinstance(item, dict)
         and isinstance(item.get("digests"), dict)
         and item["digests"].get("sha256")
     }
-    return classify_files("pypi", "fdu", version, expected, published)
+
+
+def pypi_state(
+    manifest: Path,
+    version: str,
+    fetch: Callable[[str], bytes | None] | None = None,
+) -> RegistryState:
+    """Compare the complete expected wheel/sdist set with PyPI's release metadata."""
+    expected = pypi_expected(manifest)
+    return classify_files("pypi", "fdu", version, expected, pypi_published(version, fetch))
 
 
 def crates_io_state(

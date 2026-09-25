@@ -1,7 +1,22 @@
-name: Release rehearsal
+name: Release
+
+# One workflow builds, smoke-tests, and inspects every release artifact. Dispatched as it
+# is by default, it is a rehearsal that writes nothing. Dispatched on the release tag with
+# `publish` set, the same run then uploads exactly those artifacts, from the one `publish`
+# job, after a maintainer approves the protected `release` environment.
+run-name: >-
+  ${{ inputs.publish && format('Publish {0}', github.ref_name)
+  || format('Release rehearsal on {0}', github.ref_name) }}
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: >-
+          Publish to crates.io and PyPI after the rehearsal passes. Only a run on the
+          release tag can publish, and only after the release environment is approved.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -13,7 +28,7 @@ env:
   RUSTFLAGS: "-D warnings"
 
 concurrency:
-  group: release-rehearsal-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -22,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       artifact_tag: ${{ steps.plan.outputs.artifact_tag }}
+      publish: ${{ steps.plan.outputs.publish }}
       release_tag: ${{ steps.plan.outputs.release_tag }}
       version: ${{ steps.plan.outputs.version }}
     steps:
@@ -40,16 +56,25 @@ jobs:
         with:
           version: "0.12.1"
           enable-cache: false
+      # A publishing run resolves in release mode, which fails here, before anything is
+      # built, unless the run is on `refs/tags/v{Cargo version}` and that tag names the
+      # checked-out commit. A rehearsal resolves exactly as it always has.
       - name: Resolve exact release identity
         id: plan
-        run: >-
-          python3 scripts/release/resolve_plan.py
-          --root .
-          --mode rehearsal
-          --ref "${GITHUB_REF}"
-          --commit "${GITHUB_SHA}"
-          --validate-checkout
-          --github-output "${GITHUB_OUTPUT}"
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          mode=rehearsal
+          if [ "${PUBLISH}" = "true" ]; then
+            mode=release
+          fi
+          python3 scripts/release/resolve_plan.py \
+            --root . \
+            --mode "${mode}" \
+            --ref "${GITHUB_REF}" \
+            --commit "${GITHUB_SHA}" \
+            --validate-checkout \
+            --github-output "${GITHUB_OUTPUT}"
       - run: python3 -m unittest discover -s tests/release -p 'test_*.py'
 
   crate:
@@ -232,6 +257,218 @@ jobs:
             SHA256SUMS
           if-no-files-found: error
 
-# Publication is intentionally absent here. The separately tracked final-publication
-# work adds protected-environment registry jobs only after the project-specific PyPI and
-# crates.io publisher records exist and this rehearsal has completed successfully.
+  # GitHub creates an unprotected environment the first time a job names one, and both
+  # trusted publishers trust any job in `release`. So a publishing run first proves the
+  # environment exists and is protected as the release process documents, and the
+  # publish job, the only one naming it, never starts otherwise.
+  release-environment:
+    name: Confirm the release environment is protected
+    needs: plan
+    if: inputs.publish && needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Require a reviewer, v* tag deployments only, and no administrator bypass
+        run: >-
+          python3 scripts/release/publish_gate.py check-environment
+          --repository "${GITHUB_REPOSITORY}"
+          --environment release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  # Publication. Every write happens in this one job, and only on a dispatch with
+  # `publish` set, on the release tag the plan resolved, after the rehearsal above passed.
+  #
+  # It is one job so that one approval publishes the release: GitHub asks for a separate
+  # approval for each job that names a protected environment, and both registries need
+  # this one. The crates.io bootstrap secret lives only in `release`, and both trusted
+  # publishers trust only this workflow's OIDC subject in `release`.
+  #
+  # It compiles nothing. The rehearsal's crate job already built and installed both
+  # crates; here `cargo package` and `cargo publish` run with `--no-verify`, so no
+  # dependency build script or proc macro ever runs beside the publication credentials.
+  publish:
+    name: Publish to crates.io and PyPI
+    needs: [plan, crate, sdist, wheels, evidence, release-environment]
+    if: >-
+      inputs.publish
+      && startsWith(github.ref, 'refs/tags/v')
+      && needs.plan.outputs.publish == 'true'
+      && github.ref == format('refs/tags/{0}', needs.plan.outputs.release_tag)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      # The same identity check the plan made, against this job's own checkout: the crates
+      # are packaged from it, so it has to be the tagged commit the rehearsal built.
+      - name: Confirm the checkout is the planned release tag
+        run: >-
+          python3 scripts/release/resolve_plan.py
+          --root .
+          --mode release
+          --ref "${GITHUB_REF}"
+          --commit "${GITHUB_SHA}"
+          --validate-checkout
+      # Outside the checkout, so the crates are packaged from a clean tree.
+      - name: Locate the rehearsal's files
+        run: |
+          {
+            echo "FILES=${RUNNER_TEMP}/release-files"
+            echo "EVIDENCE=${RUNNER_TEMP}/release-evidence"
+            echo "MANIFEST=${RUNNER_TEMP}/release-evidence/release-manifest.json"
+          } >> "${GITHUB_ENV}"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-evidence-${{ needs.plan.outputs.artifact_tag }}
+          path: ${{ runner.temp }}/release-evidence
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-crate
+          path: ${{ runner.temp }}/release-files
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-sdist
+          path: ${{ runner.temp }}/release-files
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-wheel-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-files
+      # Exactly the eight files the evidence job inspected, each with its recorded size
+      # and SHA-256, inspected again, and nothing else.
+      - name: Verify the downloaded files against the manifest and SHA256SUMS
+        run: >-
+          python3 scripts/release/publish_gate.py verify-files "${FILES}"
+          --manifest "${MANIFEST}"
+          --checksums "${EVIDENCE}/SHA256SUMS"
+          --version "${VERSION}"
+      # Both registries are audited before the first write, so a conflict on PyPI stops
+      # the release before crates.io receives anything. An identical version is skipped;
+      # a conflicting one fails the job.
+      - name: Audit both registries before publishing
+        id: audit
+        run: >-
+          python3 scripts/release/publish_gate.py audit
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --github-output "${GITHUB_OUTPUT}"
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.1"
+          enable-cache: false
+      # `cargo publish` takes no archive: it repackages from the checkout. So both crates
+      # are reproduced first, in one invocation as the rehearsal packaged them, and each
+      # must match the rehearsal's digest before either is uploaded.
+      - name: Reproduce both crates and compare them with the rehearsal
+        id: reproduce-both
+        if: steps.audit.outputs.crates == 'true'
+        run: |
+          cargo package --locked --no-verify -p fdu-core -p fdu
+          python3 scripts/release/publish_gate.py compare-crates \
+            --package-dir target/package \
+            --manifest "${MANIFEST}" \
+            --version "${VERSION}" \
+            --package fdu-core \
+            --package fdu
+      # The bootstrap token exists only for the first release, before crates.io can hold
+      # a trusted publisher; after that the secret is absent and OIDC is exchanged instead.
+      # `secrets` cannot appear in a step condition, so this step reports which applies.
+      - name: Choose the crates.io credential
+        id: credential
+        if: steps.audit.outputs.crates == 'true'
+        env:
+          BOOTSTRAP_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -n "${BOOTSTRAP_TOKEN}" ]; then
+            echo "source=bootstrap" >> "${GITHUB_OUTPUT}"
+            echo "::warning title=crates.io bootstrap token::Publishing with the CARGO_REGISTRY_TOKEN environment secret. Delete the secret and revoke the token once this release is published."
+          else
+            echo "source=oidc" >> "${GITHUB_OUTPUT}"
+          fi
+      # The action masks the token it mints, and its post step revokes it when the job ends.
+      - name: Exchange GitHub OIDC for a short-lived crates.io token
+        id: crates-io-auth
+        if: steps.credential.outputs.source == 'oidc'
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      # Each upload waits for its own comparison to have run and passed, not only for the
+      # audit's verdict: an audit output that came back empty would skip the comparison,
+      # and a skipped comparison has to skip the upload rather than let it through.
+      - name: Publish fdu-core
+        if: steps.audit.outputs.fdu_core == 'missing' && steps.reproduce-both.outcome == 'success'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked --no-verify -p fdu-core
+      # `fdu` resolves `fdu-core` from the index, so the index as well as the API record
+      # has to carry the rehearsed digest before `fdu` is packaged against it.
+      - name: Wait until crates.io serves the rehearsed fdu-core
+        run: >-
+          python3 scripts/release/publish_gate.py wait-crate
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --package fdu-core
+      - name: Reproduce fdu against the published fdu-core and compare it
+        id: reproduce-fdu
+        if: steps.audit.outputs.fdu == 'missing'
+        run: |
+          cargo package --locked --no-verify -p fdu
+          python3 scripts/release/publish_gate.py compare-crates \
+            --package-dir target/package \
+            --manifest "${MANIFEST}" \
+            --version "${VERSION}" \
+            --package fdu
+      - name: Publish fdu
+        if: steps.audit.outputs.fdu == 'missing' && steps.reproduce-fdu.outcome == 'success'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked --no-verify -p fdu
+      - name: Wait until crates.io serves the rehearsed fdu
+        run: >-
+          python3 scripts/release/publish_gate.py wait-crate
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --package fdu
+      # Audited again, so a rerun after an interrupted upload sends only what PyPI lacks;
+      # `--check-url` skips a file PyPI already holds with the same digest.
+      - name: Audit PyPI before uploading
+        id: pypi
+        run: >-
+          python3 scripts/release/publish_gate.py audit
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --github-output "${GITHUB_OUTPUT}"
+      - name: Upload the rehearsed source distribution and wheels to PyPI
+        if: steps.pypi.outputs.upload == 'true'
+        run: >-
+          uv publish
+          --trusted-publishing always
+          --check-url https://pypi.org/simple/
+          "${FILES}/fdu-${VERSION}.tar.gz"
+          "${FILES}"/fdu-${VERSION}-*.whl
+      - name: Wait until PyPI serves exactly the rehearsed files
+        run: >-
+          python3 scripts/release/publish_gate.py wait-pypi
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+      - name: Audit every registry against the manifest
+        run: >-
+          python3 scripts/release/registry_state.py
+          --manifest "${MANIFEST}"
+          --version "${VERSION}"
+          --require-identical

@@ -1,14 +1,17 @@
 # Feature: Release Packaging and Python API Polish
 
-**Date:** 2026-08-14 (last updated 2026-09-16)
+**Date:** 2026-08-14 (last updated 2026-09-24)
 
 **Author:** fdu project
 
-**Status:** Implemented for the non-publishing release-engineering scope; registry
-publication remains in `fdu-9cf0`. By the 2026-09-15 decision, `0.1.0` is published by
-hand from a signed tag, as [the release process](../../guides/release-process.md)
-describes; workflow publish jobs, the protected `release` environment, and trusted
-publishers follow `0.1.0`.
+**Status:** Implemented, publication included (2026-09-24, pull request #123):
+`release.yml` publishes the rehearsed artifacts through one `publish` job behind the
+protected `release` environment, and
+[the release process](../../guides/release-process.md) publishes `0.1.0` that way from a
+signed tag, with the by-hand procedure as the fallback.
+That supersedes the 2026-09-15 decision to publish `0.1.0` by hand.
+The publication itself is tracked in `fdu-9cf0`; crates.io trusted publishers follow
+`0.1.0`.
 
 ## Overview
 
@@ -305,11 +308,11 @@ sharing one project’s publisher subject with another project.
 
 | Channel | fdu setup |
 | --- | --- |
-| GitHub Releases | Publish from `jlevy/fdu` with the workflow’s built-in token, granting `contents: write` only to the announcement job. |
-| PyPI bootstrap | A maintainer uploads `0.1.0` by hand with a short-lived account-scoped API token, because a project-scoped token needs an existing project. Delete the token after verifying the release. |
-| PyPI steady state | After `0.1.0`, once the `release` environment exists and is protected, register the trusted publisher for repository `jlevy/fdu`, top-level workflow `release.yml`, and environment `release`. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
-| crates.io bootstrap | Publish `fdu-core 0.1.0`, then `fdu 0.1.0`, by hand from the same crates.io owner account with a narrowly scoped, short-lived token, because trusted publishing cannot be configured until a crate exists. Remove the token after verifying the release. |
-| crates.io steady state | After `0.1.0`, once the `release` environment is protected, configure both crates’ trusted publishers for `jlevy/fdu`, `release.yml`, and environment `release`; exchange OIDC only inside the publish job. |
+| GitHub Releases | A maintainer publishes the release from the verified evidence; no job receives `contents: write` (`fdu-kqa4` tracks automating it). |
+| PyPI bootstrap | The workflow’s `publish` job uploads `0.1.0` through the pending trusted publisher registered on 2026-09-24 for `jlevy/fdu`, `release.yml`, and environment `release`, which creates the project on first upload. No API token exists. |
+| PyPI steady state | The same publisher, now attached to the project. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
+| crates.io bootstrap | The `publish` job uploads `fdu-core 0.1.0`, then `fdu 0.1.0`, with a narrowly scoped, short-lived token held only as the `release` environment’s `CARGO_REGISTRY_TOKEN` secret, because trusted publishing cannot be configured until a crate exists. Delete the secret and revoke the token after verifying the release. |
+| crates.io steady state | After `0.1.0`, configure both crates’ trusted publishers for `jlevy/fdu`, `release.yml`, and environment `release`; the publish job exchanges OIDC when the secret is absent. |
 
 No credential is committed, inherited across workflows, printed, or retained in an
 artifact. The protected environment separates approval from build jobs.
@@ -540,7 +543,8 @@ experience.
 
 ### Release Pipeline
 
-Use one top-level workflow, one tag, and independently retryable registry jobs.
+Use one top-level workflow, one tag, and one publish job whose every step is idempotent,
+so a rerun sends only what a registry lacks.
 Registry uploads cannot be atomic, and published versions cannot be replaced, so the
 workflow models partial success instead of hiding it.
 
@@ -566,10 +570,10 @@ inspect, install, type-check, smoke, compare, checksum, and attest
               GitHub release + retained evidence
 ```
 
-`workflow_dispatch` runs the same graph in a non-uploading rehearsal mode; a release tag
-will run publication mode once the publisher jobs land.
-Today `.github/workflows/release.yml` is the rehearsal only: it is named “Release
-rehearsal”, triggers on `workflow_dispatch` alone, and has no publisher jobs.
+`workflow_dispatch` runs the same graph: a default dispatch is a non-uploading
+rehearsal, and since 2026-09-24 a dispatch on the release tag with `publish` set runs
+publication mode, in which one `publish` job uploads the rehearsed artifacts once the
+protected `release` environment is approved.
 The resolver rejects a dirty or non-tagged source, a tag that differs from
 `v{Cargo version}`, a tag that does not identify the workflow commit, an unexpected
 package version, or an incomplete artifact matrix.
@@ -577,11 +581,12 @@ package version, or an incomplete artifact matrix.
 The build stage uploads immutable workflow artifacts and a machine-readable manifest.
 Wheel and source-distribution smoke and publication jobs download those exact files and
 verify checksums; they never rebuild them.
-Cargo’s supported `cargo publish` command does not accept a prebuilt `.crate`, so its
-narrow publish job is the documented exception: it downloads the exact tagged source
-bundle, reproduces the package, checks that its checksum equals the validated preview,
-publishes it, and then checks the registry checksum.
-A mismatch is a release failure, not a reason to rebuild from a different source.
+Cargo’s supported `cargo publish` command does not accept a prebuilt `.crate`, so the
+crate upload is the documented exception: the publish job reproduces each package from
+the tagged checkout with `cargo package --locked --no-verify`, checks that its checksum
+equals the validated preview, publishes it, and then waits for the registry to serve
+that checksum. A mismatch is a release failure, not a reason to rebuild from a different
+source.
 
 Registry probes classify each expected version as `missing`, `identical`, or `conflict`.
 A retry uploads only `missing` channels, safely skips `identical` ones, and stops on
@@ -617,19 +622,24 @@ The scripts use machine-readable registry APIs, reject unknown fields or missing
 artifacts, and produce summaries suitable for retained release evidence.
 
 Build and validation jobs have no publication authority.
-The protected `release` environment approves the two narrow publisher jobs.
-The PyPI job has no source checkout and only downloads verified files before its OIDC
-upload.
-The crates.io job uses only the exact source bundle and Cargo tooling required to
-publish. The GitHub announcement job alone receives `contents: write`. Every action is
-pinned to a reviewed commit, every installed tool is pinned through the repository’s
-supply-chain policy, and no job persists checkout credentials.
+The protected `release` environment approves one `publish` job, so a single approval
+covers both registries, which trust the same environment subject; the job checks out the
+tag only to repackage the crates, compiles nothing, and uploads the downloaded,
+re-verified files to PyPI. The GitHub announcement stays a maintainer step, so no job
+receives `contents: write` (`fdu-kqa4` tracks automating it).
+Every action is pinned to a reviewed commit, every installed tool is pinned through the
+repository’s supply-chain policy, and no job persists checkout credentials.
 
-`0.1.0` is uploaded by hand: PyPI with a short-lived account-scoped API token, and
-crates.io with a narrowly scoped short-lived token, each removed after verification.
-Trusted publishers for later releases are registered only after `0.1.0`, once the
-`release` environment exists with a required reviewer and a `v*` deployment policy;
-GitHub creates an unprotected environment the first time a job names it.
+`0.1.0` is published through the workflow: PyPI through the pending trusted publisher
+registered on 2026-09-24, which creates the project on first upload, and crates.io with
+a narrowly scoped short-lived token that lives only as the `release` environment’s
+secret for that run and is deleted and revoked afterwards.
+The `release` environment must exist with a required reviewer, a `v*` tag rule, and no
+administrator bypass before any publishing run: GitHub creates an unprotected
+environment the first time a job names it, and the pending publisher trusts it.
+The workflow checks all three before its publish job can start.
+crates.io trusted publishers for later releases are registered only after `0.1.0`, once
+both crates exist and the token is gone.
 Both records use the same owner account as Flowmark but identify the `jlevy/fdu`
 repository, top-level `release.yml`, and protected `release` environment.
 The runbook records the unavoidable asymmetric case where one registry succeeds and the
@@ -709,10 +719,10 @@ upstream-reference improvements also remain separate follow-up work.
   metadata before every upload or retry
 - [x] Pin every action and installed release tool immutably and keep publication
   authority out of build and validation jobs
-- [ ] Add direct, minimal, protected PyPI trusted publishing and the documented
-  crates.io bootstrap path under the same maintainer accounts as Flowmark (post-`0.1.0`:
-  the by-hand bootstrap is documented in the release process; workflow publish jobs
-  follow it)
+- [x] Add direct, minimal, protected PyPI trusted publishing and the documented
+  crates.io bootstrap path under the same maintainer accounts as Flowmark (pull request
+  #123: one `publish` job; PyPI through the pending publisher, crates.io through the
+  environment’s bootstrap token and then OIDC)
 - [x] Emit checksums and SBOM evidence from the non-publishing workflow
 - [ ] Add attestations and a GitHub release only after registry state is verified
   (post-`0.1.0` in the workflow; `0.1.0`’s GitHub release is created by hand after the
@@ -721,16 +731,17 @@ upstream-reference improvements also remain separate follow-up work.
 ### Phase 4: First-Release Rehearsal and Publication
 
 - [ ] Re-verify registry names through authoritative APIs immediately before release
-- [ ] Configure the PyPI trusted publisher for `jlevy/fdu`, `release.yml`, and the
-  protected `release` environment (post-`0.1.0`, once the environment is protected)
+- [x] Configure the PyPI trusted publisher for `jlevy/fdu`, `release.yml`, and the
+  `release` environment (registered 2026-09-24 as a pending publisher; the environment
+  must be protected before the first publishing run)
 - [ ] Rehearse the release commit on `main`, then tag that commit, and rehearse an
   identical-channel retry and a simulated conflicting-channel stop
 - [ ] Inspect every archive and execute every supported install path
 - [ ] Publish `0.1.0`, verify registry metadata and fresh-user installs, and retain
   release evidence
-- [ ] Remove the one-time bootstrap tokens; configure trusted publishing for
-  `jlevy/fdu`, `release.yml`, and the `release` environment after `0.1.0`, once the
-  environment is protected
+- [ ] Delete the `CARGO_REGISTRY_TOKEN` environment secret and revoke the token;
+  configure crates.io trusted publishing for `jlevy/fdu`, `release.yml`, and the
+  `release` environment after `0.1.0`
 
 ### Phase 5: Progressive Downstream Adapter
 
@@ -790,15 +801,16 @@ racing path. It then:
 
 - trusted-publisher owner, repository, top-level workflow, protected environment, and
   workflow-permission assertions
-- no mutable action tags, unpinned tool installs, inherited secrets, or source checkout
-  in the PyPI publisher job
+- no mutable action tags, unpinned tool installs, or inherited secrets in the publish
+  job, which checks out the tag only to repackage the crates and compiles nothing
 - artifact checksums unchanged between build, test, and upload jobs
 - crates.io package preview checksum reproduced from the exact source bundle and matched
   against the published registry checksum
 - registry-state tests distinguish missing, identical, and conflicting immutable
   versions
 - TestPyPI install rehearsal for the Python artifact: not scheduled
-- crates.io package reproduction and manual first-release bootstrap checklist
+- crates.io package reproduction, and the first release’s bootstrap token held only as
+  the `release` environment’s secret
 - fresh registry installs, docs.rs build, PyPI metadata, and `uvx` verification after
   publication, as the release process’s after-publishing checklist lists
 - documented retry and incident paths exercised without overwriting a version
@@ -827,9 +839,9 @@ outstanding Phase 1 CLI, agent-schema, watch, or performance dependencies.
 | A pure-Python facade adds conversion overhead | Keep the boundary bulk, use frozen slotted records, benchmark representative large reports, and avoid converting the retained index itself. |
 | Python models drift from Rust and CLI concepts | Generate or mechanically compare enum vocabulary, defaults, schemas, and normalized fixture output. |
 | The platform matrix becomes expensive | Build one abi3 wheel per OS/architecture rather than per Python minor; smoke the oldest and current stable interpreters. |
-| One registry publishes while the other fails | Use independent idempotent jobs, immutable versions, checksum verification, and a documented resume path. |
+| One registry publishes while the other fails | Audit both registries before the first write, keep every step idempotent so a rerun of the one publish job sends only what is missing, and verify checksums; the runbook documents the resume path. |
 | A retry silently accepts a different artifact under the same version | Compare registry hashes and metadata; treat existence with disagreement as an unrecoverable conflict requiring a new version. |
-| Publication authority leaks into a build step | Put OIDC or the one-time bootstrap token only in protected, single-purpose publisher jobs and install no mutable tools there. |
+| Publication authority leaks into a build step | Put OIDC or the one-time bootstrap token only in the one protected `publish` job, which compiles nothing and installs no mutable tools. |
 | PyPI publisher configuration points at a reusable workflow | Register the top-level `release.yml` identity and keep its minimal publish job direct until PyPI documents support for reusable workflow identities. |
 | Cargo cannot promote a prebuilt `.crate` through `cargo publish` | Reproduce it from the exact source bundle, compare with the validated preview, and verify the resulting registry checksum. |
 | A package name is claimed before release | Re-check through authoritative APIs at the protected approval boundary; stop rather than silently renaming one ecosystem. |

@@ -149,7 +149,31 @@ python3 scripts/run_installed_cli_qa.py --phases sanity,views,cache-analyze,watc
 
 ## Phase 1: Setup
 
-### 1.1 Identify the Binary
+### 1.1 Install the Candidate
+
+Before a release, the binary under test is the release candidate: the commit on `main`
+that will be tagged.
+Build its release wheel in a clean worktree of that commit and install it as the `fdu`
+on `PATH`, replacing any earlier install:
+
+```bash
+git worktree add --detach "$CANDIDATE_DIR" <commit>
+cd "$CANDIDATE_DIR/crates/fdu-py"
+uv run --frozen --only-group dev maturin build --locked --release --out "$FDU_QA_OUT/wheel"
+uv tool install --force --python 3.12 --no-index "$FDU_QA_OUT"/wheel/fdu-*.whl
+fdu --version
+```
+
+The version names the commit it was built from (`0.1.0-dev+g` and its first nine hex
+digits); it must be the candidate’s, with no `.dirty` suffix.
+Keep the worktree and its build on a volume with room: a release build takes a few
+gigabytes.
+The wheel the release rehearsal built for this platform is an alternative that
+is closer to what users install; download it as
+[the release process](../../docs/project/guides/release-process.md) describes, and
+install it the same way.
+
+### 1.2 Identify the Binary
 
 ```bash
 which "${FDU:-fdu}"
@@ -178,7 +202,7 @@ Help must list `--view`, `--analyze`, `--cache` (`auto`, `refresh`, `read-only`,
 - **Issue**: Version is not the intended revision **Fix**: stop.
   Do not rebuild unless the operator asked for a rebuild.
 
-### 1.2 Isolate Cache
+### 1.3 Isolate Cache
 
 The harness sets `XDG_CACHE_HOME` to a new directory for:
 
