@@ -14,10 +14,10 @@
 //! these entries walked, not found.
 //!
 //! **What holds at completion.** When a walking route returns, `files`, `bytes`, and
-//! `allocated` equal the walked totals its own report exposes, and `directories` equals
-//! the directories it read, except where a documented retry reread part of the tree, in
-//! which case the handle is larger by exactly the rereads. Content analysis leaves `analysis` at
-//! `Some((candidates, candidates))`.
+//! `allocated` equal the walked totals its own report exposes, and `directories`
+//! equals the directories it read, except where a documented retry reread part of the
+//! tree, in which case the handle is larger by exactly the rereads. Content analysis
+//! leaves `analysis` at `Some((candidates, candidates))`.
 //!
 //! **Cost.** Walker workers already keep local counts; they add the difference since
 //! their last addition to the shared cells once per chunk of directories they hand over,

@@ -9268,9 +9268,14 @@ mod tests {
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), b"unchanged");
         }
+        // A file in the wave that completes, so the serial rewalk has counts of that wave
+        // to carry forward as already added rather than add again.
+        write_file(&dir.path().join("root.txt"), b"counted by the wave that completes");
         let parallel = ScanConfig { threads: Some(2), ..ScanConfig::default() };
         let (mut index, _) = scan_into_index(dir.path(), &parallel).expect("baseline");
-        let changed = b"changed after the first wave";
+        // Larger than any filesystem stores inline in the inode, so each copy occupies
+        // blocks of its own wherever the test runs.
+        let changed = &vec![b'c'; 8_193];
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), changed);
         }

@@ -163,8 +163,8 @@ Counts may include entries a retry rereads; the display calls them walked, not f
 add the deltas to shared counters once per batch they already hand to the sink (per
 directory on the revalidation and reconcile walks, which have no batch for an unchanged
 tree), never per entry.
-The three walk counters share one cache line, so a worker’s addition moves one line
-rather than three; the analysis cells and the phase cell each have a line of their own,
+The four walk counters share one cache line, so a worker’s addition moves one line
+rather than four; the analysis cells and the phase cell each have a line of their own,
 so a poller reading the walk never invalidates the line the analysis loop writes.
 Without a handle, the cost is one `Option` check per batch.
 Content analysis updates its counter in the result loop that already runs on the caller
@@ -335,15 +335,20 @@ When it is wider than that, it shrinks in this order until it fits:
 1. The phase word’s padding is dropped: it lines the facts up across phases, which
    change a few times a run, while the counts change every frame.
 2. The root path is elided in the middle with `…`, down to 12 columns.
-3. The counts’ alignment is dropped, and the root is fitted again to the room that
-   frees.
+3. The counts’ alignment is dropped.
+   The root keeps the length it was elided to: fitted to the room this frees, it would
+   be elided again each time a count gained a digit, and the start of the line would
+   move.
 4. The `dirs` count is dropped.
 5. The bytes are dropped.
 6. Below 20 columns, only the spinner and the phase word are drawn, without the root.
 
-At 80 columns a cold walk keeps its counts aligned over a root of up to 14 columns for
-its first minute; `Revalidating` has no padding to give up, so a warm run over a longer
-root keeps every fact and loses the alignment.
+At 80 columns, with counts under ten million, `Scanning` keeps its counts aligned
+whatever the root: it shows up to 14 columns of the root in full for its first minute
+(15 for the first ten seconds, 12 after the first minute) and elides a longer one.
+`Revalidating` has no padding to give up, so a warm run over a root of 12 columns or
+more drops the alignment instead and keeps every fact; `Summarizing` does the same after
+ten seconds.
 
 **End of run.** The line is erased before the report or any message is written.
 No summary replaces it, because the report’s own performance line states the totals.

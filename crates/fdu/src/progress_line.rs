@@ -325,7 +325,7 @@ impl RootSlot {
     /// be fewer than it occupies.
     ///
     /// Whole characters only, so a wide character that would straddle the budget is
-    /// left out and the result may come up one column short rather than one over.
+    /// left out and the result may come up a column short on either side rather than over.
     fn elided(root: &str, target: usize) -> Self {
         let budget = target.saturating_sub(1);
         let tail_budget = budget / 2;
@@ -537,9 +537,10 @@ fn paint_segment(text: &str, style: Option<AnsiStyle>, color: bool) -> String {
 /// measured without its color codes, with each non-ASCII character of the root counted
 /// as two columns, and always leaves the last column empty; when it is wider than that
 /// it shrinks in order until it fits: the phase padding goes, the root is elided in the
-/// middle with `…` down to 12 columns, the alignment goes (and the root is fitted again
-/// to the room that frees), the `dirs` count goes, the bytes go, and below 20 columns
-/// only the spinner and the phase word are drawn. A frame never wraps.
+/// middle with `…` down to 12 columns, the alignment goes, the `dirs` count goes, the
+/// bytes go, and below 20 columns only the spinner and the phase word are drawn. Once
+/// elided, the root keeps its length while the later steps apply, so it holds still as
+/// the counts widen. A frame never wraps.
 ///
 /// The string excludes the leading `\r\x1b[2K`; the ticker adds it, so a frame is the
 /// same bytes whether it is drawn or pinned by a test.
@@ -554,32 +555,24 @@ pub(crate) fn render_frame(
     let limit = width.saturating_sub(1);
     let mut slots = Slots::full(root, facts, elapsed, step);
 
-    // The root as long as the rest of the frame leaves room for, and no shorter.
-    let fit_root = |slots: &mut Slots| {
-        slots.root = Some(RootSlot::new(root));
-        if slots.columns() > limit {
-            let excess = slots.columns() - limit;
-            let occupied = slots.root.as_ref().map_or(0, |root| root.columns);
-            let target = occupied.saturating_sub(excess).max(MIN_ROOT_COLUMNS);
-            if target < occupied {
-                slots.root = Some(RootSlot::elided(root, target));
-            }
-        }
-    };
-
     // The phase padding goes first: it only lines the facts up across phases, which
     // change a handful of times a run, while the counts change on every frame.
     if slots.columns() > limit {
         slots.phase_padded = false;
     }
     if slots.columns() > limit {
-        fit_root(&mut slots);
+        let excess = slots.columns() - limit;
+        let occupied = slots.root.as_ref().map_or(0, |root| root.columns);
+        let target = occupied.saturating_sub(excess).max(MIN_ROOT_COLUMNS);
+        if target < occupied {
+            slots.root = Some(RootSlot::elided(root, target));
+        }
     }
     if slots.columns() > limit {
-        // The root was elided to fit an aligned frame; without the alignment it may
-        // have room again, so it is fitted afresh rather than left shorter than needed.
+        // The root keeps the length it was elided to. Fitting it to the room the
+        // alignment frees would elide it again each time a count gained a digit, and
+        // move the start of the line, which is what the alignment exists to prevent.
         slots.aligned = false;
-        fit_root(&mut slots);
     }
     if slots.columns() > limit {
         slots.facts.drop_dirs();
@@ -876,12 +869,13 @@ mod tests {
             frame(77),
             "⠼ /Volum…itory  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
         );
-        // 3. The alignment goes, and the root takes back what that frees...
+        // 3. The alignment goes. The root keeps its 12 columns rather than taking back
+        // what that frees: refitted, it would be elided again whenever a count gained a
+        // digit, and the start of the line would move.
         assert_eq!(
             frame(76),
-            "⠼ /Volumes/…pository  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
         );
-        // ...down to the same 12 columns.
         assert_eq!(
             frame(70),
             "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
@@ -897,10 +891,11 @@ mod tests {
         assert_eq!(frame(20), "⠼ Scanning");
     }
 
-    /// What an 80-column terminal keeps. A cold walk keeps its counts aligned over a
-    /// root of up to 14 columns for its first minute, since the phase padding goes first; a
-    /// warm run's `Revalidating` has no padding to give, so over a 12-column root it
-    /// gives up the alignment instead, and keeps every fact.
+    /// What an 80-column terminal keeps, with counts under ten million. `Scanning` keeps
+    /// its counts aligned whatever the root, since the phase padding goes first: it shows
+    /// up to 14 columns of the root in full for its first minute and elides a longer one.
+    /// `Revalidating` has no padding to give up, so over a root of 12 columns or more a
+    /// warm run drops the alignment instead, and keeps every fact.
     #[test]
     fn an_eighty_column_terminal_keeps_what_fits() {
         assert_eq!(
@@ -910,6 +905,16 @@ mod tests {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 80, false),
             "⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s"
+        );
+        // The bound: 14 columns shown in full for the first minute, then elided.
+        let root = "~/wrk/github12";
+        assert_eq!(
+            render_frame(root, &walk(Phase::Scanning), ms(59_900), 4, 80, false),
+            "⠼ ~/wrk/github12  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  59.9 s"
+        );
+        assert_eq!(
+            render_frame(root, &walk(Phase::Scanning), ms(60_000), 4, 80, false),
+            "⠼ ~/wrk/…hub12  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  1 m 00 s"
         );
     }
 
