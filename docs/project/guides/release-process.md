@@ -300,10 +300,13 @@ Channel setup is the only block that can finish before the release commit exists
 
 1. Finish this section: accounts, 2FA, the pending PyPI publisher, and the protected
    `release` environment.
-2. Merge everything the release needs onto `main`, install that commit, and run the
-   [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md) on it,
-   including its peer-agreement phase: fdu’s totals on real trees, `~/Library` among
-   them, checked against du and dust with every difference named.
+2. Merge everything the release needs onto `main`,
+   [install that commit](../../../tests/qa/cli-installed-e2e.qa.md#11-install-the-candidate),
+   and run the [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md) on
+   it, including its
+   [peer-agreement phase](../../../tests/qa/cli-installed-e2e.qa.md#phase-7-peer-agreement-on-real-trees):
+   fdu’s totals on real trees, `~/Library` among them, checked against du and dust with
+   every difference named.
 3. [Rehearse the Release Commit](#rehearse-the-release-commit).
 4. [Tag the Release Commit](#tag-the-release-commit), including the name recheck.
 5. [Publish Through the Workflow](#publish-through-the-workflow): store the crates.io
