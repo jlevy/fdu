@@ -3,26 +3,31 @@
 
 Manual release QA, not part of `make check`: real trees change while they are measured,
 and peer tools are not pinned. See tests/qa/cli-installed-e2e.qa.md, the peer-agreement
-phase, for how to read the table.
+phase, for how to read the output.
 
-    python3 scripts/qa_peer_agreement.py ~/Library ~/.rustup /Applications
+    python3 scripts/qa_peer_agreement.py --self-test
+    python3 scripts/qa_peer_agreement.py . ~/.rustup /Applications ~/Library --json out.json
 
-Every tool runs once per root, one at a time, with fdu run immediately before each and
-once more at the end, so each tool is judged against the two fdu readings that bracket
-it: a live tree such as ~/Library moves while it is measured, and a comparison with a
-reading taken minutes earlier would measure the tree's movement rather than the tool.
+Each tool counts some things differently from fdu, and each difference is computed from
+the tree itself rather than allowed for with a tolerance: fdu counts a hard-linked file
+once per path and only regular files, while other tools count a hard-linked file once, a
+symbolic link's own size, or each directory's own size. `MODELS` records which tool does
+which, and `--self-test` proves every model exactly on a tree built with each case.
 
-The reference is GNU du with `--count-links`: like fdu, it counts a file once for each
-path that reaches it, so on APFS (where directories and symbolic links occupy no blocks)
-its allocated total must equal fdu's to within that drift. Plain GNU du counts a
-hard-linked file once, and the difference between the two readings is exactly what every
-tool that deduplicates hard links should come in under fdu by. The script measures that
-duplication itself, in one walk that also totals the tree's symbolic links (whose target
-text du and diskus count as apparent size and fdu does not), so on a quiet tree every
-verdict is exact rather than within a tolerance. Each tool's errors are counted from its
-output: GNU du on macOS gives up on a directory whose read is interrupted and leaves its
-whole subtree out, and a reading that falls short for that reason says so.
+GNU du with `--count-links` is the reference: it counts as fdu does apart from links'
+and directories' own sizes, so on a quiet tree its allocated total equals fdu's to the
+byte on APFS. It is required.
 
+A real tree may change while it is measured, so fdu runs just before each tool and once
+at the end, and each tool is judged against the two fdu readings around it. On a quiet
+tree, one whose every fdu reading was the same, agreement must be exact. On a live one, a
+tool may fall within its two fdu readings, or outside them by no more than the largest
+change fdu saw between consecutive readings; and a tool that reports giving up on
+directories after interrupted reads may fall short by no more than what those
+directories hold, measured afterwards. Anything else is UNEXPLAINED, and the script exits
+non-zero.
+
+The JSON written by `--json` holds absolute paths; keep it out of the repository.
 Stdlib only, like scripts/run_installed_cli_qa.py, so it runs against a PATH binary.
 """
 
@@ -33,51 +38,99 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from functools import partial
+from itertools import pairwise
 from pathlib import Path
 
-# How a tool counts, which decides what it should agree with.
-PER_PATH = "per path"  # a hard-linked file once per path, as fdu does
-PER_INODE = "per inode"  # a hard-linked file once
-DIRS = "+ directory sizes"  # also adds each directory's own apparent size
+METRICS = ("allocated", "apparent")
+
+
+@dataclass(frozen=True)
+class Model:
+    """How a tool counts, relative to fdu, which counts regular files once per path."""
+
+    per_path: bool  # a hard-linked file once per path, as fdu does; else once per inode
+    # Also counts each symbolic link's own size: "none", "all", or "below_root", which
+    # leaves out links directly inside the root (dua takes the root's entries as inputs).
+    symlinks: str
+    dirs: str  # also counts each directory's own size: "none", "all", or "all_but_root"
+
+
+# Verified by `--self-test` on APFS, where directories and symbolic links occupy no
+# blocks, so their allocated terms are zero there and only the apparent terms are tested.
+MODELS: dict[tuple[str, str], Model] = {
+    ("GNU du -l", "allocated"): Model(per_path=True, symlinks="all", dirs="all"),
+    ("GNU du -l", "apparent"): Model(per_path=True, symlinks="all", dirs="none"),
+    ("GNU du", "allocated"): Model(per_path=False, symlinks="all", dirs="all"),
+    ("GNU du", "apparent"): Model(per_path=False, symlinks="all", dirs="none"),
+    ("dust", "allocated"): Model(per_path=False, symlinks="all", dirs="all"),
+    ("dust", "apparent"): Model(per_path=True, symlinks="all", dirs="all"),
+    ("pdu", "allocated"): Model(per_path=True, symlinks="all", dirs="all"),
+    ("pdu", "apparent"): Model(per_path=True, symlinks="all", dirs="all"),
+    ("dua", "allocated"): Model(per_path=False, symlinks="below_root", dirs="all_but_root"),
+    ("dua", "apparent"): Model(per_path=False, symlinks="below_root", dirs="all_but_root"),
+    ("diskus", "allocated"): Model(per_path=False, symlinks="all", dirs="all"),
+    ("diskus", "apparent"): Model(per_path=False, symlinks="all", dirs="none"),
+    ("BSD du", "allocated"): Model(per_path=False, symlinks="all", dirs="all"),
+}
 
 
 @dataclass
 class Reading:
     tool: str
-    metric: str  # "allocated" or "apparent"
-    counting: str
+    metric: str
     total: int | None
     seconds: float
     command: str
     children: dict[str, int] = field(default_factory=dict)
     errors: dict[str, int] = field(default_factory=dict)
+    interrupted: list[str] = field(default_factory=list)
+    skipped: int = 0  # bytes in the interrupted directories, measured afterwards
+    exit: int | None = None
 
 
-def run(command: list[str], timeout: int) -> tuple[str, dict[str, int], float]:
-    """The command's stdout, the errors its stderr reports by kind, and its wall time."""
+def run(command: list[str], timeout: int) -> tuple[str, str, int, float]:
     started = time.monotonic()
     result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
-    return result.stdout, classify(result.stderr), time.monotonic() - started
+    return result.stdout, result.stderr, result.returncode, time.monotonic() - started
 
 
-def classify(stderr: str) -> dict[str, int]:
-    """Count the errors a tool printed: denied, interrupted, or other."""
-    counts = {"denied": 0, "interrupted": 0, "other": 0}
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+QUOTED = re.compile(r"['\"]([^'\"]+)['\"]")
+
+
+def tool_errors(stdout: str, stderr: str) -> tuple[dict[str, int], list[str]]:
+    """The errors a peer tool reported, by kind, and the directories it gave up on after
+    an interrupted read."""
+    counts: Counter[str] = Counter()
+    interrupted: list[str] = []
     for line in stderr.splitlines():
         lowered = line.lower()
-        if "interrupted system call" in lowered:
+        if lowered.strip().startswith("did not have permissions for directories:"):
+            # dust --print-errors lists them on one line.
+            counts["denied"] += line.split(": ", 1)[1].count(", ") + 1
+            continue
+        path = QUOTED.search(line)
+        if "interrupted system call" in lowered or "(os error 4)" in lowered:
             counts["interrupted"] += 1
+            if path:
+                interrupted.append(path[1])
         elif "not permitted" in lowered or "permission denied" in lowered:
             counts["denied"] += 1
-        elif "error" in lowered or "cannot" in lowered:
-            counts["other"] += 1
-    return {kind: n for kind, n in counts.items() if n}
+        elif "could not read" in lowered or "cannot" in lowered or "error" in lowered:
+            counts["unreadable, reason not given"] += 1
+    io_errors = re.search(r"<(\d+) IO Errors?>", ANSI.sub("", stdout))
+    if io_errors:  # dua reports only a count, on stdout
+        counts["unreadable, reason not given"] += int(io_errors[1])
+    return dict(counts), interrupted
 
 
 def gnu_du() -> str | None:
@@ -92,7 +145,7 @@ def gnu_du() -> str | None:
     return None
 
 
-def fdu_reading(fdu: str, root: Path, timeout: int, label: str) -> list[Reading]:
+def fdu_reading(fdu: str, root: Path, timeout: int) -> list[Reading]:
     command = [
         fdu,
         "--cache",
@@ -109,203 +162,340 @@ def fdu_reading(fdu: str, root: Path, timeout: int, label: str) -> list[Reading]
         "json",
         str(root),
     ]
-    out, _, seconds = run(command, timeout)
+    out, _, code, seconds = run(command, timeout)
     document = json.loads(out)
     report = document["reports"]
     tree = (report[0] if isinstance(report, list) else report)["tree"]
+    errors: Counter[str] = Counter()
+    interrupted = []
     status = document.get("status", {})
-    errors: dict[str, int] = {}
     for error in status.get("errors", []):
-        kind = "denied" if error.get("kind") == "permission" else "other"
-        errors[kind] = errors.get(kind, 0) + 1
+        if error.get("os_error") == 4:
+            errors["interrupted"] += 1
+            interrupted.append(str(root / error.get("path", "")))
+        elif error.get("kind") == "permission":
+            errors["denied"] += 1
+        else:
+            errors["other"] += 1
     if status.get("errors_omitted"):
-        # fdu details the first errors and counts the rest.
+        # fdu details its first errors and counts the rest.
         errors["more, not detailed"] = status["errors_omitted"]
-    readings = []
-    for metric, key in (("allocated", "allocated"), ("apparent", "bytes")):
-        children = {child["name"]: child[key] for child in tree["children"]}
-        readings.append(
-            Reading(
-                label, metric, PER_PATH, tree[key], seconds, " ".join(command), children, errors
-            )
+    return [
+        Reading(
+            "fdu",
+            metric,
+            tree[key],
+            seconds,
+            " ".join(command),
+            {child["name"]: child[key] for child in tree["children"]},
+            dict(errors),
+            interrupted,
+            exit=code,
         )
-    return readings
+        for metric, key in (("allocated", "allocated"), ("apparent", "bytes"))
+    ]
+
+
+def largest(out: str, pattern: str) -> int | None:
+    """The largest number the pattern captures: a root's total is never below a child's,
+    whatever order or truncation a tool prints them in."""
+    values = [
+        int(next(group for group in m.groups() if group))
+        for m in re.finditer(pattern, ANSI.sub("", out), re.M)
+    ]
+    return max(values) if values else None
 
 
 def gnu_reading(du: str, root: Path, timeout: int, metric: str, links: bool) -> Reading:
     size = ["-b"] if metric == "apparent" else ["-B1"]
     command = [du, *size, "--max-depth=1", *(["-l"] if links else []), str(root)]
-    out, errors, seconds = run(command, timeout)
+    out, err, _, seconds = run(command, timeout)
     children = {}
     total = None
     for line in out.splitlines():
         value, _, path = line.partition("\t")
         if Path(path) == root:
             total = int(value)
-        else:
+        elif path:
             children[Path(path).name] = int(value)
+    errors, interrupted = tool_errors(out, err)
     label = "GNU du -l" if links else "GNU du"
-    counting = PER_PATH if links else PER_INODE
-    return Reading(label, metric, counting, total, seconds, " ".join(command), children, errors)
+    return Reading(label, metric, total, seconds, " ".join(command), children, errors, interrupted)
 
 
-def dust_reading(root: Path, timeout: int, metric: str) -> Reading:
-    command = [
-        "dust",
-        "-d",
-        "1",
-        "-o",
-        "b",
-        "-c",
-        "-b",
-        "-n",
-        "100000",
-        *(["-s"] if metric == "apparent" else []),
-        str(root),
-    ]
-    out, errors, seconds = run(command, timeout)
-    children = {}
-    total = None
-    for line in out.splitlines():
-        match = re.match(r"\s*(\d+)B\s+\S+\s+(.*)$", line)
-        if not match:
-            continue
-        value, name = int(match[1]), match[2].strip()
-        if name in (str(root), root.name, "."):
-            total = value
-        else:
-            children[Path(name).name] = value
-    counting = f"{PER_PATH} {DIRS}" if metric == "apparent" else PER_INODE
-    return Reading("dust", metric, counting, total, seconds, " ".join(command), children, errors)
-
-
-def simple_reading(
-    tool: str,
-    command: list[str],
-    metric: str,
-    counting: str,
-    pattern: str,
-    timeout: int,
-    scale: int = 1,
+def peer_reading(
+    tool: str, metric: str, command: list[str], pattern: str, timeout: int, scale: int = 1
 ) -> Reading:
-    out, errors, seconds = run(command, timeout)
-    value = first_group(re.search(pattern, out, re.M))
+    out, err, _, seconds = run(command, timeout)
+    value = largest(out, pattern)
+    errors, interrupted = tool_errors(out, err)
     total = value * scale if value is not None else None
-    return Reading(tool, metric, counting, total, seconds, " ".join(command), {}, errors)
+    return Reading(tool, metric, total, seconds, " ".join(command), {}, errors, interrupted)
 
 
-def peers(root: Path, timeout: int, du: str | None) -> list[Callable[[], Reading]]:
+def peers(root: Path, timeout: int, du: str) -> list[Callable[[], Reading]]:
     """One deferred run per tool and metric, so fdu can be run between them."""
     runs: list[Callable[[], Reading]] = []
-    if du:
-        for metric in ("allocated", "apparent"):
-            for links in (True, False):
-                runs.append(partial(gnu_reading, du, root, timeout, metric, links))
+    for metric in METRICS:
+        for links in (True, False):
+            runs.append(partial(gnu_reading, du, root, timeout, metric, links))
+    path = str(root)
     if shutil.which("dust"):
-        runs += [partial(dust_reading, root, timeout, m) for m in ("allocated", "apparent")]
+        for metric, flags in (("allocated", []), ("apparent", ["-s"])):
+            command = ["dust", "-d", "1", "-o", "b", "-c", "-b", "--print-errors", *flags, path]
+            runs.append(partial(peer_reading, "dust", metric, command, r"^\s*(\d+)B\s", timeout))
     if shutil.which("pdu"):
         for metric, quantity in (("allocated", "block-size"), ("apparent", "apparent-size")):
-            runs.append(
-                partial(
-                    simple_reading,
-                    "pdu",
-                    ["pdu", "-b", "plain", "--max-depth", "1", "-q", quantity, str(root)],
-                    metric,
-                    PER_PATH if metric == "allocated" else f"{PER_PATH} {DIRS}",
-                    r"^\s*(\d+)\s+\S+\s*" + re.escape(str(root)) + r"\b|^\s*(\d+)\s+┌──",
-                    timeout,
-                )
-            )
+            command = ["pdu", "-b", "plain", "--max-depth", "1", "-q", quantity, path]
+            runs.append(partial(peer_reading, "pdu", metric, command, r"^\s*(\d+)\s", timeout))
     if shutil.which("dua"):
         for metric, flags in (("allocated", []), ("apparent", ["-A"])):
-            runs.append(
-                partial(
-                    simple_reading,
-                    "dua",
-                    ["dua", "-f", "bytes", *flags, "aggregate", str(root)],
-                    metric,
-                    PER_INODE if metric == "allocated" else f"{PER_INODE} {DIRS}",
-                    r"(\d+) b\S*\s+total|(\d+) b\S*\s+" + re.escape(str(root)),
-                    timeout,
-                )
-            )
+            command = ["dua", "-f", "bytes", *flags, "aggregate", path]
+            runs.append(partial(peer_reading, "dua", metric, command, r"^\s*(\d+) b\b", timeout))
     if shutil.which("diskus"):
         for metric, flags in (("allocated", []), ("apparent", ["-b"])):
-            runs.append(
-                partial(
-                    simple_reading,
-                    "diskus",
-                    ["diskus", *flags, str(root)],
-                    metric,
-                    PER_INODE,
-                    r"\((\d[\d,]*) bytes\)|^(\d+)$",
-                    timeout,
-                )
-            )
-    runs.append(
-        partial(
-            simple_reading,
-            "BSD du" if sys.platform == "darwin" else "du",
-            ["/usr/bin/du", "-sk", str(root)],
-            "allocated",
-            PER_INODE,
-            r"^(\d+)",
-            timeout,
-            scale=1024,
+            command = ["diskus", "-v", *flags, path]
+            pattern = r"^\s*(\d+)\s*$|\((\d+) bytes\)"
+            runs.append(partial(peer_reading, "diskus", metric, command, pattern, timeout))
+    if sys.platform == "darwin":
+        command = ["/usr/bin/du", "-sk", path]
+        pattern = r"^(\d+)\s"
+        runs.append(
+            partial(peer_reading, "BSD du", "allocated", command, pattern, timeout, scale=1024)
         )
-    )
     return runs
 
 
-def first_group(match: re.Match[str] | None) -> int | None:
-    if match is None:
-        return None
-    value = next(group for group in match.groups() if group)
-    return int(value.replace(",", ""))
+def listing(directory: str) -> tuple[list[os.DirEntry[str]] | None, str | None]:
+    """A directory's entries, retrying an interrupted read, or why it could not be read."""
+    for _ in range(5):
+        try:
+            with os.scandir(directory) as entries:
+                return list(entries), None
+        except InterruptedError:
+            continue
+        except PermissionError:
+            return None, "denied"
+        except OSError:
+            return None, "other"
+    return None, "interrupted"
 
 
 def tree_facts(root: Path) -> dict[str, dict[str, int]]:
-    """What the tools count differently, measured in one walk of `root`.
-
-    Symbolic links: their count and bytes. Hard links: how much counting a hard-linked
-    file once per path adds over counting it once, from the paths under `root` that share
-    an inode. Directories the walk could not list: the same ones every tool must skip.
-    """
-    links = {"count": 0, "apparent": 0, "allocated": 0}
+    """What the tools count differently from fdu, measured in one walk of `root`."""
+    links: Counter[str] = Counter()
+    dirs: Counter[str] = Counter()
+    unlisted: Counter[str] = Counter()
     shared: dict[tuple[int, int], list[int]] = {}
-    unreadable = 0
-    stack = [root]
+    unstatted = 0
+    root_info = root.lstat()
+    dirs.update(count=1, apparent=root_info.st_size, allocated=root_info.st_blocks * 512)
+    stack = [(str(root), True)]
     while stack:
-        directory = stack.pop()
-        try:
-            entries = list(os.scandir(directory))
-        except OSError:
-            unreadable += 1
+        directory, at_root = stack.pop()
+        entries, failure = listing(directory)
+        if entries is None:
+            unlisted[failure or "other"] += 1
             continue
         for entry in entries:
             try:
-                if entry.is_symlink():
-                    info = entry.stat(follow_symlinks=False)
-                    links["count"] += 1
-                    links["apparent"] += info.st_size
-                    links["allocated"] += getattr(info, "st_blocks", 0) * 512
-                elif entry.is_dir(follow_symlinks=False):
-                    stack.append(Path(entry.path))
-                elif entry.is_file(follow_symlinks=False):
-                    info = entry.stat(follow_symlinks=False)
-                    if info.st_nlink > 1:
-                        key = (info.st_dev, info.st_ino)
-                        size = [info.st_size, getattr(info, "st_blocks", 0) * 512, 0]
-                        shared.setdefault(key, size)[2] += 1
+                info = entry.stat(follow_symlinks=False)
             except OSError:
+                unstatted += 1
                 continue
-    duplicated = {"inodes": 0, "apparent": 0, "allocated": 0}
+            if stat.S_ISLNK(info.st_mode):
+                links.update(count=1, apparent=info.st_size, allocated=info.st_blocks * 512)
+                if at_root:
+                    links.update(root_apparent=info.st_size, root_allocated=info.st_blocks * 512)
+            elif stat.S_ISDIR(info.st_mode):
+                dirs.update(count=1, apparent=info.st_size, allocated=info.st_blocks * 512)
+                stack.append((entry.path, False))
+            elif stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+                size = [info.st_size, info.st_blocks * 512, 0]
+                shared.setdefault((info.st_dev, info.st_ino), size)[2] += 1
+    duplicated: Counter[str] = Counter()
     for apparent, allocated, paths in shared.values():
         if paths > 1:
-            duplicated["inodes"] += 1
-            duplicated["apparent"] += apparent * (paths - 1)
-            duplicated["allocated"] += allocated * (paths - 1)
-    return {"symlinks": links, "hard_links": duplicated, "unreadable": {"dirs": unreadable}}
+            duplicated.update(
+                inodes=1, apparent=apparent * (paths - 1), allocated=allocated * (paths - 1)
+            )
+    return {
+        "hard_links": dict(duplicated),
+        "symlinks": dict(links),
+        "dirs": dict(dirs)
+        | {"root_apparent": root_info.st_size, "root_allocated": root_info.st_blocks * 512},
+        "unlisted": dict(unlisted),
+        "unstatted": {"entries": unstatted},
+    }
+
+
+def measure(root: Path, fdu: str, timeout: int, du: str) -> dict[str, object]:
+    readings = fdu_reading(fdu, root, timeout)
+    for run_tool in peers(root, timeout, du):
+        readings.append(run_tool())
+        readings += fdu_reading(fdu, root, timeout)
+    # What each tool gave up on after interrupted reads, measured now so a shortfall can
+    # be checked against it.
+    sizes: dict[tuple[str, str], int] = {}
+    for reading in readings:
+        if reading.tool == "fdu":
+            continue
+        for path in reading.interrupted:
+            if (path, reading.metric) not in sizes:
+                for measured in fdu_reading(fdu, Path(path), timeout):
+                    sizes[(path, measured.metric)] = measured.total or 0
+        reading.skipped = sum(sizes.get((p, reading.metric), 0) for p in reading.interrupted)
+    return {
+        "root": str(root),
+        "facts": tree_facts(root),
+        "readings": [asdict(r) for r in readings],
+    }
+
+
+def expected_delta(
+    model: Model, metric: str, facts: dict[str, dict[str, int]]
+) -> list[tuple[str, int]]:
+    """The parts of a tool's expected difference from fdu, each measured from the tree."""
+    parts = []
+    if not model.per_path and facts["hard_links"].get(metric):
+        parts.append(("hard links once", -facts["hard_links"][metric]))
+    links = facts["symlinks"].get(metric, 0)
+    if model.symlinks == "below_root":
+        links -= facts["symlinks"].get(f"root_{metric}", 0)
+    if model.symlinks != "none" and links:
+        parts.append(("symbolic links", links))
+    directories = facts["dirs"].get(metric, 0)
+    if model.dirs == "all_but_root":
+        directories -= facts["dirs"][f"root_{metric}"]
+    if model.dirs != "none" and directories:
+        parts.append(("directories", directories))
+    return parts
+
+
+def judge(record: dict[str, object]) -> tuple[str, int]:
+    """The record as a table, and how many readings failed."""
+    readings = [Reading(**r) for r in record["readings"]]  # type: ignore[arg-type]
+    facts: dict[str, dict[str, int]] = record["facts"]  # type: ignore[assignment]
+    fdu_at = [(i, r) for i, r in enumerate(readings) if r.tool == "fdu"]
+    series = {m: [r.total or 0 for _, r in fdu_at if r.metric == m] for m in METRICS}
+    quiet = {m: len(set(v)) == 1 for m, v in series.items()}
+    churn = {m: max((abs(b - a) for a, b in pairwise(v)), default=0) for m, v in series.items()}
+
+    def around(position: int, metric: str) -> tuple[int, int]:
+        before = next(r for i, r in reversed(fdu_at) if i < position and r.metric == metric)
+        after = next(r for i, r in fdu_at if i > position and r.metric == metric)
+        return before.total or 0, after.total or 0
+
+    first = fdu_at[0][1]
+    moved = {m: max(v) - min(v) for m, v in series.items()}
+    lines = [
+        f"### `{record['root']}`",
+        "",
+        f"fdu read {human(series['allocated'][0])} allocated and "
+        f"{human(series['apparent'][0])} apparent, exiting {first.exit}; across its "
+        f"{len(series['allocated'])} readings, one before each tool and one at the end, the "
+        f"tree moved {human(moved['allocated'])} allocated and {human(moved['apparent'])} "
+        f"apparent, at most {human(churn['allocated'])} and {human(churn['apparent'])} "
+        f"between consecutive readings. fdu errors: {describe(first.errors)}.",
+        "",
+        f"Measured from the tree: {facts['hard_links'].get('inodes', 0):,} hard-linked "
+        f"inodes, which per-path counting adds {human(facts['hard_links'].get('allocated', 0))}"
+        f" allocated to; {facts['symlinks'].get('count', 0):,} symbolic links, "
+        f"{human(facts['symlinks'].get('apparent', 0))} apparent; "
+        f"{facts['dirs'].get('count', 0):,} directories, "
+        f"{human(facts['dirs'].get('apparent', 0))} apparent; directories that could not be "
+        f"listed: {describe(facts['unlisted'])}; entries that could not be stat'd: "
+        f"{facts['unstatted']['entries']:,}.",
+        "",
+        "| Tool | Metric | Total | Δ vs fdu | Expected Δ | Made of | Verdict | Errors | Time |",
+        "| --- | --- | ---: | ---: | ---: | --- | --- | --- | ---: |",
+    ]
+    failures = 0
+    for position, reading in enumerate(readings):
+        if reading.tool == "fdu":
+            continue
+        model = MODELS[(reading.tool, reading.metric)]
+        parts = expected_delta(model, reading.metric, facts)
+        expected = sum(amount for _, amount in parts)
+        made_of = ", ".join(f"{name} {signed(amount)}" for name, amount in parts) or "—"
+        before, after = around(position, reading.metric)
+        low, high = sorted((before, after))
+        verdict = verdict_for(
+            reading, low + expected, high + expected, quiet[reading.metric], churn[reading.metric]
+        )
+        failures += verdict in ("UNEXPLAINED", "no reading")
+        total = human(reading.total) if reading.total is not None else "—"
+        delta = signed(reading.total - before) if reading.total is not None else "—"
+        lines.append(
+            f"| {reading.tool} | {reading.metric} | {total} | {delta} | {signed(expected)} | "
+            f"{made_of} | {verdict} | {describe(reading.errors)} | {reading.seconds:.1f} s |"
+        )
+    gave_up = [r for r in readings if r.tool != "fdu" and r.interrupted]
+    if gave_up:
+        lines += ["", "Directories a tool gave up on after an interrupted read:", ""]
+        for reading in gave_up:
+            names = ", ".join(f"`{relative(p, record['root'])}`" for p in reading.interrupted)
+            lines.append(f"- {reading.tool} ({reading.metric}): {names}")
+    failures += top_level(readings, quiet["allocated"], churn["allocated"], lines)
+    return "\n".join(lines), failures
+
+
+def verdict_for(reading: Reading, low: int, high: int, quiet: bool, churn: int) -> str:
+    total = reading.total
+    if total is None:
+        return "no reading"
+    if quiet:
+        return "agrees exactly" if total == low else "UNEXPLAINED"
+    if low <= total <= high:
+        return "agrees within the tree's movement"
+    if low - churn <= total <= high + churn:
+        return f"agrees within observed churn ({human(churn)})"
+    if reading.interrupted and low - reading.skipped - churn <= total < low:
+        return (
+            f"short by what it gave up on: {len(reading.interrupted):,} interrupted "
+            f"directories holding {human(reading.skipped)}"
+        )
+    return "UNEXPLAINED"
+
+
+def top_level(readings: list[Reading], quiet: bool, churn: int, lines: list[str]) -> int:
+    """Top-level directories against the reference and the fdu reading just before it."""
+    position, reference = next(
+        (i, r) for i, r in enumerate(readings) if r.tool == "GNU du -l" and r.metric == "allocated"
+    )
+    ours = next(
+        r for r in reversed(readings[:position]) if r.tool == "fdu" and r.metric == "allocated"
+    )
+    limit = 0 if quiet else churn
+    rows = []
+    for name in sorted(set(ours.children) | set(reference.children)):
+        mine, theirs = ours.children.get(name), reference.children.get(name)
+        if mine is None or theirs is None or abs(mine - theirs) > limit:
+            rows.append(
+                f"| `{name}` | {human(mine) if mine is not None else 'absent'} | "
+                f"{human(theirs) if theirs is not None else 'absent'} | "
+                f"{signed(mine - theirs) if mine is not None and theirs is not None else '—'} |"
+            )
+    bound = "exactly" if quiet else f"within {human(limit)}"
+    lines += [
+        "",
+        f"Top-level directories whose allocated size does not agree with GNU du -l {bound}: "
+        f"{len(rows)} of {len(ours.children):,}.",
+    ]
+    if rows:
+        lines += ["", "| Directory | fdu | GNU du -l | Δ |", "| --- | ---: | ---: | ---: |", *rows]
+    return len(rows) if quiet else 0
+
+
+def relative(path: str, root: object) -> str:
+    try:
+        return str(Path(path).relative_to(str(root)))
+    except ValueError:
+        return path
+
+
+def describe(errors: dict[str, int]) -> str:
+    return ", ".join(f"{n:,} {kind}" for kind, n in errors.items()) or "none"
 
 
 def human(n: float) -> str:
@@ -318,171 +508,82 @@ def human(n: float) -> str:
     return f"{sign}{n}"
 
 
-def measure(root: Path, fdu: str, timeout: int) -> dict[str, object]:
-    readings = fdu_reading(fdu, root, timeout, "fdu")
-    for run_tool in peers(root, timeout, gnu_du()):
-        readings.append(run_tool())
-        readings += fdu_reading(fdu, root, timeout, "fdu")
-    return {
-        "root": str(root),
-        "facts": tree_facts(root),
-        "readings": [asdict(r) for r in readings],
-    }
+def signed(n: int) -> str:
+    return "0 B" if n == 0 else ("+" if n > 0 else "") + human(n)
 
 
-# Tools that count a symbolic link's target text as apparent size, as du does.
-COUNTS_SYMLINKS = {"GNU du -l", "GNU du", "diskus", "BSD du"}
-
-
-def judge(record: dict[str, object]) -> str:
-    readings = [Reading(**r) for r in record["readings"]]  # type: ignore[arg-type]
-    facts: dict[str, dict[str, int]] = record["facts"]  # type: ignore[assignment]
-    links_seen, duplicated = facts["symlinks"], facts["hard_links"]
-    fdu_at = [(i, r) for i, r in enumerate(readings) if r.tool == "fdu"]
-
-    def bracket(position: int, metric: str) -> tuple[Reading, Reading]:
-        """The fdu readings of `metric` taken just before and just after `position`."""
-        before = next(r for i, r in reversed(fdu_at) if i < position and r.metric == metric)
-        after = next(r for i, r in fdu_at if i > position and r.metric == metric)
-        return before, after
-
-    totals = {
-        metric: [r.total or 0 for _, r in fdu_at if r.metric == metric]
-        for metric in ("allocated", "apparent")
-    }
-    moved = {metric: max(v) - min(v) for metric, v in totals.items()}
-    first = {metric: v[0] for metric, v in totals.items()}
-    fdu_errors = next(r for _, r in fdu_at).errors
-    lines = [
-        f"### `{record['root']}`",
-        "",
-        f"fdu: allocated {human(first['allocated'])}, apparent {human(first['apparent'])}; "
-        f"across its {len(totals['allocated'])} readings, one before each tool and one at "
-        f"the end, the tree moved {human(moved['allocated'])} allocated and "
-        f"{human(moved['apparent'])} apparent. "
-        f"fdu errors: {describe(fdu_errors)}. "
-        f"Hard links: {duplicated['inodes']:,} shared inodes, which counting per path adds "
-        f"{human(duplicated['allocated'])} allocated to. "
-        f"Symbolic links: {links_seen['count']:,}, {human(links_seen['apparent'])} apparent, "
-        f"{human(links_seen['allocated'])} allocated. "
-        f"Directories that could not be listed: {facts['unreadable']['dirs']:,}.",
-        "",
-        "| Tool | Metric | Counts | Total | Δ vs fdu | Expected Δ | fdu moved | Verdict "
-        "| Errors | Time |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | ---: |",
-    ]
-    for position, reading in enumerate(readings):
-        if reading.tool == "fdu":
-            continue
-        errors = describe(reading.errors)
-        before, after = bracket(position, reading.metric)
-        if reading.total is None:
-            lines.append(
-                f"| {reading.tool} | {reading.metric} | {reading.counting} | — | — | — | — "
-                f"| no reading | {errors} | {reading.seconds:.1f} s |"
-            )
-            continue
-        low, high = sorted((before.total or 0, after.total or 0))
-        delta = reading.total - (before.total or 0)
-        expected = 0
-        causes = []
-        if PER_INODE in reading.counting and duplicated[reading.metric]:
-            expected -= duplicated[reading.metric]
-            causes.append("hard links")
-        if reading.tool in COUNTS_SYMLINKS and links_seen[reading.metric]:
-            expected += links_seen[reading.metric]
-            causes.append("symbolic links")
-        # Exact on a quiet tree, one whose every fdu reading was the same. On a live one,
-        # within the range the two fdu readings around the tool span, plus 0.05% for a
-        # change that came and went while the tool ran: equal readings on either side of
-        # a tool do not show that nothing changed during it.
-        quiet = moved[reading.metric] == 0
-        slack = 0 if quiet else low // 2000
-        within = "exactly" if quiet else "within the tree's movement"
-        interrupted = reading.errors.get("interrupted", 0)
-        if DIRS in reading.counting:
-            adds = reading.total >= low + expected - slack
-            verdict = "adds directory sizes" if adds else "UNEXPLAINED"
-        elif low + expected - slack <= reading.total <= high + expected + slack:
-            verdict = f"agrees {within}" + (f" after {' and '.join(causes)}" if causes else "")
-        else:
-            verdict = "UNEXPLAINED"
-        if verdict == "UNEXPLAINED" and interrupted and reading.total < low + expected:
-            verdict = f"short: gave up on {interrupted:,} directories after interrupted reads"
-        lines.append(
-            f"| {reading.tool} | {reading.metric} | {reading.counting} | "
-            f"{human(reading.total)} | {human(delta)} | {human(expected)} | "
-            f"{human((after.total or 0) - (before.total or 0))} | {verdict} | {errors} "
-            f"| {reading.seconds:.1f} s |"
-        )
-
-    # Top-level directories, against the per-path reference and the fdu reading taken
-    # just before it, so a gap is placed.
-    moved_dirs = []
-    reference = next(
-        (
-            (i, r)
-            for i, r in enumerate(readings)
-            if r.tool == "GNU du -l" and r.metric == "allocated"
-        ),
-        None,
-    )
-    if reference is not None:
-        position, theirs_reading = reference
-        ours = bracket(position, "allocated")[0].children
-        for name, size in sorted(ours.items()):
-            theirs = theirs_reading.children.get(name)
-            if theirs is None:
-                continue
-            gap = size - theirs
-            if abs(gap) > max(size // 1000, 1024 * 1024):
-                moved_dirs.append(f"| `{name}` | {human(size)} | {human(theirs)} | {human(gap)} |")
-    lines += [
-        "",
-        "Top-level directories whose allocated size differs from GNU du -l by more "
-        f"than 0.1% and 1 MiB: {len(moved_dirs)}.",
-    ]
-    if moved_dirs:
-        lines += [
-            "",
-            "| Directory | fdu | GNU du -l | Δ |",
-            "| --- | ---: | ---: | ---: |",
-            *moved_dirs,
-        ]
-    return "\n".join(lines)
-
-
-def describe(errors: dict[str, int]) -> str:
-    return ", ".join(f"{n:,} {kind}" for kind, n in errors.items()) or "none"
+def self_test(fdu: str, du: str, timeout: int, scratch: Path | None) -> int:
+    """Build a tree with each case the models name, and require exact agreement."""
+    base = Path(tempfile.mkdtemp(prefix="fdu-peer-agreement-", dir=scratch))
+    probe = base / "probe root"
+    try:
+        (probe / "a").mkdir(parents=True)
+        (probe / "b").mkdir()
+        (probe / "a" / "file").write_bytes(os.urandom(10_000))
+        os.link(probe / "a" / "file", probe / "a" / "same inode")
+        os.link(probe / "a" / "file", probe / "b" / "same inode across directories")
+        (probe / "link").symlink_to("a/file")
+        (probe / "directory link").symlink_to("a")
+        (probe / "long link").symlink_to("x" * 1000)
+        with open(probe / "sparse", "wb") as sparse:
+            sparse.truncate(1 << 30)
+        (probe / "name with spaces").mkdir()
+        (probe / "name with spaces" / "small").write_bytes(b"small")
+        (probe / "locked").mkdir()
+        (probe / "locked" / "hidden").write_bytes(b"hidden")
+        (probe / "locked").chmod(0)
+        text, failures = judge(measure(probe, fdu, timeout, du))
+        print(text + "\n")
+        exact = text.count("| agrees exactly |")
+        print(f"Self-test: {exact} readings agree exactly; {failures} failed.")
+        return 1 if failures else 0
+    finally:
+        (probe / "locked").chmod(0o755)
+        shutil.rmtree(base)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("roots", nargs="*", type=Path)
     parser.add_argument("--fdu", default=os.environ.get("FDU", "fdu"))
     parser.add_argument("--timeout", type=int, default=1800, help="seconds per command")
     parser.add_argument("--json", type=Path, help="also write every reading here")
+    parser.add_argument("--rejudge", type=Path, help="judge readings saved by --json again")
     parser.add_argument(
-        "--rejudge",
-        type=Path,
-        help="judge readings saved by an earlier --json instead of measuring",
+        "--self-test",
+        action="store_true",
+        help="prove the counting models on a tree built with each case",
     )
+    parser.add_argument("--scratch", type=Path, help="where --self-test builds its tree")
     args = parser.parse_args()
 
     if args.rejudge:
+        failures = 0
         for record in json.loads(args.rejudge.read_text(encoding="utf-8")):
-            print(judge(record) + "\n", flush=True)
-        return 0
+            text, failed = judge(record)
+            failures += failed
+            print(text + "\n")
+        return 1 if failures else 0
+    du = gnu_du()
+    if du is None:
+        print("GNU du is required as the reference (`brew install coreutils`).", file=sys.stderr)
+        return 2
     version = subprocess.run([args.fdu, "--version"], capture_output=True, text=True).stdout
     print(f"## Peer agreement ({version.strip()}, {time.strftime('%Y-%m-%d')})\n", flush=True)
+    if args.self_test:
+        return self_test(args.fdu, du, args.timeout, args.scratch)
+    failures = 0
     data = []
     for root in args.roots:
-        record = measure(root.expanduser().resolve(), args.fdu, args.timeout)
+        record = measure(root.expanduser().resolve(), args.fdu, args.timeout, du)
         data.append(record)
         if args.json:
             args.json.write_text(json.dumps(data, indent=1), encoding="utf-8")
-        print(judge(record) + "\n", flush=True)
-    return 0
+        text, failed = judge(record)
+        failures += failed
+        print(text + "\n", flush=True)
+    print(f"{failures} readings failed." if failures else "Every reading is explained.")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

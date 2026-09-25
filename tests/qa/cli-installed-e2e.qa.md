@@ -16,7 +16,8 @@ disk-usage tools, and that every difference has a named cause.
 Record wall time and peak RSS so later runs can revise the numbers.
 
 **Estimated Time**: 15–20 minutes for the small tree and cache benchmark; 20–40 more if
-the medium and large fixtures are set.
+the medium and large fixtures are set; about half an hour for peer agreement (Phase 7),
+up to an hour on a loaded machine.
 Library steps are time-boxed and must stay bounded.
 
 > This is a kind of “manual test”: it is not a strict end-to-end integration test,
@@ -32,7 +33,7 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-09-18)
+## Current Status (Last Update 2026-09-25)
 
 | Phase | Status | Notes |
 | --- | --- | --- |
@@ -423,69 +424,74 @@ Run on the release candidate before tagging, and after any change to how sizes a
 counted. It answers the question a user asks first: does fdu agree with the tool they
 already trust?
 Not always byte for byte, because tools count some things differently, but
-every difference must have a named cause.
+every difference must have a measured cause.
+It is written for macOS and APFS, where directories and symbolic links occupy no blocks;
+on another filesystem the directory and link terms need the self-test run there first.
 
 **Subjects**, at least these four: this repository (a `.gitignore`, build output,
 symbolic links), `~/.rustup` or another quiet mid-size tree, `/Applications` (bundles,
 symbolic links, compressed files), and `~/Library`: permission-denied folders, sparse
 virtual-machine disks, cloud placeholders, clones, and files changing while it is
 measured. The whole `~/Library` metadata walk is required here; never `--analyze` it.
+Allow about half an hour; on a loaded machine, an hour.
 
-**Tools**: GNU du is required, as the byte-exact reference (`gdu` from coreutils on
-macOS). dust, pdu, dua, diskus, and the system du run when installed.
+**Tools**: GNU du is required, as the reference (`gdu` from coreutils on macOS); the
+script refuses to run without it.
+dust, pdu, dua, diskus, and the system du run when installed.
 dumac prints only rounded sizes, so it is not compared.
 
 ```bash
+python3 scripts/qa_peer_agreement.py --self-test
 python3 scripts/qa_peer_agreement.py . ~/.rustup /Applications ~/Library \
   --json "$FDU_QA_OUT/peer-agreement.json" | tee "$FDU_QA_OUT/peer-agreement.md"
 ```
 
-Each tool runs once per tree, one at a time, with fdu run just before each tool and once
-more at the end, and each tool is judged against the two fdu readings that bracket it: a
-live tree such as `~/Library` moves by hundreds of megabytes during an hour of
-measurement, so a comparison with a reading taken minutes earlier would measure the tree
-rather than the tool.
+The self-test builds a small tree with every case below (hard links within and across
+directories, symbolic links to a file, a directory, and nowhere, an unreadable folder, a
+sparse file, a name with spaces) and requires every tool to agree with its counting
+model exactly; run it first, and after upgrading any peer tool.
+The script exits non-zero if any reading is `UNEXPLAINED` or missing.
+The `--json` file holds absolute paths, and the tables name `~/Library` application
+folders; keep the first out of the repository and review the second before publishing.
 `--rejudge FILE` judges saved readings again without measuring.
 
-**What agreement means.** GNU du with `--count-links` counts a file once per path, as
-fdu does, so on APFS its allocated total must equal fdu’s exactly on a quiet tree.
-Every other tool differs for the reasons below, and the script computes each expected
-difference from the tree itself:
+**How the tools count.** fdu counts regular files once per path, and nothing else.
+GNU du with `--count-links` counts the same way apart from links’ and directories’ own
+sizes, so on a quiet APFS tree its allocated total equals fdu’s to the byte.
+Every other difference is computed from the tree itself, in one walk:
 
 | Difference | Tools | Expected difference from fdu |
 | --- | --- | --- |
-| Hard links | fdu, `du -l`, and pdu count a hard-linked file once per path; du, dust, dua, and diskus once | Per-inode tools are lower by exactly GNU du’s two readings’ difference |
-| Symbolic links | du and diskus count a link’s target text as apparent size; fdu counts regular files only | Apparent size higher by the links’ total; allocated unchanged on APFS, where links occupy no blocks |
-| Directory sizes | dust `-s`, pdu apparent, and dua `-A` add each directory’s own size | Apparent size higher by about the directories’ sizes |
-| Directory blocks | du counts a directory’s blocks; fdu does not | None on APFS; on ext4, du is higher by about 4 KiB per directory |
+| Hard links | fdu, `du -l`, pdu, and dust’s apparent size count a hard-linked file once per path; du, dua, diskus, and dust’s allocated size count it once | Lower by what per-path counting adds, measured from the paths that share an inode |
+| Symbolic links | du, dust, pdu, and diskus count a link’s own size, which is its target text; dua does too, except for links directly inside the root, which it takes as inputs | Apparent size higher by the links’ total; allocated unchanged on APFS |
+| Directory sizes | dust `-s` and pdu’s apparent size add every directory’s own size; dua adds every directory’s but the root’s; du and diskus add none to apparent size | Apparent size higher by the directories’ total; allocated unchanged on APFS |
 | Allocated or apparent | fdu, du, dust, dua, and diskus default to allocated; a sparse disk image, a cloud placeholder, or a compressed file makes the two differ | Compare like with like, never fdu’s default with a tool’s apparent figure |
-| A live tree | `~/Library` changes while it is measured | Within the range of the two fdu readings that bracket the tool, plus 0.05% |
-| Interrupted reads | GNU du and pdu on macOS give up on a directory whose read is interrupted, and leave its subtree out | The tool reads short, and says so in its errors; fdu’s fast macOS reader declines on any failure and its portable reader reads the directory again, and a second failure would be reported |
+| A live tree | `~/Library` changes while it is measured | fdu runs just before each tool and once at the end; a tool must fall within its two fdu readings, or outside them by no more than the largest change fdu saw between consecutive readings |
+| Interrupted reads | GNU du and pdu on macOS give up on a directory whose read is interrupted, and leave its subtree out | Short by no more than what those directories hold, measured afterwards, and the table lists them; fdu’s fast macOS reader declines on any failure and its portable reader reads the directory again, and a second failure would be reported |
 
 **Verify**:
 
-- [ ] No row says `UNEXPLAINED`: every tool agrees exactly on a quiet tree, or within
-  the tree’s movement on a live one, after its named causes; a row marked `short` names
-  the directories the tool gave up on
-- [ ] fdu reports as many unreadable directories as GNU du reports denied ones
-- [ ] On a quiet tree, no top-level directory’s allocated size differs from GNU du’s by
-  more than 0.1% and 1 MiB; on `~/Library`, only directories that were changing may, and
-  a rerun moves them
+- [ ] The self-test agrees exactly for every tool
+- [ ] Every reading of every tree agrees, and no row says `UNEXPLAINED` or `no reading`:
+  exactly on a quiet tree, one whose every fdu reading was the same; within the tree’s
+  movement or its observed churn on a live one; or short by the directories it lists
+- [ ] On a quiet tree, every top-level directory’s allocated size equals GNU du’s
+  exactly, and none is present on only one side
+- [ ] fdu’s error count on `~/Library` matches GNU du’s (fdu details its first 64 errors
+  and counts the rest), and fdu exits 2 (partial)
 - [ ] fdu’s `~/Library` total is plausible against the volume (`df -h ~`): a figure
   larger than the disk means a sparse file was counted by its apparent size
-- [ ] fdu warns for each folder it could not read and exits 2 (partial) on `~/Library`,
-  and the tools that agree with it skipped the same folders
 - [ ] The tables are recorded in a dated report under `docs/project/reports/`
 
 An `UNEXPLAINED` row is a finding: identify the files responsible (compare the top-level
-directories, then descend with `fdu --view tree --depth 1` and `du -d 1`) and either
-name a new cause here or file a bead.
+directories, then descend with `fdu --view tree --depth 1` and `du -d 1`), and either
+extend the model and the self-test with the new case or file a bead.
 
 * * *
 
 ## Phase 8: Results
 
-### 7.1 Record the Table
+### 8.1 Record the Table
 
 Copy `FDU_QA_OUT/results.md` into a dated file under `docs/project/reports/` (or replace
 the table in the current report).

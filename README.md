@@ -279,11 +279,12 @@ per-extension roll-ups, and kept the index that answers the next question withou
 another walk. dumac’s 95% interval was +5.8% to +13.5%.
 
 The answers agree, too.
-On real trees, `~/Library` among them, fdu’s totals equal GNU du `--count-links` to the
-byte, and differ from du and dust only where they count differently: fdu counts a
-hard-linked file once per path and a symbolic link’s target text not at all.
+On quiet trees, fdu’s allocated totals equal GNU du `--count-links` to the byte; on
+`~/Library`, which changes while it is measured, every tool agrees within that movement.
+The other differences have measured causes: fdu counts a hard-linked file once per path,
+and counts neither a symbolic link’s own size nor a directory’s.
 [The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
-names every difference.
+has the tables.
 
 fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
 million-entry index and dumac retained one integer.
