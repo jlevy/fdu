@@ -11,7 +11,7 @@ Replace the tables when revising; keep the playbook’s procedure.
 | Field | Value |
 | --- | --- |
 | fdu | `fdu 0.1.0-dev+g963d48520` (main after #125), installed from its release wheel |
-| Script | `scripts/qa_peer_agreement.py` at b7aa0b74 |
+| Script | `scripts/qa_peer_agreement.py`, measured at b7aa0b74, judged at 5f121aaa (the later commit changes only how readings are judged) |
 | Host | macOS, Apple silicon, APFS; a desktop in use |
 | Peers | GNU du 9.9 (`gdu`), dust 1.2.4, pdu 0.24.0, dua 2.41.1, diskus 0.9.0, BSD du |
 | Commands | `python3 scripts/qa_peer_agreement.py --self-test`, then `. ~/.rustup /Applications ~/Library --json FILE` |
@@ -19,7 +19,11 @@ Replace the tables when revising; keep the playbook’s procedure.
 
 ## Verdict
 
-**Every reading is explained.** The self-test and the comparison both exited 0.
+**Every other reading is explained; 1 could not be checked, because the tool skipped
+folders without naming them.** The self-test and the comparison both exited 0. On
+`~/Library`, dua skipped folders without naming them in each of its three runs, and its
+allocated reading came in short, so that one reading is marked not verifiable rather
+than taken as agreeing; every other reading is checked.
 
 - The self-test tree, built with every case the counting models name, agrees exactly for
   all 13 tool readings.
@@ -31,9 +35,9 @@ Replace the tables when revising; keep the playbook’s procedure.
 - `~/Library` moved 448.0 KiB allocated during its part of the run.
   Each tool falls within the fdu readings taken around it, or outside them by no more
   than fdu moved during or next to them, or short by what the folders it reported
-  skipping hold, measured afterwards.
-  fdu exited 2 (partial) with 153 errors, as many as GNU du reports denied and as many
-  as the script’s own walk found unreadable (149 directories and 4 files).
+  skipping hold, measured afterwards; dua’s allocated reading is the one exception
+  above. fdu exited 2 (partial) with 153 errors, as many as GNU du reports denied and as
+  many as the script’s own walk found unreadable (149 directories and 4 files).
 
 ## Findings
 
@@ -50,7 +54,7 @@ Replace the tables when revising; keep the playbook’s procedure.
 3. **Other tools skip folders on a live tree; fdu did not.** GNU du and pdu on macOS
    give up on a directory whose read is interrupted, and diskus on one that fails for a
    moment without saying why; each leaves that subtree out.
-   In an earlier run diskus skipped a 743 MiB application container this way.
+   In an earlier run diskus skipped 52 folders holding 743 MiB this way.
    The script measures each folder a tool names afterwards, and each such tool fell
    short by what those folders hold, within the fdu readings around it.
    dua reports only a count, so when it skips folders without naming them it is run
@@ -72,10 +76,11 @@ Replace the tables when revising; keep the playbook’s procedure.
      links occupy no blocks on APFS.
    - *Directory sizes*: dust `-s` and pdu’s apparent size add every directory’s own
      size, and dua every directory’s but the root’s: 1 to 35 MiB here.
-5. **A checker for a live tree has to be hard to fool.** Three independent reviews broke
+5. **A checker for a live tree has to be hard to fool.** Four independent reviews broke
    earlier versions of the script: a tolerance taken as a share of the tree allowed
    gigabytes on `~/Library`’s 8 TiB apparent total, one or two bad fdu readings could
-   loosen the rows around them, and a bound on unnamed skips was not a bound.
+   loosen the rows around them, a bound on unnamed skips was not a bound, and fdu’s
+   undetailed errors went unchecked.
    The script now takes its allowances only from fdu’s own movement around each tool,
    fails fdu readings that disagree with a tree that otherwise did not move, and fails
    on each of the reviews’ attacks.
@@ -216,8 +221,8 @@ stat’d: 4.
 | dust | apparent | 8.1 TiB | +36.2 MiB | +36.3 MiB | symbolic links +1.1 MiB, directories +35.2 MiB | agrees within fdu’s nearby movement (167.4 KiB) | 149 denied | 14.3 s |
 | pdu | allocated | 72.1 GiB | -132.0 KiB | 0 B | — | short by what it skipped: 5 directories holding 124.0 KiB | 153 denied, 5 interrupted | 12.5 s |
 | pdu | apparent | 8.1 TiB | +6.1 MiB | +36.3 MiB | symbolic links +1.1 MiB, directories +35.2 MiB | short by what it skipped: 7 directories holding 30.3 MiB | 153 denied, 7 interrupted | 13.1 s |
-| dua | allocated | 72.0 GiB | -22.6 MiB | -22.6 MiB | hard links once -22.6 MiB | agrees within fdu’s nearby movement (292.0 KiB) | 161 unreadable, reason not given | 12.2 s |
-| dua | apparent | 8.1 TiB | +13.9 MiB | +14.0 MiB | hard links once -22.3 MiB, symbolic links +1.1 MiB, directories +35.2 MiB | agrees within the tree’s movement | 156 unreadable, reason not given | 9.7 s |
+| dua | allocated | 72.0 GiB | -22.6 MiB | -22.6 MiB | hard links once -22.6 MiB | not verifiable: short after skipping 8 folders it did not name, in each of 3 runs | 161 unreadable, reason not given | 12.2 s (run 3 times) |
+| dua | apparent | 8.1 TiB | +13.9 MiB | +14.0 MiB | hard links once -22.3 MiB, symbolic links +1.1 MiB, directories +35.2 MiB | agrees within the tree’s movement | 156 unreadable, reason not given | 9.7 s (run 3 times) |
 | diskus | allocated | 72.0 GiB | -27.5 MiB | -22.6 MiB | hard links once -22.6 MiB | short by what it skipped: 41 directories holding 4.9 MiB | 194 unreadable, reason not given | 12.1 s |
 | diskus | apparent | 8.1 TiB | -303.2 MiB | -21.2 MiB | hard links once -22.3 MiB, symbolic links +1.1 MiB | short by what it skipped: 45 directories holding 281.9 MiB, within fdu’s nearby movement (75.6 KiB) | 198 unreadable, reason not given | 13.1 s |
 | BSD du | allocated | 72.0 GiB | -22.6 MiB | -22.6 MiB | hard links once -22.6 MiB | agrees within the tree’s movement | 153 denied | 36.8 s |
