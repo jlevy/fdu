@@ -7,11 +7,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-09-24
-
-<!-- Release date: 2026-09-24 is the planned tag date. Set it to the actual tag date if
-v0.1.0 is cut later.
--->
+## [0.1.0] - 2026-09-25
 
 The first release. fdu walks a directory tree once and answers, for every directory at
 once, how big it is, how many files it holds, what changed most recently, and what kinds
