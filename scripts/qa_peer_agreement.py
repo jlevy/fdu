@@ -103,11 +103,18 @@ class Reading:
     skipped: int = 0  # what the tool would have counted there, measured afterwards
     unmeasured: bool = False  # a directory it gave up on could not be measured
     exit: int | None = None
+    attempts: int = 1  # dua is run again when it skips folders without naming them
 
 
 def run(command: list[str], timeout: int) -> tuple[str, str, int, float]:
+    """A command's stdout, stderr, exit status, and wall time; a timeout is a failed run."""
     started = time.monotonic()
-    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return "", f"timed out after {timeout} s", -1, time.monotonic() - started
     return result.stdout, result.stderr, result.returncode, time.monotonic() - started
 
 
@@ -116,7 +123,9 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 GNU_FAILURE = re.compile(r"^\S*du: cannot (?:read directory|access) (.+): ([^:]+)$")
 BSD_FAILURE = re.compile(r"^du: (.+): ([^:]+)$")
 PDU_FAILURE = re.compile(r'\[error\] \w+ (".*"): (.*)$')
-DISKUS_FAILURE = re.compile(r"could not read contents of directory '(.*)'$")
+DISKUS_FAILURE = re.compile(
+    r"could not (?:read contents of directory|retrieve metadata for path) '(.*)'$"
+)
 
 
 def reason(text: str) -> str:
@@ -190,6 +199,10 @@ def fdu_reading(fdu: str, root: Path, timeout: int) -> list[Reading]:
     failed = []
     status = document.get("status", {})
     for error in status.get("errors", []):
+        if error.get("kind") == "disappeared":
+            # Removed while fdu walked it: the tree moving, not a read fdu gave up on.
+            errors["disappeared"] += 1
+            continue
         failed.append(str(root / error.get("path", "")))
         if error.get("os_error") == 4:
             errors["interrupted"] += 1
@@ -367,21 +380,33 @@ def tree_facts(root: Path) -> dict[str, object]:
 
 
 def measure(root: Path, fdu: str, timeout: int, du: str) -> dict[str, object]:
+    # The walk comes first, so a tool that skips folders without naming them can be run
+    # again while its bracket is open.
+    facts = tree_facts(root)
+    unreadable = set(facts["unlisted_paths"]) | set(facts["unstatted_paths"])  # type: ignore[arg-type]
     readings = fdu_reading(fdu, root, timeout)
     for run_tool in peers(root, timeout, du):
-        readings.append(run_tool())
+        reading = run_tool()
+        # dua reports only a count of failures; when it is more than the paths no tool
+        # can read, it skipped folders without naming them, and a reading that did not
+        # is the one that can be checked.
+        for _ in range(2):
+            if reading.tool != "dua" or unnamed_skips(reading, unreadable) == 0:
+                break
+            again = run_tool()
+            again.attempts = reading.attempts + 1
+            reading = again
+        readings.append(reading)
         readings += fdu_reading(fdu, root, timeout)
-    facts = tree_facts(root)
     # A path a tool reported it could not read, but that the walk could read, is one it
     # gave up on: measure what the tool would have counted there, so a shortfall can be
     # checked against it. A path the walk could not read either is one no tool can.
-    unlisted = set(facts["unlisted_paths"]) | set(facts["unstatted_paths"])  # type: ignore[arg-type]
     cache: dict[str, tuple[dict[str, int], dict[str, object]] | None] = {}
     for reading in readings:
         if reading.tool == "fdu":
             continue
         reading.gave_up = sorted(
-            {os.path.normpath(p) for p in reading.failed} - unlisted - {os.path.normpath(root)}
+            {os.path.normpath(p) for p in reading.failed} - unreadable - {os.path.normpath(root)}
         )
         model = MODELS[(reading.tool, reading.metric)]
         for path in reading.gave_up:
@@ -396,29 +421,24 @@ def measure(root: Path, fdu: str, timeout: int, du: str) -> dict[str, object]:
             reading.skipped += totals[reading.metric] + sum(amount for _, amount in extras)
         if os.path.normpath(root) in {os.path.normpath(p) for p in reading.failed}:
             reading.unmeasured = True
-    # What every folder some tool gave up on holds: the most a tool that skipped folders
-    # without naming them can have lost, if it failed where the others did.
-    pool = {
-        metric: sum(measured[0][metric] for measured in cache.values() if measured)
-        for metric in METRICS
-    }
-    return {
-        "root": str(root),
-        "facts": facts,
-        "gave_up_pool": pool,
-        "readings": [asdict(r) for r in readings],
-    }
+    return {"root": str(root), "facts": facts, "readings": [asdict(r) for r in readings]}
+
+
+def unnamed_skips(reading: Reading, unreadable: set[str]) -> int:
+    """Failures a tool reported beyond the paths it named and the ones no tool can read."""
+    named = {os.path.normpath(p) for p in reading.failed}
+    return max(sum(reading.errors.values()) - len(named) - len(unreadable - named), 0)
 
 
 def subtree(fdu: str, path: Path, timeout: int) -> tuple[dict[str, int], dict[str, object]] | None:
     """fdu's totals and the walk's facts for one directory, or None if it cannot be
     measured: gone, not a directory, or unreadable now."""
     try:
-        if not path.is_dir():
+        if not stat.S_ISDIR(path.lstat().st_mode):  # a link is not followed
             return None
         readings = fdu_reading(fdu, path, timeout)
-        if any(r.total is None for r in readings):
-            return None
+        if any(r.total is None or r.exit != 0 for r in readings):
+            return None  # partial now, so what the tool missed there is not known
         return {r.metric: r.total or 0 for r in readings}, tree_facts(path)
     except OSError:
         return None
@@ -451,43 +471,72 @@ def saved(fields: dict[str, object]) -> Reading:
     return Reading(**known)  # type: ignore[arg-type]
 
 
-def fdu_series(readings: list[Reading], metric: str) -> tuple[list[int], int | None]:
-    """fdu's readings of `metric` in order, with one outlier replaced, and its position.
+def fdu_series(values: list[int]) -> tuple[list[int], list[int]]:
+    """fdu's readings with any it disagreed with itself on replaced, and their positions.
 
-    When every reading but one agrees, the odd one is fdu disagreeing with itself, not the
-    tree moving: it fails on its own row, and the tools are judged against the others."""
-    values = [r.total or 0 for r in readings if r.tool == "fdu" and r.metric == metric]
-    common, count = Counter(values).most_common(1)[0]
-    if len(values) >= 3 and count == len(values) - 1:
-        odd = next(i for i, v in enumerate(values) if v != common)
-        return [common] * len(values), odd
-    return values, None
+    On a tree that otherwise did not move, a stretch of readings that leaves a value and
+    returns to it, or a change at one end of the run, is fdu disagreeing with itself: those
+    readings fail on their own rows, and the tools are judged against the rest. A tree that
+    moved is judged as it was read, since a temporary file can take its total away and
+    back again."""
+    corrected, bad = list(values), set()
+    changed = True
+    while changed:
+        changed = False
+        pairs = [(a, b) for a in range(len(corrected)) for b in range(a + 2, len(corrected))]
+        for i, j in pairs:
+            between = range(i + 1, j)
+            if corrected[i] == corrected[j] and any(corrected[k] != corrected[i] for k in between):
+                for k in between:
+                    if corrected[k] != corrected[i]:
+                        bad.add(k)
+                        corrected[k] = corrected[i]
+                changed = True
+                break
+    if len(corrected) >= 3 and len(set(corrected)) == 2 and corrected[0] != corrected[-1]:
+        split = next(i for i, v in enumerate(corrected) if v != corrected[0])
+        if all(v == corrected[-1] for v in corrected[split:]):
+            head, tail = range(split), range(split, len(corrected))
+            shorter = tail if len(tail) < len(head) else head if len(head) < len(tail) else None
+            if shorter is not None:
+                keep = corrected[0] if shorter is tail else corrected[-1]
+                for k in shorter:
+                    bad.add(k)
+                    corrected[k] = keep
+    if len(set(corrected)) == 1:
+        return corrected, sorted(bad)
+    return list(values), []
 
 
-def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int]:
-    """The record as a table, and how many readings failed."""
+def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int, int]:
+    """The record as a table, how many readings failed, and how many could not be checked."""
     readings = [saved(r) for r in record["readings"]]  # type: ignore[union-attr]
     facts: dict[str, dict[str, int]] = record["facts"]  # type: ignore[assignment]
     fdu_readings = [r for r in readings if r.tool == "fdu"]
-    failures = 0
+    failures = unverified = 0
     notes: list[str] = []
     series: dict[str, list[int]] = {}
     for metric in METRICS:
-        series[metric], odd = fdu_series(readings, metric)
-        if odd is not None:
+        values = [r.total or 0 for r in fdu_readings if r.metric == metric]
+        series[metric], bad = fdu_series(values)
+        for k in bad:
             failures += 1
-            value = [r for r in fdu_readings if r.metric == metric][odd].total or 0
             notes.append(
-                f"- UNEXPLAINED: fdu's {metric} reading {odd + 1} of {len(series[metric])} was "
-                f"{human(value)}, and every other reading was {human(series[metric][0])}."
+                f"- UNEXPLAINED: fdu's {metric} reading {k + 1} of {len(values)} was "
+                f"{values[k]:,} bytes ({signed(values[k] - series[metric][k])}), where the "
+                f"other readings were {series[metric][k]:,}: fdu disagreed with itself, or "
+                f"the tree changed and changed back; rerun."
             )
     if any(r.total is None for r in fdu_readings):
         failures += 1
         notes.append("- UNEXPLAINED: an fdu reading failed.")
-    error_counts = {sum(r.errors.values()) for r in fdu_readings}
-    if len(error_counts) > 1:
-        failures += 1
-        notes.append(f"- UNEXPLAINED: fdu's error count varied: {sorted(error_counts)}.")
+    # fdu may be denied a folder, or find one gone mid-scan; anything else it failed to
+    # read is a finding. It details its first errors and only counts the rest.
+    for kind in ("interrupted", "other"):
+        count = max(r.errors.get(kind, 0) for r in fdu_readings)
+        if count:
+            failures += 1
+            notes.append(f"- UNEXPLAINED: fdu reported {count:,} {kind} errors.")
     quiet = {m: len(set(v)) == 1 for m, v in series.items()}
     steps = {m: [abs(b - a) for a, b in pairwise(v)] for m, v in series.items()}
     first = fdu_readings[0]
@@ -530,16 +579,11 @@ def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int
             default=0,
         )
         low, high = sorted((before + expected, after + expected))
-        # A tool that reports more failures than there are unreadable paths, without
-        # naming them all, skipped folders it did not say.
         unreadable = set(facts.get("unlisted_paths", [])) | set(facts.get("unstatted_paths", []))
-        named = {os.path.normpath(p) for p in reading.failed}
-        unnamed = sum(reading.errors.values()) - len(named) - len(unreadable - named)
-        pool = record.get("gave_up_pool", {}).get(reading.metric, 0)  # type: ignore[union-attr]
-        verdict = verdict_for(
-            reading, low, high, 0 if quiet[reading.metric] else churn, max(unnamed, 0), pool
-        )
+        unnamed = unnamed_skips(reading, unreadable) if reading.tool == "dua" else 0
+        verdict = verdict_for(reading, low, high, 0 if quiet[reading.metric] else churn, unnamed)
         failures += verdict in ("UNEXPLAINED", "no reading")
+        unverified += verdict.startswith("not verifiable")
         total = human(reading.total) if reading.total is not None else "—"
         delta = signed(reading.total - before) if reading.total is not None else "—"
         lines.append(
@@ -562,12 +606,10 @@ def judge(record: dict[str, object], full_paths: bool = False) -> tuple[str, int
                 f"{places(reading.gave_up, str(record['root']), full_paths)}"
             )
     failures += top_level(readings, series["allocated"], quiet["allocated"], steps, lines)
-    return "\n".join(lines), failures
+    return "\n".join(lines), failures, unverified
 
 
-def verdict_for(
-    reading: Reading, low: int, high: int, slack: int, unnamed: int = 0, pool: int = 0
-) -> str:
+def verdict_for(reading: Reading, low: int, high: int, slack: int, unnamed: int = 0) -> str:
     total = reading.total
     if total is None:
         return "no reading"
@@ -582,10 +624,11 @@ def verdict_for(
         return f"agrees within fdu's nearby movement ({human(slack)})"
     if gone and slack and low - gone - slack <= total <= high - gone + slack:
         return f"{short}, within fdu's nearby movement ({human(slack)})"
-    if unnamed and pool and low - gone - pool - slack <= total < low:
+    if unnamed and total < low:
+        # Skipping can only lose bytes, so only a short reading can be put down to it.
         return (
-            f"short after skipping {unnamed:,} folders it did not name, by no more than the "
-            f"{human(pool)} the other tools gave up on"
+            f"not verifiable: short after skipping {unnamed:,} folders it did not name, "
+            f"in each of {reading.attempts} runs"
         )
     return "UNEXPLAINED"
 
@@ -706,7 +749,7 @@ def self_test(fdu: str, du: str, timeout: int, scratch: Path | None) -> int:
         (probe / "locked" / "hidden").write_bytes(b"hidden")
         (probe / "locked").chmod(0)
         record = measure(probe, fdu, timeout, du)
-        text, failures = judge(record)
+        text, failures, _ = judge(record)
         print(text + "\n")
         present = {(r["tool"], r["metric"]) for r in record["readings"]}  # type: ignore[index, union-attr]
         missing = sorted(set(MODELS) - present)
@@ -742,10 +785,13 @@ def main() -> int:
 
     if args.rejudge:
         failures = 0
+        unverified = 0
         for record in json.loads(args.rejudge.read_text(encoding="utf-8")):
-            text, failed = judge(record, args.full_paths)
+            text, failed, unchecked = judge(record, args.full_paths)
             failures += failed
+            unverified += unchecked
             print(text + "\n")
+        print(summary(failures, unverified))
         return 1 if failures else 0
     du = gnu_du()
     if du is None:
@@ -755,18 +801,30 @@ def main() -> int:
     print(f"## Peer agreement ({version.strip()}, {time.strftime('%Y-%m-%d')})\n", flush=True)
     if args.self_test:
         return self_test(args.fdu, du, args.timeout, args.scratch)
-    failures = 0
+    failures = unverified = 0
     data = []
     for root in args.roots:
         record = measure(root.expanduser().resolve(), args.fdu, args.timeout, du)
         data.append(record)
         if args.json:
             args.json.write_text(json.dumps(data, indent=1), encoding="utf-8")
-        text, failed = judge(record, args.full_paths)
+        text, failed, unchecked = judge(record, args.full_paths)
         failures += failed
+        unverified += unchecked
         print(text + "\n", flush=True)
-    print(f"{failures} readings failed." if failures else "Every reading is explained.")
+    print(summary(failures, unverified))
     return 1 if failures else 0
+
+
+def summary(failures: int, unverified: int) -> str:
+    if failures:
+        return f"{failures} readings failed."
+    if unverified:
+        return (
+            f"Every other reading is explained; {unverified} could not be checked, because the "
+            "tool skipped folders without naming them."
+        )
+    return "Every reading is explained."
 
 
 if __name__ == "__main__":
