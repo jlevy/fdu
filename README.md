@@ -24,11 +24,30 @@ See [Speed](#speed).
 
 ## Install
 
-Once `0.1.0` is on the registries:
+With [uv](https://docs.astral.sh/uv/), use the published wheel without a Rust toolchain:
 
 ```shell
-uvx fdu@latest --help               # run the latest release without installing
-uv tool install fdu                 # command line, prebuilt wheel; uv tool upgrade fdu
+uvx --no-build --python 3.12 fdu@latest .
+uv tool install --no-build --python 3.12 fdu
+fdu .
+uv tool upgrade --no-build fdu
+```
+
+The first command runs fdu without keeping an installed command; the second keeps it on
+`PATH`. `--no-build` requires a compatible wheel instead of compiling from source.
+The wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64 and arm64),
+macOS (x86-64 and arm64), and Windows x86-64. `--python 3.12` selects a supported
+interpreter even if the default is free-threaded.
+For a repeatable run, replace `latest` with a release number, such as `fdu@0.1.0`. If uv
+is configured with an `exclude-newer` cool-off, a new fdu release may be filtered.
+Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
+to expire.
+`--no-config` is a one-off override that skips all uv configuration, including
+that policy.
+
+Other installation paths:
+
+```shell
 cargo install --locked fdu          # command line from source; Rust 1.85 or newer
 uv add fdu                          # Python library in a uv project
 pip install fdu                     # Python library in the current environment
@@ -39,17 +58,20 @@ cargo add fdu-core --features watch # engine only, with the watch layer
 `--locked` keeps the reviewed dependency set; see
 [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
 
-For coding agents, `fdu --install-skill` writes the agent skill to
-`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root,
-or to `DIR/skills/fdu/SKILL.md` with `--agent-base DIR` for one agent’s user scope, such
-as `~/.claude`. Re-run it after upgrading; it replaces only files it generated and
-reports each as installed, updated, or unchanged.
-`fdu --skill` prints the same document, and deleting those two directories uninstalls
-it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`.
+For coding agents, run this from the project that should use the skill; it needs no
+installed `fdu` command:
 
-Wheels are `abi3` for GIL-enabled CPython 3.12 and newer.
-Free-threaded CPython cannot load them; pass a standard interpreter (`--python 3.12` or
-`--python 3.14`).
+```shell
+uvx --no-build --python 3.12 fdu@latest --install-skill
+```
+
+The command writes the agent skill to `.agents/skills/fdu/SKILL.md` and
+`.claude/skills/fdu/SKILL.md` under the project root, or to `DIR/skills/fdu/SKILL.md`
+with `--agent-base DIR` for one agent’s user scope, such as `~/.claude`. The skill is a
+document, separate from the installed command: it uses `fdu` on `PATH` when present and
+otherwise runs `uvx fdu@latest`. Re-run the installer after upgrading to refresh the
+skill; `fdu --skill` prints it, and deleting the generated skill directories removes it.
+See the [skill usage guide](docs/usage.md#agent-skill).
 
 From a source checkout:
 

@@ -6,22 +6,29 @@ roll-up engine.
 ## Install
 
 ```shell
-uvx fdu@latest .      # run the latest release once, without installing it
-uv tool install fdu   # put the fdu command on your PATH; uv tool upgrade fdu updates it
-uv add fdu            # use the library in a uv project
-pip install fdu       # or install the library with pip
+uvx --no-build --python 3.12 fdu@latest .
+uv tool install --no-build --python 3.12 fdu
+uv add fdu
+pip install fdu
 ```
 
-`uvx fdu@<version> --help` runs one exact release.
-For coding agents, `fdu --install-skill` writes the agent skill under the project root
-and `fdu --skill` prints it; the
-[repository README](https://github.com/jlevy/fdu#install) has the details.
+The first command runs fdu once; the second keeps it on `PATH`.
+`uv tool upgrade --no-build fdu` updates that install; `uvx fdu@<version> --help` runs
+one exact release. For coding agents, run
+`uvx --no-build --python 3.12 fdu@latest --install-skill` from the target project.
+It writes the agent skill without installing the command.
+The skill uses `fdu` on `PATH` when present and otherwise `uvx fdu@latest`;
+`fdu --skill` prints it.
+The [repository README](https://github.com/jlevy/fdu#install) has the details.
 Prebuilt `abi3` wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
 and arm64), macOS (x86-64 and arm64), and Windows x86-64, so installing needs no Rust
 toolchain. Free-threaded CPython, such as `3.14t`, cannot install them and is not
-supported; an installer there falls back to building the source distribution.
-If uv selects a free-threaded interpreter, pass `--python 3.14` (or `--python 3.12`), as
-in `uv tool install --python 3.14 fdu`.
+supported; an installer there may fall back to building the source distribution.
+`--no-build` makes uv fail instead of compiling when no compatible wheel exists.
+If uv selects a free-threaded interpreter, pass `--python 3.14` (or `--python 3.12`). An
+`exclude-newer` policy in uv can filter a newly published fdu release.
+Review and allow the first-party `fdu` package in that policy, or wait for its cool-off
+to expire.
 
 ## Use
 

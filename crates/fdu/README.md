@@ -18,7 +18,21 @@ states the compatibility rules.
 
 ## Install
 
-Install the command line with Rust 1.85 or newer:
+With [uv](https://docs.astral.sh/uv/), run the prebuilt command without a Rust toolchain
+or a persistent install, or keep it on your `PATH`:
+
+```shell
+uvx --no-build --python 3.12 fdu@latest .
+uv tool install --no-build --python 3.12 fdu
+fdu .
+```
+
+`--no-build` requires a compatible wheel and fails instead of compiling from source.
+The [Python package](https://pypi.org/project/fdu/) publishes wheels for GIL-enabled
+CPython 3.12 and newer on Linux glibc (x86-64 and arm64), macOS (x86-64 and arm64), and
+Windows x86-64. `uv tool upgrade fdu` updates a persistent install.
+
+To install the Rust crate from source, use Rust 1.85 or newer:
 
 ```shell
 cargo install --locked fdu
@@ -31,15 +45,12 @@ bypasses the review and release cool-off
 [the supply-chain policy](https://github.com/jlevy/fdu/blob/main/SUPPLY-CHAIN-SECURITY.md)
 applies to the dependency set.
 
-The [`fdu` Python package](https://pypi.org/project/fdu/) carries the same command line
-in prebuilt wheels, so `uv tool install fdu` installs it without a Rust toolchain,
-`uv tool upgrade fdu` updates it, and `uvx fdu@latest` runs the latest release without
-installing anything.
-
-For coding agents, `fdu --install-skill` writes the agent skill to
-`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root
-(`--agent-base DIR` for one agent’s user scope, such as `~/.claude`), and `fdu --skill`
-prints it.
+For coding agents, `uvx --no-build --python 3.12 fdu@latest --install-skill` writes the
+agent skill without first installing the command.
+It places the skill at `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md`
+under the project root (`--agent-base DIR` for one agent’s user scope, such as
+`~/.claude`), and `fdu --skill` prints it.
+The installed skill uses `fdu` on `PATH` when present, otherwise `uvx fdu@latest`.
 
 ## Use
 

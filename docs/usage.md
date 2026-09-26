@@ -337,17 +337,31 @@ scan. The duration uses the same age grammar as `--modified-since`: `2s`, `200ms
 `1h30m`. Fractional ages such as `0.2s` are still rejected.
 Content analysis is one-shot and cannot be combined with watch mode.
 
-Run `fdu --docs` for the offline guide, `fdu --help` for every flag, and `fdu --skill`
-for the portable agent-facing contract.
-`fdu --install-skill` writes that contract to `.agents/skills/fdu/SKILL.md` and
-`.claude/skills/fdu/SKILL.md` under the git root of the current directory, or under the
-current directory when it is not in a repository; `--agent-base DIR` writes
-`DIR/skills/fdu/SKILL.md` instead, for one agent’s user scope such as `~/.claude`. It
-reports each file as installed, updated, or unchanged, replaces only files it generated,
-and refuses a `SKILL.md` written by hand with exit 2. Deleting those directories
-uninstalls it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`;
-it names the build that wrote it, so re-run `fdu --install-skill` when `fdu --version`
-differs.
+Run `fdu --docs` for the offline guide and `fdu --help` for every flag.
+
+## Agent Skill
+
+From the project that should use the skill, run:
+
+```shell
+uvx --no-build --python 3.12 fdu@latest --install-skill
+```
+
+This needs [uv](https://docs.astral.sh/uv/) and a compatible prebuilt wheel, but no
+persistent `fdu` command or Rust compilation.
+It writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the git
+root of the current directory, or under the current directory when it is not in a
+repository; `--agent-base DIR` writes `DIR/skills/fdu/SKILL.md` instead, for one agent’s
+user scope such as `~/.claude`. It reports each file as installed, updated, or
+unchanged, replaces only files it generated, and refuses a `SKILL.md` written by hand
+with exit 2. Deleting those directories uninstalls it.
+The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`; installing the
+skill does not install the command.
+The zero-install fallback follows uv’s `exclude-newer` policy; see the
+[installation note](../README.md#install) if a just-published release is filtered.
+To keep the command on `PATH`, run `uv tool install --no-build --python 3.12 fdu` and
+later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
+The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
