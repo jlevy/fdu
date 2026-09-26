@@ -24,9 +24,11 @@ selection currently reduces reported totals without reducing content reads.
 The recommended sequence is:
 
 1. Fix demonstrated counting errors and preserve their minimal reproductions.
-2. Use `--ignored=include|exclude|only` and automatically avoid excluded content reads.
-3. Add a code-first overview with explicit populations, coverage, and metric sorting.
-4. Add an advanced traversal-pruning option with honest unavailable totals.
+2. Use one ignored-population option; derive traversal and body reads from the requested
+   measurements, pruning ignored subtrees when excluded.
+3. Add a code-first overview with separate populations, coverage, and metric sorting.
+4. Compose existing request controls for less common combinations of populations and
+   measurements.
 5. Evaluate optional structural complexity only after the counting layer is reliable.
 
 This follows the earlier
@@ -247,7 +249,8 @@ Two distinct improvements follow:
   ignored bodies for a request that only needs non-ignored content.
 - **Prune ignored traversal:** avoid visiting ignored subtrees at all, accepting that
   exact ignored file/byte totals are then unavailable.
-  This needs a separate scope contract and should follow the content-read improvement.
+  The execution plan must distinguish these costs, but they do not require separate
+  ignored-file switches.
 
 If ignored files were not analyzed, their code-line total must say “not analyzed”.
 If their directories were not traversed, their file/byte totals must say “not scanned”.
@@ -347,119 +350,170 @@ public models and goldens together rather than retaining adapters for the old al
 shape.
 
 The proposal below is the recommended target design, not implemented behavior.
-Its first increment needs one everyday population option and automatic avoidance of
-unneeded content reads.
-Traversal pruning and additional metrics follow separately.
+The common interface should express the answer wanted; the engine derives the work
+needed to produce it.
 
-### One Three-Valued Option Selects the Population
+### Separate Population, Measurement, and Presentation
 
-Replace `--exclude-ignored` and `--only-ignored` with:
+Start with the facts a caller wants, rather than the stages the implementation runs.
+
+| Facet | Question | Values or Examples |
+| --- | --- | --- |
+| Population | Which entries contribute to this answer? | `--ignored` and existing path/kind predicates |
+| Measurement | Which facts are needed about those entries? | Metadata by default; `--analyze` requests content metrics |
+| Presentation | How are measured facts exposed? | `--view`, format, sorting, and paging |
+
+Ignored state is a classification with two known values, plus an unavailable state when
+rules could not be observed.
+The three population choices are subsets of those two known classes.
+“Scan” and “report” are execution stages, and “separate” is a presentation choice; none
+is another value of ignored state.
+
+For each population, the caller can request no contribution, metadata, or metadata plus
+content metrics. The resulting work follows:
+
+- No contribution permits pruning when rule semantics prove the subtree cannot contain
+  an eligible entry.
+- Metadata requires discovery and stat work, but no body reads for content analysis.
+- Content metrics require reading eligible bodies for the requested analyzers.
+
+Discovery can still need ancestor directory enumeration and ignore-control reads.
+These are prerequisites, not an obligation to include those ancestors in the reported
+population. A promise to exclude ignored content must distinguish this control work from
+opening ignored bodies for analysis.
+
+### One Everyday Option Selects the Population and Its Work
+
+Replace the ignored booleans with:
 
 ```text
 --ignored=include|exclude|only
 ```
 
-| Value | Population for Detailed Reports and Content Analysis | Other Population |
+| Value | Answer | Required Work |
 | --- | --- | --- |
-| `include` | Non-ignored and ignored files | Show the ignored contribution separately where useful |
-| `exclude` | Non-ignored files | Metadata totals remain available when scanned; bodies are not read |
-| `only` | Ignored files | Traverse non-ignored ancestors to find them; do not analyze non-ignored bodies |
+| `include` | Both populations, with separate contributions and an all-files total | Discover both; requested content analysis covers both by default |
+| `exclude` | Non-ignored files | Prune effectively ignored subtrees; do not analyze ignored bodies |
+| `only` | Ignored files | Discover ignored matches through non-ignored ancestors; do not analyze non-ignored bodies |
 
-The engine already has this three-valued selection model; the change gives all surfaces
-one vocabulary. `exclude` should prevent fresh reads of excluded bodies automatically.
-The user should not need an additional performance flag to avoid computing content
-metrics that the request will not report.
-Reading `.gitignore` control files remains necessary even when those files are outside
-the selected content population.
-Control reads and content reads must remain distinct in instrumentation and help text.
+The two common modes are `include` for a full overview and `exclude` for a cheaper
+non-ignored overview.
+`only` has a concrete diagnostic use: inspect dependency trees, build output, or
+handwritten code hidden by ignore rules.
+It cannot generally prune non-ignored directories, because they may contain ignored
+children. The same selection vocabulary therefore does not promise symmetric costs.
 
-This policy applies to the requested population before report limits and pagination.
-Asking for the ten largest files by code lines still requires counts for all eligible
-files. A display bound must never become an undocumented sampling bound.
-The same principle can later extend to other predicates decidable from metadata;
-content-dependent selection must first obtain the metrics it needs.
-
-### Make Traversal Pruning a Separate Scope Choice
-
-Add a later, advanced scope option:
-
-```text
---scan-ignored=include|exclude
-```
-
-The default is `include`: discover metadata for both populations so fdu can quantify
-ignored disk use while skipping ignored body analysis when `--ignored=exclude`.
-`--scan-ignored=exclude` prunes paths the effective rules classify as ignored.
-It avoids descendant enumeration and metadata work as well as body reads.
-It cannot provide exact file counts, bytes, or code lines inside pruned directories.
-The naming follows the existing distinction between `--scan-depth` and report `--depth`:
-scan options determine available facts; report options select from them.
-
-The explicit combinations `--scan-ignored=exclude --ignored=include` and
-`--scan-ignored=exclude --ignored=only` are rejected with a message naming the conflict.
-When the caller omits `--ignored`, pruning resolves that default to `exclude`. This
-makes a fast non-ignored scan a single additional choice rather than requiring users to
-coordinate two switches.
+There is no additional `--scan-ignored` option.
+An exclusion changes the answer’s population and enables the engine to avoid work for
+that population. Display limits remain presentation: requesting the ten largest files by
+code lines still requires counts for every eligible file.
+A content-dependent predicate likewise requires obtaining the metrics it tests.
 
 Use the same effective ignore rules for admission and reporting, including ancestor
 exclusions and supported negations.
-Read required ancestor controls before pruning.
+Read necessary controls before deciding a subtree is safely prunable.
 Do not invent Git-index semantics: `.gitignore` classification does not mean tracked
 versus untracked, and `.git` itself needs an explicit scope policy if excluded.
-If ignore rules cannot be read or are refused under a budget, retain the engine’s
-explicit unknown/partial outcome rather than claiming exact exclusion.
+If rules cannot be read or are refused under a budget, preserve an explicit
+unknown/partial outcome; do not infer that unknown entries are non-ignored or silently
+prune them as ignored.
 
-Examples using the proposed interface:
+### Reuse the Existing Measurement and View Controls
+
+`--analyze` already selects content measurements such as code, lines, and words.
+`--view` selects how the available measurements are presented.
+Both operate on the population selected for that request.
+A view must not silently enable an analyzer or change the population.
+There is no additional measurement-scope flag.
+
+These controls express the six uniform cases directly:
+
+| Non-Ignored | Ignored | Request |
+| --- | --- | --- |
+| Metadata | Omitted | `fdu . --ignored=exclude` |
+| Content | Omitted | `fdu . --ignored=exclude --analyze=code` |
+| Omitted | Metadata | `fdu . --ignored=only` |
+| Omitted | Content | `fdu . --ignored=only --analyze=code` |
+| Metadata | Metadata | `fdu . --ignored=include` |
+| Content | Content | `fdu . --ignored=include --analyze=code` |
+
+“Content” includes metadata and the explicitly requested analyzer set.
+Views can vary independently in every row, subject to their metric requirements.
+All syntax using `--ignored` is proposed.
+
+There are two remaining combinations: metadata for both populations with content metrics
+for just one.
+For example, someone may want whole-tree disk usage and code counts limited
+to non-ignored files.
+Express those as two ordinary requests:
 
 ```shell
-fdu . --analyze=code                          # non-ignored code; ignored metadata summary
-fdu . --analyze=code --ignored=include        # analyze both populations
-fdu . --analyze=code --ignored=only           # inspect the ignored code
-fdu . --analyze=code --scan-ignored=exclude   # also avoid ignored traversal
+fdu . --ignored=include
+fdu . --ignored=exclude --analyze=code
 ```
 
-`--no-gitignore` continues to mean that ignore rules are not observed, so meaningful
-`exclude`, `only`, or pruning requests cannot be combined with it.
-An omitted population resolves to `include` when observation is explicitly disabled.
-The report must then label ignored classification unavailable; it must not label every
-file non-ignored.
+To analyze only ignored output alongside whole-tree disk usage, use `only` in the second
+request. Different analyzers for different populations likewise use ordinary requests
+with the respective `--ignored`, `--analyze`, and `--view` values.
+Each answer keeps one population and an unambiguous denominator.
+This covers all eight nonempty combinations of omitted, metadata, and content across the
+two populations without adding another scope control.
 
-### Resolve Defaults Once, Before Execution
+The initial CLI produces separate reports for these compositions.
+A library application can compose their results and reuse compatible retained metadata
+where the lifecycle supports the requested analysis.
+If a single combined CLI report becomes useful, it should compose these same request
+objects; it should not introduce a second interpretation of `--ignored`. Cache reuse is
+an optimization and must preserve each request’s cold answer.
 
-| Request with No Explicit Population | Resolved Population | Scan Scope |
-| --- | --- | --- |
-| Metadata-only, such as `fdu .` | `include` | Include ignored metadata |
-| Any content analysis, including `code`, `lines`, `words`, or `all` | `exclude` | Include ignored metadata |
-| Explicit `--scan-ignored=exclude` | `exclude` | Exclude ignored paths |
-| Explicit `--no-gitignore` | `include` | No ignore classification |
+### When Is Scanning without Reporting Useful?
 
-These defaults answer two common questions: disk inventory accounts for everything
-admitted to the scan, while content inspection starts with the working source and
-documents. Callers can always name a population explicitly.
-An explicit value wins over a default; contradictory explicit values are errors.
-Changing a view, format, sort key, worker count, or cache policy never changes the
-resolved population.
-Rust and Python use the same resolver rather than supplying different defaults through
-their parameter constructors.
+A one-shot request should not deliberately measure facts that contribute to no requested
+row, aggregate, denominator, or coverage statement.
+Showing a summary while hiding individual rows is still reporting those files.
+Sorting or selecting by a content metric can also require reading a file that ultimately
+has no displayed row.
+Neither case needs a second ignored-file policy.
 
-The resolved request is part of machine output and the human report’s scope label.
-This makes the context-dependent default visible and reproducible without a separate
-`auto` value that downstream consumers would have to interpret.
+Preparing a retained index for later interactive queries is a genuine separate use case.
+A browser can discover both populations once and query either as its user changes the
+view. The retained-root API already distinguishes discovery from queries; preserve that
+capability, and state what additional discovery is needed when a query asks beyond the
+retained coverage. Cache warming belongs to an explicit preparation lifecycle with
+declared scope. It should not make an ordinary excluded-population report silently scan
+everything.
 
-### Why Not a Single Include/Summary/Skip Switch?
+Grouping and row focus remain query/presentation operations over the available facts.
+An application may show only ignored rows while preserving a whole-tree summary.
+It must name each aggregate’s population; applying a row filter must not silently
+redefine its denominator.
+No extra CLI control is needed merely to keep this expressible through engine queries.
 
-| Alternative | Assessment |
-| --- | --- |
-| `--ignored=include | summary |
-| `--ignored=full | metadata |
-| Three-valued selection with automatic body skipping | Recommended first increment; one everyday choice, with exact metadata still available |
-| Add `--scan-ignored=include | exclude` |
+### Use Stable Defaults and Explicit Unavailable States
 
-This preserves the useful three-valued flag without expanding it into a growing list of
-combinations such as include, exclude, summarize, prune, and only.
-Do not add a separate `--analyze-ignored` option: content population should follow the
-resolved selection, and report construction should not require users to reconcile two
-competing populations.
+Default `--ignored` to `include` for metadata and content requests alike: the question
+is “what is here, and how much belongs to each population?”
+The code overview separates the populations so ignored dependencies cannot obscure the
+non-ignored code contribution.
+Content reads remain opt-in through `--analyze`; `--ignored=exclude` is the explicit
+choice for the cheapest non-ignored overview.
+Views, formats, sorting, workers, cache policy, and enabling an analyzer do not change
+the selected population.
+Rust, Python, and the CLI use the same typed resolver.
+
+`--no-gitignore` disables classification and is compatible with `include` only.
+The report must label the population unclassified, rather than labelling every entry
+non-ignored.
+Refuse `exclude` and `only` when the classification needed to interpret them
+is disabled.
+
+Machine output records the resolved population, requested analyzers, and coverage; human
+summaries state them concisely.
+Pruned populations have “not scanned” metadata, not zero counts.
+Metrics whose analyzers were not requested are absent, not zero.
+Read failures remain incomplete measurements within the requested scope.
+Partial ignore classification preserves its own unknown contribution.
+These states must remain distinguishable across formats and warm/cold execution.
 
 ### A Code Overview Is a View over the Same Metrics
 
@@ -474,25 +528,26 @@ The code overview contains:
 1. The selected population, code-line total, analyzed source-file count, and language
    count, followed by comment and blank-line totals.
 2. A language table ordered by code lines descending, with a stable name tie-break.
-3. Ignored/non-ignored population context and a concise coverage statement when any
+3. Separate ignored/non-ignored contributions and a concise coverage statement when any
    source files were unsupported, unreadable, or changed during analysis.
 
-For example, using illustrative numbers:
+For example, using illustrative numbers for `--ignored=include`:
 
 ```text
-Code overview: non-ignored files; tests included
-18,400 code lines | 210 analyzed source files | 4 analyzed languages
-2,100 comment lines | 2,600 blank lines
+Code overview: all files; tests included
+110,400 code lines | 2,030 analyzed source files | 4 analyzed languages
+Non-ignored: 18,400 code lines / 210 source files
+Ignored:     92,000 code lines / 1,820 source files
 
-Language        Files       Code     Share    Comments      Blank
-Rust              120     12,000     65.2%       1,500      1,900
-Python             50      4,000     21.7%         400        500
-JavaScript         30      2,000     10.9%         150        150
-Shell              10        400      2.2%          50         50
+Language       Non-ignored    Ignored        All     Share
+JavaScript           2,000     74,000     76,000     68.8%
+Python               4,000     12,500     16,500     14.9%
+Rust                12,000      4,500     16,500     14.9%
+Shell                  400      1,000      1,400      1.3%
 
-Share: measured code lines in the selected population
-Ignored: 8,200 files / 140 MiB; code not analyzed
-Coverage: 210 source files counted; 3 unsupported; 1 read error
+Share: measured code lines in both populations; rounded
+Comments: 12,100 lines | Blank: 17,600 lines
+Coverage: 2,030 source files counted; 3 unsupported; 1 read error
 ```
 
 The file and language counts on the first line count analyzed source; missing source
@@ -501,9 +556,12 @@ Documentation, configuration, and binary inventories remain accessible through t
 existing views and are not relabelled as source code.
 Tests and examples remain included; maintained code is not limited to production files.
 
-With `--ignored=include`, the main total and language table cover both populations, and
-a short population summary exposes each contribution.
+With `include`, the language table exposes both contributions directly; a combined total
+alone can hide the working codebase inside a large dependency tree.
 All = non-ignored + ignored for each fully measured metric.
+With `exclude` or `only`, collapse the table to the requested population.
+When an application combines reports with different populations, label each report
+explicitly. Do not show an all-files code total when only one population was analyzed.
 Generated and vendored flags can overlap, so their totals must not be presented as
 another disjoint partition.
 With pruning, print “ignored contents not scanned”, with no invented file or byte total.
@@ -542,29 +600,33 @@ Do not claim exact Linguist parity from a handful of matching language names.
 
 ### Keep the Engine Model Small and Explicit
 
-The engine owns three related values: entry scan scope, the selected content population,
-and report presentation.
-Represent the analysis selection once and reuse its predicate when building analysis
-candidates and content reports; do not copy CLI flag checks into workers, reducers, or
-Python wrappers. Display limits, pages, and tree display depth do not belong in analysis
-scope.
+The engine owns the requested population, analyzer set, and report presentation.
+Every requested metric in one report uses that report’s population.
+Resolve these once and derive an execution plan that obtains the required facts.
+Reuse the population predicates across discovery, analysis candidates, and reports; do
+not copy CLI checks into workers, reducers, or Python wrappers.
+Display limits, pages, and tree display depth do not narrow measurement scope.
 
-Metadata and content coverage remain distinct.
-A metadata-complete index can hold content for only one selected population, and must
-state that content scope.
-The first implementation can use exact content-scope identity and rebuild on a change.
-Broader-cache reuse is a later optimization requiring an exact projection.
-A cached all-files analysis must not make ignored code totals appear in a request that
-did not ask to analyze them.
+Keep logical requests distinct from retained-state coverage.
+A retained index can contain more metadata than one query needs; a one-shot request can
+prune entries that cannot contribute to its answer.
+Use exact scope identity initially, with broader-cache reuse allowed only through a
+projection proven equal to a cold answer.
+An all-files cache must not expose ignored totals in an excluded-population request.
+A pruned index cannot answer an all-files request by relabelling itself complete.
 
-Include the selected content predicate, relevant ignore-rule state, analyzer versions,
-and the existing entry/type identities in admission and invalidation decisions.
-Refreshes that change ignore classification must invalidate or reproject the affected
-content through the existing mutation boundaries.
+Metadata and content coverage remain distinct, and content identity includes both the
+analyzer set and requested population.
+An application can compose ordinary requests without requiring a special cache format
+for every combination; broader reuse remains an optimization, not a prerequisite for
+correctness.
+
+Include relevant ignore-rule state, analyzer versions, and existing entry/type
+identities in admission and invalidation decisions.
+Rule changes must trigger appropriate discovery and invalidate affected metrics,
+including discovering a previously pruned subtree that becomes eligible.
 Required body reads happen outside index mutation and their results commit
-conditionally. Changing traversal scope requires appropriate discovery; a pruned index
-cannot answer an all-files request by relabelling itself complete.
-The [engine architecture](../architecture/fdu-engine-architecture.md) and
+conditionally. The [engine architecture](../architecture/fdu-engine-architecture.md) and
 [surface architecture](../architecture/fdu-surface-architecture.md) own these
 boundaries. Do not make this increment depend on adding content analysis to a serving
 lifecycle that does not support it yet; any later lifecycle support must use the same
@@ -591,14 +653,23 @@ Defer AST complexity, duplication analysis, Git history, and composite quality s
 - Equivalent explicit requests return the same content across Rust, Python, the CLI,
   formats, worker counts, and cold/warm paths.
   Test default resolution separately.
-- `include`, `exclude`, and `only` conserve fully measured population totals.
-  Test unsupported files, read failures, no recognized languages, and zero code lines.
+- Exercise the six direct population/measurement combinations and the two composed cases
+  above. Where classification and measurement are complete, include totals equal the sum
+  of exclude and only totals for the same analyzer set.
+  Test unknown classification, unsupported files, read failures, no recognized
+  languages, and zero code lines.
 - A fresh excluded body is never opened for content analysis; control-file reads are
   separately accounted for.
   Prove this with counters, not timing alone.
-- `--scan-ignored=exclude` does not enumerate ignored descendants, and reports their
-  totals unavailable. Test ancestor rules, negation, nested repositories, refused
-  controls, and rules changing between runs.
+- `--ignored=exclude` prunes safely excluded subtrees and reports their totals
+  unavailable. Test ancestor rules, negation, nested repositories, refused controls, and
+  rules changing between runs.
+  `only` must still find ignored descendants beneath non-ignored ancestors.
+- Composed requests retain their own populations and denominators.
+  A preceding all-files metadata report must not make an excluded-population code report
+  read ignored bodies or expose ignored totals.
+  Presentation-only changes preserve measured totals; explicit retained preparation
+  supports later narrow queries.
 - Exercise all-to-selected and selected-to-all cache transitions, including edits to
   `.gitignore`; unavailable data cannot become available just because a warm cache
   happens to contain it.
@@ -613,18 +684,18 @@ Defer AST complexity, duplication analysis, Git history, and composite quality s
 | Order | Work | Completion Evidence |
 | --- | --- | --- |
 | 1 | Fix Rust states and the common multiline forms; isolate the JS regex fix | Hand-established fixture results, chunk-boundary checks, analyzer invalidation, and surface parity |
-| 2 | Replace the ignored booleans with `--ignored`; resolve defaults in the engine; analyze only the selected population | Parser/API tests; no excluded-body reads; correct cache transitions |
+| 2 | Unify population selection under `--ignored`; derive traversal and content work, including pruning for `exclude` | Parser/API tests; no excluded-body reads or safely prunable descendant enumeration; correct cache transitions |
 | 3 | Add the code overview and metric-based file/directory sorting | Scope-labelled goldens, complete denominator accounting, structured-output parity |
-| 4 | Add `--scan-ignored` as an explicit advanced scope choice | No ignored-descendant enumeration; honest unavailable totals and rule-change behavior |
-| 5 | Improve language/classification coverage and evaluate a reviewed counter library if native repairs expand | Matched syntax and classification corpora, documented overrides, dependency and cost evidence |
-| 6 | Prototype optional branching estimates only after the overview is useful and accurate | Defined per-language rules, measured overhead, explicit optional analyzer |
+| 4 | Improve language/classification coverage and evaluate a reviewed counter library if native repairs expand | Matched syntax and classification corpora, documented overrides, dependency and cost evidence |
+| 5 | Prototype optional branching estimates only after the overview is useful and accurate | Defined per-language rules, measured overhead, explicit optional analyzer |
 
 Research is tracked in `fdu-rq93`; the empirical investigation is `fdu-4il8`. Confirmed
 parser follow-ups are `fdu-ov8o` (Rust), `fdu-lr38` (JavaScript regex), and `fdu-f1m3`
 (remaining multiline forms).
-The overview increment is tracked in `fdu-zdbq`, and selected-content read avoidance in
-`fdu-gdg0`; traversal pruning is tracked separately in `fdu-a0kr`. Break the proposed
-work into implementation tasks before changing the engine.
+The overview increment is tracked in `fdu-zdbq`, and unified ignored-population work in
+`fdu-gdg0`; its traversal-pruning acceptance work is tracked in `fdu-a0kr`. These are
+implementation boundaries within one public option, not separate user modes.
+Break these increments into implementation tasks before changing the engine.
 The alpha compatibility decision permits replacing interfaces; this research change
 itself does not implement those replacements.
 
