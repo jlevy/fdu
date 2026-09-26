@@ -344,7 +344,7 @@ Run `fdu --docs` for the offline guide and `fdu --help` for every flag.
 From the project that should use the skill, run:
 
 ```shell
-uvx --no-build --python 3.12 fdu@latest --install-skill
+uvx --no-build fdu@latest --install-skill
 ```
 
 This needs [uv](https://docs.astral.sh/uv/) and a compatible prebuilt wheel, but no
@@ -355,11 +355,11 @@ repository; `--agent-base DIR` writes `DIR/skills/fdu/SKILL.md` instead, for one
 user scope such as `~/.claude`. It reports each file as installed, updated, or
 unchanged, replaces only files it generated, and refuses a `SKILL.md` written by hand
 with exit 2. Deleting those directories uninstalls it.
-The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`; installing the
-skill does not install the command.
+The skill prefers an `fdu` on `PATH` and otherwise runs `uvx --no-build fdu@latest`;
+installing the skill does not install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the
-[installation note](../README.md#install) if a just-published release is filtered.
-To keep the command on `PATH`, run `uv tool install --no-build --python 3.12 fdu` and
+[installation note](../README.md#install-the-command-line) if a just-published release
+is filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and
 later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
 The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
 

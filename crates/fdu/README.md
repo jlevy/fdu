@@ -16,21 +16,35 @@ command line;
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
 
-## Install
+## Set Up with Any Coding Agent
+
+Give the agent this instruction:
+
+> Set up fdu for this project: run `uvx --no-build fdu@latest --install-skill` from the
+> project root, then follow the installed fdu skill whenever measuring or tracking disk
+> usage.
+
+The installer writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md`.
+The skill uses `fdu` on `PATH` when present and otherwise runs
+`uvx --no-build fdu@latest`; `fdu --skill` prints it.
+
+## Install the Command Line
 
 With [uv](https://docs.astral.sh/uv/), run the prebuilt command without a Rust toolchain
 or a persistent install, or keep it on your `PATH`:
 
 ```shell
-uvx --no-build --python 3.12 fdu@latest .
-uv tool install --no-build --python 3.12 fdu
+uvx --no-build fdu@latest .
+uv tool install --no-build fdu
 fdu .
 ```
 
 `--no-build` requires a compatible wheel and fails instead of compiling from source.
 The [Python package](https://pypi.org/project/fdu/) publishes wheels for GIL-enabled
 CPython 3.12 and newer on Linux glibc (x86-64 and arm64), macOS (x86-64 and arm64), and
-Windows x86-64. `uv tool upgrade fdu` updates a persistent install.
+Windows x86-64. No Python version is needed in normal use.
+If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`.
+`uv tool upgrade fdu` updates a persistent install.
 
 To install the Rust crate from source, use Rust 1.85 or newer:
 
@@ -44,13 +58,6 @@ Without it Cargo re-resolves every dependency to the newest compatible release, 
 bypasses the review and release cool-off
 [the supply-chain policy](https://github.com/jlevy/fdu/blob/main/SUPPLY-CHAIN-SECURITY.md)
 applies to the dependency set.
-
-For coding agents, `uvx --no-build --python 3.12 fdu@latest --install-skill` writes the
-agent skill without first installing the command.
-It places the skill at `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md`
-under the project root (`--agent-base DIR` for one agent’s user scope, such as
-`~/.claude`), and `fdu --skill` prints it.
-The installed skill uses `fdu` on `PATH` when present, otherwise `uvx fdu@latest`.
 
 ## Use
 

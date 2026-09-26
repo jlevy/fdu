@@ -327,8 +327,32 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,164 +1,1 @@
+@@ -1,188 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
+-
+-SET UP WITH ANY CODING AGENT
+-  From the project root, install fdu's project skill with no persistent command
+-  and no Rust compilation:
+-
+-    uvx --no-build fdu@latest --install-skill
+-
+-  If fdu is already on PATH, `fdu --install-skill` is equivalent. The installed
+-  skill uses that command when present and a wheel-only uvx fallback otherwise.
+-
+-INSTALL THE COMMAND LINE
+-  Run the latest release once, or keep it on PATH:
+-
+-    uvx --no-build fdu@latest PATH
+-    uv tool install --no-build fdu
+-    fdu PATH
+-
+-  The wheel requires GIL-enabled Python 3.12 or newer. uv normally selects a
+-  matching interpreter; if it selects a free-threaded build such as 3.14t,
+-  add `--python 3.14` to the uvx or uv tool command.
+-
+-USE AS A LIBRARY
+-  Python: `uv add fdu` (or `pip install fdu`)
+-  Rust:   `cargo add fdu` (or `cargo add fdu-core` for the engine alone)
 -
 -START HERE
 -  A report requires a PATH. Use `.` for the current directory.
