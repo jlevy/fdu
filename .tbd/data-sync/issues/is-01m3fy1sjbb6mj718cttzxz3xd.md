@@ -3,16 +3,16 @@ type: is
 id: is-01m3fy1sjbb6mj718cttzxz3xd
 title: Simplify uv setup and present agent-first usage
 kind: task
-status: open
+status: closed
 priority: 1
-version: 3
+version: 4
 labels:
   - release
 dependencies: []
 created_at: 2026-09-26T22:40:53.311Z
-updated_at: 2026-09-26T23:43:41.055Z
-closed_at: 2026-09-26T23:19:55.048Z
-close_reason: Removed normal-use Python pins, verified unpinned uvx and uv tool installs against PyPI with builds disabled, added agent-first README and CLI setup, made the installed skill wheel-only, and passed the full handoff gate including parity and path-independence follow-through.
+updated_at: 2026-09-26T23:55:14.748Z
+closed_at: 2026-09-26T23:55:14.746Z
+close_reason: Simplified the agent handoff to one self-documenting install command, made the generated skill explicitly complete and independent of prior session context, and passed focused golden/parity tests plus the full make check gate.
 resolution: null
 duplicate_of: null
 ---
