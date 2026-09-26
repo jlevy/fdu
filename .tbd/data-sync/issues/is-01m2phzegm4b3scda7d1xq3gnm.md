@@ -3,9 +3,10 @@ type: is
 id: is-01m2phzegm4b3scda7d1xq3gnm
 title: End-to-end verification of the final 0.1.0 release candidate
 kind: task
-status: open
+status: in_progress
 priority: 0
-version: 7
+version: 8
+delegate: claude-code@spud10
 labels:
   - release
   - testing
@@ -18,8 +19,11 @@ dependencies:
   - type: blocks
     target: is-01m2phzkwcvz3fwk2nh150bdmj
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
+hold: null
+hold_until: null
 created_at: 2026-09-17T02:08:52.755Z
-updated_at: 2026-09-24T19:31:50.309Z
+updated_at: 2026-09-26T00:00:09.720Z
+started_at: 2026-09-26T00:00:09.719Z
 ---
 After the stabilization fixes merge: main CI green; dispatch the release rehearsal on main; download
 every artifact and verify SHA256SUMS; run the end-to-end harness against the CI-built macOS arm64 wheel
