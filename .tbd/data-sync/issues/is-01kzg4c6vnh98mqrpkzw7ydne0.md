@@ -5,7 +5,7 @@ title: "Publish fdu 0.1.0: crates.io, PyPI, GitHub Release"
 kind: epic
 status: open
 priority: 1
-version: 26
+version: 28
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 refs:
   - kind: other
@@ -14,6 +14,12 @@ refs:
   - kind: other
     url: https://github.com/jlevy/fdu/tree/v0.1.0
     at: 2026-09-26T01:12:11.790Z
+  - kind: other
+    url: https://github.com/jlevy/fdu/actions/runs/36219577994
+    at: 2026-09-26T05:15:19.066Z
+  - kind: other
+    url: https://github.com/jlevy/fdu/releases/tag/v0.1.0
+    at: 2026-09-26T05:15:19.085Z
 labels:
   - release
 dependencies:
@@ -39,7 +45,7 @@ child_order_hints:
   - is-01m2phzmxbwajz8eqrcv6rzfks
   - is-01m3dfhj9vr54m664wrmw7eghm
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-09-26T01:13:27.248Z
+updated_at: 2026-09-26T05:17:37.183Z
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.
@@ -67,3 +73,5 @@ publish jobs, the protected environment and trusted publishers are tracked in th
 2026-09-18: First-time channel setup is in docs/project/guides/release-process.md#first-time-channel-setup. Create the protected GitHub `release` environment before anyone registers a publisher (the environment is unused by the 0.1.0 hand upload). Do not register a pending PyPI publisher before the hand upload. Trusted-publisher records and workflow publish jobs stay post-0.1.0. Maintainer console work is fdu-o5st.
 
 2026-09-25 CURRENT RELEASE PATH: The current release-process.md supersedes the earlier by-hand plan: publish through the protected release.yml workflow. Main commit 7cf7f1b4b passed make check, cross-lint, docs-format, local release-rehearse, CI wheel QA, and four-tree peer agreement. Read-only five-platform rehearsal 36203963537 passed; all eight files passed SHA256SUMS. Signed v0.1.0 tag points to that commit and GitHub verifies its SSH signature; clean clone passed resolve_plan --validate-checkout. Protected release environment, private vulnerability reporting, immutable releases, v* tag protection, secret scanning, and push protection are enabled. The release environment has no CARGO_REGISTRY_TOKEN secret yet; the maintainer was asked to create a narrowly scoped, short-lived crates.io token and store it there without sharing its value. Do not dispatch publish=true until the secret exists. Then confirm the run is v0.1.0 and the tagged commit, approve the release deployment, watch both registries, delete the environment secret and have the maintainer revoke the token, download and verify published artifacts, audit registries, create the GitHub release, perform post-publication checks, and register crates.io trusted publishers. QA evidence is in fdu-tyvq and post-tag report PR #128.
+
+2026-09-25 PUBLICATION: GitHub release v0.1.0 is live with all 11 expected attachments. Workflow run 36219577994 attempt 1 published fdu-core and fdu to crates.io and six Python files to PyPI, but the immediate final audit caught a transient PyPI JSON 404 after wait-pypi had succeeded. Independent audit found all three registry packages identical to the run manifest. Attempt 2 reran only the failed publish job, skipped every upload, and passed. The environment CARGO_REGISTRY_TOKEN secret was deleted and verified absent. Public uvx, uv tool, Python API, and cargo installs return fdu 0.1.0; docs.rs succeeded for both crates. Follow-up bug fdu-zx9y tracks bounded retry for this propagation gap. Pending maintainer actions: revoke the temporary crates.io token, then register trusted publishers for fdu-core and fdu (owner jlevy, repo fdu, workflow release.yml, environment release) and confirm the PyPI project publisher. The Mac was locked when browser setup was attempted, so the maintainer was asked to unlock it. Do not close this bead until those actions are verified.
