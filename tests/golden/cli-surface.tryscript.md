@@ -146,6 +146,9 @@ description: >-
 
 # fdu Directory Roll-Ups
 
+This is the complete fdu usage contract; it needs no setup chat or prior session
+context.
+
 Use `fdu` to summarize a directory tree without modifying files in that tree.
 `fdu --docs` prints common commands, cache behavior, and the full usage contract without
 a PATH and without scanning.
@@ -510,13 +513,12 @@ $ fdu --docs
 fdu — a fast, incremental file roll-up engine.
 
 SET UP WITH ANY CODING AGENT
-  From the project root, install fdu's project skill with no persistent command
-  and no Rust compilation:
+  Install fdu's self-contained skill for current and future agent sessions:
 
     uvx --no-build fdu@latest --install-skill
 
-  If fdu is already on PATH, `fdu --install-skill` is equivalent. The installed
-  skill uses that command when present and a wheel-only uvx fallback otherwise.
+  Run it from the project root. The generated SKILL.md needs no prior session
+  context. If fdu is on PATH, `fdu --install-skill` is equivalent.
 
 INSTALL THE COMMAND LINE
   Run the latest release once, or keep it on PATH:

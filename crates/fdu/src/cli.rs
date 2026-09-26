@@ -126,13 +126,12 @@ macro_rules! docs_guide {
             r"fdu — a fast, incremental file roll-up engine.
 
 SET UP WITH ANY CODING AGENT
-  From the project root, install fdu's project skill with no persistent command
-  and no Rust compilation:
+  Install fdu's self-contained skill for current and future agent sessions:
 
     uvx --no-build fdu@latest --install-skill
 
-  If fdu is already on PATH, `fdu --install-skill` is equivalent. The installed
-  skill uses that command when present and a wheel-only uvx fallback otherwise.
+  Run it from the project root. The generated SKILL.md needs no prior session
+  context. If fdu is on PATH, `fdu --install-skill` is equivalent.
 
 INSTALL THE COMMAND LINE
   Run the latest release once, or keep it on PATH:
@@ -3158,6 +3157,8 @@ mod tests {
 
         assert!(skill.starts_with("---\nname: fdu\n"));
         assert!(!skill.contains('\r'), "the public skill must use portable LF endings");
+        assert!(skill.contains("complete fdu usage contract"));
+        assert!(skill.contains("needs no setup chat or prior session"));
         assert!(skill.contains("command -v fdu"), "the installed command comes first");
         assert!(
             skill.contains("uvx --no-build fdu@latest "),

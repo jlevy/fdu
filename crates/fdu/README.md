@@ -20,13 +20,11 @@ states the compatibility rules.
 
 Give the agent this instruction:
 
-> Set up fdu for this project: run `uvx --no-build fdu@latest --install-skill` from the
-> project root, then follow the installed fdu skill whenever measuring or tracking disk
-> usage.
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
 
 The installer writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md`.
-The skill uses `fdu` on `PATH` when present and otherwise runs
-`uvx --no-build fdu@latest`; `fdu --skill` prints it.
+The skill needs no prior session context; `fdu --skill` prints it.
 
 ## Install the Command Line
 

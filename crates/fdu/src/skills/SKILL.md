@@ -10,6 +10,9 @@ description: >-
 
 # fdu Directory Roll-Ups
 
+This is the complete fdu usage contract; it needs no setup chat or prior session
+context.
+
 Use `fdu` to summarize a directory tree without modifying files in that tree.
 `fdu --docs` prints common commands, cache behavior, and the full usage contract without
 a PATH and without scanning.

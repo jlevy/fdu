@@ -26,15 +26,12 @@ See [Speed](#speed).
 
 Hand any coding agent this one instruction:
 
-> Set up fdu for this project: run `uvx --no-build fdu@latest --install-skill` from the
-> project root, then follow the installed fdu skill whenever measuring or tracking disk
-> usage.
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
 
 The command writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under
-the project root. It needs [uv](https://docs.astral.sh/uv/) and a compatible prebuilt
-wheel, but does not keep an installed command or compile Rust.
-The skill uses `fdu` on `PATH` when present and otherwise runs
-`uvx --no-build fdu@latest`.
+the project root. The skill needs no prior session context and uses `fdu` on `PATH` or a
+wheel-only `uvx` fallback; no installed command or Rust toolchain is required.
 
 Use `--agent-base DIR` to write `DIR/skills/fdu/SKILL.md` for one agent’s user scope,
 such as `~/.claude`. Re-run the installer after upgrading to refresh the skill;

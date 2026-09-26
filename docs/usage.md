@@ -355,6 +355,8 @@ repository; `--agent-base DIR` writes `DIR/skills/fdu/SKILL.md` instead, for one
 user scope such as `~/.claude`. It reports each file as installed, updated, or
 unchanged, replaces only files it generated, and refuses a `SKILL.md` written by hand
 with exit 2. Deleting those directories uninstalls it.
+The generated file is the complete agent-facing usage contract and does not depend on
+the installing session’s prompt or memory.
 The skill prefers an `fdu` on `PATH` and otherwise runs `uvx --no-build fdu@latest`;
 installing the skill does not install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the

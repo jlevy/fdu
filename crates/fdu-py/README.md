@@ -7,13 +7,10 @@ roll-up engine.
 
 Give the agent this instruction:
 
-> Set up fdu for this project: run `uvx --no-build fdu@latest --install-skill` from the
-> project root, then follow the installed fdu skill whenever measuring or tracking disk
-> usage.
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
 
-The command writes the project skill without keeping an installed command.
-The skill uses `fdu` on `PATH` when present and otherwise runs
-`uvx --no-build fdu@latest`; `fdu --skill` prints it.
+The skill needs no prior session context or installed command; `fdu --skill` prints it.
 
 ## Install the Command Line
 
