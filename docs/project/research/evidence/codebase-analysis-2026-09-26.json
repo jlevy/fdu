@@ -1,0 +1,3822 @@
+{
+  "versions": {
+    "fdu": "fdu 0.1.0",
+    "tokei": "tokei 14.0.0 compiled with serialization support: json, cbor, yaml"
+  },
+  "repo_revision": "e06c3e084dca7eec60cd2f1216f942c43c4398f0",
+  "units": [
+    "code",
+    "comment",
+    "blank"
+  ],
+  "fixtures": {
+    "rust_control.rs": {
+      "fdu": [
+        3,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2ffcea4580804793a3dae2b0b6137294b3a5aac25e73c6be26433ad7599a411f",
+      "expected_fdu_contract": [
+        3,
+        1,
+        0
+      ],
+      "source": "// comment\nfn main() { // tail\n  let x = \"// text\";\n}\n"
+    },
+    "rust_multiline.rs": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "26d766abf48ffa6cb770fa31c5a06d899144f0853ac1abff0bfe351a9540dee4",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "const S: &str = \"first\n// text\nlast\";\n"
+    },
+    "rust_lifetime.rs": {
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        1,
+        2,
+        0
+      ],
+      "tokei_primary": [
+        1,
+        2,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "1ea4b3587e43b31a6207cab169831ce5d8b6ef11147ef97b2ed82d80150b4e14",
+      "expected_fdu_contract": [
+        2,
+        1,
+        0
+      ],
+      "source": "fn x<'a>() { /*\ncomment\n*/ }\n"
+    },
+    "rust_raw.rs": {
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "493cec9e632b9cabaa8a1a93cb0f9fe2ff6b473fbd965ffd7b2055a671cefe01",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "const S: &str = r##\"first\n// text\nlast\"##;\n"
+    },
+    "rust_nested.rs": {
+      "fdu": [
+        1,
+        3,
+        0
+      ],
+      "tokei": [
+        1,
+        3,
+        0
+      ],
+      "tokei_primary": [
+        1,
+        3,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "ae511f1d6da857c9d34604ca60698494055eceb4c97783f7e06b055220751f23",
+      "expected_fdu_contract": [
+        1,
+        3,
+        0
+      ],
+      "source": "/* first\n/* nested */\nlast */\nfn main() {}\n"
+    },
+    "cpp_raw.cpp": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "7bd4cb695da3da406071f56c9e3071cc7abe2a897ac8b4a85153e83beeccc14e",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "const char *s = R\"tag(first\n// text\nlast)tag\";\n"
+    },
+    "c_continuation.c": {
+      "fdu": [
+        1,
+        1,
+        0
+      ],
+      "tokei": [
+        1,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        1,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "53eebf13022b1f2c4832f35c42d8dccd820603bd3a03884e3795bacbd5a22fa5",
+      "expected_fdu_contract": [
+        2,
+        0,
+        0
+      ],
+      "source": "const char *s = \"first\\\n// text\";\n"
+    },
+    "c_control.c": {
+      "fdu": [
+        1,
+        1,
+        0
+      ],
+      "tokei": [
+        1,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        1,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "685f7e2e95426e42a3e4df40a56d57ea26df95f7c0ec08609d23155002059aff",
+      "expected_fdu_contract": [
+        1,
+        1,
+        0
+      ],
+      "source": "/* comment */\nint main() { return 0; } // tail\n"
+    },
+    "java_textblock.java": {
+      "fdu": [
+        3,
+        1,
+        0
+      ],
+      "tokei": [
+        4,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        4,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "9c431d2bbd7b64c3863e429814f25f57acd752a2327450f9894e3767e203c9c9",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "class C { String s = \"\"\"\n// text\nlast\n\"\"\"; }\n"
+    },
+    "csharp_verbatim.cs": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "5d6672f603e541cda17937f1deb3aea2232c3070d1ed009caf1073ebf849c790",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "class C { string s = @\"first\n// text\nlast\"; }\n"
+    },
+    "csharp_raw.cs": {
+      "fdu": [
+        3,
+        1,
+        0
+      ],
+      "tokei": [
+        4,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        4,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2dac186ac40f0edc72eb9377b30c2fb713d79127ac3751ce82d96f34495b1f58",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "class C { string s = \"\"\"\n// text\nlast\n\"\"\"; }\n"
+    },
+    "javascript_template.js": {
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "1a2cf476f8cf29c05aeca3245cdb1d695b07ad354e9465e42c9fe0b88771581d",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "const s = `first\n// text\nlast`;\n"
+    },
+    "javascript_regex.js": {
+      "fdu": [
+        1,
+        1,
+        0
+      ],
+      "tokei": [
+        1,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        1,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d3ed3b8e5f56fa2ed7d2584975027d07b90648a7bfad9ec75655ab05d55df918",
+      "expected_fdu_contract": [
+        2,
+        0,
+        0
+      ],
+      "source": "const re = /[/*]/;\nconst answer = 42;\n"
+    },
+    "typescript_template.ts": {
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c4a2b2f686a8c030091fffb918ed66b25043bb1a1579d046262f54222dc165b5",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "const s: string = `first\n// text\nlast`;\n"
+    },
+    "go_raw.go": {
+      "fdu": [
+        4,
+        0,
+        0
+      ],
+      "tokei": [
+        3,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "15129349db7c138d3c8a88b82b1c3f7f0aa4582ee8a2050207aa08b34e0cecb0",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "package p\nvar s = `first\n// text\nlast`\n"
+    },
+    "python_docstring.py": {
+      "fdu": [
+        4,
+        0,
+        0
+      ],
+      "tokei": [
+        4,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        4,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "1f02bb8db7c71233350e7a758bf77a91c4bca6a484d07c6d557581357f05460f",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "\"\"\"first\n# text\nlast\"\"\"\npass\n"
+    },
+    "python_control.py": {
+      "fdu": [
+        1,
+        1,
+        1
+      ],
+      "tokei": [
+        1,
+        1,
+        1
+      ],
+      "tokei_primary": [
+        1,
+        1,
+        1
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "e4033cf09c654fe52f676dde5e032ad37d3796ad0abb3d4081f5615384cc9f0f",
+      "expected_fdu_contract": [
+        1,
+        1,
+        1
+      ],
+      "source": "# comment\nx = \"# text\"  # tail\n\n"
+    },
+    "ruby_percent.rb": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        2,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        2,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2554bb355d2a5841919d800e25da8003d5ec85fb91454646334248e8fa72ec70",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "s = %q{first\n# text\nlast}\n"
+    },
+    "ruby_heredoc.rb": {
+      "fdu": [
+        3,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f60fd790c7eb71afb73b1dcdb788d96721feee19c7694cee766127815d94c1f1",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "s = <<~TEXT\n# text\nlast\nTEXT\n"
+    },
+    "ruby_regular.rb": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "e17d0655d2ff6e026f40ddc7811b6ab74a7b5776626ffcd20b4d9b3757ab9722",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "s = \"first\n# text\nlast\"\n"
+    },
+    "shell_heredoc.sh": {
+      "fdu": [
+        3,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2f4f2788048f5f5d26d36d3090f241a09dbb0d260bb4b9b6b4cfc33e4e40a134",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "cat <<'TEXT'\n# text\nlast\nTEXT\n"
+    },
+    "shell_quote.sh": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2a0b09815746e2bf9040528289a6c3d1a3fa84ca47a7526472afc4580b6a673d",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "value='first\n# text\nlast'\n"
+    },
+    "sql_dollar.sql": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        2,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        2,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "14182ad72553a7d07abb601ec985163a1d3686bd2075edf7271058e4a7fcf1b3",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "SELECT $tag$first\n-- text\nlast$tag$;\n"
+    },
+    "sql_quote.sql": {
+      "fdu": [
+        2,
+        1,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "0e078282e90fad7f0d1ad0da10a8599ecbbf0098c7c1901a4fc27e9ecac7052b",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "SELECT 'first\n-- text\nlast';\n"
+    },
+    "sql_control.sql": {
+      "fdu": [
+        1,
+        1,
+        0
+      ],
+      "tokei": [
+        1,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        1,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "ecafcf5568959c24ece308230924d8b547f777f5624c00750c06442175d3b477",
+      "expected_fdu_contract": [
+        1,
+        1,
+        0
+      ],
+      "source": "-- comment\nSELECT 1; /* tail */\n"
+    },
+    "php_heredoc.php": {
+      "fdu": [
+        4,
+        1,
+        0
+      ],
+      "tokei": [
+        4,
+        1,
+        0
+      ],
+      "tokei_primary": [
+        4,
+        1,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "edc15f05770d5b6c27635fd200570ae9968c20571e7e0f5596783a95e8e98822",
+      "expected_fdu_contract": [
+        5,
+        0,
+        0
+      ],
+      "source": "<?php\n$s = <<<TEXT\n// text\nlast\nTEXT;\n"
+    },
+    "kotlin_triple.kt": {
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "3033a4df5638d7a4d33e6d8a05e465c5b70acb3e657f3aba93daf217c77ea2b9",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "val s = \"\"\"first\n// text\nlast\"\"\"\n"
+    },
+    "swift_triple.swift": {
+      "fdu": [
+        4,
+        0,
+        0
+      ],
+      "tokei": [
+        4,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        4,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "e2a89b4ccb89ffbd9871c8d1c310c7fbaa6902243aa02cdc245d20d4a0ce9c1e",
+      "expected_fdu_contract": [
+        4,
+        0,
+        0
+      ],
+      "source": "let s = \"\"\"\n// text\nlast\n\"\"\"\n"
+    },
+    "blank_block.rs": {
+      "fdu": [
+        0,
+        3,
+        0
+      ],
+      "tokei": [
+        0,
+        3,
+        0
+      ],
+      "tokei_primary": [
+        0,
+        3,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f06e94b3a1e6e4c5795f5382c8d9d4846a7479d376f2e2966477b913b6d8d8e8",
+      "expected_fdu_contract": [
+        0,
+        3,
+        0
+      ],
+      "source": "/* first\n\nlast */\n"
+    },
+    "blank_string.rs": {
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        3,
+        0,
+        0
+      ],
+      "tokei_primary": [
+        3,
+        0,
+        0
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "dd5c218bda40e985177fa76357a19e3290d503a5faf006e2ef1785079d22927f",
+      "expected_fdu_contract": [
+        3,
+        0,
+        0
+      ],
+      "source": "const S: &str = r\"first\n\nlast\";\n"
+    }
+  },
+  "real": {
+    "crates/fdu/build.rs": {
+      "fdu": [
+        53,
+        30,
+        4
+      ],
+      "tokei": [
+        53,
+        25,
+        9
+      ],
+      "tokei_primary": [
+        53,
+        5,
+        4
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "5d07feea3117ef45f8f562a8b524b544a9e74d728a6dbefa6e9c6e5a6980be41"
+    },
+    "crates/fdu/src/cli.rs": {
+      "fdu": [
+        2910,
+        612,
+        263
+      ],
+      "tokei": [
+        2907,
+        563,
+        308
+      ],
+      "tokei_primary": [
+        2907,
+        214,
+        259
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f1a6e83385c1600e102f16711af23183f7d7f48a73f426e4c3bd64c8459ecaa7"
+    },
+    "crates/fdu/src/interrupt.rs": {
+      "fdu": [
+        121,
+        42,
+        21
+      ],
+      "tokei": [
+        120,
+        37,
+        25
+      ],
+      "tokei_primary": [
+        120,
+        4,
+        20
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "ca355803a139b274d3b42be4efbed50a641f026692e8ca9af53dc0d692f302dc"
+    },
+    "crates/fdu/src/lib.rs": {
+      "fdu": [
+        10,
+        14,
+        4
+      ],
+      "tokei": [
+        10,
+        11,
+        7
+      ],
+      "tokei_primary": [
+        10,
+        0,
+        4
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "db1cc9a627dfa5872200fc913c6171e830f81e250eb69abc7f4bf361d33a7dfa"
+    },
+    "crates/fdu/src/main.rs": {
+      "fdu": [
+        12,
+        1,
+        3
+      ],
+      "tokei": [
+        12,
+        1,
+        3
+      ],
+      "tokei_primary": [
+        12,
+        0,
+        3
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "71a3e3c6933f8c4af63f24653e01b350fe00e360a7bf8aec307ae88ecac14cc8"
+    },
+    "crates/fdu/src/progress_line.rs": {
+      "fdu": [
+        800,
+        196,
+        72
+      ],
+      "tokei": [
+        799,
+        177,
+        91
+      ],
+      "tokei_primary": [
+        799,
+        30,
+        72
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "3479de8d5f24d218c95b818fecfa0a2451d064383481343a997c50c2f65a0f2f"
+    },
+    "crates/fdu/src/progress_ticker.rs": {
+      "fdu": [
+        444,
+        126,
+        55
+      ],
+      "tokei": [
+        443,
+        109,
+        71
+      ],
+      "tokei_primary": [
+        443,
+        3,
+        54
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "7889b853e292db51567fed7c65def14090c55ae6efbe7cb68218b7604c4742ee"
+    },
+    "crates/fdu/src/skill_install.rs": {
+      "fdu": [
+        231,
+        78,
+        31
+      ],
+      "tokei": [
+        229,
+        70,
+        37
+      ],
+      "tokei_primary": [
+        229,
+        11,
+        29
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "7d15a624c91fdff4bb9474dd70f36ffd6fc6c810520c17d6b14bd341782b9b0c"
+    },
+    "crates/fdu/tests/cli_color.rs": {
+      "fdu": [
+        154,
+        12,
+        23
+      ],
+      "tokei": [
+        154,
+        11,
+        24
+      ],
+      "tokei_primary": [
+        154,
+        6,
+        23
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "8c42030779bef463c2378a120f88eede603e50ae17e5779498d6847ab0b113b3"
+    },
+    "crates/fdu/tests/cli_exit.rs": {
+      "fdu": [
+        236,
+        15,
+        29
+      ],
+      "tokei": [
+        236,
+        14,
+        30
+      ],
+      "tokei_primary": [
+        236,
+        2,
+        29
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "ac73aa2a1ef2b167729ec8c27267a839dab0c6b11318a0e0a9fcbedec5a56fc0"
+    },
+    "crates/fdu/tests/detached_performance_invariants.rs": {
+      "fdu": [
+        250,
+        49,
+        31
+      ],
+      "tokei": [
+        250,
+        47,
+        33
+      ],
+      "tokei_primary": [
+        250,
+        38,
+        31
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "77d36e32b9be4b6bdbf28a3437de5d8b72d70eba7a2fc698492c1da9f58b3bc1"
+    },
+    "crates/fdu/tests/directory_queries.rs": {
+      "fdu": [
+        77,
+        1,
+        5
+      ],
+      "tokei": [
+        77,
+        1,
+        5
+      ],
+      "tokei_primary": [
+        77,
+        0,
+        5
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "1db6ec23175ad714b30cd2afffe9220f9895c5dd7726064f0630721b7ae86e75"
+    },
+    "crates/fdu/tests/scan_watermark_integration.rs": {
+      "fdu": [
+        75,
+        28,
+        11
+      ],
+      "tokei": [
+        93,
+        16,
+        5
+      ],
+      "tokei_primary": [
+        93,
+        0,
+        3
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2c9683b6c17a02c5f65034c5d3c8ecd685ae5d053da61f32acb8df7148987932"
+    },
+    "crates/fdu/tests/watch_controls.rs": {
+      "fdu": [
+        270,
+        41,
+        39
+      ],
+      "tokei": [
+        270,
+        38,
+        42
+      ],
+      "tokei_primary": [
+        270,
+        12,
+        39
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d859103f6c00ca3b4fd7694f1862f3dd339f55fb393f2f3b362bbe92c153983e"
+    },
+    "crates/fdu/tests/watch_persistence.rs": {
+      "fdu": [
+        218,
+        63,
+        30
+      ],
+      "tokei": [
+        218,
+        59,
+        34
+      ],
+      "tokei_primary": [
+        218,
+        35,
+        30
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f1344a0e2e27ee400ad983f9583a9a686262df59070c1038b57df0f0c91418c2"
+    },
+    "crates/fdu-core/build.rs": {
+      "fdu": [
+        111,
+        21,
+        9
+      ],
+      "tokei": [
+        109,
+        19,
+        11
+      ],
+      "tokei_primary": [
+        109,
+        7,
+        9
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "6e0b358521a82e1a5029d5bfe02d9e91c8954fe75514feae9d3b6fd448f35a04"
+    },
+    "crates/fdu-core/examples/format_conformance.rs": {
+      "fdu": [
+        140,
+        3,
+        6
+      ],
+      "tokei": [
+        140,
+        3,
+        6
+      ],
+      "tokei_primary": [
+        140,
+        2,
+        6
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "4ce7b21b07c9a8a9d5e4736f0c1c5bb54179aec66dd65841d07e9e35c3ddf20c"
+    },
+    "crates/fdu-core/examples/perf_probe.rs": {
+      "fdu": [
+        2711,
+        228,
+        167
+      ],
+      "tokei": [
+        2800,
+        189,
+        117
+      ],
+      "tokei_primary": [
+        2800,
+        79,
+        100
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a68b2f20a370cffce76272560c7061d4b8c21ff887ba80b1f69892eebfb62950"
+    },
+    "crates/fdu-core/src/admission.rs": {
+      "fdu": [
+        188,
+        27,
+        28
+      ],
+      "tokei": [
+        188,
+        25,
+        30
+      ],
+      "tokei_primary": [
+        188,
+        2,
+        28
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "26d20879e130798bd7dab24b082e82e163ab8f9722613ef3852cec363c44a13e"
+    },
+    "crates/fdu-core/src/cache.rs": {
+      "fdu": [
+        859,
+        298,
+        99
+      ],
+      "tokei": [
+        851,
+        273,
+        116
+      ],
+      "tokei_primary": [
+        851,
+        80,
+        91
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "41c4ee1bf9b89b8194f3e1bf0f7913ab335f21b33c2006edfd91ec3965161093"
+    },
+    "crates/fdu-core/src/classify/file_rollup_manifest.rs": {
+      "fdu": [
+        700,
+        60,
+        31
+      ],
+      "tokei": [
+        700,
+        54,
+        37
+      ],
+      "tokei_primary": [
+        700,
+        11,
+        31
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c5ac0fff1e85cda6bcdb016781927f1cc7e6b0e07607eb4af478032f429b3a17"
+    },
+    "crates/fdu-core/src/classify/file_type_detection.rs": {
+      "fdu": [
+        175,
+        5,
+        17
+      ],
+      "tokei": [
+        175,
+        4,
+        18
+      ],
+      "tokei_primary": [
+        175,
+        0,
+        17
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "6f26f204f8b408b946a368dc7df8f771150e5e3f1dd8fe7babab6c0e34dd8550"
+    },
+    "crates/fdu-core/src/classify/manifest_toml.rs": {
+      "fdu": [
+        340,
+        52,
+        23
+      ],
+      "tokei": [
+        351,
+        43,
+        21
+      ],
+      "tokei_primary": [
+        351,
+        27,
+        19
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "9f45b2f2262df19d7d535e998437ac52cad28dba5f49cee42e7ad2959da2dc05"
+    },
+    "crates/fdu-core/src/classify/type_rule_manifest.rs": {
+      "fdu": [
+        327,
+        57,
+        20
+      ],
+      "tokei": [
+        325,
+        54,
+        21
+      ],
+      "tokei_primary": [
+        325,
+        25,
+        18
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "6db3a24307409ea05509b37bdf3a110a42d6f89ce66d22541d90bec00c76e21e"
+    },
+    "crates/fdu-core/src/classify.rs": {
+      "fdu": [
+        1339,
+        328,
+        154
+      ],
+      "tokei": [
+        1338,
+        292,
+        189
+      ],
+      "tokei_primary": [
+        1338,
+        32,
+        153
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "664ae4d29047d2d1ffe985fa3f83233d2760cccffc1b45bfc5e5e06aa906bf14"
+    },
+    "crates/fdu-core/src/content/content_analysis.rs": {
+      "fdu": [
+        1183,
+        48,
+        80
+      ],
+      "tokei": [
+        1183,
+        45,
+        83
+      ],
+      "tokei_primary": [
+        1183,
+        10,
+        80
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "55990b7eba4afa4a4a89f1548739c51217e20c2f11627232dd364f95bcd1f3ba"
+    },
+    "crates/fdu-core/src/content/content_basic_metrics.rs": {
+      "fdu": [
+        289,
+        10,
+        26
+      ],
+      "tokei": [
+        289,
+        10,
+        26
+      ],
+      "tokei_primary": [
+        289,
+        0,
+        26
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d3e37bcd4892f62ebf1423b1b968ba0c7d73b436012619b62925966a54a514f3"
+    },
+    "crates/fdu-core/src/content/content_cache.rs": {
+      "fdu": [
+        1319,
+        184,
+        130
+      ],
+      "tokei": [
+        1318,
+        170,
+        144
+      ],
+      "tokei_primary": [
+        1318,
+        51,
+        130
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "987e387bfad3cb9720fbb203dafb5bf4734780bfc25c9ec52cfa71098044edb9"
+    },
+    "crates/fdu-core/src/content/content_code_metrics.rs": {
+      "fdu": [
+        396,
+        13,
+        29
+      ],
+      "tokei": [
+        397,
+        12,
+        29
+      ],
+      "tokei_primary": [
+        397,
+        0,
+        28
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c964038d191ac00690a61a880cf862dacceadb5c2dacd5ca55f35a0893398a29"
+    },
+    "crates/fdu-core/src/content/content_index.rs": {
+      "fdu": [
+        681,
+        81,
+        83
+      ],
+      "tokei": [
+        681,
+        75,
+        89
+      ],
+      "tokei_primary": [
+        681,
+        17,
+        83
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f96f47f641dfa08c29f63468e5bc1e770b0ddb53cc958a7d90cabb3cfd8d1562"
+    },
+    "crates/fdu-core/src/content/content_markdown_metrics.rs": {
+      "fdu": [
+        197,
+        3,
+        16
+      ],
+      "tokei": [
+        197,
+        3,
+        16
+      ],
+      "tokei_primary": [
+        197,
+        0,
+        16
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "7c6e08713eada1de9581be77bf99d5de37d385278b128a091ff36ef325c2ab88"
+    },
+    "crates/fdu-core/src/content/content_model.rs": {
+      "fdu": [
+        578,
+        187,
+        67
+      ],
+      "tokei": [
+        573,
+        177,
+        75
+      ],
+      "tokei_primary": [
+        573,
+        7,
+        65
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "19f25f208e96761074b160ccfff041c1c2e8cfbc1f44913f006e9d7b7ce71912"
+    },
+    "crates/fdu-core/src/content.rs": {
+      "fdu": [
+        26,
+        3,
+        2
+      ],
+      "tokei": [
+        26,
+        2,
+        3
+      ],
+      "tokei_primary": [
+        26,
+        0,
+        2
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "b45864c1f87ecff175b719a417bf2e0161a7b8c0763eee9592d6275f468df383"
+    },
+    "crates/fdu-core/src/control/gitignore.rs": {
+      "fdu": [
+        656,
+        109,
+        52
+      ],
+      "tokei": [
+        656,
+        101,
+        60
+      ],
+      "tokei_primary": [
+        656,
+        40,
+        52
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "895f3dc47c5fa6cc33499fb9038b0b72fd789d441cec152343dbaf977e21d783"
+    },
+    "crates/fdu-core/src/control.rs": {
+      "fdu": [
+        897,
+        223,
+        102
+      ],
+      "tokei": [
+        896,
+        200,
+        124
+      ],
+      "tokei_primary": [
+        896,
+        16,
+        101
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "36a05d61066bc213129698aba6e94317a35590c1df720cb9c4a5010e477579f7"
+    },
+    "crates/fdu-core/src/counters/alloc.rs": {
+      "fdu": [
+        110,
+        47,
+        24
+      ],
+      "tokei": [
+        110,
+        42,
+        29
+      ],
+      "tokei_primary": [
+        110,
+        16,
+        24
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "436858fddf9ae1987d2d48c3da223e52638bda775b40eadd0f390edc25821828"
+    },
+    "crates/fdu-core/src/counters/process.rs": {
+      "fdu": [
+        330,
+        31,
+        31
+      ],
+      "tokei": [
+        330,
+        29,
+        33
+      ],
+      "tokei_primary": [
+        330,
+        2,
+        31
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "edad8d0a742530ad54bade8aa5a172515842742c5d3504c506201e193f7a4744"
+    },
+    "crates/fdu-core/src/counters.rs": {
+      "fdu": [
+        860,
+        138,
+        65
+      ],
+      "tokei": [
+        860,
+        126,
+        77
+      ],
+      "tokei_primary": [
+        860,
+        8,
+        65
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "b830bfe9726054c1c3b3e30b1cedfe7153a217f518173957afb9b452e9b9c002"
+    },
+    "crates/fdu-core/src/emit/emit_json.rs": {
+      "fdu": [
+        152,
+        1,
+        16
+      ],
+      "tokei": [
+        152,
+        1,
+        16
+      ],
+      "tokei_primary": [
+        152,
+        0,
+        16
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "aa0343398a00ccff6f0c2a4284bc91153c5f47abd6055cb4727754bf64d80bf3"
+    },
+    "crates/fdu-core/src/emit/emit_scalar.rs": {
+      "fdu": [
+        315,
+        11,
+        10
+      ],
+      "tokei": [
+        323,
+        8,
+        5
+      ],
+      "tokei_primary": [
+        323,
+        0,
+        4
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "aec6ca09a0ed6417fe2412214e47117b027715d4cb1bee6d0c82fdba759b5d8a"
+    },
+    "crates/fdu-core/src/emit/emit_yaml.rs": {
+      "fdu": [
+        205,
+        1,
+        17
+      ],
+      "tokei": [
+        205,
+        1,
+        17
+      ],
+      "tokei_primary": [
+        205,
+        0,
+        17
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "fc08aa225d3bf4fcdded68f51993fa7b4e674d80e938159bb8ab78d801fbfc90"
+    },
+    "crates/fdu-core/src/emit.rs": {
+      "fdu": [
+        109,
+        10,
+        17
+      ],
+      "tokei": [
+        109,
+        9,
+        18
+      ],
+      "tokei_primary": [
+        109,
+        0,
+        17
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "b457f38be65ca9e334e6c74673710dfd38cacfbee310a3e7da0fe9ceca283853"
+    },
+    "crates/fdu-core/src/engine_contract.rs": {
+      "fdu": [
+        1139,
+        846,
+        175
+      ],
+      "tokei": [
+        1139,
+        781,
+        240
+      ],
+      "tokei_primary": [
+        1139,
+        17,
+        175
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "fa157887f897bb5bdb287b3aa9e80b20e67aa429bb13196151e5ff2593697069"
+    },
+    "crates/fdu-core/src/execution.rs": {
+      "fdu": [
+        1528,
+        290,
+        125
+      ],
+      "tokei": [
+        1528,
+        269,
+        146
+      ],
+      "tokei_primary": [
+        1528,
+        80,
+        125
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c9cd25eba2388add0829efcee2e56aae16ba23e5a79dc8554793f25b17f255cb"
+    },
+    "crates/fdu-core/src/index.rs": {
+      "fdu": [
+        8416,
+        1099,
+        721
+      ],
+      "tokei": [
+        8416,
+        988,
+        832
+      ],
+      "tokei_primary": [
+        8416,
+        255,
+        721
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d5b96867e51d8bd172aa1caf9701498927f8e66f76607d88a485fb2cee2f1d19"
+    },
+    "crates/fdu-core/src/lib.rs": {
+      "fdu": [
+        1717,
+        338,
+        174
+      ],
+      "tokei": [
+        1717,
+        300,
+        212
+      ],
+      "tokei_primary": [
+        1717,
+        88,
+        174
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "55bcbb69d3703e8b361a45bbf0e43fbd5a798443e9de0bb0fc6415ccdd2cee2a"
+    },
+    "crates/fdu-core/src/opened/continuation.rs": {
+      "fdu": [
+        367,
+        85,
+        29
+      ],
+      "tokei": [
+        367,
+        74,
+        40
+      ],
+      "tokei_primary": [
+        367,
+        11,
+        29
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "6755c28dc5343aa1d4bf9a1a77f5c5c44caffea0392e208004c126e50b83c874"
+    },
+    "crates/fdu-core/src/opened/golden_support.rs": {
+      "fdu": [
+        630,
+        13,
+        58
+      ],
+      "tokei": [
+        629,
+        12,
+        58
+      ],
+      "tokei_primary": [
+        629,
+        3,
+        57
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "8a93b6386672d72045b9a35c57830d52a86c71a78be6a8b9fc77d6bf198e7c06"
+    },
+    "crates/fdu-core/src/opened/golden_tests.rs": {
+      "fdu": [
+        717,
+        17,
+        45
+      ],
+      "tokei": [
+        717,
+        16,
+        46
+      ],
+      "tokei_primary": [
+        717,
+        11,
+        45
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d2c50c5c060f21e47e511606a7e81cd9edd2d5f4ee391ed856a8c46bcce030d7"
+    },
+    "crates/fdu-core/src/opened/journal.rs": {
+      "fdu": [
+        201,
+        13,
+        23
+      ],
+      "tokei": [
+        201,
+        13,
+        23
+      ],
+      "tokei_primary": [
+        201,
+        6,
+        23
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a0529f6a7165bb5ee523358cc68d01c7fc03ea55eb39a4bd517692d443c06b79"
+    },
+    "crates/fdu-core/src/opened/read.rs": {
+      "fdu": [
+        970,
+        190,
+        58
+      ],
+      "tokei": [
+        970,
+        172,
+        76
+      ],
+      "tokei_primary": [
+        970,
+        82,
+        58
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "ea7da46e9ec95d43671b4fed66ff3e81a4112bd6765b933bc9a8174b468237c4"
+    },
+    "crates/fdu-core/src/opened.rs": {
+      "fdu": [
+        6373,
+        539,
+        441
+      ],
+      "tokei": [
+        6371,
+        482,
+        498
+      ],
+      "tokei_primary": [
+        6371,
+        103,
+        441
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "cdad5788dc4f7e3e9470804d51693113dd07eedaa0f888534d7b4a0b68b9e478"
+    },
+    "crates/fdu-core/src/platform_tuning.rs": {
+      "fdu": [
+        197,
+        122,
+        21
+      ],
+      "tokei": [
+        195,
+        106,
+        39
+      ],
+      "tokei_primary": [
+        195,
+        10,
+        22
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d694eba3448372b446dfed8cc7d4a72f1eaf05bb186cc696e7d228daf67c4b14"
+    },
+    "crates/fdu-core/src/progress.rs": {
+      "fdu": [
+        218,
+        128,
+        26
+      ],
+      "tokei": [
+        218,
+        111,
+        43
+      ],
+      "tokei_primary": [
+        218,
+        1,
+        26
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "658c4119090fdfd609251fbccaea25c635d27628573847c866370133d0030e43"
+    },
+    "crates/fdu-core/src/query/query_glob.rs": {
+      "fdu": [
+        413,
+        86,
+        45
+      ],
+      "tokei": [
+        412,
+        84,
+        48
+      ],
+      "tokei_primary": [
+        412,
+        25,
+        41
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "1fb2147175a1d8c8e0b98acfe834847a3a6bb48daf5c4466d5ffab759b65662c"
+    },
+    "crates/fdu-core/src/query/query_report.rs": {
+      "fdu": [
+        2688,
+        608,
+        194
+      ],
+      "tokei": [
+        2686,
+        560,
+        240
+      ],
+      "tokei_primary": [
+        2686,
+        128,
+        192
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "361193ebf206d521c9fdfd76362ac773da470f96f380a16ea5cb07a43cfa9771"
+    },
+    "crates/fdu-core/src/query/query_request.rs": {
+      "fdu": [
+        1583,
+        409,
+        107
+      ],
+      "tokei": [
+        1583,
+        364,
+        152
+      ],
+      "tokei_primary": [
+        1583,
+        29,
+        107
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "8a487fd2c6f384c46381f825df09bb109ce34be2fd94e41f55b16a7e4afd7003"
+    },
+    "crates/fdu-core/src/query/query_selection.rs": {
+      "fdu": [
+        623,
+        215,
+        66
+      ],
+      "tokei": [
+        622,
+        184,
+        96
+      ],
+      "tokei_primary": [
+        622,
+        11,
+        65
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "63a80f176b6cadb0eb81f1e2096403d0fbe8429747b6dc3f8fb74ebb357dfbea"
+    },
+    "crates/fdu-core/src/query/query_status.rs": {
+      "fdu": [
+        346,
+        28,
+        32
+      ],
+      "tokei": [
+        346,
+        27,
+        33
+      ],
+      "tokei_primary": [
+        346,
+        0,
+        32
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c9e6f051034f92422a0fee92172e5a5b00789c457d02dc9eff0ae2b66d980907"
+    },
+    "crates/fdu-core/src/query/query_subtrees.rs": {
+      "fdu": [
+        120,
+        36,
+        6
+      ],
+      "tokei": [
+        120,
+        34,
+        8
+      ],
+      "tokei_primary": [
+        120,
+        13,
+        6
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "e039a3eea563df425f79be4752f4e6456b9b5c22b7f1eba0e2159d1b196dcb8a"
+    },
+    "crates/fdu-core/src/query/query_values.rs": {
+      "fdu": [
+        662,
+        126,
+        86
+      ],
+      "tokei": [
+        662,
+        111,
+        101
+      ],
+      "tokei_primary": [
+        662,
+        37,
+        86
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "5e4cd16fdabb568770dc7bf19b9da83fb88371e1fe4434a3c0b1921dbc7428f0"
+    },
+    "crates/fdu-core/src/query.rs": {
+      "fdu": [
+        31,
+        7,
+        2
+      ],
+      "tokei": [
+        31,
+        6,
+        3
+      ],
+      "tokei_primary": [
+        31,
+        0,
+        2
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "50fbf6ec11f020bb5a987af3e27cd6aa8b12d75884b0fc141275e2faa48f131b"
+    },
+    "crates/fdu-core/src/report_format.rs": {
+      "fdu": [
+        3341,
+        447,
+        247
+      ],
+      "tokei": [
+        3338,
+        400,
+        292
+      ],
+      "tokei_primary": [
+        3338,
+        148,
+        245
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "6a29af47f9afc644fd35f55377de4eefafde2d2ef1c1298a8c25d4a5a03c8125"
+    },
+    "crates/fdu-core/src/scan/macos_bulk.rs": {
+      "fdu": [
+        370,
+        45,
+        48
+      ],
+      "tokei": [
+        370,
+        42,
+        51
+      ],
+      "tokei_primary": [
+        370,
+        27,
+        48
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a920cb55940dd409c23bbab306d367e4b789af11985117f59c855227ba9903dd"
+    },
+    "crates/fdu-core/src/scan/windows_metadata.rs": {
+      "fdu": [
+        323,
+        90,
+        30
+      ],
+      "tokei": [
+        323,
+        81,
+        39
+      ],
+      "tokei_primary": [
+        323,
+        20,
+        30
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f7dfd4a7f514b2d6a8bce028a7a14bbb8812bdd3de0ca56a65bd03296a0b8031"
+    },
+    "crates/fdu-core/src/scan.rs": {
+      "fdu": [
+        8165,
+        1320,
+        720
+      ],
+      "tokei": [
+        9089,
+        620,
+        494
+      ],
+      "tokei_primary": [
+        9089,
+        186,
+        434
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "6d4089db43b09d1fdda8cbfea2febbc11c4e2dbaafbb9a74b5864275bbb2b6be"
+    },
+    "crates/fdu-core/src/snapshot.rs": {
+      "fdu": [
+        2272,
+        502,
+        261
+      ],
+      "tokei": [
+        2270,
+        460,
+        301
+      ],
+      "tokei_primary": [
+        2270,
+        177,
+        259
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "40bfcd48c99e84185668541160a9557f42c885deac9631878f82c048f6fc3b46"
+    },
+    "crates/fdu-core/src/stored_state.rs": {
+      "fdu": [
+        714,
+        181,
+        81
+      ],
+      "tokei": [
+        713,
+        166,
+        95
+      ],
+      "tokei_primary": [
+        713,
+        25,
+        80
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "468dcc41dfc7e1f82f90c7695834b0684d9d99c57cdb283341b3cec4769a7390"
+    },
+    "crates/fdu-core/src/test_support.rs": {
+      "fdu": [
+        44,
+        26,
+        6
+      ],
+      "tokei": [
+        44,
+        22,
+        10
+      ],
+      "tokei_primary": [
+        44,
+        0,
+        6
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a3a28f597a3b9150507223ea912253bf837a1376ba5b69eee6feca53e0124924"
+    },
+    "crates/fdu-core/src/watch/scripted_events.rs": {
+      "fdu": [
+        119,
+        11,
+        13
+      ],
+      "tokei": [
+        118,
+        10,
+        15
+      ],
+      "tokei_primary": [
+        118,
+        6,
+        14
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "0db888460f62a18b116378c14196cba895bda754ff38047046a2fb397c58eb60"
+    },
+    "crates/fdu-core/src/watch.rs": {
+      "fdu": [
+        1748,
+        252,
+        170
+      ],
+      "tokei": [
+        1748,
+        220,
+        202
+      ],
+      "tokei_primary": [
+        1748,
+        37,
+        170
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "5036a3cf3f6cff2a51ca630d2097ea526bdb330eddf78fd91329911ef35d23c9"
+    },
+    "crates/fdu-core/src/watch_session.rs": {
+      "fdu": [
+        986,
+        210,
+        65
+      ],
+      "tokei": [
+        986,
+        186,
+        89
+      ],
+      "tokei_primary": [
+        986,
+        45,
+        65
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "59161bf8d08bc086471350059f0842a9158b96ab6041eb7d605a5f47ede8f736"
+    },
+    "crates/fdu-core/tests/parallel_equivalence.rs": {
+      "fdu": [
+        351,
+        71,
+        47
+      ],
+      "tokei": [
+        351,
+        64,
+        54
+      ],
+      "tokei_primary": [
+        351,
+        31,
+        47
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "4d6749609d2763f376e2f60364898852df5a60030eb53c6e3ab64cce9604d00a"
+    },
+    "crates/fdu-core/tests/partial_directory_queries.rs": {
+      "fdu": [
+        171,
+        1,
+        4
+      ],
+      "tokei": [
+        171,
+        1,
+        4
+      ],
+      "tokei_primary": [
+        171,
+        0,
+        4
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a2201b92f439c3f56ce65bcdf06b0bf88b04d4fa2e0adf5b589a06284c8e7f30"
+    },
+    "crates/fdu-core/tests/query_allocations.rs": {
+      "fdu": [
+        118,
+        44,
+        14
+      ],
+      "tokei": [
+        118,
+        43,
+        15
+      ],
+      "tokei_primary": [
+        118,
+        39,
+        14
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "b698def2c71d9abf56ca1da476da724439c009f12343379fe033a41238a9fee3"
+    },
+    "crates/fdu-core/tests/reference_model.rs": {
+      "fdu": [
+        1220,
+        35,
+        82
+      ],
+      "tokei": [
+        1220,
+        34,
+        83
+      ],
+      "tokei_primary": [
+        1220,
+        18,
+        82
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "3fa2edc470998c1582c4ac09a6f03baa0337e964d578ceec5a03a0c2c779b47e"
+    },
+    "crates/fdu-core/tests/state_transition_regressions.rs": {
+      "fdu": [
+        149,
+        1,
+        19
+      ],
+      "tokei": [
+        149,
+        1,
+        19
+      ],
+      "tokei_primary": [
+        149,
+        0,
+        19
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d55ae1c3fb277a324a5bbc08280de060582336ab6f3708a38b7534530094eb1d"
+    },
+    "crates/fdu-core/tests/watch_session_integration.rs": {
+      "fdu": [
+        408,
+        102,
+        47
+      ],
+      "tokei": [
+        408,
+        90,
+        59
+      ],
+      "tokei_primary": [
+        408,
+        32,
+        47
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c83b23a7a2d6049078266352ec6568413c64e3b0a0f0e2ca304dc005e5e503d1"
+    },
+    "crates/fdu-py/src/lib.rs": {
+      "fdu": [
+        1134,
+        251,
+        88
+      ],
+      "tokei": [
+        1134,
+        221,
+        118
+      ],
+      "tokei_primary": [
+        1134,
+        69,
+        88
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a9debd0c53d7d1e7ab4aa762ed3f3909d88517804a32734c2881617eed9bb5ed"
+    },
+    "crates/fdu-py/src/opened_binding.rs": {
+      "fdu": [
+        1244,
+        52,
+        84
+      ],
+      "tokei": [
+        1244,
+        47,
+        89
+      ],
+      "tokei_primary": [
+        1244,
+        18,
+        84
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "62c90604d57dc2955a41a12a56a6f44001dedd7e888f126ce27c1b40c52e93a4"
+    },
+    "crates/fdu-py/python/fdu/__init__.py": {
+      "fdu": [
+        182,
+        2,
+        4
+      ],
+      "tokei": [
+        182,
+        2,
+        4
+      ],
+      "tokei_primary": [
+        182,
+        2,
+        4
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "1f800680bddff0b4bdc0f247fb8ec0a19205809d6f96c33671b928e383de7986"
+    },
+    "crates/fdu-py/python/fdu/_api.py": {
+      "fdu": [
+        574,
+        27,
+        103
+      ],
+      "tokei": [
+        574,
+        27,
+        103
+      ],
+      "tokei_primary": [
+        574,
+        27,
+        103
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f79bcf4c40f20825d4ca62d0ef19a1e4b713cba7c9a2dd3c744480a3e9e610cd"
+    },
+    "crates/fdu-py/python/fdu/_models.py": {
+      "fdu": [
+        1214,
+        92,
+        263
+      ],
+      "tokei": [
+        1214,
+        92,
+        263
+      ],
+      "tokei_primary": [
+        1214,
+        92,
+        263
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "3f617e015fc68e42a00a5d75bcdef39c491b50658d7bb1d7f1e5c3a60c08cc38"
+    },
+    "crates/fdu-py/python/fdu/opened.py": {
+      "fdu": [
+        1204,
+        57,
+        260
+      ],
+      "tokei": [
+        1204,
+        57,
+        260
+      ],
+      "tokei_primary": [
+        1204,
+        57,
+        260
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "fc1549b2fead453dca6073eefca6486f44f4cc9db750e30807f8d9fabbb13024"
+    },
+    "scripts/qa_peer_agreement.py": {
+      "fdu": [
+        746,
+        28,
+        71
+      ],
+      "tokei": [
+        746,
+        28,
+        71
+      ],
+      "tokei_primary": [
+        746,
+        28,
+        71
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "9548d6a7e93e5ebf9f21e4856d79072e7155e8b8efa015bc743fa6af3ec7bdd3"
+    },
+    "scripts/run_installed_cli_qa.py": {
+      "fdu": [
+        748,
+        18,
+        79
+      ],
+      "tokei": [
+        748,
+        18,
+        79
+      ],
+      "tokei_primary": [
+        748,
+        18,
+        79
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "460d7819b7cdb282eeb3779a6a2ad2671394c1ae7a2a5ad28d62b7d094d12067"
+    },
+    "scripts/verify_bead_sync.py": {
+      "fdu": [
+        212,
+        13,
+        40
+      ],
+      "tokei": [
+        212,
+        13,
+        40
+      ],
+      "tokei_primary": [
+        212,
+        13,
+        40
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "bf59d0d54cf4b5c4ec04df175936c83be2f69e730089cb4067eabf18bf31ed64"
+    },
+    "scripts/check-admission-sites.mjs": {
+      "fdu": [
+        277,
+        20,
+        24
+      ],
+      "tokei": [
+        290,
+        18,
+        13
+      ],
+      "tokei_primary": [
+        290,
+        18,
+        13
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "24d4a24c52c424a2041bb39b83366ff2e90936e2cf9375744b6f24f9bf815b98"
+    },
+    "scripts/check-admission-sites.test.mjs": {
+      "fdu": [
+        174,
+        4,
+        14
+      ],
+      "tokei": [
+        174,
+        4,
+        14
+      ],
+      "tokei_primary": [
+        174,
+        4,
+        14
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "f54a62cc0e9ab96ad705fb0bf1260c1d9752bae1fb0f01e447db98764474b916"
+    },
+    "scripts/check-golden-invocations.mjs": {
+      "fdu": [
+        45,
+        23,
+        7
+      ],
+      "tokei": [
+        47,
+        23,
+        5
+      ],
+      "tokei_primary": [
+        47,
+        23,
+        5
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "9e8d23797ac4df8d8ee63247953d533f2a725e4a7247de601c78d0c0af8ef16f"
+    },
+    "scripts/check-golden-observability.mjs": {
+      "fdu": [
+        88,
+        8,
+        14
+      ],
+      "tokei": [
+        99,
+        8,
+        3
+      ],
+      "tokei_primary": [
+        99,
+        8,
+        3
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "3bd1fab687035c7a89edfd80764fa56a6e703d98f4904555e03fd38e91445566"
+    },
+    "scripts/check-golden-observability.test.mjs": {
+      "fdu": [
+        71,
+        0,
+        10
+      ],
+      "tokei": [
+        71,
+        0,
+        10
+      ],
+      "tokei_primary": [
+        71,
+        0,
+        10
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a92cbf415d6b1a0368a7e16f3677b4f9ed47827395f906ec1fb404a878bf490f"
+    },
+    "scripts/check-opened-root-goldens.mjs": {
+      "fdu": [
+        134,
+        7,
+        10
+      ],
+      "tokei": [
+        134,
+        7,
+        10
+      ],
+      "tokei_primary": [
+        134,
+        7,
+        10
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "b0cf48c22124907c4fe152123cc205eea8c924a39bfbe9b3b3ead53cfc3cbea5"
+    },
+    "scripts/check-opened-root-goldens.test.mjs": {
+      "fdu": [
+        66,
+        0,
+        11
+      ],
+      "tokei": [
+        66,
+        0,
+        11
+      ],
+      "tokei_primary": [
+        66,
+        0,
+        11
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "dfd9501d0b6619c6e3d1a7d62d790e78c1260a6cba58fd3d9539a55d8f566a27"
+    },
+    "scripts/check-portability.mjs": {
+      "fdu": [
+        44,
+        16,
+        7
+      ],
+      "tokei": [
+        44,
+        16,
+        7
+      ],
+      "tokei_primary": [
+        44,
+        16,
+        7
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "a81da030f298687572988f3f8549cb131615c05c9d943818f1c95a5d5f8e6ab4"
+    },
+    "scripts/check-rust-module-names.mjs": {
+      "fdu": [
+        170,
+        3,
+        19
+      ],
+      "tokei": [
+        170,
+        3,
+        19
+      ],
+      "tokei_primary": [
+        170,
+        3,
+        19
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "dfe04eb96880f3dd6ebafbb1d7bf6d7568b2224802ad913ae8d88ee393857b02"
+    },
+    "scripts/check-rust-module-names.test.mjs": {
+      "fdu": [
+        130,
+        0,
+        8
+      ],
+      "tokei": [
+        130,
+        0,
+        8
+      ],
+      "tokei_primary": [
+        130,
+        0,
+        8
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "5aaf66cf39d19d1748facd52731ef5b1968d41ccd1421178526cf5237c33631f"
+    },
+    "scripts/check-supply-chain.mjs": {
+      "fdu": [
+        783,
+        66,
+        56
+      ],
+      "tokei": [
+        796,
+        66,
+        43
+      ],
+      "tokei_primary": [
+        796,
+        66,
+        43
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "8072126f627c6efea3aec4aabd32a613259a84015beb7207857e66aaa905f01c"
+    },
+    "scripts/check-supply-chain.test.mjs": {
+      "fdu": [
+        413,
+        16,
+        37
+      ],
+      "tokei": [
+        413,
+        16,
+        37
+      ],
+      "tokei_primary": [
+        413,
+        16,
+        37
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "2556c6cfb961f70dad598ad5528d50cf234f7f357eef09d418a1536472ed26dd"
+    },
+    "scripts/check-uv-version.test.mjs": {
+      "fdu": [
+        171,
+        14,
+        16
+      ],
+      "tokei": [
+        199,
+        0,
+        2
+      ],
+      "tokei_primary": [
+        199,
+        0,
+        2
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "4db7190796803441d36ce492051310c2c4a05a6cf27ec634356a125c510c04af"
+    },
+    "scripts/check-yaml.mjs": {
+      "fdu": [
+        219,
+        19,
+        18
+      ],
+      "tokei": [
+        219,
+        19,
+        18
+      ],
+      "tokei_primary": [
+        219,
+        19,
+        18
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "53fee5b84511a01aa89e60254214d7868e188224c3fab8931ac52c8fe74354fc"
+    },
+    "scripts/content-selfcheck.mjs": {
+      "fdu": [
+        162,
+        10,
+        13
+      ],
+      "tokei": [
+        162,
+        10,
+        13
+      ],
+      "tokei_primary": [
+        162,
+        10,
+        13
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "c79d8471d679731c8571bdffc19d6aaf115bf371a9163acae763b21e7651e727"
+    },
+    "scripts/parity-classes.mjs": {
+      "fdu": [
+        107,
+        48,
+        6
+      ],
+      "tokei": [
+        107,
+        48,
+        6
+      ],
+      "tokei_primary": [
+        107,
+        48,
+        6
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "d887a889d590ad14b0cf7260f10503effe3ee24a29c9ec403c9b57815436c11a"
+    },
+    "scripts/parity-classes.test.mjs": {
+      "fdu": [
+        81,
+        37,
+        15
+      ],
+      "tokei": [
+        81,
+        37,
+        15
+      ],
+      "tokei_primary": [
+        81,
+        37,
+        15
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "9ee7379d326f4694dcf50ca666c5fcb974e029699eba64e9e5c049e9d7463a45"
+    },
+    "scripts/run-golden.mjs": {
+      "fdu": [
+        51,
+        28,
+        8
+      ],
+      "tokei": [
+        51,
+        28,
+        8
+      ],
+      "tokei_primary": [
+        51,
+        28,
+        8
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "7d626af9bc446f81dcf9c1af7caf7b77b9064cc07ebe53cef5a60b1745bcbfbc"
+    },
+    "scripts/run-parity.mjs": {
+      "fdu": [
+        205,
+        59,
+        19
+      ],
+      "tokei": [
+        205,
+        59,
+        19
+      ],
+      "tokei_primary": [
+        205,
+        59,
+        19
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "bfa4381c079a66067bfbf9c8416509ef4574d5c2c649f5c3ddaf1148eeb46bb4"
+    },
+    "scripts/bootstrap-gh-cli.sh": {
+      "fdu": [
+        64,
+        2,
+        14
+      ],
+      "tokei": [
+        64,
+        2,
+        14
+      ],
+      "tokei_primary": [
+        64,
+        2,
+        14
+      ],
+      "fdu_coverage": {
+        "lines": {
+          "analyzed": 1
+        },
+        "code": {
+          "analyzed": 1
+        }
+      },
+      "sha256": "ea59aba800cb78159db96572cd1daa09968b7274c36d5b294f3bf4ae3dd20a0d"
+    }
+  },
+  "method": {
+    "scope": "one exact source file per isolated directory; fdu cache off; Tokei no-ignore and hidden; no registry-specific exclusions",
+    "fixture_selection": "purposefully adversarial syntax and controls, not a random sample or accuracy estimate",
+    "fdu_command": "fdu CASE_DIRECTORY --analyze=code --format=json --cache=off --limit=all",
+    "tokei_command": "tokei --no-ignore --hidden --output=json CASE_FILE",
+    "tokei_count": "Total includes embedded language blobs; primary recorded separately",
+    "counter_limit": "Tokei 14.0.0 installed; not crates.io current source pin 15.0.0; no second counter installed"
+  },
+  "adjudication": {
+    "rust_char_quote": {
+      "source": "fn main() { let c = '\"'; }\n// comment\n\nfn other() {}\n",
+      "expected": [
+        2,
+        1,
+        1
+      ],
+      "fdu": [
+        2,
+        1,
+        1
+      ],
+      "tokei": [
+        4,
+        0,
+        0
+      ]
+    },
+    "rust_lifetime_block": {
+      "source": "fn x<'a>() {} /*\ncomment\n*/\n",
+      "expected": [
+        1,
+        2,
+        0
+      ],
+      "fdu": [
+        3,
+        0,
+        0
+      ],
+      "tokei": [
+        1,
+        2,
+        0
+      ]
+    },
+    "scan_rs_char_quote_ablation": {
+      "original_tokei": [
+        9089,
+        620,
+        494
+      ],
+      "replace_single_doublequote_character_literal_with_x_tokei": [
+        8164,
+        1189,
+        850
+      ],
+      "original_fdu": [
+        8165,
+        1320,
+        720
+      ],
+      "conclusion": "Most aggregate Rust discrepancy is a Tokei14 parser defect, not fdu error."
+    }
+  }
+}
