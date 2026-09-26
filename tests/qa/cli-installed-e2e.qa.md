@@ -37,19 +37,19 @@ Library steps are time-boxed and must stay bounded.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | `fdu 0.1.0-dev+gcb9666a2a`; `XDG_CACHE_HOME` isolation |
+| Phase 1: Setup | ✅ Passed | CI-built `fdu 0.1.0` wheel; `XDG_CACHE_HOME` isolation |
 | Phase 2: Small-tree views | ✅ Passed | All advertised views; `documents` without `--analyze` exits 2 |
-| Phase 3: Cache × analyze | ✅ Passed | `auto` second run 3.5× faster; `off` stayed `0 cached` |
+| Phase 3: Cache × analyze | ✅ Passed | `auto` reused all 21,280 records; `off` stayed `0 cached` |
 | Phase 4: Medium tree | ✅ Passed | Whole-tree metadata only; analyze on `docs/` |
 | Phase 5: Bounded Library | ✅ Passed | Depth 2 exit 2 (TCC); no SIGKILL |
-| Phase 6: Terminal Progress | ⏳ Pending | Added 2026-09-23 with the progress indicator |
-| Phase 7: Peer agreement | ✅ Passed | 2026-09-25, four trees including `~/Library`, no unexplained difference; [report-2026-09-25-peer-agreement.md](../../docs/project/reports/report-2026-09-25-peer-agreement.md) |
-| Phase 8: Results | ✅ Passed | [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md) |
+| Phase 6: Terminal Progress | ⏳ Pending | Installed-wheel pseudo-terminal tests passed; window-resize and color judgments remain |
+| Phase 7: Peer agreement | ✅ Passed | Final candidate, four trees including `~/Library`, all 52 readings explained; [release candidate report](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md) |
+| Phase 8: Results | ✅ Passed | [report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
 
-**Test Results (last update 2026-09-18):** see
-[report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md).
+**Test Results (last update 2026-09-25):** see
+[report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md).
 
 **Next Steps:**
 
@@ -80,7 +80,7 @@ Library steps are time-boxed and must stay bounded.
 - [integration-runbook.md](../../docs/project/guides/integration-runbook.md) — workflow
   proof; this playbook is the installed-CLI counterpart
 - Dated numbers:
-  [report-2026-09-18-cli-installed-qa.md](../../docs/project/reports/report-2026-09-18-cli-installed-qa.md)
+  [report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md)
 
 ## Local Fixtures
 
