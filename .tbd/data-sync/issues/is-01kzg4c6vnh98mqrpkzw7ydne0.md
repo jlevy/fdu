@@ -3,9 +3,9 @@ type: is
 id: is-01kzg4c6vnh98mqrpkzw7ydne0
 title: "Publish fdu 0.1.0: crates.io, PyPI, GitHub Release"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 28
+version: 29
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 refs:
   - kind: other
@@ -45,7 +45,11 @@ child_order_hints:
   - is-01m2phzmxbwajz8eqrcv6rzfks
   - is-01m3dfhj9vr54m664wrmw7eghm
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-09-26T05:17:37.183Z
+updated_at: 2026-09-26T17:25:53.886Z
+closed_at: 2026-09-26T17:25:53.885Z
+close_reason: v0.1.0 is public on crates.io, PyPI, and GitHub Releases; tag signed, workflow audit identical, docs.rs built, and published installs smoke-tested. Separate post-release propagation retry bug remains tracked as fdu-zx9y.
+resolution: null
+duplicate_of: null
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.
