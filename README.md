@@ -84,22 +84,24 @@ Use `.` for the current directory:
 
 ```console
 $ fdu .
-     2.6 MiB  ██████████   100%  . (144 files)
-     1.5 MiB  ██████░░░░    58%    crates (116 files)
-     827 KiB  ███░░░░░░░    31%    tests (18 files)
+     2.6 MiB  ██████████   100%  . 144 files
+     1.5 MiB  ██████░░░░    58%    crates 116 files
+     827 KiB  ███░░░░░░░    31%    tests 18 files
 ```
 
-That is the default `list` view in `tree` format: allocated sizes, largest first, two
-directory levels, up to ten children per directory.
-It reads metadata and `.gitignore` files; it does not open regular files for content.
-Hidden and ignored entries are included; ignored byte shares are annotated when present.
+The default `list` view in `tree` format shows allocated sizes, largest first, down to
+depth 5, including file leaves and subtrees contributing at least 1% of the root.
+Set `--depth`, `--min-share`, `--breadth`, and `--limit` to adjust independent display
+bounds. It reads metadata and `.gitignore` files; it does not open regular files for
+content. Hidden and ignored entries are included; ignored byte shares are annotated when
+present.
 
 | Question | Command |
 | --- | --- |
 | Which directories are large? | `fdu .` |
 | Old build directories with size and age | `fdu . --kind dir --include node_modules --modified-before 30d --long` |
 | Matching paths only | `fdu . --kind dir --include .venv --format paths` |
-| Totals, excluding ignored entries | `fdu . --exclude-ignored --view=summary` |
+| Totals, excluding ignored entries | `fdu . --ignored=exclude --view=summary` |
 | Languages by space | `fdu . --view=languages` |
 | Ten files that changed most recently | `fdu . --view=recent --limit=10` |
 | Standard lines of code | `fdu . --analyze=code` |

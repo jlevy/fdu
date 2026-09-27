@@ -993,6 +993,14 @@ fn verify_intent(
                     }
                     Err(error) => ops.push(op_for_stat_error(rel.clone(), &error)),
                 }
+                if scan_config.population != crate::query::IgnoredEntries::Include
+                    && crate::control::is_control_file(rel)
+                {
+                    ops.push(Op::InvalidateSubtree {
+                        path: rel.parent().map_or_else(PathBuf::new, Path::to_path_buf),
+                        reason: InvalidateReason::ControlPopulationChanged,
+                    });
+                }
             }
         }
     }
@@ -1642,6 +1650,31 @@ mod tests {
             &observation.ops[1].op,
             Op::ControlUpsert { path, source } if path == &relative && source == b"*.log\n"
         ));
+    }
+
+    #[test]
+    fn only_population_control_event_reconciles_previously_absent_file() {
+        let dir = tempfile::tempdir().expect("tree");
+        fs::write(dir.path().join(".gitignore"), b"# no ignored files\n").expect("control");
+        fs::write(dir.path().join("debug.log"), b"debug").expect("file");
+        let scan =
+            ScanConfig { population: crate::query::IgnoredEntries::Only, ..ScanConfig::default() };
+        let (index, cold) = crate::scan::scan_into_index(dir.path(), &scan).expect("cold");
+        assert!(cold.is_complete());
+        assert!(index.lookup(Path::new("debug.log")).is_none());
+        let handle = crate::IndexHandle::new(index);
+        fs::write(dir.path().join(".gitignore"), b"*.log\n").expect("rule edit");
+        let intent = CoalescedIntent {
+            pending: BTreeMap::from([(
+                PathBuf::from(".gitignore"),
+                Pending::Verify { relist_if_dir: false },
+            )]),
+        };
+        let report =
+            apply_intent(&handle, dir.path(), WatchConfig::default(), &intent, &scan, &mut |_| {})
+                .expect("watch apply");
+        assert!(report.reconciliation.is_complete());
+        assert!(handle.kind(Path::new("debug.log")).expect("lookup").is_some());
     }
 
     /// A watch maintains exactly the control state its scan policy claims.

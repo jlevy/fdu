@@ -513,7 +513,7 @@ def phase_views(runner: Runner, tree: Path, cache_home: Path) -> None:
         ("files", [root, "--view=files", "--limit=10"], None),
         ("full", [root, "--view=full"], None),
         ("combo-kinds", [root, "--view=families,types,extensions"], None),
-        ("exclude-ignored-summary", [root, "--exclude-ignored", "--view=summary"], None),
+        ("exclude-ignored-summary", [root, "--ignored=exclude", "--view=summary"], None),
         ("depth-limit-tree", [root, "--depth=1", "--limit=5"], None),
         ("scan-depth-1-summary", [root, "--scan-depth=1", "--view=summary"], None),
         ("json-summary", [root, "--view=summary", "--format=json"], None),

@@ -254,6 +254,7 @@ class EffectiveChangeKind(StrEnum):
 
 
 class InvalidateReason(StrEnum):
+    CONTROL_POPULATION_CHANGED = "control_population_changed"
     WATCH_OVERFLOW = "watch_overflow"
     UNPAIRED_RENAME = "unpaired_rename"
     WATCH_SETUP_RACE = "watch_setup_race"
@@ -348,6 +349,8 @@ class EntryScope:
     follow_symlinks: bool
     one_filesystem: bool
     hidden_fingerprint: int
+    population: str
+    control_fingerprint: int
     exclude_special: bool
 
 
@@ -672,6 +675,7 @@ class ScanScope:
     follow_symlinks: bool
     one_filesystem: bool
     hidden_fingerprint: int
+    population: str
     exclude_special: bool
     ignore_rules_fingerprint: int
     type_rules_fingerprint: int
@@ -882,6 +886,8 @@ def _scope(value: object) -> EntryScope:
         follow_symlinks=bool(raw["follow_symlinks"]),
         one_filesystem=bool(raw["one_filesystem"]),
         hidden_fingerprint=int(raw["hidden_fingerprint"]),
+        population=str(raw["population"]),
+        control_fingerprint=int(raw["control_fingerprint"]),
         exclude_special=bool(raw["exclude_special"]),
     )
 
@@ -1050,6 +1056,7 @@ def _scan_scope(value: object) -> ScanScope:
         follow_symlinks=bool(raw["follow_symlinks"]),
         one_filesystem=bool(raw["one_filesystem"]),
         hidden_fingerprint=int(raw["hidden_fingerprint"]),
+        population=str(raw["population"]),
         exclude_special=bool(raw["exclude_special"]),
         ignore_rules_fingerprint=int(raw["ignore_rules_fingerprint"]),
         type_rules_fingerprint=int(raw["type_rules_fingerprint"]),
@@ -1276,6 +1283,8 @@ def _version_wire(version: EngineVersion) -> dict[str, object]:
             "follow_symlinks": version.scope.follow_symlinks,
             "one_filesystem": version.scope.one_filesystem,
             "hidden_fingerprint": version.scope.hidden_fingerprint,
+            "population": version.scope.population,
+            "control_fingerprint": version.scope.control_fingerprint,
             "exclude_special": version.scope.exclude_special,
         },
         "semantics": {

@@ -256,6 +256,32 @@ impl Default for PerformanceSummary {
 }
 
 impl PerformanceSummary {
+    /// Total metadata throughput over the same elapsed sample as the report duration.
+    /// GB/s represents walked size, not storage read bandwidth.
+    pub fn total_throughput(
+        self,
+        elapsed: std::time::Duration,
+        size: crate::query::SizeMetric,
+    ) -> String {
+        let ns = elapsed.as_nanos();
+        if ns == 0 {
+            return "throughput unavailable".to_owned();
+        }
+        let bytes = match size {
+            crate::query::SizeMetric::Apparent => self.walked_bytes,
+            crate::query::SizeMetric::Allocated => self.walked_allocated,
+        };
+        let files_per_second = u128::from(self.walked_files) * 1_000_000_000 / ns;
+        // GB/s = bytes/ns; keep three decimal places without floating point overflow.
+        let milli_gb_per_second = u128::from(bytes) * 1_000 / ns;
+        format!(
+            "{} files/s, {}.{:03} GB/s represented",
+            files_per_second,
+            milli_gb_per_second / 1_000,
+            milli_gb_per_second % 1_000
+        )
+    }
+
     fn from_open_report(report: &crate::OpenReport) -> Self {
         let analysis = report.analysis.unwrap_or_default();
         Self {
@@ -556,6 +582,34 @@ mod tests {
     use super::*;
     use crate::query::{IgnoredEntries, Pattern, Query, Section};
     use crate::{OpenFixture, ScanConfig};
+
+    #[test]
+    fn total_throughput_uses_one_elapsed_sample_and_selected_size() {
+        use crate::query::SizeMetric;
+        let work = PerformanceSummary {
+            walked_files: 200,
+            walked_bytes: 4_000_000_000,
+            walked_allocated: 1_000_000_000,
+            ..PerformanceSummary::default()
+        };
+        assert_eq!(
+            work.total_throughput(std::time::Duration::from_secs(2), SizeMetric::Apparent),
+            "100 files/s, 2.000 GB/s represented"
+        );
+        assert_eq!(
+            work.total_throughput(std::time::Duration::from_secs(2), SizeMetric::Allocated),
+            "100 files/s, 0.500 GB/s represented"
+        );
+        assert_eq!(
+            work.total_throughput(std::time::Duration::ZERO, SizeMetric::Apparent),
+            "throughput unavailable"
+        );
+        assert_eq!(
+            PerformanceSummary::default()
+                .total_throughput(std::time::Duration::from_secs(1), SizeMetric::Apparent),
+            "0 files/s, 0.000 GB/s represented"
+        );
+    }
 
     #[test]
     #[cfg(unix)]
@@ -1372,7 +1426,16 @@ mod tests {
                     crate::control::ControlCoverage::Observed(coverage) => {
                         assert!(read_controls, "observed only when asked");
                         assert_eq!(coverage.refused, 2, "{coverage:?}");
-                        assert_eq!(report.notes.len(), 1, "{:?}", report.notes);
+                        assert_eq!(report.notes.len(), 2, "{:?}", report.notes);
+                        assert!(
+                            report.notes[0].contains("2 .gitignore files not applied"),
+                            "{:?}",
+                            report.notes
+                        );
+                        assert_eq!(
+                            report.notes[1],
+                            "note: ignored subtotals are unavailable where governing rules could not be verified"
+                        );
                     }
                     crate::control::ControlCoverage::NotObserved => {
                         assert!(!read_controls, "unobserved only when turned off");

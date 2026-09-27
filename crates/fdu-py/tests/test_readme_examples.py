@@ -40,6 +40,7 @@ def test_every_readme_python_example_runs(tmp_path: Path, monkeypatch: pytest.Mo
             line = text.count("\n", 0, block.start()) + 2
             where = f"{readme.relative_to(REPOSITORY)}:{line}"
             source = block.group(1).replace(PLACEHOLDER_ROOT, 'Path(".")')
+            source = source.replace('"/path/to/cache"', repr(str(tmp_path / "explicit-cache")))
             try:
                 compiled = compile(source, where, "exec")
             except Exception as error:

@@ -41,7 +41,7 @@ const action = process.argv[2];
 
 // The snapshot fdu wrote for the tree under test: the one layout name not planted here.
 const written = readdirSync(CACHE_DIR).filter(
-  (name) => /^[0-9a-f]{16}\.fdu$/.test(name) && !name.startsWith(PLANTED_PREFIX),
+  (name) => /^[0-9a-f]{16}\.metadata\.bin$/.test(name) && !name.startsWith(PLANTED_PREFIX),
 );
 if (written.length !== 1) {
   console.error(`cache-plant: expected one snapshot in ${CACHE_DIR}, found ${written.length}`);
@@ -62,16 +62,16 @@ switch (action) {
   case "stale": {
     const version = Buffer.alloc(4);
     version.writeUInt32LE(1);
-    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}1.fdu`), Buffer.concat([MAGIC, version]));
-    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}2.fdu`), withOtherEngine(current));
-    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}3.fdu`), current.subarray(0, current.length - 1));
+    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}1.metadata.bin`), Buffer.concat([MAGIC, version]));
+    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}2.metadata.bin`), withOtherEngine(current));
+    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}3.metadata.bin`), current.subarray(0, current.length - 1));
     writeFileSync(join(CACHE_DIR, "notes.txt"), "not a snapshot\n");
     console.log("planted: format 1, another engine, truncated, notes.txt");
     break;
   }
   case "directory":
     // Under a snapshot's own name, so the name cannot be what saves it from a clear.
-    mkdirSync(join(CACHE_DIR, `${PLANTED_PREFIX}7.fdu`), { recursive: true });
+    mkdirSync(join(CACHE_DIR, `${PLANTED_PREFIX}7.metadata.bin`), { recursive: true });
     console.log("planted: a directory under a snapshot's name");
     break;
   case "other-engine":
@@ -83,11 +83,11 @@ switch (action) {
     console.log("planted: not a snapshot");
     break;
   case "leftovers": {
-    const abandoned = join(CACHE_DIR, `.${PLANTED_PREFIX}4.fdu.tmp.1.0011223344556677.0`);
+    const abandoned = join(CACHE_DIR, `.${PLANTED_PREFIX}4.metadata.bin.tmp.1.0011223344556677.0`);
     writeFileSync(abandoned, current);
     utimesSync(abandoned, BEYOND_THE_REAPER, BEYOND_THE_REAPER);
-    writeFileSync(join(CACHE_DIR, `.${PLANTED_PREFIX}6.fdu.tmp.1.0011223344556677.0`), current);
-    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}5.fdu.content`), CONTENT_MAGIC);
+    writeFileSync(join(CACHE_DIR, `.${PLANTED_PREFIX}6.metadata.bin.tmp.1.0011223344556677.0`), current);
+    writeFileSync(join(CACHE_DIR, `${PLANTED_PREFIX}5.analysis.bin`), CONTENT_MAGIC);
     console.log("planted: abandoned staging file, in-flight staging file, orphaned sidecar");
     break;
   }

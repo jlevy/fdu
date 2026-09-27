@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 24 sessions differ, and every one of them has a named cause.
+# 25 sessions differ, and every one of them has a named cause.
 #
-#  14  Each surface names its own parameter  [surface-label]
+#  15  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -106,25 +106,26 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
   ✗ A Selection by Ignored State Needs the Rules
 @@ -1,1 +1,1 @@
--fdu: --only-ignored needs .gitignore classification, and --no-gitignore turned it off; drop one of them
+-fdu: --ignored=only needs .gitignore classification, and --no-gitignore turned it off; drop one of them
 +fdu: ignored=only needs .gitignore classification, and read_controls turned it off; drop one of them
   ✓ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
   ✗ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
-@@ -1,2 +1,2 @@
+@@ -1,3 +1,3 @@
      16 KiB  2 files, 0 directories
 -note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so ignored shares under . are not exact; sizes are. To apply them, raise --gitignore-line-limit above 16 KiB, or set it to all
 +note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so ignored shares under . are not exact; sizes are. To apply them, raise control_line_limit above 16 KiB, or set it to all
+ note: ignored subtotals are unavailable where governing rules could not be verified
   ✓ JSON Carries the Versioned Envelope
   ✓ JSONL Is One Document per Line
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
--fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ The Unreleased View Alias Is Rejected
 @@ -1,1 +1,1 @@
--fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -217,20 +218,26 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
       256 B  7 files, 4 directories
 -note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
   ✓ Common-Language SLOC Is a Complete Partition
+  ✓ Metric Order, Reverse, and Share Threshold Compose
+  ✓ Directory Selection Shares One Population Across Code Views
+  ✗ Unsupported Metric Sorts Fail Before Filesystem Access
+@@ -1,1 +1,1 @@
+-fdu: invalid --sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
++fdu: invalid sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✗ The Analyzer Set Chooses the View
-@@ -2,5 +2,4 @@
-       98 B  ████░░░░░░    38%    assets (2 files)
-       77 B  ███░░░░░░░    30%    src (2 files)
-       59 B  ██░░░░░░░░    23%    docs (2 files)
-       22 B  █░░░░░░░░░     9%    data (1 file)
+@@ -10,5 +10,4 @@
+       42 B  ██░░░░░░░░    16%      guide.md
+       17 B  █░░░░░░░░░     7%      notes.txt
+       22 B  █░░░░░░░░░     9%    data 1 file
+       22 B  █░░░░░░░░░     9%      settings.json
 -note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or full
   ✗ Every View One Walk Can Answer
-@@ -23,11 +23,11 @@
+@@ -24,11 +24,11 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
  LARGEST  (2 of 7; --limit all for every one)
@@ -241,10 +248,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  RECENT  (2 of 7; --limit all for every one)
 -[RFC3339]  assets[SEP]late.bin.txt
 -[RFC3339]  docs[SEP]notes.txt
--note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
+-note: omitted code, documents — code requires content analysis: add --analyze code; documents require content analysis: add --analyze lines, code, words, or all
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
-+note: omitted documents — requires content analysis: add analyze lines, code, words, or all
++note: omitted code, documents — code requires content analysis: add analyze code; documents require content analysis: add analyze lines, code, words, or all
   ✓ Every View One Walk Can Answer
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
@@ -284,6 +291,8 @@ PASS [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
 PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
+  ✓ All-Cache Actions Need No Scan Root
+  ✓ All-Cache Actions Need No Scan Root
   ✓ Status Before Anything Is Cached
   ✓ A Report Leaves a Snapshot Behind
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
@@ -324,10 +333,12 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ An Unknown Scope Names Both Accepted Values
 PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✓ An Explicit Path Gives a Useful Project-Shaped Report
+  ✓ Unknown Branches Do Not Disable Filtering for Known Sizes
+  ✓ Unknown Branches Do Not Disable Filtering for Known Sizes
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,187 +1,1 @@
+@@ -1,199 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -SET UP WITH ANY CODING AGENT
@@ -357,7 +368,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  A report requires a PATH. Use `.` for the current directory.
 -
 -    fdu .                                      directory sizes (the default)
--    fdu . --exclude-ignored                    omit entries covered by .gitignore
+-    fdu . --ignored=exclude                    omit entries covered by .gitignore
 -    fdu . --view=summary                       one total for the tree
 -    fdu . --view=languages                     languages by byte size
 -    fdu . --view=families,types,extensions     three file-kind breakdowns
@@ -368,8 +379,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -    fdu . --analyze=words                      prose volume by document type
 -
 -  `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
--  to depth 2, with at most 10 children per directory. Hidden and ignored entries
--  are included; .gitignore is read to label ignored shares, not to exclude them.
+-  to depth 5, showing contents with at least 1% of the selected root size. Hidden
+-  and ignored entries are included; .gitignore is read to label ignored shares, not to exclude them.
 -
 -VIEWS AND ANALYSIS
 -  --view chooses the question the report answers. Several views share one scan
@@ -378,8 +389,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -    contents are not opened. Compatible cached results avoid rereading unchanged
 -    bodies, so a repeated content analysis can be much cheaper.
 -
--  Naming analyzers selects a view that displays them: code selects languages,
--  words selects documents, and lines or a multi-analyzer set selects families.
+-  Naming analyzers selects a view that displays them: code selects code, words
+-  selects documents, code,words selects both, and lines selects families.
 -  Name --view for a different projection; it always wins.
 -
 -  A view never turns on an analyzer, because choosing how to look at a result
@@ -393,7 +404,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  fdu . --analyze=words --view=documents
 -  fdu PATH --view=largest --limit=100                        the 100 largest files
 -  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
--  fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
+-  fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
 -  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 -
 -  --interval throttles rendering only; change detection is event-driven and
@@ -404,15 +415,17 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -    largest = files --sort size --limit 20, regular files only
 -    recent  = files --sort mtime --limit 20, regular files only
 -  --sort and --limit still override them. files alone is complete: every
--  matching entry, in name order. full keeps its bounded digest, without list/files.
+-  matching entry, in name order. full combines applicable views, without list/files.
 -
 -LIST FORMATS AND OLD BUILD DIRECTORIES
 -  The metadata default view is list; its default format is tree. These agree:
 -    fdu PATH
 -    fdu PATH --view list --format tree
--  Tree shows directory roll-ups, depth 2, ten children per directory.
--  Files contribute to totals without new leaf rows. --depth all expands levels;
--  --limit all removes row caps. Flat list limits apply to the whole result.
+-  Tree shows directories and significant files to depth 5. --min-share 1% compares
+-  every row to the selected root total. --min-share 0% shows even zero-size rows.
+-  --breadth caps children per directory; --limit caps data rows per section.
+-  Both default to all. --depth all expands levels. Omission notes name each bound.
+-  Display bounds never change totals or limit the filesystem scan.
 -
 -  --format paths gives matching paths only; --long adds size, age, and path.
 -  Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -439,11 +452,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
--             --gitignore-budget, --gitignore-line-limit, --no-gitignore
+-             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
--             --exclude-ignored, --only-ignored
--  View       list,summary,tree,families,types,extensions,languages,documents,
+-             --breadth, --min-share
+-  View       list,summary,tree,families,types,extensions,languages,code,documents,
 -             largest,recent,files,full
 -  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
 -             --color, --progress
@@ -458,7 +471,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -  A comma-separated set: code,words runs both. none and all name the whole
 -  axis and cannot be combined. lines comes with any analyzer, free.
--  languages is metadata-only by default; code adds standard LOC.
+-  languages is metadata-only by default; --view code requires --analyze code.
+-  Code reports show source lines, language shares, population columns, and coverage.
 -  documents requires any enabled analyzer.
 -  Analysis streams every eligible file through EOF; files are never size-truncated.
 -  --analysis-workers bounds concurrency.
@@ -481,13 +495,19 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  compatible snapshot and content sidecar for the requested analysis, and labels
 -  its answer stale. --cache=off neither reads nor writes fdu's cache.
 -
+-  macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
+-  --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
+-  Each root has <key>.metadata.bin and optional <key>.analysis.bin. The latter
+-  stores derived metrics, not source bodies. Status and clear use the same directory.
+-
 -IGNORE RULES
--  Every report reads each .gitignore in the tree, and summary, tree, and extension
--  rows end with how much of their size its rules ignore, as `(128 B ignored)`.
--  A directory a rule ignores is ignored with everything below it. Unignored is not
--  tracked: .git is unignored unless a rule names it. --exclude-ignored and
--  --only-ignored select one side after the scan; they do not prune metadata work
--  or content analysis. Sort and --min-size follow the size shown.
+-  Fresh scans read applicable .gitignore files by default; cache-only uses retained
+-  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
+-  Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
+-  .git is unignored unless a rule names it. --ignored=include is default.
+-  --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.
+-  --ignored=only discovers ignored matches through ordinary ancestors, reading
+-  only ignored bodies for analysis. Sort and --min-size follow the size shown.
 -  --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
 -  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
 -  and matching is case-sensitive on every platform. An unreadable .gitignore makes
@@ -496,12 +516,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  ignored shares under that directory do not.
 -
 -OUTPUT AND AUTOMATION
--  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
--  Cache status is its own document in every machine format: fdu.cache/2.
+-  Every machine report uses fdu.report/8; watch changes use fdu.stream/2.
+-  Cache status is its own document in every machine format: fdu.cache/3.
 -  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
 -  One-shot text reports end with a gray performance line; machine formats omit it.
+-  It counts ignore files and accepted rules, including repeated governing sources.
+-  Total files/s and decimal GB/s use the displayed elapsed duration. GB/s represents
+-  walked file size; actual body-read throughput is reported separately.
 -  JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
 -  lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
 -  Results go to stdout; warnings and errors go to stderr.

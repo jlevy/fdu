@@ -12,7 +12,7 @@ env:
   TZ: UTC
 patterns:
   SCAN_PATH: '[^\r\n]+'
-  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
   HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
   SEP: '[/\\]'
 ---
@@ -22,11 +22,19 @@ patterns:
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 2
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+  … 1 entry omitted by rows (6 B); --limit=all to show
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -34,11 +42,12 @@ Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; anal
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-                                 …
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 1
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+    … 1 entry omitted by depth (128 B); --depth=all to show
+  … 5 entries omitted by rows (141 B); --limit=all to show
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -57,7 +66,7 @@ $ fdu --cache off --color never --view types --limit 10 --size apparent project
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -72,10 +81,17 @@ An all-caps header above each block, one blank line between blocks, is enough to
 ```console
 $ fdu --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
 TREE
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
+Tree scope: at least 1% of selected root through depth 1
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+    … 1 entry omitted by depth (128 B); --depth=all to show
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+    … 2 entries omitted by depth (36 B); --depth=all to show
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+    … 1 entry omitted by depth (23 B); --depth=all to show
+       6 B  ░░░░░░░░░░     2%    .gitignore
 
 TYPES
      128 B   47.6%  archive            1 file
@@ -92,7 +108,7 @@ FAMILIES
 
 SUMMARY
      269 B  7 files, 3 directories (128 B ignored)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -107,7 +123,7 @@ the property behind piping it into `xargs`.
 $ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-Performance: walked 7 files / [HUMAN_SIZE]; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -124,7 +140,7 @@ $ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
-Performance: walked 7 files / [HUMAN_SIZE]; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -142,7 +158,7 @@ src[SEP]omega.rs
 
 SUMMARY
       36 B  2 files, 0 directories
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

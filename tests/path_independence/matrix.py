@@ -60,11 +60,15 @@ def cli_args(request: Spec) -> list[str]:
     if "kind" in selection:
         args += ["--kind", ",".join(selection["kind"])]
     if selection.get("ignored") == "exclude":
-        args.append("--exclude-ignored")
+        args.append("--ignored=exclude")
     if selection.get("ignored") == "only":
-        args.append("--only-ignored")
+        args.append("--ignored=only")
     if "depth" in selection:
         args += ["--depth", str(selection["depth"])]
+    if "min_share" in selection:
+        args += ["--min-share", selection["min_share"]]
+    if "breadth" in selection:
+        args += ["--breadth", str(selection["breadth"])]
     if "limit" in selection:
         args += ["--limit", str(selection["limit"])]
     if "sort" in selection:
@@ -102,8 +106,8 @@ REQUESTS: dict[str, Spec] = {
     "limit2": spec(limit=2),
     "sort_name": spec(sort="name"),
     "sort_mtime_rev": spec(sort="mtime", reverse=True, views=["files"]),
-    "depth1": spec(depth=1),
-    "depthall": spec(depth="all"),
+    "depth1": spec(views=["tree"], depth=1),
+    "depthall": spec(views=["tree"], depth="all"),
     "sizeapp": spec(size="apparent"),
     # views, metadata only
     "v_summary": spec(views=["summary"]),
@@ -144,6 +148,10 @@ REQUESTS: dict[str, Spec] = {
     "a_lines_incl_rs": spec(analyze="lines", include=["*.rs"]),
     "a_all_sizeapp": spec(analyze="all", size="apparent"),
     "a_code_langs_name_lim1": spec(analyze="code", views=["languages"], sort="name", limit=1),
+    "a_code_metric_rev": spec(
+        analyze="code", views=["code"], sort="code_lines", reverse=True, min_share="7%"
+    ),
+    "v_tree_bounds": spec(views=["tree"], depth=2, min_share="0%", breadth=1),
     # the summary tier
     "v_summary_exclign": spec(views=["summary"], ignored="exclude"),
     "v_summary_nogi": spec(views=["summary"], no_gitignore=True),
@@ -322,6 +330,8 @@ SUBSET = Tier(
         "a_all",
         "a_lines_v_documents",
         "a_code_langs_name_lim1",
+        "a_code_metric_rev",
+        "v_tree_bounds",
         "a_all_nogi",
         "onefs",
     ),

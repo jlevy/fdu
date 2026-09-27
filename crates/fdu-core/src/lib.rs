@@ -105,9 +105,9 @@ pub use crate::watch_session as session;
 
 pub use crate::admission::HiddenPolicy;
 pub use crate::cache::{
-    CacheScope, CacheState, CacheStatus, ClearSummary, ContentInfo, ContentState, ContentStatus,
-    LeftoverKind, SnapshotInfo, StaleReason, cache_status, clear_all_caches, clear_cache,
-    list_caches,
+    CachePaths, CacheScope, CacheState, CacheStatus, ClearSummary, ContentInfo, ContentState,
+    ContentStatus, LeftoverKind, SnapshotInfo, StaleReason, cache_status, clear_all_caches,
+    clear_cache, list_caches,
 };
 pub use crate::control::{
     CONTROL_FILE_NAME, ControlAdmission, ControlCoverage, ControlIdentity, ControlLimits,
@@ -458,8 +458,9 @@ pub fn open_with_pending_save(
     basis: &query::Basis,
     delivery: &query::Delivery,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
-    let request =
-        query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
+    let mut query = query::Query::default();
+    query.selection.ignored = basis.scope.population;
+    let request = query::Request::new(basis.clone(), query, std::time::SystemTime::now());
     let plan = plan(&request, delivery, Route::Retained).map_err(Error::InvalidRequest)?;
     execute(&plan, &request.basis, false, None)
         .map(|(index, report, pending, _diagnostics)| (index, report, pending))
@@ -480,8 +481,9 @@ pub fn refresh(
     basis: &query::Basis,
     delivery: &query::Delivery,
 ) -> Result<ReconcileReport> {
-    let request =
-        query::Request::new(basis.clone(), query::Query::default(), std::time::SystemTime::now());
+    let mut query = query::Query::default();
+    query.selection.ignored = basis.scope.population;
+    let request = query::Request::new(basis.clone(), query, std::time::SystemTime::now());
     let plan = plan(&request, delivery, Route::Refresh).map_err(Error::InvalidRequest)?;
     validate_basis_root(index.root_path(), basis)?;
     request.validate_read(&query::Basis::held_by(index)).map_err(Error::InvalidRequest)?;
@@ -996,26 +998,65 @@ fn spawn_save(
     PendingSave { workers }
 }
 
-/// The conventional snapshot location for a root.
+/// The application cache directory, resolved independently of a scanned root.
 ///
-/// Snapshots are keyed by a hash of the canonical root path under the user cache
-/// directory, so two roots never collide and a moved tree simply misses rather than
-/// reading another tree's data.
-pub fn default_cache_path(root: &Path) -> Option<PathBuf> {
-    let canonical = root.canonicalize().ok()?;
+/// An explicit destination and `FDU_CACHE_DIR` name this directory exactly.
+/// `XDG_CACHE_HOME` and platform locations are bases under which `fdu` lives.
+/// A relative path is anchored to the process's current directory before I/O.
+pub fn default_cache_dir(explicit: Option<&Path>) -> Result<Option<PathBuf>> {
+    resolve_cache_dir(
+        explicit,
+        nonempty_env("FDU_CACHE_DIR"),
+        nonempty_env("XDG_CACHE_HOME"),
+        platform_cache_dir(),
+    )
+}
+
+fn resolve_cache_dir(
+    explicit: Option<&Path>,
+    override_dir: Option<OsString>,
+    xdg: Option<OsString>,
+    platform_base: Option<PathBuf>,
+) -> Result<Option<PathBuf>> {
+    let directory = if let Some(explicit) = explicit {
+        if explicit.as_os_str().is_empty() {
+            return Err(Error::InvalidValue {
+                kind: "cache directory",
+                value: String::new(),
+                hint: "supply a nonempty directory path".to_string(),
+            });
+        }
+        Some(explicit.to_path_buf())
+    } else if let Some(override_dir) = override_dir.filter(|value| !value.is_empty()) {
+        Some(PathBuf::from(override_dir))
+    } else if let Some(xdg) = xdg.filter(|value| !value.is_empty()) {
+        Some(PathBuf::from(xdg).join("fdu"))
+    } else {
+        platform_base.map(|base| base.join("fdu"))
+    };
+    directory
+        .map(|path| std::path::absolute(&path).map_err(|error| Error::io(&path, error)))
+        .transpose()
+}
+
+/// The conventional metadata snapshot location for a root in the resolved directory.
+///
+/// The canonical native root path supplies the stable 16-digit lookup key. The file's
+/// own header still proves whether it can answer a request.
+pub fn default_cache_path_in(root: &Path, explicit: Option<&Path>) -> Result<Option<PathBuf>> {
+    let Some(directory) = default_cache_dir(explicit)? else { return Ok(None) };
+    let canonical = root.canonicalize().map_err(|error| Error::io(root, error))?;
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for byte in canonical.as_os_str().as_encoded_bytes() {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x1000_0000_01b3);
     }
-    Some(user_cache_dir()?.join("fdu").join(cache::snapshot_file_name(hash)))
+    Ok(Some(CachePaths::for_root_hash(&directory, hash).metadata))
 }
 
-fn user_cache_dir() -> Option<PathBuf> {
-    if let Some(xdg) = nonempty_env("XDG_CACHE_HOME") {
-        return Some(PathBuf::from(xdg));
-    }
-    platform_cache_dir()
+/// Conventional metadata snapshot path for callers without an explicit destination.
+pub fn default_cache_path(root: &Path) -> Option<PathBuf> {
+    default_cache_path_in(root, None).ok().flatten()
 }
 
 fn nonempty_env(name: &str) -> Option<OsString> {
@@ -1045,7 +1086,7 @@ fn windows_cache_dir(
 
 #[cfg(target_os = "macos")]
 fn platform_cache_dir() -> Option<PathBuf> {
-    Some(PathBuf::from(nonempty_env("HOME")?).join("Library").join("Caches"))
+    Some(PathBuf::from(nonempty_env("HOME")?).join(".cache"))
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -1632,6 +1673,47 @@ mod tests {
     }
 
     #[test]
+    fn narrowed_population_snapshot_and_sidecar_reuse_only_their_scope() {
+        let dir = tempfile::tempdir().expect("tree");
+        let cache = tempfile::tempdir().expect("cache");
+        let snapshot_path = cache.path().join("scoped.metadata.bin");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("keep.rs"), b"kept\n");
+        write_file(&dir.path().join("debug.log"), b"ignored\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisSet::NONE.with_lines(),
+            ..content::AnalysisRequest::default()
+        };
+        let excluded = OpenFixture {
+            scan: ScanConfig {
+                population: query::IgnoredEntries::Exclude,
+                ..ScanConfig::default()
+            },
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+        };
+        let (cold, report) = open_fixture(dir.path(), &excluded).expect("cold exclude");
+        assert_eq!(report.path_taken, OpenPath::ColdScan);
+        assert!(cold.lookup(Path::new("keep.rs")).is_some());
+        assert!(cold.lookup(Path::new("debug.log")).is_none());
+        assert!(content::content_cache_path(&snapshot_path).exists());
+
+        let only_cache = OpenFixture { policy: CachePolicy::Only, ..excluded.clone() };
+        let (restored, report) = open_fixture(dir.path(), &only_cache).expect("cache-only exclude");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert!(report.content_cache.hits > 0);
+        assert!(restored.lookup(Path::new("keep.rs")).is_some());
+        assert!(restored.lookup(Path::new("debug.log")).is_none());
+
+        let opposite = OpenFixture {
+            scan: ScanConfig { population: query::IgnoredEntries::Only, ..ScanConfig::default() },
+            ..only_cache
+        };
+        assert!(matches!(open_fixture(dir.path(), &opposite), Err(Error::Snapshot(_))));
+    }
+
+    #[test]
     fn cached_coverage_exclusions_remain_visible_without_making_the_run_partial() {
         let dir = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
@@ -2007,6 +2089,62 @@ mod tests {
         };
         assert_ne!(pa, pb);
         assert_eq!(pa, default_cache_path(a.path()).expect("stable"));
+    }
+
+    #[test]
+    fn cache_destination_precedence_and_pairing() {
+        let fixture = tempfile::tempdir().expect("tempdir");
+        let explicit = fixture.path().join("explicit");
+        let override_dir = fixture.path().join("override");
+        let xdg = fixture.path().join("xdg");
+        let xdg_app_dir = xdg.join("fdu");
+        let native = fixture.path().join("native");
+        let resolve = |choice| {
+            resolve_cache_dir(
+                choice,
+                Some(override_dir.as_os_str().to_os_string()),
+                Some(xdg.as_os_str().to_os_string()),
+                Some(native.clone()),
+            )
+            .expect("resolve")
+            .expect("directory")
+        };
+        assert_eq!(resolve(Some(&explicit)), explicit);
+        assert_eq!(resolve(None), override_dir);
+        assert_eq!(
+            resolve_cache_dir(None, None, Some(xdg.into_os_string()), Some(native.clone()))
+                .expect("resolve"),
+            Some(xdg_app_dir)
+        );
+        assert_eq!(
+            resolve_cache_dir(None, None, None, Some(native.clone())).expect("resolve"),
+            Some(native.join("fdu"))
+        );
+        assert!(resolve_cache_dir(Some(Path::new("")), None, None, None).is_err());
+
+        let metadata = default_cache_path_in(fixture.path(), Some(&explicit))
+            .expect("path")
+            .expect("directory");
+        let paths = CachePaths::from_metadata(&metadata);
+        assert_eq!(paths.metadata.parent(), Some(explicit.as_path()));
+        assert_eq!(
+            paths.metadata.file_name().expect("name").to_string_lossy().len(),
+            16 + ".metadata.bin".len()
+        );
+        assert!(
+            paths.metadata.file_name().expect("name").to_string_lossy().ends_with(".metadata.bin")
+        );
+        assert!(
+            paths.analysis.file_name().expect("name").to_string_lossy().ends_with(".analysis.bin")
+        );
+        assert_eq!(paths.analysis.parent(), paths.metadata.parent());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_native_cache_base_is_under_home_dot_cache() {
+        let home = PathBuf::from(nonempty_env("HOME").expect("HOME for native cache"));
+        assert_eq!(platform_cache_dir(), Some(home.join(".cache")));
     }
 
     #[cfg(target_os = "windows")]

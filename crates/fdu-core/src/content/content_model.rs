@@ -384,7 +384,7 @@ impl ContentProvenance {
             analyzers.push((CONTENT_BASIC, VERSION_ONE));
         }
         if request.profile.includes_code() {
-            analyzers.push((CODE_SLOC, VERSION_ONE));
+            analyzers.push((CODE_SLOC, AnalyzerVersion(2)));
         }
         if request.profile.includes_words() {
             analyzers.push((TEXT_LOGICAL, VERSION_ONE));
@@ -691,7 +691,10 @@ pub(crate) enum AnalysisApplyOutcome {
 mod tests {
     use std::collections::HashSet;
 
-    use super::{AnalysisSet, AnalyzerOutcome, CoverageReason, LogicalWordStats, METRICS};
+    use super::{
+        AnalysisRequest, AnalysisSet, AnalyzerOutcome, AnalyzerVersion, CODE_SLOC,
+        ContentProvenance, CoverageReason, LogicalWordStats, METRICS,
+    };
 
     #[test]
     #[should_panic(expected = "an analyzed outcome must carry a value")]
@@ -814,6 +817,13 @@ mod tests {
         // A record written by a build with an analyzer this one lacks cannot be honored,
         // so it is refused rather than silently under-reported as absent metrics.
         assert_eq!(AnalysisSet::from_bits(0b1000_0000), None);
+    }
+
+    #[test]
+    fn code_metrics_use_the_updated_analyzer_version() {
+        let request = AnalysisRequest { profile: AnalysisSet::NONE.with_code(), workers: 1 };
+        let provenance = ContentProvenance::for_request(request, 42);
+        assert!(provenance.analyzers.contains(&(CODE_SLOC, AnalyzerVersion(2))));
     }
 
     #[test]

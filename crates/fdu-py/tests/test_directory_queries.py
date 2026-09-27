@@ -43,6 +43,13 @@ def inventory(format: fdu.Format = fdu.Format.LONG) -> fdu.Query:
     )
 
 
+def test_cache_directory_resolves_without_a_scan_root(tmp_path: Path) -> None:
+    destination = tmp_path / "snapshots"
+    assert fdu.cache_directory(cache_dir=destination) == destination
+    assert fdu.list_caches(cache_dir=destination) == ()
+    assert fdu.clear_all_caches(cache_dir=destination) == fdu.ClearSummary(0, 0)
+
+
 def test_retained_directory_metrics_and_formats_need_no_filesystem(builds: Path) -> None:
     index = fdu.scan(builds)
     shutil.rmtree(builds)

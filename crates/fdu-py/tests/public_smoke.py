@@ -308,8 +308,8 @@ def check_every_view(root: Path) -> None:
     for view in fdu.View:
         if view is fdu.View.FULL:
             continue
-        # `documents` has no metadata-only projection, so it needs the analysed index.
-        source = analyzed if view is fdu.View.DOCUMENTS else index
+        # Code and document views require content analysis.
+        source = analyzed if view in (fdu.View.CODE, fdu.View.DOCUMENTS) else index
         report = source.report(fdu.Query(views=(view,)))
         assert len(report.sections) == 1, (view, report.sections)
         assert report.sections[0].view is view, (view, report.sections[0].view)
@@ -329,16 +329,20 @@ def check_every_view(root: Path) -> None:
     # a directory tree containing none of the results -- the defect the content axis
     # removed from the CLI, still live here because nothing tested the two together.
     for analyze, expected in (
-        (fdu.Analysis.NONE, fdu.View.LIST),
-        (fdu.Analysis.LINES, fdu.View.FAMILIES),
-        (fdu.Analysis.CODE, fdu.View.LANGUAGES),
-        (fdu.Analysis.WORDS, fdu.View.DOCUMENTS),
-        (fdu.Analysis.ALL, fdu.View.FAMILIES),
+        (fdu.Analysis.NONE, (fdu.View.LIST,)),
+        (fdu.Analysis.LINES, (fdu.View.FAMILIES,)),
+        (fdu.Analysis.CODE, (fdu.View.CODE,)),
+        (fdu.Analysis.WORDS, (fdu.View.DOCUMENTS,)),
+        (fdu.Analysis.ALL, (fdu.View.CODE, fdu.View.DOCUMENTS)),
     ):
         derived = fdu.scan(str(root), analysis=fdu.AnalysisOptions(analyze=analyze))
         answer = derived.report(fdu.Query())
         section = answer.sections[0]
-        assert section.view is expected, (analyze, section.view, expected)
+        assert tuple(item.view for item in answer.sections) == expected, (
+            analyze,
+            answer.sections,
+            expected,
+        )
         wire = json.loads(answer.render(fdu.Format.JSON))
         assert answer.as_dict() == wire
         if isinstance(section, fdu.MetricsSection):
@@ -395,7 +399,9 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     assert observed.total().files == 2
     defaults = fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=16 * 1024)
     refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_LIMIT)
-    expected = fdu.ControlObservation(limits=defaults, applied=0, refused=1, refusals=(refused,))
+    expected = fdu.ControlObservation(
+        limits=defaults, applied=0, rules=0, refused=1, refusals=(refused,)
+    )
     assert observed.status.ignore_rules == expected, observed.status
     observed_report = observed.report(fdu.Query(views=(fdu.View.SUMMARY,)))
     assert observed_report.status.complete is True
@@ -404,11 +410,15 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     assert wire["ignore_rules"] == {
         "limits": {"budget": 4 * 1024 * 1024, "line_limit": 16 * 1024},
         "applied": 0,
+        "rules": 0,
         "refused": 1,
         "refusals": [{"path": ".gitignore", "reason": "line_limit"}],
     }, wire
     # The note names the directory and the limit that fired, as this surface spells it.
-    (note,) = observed_report.notes
+    note, unknown_note = observed_report.notes
+    assert unknown_note == (
+        "note: ignored subtotals are unavailable where governing rules could not be verified"
+    ), unknown_note
     assert "under . are not exact" in note, note
     assert "raise control_line_limit above 16 KiB, or set it to all" in note, note
     assert "control_budget" not in note, note
@@ -418,12 +428,16 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     assert budget_lifted.status.ignore_rules == fdu.ControlObservation(
         limits=fdu.ControlLimits(budget=None, line_limit=16 * 1024),
         applied=0,
+        rules=0,
         refused=1,
         refusals=(refused,),
     )
     lifted = fdu.scan(root, scan=fdu.ScanOptions(control_line_limit="all"))
     assert lifted.status.ignore_rules == fdu.ControlObservation(
-        limits=fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=None), applied=1, refused=0
+        limits=fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=None),
+        applied=1,
+        rules=1,
+        refused=0,
     )
     assert lifted.report().notes == ()
 
@@ -472,6 +486,7 @@ def check_reports_carry_the_ignored_share() -> None:
     share = summary.summary.ignored
     assert share is not None and (share.files, share.dirs, share.bytes) == (1, 1, 100), share
     assert isinstance(tree, fdu.TreeSection), tree
+    assert tree.tree is not None
     by_name = {child.name: child.ignored for child in tree.tree.children}
     assert by_name["dist"] is not None and by_name["dist"].bytes == 100, by_name
     assert by_name["src"] == fdu.IgnoredTally(0, 0, 0, 0), by_name
@@ -534,12 +549,13 @@ def check_a_one_shot_report_forwards_every_control_knob() -> None:
         return fdu.report(root, query, cache=fdu.CachePolicy.OFF, scan=options).status.ignore_rules
 
     defaults = fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=16 * 1024)
-    assert rules(None) == fdu.ControlObservation(limits=defaults, applied=1, refused=0)
+    assert rules(None) == fdu.ControlObservation(limits=defaults, applied=1, rules=2, refused=0)
 
     refused = fdu.RefusedControl(Path(".gitignore"), fdu.ControlRefusalReason.LINE_LIMIT)
     assert rules(fdu.ScanOptions(control_line_limit="1KiB")) == fdu.ControlObservation(
         limits=fdu.ControlLimits(budget=4 * 1024 * 1024, line_limit=1024),
         applied=0,
+        rules=0,
         refused=1,
         refusals=(refused,),
     )
@@ -548,6 +564,7 @@ def check_a_one_shot_report_forwards_every_control_knob() -> None:
     assert rules(fdu.ScanOptions(control_budget="1KiB")) == fdu.ControlObservation(
         limits=fdu.ControlLimits(budget=1024, line_limit=16 * 1024),
         applied=0,
+        rules=0,
         refused=1,
         refusals=(over_budget,),
     )
@@ -578,6 +595,77 @@ def check_refresh_and_watch_persist() -> None:
             next(feed)
             cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
             assert cached.total().bytes == path.stat().st_size
+
+
+def check_population_code_and_cache(entrypoint: Path) -> None:
+    """Installed API and CLI agree after cache population transitions."""
+    with tempfile.TemporaryDirectory(prefix="fdu-population-") as scratch:
+        parent = Path(scratch)
+        root = parent / "source"
+        cache = parent / "cache"
+        root.mkdir()
+        (root / "vendor").mkdir()
+        (root / ".gitignore").write_text("vendor/\n", encoding="utf-8")
+        (root / "main.rs").write_text("fn main() {}\n// note\n\n", encoding="utf-8")
+        (root / "vendor" / "lib.rs").write_text("fn a() {}\nfn b() {}\n", encoding="utf-8")
+        analysis = fdu.AnalysisOptions(analyze=fdu.Analysis.CODE)
+        for population, expected in [
+            (fdu.IgnoredEntries.INCLUDE, 3),
+            (fdu.IgnoredEntries.EXCLUDE, 1),
+            (fdu.IgnoredEntries.ONLY, 2),
+            (fdu.IgnoredEntries.INCLUDE, 3),
+        ]:
+            query = fdu.Query(selection=fdu.Selection(ignored=population))
+            report = fdu.report(root, query, analysis=analysis, cache_dir=cache)
+            section = report.sections[0]
+            assert isinstance(section, fdu.CodeSection), section
+            assert section.code.selected.code_lines == expected, section
+            assert section.code.selected.missing_records == 0, section
+            assert report.request.scope.population is population, report.request
+            if population is fdu.IgnoredEntries.INCLUDE:
+                assert section.code.non_ignored is not None
+                assert section.code.ignored is not None
+                assert section.code.non_ignored.code_lines == 1
+                assert section.code.ignored.code_lines == 2
+            cached = fdu.report(
+                root, query, analysis=analysis, cache=fdu.CachePolicy.ONLY, cache_dir=cache
+            )
+            assert cached.sections == report.sections
+            cli = subprocess.run(
+                [
+                    entrypoint,
+                    str(root),
+                    "--analyze=code",
+                    "--format=json",
+                    f"--ignored={population}",
+                    "--cache=only",
+                    "--cache-dir",
+                    str(cache),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            assert cli.returncode == 0, (cli.stdout, cli.stderr)
+            assert json.loads(cli.stdout)["reports"] == report.as_dict()["reports"]
+        path = fdu.cache_path(root, cache_dir=cache)
+        assert path is not None and path.name.endswith(".metadata.bin"), path
+        assert path.with_name(path.name.replace(".metadata.bin", ".analysis.bin")).exists()
+        assert len(fdu.list_caches(cache_dir=cache)) == 1
+        held = fdu.open(
+            root, ignored=fdu.IgnoredEntries.EXCLUDE, analysis=analysis, cache=fdu.CachePolicy.OFF
+        )
+        section = held.report().sections[0]
+        assert isinstance(section, fdu.CodeSection) and section.code.selected.code_lines == 1
+        empty = fdu.report(
+            root,
+            fdu.Query(views=(fdu.View.TREE,), selection=fdu.Selection(limit=0)),
+            cache=fdu.CachePolicy.OFF,
+        ).sections[0]
+        assert isinstance(empty, fdu.TreeSection)
+        assert empty.tree is None and empty.omissions[0].reason is fdu.TreeOmissionReason.ROWS
+        assert fdu.clear_cache(root, cache_dir=cache)
+        assert not fdu.list_caches(cache_dir=cache)
 
 
 def main() -> None:
@@ -641,7 +729,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/7"
+    assert wire["schema"] == "fdu.report/8"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 
@@ -747,10 +835,10 @@ def main() -> None:
     # A sidecar with no snapshot is fdu's own leftover, not a foreign file. Only the
     # classification is asserted here: this test shares the developer's real cache
     # directory, so it plants one file of its own and removes it, and never clears.
-    orphan = status.path.with_name(status.path.name + ".content")
+    orphan = status.path.with_name(status.path.name.replace(".metadata.bin", ".analysis.bin"))
     orphan.write_bytes(b"FDUCTNT\0planted")
     try:
-        listed = {cache.path: cache for cache in fdu.list_caches(cache_root)}
+        listed = {cache.path: cache for cache in fdu.list_caches(cache_dir=status.path.parent)}
         assert listed[orphan].state is fdu.CacheState.LEFTOVER, listed
         assert listed[orphan].leftover_kind is fdu.LeftoverKind.ORPHANED_CONTENT, listed
     finally:
@@ -839,6 +927,7 @@ def main() -> None:
     assert wire["ignore_rules"] == {
         "limits": {"budget": 4 * 1024 * 1024, "line_limit": 16 * 1024},
         "applied": 0,
+        "rules": 0,
         "refused": 0,
         "refusals": [],
     }, wire
@@ -846,6 +935,7 @@ def main() -> None:
         json.dumps(cli_wire, sort_keys=True)
     ), (wire, cli_wire)
 
+    check_population_code_and_cache(entrypoint)
     print(f"fdu {fdu.__version__} public API ok")
 
 
