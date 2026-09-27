@@ -5,14 +5,14 @@ title: macOS home scans exit 2 and emit one warning per TCC-protected path
 kind: task
 status: open
 priority: 2
-version: 1
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
+version: 2
+spec_path: docs/project/specs/active/plan-2026-09-27-cli-and-skill-followups.md
 labels:
   - macos
   - cli
 dependencies: []
 created_at: 2026-08-30T07:12:48.615Z
-updated_at: 2026-08-30T07:12:48.615Z
+updated_at: 2026-09-27T08:18:01.800Z
 ---
 On main (not PR #48): 'fdu ~' produces a correct roll-up - 214 GiB, 4,114,663 files - but exits 2 and writes 158 'warning: I/O error at ...: Operation not permitted' lines, one per TCC-protected path (~/.Trash, ~/Library/Accounts, ~/Library/Biome, ~/Library/Caches/CloudKit, and so on).
 

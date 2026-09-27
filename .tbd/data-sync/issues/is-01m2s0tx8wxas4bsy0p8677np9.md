@@ -5,14 +5,15 @@ title: Restructure the GitHub README for a first-time visitor
 kind: task
 status: closed
 priority: 0
-version: 5
+version: 6
+spec_path: docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md
 labels:
   - release
   - docs
 dependencies: []
 parent_id: is-01m2s0tq4ppsygrs129nw1m86n
 created_at: 2026-09-18T01:07:01.532Z
-updated_at: 2026-09-18T01:10:25.637Z
+updated_at: 2026-09-27T08:15:13.058Z
 closed_at: 2026-09-18T01:10:25.637Z
 close_reason: "Landing page and post-publish checklist are in #86 (cursor/first-user-readme-f28b)."
 ---

@@ -5,15 +5,15 @@ title: "H143: leftover after H111 floor/RSS fail"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - linux
   - H143
 dependencies: []
 parent_id: is-01m2y4f4g34vdbgxf0jcvt8dw3
 created_at: 2026-09-20T01:34:10.917Z
-updated_at: 2026-09-20T04:39:16.847Z
+updated_at: 2026-09-27T08:17:24.173Z
 closed_at: 2026-09-20T04:39:16.847Z
 close_reason: "exp-142: same leftover identity on quiet linux-450k cold-scan-index; walk 94.7-94.8%; finish 4.3% is H86 consume; do not restart H86"
 ---

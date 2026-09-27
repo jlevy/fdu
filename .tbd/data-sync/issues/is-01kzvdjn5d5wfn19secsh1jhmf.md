@@ -5,13 +5,13 @@ title: Keep regenerated performance ledger Flowmark-clean
 kind: bug
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-12T16:41:05.964Z
-updated_at: 2026-08-12T16:47:46.108Z
+updated_at: 2026-09-27T08:17:45.044Z
 closed_at: 2026-08-12T16:47:46.107Z
 close_reason: make perf-ledger now runs the repository-standard pinned flowmark --auto . pass after generation. Regenerating all 15 experiment entries followed by make docs-format-check leaves the ledger unchanged and clean.
 ---

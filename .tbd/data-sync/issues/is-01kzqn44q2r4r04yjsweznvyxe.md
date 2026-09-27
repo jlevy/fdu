@@ -5,13 +5,13 @@ title: "P2: Python cache accessors"
 kind: task
 status: closed
 priority: 3
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:36:01.250Z
-updated_at: 2026-08-11T16:59:09.480Z
+updated_at: 2026-09-27T08:18:20.244Z
 closed_at: 2026-08-11T16:59:09.480Z
 close_reason: Python Index.report() with the five axes and shared value grammars, plus cache_path/cache_status/list_caches/clear_cache/clear_all_caches and the cache= policy on open(). Tree dict built iteratively. Restored root_raw for non-UTF-8 identity, which the installed-wheel test caught as missing. Wheel smoke extended to every view, selection, multi-view ordering, four rejected grammars, and the cache accessors; make python-smoke passes against the built wheel.
 ---

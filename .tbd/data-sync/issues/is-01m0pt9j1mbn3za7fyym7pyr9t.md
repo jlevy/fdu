@@ -5,13 +5,13 @@ title: Bounded per-directory extension and filename rows with a remainder
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T08:02:49.012Z
-updated_at: 2026-08-23T19:38:24.901Z
+updated_at: 2026-09-27T08:17:56.205Z
 closed_at: 2026-08-23T19:38:24.901Z
 close_reason: "RollUp.by_ext gains a Bound: rollup_bounded/total_bounded/children_bounded keep the largest N rows by apparent bytes (ties by name) and aggregate the rest into ext_remainder. Applied before names are cloned, so a wide subtree costs one pass plus N clones. Reached from Python as total/rollup/children(extensions=N). Bound moved to engine_contract so depth, row limits, and extension rows share one vocabulary."
 resolution: null

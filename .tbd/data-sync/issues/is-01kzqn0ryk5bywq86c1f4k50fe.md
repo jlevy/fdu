@@ -5,8 +5,8 @@ title: "P1: Query/Report core and pure report() over four views"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -17,7 +17,7 @@ dependencies:
     target: is-01kzqn4eh461jy13mvs25bmwvn
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:34:10.898Z
-updated_at: 2026-08-11T07:03:42.302Z
+updated_at: 2026-09-27T08:16:57.670Z
 closed_at: 2026-08-11T07:03:42.301Z
 close_reason: "query/report.rs implements ViewSpec, Query, Provenance, Report, Section, and pure report(). Both performance tiers implemented with a test pinning their equivalence; one traversal serves all filtered views in a request; per-view sort defaults with name tiebreak for golden stability; depth 0 keeps du's root-totals meaning and marks truncation. 14 tests. Deviation recorded on the function: provenance is a third argument because generated_at cannot be sampled purely."
 ---

@@ -5,11 +5,12 @@ title: Move enforcement from guide to build
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-experiment-evidence-scope.md
 labels: []
 dependencies: []
+parent_id: is-01m3gyw6q417g550gsk5tgpv0v
 created_at: 2026-08-23T05:36:09.068Z
-updated_at: 2026-09-17T02:11:00.331Z
+updated_at: 2026-09-27T08:17:50.636Z
 ---
 tree_provenance required for artifacts dated on or after the cutover (pre-cutover stay valid, rendering 'provenance unrecorded'); a variant-spelling hypothesis id (H86-foo beside H86) becomes fatal while genuine reuse across experiments stays legal; verdict.scope required for new artifacts; record the control's commit distance and flag an accepted-but-unlanded result whose control has drifted (exp-064's was 44 commits behind and nothing said so).

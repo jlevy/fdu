@@ -5,8 +5,8 @@ title: Harden CLI color, help, and stream behavior
 kind: feature
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
 labels:
   - cli
 dependencies:
@@ -18,7 +18,7 @@ dependencies:
     target: is-01kzmnxy0xvkvazmqvdwsjm20h
 parent_id: is-01kzmnx3taexx4cq4m722p0yp0
 created_at: 2026-08-10T01:52:03.334Z
-updated_at: 2026-08-10T02:09:05.992Z
+updated_at: 2026-09-27T08:16:50.878Z
 closed_at: 2026-08-10T02:09:05.991Z
 close_reason: Implemented the shared Rust process boundary, semantic anstyle palette, --color contract with NO_COLOR/FORCE_COLOR precedence, complete help, strict stdout/stderr diagnostics, pluralization, and real-process regression coverage. Exact goldens and make check pass.
 ---

@@ -5,13 +5,14 @@ title: release.yml crate smoke step cannot resolve fdu-core before it is publish
 kind: bug
 status: closed
 priority: 1
-version: 3
+version: 4
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-15T00:30:15.434Z
-updated_at: 2026-09-15T16:21:32.651Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-15T16:21:32.650Z
 close_reason: "aa6cdeb (PR #61): scripts/release/smoke_crate.py extracts both .crate files, patches fdu-core to the packaged sibling, relocks once and requires only fdu-core's source/checksum to change, installs fdu --locked, and requires 'fdu <version>'. release.yml's crate job and make release-rehearse both call it; tests in tests/release/test_smoke_crate.py and test_metadata.py. Resolution verified with real cargo metadata --locked; the install itself runs first in the dispatched rehearsal (fdu-ls14)."
 resolution: null

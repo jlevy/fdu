@@ -5,7 +5,8 @@ title: "Address review: PR #122 — fdu --install-skill and install docs"
 kind: task
 status: closed
 priority: 1
-version: 8
+version: 9
+spec_path: docs/project/specs/active/plan-2026-09-27-cli-and-skill-followups.md
 labels:
   - skill
   - review
@@ -19,7 +20,7 @@ child_order_hints:
   - is-01m395ntf98ec3w1jfnxy1acvh
   - is-01m395nw15r6f3m37xmsfkq42g
 created_at: 2026-09-24T07:39:01.024Z
-updated_at: 2026-09-24T07:45:22.877Z
+updated_at: 2026-09-27T08:17:33.172Z
 closed_at: 2026-09-24T07:45:22.874Z
 close_reason: "All six findings fixed in b4bdb9b2; review and disposition comments on PR #122."
 resolution: null

@@ -5,12 +5,13 @@ title: 2026-09-18 new-user packaged-artifact simulation results
 kind: chore
 status: closed
 priority: 2
-version: 2
+version: 3
+spec_path: docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md
 labels: []
 dependencies: []
 parent_id: is-01m2s0tq4ppsygrs129nw1m86n
 created_at: 2026-09-18T01:10:24.984Z
-updated_at: 2026-09-18T01:10:34.513Z
+updated_at: 2026-09-27T08:15:13.058Z
 closed_at: 2026-09-18T01:10:34.513Z
 close_reason: Results recorded on fdu-bnp9; this extra bead is redundant.
 ---

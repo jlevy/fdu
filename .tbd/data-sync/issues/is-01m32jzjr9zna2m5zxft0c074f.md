@@ -5,13 +5,13 @@ title: "PR #97 review R1: claim-only for non-shipped accepted arms"
 kind: bug
 status: closed
 priority: 1
-version: 2
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 3
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels: []
 dependencies: []
 parent_id: is-01m32jzamqf58124kga00kdbd0
 created_at: 2026-09-21T18:17:18.857Z
-updated_at: 2026-09-21T18:32:07.565Z
+updated_at: 2026-09-27T08:17:31.105Z
 closed_at: 2026-09-21T18:32:07.565Z
 close_reason: "Addressed on #97: CLAIM_ONLY exp-146/148/149/150/152/154 plus recycle reuse test, publishing sentence, DT_UNKNOWN rustdoc, and finish unused-vec fix. Shipped on 16af624f / cfbd3533 after merge-down onto #94 c1ec3342."
 ---

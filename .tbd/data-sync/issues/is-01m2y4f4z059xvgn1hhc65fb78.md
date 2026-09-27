@@ -5,8 +5,8 @@ title: "H139: Linux cache-hit stack same or different"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - linux
   - H139
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m2y4f6c3ea0q3ngn99nz7eek
 parent_id: is-01m2y4f4g34vdbgxf0jcvt8dw3
 created_at: 2026-09-20T00:46:42.654Z
-updated_at: 2026-09-20T01:06:36.275Z
+updated_at: 2026-09-27T08:17:23.357Z
 closed_at: 2026-09-20T01:06:36.275Z
 close_reason: "exp-138: same on Linux, content-cache-hit wall -22.48% [-23.46%, -21.39%] quiet on linux-v6.12; RSS -10.24%; no engine patch"
 ---

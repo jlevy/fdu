@@ -5,13 +5,13 @@ title: Classification identity in listings; registry identity in Python
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:32:08.882Z
-updated_at: 2026-08-23T21:14:56.883Z
+updated_at: 2026-09-27T08:17:53.518Z
 closed_at: 2026-08-23T21:14:56.883Z
 close_reason: ChildSnapshot and files-view rows carry the active registry's verdict (type id, family, resolved group id, detection source, confidence, origin flags) plus the logical extension, as metadata-only fields; filled after a view's bound so a bounded preset classifies only what it emits. Registry identity reads from Python through fdu.TypeRegistry (fingerprint, rule_count, extension_count, filename_count, type_ids, classify), which fdu-ctp5 introduced. Goldened in JSONL on both surfaces, with the directory case pinned as null rather than a sentinel.
 resolution: null

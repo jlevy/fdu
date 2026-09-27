@@ -5,15 +5,15 @@ title: Validate and publish the CLI UX follow-up PR
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
 labels:
   - cli
   - pr-review
 dependencies: []
 parent_id: is-01kzmnx3taexx4cq4m722p0yp0
 created_at: 2026-08-10T01:52:23.067Z
-updated_at: 2026-08-10T02:48:05.218Z
+updated_at: 2026-09-27T08:16:51.861Z
 closed_at: 2026-08-10T02:48:05.218Z
 close_reason: "PR #2 is open from merged origin/main with the full design and senior review comment. Final CARGO_INCREMENTAL=0 make check passes locally, and fresh PR CI run 31350476952 passes all 13 Linux, macOS, Windows, artifact, MSRV, quality, and supply-chain jobs."
 ---

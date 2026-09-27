@@ -5,15 +5,18 @@ title: Complete the performance record and generate the technical report
 kind: epic
 status: open
 priority: 2
-version: 3
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-15-fdu-performance-record-and-report.md
 labels:
   - performance
 dependencies: []
 child_order_hints:
   - is-01m05p89zcgft47xacknr3wf48
+  - is-01m3gyw719hgsaept2b0dy5avs
+  - is-01m3gyw7bx46xccdxsv6x975g9
+  - is-01m3gyw7p9nwsravg1ayaceds0
 created_at: 2026-08-16T02:15:22.490Z
-updated_at: 2026-09-17T02:10:42.220Z
+updated_at: 2026-09-27T08:14:34.184Z
 ---
 Epic for the four-phase plan in the spec: (A) surface absolute timings already in all
 64 artifacts through the ledger generator and add the duplicate-id check (fdu-f8ni);

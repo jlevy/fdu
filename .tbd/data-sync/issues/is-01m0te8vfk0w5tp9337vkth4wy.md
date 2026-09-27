@@ -5,8 +5,8 @@ title: Report work counters hide full-index traversal
 kind: bug
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 5
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
   - performance
@@ -16,7 +16,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:49:40.722Z
-updated_at: 2026-08-24T23:19:38.573Z
+updated_at: 2026-09-27T08:17:18.254Z
 closed_at: 2026-08-24T23:19:38.573Z
 close_reason: |
   Shipped. `make check` green.

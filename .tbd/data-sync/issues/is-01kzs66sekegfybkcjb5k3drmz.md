@@ -5,13 +5,13 @@ title: Unit-test the watch persistence state machine directly
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vzdeychrseqy1t2qftr9
 created_at: 2026-08-11T19:53:48.242Z
-updated_at: 2026-08-11T20:38:06.076Z
+updated_at: 2026-09-27T08:17:41.634Z
 closed_at: 2026-08-11T20:38:06.075Z
 close_reason: Decisions extracted to pure save_is_due and pending_after over a named SaveOutcome; table tests cover the R5 throttle-then-idle case and the R7 clear-on-skip-or-fail case directly, plus the burst-then-quiet sequence.
 ---

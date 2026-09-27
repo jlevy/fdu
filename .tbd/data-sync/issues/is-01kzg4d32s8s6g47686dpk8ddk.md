@@ -5,14 +5,14 @@ title: "Metabrowser integration: replace the Python walker and inventory hot pat
 kind: feature
 status: open
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - future
 dependencies: []
 parent_id: is-01kzm3v6nndedpwk414enwysv3
 created_at: 2026-08-08T07:29:07.672Z
-updated_at: 2026-08-23T07:33:24.380Z
+updated_at: 2026-09-27T08:17:33.495Z
 ---
 The seam is already clean: metabrowser's walker yields a well-defined record stream, the inventory consumes it, and plugins consume classification and projections through a documented API. fdu slots in at the walker/inventory seam without disturbing the plugin boundary.
 

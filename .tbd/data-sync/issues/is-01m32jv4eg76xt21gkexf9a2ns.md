@@ -5,8 +5,8 @@ title: "Address review: PR #94 — Linux parallel validation honesty edits"
 kind: task
 status: closed
 priority: 1
-version: 8
-spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
+version: 10
+spec_path: docs/project/specs/done/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - linux
   - campaign-2
@@ -20,7 +20,7 @@ child_order_hints:
   - is-01m32jv5wkz9n4v1537krf2k3k
   - is-01m32jv65s9gkk6wsjbc6esaxr
 created_at: 2026-09-21T18:14:53.136Z
-updated_at: 2026-09-21T18:25:26.385Z
+updated_at: 2026-09-27T08:17:28.725Z
 closed_at: 2026-09-21T18:25:26.385Z
 close_reason: "All R1–R6 children fixed on #94 in c1ec3342"
 ---

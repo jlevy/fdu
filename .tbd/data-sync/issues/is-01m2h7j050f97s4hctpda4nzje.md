@@ -5,13 +5,14 @@ title: Every shipped surface still says pre-release, unpublished, or Pre-Alpha
 kind: task
 status: closed
 priority: 1
-version: 2
+version: 3
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-15T00:30:34.143Z
-updated_at: 2026-09-15T17:52:59.610Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-15T17:52:59.602Z
 close_reason: "bc704c5 (PR #62): README, crate READMEs, SECURITY.md say 0.x and link the release process for compatibility rules; install uses cargo install --locked fdu, uv tool install fdu, exact-version uvx, cargo add fdu-core; classifier is Development Status :: 3 - Alpha because fdu.opened is still being revised against the MetaBrowser contract (fdu-m68r, fdu-hgnj). The release guide's 'within the 0.1 series' rule already permits a 0.2.0 break, so it is unchanged. CI 19/19."
 resolution: null

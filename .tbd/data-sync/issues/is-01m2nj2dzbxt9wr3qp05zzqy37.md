@@ -3,14 +3,18 @@ type: is
 id: is-01m2nj2dzbxt9wr3qp05zzqy37
 title: Move the three completed CLI plans to specs/done and rewrite their inbound links
 kind: task
-status: open
+status: closed
 priority: 3
-version: 2
+version: 3
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-16T16:51:16.074Z
-updated_at: 2026-09-16T16:51:30.165Z
+updated_at: 2026-09-27T08:18:25.888Z
+closed_at: 2026-09-27T08:18:25.886Z
+close_reason: All three requested CLI plans are in specs/done; repository Markdown links and all historical bead spec paths repaired during fdu-34sa. Genuine CLI/skill residuals are owned by the new active follow-up plan.
+resolution: null
+duplicate_of: null
 ---
 Three plans are marked Completed but still filed in docs/project/specs/active/, because moving them while the doc-drift PRs are open would break links across several of them at once. Move them with `git mv` in one change once those PRs have merged:
 

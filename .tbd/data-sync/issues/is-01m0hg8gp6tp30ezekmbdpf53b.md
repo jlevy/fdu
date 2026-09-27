@@ -5,13 +5,13 @@ title: Parse --analyze as a comma-delimited set with none/all totals
 kind: task
 status: closed
 priority: 1
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01m0hfrm2xbqzdx4avgegcvf0t
 created_at: 2026-08-21T06:31:16.933Z
-updated_at: 2026-08-21T07:15:53.053Z
+updated_at: 2026-09-27T08:17:03.679Z
 closed_at: 2026-08-21T07:15:53.052Z
 close_reason: Implemented on claude/fdu-content-axis; make check green (24 suites, 114 goldens).
 ---

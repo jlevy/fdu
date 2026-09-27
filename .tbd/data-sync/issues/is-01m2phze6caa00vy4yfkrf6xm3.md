@@ -5,7 +5,8 @@ title: SSH tag-signing identity for v0.1.0
 kind: chore
 status: closed
 priority: 0
-version: 4
+version: 5
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
   - security
@@ -16,7 +17,7 @@ dependencies:
     target: is-01m2phzkwcvz3fwk2nh150bdmj
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:52.428Z
-updated_at: 2026-09-26T00:59:14.800Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-26T00:59:14.799Z
 close_reason: Registered the public SSH signing key; v0.1.0 signed with the matching local key and verified locally and by GitHub on the rehearsed commit. One-off Git config supplied the signing and allowed-signers settings.
 resolution: null

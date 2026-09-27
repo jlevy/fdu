@@ -5,13 +5,13 @@ title: Rename --view all to --view full and define its membership
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
 parent_id: is-01m0k4qrz1rb300efa1s5z86w6
 created_at: 2026-08-21T21:48:53.320Z
-updated_at: 2026-09-16T16:50:15.576Z
+updated_at: 2026-09-27T08:17:06.748Z
 closed_at: 2026-09-16T16:50:15.574Z
 close_reason: "a6b670c (PR #39): --view full is every summary view including largest and recent, excluding files (ViewSpec::full_report), --view all is rejected, and a documents view skipped without analysis is named. PR #62 carried full through the shipped text."
 resolution: null

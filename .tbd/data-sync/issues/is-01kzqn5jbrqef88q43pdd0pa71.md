@@ -5,13 +5,13 @@ title: "P3: Python Index.watch() iterator"
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:36:47.991Z
-updated_at: 2026-08-11T17:18:23.707Z
+updated_at: 2026-09-27T08:17:38.756Z
 closed_at: 2026-08-11T17:18:23.706Z
 close_reason: Python Index.watch() with GIL released across the wait, empty-batch ticks so the interpreter can always exit, close()/context-manager shutdown, and unsendable declared at the boundary; fdu-py enables watch while the fdu crate still builds cli-only. Benchmark job vocabulary extended with cli-summary, cli-files, watch-stream across schema.py, the JSON schema, and the CLI-job set. docs/project/guides/fdu-design-principles.md records the eleven principles as implemented, with both amendments and the testing hazards; AGENTS.md points at it. make check passes.
 ---

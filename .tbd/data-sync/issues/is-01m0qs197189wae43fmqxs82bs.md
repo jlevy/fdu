@@ -5,13 +5,13 @@ title: Counter relations as a golden-visible cost oracle
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 3
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T17:00:03.681Z
-updated_at: 2026-08-23T22:25:09.527Z
+updated_at: 2026-09-27T08:17:57.786Z
 closed_at: 2026-08-23T22:25:09.527Z
 close_reason: "Counts::to_json plus a __FDU_COUNTERS__= payload on stderr, following FDU_SCAN_DIAGNOSTICS's pattern: versioned, outside the report envelope. A new cli-cost golden asserts relations rather than absolutes — stats equal entries plus the root on a cold walk, dir_opens equal directories plus the root, cache-only touches nothing at all (checked in syscalls rather than by reading source off the report), and analysis is the only thing that opens file bodies while walking identically. Never wall-clock. The package reports no counters because the allocator tier is process-global and an extension cannot install one for CPython; the scripts emit one stable line saying so and the parity harness records it as the process-instrumentation class."
 resolution: null

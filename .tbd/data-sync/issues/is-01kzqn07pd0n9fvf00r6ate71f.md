@@ -5,15 +5,15 @@ title: "P1: Selection type and glob-matcher dependency decision"
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzqn0ryk5bywq86c1f4k50fe
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:33:53.228Z
-updated_at: 2026-08-11T06:58:10.124Z
+updated_at: 2026-09-27T08:16:57.046Z
 closed_at: 2026-08-11T06:58:10.122Z
 close_reason: "Selection implemented in crates/fdu/src/query/selection.rs with include/exclude, min_size (metric-aware), kinds, half-open modified window, depth/limit Bounds, sort, reverse, and size metric; is_unfiltered() marks the fast roll-up tier. Glob decision recorded and implemented first-party (crates/fdu/src/query/glob.rs): globset would add ~6 transitive crates to a core tree that holds one, for query-time matching of a few patterns rather than per-entry ignore rules; escape hatch documented in the module. 25 tests across glob and selection."
 ---

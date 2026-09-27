@@ -3,15 +3,19 @@ type: is
 id: is-01m2f3trcyqwwfspfr7g810f3d
 title: The raw-extension docs say any final component counts, but a non-UTF-8 name has no extension
 kind: bug
-status: in_progress
+status: closed
 priority: 3
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-14T04:46:57.949Z
-updated_at: 2026-09-23T02:22:36.541Z
+updated_at: 2026-09-27T08:15:16.104Z
+closed_at: 2026-09-27T08:15:16.103Z
+close_reason: "Implemented raw-extension documentation in classify.rs and engine architecture: invalid native extension has no string bucket; valid extension after an invalid stem may still be extracted. PR #116 merged and composed fdu-n2ok/current PR #133 CI pass."
+resolution: null
+duplicate_of: null
 ---
 PR #48 delta review PR48-DOC-1 (https://github.com/jlevy/fdu/pull/48#pullrequestreview-5194007815). crates/fdu-core/src/classify.rs:15, 931 and docs/project/architecture/fdu-engine-architecture.md:383 at d48b8f8, from 0a2e341. The prose says the raw level counts a final component whatever its bytes. derive_ext_native (classify.rs:989, :1010) returns None for invalid UTF-8 or UTF-16, so such a name goes in the (none) bucket. The example table is correct; only the prose is wrong. Fix the prose on both surfaces, and add a row for a non-UTF-8 name if a portable test can pin it.
 

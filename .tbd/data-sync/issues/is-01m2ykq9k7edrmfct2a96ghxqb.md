@@ -5,13 +5,13 @@ title: "Make PR #94 merge-ready: recorded status, no Do-not-merge"
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-09-19-linux-parallel-validation.md
 labels: []
 dependencies: []
 parent_id: is-01m2y4f4g34vdbgxf0jcvt8dw3
 created_at: 2026-09-20T05:13:18.182Z
-updated_at: 2026-09-20T05:16:21.201Z
+updated_at: 2026-09-27T08:17:24.720Z
 closed_at: 2026-09-20T05:16:21.201Z
 close_reason: "PR #94 docs and description marked recorded and ready to merge onto #92. H139–H143 stay recorded. Not merged; not a Linux floor pass."
 ---

@@ -3,13 +3,17 @@ type: is
 id: is-01m01hakg0s70skr7r11qj9fbj
 title: Make content self-check enumerate every tracked file type
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 5
+version: 6
 labels: []
 dependencies: []
 created_at: 2026-08-15T01:42:03.007Z
-updated_at: 2026-09-13T16:50:56.497Z
+updated_at: 2026-09-27T08:12:59.864Z
+closed_at: 2026-09-27T08:12:59.864Z
+close_reason: "Implemented duplicate findings: scripts/content-selfcheck.mjs uses --limit all for grouped and code reports and asserts tracked TOML. Current PR #133 CI 36303716655 passes."
+resolution: null
+duplicate_of: null
 ---
 The self-check asserts that specific tracked types exist but relies on the CLI's default top-10 report limit. Large report assets can push a valid type such as TOML below that display limit. Request all rows before asserting repository-wide type coverage.
 

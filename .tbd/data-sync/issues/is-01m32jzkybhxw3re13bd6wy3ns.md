@@ -5,13 +5,13 @@ title: "PR #97 review R5: DT_UNKNOWN stats counter rustdoc"
 kind: bug
 status: closed
 priority: 3
-version: 2
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 3
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels: []
 dependencies: []
 parent_id: is-01m32jzamqf58124kga00kdbd0
 created_at: 2026-09-21T18:17:20.075Z
-updated_at: 2026-09-21T18:32:07.575Z
+updated_at: 2026-09-27T08:18:23.579Z
 closed_at: 2026-09-21T18:32:07.575Z
 close_reason: "Addressed on #97: CLAIM_ONLY exp-146/148/149/150/152/154 plus recycle reuse test, publishing sentence, DT_UNKNOWN rustdoc, and finish unused-vec fix. Shipped on 16af624f / cfbd3533 after merge-down onto #94 c1ec3342."
 ---

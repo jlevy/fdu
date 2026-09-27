@@ -5,8 +5,8 @@ title: "P3: watch scope validation errors"
 kind: task
 status: closed
 priority: 1
-version: 17
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 18
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47
@@ -35,7 +35,7 @@ parent_id: is-01m0prgbradma67z3j1wfyh8r7
 child_order_hints:
   - is-01m0wqh3ydkn7yztpt80t9d857
 created_at: 2026-08-11T05:36:29.253Z
-updated_at: 2026-09-14T03:10:10.036Z
+updated_at: 2026-09-27T08:17:00.125Z
 closed_at: 2026-09-14T03:10:10.034Z
 close_reason: "8766023: cli-watch golden 'Selection Filters the Stream, Not What Is Watched' runs --watch with --min-size 100 --size apparent through watch-capture; an excluded create emits no record, the included create streams, and the excluded file's removal still streams. Rejections were already goldened in cli-surface. Parity artifact updated. CI green on all three OSes: https://github.com/jlevy/fdu/actions/runs/34801311382"
 resolution: null

@@ -5,13 +5,13 @@ title: Require an explicit scan path and re-audit composable CLI output
 kind: task
 status: closed
 priority: 1
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 3
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-12T16:22:09.251Z
-updated_at: 2026-08-12T16:47:45.900Z
+updated_at: 2026-09-27T08:17:01.871Z
 closed_at: 2026-08-12T16:47:45.899Z
 close_reason: Reports now require an explicit PATH; bare fdu is byte-identical to --help, exits 0, and performs no scan. Origin/main comparison confirmed and goldens pin the restored ten-cell bars, structural indentation, and omission markers only for actual sibling limits. README, help, skill, changelog, architecture principles, runbook, and active specs now match the surface. make check passes.
 ---

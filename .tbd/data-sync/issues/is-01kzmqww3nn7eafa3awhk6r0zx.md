@@ -5,8 +5,8 @@ title: Isolate the non-Unicode wheel smoke fixture
 kind: bug
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
 labels:
   - python
   - ci
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzmnxy0xvkvazmqvdwsjm20h
 parent_id: is-01kzmnx3taexx4cq4m722p0yp0
 created_at: 2026-08-10T02:26:45.493Z
-updated_at: 2026-08-10T02:34:20.882Z
+updated_at: 2026-09-27T08:16:52.187Z
 closed_at: 2026-08-10T02:34:20.881Z
 close_reason: Fixed in 4cbcd85 by moving the native-argv fixture outside the already indexed API tree. The refreshed Ubuntu wheel lane passed the installed-wheel smoke, non-Unicode argv behavior, refresh assertions, and direct uvx execution.
 ---

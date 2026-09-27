@@ -5,13 +5,13 @@ title: "P1: golden coverage for the five-axis surface"
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:35:06.917Z
-updated_at: 2026-08-11T16:29:11.654Z
+updated_at: 2026-09-27T08:16:58.493Z
 closed_at: 2026-08-11T16:29:11.654Z
 close_reason: "Added tests/golden/cli-axes.tryscript.md (26 blocks: every axis alone and combined, all four formats, 11 error paths) and migrated/re-recorded the three existing golden files; 52 blocks green. Unstable fields use named patterns, not elisions. The goldens found four defects unit tests missed: usage errors exited 1 instead of 2; the JSON tree emitted balanced-but-invalid [{a}{b},] (fixture had no multi-child directory - regression test added); JSONL collapse left '[ {'; and the renderer swap had silently dropped human colour and the per-path errors list from partial results. All fixed."
 ---

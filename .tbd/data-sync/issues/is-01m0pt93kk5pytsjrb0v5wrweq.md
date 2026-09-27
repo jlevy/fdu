@@ -5,8 +5,8 @@ title: "A group level: browsing taxonomy as its own axis"
 kind: feature
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 6
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01m0ptezmtmkn04mh1f1rwgdxb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T08:02:34.226Z
-updated_at: 2026-08-23T20:52:56.478Z
+updated_at: 2026-09-27T08:17:14.440Z
 closed_at: 2026-08-23T20:52:56.477Z
 close_reason: "A group level added to the [[kind]] dialect ([[group]] with id/label/order, group= on each kind, validated all-or-nothing), to the registry, and to maintained roll-up state: Entry.group_id resolved once at insert beside ext_id, InternedRollUp.by_group merged and unmerged by the same reducer, RollUp.by_group resolved to names. A groups view reads that maintained state when unfiltered and the shared walk when filtered, in all four formats, on both surfaces, with fdu's 68 kinds assigned metabrowser's six groups. ContentFamily keeps its analysis meaning untouched. Costs on the reducer path are what fdu-n4gn measures."
 resolution: null

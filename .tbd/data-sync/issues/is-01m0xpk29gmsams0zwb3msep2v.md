@@ -5,8 +5,8 @@ title: Replace surgical parsing in golden sessions with full stable output
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#discussion_r3858495113
@@ -16,7 +16,7 @@ labels:
 dependencies: []
 parent_id: is-01m0xns5sa6dgxxa5y4a1ts8xv
 created_at: 2026-08-26T00:12:47.267Z
-updated_at: 2026-08-26T00:28:12.880Z
+updated_at: 2026-09-27T08:17:21.129Z
 closed_at: 2026-08-26T00:28:12.879Z
 close_reason: Concurrent review work created fdu-9tdm first for the same exact GitHub finding. Its notes now preserve this bead’s full audit scope and acceptance criteria.
 resolution: duplicate

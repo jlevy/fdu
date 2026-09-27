@@ -5,12 +5,13 @@ title: Watch --interval rejects 200ms and 0.2s
 kind: bug
 status: closed
 priority: 3
-version: 2
+version: 3
+spec_path: docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md
 labels: []
 dependencies: []
 parent_id: is-01m2s0tq4ppsygrs129nw1m86n
 created_at: 2026-09-18T01:10:44.672Z
-updated_at: 2026-09-18T03:07:28.157Z
+updated_at: 2026-09-27T08:15:13.058Z
 closed_at: 2026-09-18T03:07:28.157Z
 close_reason: "Implemented on PR #87: SIGINT, registry READMEs, caret pins, version stamp/LF, 0.2 API note, 200ms interval, transient-summary --no-gitignore, python-smoke --python, JSON 2^53."
 ---

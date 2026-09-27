@@ -5,14 +5,14 @@ title: Verify test sensitivity portability and maintenance cost after consolidat
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md
 delegate: codex-integration
 labels: []
 dependencies: []
 parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 created_at: 2026-09-27T02:18:14.005Z
-updated_at: 2026-09-27T03:45:30.655Z
+updated_at: 2026-09-27T08:18:17.814Z
 closed_at: 2026-09-27T03:35:35.656Z
 close_reason: Completed testing review and sensitivity/portability verification in PR133. Complete local gate and all 19 CI jobs pass; Linux parity matches. Review records scoped source/fixture/inline-test inventory, observed runtime, 23-case broken-cache proofs, remaining platform limits, and retained independent invariants.
 resolution: null

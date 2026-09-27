@@ -5,8 +5,8 @@ title: "H144: Linux cache-hit leftover after landed stack"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - linux
   - campaign-2
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m2ymtyay315j2ae8fmv8fshx
 parent_id: is-01m2ymtwf6fth3a3rk0nn4kw8d
 created_at: 2026-09-20T05:32:45.290Z
-updated_at: 2026-09-20T05:45:36.299Z
+updated_at: 2026-09-27T08:17:25.849Z
 closed_at: 2026-09-20T05:45:36.299Z
 close_reason: "exp-144 quiet: same leftover as Darwin H134; apply ~80ms; no new userspace cut. Do not retry H125-H133."
 ---

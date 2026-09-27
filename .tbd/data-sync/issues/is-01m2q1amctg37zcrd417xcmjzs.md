@@ -5,13 +5,14 @@ title: make python-smoke's uv tool run step still picks a free-threaded Python
 kind: bug
 status: closed
 priority: 2
-version: 2
+version: 3
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T06:37:07.865Z
-updated_at: 2026-09-18T03:07:28.163Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-18T03:07:28.163Z
 close_reason: "Implemented on PR #87: SIGINT, registry READMEs, caret pins, version stamp/LF, 0.2 API note, 200ms interval, transient-summary --no-gitignore, python-smoke --python, JSON 2^53."
 ---

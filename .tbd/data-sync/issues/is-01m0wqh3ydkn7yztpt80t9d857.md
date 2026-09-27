@@ -5,8 +5,8 @@ title: Make live one-filesystem admission fail open portably
 kind: bug
 status: closed
 priority: 2
-version: 8
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 10
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
@@ -28,7 +28,7 @@ labels:
 dependencies: []
 parent_id: is-01kzqn502680awzhvddzntq32d
 created_at: 2026-08-25T15:09:57.581Z
-updated_at: 2026-08-25T17:13:46.035Z
+updated_at: 2026-09-27T08:18:01.528Z
 closed_at: 2026-08-25T17:12:18.238Z
 close_reason: "Verified complete at PR #47 exact head e9af881a31243c5c763eff09b2e21ece3a7f5aab. watch::admitted preserves an unavailable root device as None; on_root_filesystem fails open only for that absence or a failed parent stat; the production regression separates missing-root identity from a real parent; the device-comparison test is Unix-gated; and all 19 exact-head CI checks, including Windows, are green."
 resolution: null

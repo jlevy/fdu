@@ -5,13 +5,13 @@ title: Machine output lost per-entry raw identity in the five-axis rewrite
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-11T23:31:25.583Z
-updated_at: 2026-09-17T02:10:43.073Z
+updated_at: 2026-09-27T08:17:42.880Z
 closed_at: 2026-09-17T02:10:43.073Z
 close_reason: path_raw shipped in 163046f (report_format.rs:894-901)
 resolution: null

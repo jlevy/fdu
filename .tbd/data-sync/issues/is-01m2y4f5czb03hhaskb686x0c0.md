@@ -5,15 +5,15 @@ title: "H140: Linux walk leftover after current engine"
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-09-19-linux-parallel-validation.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-09-19-linux-parallel-validation.md
 labels:
   - linux
   - H140
 dependencies: []
 parent_id: is-01m2y4f4g34vdbgxf0jcvt8dw3
 created_at: 2026-09-20T00:46:43.102Z
-updated_at: 2026-09-20T01:11:09.983Z
+updated_at: 2026-09-27T08:17:23.626Z
 closed_at: 2026-09-20T01:11:09.983Z
 close_reason: "exp-139: walk still 95.7-96.1% of default-tree component; leftover is getdents64+statx floor; no userspace cut; do not retry H71"
 ---

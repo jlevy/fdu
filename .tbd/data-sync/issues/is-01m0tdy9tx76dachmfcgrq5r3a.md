@@ -5,14 +5,14 @@ title: Reject a zero child-page limit
 kind: bug
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:54.973Z
-updated_at: 2026-08-24T23:08:45.214Z
+updated_at: 2026-09-27T08:18:00.102Z
 closed_at: 2026-08-24T23:08:45.213Z
 close_reason: |
   Shipped with `fdu-g0n4` in one commit. `make check` green, parity holds.

@@ -5,8 +5,8 @@ title: Bounded tree remainders drop non-file leaves
 kind: bug
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
   - metabrowser
@@ -15,7 +15,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T18:07:37.337Z
-updated_at: 2026-08-24T19:22:01.962Z
+updated_at: 2026-09-27T08:17:18.980Z
 closed_at: 2026-08-24T19:22:01.962Z
 close_reason: |
   Confirmed and fixed. The finding was correct: `fdu-or38` gave `TreeNode` an `others`

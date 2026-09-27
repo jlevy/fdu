@@ -5,14 +5,15 @@ title: "Release rehearsal: preserve watch_rule nanoseconds on Windows"
 kind: bug
 status: closed
 priority: 1
-version: 4
+version: 5
+spec_path: docs/project/guides/release-process.md
 delegate: codex@spud10
 labels:
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-16T18:47:36.425Z
-updated_at: 2026-09-16T19:30:50.461Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-16T19:30:50.458Z
 close_reason: "Fixed by PR #73 (65aa773): exact integer nanoseconds now bypass platform SystemTime; local make check/cross-lint and all 19 PR CI jobs, including both Windows wheel smoke jobs, passed."
 resolution: null

@@ -5,8 +5,8 @@ title: "Phase 2: Cache policy axis and lifecycle utilities"
 kind: feature
 status: closed
 priority: 2
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 child_order_hints:
   - is-01kzs53e2agcaeebb7nypyp77g
 created_at: 2026-08-10T23:59:30.469Z
-updated_at: 2026-08-11T21:20:37.345Z
+updated_at: 2026-09-27T08:17:35.030Z
 closed_at: 2026-08-11T21:20:37.344Z
 close_reason: "Phase 2 delivered: CachePolicy auto/refresh/read-only/only/off with only failing closed, background snapshot save with warn-not-fail semantics, cache_status/list_caches/clear_cache/clear_all_caches with bounded header reads and never-delete-unrecognized, the --cache-status and --cache-clear lifecycle flags through the format axis, Python cache accessors, and the two-layer cache design doc. Cache retention (fdu-558j) is a policy decision that outlived the phase and moved to the epic."
 ---

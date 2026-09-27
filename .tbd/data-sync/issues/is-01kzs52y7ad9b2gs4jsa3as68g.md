@@ -5,13 +5,13 @@ title: Watermark round-trip test for scan_started_at fed back as --modified-sinc
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vqasq5aqd5g07357h76t
 created_at: 2026-08-11T19:34:13.480Z
-updated_at: 2026-08-11T20:59:33.849Z
+updated_at: 2026-09-27T08:17:40.301Z
 closed_at: 2026-08-11T20:59:33.848Z
 close_reason: Watermark round trip covered end to end through the binary, including a mid-walk write and the bounded-window property that seeded files stay out. Made deterministic rather than scheduler-dependent after two earlier versions proved timing-fragile.
 ---

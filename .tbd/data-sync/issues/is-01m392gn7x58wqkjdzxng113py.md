@@ -5,13 +5,14 @@ title: Align README, Python README, usage, release notes, and release process on
 kind: task
 status: closed
 priority: 1
-version: 2
+version: 3
+spec_path: docs/project/specs/active/plan-2026-09-27-cli-and-skill-followups.md
 labels:
   - skill
 dependencies: []
 parent_id: is-01m392gedkq4bn4qbxbedkt29f
 created_at: 2026-09-24T06:44:13.685Z
-updated_at: 2026-09-24T08:42:49.257Z
+updated_at: 2026-09-27T08:17:33.172Z
 closed_at: 2026-09-24T08:42:49.233Z
 close_reason: "Shipped in PR #122 (merged to main as 0162e951, 2026-09-24): make check and cross-lint on tree 14e8c200, CI green, delta reviews approved."
 resolution: null

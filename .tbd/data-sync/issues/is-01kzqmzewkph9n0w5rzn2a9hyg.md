@@ -5,8 +5,8 @@ title: "Spec: composable CLI and query surface (five axes)"
 kind: epic
 status: closed
 priority: 1
-version: 25
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 26
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 child_order_hints:
@@ -34,7 +34,7 @@ child_order_hints:
   - is-01kzqscchfxr2p8rnk9csrq8w3
   - is-01kzqtb7a0va7ce09caacgd8s5
 created_at: 2026-08-11T05:33:27.826Z
-updated_at: 2026-09-17T02:10:44.490Z
+updated_at: 2026-09-27T08:16:55.892Z
 closed_at: 2026-09-17T02:10:44.489Z
 close_reason: Second epic for the same completed composable-CLI spec
 resolution: duplicate

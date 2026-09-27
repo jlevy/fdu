@@ -5,8 +5,8 @@ title: Prune excluded ignored subtrees under the unified population policy
 kind: feature
 status: closed
 priority: 2
-version: 9
-spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
+version: 10
+spec_path: docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md
 delegate: sol-cache-layout
 labels: []
 dependencies:
@@ -22,7 +22,7 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-26T22:39:51.973Z
-updated_at: 2026-09-27T03:12:08.849Z
+updated_at: 2026-09-27T08:18:11.846Z
 started_at: 2026-09-27T01:27:23.782Z
 closed_at: 2026-09-27T03:12:08.849Z
 close_reason: Unified population and real traversal/read pruning across Rust, CLI, and Python in PR133. Full16,787-case path-independence matrix passes, including population and cache histories; unknown controls remain explicit. Correctness and work counters are linked from the plan.

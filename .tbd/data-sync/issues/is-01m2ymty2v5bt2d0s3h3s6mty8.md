@@ -5,15 +5,15 @@ title: "H146: Linux first-run leftover after H140"
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - linux
   - campaign-2
 dependencies: []
 parent_id: is-01m2ymtwf6fth3a3rk0nn4kw8d
 created_at: 2026-09-20T05:32:46.042Z
-updated_at: 2026-09-20T06:10:36.796Z
+updated_at: 2026-09-27T08:17:26.395Z
 closed_at: 2026-09-20T06:10:36.796Z
 close_reason: "Same leftover identity as Darwin H136 (exp-147, quiet): walk 93% of first-run; isolated save ~24ms is >=3% and not skippable; do not retry H100."
 ---

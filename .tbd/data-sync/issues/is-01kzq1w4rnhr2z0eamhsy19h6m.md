@@ -5,13 +5,13 @@ title: "Phase 4: Distill design principles into docs/project/guides/fdu-design-p
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-10T23:59:36.212Z
-updated_at: 2026-08-11T21:20:37.152Z
+updated_at: 2026-09-27T08:17:36.472Z
 closed_at: 2026-08-11T21:20:37.152Z
 close_reason: "Phase 4 delivered: docs/project/guides/fdu-design-principles.md distills the principles as implemented, the parity review of what legitimately lives only in cli.rs is recorded there, and AGENTS.md plus the README now point at it along with the cache design and the integration runbook."
 ---

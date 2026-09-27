@@ -5,13 +5,13 @@ title: "H72: skip directory and symlink statx on Linux transient summary"
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels: []
 dependencies: []
 parent_id: is-01m2ymtwf6fth3a3rk0nn4kw8d
 created_at: 2026-09-20T06:59:24.623Z
-updated_at: 2026-09-20T07:07:14.057Z
+updated_at: 2026-09-27T08:18:03.043Z
 closed_at: 2026-09-20T07:07:14.057Z
 close_reason: "H72 recorded: rejected on reconstructible linux-v6.12 (exp-152, -1.63%); accepted on nominated /usr (exp-153, -9.01%). Engine kept f841662c."
 ---
