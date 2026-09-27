@@ -500,7 +500,7 @@ def check_reports_carry_the_ignored_share() -> None:
     assert isinstance(files, fdu.FilesSection), files
     flags = {row.path.as_posix(): row.ignored for row in files.files}
     assert (flags["dist"], flags["dist/bundle.js"], flags["src/main.rs"]) == (True, True, False)
-    assert "(100 B ignored)" in report.render(fdu.Format.TEXT)
+    assert "(100 B gitignored)" in report.render(fdu.Format.TEXT)
 
     kept_query = fdu.Query(
         views=(fdu.View.SUMMARY,),

@@ -1643,13 +1643,14 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
-/// The ignored share a text row ends with, as ` (128 B ignored)`, or nothing.
+/// The gitignored subset a text row ends with, as ` (128 B gitignored)`, or nothing.
+/// This amount is already included in the row total, not additional usage.
 ///
 /// One placement for every row that carries a share: after the row's own detail, so the
 /// fixed size, bar, and percentage columns keep their alignment. Nothing is appended when
 /// no file is ignored, when the index observed no control state, or when the selection
 /// admitted only ignored entries, where the share would repeat the row's size. A share of
-/// ignored directories alone holds no bytes, and `(0 B ignored)` would say nothing a
+/// ignored directories alone holds no bytes, and `(0 B gitignored)` would say nothing a
 /// reader can act on; the machine formats still count them. Text cannot tell "nothing
 /// ignored" from "no rules read"; the performance line says whether any rule was read,
 /// and machine formats carry a zero share and `null` respectively.
@@ -1669,7 +1670,7 @@ fn ignored_suffix(
         format!(
             " {}",
             detail(
-                &format!("({} ignored)", human_bytes(pick(size, share.bytes, share.allocated))),
+                &format!("({} gitignored)", human_bytes(pick(size, share.bytes, share.allocated))),
                 color
             )
         )
@@ -3879,17 +3880,17 @@ mod tests {
             text,
             concat!(
                 "SUMMARY\n",
-                "     164 B  2 files, 2 directories (128 B ignored)\n",
+                "     164 B  2 files, 2 directories (128 B gitignored)\n",
                 "\n",
                 "TREE\n",
-                "     164 B  ██████████   100%  . 2 files (128 B ignored)\n",
-                "     128 B  ████████░░    78%    dist 1 file (128 B ignored)\n",
-                "     128 B  ████████░░    78%      a.gz (128 B ignored)\n",
+                "     164 B  ██████████   100%  . 2 files (128 B gitignored)\n",
+                "     128 B  ████████░░    78%    dist 1 file (128 B gitignored)\n",
+                "     128 B  ████████░░    78%      a.gz (128 B gitignored)\n",
                 "      36 B  ██░░░░░░░░    22%    src 1 file\n",
                 "      36 B  ██░░░░░░░░    22%      b.rs\n",
                 "\n",
                 "EXTENSIONS\n",
-                "     128 B  .gz          1 file (128 B ignored)\n",
+                "     128 B  .gz          1 file (128 B gitignored)\n",
                 "      36 B  .rs          1 file\n",
                 "\n",
                 "FILES\n",
@@ -4169,7 +4170,7 @@ mod tests {
             colored.contains(&format!(
                 "{} 3,508 files {}",
                 paint("a(b)\\n界", STYLE_NAME, true),
-                detail("(43 B ignored)", true)
+                detail("(43 B gitignored)", true)
             )),
             "{colored:?}"
         );
@@ -4182,8 +4183,10 @@ mod tests {
         row.ignored = Some(ignored);
         let colored = render(&summary, Format::Text, true);
         assert!(
-            colored
-                .contains(&format!("3,508 files, 1 directory {}", detail("(43 B ignored)", true))),
+            colored.contains(&format!(
+                "3,508 files, 1 directory {}",
+                detail("(43 B gitignored)", true)
+            )),
             "{colored:?}"
         );
         assert_eq!(strip_ansi(&colored), render(&summary, Format::Text, false));
@@ -4196,7 +4199,7 @@ mod tests {
         let colored = render(&types, Format::Text, true);
         assert!(colored.contains(&paint(".(txt)", STYLE_CATEGORY, true)), "{colored:?}");
         assert!(
-            colored.contains(&format!("3,508 files {}", detail("(43 B ignored)", true))),
+            colored.contains(&format!("3,508 files {}", detail("(43 B gitignored)", true))),
             "{colored:?}"
         );
         assert_eq!(strip_ansi(&colored), render(&types, Format::Text, false));

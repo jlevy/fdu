@@ -65,9 +65,9 @@ No cached snapshots.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -121,9 +121,9 @@ can then answer from without touching the tree.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -138,7 +138,7 @@ $ fdu --size apparent project
 
 ```console
 $ fdu --cache only --view summary --size apparent project
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 ! perf: walked 0 files / 0 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
 ```
@@ -399,9 +399,9 @@ Cache already empty.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -434,9 +434,9 @@ accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -576,9 +576,9 @@ $ fdu --cache-status=all project
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -615,9 +615,9 @@ Cache cleared.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -656,9 +656,9 @@ belong to a running writer, and only a sidecar no snapshot still wants.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs

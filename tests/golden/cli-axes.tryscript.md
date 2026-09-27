@@ -41,7 +41,7 @@ rather than elided — the field stays visible in a diff, which is the point of 
 
 ```console
 $ fdu --cache off --view summary --size apparent project
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 ! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -80,13 +80,13 @@ so the two can never collide.
 ```console
 $ fdu --cache off --view extensions,summary --size apparent project
 EXTENSIONS
-     128 B  .tar.gz      1 file (128 B ignored)
+     128 B  .tar.gz      1 file (128 B gitignored)
       71 B  .md          2 files
       36 B  .rs          2 files
       34 B  (none)       2 files
 
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 ! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -132,9 +132,9 @@ src[SEP]omega.rs
 
 ```console
 $ fdu --cache off --view tree --size apparent --depth all project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -157,7 +157,7 @@ remember; a single-view report has nothing to disambiguate and stays bare.
 ```console
 $ fdu --cache off --view summary,types --size apparent --limit 1 project
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 
 TYPES  (1 of 5)
      128 B   47.6%  archive            1 file
@@ -223,14 +223,14 @@ what is underneath it.
 
 ```console
 $ fdu --cache off --view summary --kind file --size apparent project
-     269 B  7 files, 0 directories (128 B ignored)
+     269 B  7 files, 0 directories (128 B gitignored)
 ! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --cache off --view summary --kind dir --size apparent project
-     187 B  4 files, 3 directories (128 B ignored)
+     187 B  4 files, 3 directories (128 B gitignored)
 ! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -274,7 +274,7 @@ src[SEP]omega.rs
 
 ```console
 $ fdu --cache off --view tree --depth 0 --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
                                  … and 269 B (7 files) more
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 0
@@ -294,12 +294,12 @@ read no rules.
 ```console
 $ fdu --cache off --view summary,tree,extensions --size apparent project
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 
 TREE
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -310,7 +310,7 @@ TREE
        6 B  ░░░░░░░░░░     2%    .gitignore
 
 EXTENSIONS
-     128 B  .tar.gz      1 file (128 B ignored)
+     128 B  .tar.gz      1 file (128 B gitignored)
       71 B  .md          2 files
       36 B  .rs          2 files
       34 B  (none)       2 files

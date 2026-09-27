@@ -23,9 +23,9 @@ patterns:
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -49,9 +49,9 @@ display-limit diagnostic.
 
 ```console
 $ fdu --cache off --color never --size apparent --view tree --full project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -66,9 +66,9 @@ $ fdu --cache off --color never --size apparent --view tree --full project
 
 ```console
 $ fdu --cache off --color never --size apparent --view tree --depth=all --breadth=all --limit=all --min-share=0% project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       18 B  █░░░░░░░░░     7%      alpha.rs
@@ -122,8 +122,8 @@ $ fdu --cache off --color never --size apparent --view tree --limit=0 project
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
                                  … and 269 B (7 files) more
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 1, row limit 2
@@ -163,8 +163,8 @@ An all-caps header above each block, one blank line between blocks, is enough to
 ```console
 $ fdu --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
 TREE
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     269 B  ██████████   100%  . 7 files (128 B gitignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
       28 B  █░░░░░░░░░    10%    Makefile
@@ -186,7 +186,7 @@ FAMILIES
        6 B    2.2%  unknown            1 file
 
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 1
 ! tip: expand deeper: --depth=all

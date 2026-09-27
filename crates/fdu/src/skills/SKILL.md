@@ -43,6 +43,7 @@ root. Breadth and total rows are unbounded unless requested; `--depth`, `--min-s
 `--breadth`, and `--limit` compose independently.
 Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
+A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 
 `--analyze` chooses what may be read and `--view` chooses what is printed.
 The language commands differ only on the analysis axis: without code analysis
@@ -305,7 +306,7 @@ Request another report from the retained index for that change, without scanning
 Fresh scans read applicable per-directory `.gitignore` files by default.
 Cache-only reports use retained rule state, and `--no-gitignore` disables the rules.
 Summary, tree, and extension rows show ignored size as a gray parenthetical such as
-`(128 B ignored)` when color is enabled.
+`(128 B gitignored)` when color is enabled.
 The performance line counts ignore files and accepted rules.
 
 ```bash

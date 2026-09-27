@@ -449,7 +449,7 @@ Request another report from the retained index for that change, without scanning
 Fresh scans read applicable per-directory `.gitignore` files by default.
 Cache-only reports use retained rule state, and `--no-gitignore` disables the rules.
 Summary, tree, and extension rows show ignored size as a gray parenthetical such as
-`(128 B ignored)` when color is enabled.
+`(128 B gitignored)` when color is enabled.
 The performance line counts ignore files and accepted rules.
 
 ```bash
@@ -774,7 +774,7 @@ CACHE BEHAVIOR
 
 IGNORE RULES
   Fresh scans read applicable .gitignore files by default; cache-only uses retained
-  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
+  rules. Summary, tree, and extension rows show ignored size as `(128 B gitignored)`.
   Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
   .git is unignored unless a rule names it. --ignored=include is default.
   --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.

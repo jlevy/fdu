@@ -224,6 +224,8 @@ For the most recent working files without ignored entries or repository internal
 fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'
 ```
 
+Human rows label this subset as `(73 MiB gitignored)`: the amount is already included in
+the row total, not additional usage.
 `--no-gitignore` disables reading and applying the rules, so ignored shares are unknown.
 It cannot be combined with either ignored-state selection.
 

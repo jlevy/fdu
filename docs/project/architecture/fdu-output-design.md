@@ -17,8 +17,12 @@ Keep those comments and this guide consistent.
 ## Row Styling
 
 Names use cyan; totals and file counts use the ordinary foreground color.
-Write `attic 3508 files (43 MiB ignored)`: file counts are outside parentheses, while
-embedded ignored amounts are parenthesized and gray.
+Write `attic 3508 files (43 MiB gitignored)`: file counts are outside parentheses, while
+embedded gitignored amounts are parenthesized and gray.
+The gitignored amount is a subset already included in the row total, not additional
+usage.
+For example, `224 MiB ... (73 MiB gitignored)` means 224 MiB overall, including 73
+MiB classified by `.gitignore` rules.
 Secondary breakdowns follow the same convention, such as
 `477298 lines (439949 nonblank, 37349 blank)` with the parenthetical detail gray.
 Apply these roles consistently across human report views.
