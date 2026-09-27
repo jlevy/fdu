@@ -191,6 +191,13 @@ whose per-sample scan-policy traces make it 4.5 MB uncompressed.
 
 ## Interpretation and Limits
 
+Both matrices ran fdu with `--cache off`, as the macOS comparison did.
+The default `fdu .` also writes a metadata snapshot, which added 0.32 s at this size;
+the
+[cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
+measures that cost, explains the macOS and Linux rankings from their CPU split, and
+proposes defaults.
+
 A virtualized host is the common deployment case for Linux and a valid regime for warm
 measurements; it cannot say anything about device latency, so no cold claim is made
 here. [The platform tuning guide](../guides/platform-tuning.md#host) explains the

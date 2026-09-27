@@ -317,6 +317,11 @@ That gap is glibc allocator contention between fdu’s walker threads and its in
 builder, not filesystem work; see the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 for the evidence and the work under way.
+Both tables measure fdu with its cache disabled; the default `fdu .` also writes a
+snapshot that a later `fdu .` does not read, which on this Linux tree added about a
+quarter to the run. The
+[cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
+covers when the cache and the index pay on each platform.
 Windows builds and passes tests but has not been performance-benchmarked.
 
 ## Why
