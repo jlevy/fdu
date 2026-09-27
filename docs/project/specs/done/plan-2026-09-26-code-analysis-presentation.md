@@ -79,9 +79,9 @@ This plan intentionally revises the current depth-two, ten-child tree default an
 directory-only rows.
 Update the default descriptions in the design principles and surface architecture when
 implementing that change.
-The [directory-query plan](plan-2026-09-20-directory-query-formats.md) preserves the
-filter and subtree-total contracts; its requirement to retain the earlier presentation
-is superseded for this increment.
+The [directory-query plan](../active/plan-2026-09-20-directory-query-formats.md)
+preserves the filter and subtree-total contracts; its requirement to retain the earlier
+presentation is superseded for this increment.
 Historical implementation evidence stays intact.
 
 ## Design

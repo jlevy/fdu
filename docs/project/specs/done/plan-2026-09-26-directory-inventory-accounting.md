@@ -109,8 +109,9 @@ allocated blocks (`scan/windows_metadata.rs`); label that platform limitation.
 Do not alter ordinary rollups in this documentation layer.
 The existing fdu-579b hard-link attribution design gate and fdu-8ybz durable checkpoint
 work own any unique-identity metric.
-The [disk-usage checkpoint plan](plan-2026-09-13-fdu-disk-usage-checkpoints.md) already
-separates per-path allocated, unique allocated, and free-space observations.
+The
+[disk-usage checkpoint plan](../active/plan-2026-09-13-fdu-disk-usage-checkpoints.md)
+already separates per-path allocated, unique allocated, and free-space observations.
 A future capability must retain sound link identity, preserve incremental attribution
 under add/remove/rename, disclose that clone/shared-extent allocation remains
 unobserved, and return unknown where identity or physical allocation is unavailable.
@@ -144,8 +145,8 @@ This is not a prerequisite for closing #93.
 
 - [Issue #93](https://github.com/jlevy/fdu/issues/93) and merged
   [PR #117](https://github.com/jlevy/fdu/pull/117)
-- [Directory-query design](plan-2026-09-20-directory-query-formats.md)
-- [Disk-usage checkpoint plan](plan-2026-09-13-fdu-disk-usage-checkpoints.md)
+- [Directory-query design](../active/plan-2026-09-20-directory-query-formats.md)
+- [Disk-usage checkpoint plan](../active/plan-2026-09-13-fdu-disk-usage-checkpoints.md)
 - [uv link modes](https://docs.astral.sh/uv/reference/settings/#link-mode) and
   [uv cache placement](https://docs.astral.sh/uv/concepts/cache/#cache-directory)
 

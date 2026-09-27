@@ -8,6 +8,8 @@
 [PR #2](https://github.com/jlevy/fdu/pull/2) shipped it, and the epic `fdu-6c8n` and
 every bead under it are closed.
 It is listed in [the archive](../../../../TODO.archive.md).
+Remaining skill installation checks and related CLI work are tracked in the
+[active follow-up plan](../active/plan-2026-09-27-cli-and-skill-followups.md).
 
 **Superseded by
 [the composable CLI plan](plan-2026-08-10-fdu-composable-cli-surface.md).** The body

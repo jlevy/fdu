@@ -17,11 +17,11 @@ keeps two Linux-specific engine cuts: H147 transient batch recycle and H72 `d_ty
 skip. The leftover compileable queue on that 4-core VM is exhausted: H71 stays refuted
 here, H85’s 20% bar is not lowered, and `PORTABLE` thread constants are not shipped.
 
-[Campaign-2](plan-2026-08-23-fdu-performance-campaign-2.md) still queues a one-afternoon
-PGO screen (`fdu-pdne`). H93 was the first registry meaning; that id was later reused,
-so this block mints **H148**. The screen records a number.
-It does not change the release profile unless both named jobs clear 3% with intervals
-below zero.
+[Campaign 2](../active/plan-2026-08-23-fdu-performance-campaign-2.md)’s PGO screen is
+recorded here as **H148**. H93 was the first registry meaning; that identifier was later
+reused. The remaining `fdu-pdne` evaluates release-pipeline adoption and its additional
+acceptance requirements.
+The accepted screen does not itself change the release profile.
 
 ## Goals
 
@@ -131,8 +131,8 @@ If #94 moves, rebase this branch onto it and keep the H148 meaning.
 
 - [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
   leftover queue and H147/H72 on #97
-- [Campaign-2](plan-2026-08-23-fdu-performance-campaign-2.md) — `fdu-pdne` remaining
-  queue
+- [Campaign-2](../active/plan-2026-08-23-fdu-performance-campaign-2.md) — `fdu-pdne`
+  remaining queue
 - [Strategy review](../../reports/report-2026-08-23-research-loop-strategy-review.md) —
   screen records a number; adoption is a separate decision
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010)

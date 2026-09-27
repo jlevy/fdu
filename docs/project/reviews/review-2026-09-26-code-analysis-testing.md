@@ -1,6 +1,6 @@
 # Code Analysis Testing Review
 
-The [code analysis plan](../specs/active/plan-2026-09-26-code-analysis-presentation.md)
+The [code analysis plan](../specs/done/plan-2026-09-26-code-analysis-presentation.md)
 requires evidence across the engine, command line, installed Python wheel, cache routes,
 and formats. This review uses `golden-testing-guidelines`, `general-testing-rules`, and
 the installed tryscript 0.2.1 reference.
