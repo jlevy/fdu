@@ -138,21 +138,27 @@ See
 fdu . --analyze=code --ignored=exclude --limit=5
 ```
 
-For example, running this on the fdu repository at revision `6731aad9` produced the
-following overview (performance footer omitted):
+For example, the output-design implementation applied to repository revision `ab0c4e36`
+produced this stdout:
 
 ```text
-(5 of 16; --limit all for every one)
-119,153 code lines (14,735 comment, 11,733 blank)
-241 of 243 source files analyzed across 15 languages (exclude population)
+(5 of 16)
+119,938 code lines (14,767 comment, 11,762 blank)
+242 of 244 source files analyzed across 15 languages (exclude population)
 22 selected files with unclassified type
 2 unsupported
 Language shares of measured code lines
-    77,093   64.7%  Rust (100/100 analyzed)
-    37,591   31.5%  Python (95/95 analyzed)
-     3,790    3.2%  JavaScript (25/25 analyzed)
+    77,694   64.8%  Rust (101/101 analyzed)
+    37,757   31.5%  Python (95/95 analyzed)
+     3,808    3.2%  JavaScript (25/25 analyzed)
        403    0.3%  C (3/3 analyzed)
        249    0.2%  Shell (7/7 analyzed)
+```
+
+The suggestion appears once on stderr, followed by the run’s `perf:` summary:
+
+```text
+tip: show more rows: --limit=all
 ```
 
 The percentages share one denominator: all measured code lines, including languages
@@ -173,7 +179,7 @@ Find every `.venv`, `node_modules`, and Cargo `target` directory under a work di
 largest first, then get their combined usage from the same cached scan:
 
 ```shell
-fdu ~/work --kind dir --include .venv --include node_modules --include target --long
+fdu ~/work --kind dir --include .venv --include node_modules --include target --full --long
 fdu ~/work --kind dir --include .venv --include node_modules --include target \
   --view summary --cache only
 ```
@@ -196,7 +202,7 @@ For detailed rows and the total in one structured report:
 
 ```shell
 fdu ~/work --kind dir --include .venv --include node_modules --include target \
-  --view files,summary --sort size --format json
+  --view files,summary --full --sort size --format json
 ```
 
 These are per-path sizes, not estimates of space freed by deletion.
