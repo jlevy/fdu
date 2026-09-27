@@ -59,7 +59,7 @@ try {
     tree,
   ]);
   const report = JSON.parse(output);
-  assert.equal(report.schema, "fdu.report/8");
+  assert.equal(report.schema, "fdu.report/9");
   assert.equal(report.status.complete, true);
   assert.deepEqual(report.analysis.analyze, ["lines", "words"]);
   assert.deepEqual(report.analysis.analyzers, [
@@ -144,11 +144,11 @@ try {
     tree,
   ]);
   const codeReport = JSON.parse(codeOutput);
-  assert.equal(codeReport.schema, "fdu.report/8");
+  assert.equal(codeReport.schema, "fdu.report/9");
   assert.deepEqual(codeReport.analysis.analyze, ["lines", "code"]);
   assert.deepEqual(codeReport.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
-    { id: "code-sloc-v1", version: 2 },
+    { id: "code-sloc-v1", version: 3 },
   ]);
   const code = codeReport.reports[0].metrics;
   assert.equal(code.share_metric, "code_lines");

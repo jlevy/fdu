@@ -1,7 +1,8 @@
 # fdu (Python)
 
-Python bindings for [fdu](https://github.com/jlevy/fdu), a fast, incremental file
-roll-up engine.
+**Fastest native du replacement and detailed file analytics for Python and Rust**
+
+Python bindings for [fdu](https://github.com/jlevy/fdu).
 
 ## Set Up with Any Coding Agent
 
@@ -207,8 +208,16 @@ only visible tree rows.
 `Selection(depth=5, min_share="1%", breadth=Bound.ALL, limit=Bound.ALL)` describes the
 ordinary tree defaults.
 Breadth bounds children per directory; limit bounds data rows per section.
-`TreeSection.limits` records the effective controls, and typed omissions explain hidden
-subtrees. Machine List output is complete unless explicitly limited.
+`TreeSection.limits` records the effective controls.
+Each `TreeOmission.entries` counts directly hidden children: an omitted directory is one
+entry, while its nullable `files` count covers regular files throughout that hidden
+subtree. The optional `TreeSection.remainder` combines hidden contents across one tree,
+with nullable `files`, `bytes`, and `allocated` totals and bound reasons in stable
+order. It is `None` when nothing is hidden.
+Parent totals already include the remainder, so do not add it to them.
+The terminal gives that remainder one root-level line, such as
+`… and 1.2 MiB (12,345 files) more`. Machine reports use `fdu.report/9`. Machine List
+output is complete unless explicitly limited.
 Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).

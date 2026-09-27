@@ -384,7 +384,7 @@ impl ContentProvenance {
             analyzers.push((CONTENT_BASIC, VERSION_ONE));
         }
         if request.profile.includes_code() {
-            analyzers.push((CODE_SLOC, AnalyzerVersion(2)));
+            analyzers.push((CODE_SLOC, AnalyzerVersion(3)));
         }
         if request.profile.includes_words() {
             analyzers.push((TEXT_LOGICAL, VERSION_ONE));
@@ -823,7 +823,7 @@ mod tests {
     fn code_metrics_use_the_updated_analyzer_version() {
         let request = AnalysisRequest { profile: AnalysisSet::NONE.with_code(), workers: 1 };
         let provenance = ContentProvenance::for_request(request, 42);
-        assert!(provenance.analyzers.contains(&(CODE_SLOC, AnalyzerVersion(2))));
+        assert!(provenance.analyzers.contains(&(CODE_SLOC, AnalyzerVersion(3))));
     }
 
     #[test]

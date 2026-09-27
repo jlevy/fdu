@@ -25,7 +25,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --limit 10 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -267,7 +267,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
 ```console
 $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -326,7 +326,7 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
         "newest_mtime_ns": [MTIME_NS],
         "truncated": true,
         "omissions": [
-          {"reason": "rows", "entries": 5, "bytes": 141, "allocated": [ALLOCATED]}
+          {"reason": "rows", "entries": 5, "files": 6, "bytes": 141, "allocated": [ALLOCATED]}
         ],
         "children": [
           {
@@ -341,16 +341,26 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
             "newest_mtime_ns": [MTIME_NS],
             "truncated": true,
             "omissions": [
-              {"reason": "depth", "entries": 1, "bytes": 128, "allocated": [ALLOCATED]}
+              {"reason": "depth", "entries": 1, "files": 1, "bytes": 128, "allocated": [ALLOCATED]}
             ],
             "children": []
           }
         ]
       },
-      "omissions": []
+      "omissions": [],
+      "remainder": {
+        "files": 7,
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "reasons": ["depth", "rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: depth 1, row limit 2
+! tip: expand deeper: --depth=all
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -366,7 +376,7 @@ age.
 ```console
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -512,10 +522,12 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
           }
         ]
       },
-      "omissions": []
+      "omissions": [],
+      "remainder": null
     }
   ]
 }
+! note: incomplete subtrees remain visible below the size threshold
 ? 0
 ```
 
@@ -529,7 +541,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],

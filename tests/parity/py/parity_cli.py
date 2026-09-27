@@ -156,6 +156,7 @@ class Args:
         self.limit: fdu.Bound | int | None = None
         self.breadth: fdu.Bound | int | None = None
         self.min_share: str | None = None
+        self.full = False
         self.sort: fdu.SortKey | None = None
         self.reverse = False
         self.size = fdu.SizeMetric.ALLOCATED
@@ -266,6 +267,8 @@ def parse_args(argv: list[str]) -> Args:
             args.breadth = parse_bound(take())
         elif flag == "--min-share":
             args.min_share = take()
+        elif flag == "--full":
+            args.full = True
         elif flag == "--cache-dir":
             args.cache_dir = take()
         elif flag == "--cache":
@@ -327,10 +330,12 @@ def build_query(args: Args) -> fdu.Query:
         modified_since=args.modified_since,
         modified_before=args.modified_before,
         kinds=tuple(args.kinds),
-        depth=args.depth,
-        limit=args.limit,
-        breadth=args.breadth,
-        min_share=args.min_share,
+        depth=args.depth if args.depth is not None else (fdu.Bound.ALL if args.full else None),
+        limit=args.limit if args.limit is not None else (fdu.Bound.ALL if args.full else None),
+        breadth=args.breadth
+        if args.breadth is not None
+        else (fdu.Bound.ALL if args.full else None),
+        min_share=args.min_share if args.min_share is not None else ("0%" if args.full else None),
         sort=args.sort,
         reverse=args.reverse,
         size=args.size,
@@ -488,9 +493,10 @@ def render(args: Args, report: fdu.Report) -> str:
     # The one renderer, reached through the API rather than reimplemented. A shim that
     # drew its own bars and padding would be testing the reimplementation.
     color = args.color == "always"
-    if args.format in (fdu.Format.PATHS, fdu.Format.LONG):
-        for note in report.notes:
-            print(note, file=sys.stderr)
+    for note in report.notes:
+        print(note, file=sys.stderr)
+    for tip in report.tips:
+        print(tip, file=sys.stderr)
     return report.render(args.format, color=color)
 
 

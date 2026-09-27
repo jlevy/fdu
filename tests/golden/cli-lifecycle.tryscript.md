@@ -69,7 +69,7 @@ reads one.
 ```console
 $ fdu --view summary --size apparent project
      269 B  7 files, 3 directories (128 B ignored)
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -83,7 +83,6 @@ No cached snapshots.
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -95,7 +94,7 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -117,7 +116,7 @@ Cache cleared.
 ```console
 $ fdu --no-gitignore --view summary --size apparent project
      269 B  7 files, 3 directories
-Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -138,7 +137,6 @@ can then answer from without touching the tree.
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -150,14 +148,14 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --stale-ok --view summary --size apparent project
      269 B  7 files, 3 directories (128 B ignored)
-Performance: walked 0 files / 0 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
+! perf: walked 0 files / 0 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -265,7 +263,7 @@ $ fdu --analyze lines --view families --size apparent project
       71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 2 documentation
       64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank)
        6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank)
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
 ? 0
 ```
 
@@ -417,7 +415,6 @@ Cache already empty.
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -429,7 +426,7 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -453,7 +450,6 @@ accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -465,7 +461,7 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -596,7 +592,6 @@ $ fdu --cache-status=all project
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -608,7 +603,7 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -636,7 +631,6 @@ Cache cleared.
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -648,7 +642,7 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -678,7 +672,6 @@ belong to a running writer, and only a sidecar no snapshot still wants.
 
 ```console
 $ fdu --cache on --size apparent project
-Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -690,7 +683,7 @@ Tree scope: at least 1% of selected root through depth 5
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
        6 B  ░░░░░░░░░░     2%    .gitignore
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

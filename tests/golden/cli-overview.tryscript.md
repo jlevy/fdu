@@ -26,7 +26,6 @@ directory.
 
 ```console
 $ fdu --cache off --color never --size apparent realistic-project
-Tree scope: at least 1% of selected root through depth 5
    7.6 KiB  ██████████   100%  . 16 files
    4.1 KiB  █████░░░░░    55%    src 7 files
    2.6 KiB  ███░░░░░░░    34%      index 4 files
@@ -55,7 +54,7 @@ Tree scope: at least 1% of selected root through depth 5
      285 B  ░░░░░░░░░░     4%    benches 1 file
      285 B  ░░░░░░░░░░     4%      reconcile.rs
      172 B  ░░░░░░░░░░     2%    Cargo.toml
-Performance: walked 16 files / 7.6 KiB; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 16 files / 7.6 KiB; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -76,13 +75,15 @@ $ node -e "const fs=require('node:fs'); fs.mkdirSync('shallow-project/pending',{
 
 ```console
 $ fdu --cache off --color never --size apparent --scan-depth 1 shallow-project
-Tree scope: at least 1% of selected root through depth 5
    9.7 KiB  ██████████   100%  . 2 files
    9.7 KiB  ██████████   100%    large
        0 B  ░░░░░░░░░░     0%    pending 0 files
-  … 1 entry omitted by share (1 B); --min-share=0% to show
-note: incomplete subtrees may appear below the share threshold; known sizes remain filtered
-Performance: walked 2 files / 9.7 KiB; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+                                 … and 1 B (1 file) more
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: below 1% of selected root
+! note: incomplete subtrees remain visible below the size threshold
+! tip: show smaller entries: --min-share=0%
+! perf: walked 2 files / 9.7 KiB; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

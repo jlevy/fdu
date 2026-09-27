@@ -1508,7 +1508,7 @@ mod tests {
                         assert_eq!(coverage.refused, 2, "{coverage:?}");
                         assert_eq!(report.notes.len(), 2, "{:?}", report.notes);
                         assert!(
-                            report.notes[0].contains("2 .gitignore files not applied"),
+                            report.notes[0].contains("2 ignore files not applied"),
                             "{:?}",
                             report.notes
                         );

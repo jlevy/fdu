@@ -690,10 +690,12 @@ impl Request {
             }
         }
         let hierarchy = self.query.views.iter().any(|view| self.query.tree_for(*view));
-        if self.query.selection.depth.is_some() && !hierarchy {
+        // Neutral bounds compose across views, including the CLI --full shorthand.
+        // A finite hierarchy bound on flat output would promise filtering it cannot do.
+        if matches!(self.query.selection.depth, Some(Bound::Limit(_))) && !hierarchy {
             return Err(invalid(self.query.axes.depth, "", "requires a hierarchical view"));
         }
-        if self.query.selection.breadth.is_some() && !hierarchy {
+        if matches!(self.query.selection.breadth, Some(Bound::Limit(_))) && !hierarchy {
             return Err(invalid(self.query.axes.breadth, "", "requires a hierarchical view"));
         }
         let additive = self.query.views.iter().any(|view| {
@@ -708,7 +710,9 @@ impl Request {
                         | ViewSpec::Code
                 )
         });
-        if self.query.selection.min_share.is_some() && !additive {
+        if self.query.selection.min_share.as_ref().is_some_and(|share| !share.admits(0, 1))
+            && !additive
+        {
             return Err(invalid(self.query.axes.min_share, "", "requires an additive view"));
         }
         check_observation(basis.scope.population, basis.scope.read_controls)?;

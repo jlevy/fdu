@@ -1,7 +1,5 @@
-Tree scope: at least 1% of selected root through depth 5
    9.7 KiB  ██████████   100%  . 5 files
    9.6 KiB  ██████████    99%    large
      100 B  ░░░░░░░░░░     1%    one-percent
        0 B  ░░░░░░░░░░     0%    denied 0 files
-  … 3 entries omitted by share (2 B); --min-share=0% to show
-note: incomplete subtrees may appear below the share threshold; known sizes remain filtered
+                                 … and 2 B (3 files) more

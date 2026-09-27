@@ -112,8 +112,11 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
         human_stdout.starts_with(include_str!("../../fdu-core/tests/golden/partial-tree.txt")),
         "partial CLI report differs from the engine golden: {human_stdout}"
     );
-    assert!(!human_stdout.contains("warning:"), "diagnostic leaked to stdout: {human_stdout}");
-    assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
+    assert!(!human_stdout.contains("warn:"), "diagnostic leaked to stdout: {human_stdout}");
+    assert!(
+        human_stderr.lines().any(|line| line.starts_with("warn:")),
+        "missing stderr warn: {human_stderr}"
+    );
 }
 
 /// Text mode prints one warning per retained issue, and the retention bound drops the
@@ -150,11 +153,11 @@ fn text_warnings_state_how_many_errors_were_omitted() {
     let json = String::from_utf8(json.stdout).expect("JSON is UTF-8");
     assert!(json.contains("\"errors_omitted\": 6"), "{json}");
     let stderr = String::from_utf8(text.stderr).expect("stderr is UTF-8");
-    let warnings: Vec<&str> = stderr.lines().filter(|line| line.starts_with("warning:")).collect();
+    let warnings: Vec<&str> = stderr.lines().filter(|line| line.starts_with("warn:")).collect();
     assert_eq!(warnings.len(), fdu_core::MAX_RETAINED_ISSUES + 1, "{stderr}");
     assert_eq!(
         warnings.last().copied(),
-        Some("warning: 6 more errors omitted; details are kept for the first 64"),
+        Some("warn: 6 more errors omitted; details are kept for the first 64"),
         "{stderr}"
     );
 }

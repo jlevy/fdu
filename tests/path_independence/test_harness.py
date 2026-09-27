@@ -24,7 +24,7 @@ from runner import Invocation, _read_jsonl_report, case_key, compare, normalize
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/8",
+        "schema": "fdu.report/9",
         "request": {
             "scope": {"read_controls": True},
             "analyze": [],

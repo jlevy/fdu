@@ -920,10 +920,14 @@ impl PyOneShot {
     fn notes(&self) -> Vec<String> {
         use fdu_core::report_format::{self, Format};
         if matches!(self.report.format, Format::Paths | Format::Long) {
-            report_format::flat_diagnostics(&self.report)
+            report_format::flat_diagnostic_lines(&self.report).notes
         } else {
-            self.report.notes.clone()
+            report_format::report_notes(&self.report)
         }
+    }
+    /// Actionable suggestions, separate from factual notes and formatted output.
+    fn tips(&self) -> Vec<String> {
+        fdu_core::report_format::report_tips(&self.report)
     }
 }
 

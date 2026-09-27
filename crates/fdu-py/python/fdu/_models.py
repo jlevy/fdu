@@ -726,9 +726,21 @@ class TreeOmissionReason(StrEnum):
 @dataclass(frozen=True, slots=True)
 class TreeOmission:
     reason: TreeOmissionReason
+    #: Directly hidden child entries; one omitted directory counts as one entry.
     entries: int
     bytes: int | None
     allocated: int | None
+    #: Recursive regular-file count hidden by this omission, when known.
+    files: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TreeRemainder:
+    #: Recursive regular-file count hidden across this tree, when known.
+    files: int | None
+    bytes: int | None
+    allocated: int | None
+    reasons: tuple[TreeOmissionReason, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -893,6 +905,9 @@ class TreeSection:
     tree: TreeNode | None
     limits: TreeDisplayLimits
     omissions: tuple[TreeOmission, ...] = ()
+    #: Hidden contents across this tree, or ``None`` when nothing is omitted.
+    #: Parent totals already include these values; do not add them again.
+    remainder: TreeRemainder | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -975,6 +990,8 @@ class Report:
     notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
     age_reference_ns: int | None = None
+    #: Actionable suggestions, separate from facts and formatted data.
+    tips: tuple[str, ...] = ()
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
     _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
 
@@ -1522,8 +1539,25 @@ def _tree_omissions(values: list[dict[str, Any]]) -> tuple[TreeOmission, ...]:
             entries=int(value["entries"]),
             bytes=_optional_int(value["bytes"]),
             allocated=_optional_int(value["allocated"]),
+            files=_optional_int(value.get("files")),
         )
         for value in values
+    )
+
+
+def _tree_remainder(value: object) -> TreeRemainder | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("tree remainder must be an object or null")
+    reasons = value["reasons"]
+    if not isinstance(reasons, list):
+        raise TypeError("tree remainder reasons must be a list")
+    return TreeRemainder(
+        files=_optional_int(value["files"]),
+        bytes=_optional_int(value["bytes"]),
+        allocated=_optional_int(value["allocated"]),
+        reasons=tuple(TreeOmissionReason(reason) for reason in reasons),
     )
 
 
@@ -1682,6 +1716,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                         _limit(limits["rows"]),
                     ),
                     _tree_omissions(raw["omissions"]),
+                    _tree_remainder(cast(dict[str, Any], raw).get("remainder")),
                 )
             )
         else:

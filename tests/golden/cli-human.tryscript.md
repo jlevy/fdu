@@ -14,6 +14,7 @@ patterns:
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
   HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
+  AGE: '\s*-?\d+(s|m|h|d|w|mo|y)'
   SEP: '[/\\]'
 ---
 # Human CLI Output
@@ -22,7 +23,6 @@ patterns:
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
-Tree scope: at least 1% of selected root through depth 2
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
      128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
@@ -33,8 +33,88 @@ Tree scope: at least 1% of selected root through depth 2
       28 B  █░░░░░░░░░    10%    Makefile
       23 B  █░░░░░░░░░     9%    docs 1 file
       23 B  █░░░░░░░░░     9%      FAQ.MD
-  … 1 entry omitted by rows (6 B); --limit=all to show
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+                                 … and 6 B (1 file) more
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 10
+! tip: show more rows: --limit=all
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+## The Full Shorthand Shows the Complete Tree
+
+`--full` is the four explicit display bounds below.
+Both reports show the same rows, including the smallest file, with no remainder or
+display-limit diagnostic.
+
+```console
+$ fdu --cache off --color never --size apparent --view tree --full project
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --view tree --depth=all --breadth=all --limit=all --min-share=0% project
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### Full Flat File and Directory Listings
+
+The same shorthand reaches flat file paths and directory rows.
+Directory sizes include regular files below each listed directory.
+
+```console
+$ fdu --cache off --color never --size apparent --kind file --full --format paths project
+dist[SEP]acorn-0.1.0.tar.gz
+README.md
+Makefile
+docs[SEP]FAQ.MD
+src[SEP]alpha.rs
+src[SEP]omega.rs
+.gitignore
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --kind dir --full --sort name --long project
+     128 B  [AGE] dist
+      23 B  [AGE] docs
+      36 B  [AGE] src
+? 0
+```
+
+### Zero Rows Still Account for Every Hidden File
+
+```console
+$ fdu --cache off --color never --size apparent --view tree --limit=0 project
+                               … and 269 B (7 files) more
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -42,12 +122,14 @@ Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; 
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
-Tree scope: at least 1% of selected root through depth 1
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-    … 1 entry omitted by depth (128 B); --depth=all to show
-  … 5 entries omitted by rows (141 B); --limit=all to show
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+                                 … and 269 B (7 files) more
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: depth 1, row limit 2
+! tip: expand deeper: --depth=all
+! tip: show more rows: --limit=all
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -66,7 +148,7 @@ $ fdu --cache off --color never --view types --limit 10 --size apparent project
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -81,17 +163,14 @@ An all-caps header above each block, one blank line between blocks, is enough to
 ```console
 $ fdu --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
 TREE
-Tree scope: at least 1% of selected root through depth 1
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-    … 1 entry omitted by depth (128 B); --depth=all to show
       48 B  ██░░░░░░░░    18%    README.md
       36 B  █░░░░░░░░░    13%    src 2 files
-    … 2 entries omitted by depth (36 B); --depth=all to show
       28 B  █░░░░░░░░░    10%    Makefile
       23 B  █░░░░░░░░░     9%    docs 1 file
-    … 1 entry omitted by depth (23 B); --depth=all to show
        6 B  ░░░░░░░░░░     2%    .gitignore
+                                 … and 187 B (4 files) more
 
 TYPES
      128 B   47.6%  archive            1 file
@@ -108,7 +187,10 @@ FAMILIES
 
 SUMMARY
      269 B  7 files, 3 directories (128 B ignored)
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: depth 1
+! tip: expand deeper: --depth=all
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -123,7 +205,7 @@ the property behind piping it into `xargs`.
 $ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-Performance: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -140,7 +222,7 @@ $ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
-Performance: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -158,7 +240,7 @@ src[SEP]omega.rs
 
 SUMMARY
       36 B  2 files, 0 directories
-Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

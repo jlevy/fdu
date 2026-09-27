@@ -1,6 +1,6 @@
 # fdu
 
-**Fast, incremental file roll-up engine** — `fd` and `du`, read as “fast du”.
+**Fastest native du replacement and detailed file analytics for Python and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.

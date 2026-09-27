@@ -411,6 +411,80 @@ is filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu`
 later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
 The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
 
+## Find Files and Export Complete Inventories
+
+`--full` lifts all display bounds.
+Use it for a complete recursive hierarchy or a flat inventory with directory roll-ups:
+
+```shell
+# Every directory and regular file, with recursive directory totals.
+fdu . --view tree --full --format json
+
+# Every directory as one row with recursive bytes, allocation, and file counts.
+fdu . --view list --kind dir --full --sort name --format json
+
+# Every regular file as one row with its own size and modification time.
+fdu . --view files --kind file --full --format json
+
+# Paths only, like a recursive find/fd search.
+fdu . --kind file --include '*.rs' --full --sort name --format paths
+fdu . --kind dir --include node_modules --full --sort name --format paths
+
+# The same directory search, with recursive usage and age.
+fdu . --kind dir --include node_modules --full --long
+```
+
+For these inventory and search tasks, fdu can replace a `find` or `fd` invocation while
+also providing usage totals:
+
+| Search | `find` | `fd` | fdu |
+| --- | --- | --- | --- |
+| All regular files | `find . -type f` | `fd --unrestricted --type f . .` | `fdu . --kind file --full --format paths` |
+| Rust filenames | `find . -type f -name '*.rs'` | `fd --unrestricted --case-sensitive --glob '*.rs' .` | `fdu . --kind file --include '*.rs' --full --format paths` |
+| Dependency directories | `find . -type d -name node_modules` | `fd --unrestricted --type d --glob node_modules .` | `fdu . --kind dir --include node_modules --full --format paths` |
+
+These examples compare matched paths, not ordering or byte-for-byte path spelling.
+fdu includes hidden and ignored content by default; `fd --unrestricted` makes that
+population explicit.
+fdu’s `--ignored exclude` applies its per-directory `.gitignore` contract, not every
+ignore source supported by fd.
+Selection uses globs, not fd’s default regular expressions or find’s expression
+language. fdu does not provide find’s `-exec` actions.
+Paths output escapes control characters for display; use JSON/JSONL/YAML with native
+path identity for robust programmatic consumption, not a newline pipeline for arbitrary
+filenames.
+
+Nested directory rows overlap: a parent’s recursive usage includes its descendants.
+Do not sum those rows; add `--view list,summary` for a path-union total.
+A file row has its own usage, not a recursive tally.
+`--full` does not enable file-body analysis, change ignored population, or override
+`--scan-depth`. Inspect completeness independently of display bounds.
+Explicit flags override the shorthand, for example `--full --depth=3`.
+
+## Complete Recursive Output
+
+Use `fdu . --view tree --format json --full` for a full recursive roll-up.
+`--full` is shorthand for `--depth=all --breadth=all --limit=all --min-share=0%`.
+Explicit limits override it regardless of flag order: `--full --depth=3` expands all
+rows through depth three.
+The view selection is unchanged (`--view full` selects multiple views and has a
+different purpose). Scan scope, ignored population, and analysis are also unchanged;
+unreadable directories still make coverage incomplete.
+With complete discovery and no exclusions, every directory and regular file appears,
+`remainder` is null, and there are no omission notes or tips.
+
+## Output and Diagnostics
+
+Formatted results go to stdout.
+Notes, warnings, and suggestions go to stderr as `note:`, `warn:`, and `tip:` lines; a
+human text/tree report ends stderr with `perf:`. JSON, JSONL, YAML, paths, and long rows
+remain cleanly consumable by other programs.
+Warnings retain their cause and affected path, and partial results retain their exit
+status. Flag suggestions appear once at the end rather than beside every omitted row.
+Omitted sizes name the omitted contents and are already included in directory totals.
+See the [output design](project/architecture/fdu-output-design.md) for category
+ordering, colors, omission alignment, and diagnostic detail.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

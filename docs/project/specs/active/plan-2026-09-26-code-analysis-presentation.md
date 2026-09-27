@@ -253,9 +253,13 @@ spans rather than merely detecting any ANSI output.
 
 Accept nonnegative integer maxima or `all`, and finite explicit percentages from `0%`
 through `100%`. Validate before work.
-Reject explicit hierarchy-only controls when no requested section can use them; for
-mixed views, apply them to the hierarchical sections.
-Reject explicit share filtering for views without an additive denominator.
+Reject finite hierarchy-only controls when no requested section can use them; for mixed
+views, apply them to the hierarchical sections.
+Reject positive share filtering for views without an additive denominator.
+Unlimited hierarchy bounds and zero share are neutral and valid for every view.
+`--full` is shorthand for `--depth=all --breadth=all --limit=all --min-share=0%`;
+explicit individual bounds override it regardless of argument order.
+Use it for complete recursive exports and flat directory/file inventories.
 
 The root counts toward the row limit; headers and omission annotations do not.
 `--limit=0` produces no data rows and an omission note.
@@ -298,7 +302,17 @@ Attribute each omitted subtree to its first exclusion boundary, with exact disjo
 remainder measures where known.
 Do not add ancestor and descendant totals.
 Mark a depth boundary even if no child rows were retained.
-Every omission names the bound and how to lift it.
+The shared `TreeRemainder` aggregates hidden recursive files and both byte measures
+across disjoint boundaries.
+Text prints one gray root-level `… and SIZE (N files) more` line; report schema 9
+exposes the same nullable totals and ordered reasons.
+Per-boundary `entries` still means direct hidden roots; `files` means recursive regular
+files. Unknown values propagate.
+Nothing hidden means a null remainder and no notes.
+Applicable bounds are explained once in end notes, with each remedy once as a `tip:` on
+stderr. Full expansion is tested across text, JSON, JSONL, YAML, and Python.
+The [output design](../../architecture/fdu-output-design.md) owns diagnostic prefixes,
+stream separation, colors, and filename-column omission alignment (fdu-0578).
 
 Resolve projection and limits before rendering.
 JSON, JSONL, YAML, text, Rust, and Python must expose the same selected answer and

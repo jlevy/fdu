@@ -1103,7 +1103,11 @@ def _projection_result(value: object) -> ProjectionResult:
 
         return ReportResult(
             "report",
-            replace(report_from_dict(wire, notes), _renderer=renderer),
+            replace(
+                report_from_dict(wire, notes),
+                tips=tuple(str(tip) for tip in _sequence(report["tips"], "report tips")),
+                _renderer=renderer,
+            ),
         )
     if kind == "diagnostics":
         return DiagnosticsResult("diagnostics", _diagnostics(payload))

@@ -19,7 +19,8 @@ pub use query_report::{
     AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, FileRow,
     IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages, Query, Report,
     ReportMetricValues, ReportSource, Section, ShareMetric, SummaryRow, TreeDisplayLimits,
-    TreeNode, TreeOmission, TreeOmissionReason, TypeRow, ViewSpec, document_words, pages, report,
+    TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder, TypeRow, ViewSpec, document_words,
+    pages, report,
 };
 pub(crate) use query_report::{report_in, report_summary};
 pub(crate) use query_request::Rejection;
