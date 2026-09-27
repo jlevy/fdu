@@ -2816,7 +2816,7 @@ mod tests {
     use super::*;
     use crate::Index;
     use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
-    use crate::query::{Bound, Query, Request, Selection};
+    use crate::query::{Bound, Query, Request, Selection, ShareThreshold};
     use std::ffi::OsStr;
     use std::path::PathBuf;
     use std::process::Command;
@@ -4789,7 +4789,13 @@ mod tests {
             .stack_size(DEEP_RENDER_STACK_BYTES)
             .spawn(move || {
                 let query = Query {
-                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
+                    selection: Selection {
+                        depth: Some(Bound::All),
+                        breadth: Some(Bound::All),
+                        limit: Some(Bound::All),
+                        min_share: Some(ShareThreshold::parse("0%").expect("zero share is valid")),
+                        ..Selection::default()
+                    },
                     views: vec![ViewSpec::Tree],
                     ..Query::default()
                 };
@@ -4800,21 +4806,37 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
+                eprintln!("deep-render phase: report");
                 let report = report(
                     &index,
                     &crate::test_support::read_of(&index, query.clone()),
                     &provenance,
                 )
                 .expect("report");
+                let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+                    panic!("expected a tree section with a root")
+                };
+                assert!(omissions.is_empty(), "the root must not be omitted");
+                let mut nodes = 0;
+                let mut pending = vec![root.as_ref()];
+                while let Some(node) = pending.pop() {
+                    nodes += 1;
+                    assert!(node.omissions.is_empty(), "no branch may be omitted: {:?}", node.path);
+                    pending.extend(node.children.iter());
+                }
+                assert_eq!(nodes, DEEP_RENDER_DEPTH + 1, "the test must reach every directory");
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
+                    eprintln!("deep-render phase: render {format:?}");
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
                     if format != Format::Text {
+                        eprintln!("deep-render phase: stream {format:?}");
                         let mut streamed = Vec::new();
                         write(&report, format, false, &mut streamed).expect("stream deep report");
                         assert_eq!(streamed, rendered.as_bytes(), "{format:?} bytes differ");
                     }
                 }
+                eprintln!("deep-render phase: drop");
             })
             .expect("spawn deep-render thread")
             .join()
