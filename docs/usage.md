@@ -87,9 +87,11 @@ The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
 Significant files appear as leaves alongside directory totals.
 Each tree row shows a share bar, percentage of the selected root, size, then its
-indented name. The single remainder row, when present, uses those same columns for all
-hidden descendants together and ends `… and N more files`. Unknown quantities are
-labeled unknown rather than estimated.
+indented name. The single remainder row, when present, uses those same columns for
+unlisted root branches and ends `… and N more files`. A listed directory already
+represents its entire subtree, even when descendants are not expanded.
+Listed root branches plus the remainder account for the root total.
+Unknown quantities are labeled unknown rather than estimated.
 `--bar-size=20` widens the bar; `--bar-size=0` or a negative value hides it.
 The default is 10 characters.
 This affects human trees only.
