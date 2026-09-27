@@ -42,7 +42,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 52 sessions differ, and every one of them has a named cause.
+# 53 sessions differ, and every one of them has a named cause.
 #
 #  19  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
@@ -55,7 +55,7 @@
 #      Only the four exact action, setter, and value pairs emitted by the shared
 #      report renderer are accepted; every other line remains identical.
 #
-#  18  Each surface names its own parameter  [surface-label]
+#  19  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -94,7 +94,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Tree Reports Every Directory’s Roll-Up
   ✗ Several Views Come Back in Request Order, From One Scan
     stderr:
-@@ -1,1 +1,1 @@
+@@ -1,2 +1,2 @@
+ note: gitignored sizes are included in row totals
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✓ Include Narrows by Glob
@@ -126,7 +127,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +tip: show more rows: limit=all
   ✗ Depth Bounds the Rendered Tree, Not the Scan
     stderr:
-@@ -1,3 +1,3 @@
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
  note: more includes hidden subtrees already counted in directory totals; files are counted recursively
  note: display limits: depth 0
 -tip: expand deeper: --depth=all
@@ -939,10 +941,18 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "full": expected one of none, lines, code, words, all
 +fdu: invalid analyze "full": expected one of none, lines, code, words, all
+  ✗ Quiet Keeps Results and Errors
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
+  ✓ Quiet Keeps Results and Errors
 FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
     stderr:
-@@ -1,3 +1,3 @@
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
  note: more includes hidden subtrees already counted in directory totals; files are counted recursively
  note: display limits: row limit 10
 -tip: show more rows: --limit=all
@@ -960,7 +970,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
 +tip: show more rows: limit=all
   ✗ Depth and Number Limit Only the Rendered View
     stderr:
-@@ -1,4 +1,4 @@
+@@ -1,5 +1,5 @@
+ note: gitignored sizes are included in row totals
  note: more includes hidden subtrees already counted in directory totals; files are counted recursively
  note: display limits: depth 1, row limit 2
 -tip: expand deeper: --depth=all
@@ -970,7 +981,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✓ Type View Honors the Selected Size Metric
   ✗ Several Views Are Labelled; One View Is Left Bare
     stderr:
-@@ -1,3 +1,3 @@
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
  note: more includes hidden subtrees already counted in directory totals; files are counted recursively
  note: display limits: depth 1
 -tip: expand deeper: --depth=all
@@ -978,6 +990,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✓ A Lone View Keeps the Bare Layout
   ✓ A View That Matched Nothing Still Says So
   ✓ Asking for a Second View Labels the Paths Too
+  ✓ Tree Bar Width
+  ✓ Tree Bar Width
+  ✓ Tree Bar Width
 FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
   ✓ Full Output Exposes Scan and Projection Completeness Separately
   ✗ Render Limits Mark the Projection as Truncated
@@ -1061,7 +1076,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
      }
    ]
     stderr:
-@@ -1,4 +1,4 @@
+@@ -1,5 +1,5 @@
+ note: gitignored sizes are included in row totals
  note: more includes hidden subtrees already counted in directory totals; files are counted recursively
  note: display limits: depth 1, row limit 2
 -tip: expand deeper: --depth=all

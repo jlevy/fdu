@@ -185,7 +185,27 @@ This is behavioral evidence for the working changes, not final clean-wheel prove
   All 1,009 tree nodes have no hidden remainder or omissions, and machine output has
   empty diagnostic stderr for this complete fixture.
 
-Final clean-wheel installation and current-head CI are separate evidence in the PR.
+The clean top-of-stack wheel at `1f5bc81a` was then installed as
+`fdu 0.1.0-dev+g1f5bc81af`, replacing the prior local installation.
+Its SHA-256 is `7c9b680db74ce37e73d153aafc5a41ec929b13d4a006eb78802dfd6c76070cbe`. The
+installed skill matches `fdu --skill` byte-for-byte.
+Subsequent parity-evidence commits do not change its executable source.
+
+The complete local gate plus corrective reruns passed all targets: 198 shared golden
+commands, 98 CLI tests, 906 core tests, library-only and minimum-version tests, 70
+Python tests, wheel and source-package smoke tests, concurrency checks, 2,267
+path-independence cases, release and terminal tests, documentation, performance
+evidence, and audits.
+Initial lint and grouped-output expectation failures were corrected and replayed.
+The editable Python environment also needed its old native extension refreshed; that
+gate improvement is tracked separately as `fdu-ukg6`.
+
+Adopted the exact Linux artifact produced at `c86c50de` in
+[run 36355306692](https://github.com/jlevy/fdu/actions/runs/36355306692), SHA-256
+`915948b47d9d32ec2827ca15f87716520f377575d04c264e45c3c5c52a3a84aa`. The local parity
+replay passes all eight classifier tests and matches all 53 classified differences.
+These are separate full-gate and targeted-rerun observations; final current-head CI is
+recorded in the PR.
 
 ## Remaining Acceptance
 
