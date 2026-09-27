@@ -8,7 +8,7 @@ It exists so that any contributor — human or agent — can pick the loop up mo
 re-run it, and get numbers comparable to the ones already recorded.
 
 New here? To run the next iteration, start at
-[the runbook’s current standing](performance-loop-runbook.md#current-standing-2026-09-18).
+[the runbook’s Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
 [The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
 is the history through 2026-08-23. This document is the protocol.
 
@@ -285,8 +285,10 @@ Drift is expected — a nominated tree is somebody’s live working directory �
 What matters is that a reader is told before comparing last month’s number with today’s.
 The Darwin/arm64 set was re-nominated on 2026-09-18: rustup is 77k (was 175k), and the
 source-checkout is the live metabrowser clone (the 2026-08 corpus path is gone).
-Current sizes and the next-up list are in
-[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18).
+Current sizes are in
+[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18); the
+action order is in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
 
 ### Say where the tree came from
 
@@ -749,9 +751,10 @@ enforce this along with the standalone document shape.
 
 ## Hypotheses
 
-Kept as a live list; the *ordering* — which of these to run next and why — is
-[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18) and
-[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+Kept as a live list; the *ordering* — which of these to run next and why — is in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
+[The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+records the earlier Darwin queue, not current priorities.
 [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) is
 the floor-anchored strategy, not the live queue.
 Numbering is shared with the
@@ -796,8 +799,9 @@ record of what that later experiment actually tested.
 | H103 | Content roll-up `PathKey` and FxHash (refuted, exp-104) | exp-086: scanner phase counters (baseline) |
 | H104–H106 | (unused here when assigned) | exp-087–089: fuse / coalesce / suppress causal scan (all rejected) |
 
-New work takes **H107** and up.
-Do not mint another meaning for H91–H106.
+The post-0.1.0 registry began at **H107**. Do not mint another meaning for H91–H106; the
+current next-free id is in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
 
 ### Current engine (0.1.0)
 
@@ -991,9 +995,10 @@ module any other way does not resolve the package.
 `NAME` the run, which becomes `run-<NAME>.json` under `PERF_RESULTS`.
 [The runbook](performance-loop-runbook.md) is one round of this on the nominated
 subjects, start to finish, including the record and the handoff.
-Its [current standing](performance-loop-runbook.md#current-standing-2026-09-18) is the
-pickup: standing best, regime, subjects, and the next-up list.
-Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
+Its [current standing](performance-loop-runbook.md#current-standing-2026-09-18) records
+standing best, regime, and subjects;
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27) owns the next-up
+order. Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
 `PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
 directly to the harness contracts.
 The defaults are exploratory and uncontrolled, so an omitted variable cannot
