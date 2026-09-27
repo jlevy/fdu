@@ -910,6 +910,7 @@ impl Cli {
                         &report.ignore_rules,
                         report_started.elapsed(),
                         request.query.selection.size,
+                        diagnostic_color,
                     ),
                     STYLE_PERFORMANCE,
                     diagnostic_color,
@@ -1465,6 +1466,7 @@ fn performance_footer(
     ignore_rules: &ControlCoverage,
     total: Duration,
     size: SizeMetric,
+    color: bool,
 ) -> String {
     // The walked bytes in the answer's own metric: a sparse disk image is terabytes
     // apparent and megabytes allocated, and the line sits right under the answer.
@@ -1482,9 +1484,9 @@ fn performance_footer(
         "0 cached".to_string()
     } else {
         format!(
-            "{} cached / {}",
+            "{} cached ({})",
             human_count(performance.cached_files),
-            report_format::human_bytes(performance.cached_bytes)
+            performance_bytes(performance.cached_bytes, color)
         )
     };
     let read_rate = if performance.bytes_read == 0 || performance.analysis_ns == 0 {
@@ -1492,10 +1494,10 @@ fn performance_footer(
     } else {
         format!(
             " at {}/s",
-            report_format::human_bytes(rate_per_second(
-                performance.bytes_read,
-                performance.analysis_ns,
-            ))
+            performance_bytes(
+                rate_per_second(performance.bytes_read, performance.analysis_ns,),
+                color
+            )
         )
     };
     let rules = match ignore_rules {
@@ -1507,7 +1509,7 @@ fn performance_footer(
                 String::new()
             };
             format!(
-                "ignore {} {} / {} rules{refused}",
+                "ignore {} {} ({} rules){refused}",
                 human_count(observed.applied.saturating_add(observed.refused)),
                 plural_u64(observed.applied.saturating_add(observed.refused), "file", "files"),
                 human_count(observed.rules)
@@ -1515,16 +1517,23 @@ fn performance_footer(
         }
     };
     format!(
-        "perf: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {} ({})",
+        "perf: walked {} {} ({}); {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {} ({})",
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
-        report_format::human_bytes(walked_bytes),
-        report_format::human_bytes(performance.bytes_read),
+        performance_bytes(walked_bytes, color),
+        performance_bytes(performance.bytes_read, color),
         read_rate,
         performance_source(performance.source),
         human_duration(total),
         performance.total_throughput(total, size),
     )
+}
+
+/// Keep the diagnostic frame gray after a styled size resets its local ANSI style.
+/// This also makes a GiB-scale size bold gray while leaving smaller sizes gray.
+fn performance_bytes(bytes: u64, color: bool) -> String {
+    let styled = report_format::styled_bytes(bytes, 0, color, true);
+    if color { format!("{styled}{STYLE_PERFORMANCE}") } else { styled }
 }
 
 fn performance_source(source: ReportSource) -> &'static str {
@@ -2149,11 +2158,17 @@ mod tests {
             ..PerformanceSummary::default()
         };
         let footer = |rules: &ControlCoverage| {
-            performance_footer(performance, rules, Duration::from_millis(3), SizeMetric::Apparent)
+            performance_footer(
+                performance,
+                rules,
+                Duration::from_millis(3),
+                SizeMetric::Apparent,
+                false,
+            )
         };
         assert_eq!(
             footer(&ControlCoverage::NotObserved),
-            "perf: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms (2333 files/s, 0.000 GB/s represented)"
+            "perf: walked 7 files (269 B); no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms (2333 files/s, 0.000 GB/s represented)"
         );
         // The walked bytes are the answer's metric, allocated unless `--size apparent`.
         assert!(
@@ -2162,8 +2177,9 @@ mod tests {
                 &ControlCoverage::NotObserved,
                 Duration::from_millis(3),
                 SizeMetric::Allocated,
+                false,
             )
-            .starts_with("perf: walked 7 files / 28 KiB; ")
+            .starts_with("perf: walked 7 files (28 KiB); ")
         );
         let observed = |applied, refusals: Vec<RefusedControl>| {
             ControlCoverage::Observed(ControlObservation {
@@ -2174,13 +2190,13 @@ mod tests {
                 refusals,
             })
         };
-        assert!(footer(&observed(1, Vec::new())).contains("; ignore 1 file / 0 rules; "));
+        assert!(footer(&observed(1, Vec::new())).contains("; ignore 1 file (0 rules); "));
         let refused = RefusedControl {
             path: PathBuf::from(".gitignore"),
             reason: ControlRefusalReason::LineLimit,
         };
         assert!(
-            footer(&observed(0, vec![refused])).contains("; ignore 1 file / 0 rules, 1 refused; ")
+            footer(&observed(0, vec![refused])).contains("; ignore 1 file (0 rules), 1 refused; ")
         );
     }
 
@@ -2959,7 +2975,7 @@ mod tests {
         let footer = diagnostics.lines().last().expect("performance footer");
         assert!(
             footer.starts_with(
-                "perf: walked 2 files / 8 B; ignore 0 files / 0 rules; content read 8 B at "
+                "perf: walked 2 files (8 B); ignore 0 files (0 rules); content read 8 B at "
             ),
             "{plain}"
         );
@@ -3025,7 +3041,7 @@ mod tests {
             let answer = row.split("  ").next().expect("the row's size");
             let footer = diagnostic.lines().last().expect("the footer");
             assert!(
-                footer.starts_with(&format!("perf: walked 2 files / {answer}; ")),
+                footer.starts_with(&format!("perf: walked 2 files ({answer}); ")),
                 "--size {size}: {out}"
             );
         }
@@ -3048,11 +3064,55 @@ mod tests {
             &ControlCoverage::NotObserved,
             Duration::from_millis(2_500),
             SizeMetric::Apparent,
+            false,
         );
 
         assert_eq!(
             footer,
-            "perf: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s (4938 files/s, 0.000 GB/s represented)"
+            "perf: walked 12,345 files (2.0 KiB); no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached (4.0 KiB); warm revalidation; total 2.50 s (4938 files/s, 0.000 GB/s represented)"
+        );
+    }
+
+    #[test]
+    fn large_performance_sizes_are_bold_gray_and_restore_gray_afterward() {
+        let performance = PerformanceSummary {
+            walked_files: 1,
+            walked_bytes: 1 << 30,
+            fresh_files: 1,
+            bytes_read: 1 << 30,
+            analysis_ns: 1_000_000_000,
+            cached_files: 1,
+            cached_bytes: 1 << 30,
+            ..PerformanceSummary::default()
+        };
+        let plain = performance_footer(
+            performance,
+            &ControlCoverage::NotObserved,
+            Duration::from_secs(1),
+            SizeMetric::Apparent,
+            false,
+        );
+        assert!(!plain.contains('\u{1b}'));
+        assert!(plain.contains("walked 1 file (1.0 GiB)"), "{plain}");
+        assert!(plain.contains("1 cached (1.0 GiB)"), "{plain}");
+
+        let colored = paint(
+            &performance_footer(
+                performance,
+                &ControlCoverage::NotObserved,
+                Duration::from_secs(1),
+                SizeMetric::Apparent,
+                true,
+            ),
+            STYLE_PERFORMANCE,
+            true,
+        );
+        let bold_gray_size = report_format::styled_bytes(1 << 30, 0, true, true);
+        assert!(bold_gray_size.contains('\u{1b}'), "{bold_gray_size:?}");
+        assert_eq!(
+            colored.matches(&format!("{bold_gray_size}{STYLE_PERFORMANCE}")).count(),
+            4,
+            "walked, read, read-rate, and cached sizes each restore gray: {colored:?}"
         );
     }
 

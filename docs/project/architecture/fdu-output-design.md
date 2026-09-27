@@ -16,7 +16,18 @@ Keep those comments and this guide consistent.
 
 ## Row Styling
 
-Names use cyan; totals and file counts use the ordinary foreground color.
+Names that use cyan are bright cyan and bold; names shown in white or gray retain those
+colors.
+Directory names have a gray trailing `/`, except `.` and `..`; regular file names
+do not. Path and structured formats keep their original path values.
+Sizes of at least 1 GiB are bold, including gray parenthetical sizes and performance
+details. The threshold uses exact bytes, before rounding.
+Smaller sizes and file counts use the ordinary foreground color.
+Percentages below 1% are gray, using the exact ratio before rounding.
+These styles apply wherever human output presents those values.
+Tree rows put the share bar first, then the percentage of the selected root, size, and
+indented filename.
+Keep these columns aligned across directory, file, and remainder rows.
 Write `attic 3508 files (43 MiB gitignored)`: file counts are outside parentheses, while
 embedded gitignored amounts are parenthesized and gray.
 The gitignored amount is a subset already included in the row total, not additional
@@ -60,11 +71,21 @@ Machine data never contains ANSI escapes.
 
 ## Omitted Rows
 
-Each tree has at most one gray remainder line, aligned below its selected root in the
-filename column. Leave size, bar, and percentage columns blank.
+Colored tree bars use normal foreground blocks for non-gitignored usage, gray blocks for
+gitignored usage, and faint dots for the unused width.
+Each bar has ten cells; its segments are rounded against the same selected root.
+Unknown ignore classification uses `▒` blocks for unclassified usage rather than
+claiming either population.
+Uncolored bars retain their plain block glyphs.
+
+Each tree has at most one remainder line below its selected root.
+Its annotation and values are gray, with the shared size emphasis and bar population
+colors. It uses the same bar, percentage, and size columns as tree rows; its name column
+reads `… and N more files`. The bar and percentage show the combined hidden share of the
+selected root.
 
 ```text
-                                 … and 1.2 MiB (12,345 files) more
+█░░░░░░░░░    12%     1.2 MiB  … and 12,345 more files
 ```
 
 The size and recursive file count cover disjoint hidden subtrees across the entire tree.
@@ -72,8 +93,11 @@ They are already included in directory totals.
 Count regular files inside hidden directories, not just their directory roots.
 A machine omission boundary’s `entries` field counts direct hidden roots (files or
 directories); it is distinct from `files`. Unknown measurements remain `null` in
-structured output and read `unknown size` or `unknown file count` in text.
-Never infer exact totals from incomplete coverage.
+structured output. Text uses `unknown` in the size column and
+`… and more files (count unknown)` for an unknown count.
+An unknown hidden size has a blank bar and `—` percentage.
+As with ordinary rows, percentages use the observed root total; partial scan diagnostics
+remain essential when coverage is incomplete.
 
 The core `TreeRemainder` model supplies every format.
 JSON, JSONL, and YAML tree sections expose `remainder` with `files`, `bytes`,
@@ -149,10 +173,10 @@ Expected stdout and stderr are recorded separately.
 Preserve portable timestamp, allocation, and rate patterns; inspect golden changes
 rather than accepting host-specific recordings.
 
-Focused tests enforce filename-column alignment, exact omitted sizes, missing-size
-wording, one tip per applicable bound, category ordering, terminal color roles,
-stdout/stderr separation, clean machine parsing, and unchanged partial-result exit
-status. Include multiple directories and multiple views so deduplication is exercised.
+Focused tests enforce tree-column alignment, exact omitted sizes, missing-size wording,
+one tip per applicable bound, category ordering, terminal color roles, stdout/stderr
+separation, clean machine parsing, and unchanged partial-result exit status.
+Include multiple directories and multiple views so deduplication is exercised.
 
 Validation belongs to the existing golden, parity, terminal, and full `make check`
 gates.

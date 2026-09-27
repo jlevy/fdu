@@ -1,9 +1,9 @@
-   9.7 KiB  ██████████   100%  . 7 files
-   3.9 KiB  ████░░░░░░    40%    A 3 files
-   1.9 KiB  ██░░░░░░░░    20%      a1 2 files
-   1.9 KiB  ██░░░░░░░░    20%        x 1 file
-   1.9 KiB  ██░░░░░░░░    20%      a2 1 file
-   1.9 KiB  ██░░░░░░░░    20%        file
-   3.9 KiB  ████░░░░░░    40%    B 2 files
-   1.9 KiB  ██░░░░░░░░    20%      b1 1 file
-                                 … and 7.8 KiB (6 files) more
+██████████   100%     9.7 KiB  . 7 files
+████░░░░░░    40%     3.9 KiB    A/ 3 files
+██░░░░░░░░    20%     1.9 KiB      a1/ 2 files
+██░░░░░░░░    20%     1.9 KiB        x/ 1 file
+██░░░░░░░░    20%     1.9 KiB      a2/ 1 file
+██░░░░░░░░    20%     1.9 KiB        file
+████░░░░░░    40%     3.9 KiB    B/ 2 files
+██░░░░░░░░    20%     1.9 KiB      b1/ 1 file
+████████░░    80%     7.8 KiB    … and 6 more files

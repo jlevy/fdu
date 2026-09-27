@@ -75,7 +75,7 @@ $ fdu --cache off --analyze code --view types --sort count --limit all --size ap
       36 B   14.6%  unknown:.1         1 file, 3 lines (3 nonblank, 0 blank)
       50 B   20.3%  unknown:.inc       1 file, 3 lines (2 code, 1 comment, 0 blank)
       48 B   19.5%  unknown:.unknown   1 file, 2 lines (2 nonblank, 0 blank)
-! perf: walked 6 files / 246 B; ignore 0 files / 0 rules; content read 246 B at [BYTE_RATE]; analysis 6 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 6 files (246 B); ignore 0 files (0 rules); content read 246 B at [BYTE_RATE]; analysis 6 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -90,7 +90,7 @@ measurements as zero.
 $ fdu --cache off --view languages --size apparent content-project
       39 B   50.6%  Python  1 file
       38 B   49.4%  Rust    1 file
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 !
 ? 0
 ```
@@ -108,7 +108,7 @@ $ fdu --cache off --analyze lines --view summary empty-project
        0 B  0 files, 0 directories
 ! note: requested analysis is not displayed by the selected views
 ! tip: show analysis: --view families, languages, or full
-! perf: walked 0 files / 0 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 0 files (0 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -119,7 +119,7 @@ the human row.
 $ fdu --cache off --analyze code --view languages --size apparent unsupported-project
 Percentage column: code lines
       15 B       —  Haskell  1 file, 1 lines (1 nonblank, 0 blank), 1 unsupported
-! perf: walked 1 file / 15 B; ignore 0 files / 0 rules; content read 15 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 1 file (15 B); ignore 0 files (0 rules); content read 15 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -134,7 +134,7 @@ DOCUMENTS
 Percentage column: raw words
       42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 1 documentation
       35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 1 documentation, 1 binary
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -579,14 +579,14 @@ partial exit status.
 ```console
 $ fdu --analyze lines --view types --size apparent cached-partial-project
        6 B  100.0%  text               1 file, 1 invalid UTF-8
-! perf: walked 1 file / 6 B; ignore 0 files / 0 rules; content read 6 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 1 file (6 B); ignore 0 files (0 rules); content read 6 B at [BYTE_RATE]; analysis 1 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --cache only --analyze lines --view types --size apparent cached-partial-project
        6 B  100.0%  text               1 file, 1 invalid UTF-8
-! perf: walked 0 files / 0 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 1 cached / 6 B; cache only; total [PERF_TIME]
+! perf: walked 0 files (0 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 1 cached (6 B); cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -607,7 +607,7 @@ $ fdu --analyze lines --view summary --size apparent content-project
      256 B  7 files, 4 directories
 ! note: requested analysis is not displayed by the selected views
 ! tip: show analysis: --view families, languages, or full
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 7 cached / 256 B; warm revalidation; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 7 cached (256 B); warm revalidation; total [PERF_TIME]
 ? 0
 ```
 
@@ -625,7 +625,7 @@ $ fdu --cache only --analyze lines --view summary --size apparent content-projec
      256 B  7 files, 4 directories
 ! note: requested analysis is not displayed by the selected views
 ! tip: show analysis: --view families, languages, or full
-! perf: walked 0 files / 0 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 7 cached / 256 B; cache only; total [PERF_TIME]
+! perf: walked 0 files (0 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 7 cached (256 B); cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -659,7 +659,7 @@ Percentage column: code lines
       84 B    5.0%  SQL         1 file, 7 lines (2 code, 4 comment, 1 blank)
       95 B    5.0%  Swift       1 file, 7 lines (2 code, 4 comment, 1 blank)
       97 B    5.0%  TypeScript  1 file, 7 lines (2 code, 4 comment, 1 blank)
-! perf: walked 15 files / 1.4 KiB; ignore 0 files / 0 rules; content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 15 files (1.4 KiB); ignore 0 files (0 rules); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -684,7 +684,7 @@ Language shares of measured code lines
          4   10.0%  Shell (1/1 analyzed; 4 non-ignored, 0 ignored)
          5   12.5%  Python (1/1 analyzed; 5 non-ignored, 0 ignored)
 ! tip: show smaller entries: --min-share=0%
-! perf: walked 15 files / 1.4 KiB; ignore 0 files / 0 rules; content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 15 files (1.4 KiB); ignore 0 files (0 rules); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -709,7 +709,7 @@ Percentage column: code lines
 
 SUMMARY
       38 B  1 file, 1 directory
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -729,19 +729,19 @@ Each run names no view, so what appears is the view the requested analyzers sele
 
 ```console
 $ fdu --cache off --color never --size apparent content-project
-     256 B  ██████████   100%  . 7 files
-      98 B  ████░░░░░░    38%    assets 2 files
-      80 B  ███░░░░░░░    31%      logo.png
-      18 B  █░░░░░░░░░     7%      late.bin.txt
-      77 B  ███░░░░░░░    30%    src 2 files
-      39 B  ██░░░░░░░░    15%      tool.py
-      38 B  █░░░░░░░░░    15%      main.rs
-      59 B  ██░░░░░░░░    23%    docs 2 files
-      42 B  ██░░░░░░░░    16%      guide.md
-      17 B  █░░░░░░░░░     7%      notes.txt
-      22 B  █░░░░░░░░░     9%    data 1 file
-      22 B  █░░░░░░░░░     9%      settings.json
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       256 B  . 7 files
+████░░░░░░    38%        98 B    assets/ 2 files
+███░░░░░░░    31%        80 B      logo.png
+█░░░░░░░░░     7%        18 B      late.bin.txt
+███░░░░░░░    30%        77 B    src/ 2 files
+██░░░░░░░░    15%        39 B      tool.py
+█░░░░░░░░░    15%        38 B      main.rs
+██░░░░░░░░    23%        59 B    docs/ 2 files
+██░░░░░░░░    16%        42 B      guide.md
+█░░░░░░░░░     7%        17 B      notes.txt
+█░░░░░░░░░     9%        22 B    data/ 1 file
+█░░░░░░░░░     9%        22 B      settings.json
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -751,7 +751,7 @@ $ fdu --cache off --color never --size apparent --analyze lines content-project
       77 B   30.1%  code               2 files, 7 lines (5 nonblank, 2 blank)
       77 B   30.1%  prose              3 files, 8 lines (5 nonblank, 3 blank), 2 documentation, 1 binary
       22 B    8.6%  data               1 file, 3 lines (3 nonblank, 0 blank)
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -763,7 +763,7 @@ $ fdu --cache off --color never --size apparent --analyze code content-project
 Language shares of measured code lines
          3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
          1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -772,7 +772,7 @@ $ fdu --cache off --color never --size apparent --analyze words content-project
 Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -790,7 +790,7 @@ DOCUMENTS
 Percentage column: document words
       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -801,21 +801,21 @@ use, so the run still succeeds.
 
 ```console
 $ fdu --cache off --color never --size apparent --analyze all --view tree content-project
-     256 B  ██████████   100%  . 7 files
-      98 B  ████░░░░░░    38%    assets 2 files
-      80 B  ███░░░░░░░    31%      logo.png
-      18 B  █░░░░░░░░░     7%      late.bin.txt
-      77 B  ███░░░░░░░    30%    src 2 files
-      39 B  ██░░░░░░░░    15%      tool.py
-      38 B  █░░░░░░░░░    15%      main.rs
-      59 B  ██░░░░░░░░    23%    docs 2 files
-      42 B  ██░░░░░░░░    16%      guide.md
-      17 B  █░░░░░░░░░     7%      notes.txt
-      22 B  █░░░░░░░░░     9%    data 1 file
-      22 B  █░░░░░░░░░     9%      settings.json
+██████████   100%       256 B  . 7 files
+████░░░░░░    38%        98 B    assets/ 2 files
+███░░░░░░░    31%        80 B      logo.png
+█░░░░░░░░░     7%        18 B      late.bin.txt
+███░░░░░░░    30%        77 B    src/ 2 files
+██░░░░░░░░    15%        39 B      tool.py
+█░░░░░░░░░    15%        38 B      main.rs
+██░░░░░░░░    23%        59 B    docs/ 2 files
+██░░░░░░░░    16%        42 B      guide.md
+█░░░░░░░░░     7%        17 B      notes.txt
+█░░░░░░░░░     9%        22 B    data/ 1 file
+█░░░░░░░░░     9%        22 B      settings.json
 ! note: requested analysis is not displayed by the selected views
 ! tip: show analysis: --view families, languages, or full
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -831,9 +831,9 @@ SUMMARY
      256 B  7 files, 4 directories
 
 TREE
-     256 B  ██████████   100%  . 7 files
-      98 B  ████░░░░░░    38%    assets 2 files
-                                 … and 256 B (7 files) more
+██████████   100%       256 B  . 7 files
+████░░░░░░    38%        98 B    assets/ 2 files
+██████████   100%       256 B    … and 7 more files
 
 FAMILIES  (2 of 4)
       80 B   31.2%  binary             1 file
@@ -863,7 +863,7 @@ RECENT  (2 of 7)
 ! note: omitted code, documents: content analysis required
 ! tip: show more rows: --limit=all
 ! tip: include omitted views: add --analyze code
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -875,9 +875,9 @@ SUMMARY
      256 B  7 files, 4 directories
 
 TREE
-     256 B  ██████████   100%  . 7 files
-      98 B  ████░░░░░░    38%    assets 2 files
-                                 … and 256 B (7 files) more
+██████████   100%       256 B  . 7 files
+████░░░░░░    38%        98 B    assets/ 2 files
+██████████   100%       256 B    … and 7 more files
 
 FAMILIES  (2 of 4)
       80 B   31.2%  binary             1 file, 1 binary
@@ -914,7 +914,7 @@ RECENT  (2 of 7)
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: row limit 2
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (256 B); ignore 0 files (0 rules); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

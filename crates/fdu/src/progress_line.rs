@@ -20,7 +20,7 @@ use clap::ValueEnum;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 
 use fdu_core::query::SizeMetric;
-use fdu_core::report_format::{human_bytes, human_count};
+use fdu_core::report_format::{STYLE_NAME, human_bytes, human_count};
 
 use crate::cli::paint;
 
@@ -260,7 +260,7 @@ const COUNT_COLUMNS: usize = 9;
 const BYTES_COLUMNS: usize = 8;
 
 const STYLE_SPINNER: AnsiStyle = AnsiColor::Cyan.on_default();
-const STYLE_ROOT: AnsiStyle = AnsiColor::Cyan.on_default();
+const STYLE_ROOT: AnsiStyle = STYLE_NAME;
 const STYLE_PHASE: AnsiStyle = AnsiStyle::new().bold();
 const STYLE_DIM: AnsiStyle = AnsiColor::BrightBlack.on_default();
 
@@ -363,7 +363,7 @@ impl RootSlot {
 #[derive(Clone, Debug)]
 enum FactsSlot {
     None,
-    Walk { files: String, dirs: Option<String>, bytes: Option<String> },
+    Walk { files: String, dirs: Option<String>, bytes: Option<(String, bool)> },
     Analysis { percent: String, done: String, total: String },
 }
 
@@ -409,7 +409,7 @@ impl Slots {
                 FactsSlot::Walk {
                     files: human_count(facts.files),
                     dirs: Some(human_count(facts.directories)),
-                    bytes: Some(human_bytes(facts.bytes)),
+                    bytes: Some((human_bytes(facts.bytes), facts.bytes >= 1 << 30)),
                 }
             }
             (Phase::Analyzing, Some((done, total))) => FactsSlot::Analysis {
@@ -471,7 +471,10 @@ impl Slots {
                 }
                 if let Some(bytes) = bytes {
                     segments.push((" · ".to_string(), Some(STYLE_DIM)));
-                    segments.push((align(bytes, BYTES_COLUMNS), None));
+                    segments.push((
+                        align(&bytes.0, BYTES_COLUMNS),
+                        bytes.1.then_some(AnsiStyle::new().bold()),
+                    ));
                 }
             }
             FactsSlot::Analysis { percent, done, total } => {
@@ -803,39 +806,41 @@ mod tests {
         const BOLD: &str = "\u{1b}[1m";
         const DIM: &str = "\u{1b}[90m";
         const RESET: &str = "\u{1b}[0m";
+        let root_style = format!("{STYLE_ROOT}");
+        let root_reset = format!("{STYLE_ROOT:#}");
 
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Loading), ms(600), 2, 100, true),
             format!(
-                "{CYAN}⠹{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Loading{RESET}       \
+                "{CYAN}⠹{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Loading{RESET}       \
                  {DIM}0.6 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, true),
             format!(
-                "{CYAN}⠼{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Scanning{RESET}        412,309\
-                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}  38 GiB  {DIM}3.1 s{RESET}"
+                "{CYAN}⠼{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Scanning{RESET}        412,309\
+                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}{BOLD}  38 GiB{RESET}  {DIM}3.1 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 100, true),
             format!(
-                "{CYAN}⠼{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Revalidating{RESET}    412,309\
-                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}  38 GiB  {DIM}1.4 s{RESET}"
+                "{CYAN}⠼{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Revalidating{RESET}    412,309\
+                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}{BOLD}  38 GiB{RESET}  {DIM}1.4 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &analyzing(12_044, 50_110), ms(7_900), 7, 100, true),
             format!(
-                "{CYAN}⠧{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Analyzing{RESET}      24%  \
+                "{CYAN}⠧{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Analyzing{RESET}      24%  \
                  12,044{DIM} / {RESET}50,110{DIM} files{RESET}  {DIM}7.9 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Saving), ms(8_100), 9, 100, true),
             format!(
-                "{CYAN}⠏{RESET} {CYAN}~/wrk/github{RESET}  {BOLD}Saving{RESET}        \
+                "{CYAN}⠏{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Saving{RESET}        \
                  {DIM}8.1 s{RESET}"
             )
         );

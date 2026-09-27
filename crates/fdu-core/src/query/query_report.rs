@@ -642,6 +642,31 @@ pub struct TreeOmission {
     pub bytes: Option<u64>,
     /// Exact allocated remainder when the subtree measurements are complete.
     pub allocated: Option<u64>,
+    /// Ignored part of the omitted subtrees, when their governing rules are known.
+    pub ignored: Option<IgnoredSize>,
+}
+
+/// Exact ignored byte sizes on a disjoint omitted subtree.
+/// Directory inode usage is not part of either size metric.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct IgnoredSize {
+    /// Apparent bytes of ignored regular files.
+    pub bytes: u64,
+    /// Allocated bytes of ignored regular files.
+    pub allocated: u64,
+}
+
+impl IgnoredSize {
+    fn from_tally(tally: IgnoredTally) -> Self {
+        Self { bytes: tally.bytes, allocated: tally.allocated }
+    }
+
+    fn checked_add(self, other: Self) -> Option<Self> {
+        Some(Self {
+            bytes: self.bytes.checked_add(other.bytes)?,
+            allocated: self.allocated.checked_add(other.allocated)?,
+        })
+    }
 }
 
 /// Disjoint hidden content across a whole projected tree, shared by every format.
@@ -656,6 +681,9 @@ pub struct TreeRemainder {
     pub bytes: Option<u64>,
     /// Allocated bytes in hidden subtrees.
     pub allocated: Option<u64>,
+    /// Ignored part of the disjoint hidden subtrees, when classification is known.
+    /// Human bar coloring consumes this fact; the machine remainder schema is unchanged.
+    pub ignored: Option<IgnoredSize>,
     /// Applicable boundaries in stable share, depth, breadth, row order.
     pub reasons: Vec<TreeOmissionReason>,
 }
@@ -663,13 +691,20 @@ pub struct TreeRemainder {
 impl TreeRemainder {
     /// Summarize retained omission facts without changing the selected population.
     pub fn from_tree(root: Option<&TreeNode>, omissions: &[TreeOmission]) -> Option<Self> {
-        let mut result =
-            Self { files: Some(0), bytes: Some(0), allocated: Some(0), reasons: Vec::new() };
+        let mut result = Self {
+            files: Some(0),
+            bytes: Some(0),
+            allocated: Some(0),
+            ignored: Some(IgnoredSize::default()),
+            reasons: Vec::new(),
+        };
         let mut add = |omission: &TreeOmission| {
             result.files = result.files.zip(omission.files).and_then(|(a, b)| a.checked_add(b));
             result.bytes = result.bytes.zip(omission.bytes).and_then(|(a, b)| a.checked_add(b));
             result.allocated =
                 result.allocated.zip(omission.allocated).and_then(|(a, b)| a.checked_add(b));
+            result.ignored =
+                result.ignored.zip(omission.ignored).and_then(|(a, b)| a.checked_add(b));
             if !result.reasons.contains(&omission.reason) {
                 result.reasons.push(omission.reason);
             }
@@ -2712,6 +2747,7 @@ fn tree_node(
             files: complete.then_some(root.files),
             bytes: complete.then_some(root.bytes),
             allocated: complete.then_some(root.allocated),
+            ignored: complete.then_some(root.ignored).flatten().map(IgnoredSize::from_tally),
         };
         return (None, vec![omitted]);
     }
@@ -2740,7 +2776,21 @@ fn record_omission(
     let files = complete
         .then(|| rows.iter().try_fold(0u64, |sum, (row, _)| sum.checked_add(row.files)))
         .flatten();
-    node.omissions.push(TreeOmission { reason, entries: rows.len(), files, bytes, allocated });
+    let ignored = complete
+        .then(|| {
+            rows.iter().try_fold(IgnoredSize::default(), |sum, (row, _)| {
+                sum.checked_add(IgnoredSize::from_tally(row.ignored?))
+            })
+        })
+        .flatten();
+    node.omissions.push(TreeOmission {
+        reason,
+        entries: rows.len(),
+        files,
+        bytes,
+        allocated,
+        ignored,
+    });
     node.truncated = true;
 }
 
@@ -2760,6 +2810,10 @@ fn cap_tree_rows(root: TreeNode, cap: usize, complete: bool) -> TreeNode {
                 files: complete.then_some(item.node.files),
                 bytes: complete.then_some(item.node.bytes),
                 allocated: complete.then_some(item.node.allocated),
+                ignored: complete
+                    .then_some(item.node.ignored)
+                    .flatten()
+                    .map(IgnoredSize::from_tally),
             };
             let owner = &mut kept[parent].node;
             if let Some(existing) = owner
@@ -2774,6 +2828,8 @@ fn cap_tree_rows(root: TreeNode, cap: usize, complete: bool) -> TreeNode {
                     existing.bytes.zip(omission.bytes).and_then(|(a, b)| a.checked_add(b));
                 existing.allocated =
                     existing.allocated.zip(omission.allocated).and_then(|(a, b)| a.checked_add(b));
+                existing.ignored =
+                    existing.ignored.zip(omission.ignored).and_then(|(a, b)| a.checked_add(b));
             } else {
                 owner.omissions.push(omission);
             }
@@ -4156,7 +4212,7 @@ mod tests {
         assert_eq!(remainder.reasons, vec![TreeOmissionReason::Depth]);
         let text = crate::report_format::render(&report, crate::report_format::Format::Text, false)
             .expect("render");
-        assert!(text.contains("… and unknown size (unknown file count) more"));
+        assert!(text.contains("—     unknown    … and more files (count unknown)"));
     }
 
     /// A failed listing must not turn off the default threshold for verified siblings.
@@ -4669,6 +4725,18 @@ mod tests {
                 report.notes.iter().any(|note| note.contains("ignored subtotals are unavailable"))
             );
         }
+        let hidden_report = run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection { depth: Some(Bound::Limit(0)), ..Selection::default() },
+            ),
+        );
+        let Section::Tree { root, omissions, .. } = &hidden_report.sections[0] else {
+            panic!("expected tree")
+        };
+        let hidden = TreeRemainder::from_tree(root.as_deref(), omissions).expect("hidden rows");
+        assert!(hidden.bytes.is_some() && hidden.ignored.is_none());
         for population in [IgnoredEntries::Exclude, IgnoredEntries::Only] {
             let answer = run(
                 &index,
@@ -4764,6 +4832,122 @@ mod tests {
             ]))
             .expect("apply");
         index
+    }
+
+    #[test]
+    fn tree_remainder_keeps_the_disjoint_ignored_share() {
+        let index = classified_sample();
+        let remainder = |selection| {
+            let report = run(&index, &query(&[ViewSpec::Tree], selection));
+            let Section::Tree { root, omissions, .. } = &report.sections[0] else {
+                panic!("expected tree")
+            };
+            TreeRemainder::from_tree(root.as_deref(), omissions).expect("hidden rows")
+        };
+        let mixed = remainder(Selection {
+            size: SizeMetric::Apparent,
+            depth: Some(Bound::Limit(1)),
+            breadth: Some(Bound::Limit(2)),
+            min_share: Some(ShareThreshold::parse("5%").expect("share")),
+            ..Selection::default()
+        });
+        let usage = |ignored: Option<IgnoredSize>| ignored.map(|part| (part.bytes, part.allocated));
+        assert_eq!(usage(mixed.ignored), Some((1_025, 1_536)));
+        assert_eq!(
+            mixed.reasons,
+            vec![TreeOmissionReason::Share, TreeOmissionReason::Depth, TreeOmissionReason::Breadth]
+        );
+
+        for limit in [Bound::Limit(1), Bound::Limit(0)] {
+            let rows = remainder(Selection { limit: Some(limit), ..Selection::default() });
+            assert_eq!((rows.bytes, usage(rows.ignored)), (Some(1_625), usage(mixed.ignored)));
+        }
+        let excluded = remainder(Selection {
+            depth: Some(Bound::Limit(0)),
+            ignored: IgnoredEntries::Exclude,
+            ..Selection::default()
+        });
+        assert_eq!((excluded.bytes, excluded.ignored), (Some(600), Some(IgnoredSize::default())));
+        let only = remainder(Selection {
+            depth: Some(Bound::Limit(0)),
+            ignored: IgnoredEntries::Only,
+            ..Selection::default()
+        });
+        assert_eq!((only.bytes, usage(only.ignored)), (Some(1_025), usage(mixed.ignored)));
+    }
+
+    #[test]
+    fn colored_tree_populations_share_one_golden() {
+        let classified = classified_sample();
+        let mut unobserved =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        unobserved.apply_ok(&Observation::new(vec![upsert(
+            "plain.rs",
+            EntryKind::File,
+            attrs(10, 0),
+        )]));
+
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir(root.path().join("guarded")).expect("directory");
+        fs::write(root.path().join("known.rs"), "K").expect("known file");
+        fs::write(root.path().join("guarded/.gitignore"), "*.rs\n").expect("control");
+        fs::write(root.path().join("guarded/uncertain.rs"), "U").expect("uncertain file");
+        let config = crate::ScanConfig {
+            control_limits: crate::control::ControlLimits {
+                line_limit: Some(1),
+                ..crate::control::ControlLimits::default()
+            },
+            ..crate::ScanConfig::default()
+        };
+        let (refused, _) = crate::scan::scan_into_index(root.path(), &config).expect("scan");
+        assert_eq!(refused.ignored_classification(Path::new("known.rs")), Some(false));
+        assert_eq!(refused.ignored_classification(Path::new("guarded/uncertain.rs")), None);
+
+        let selection = |ignored| Selection {
+            size: SizeMetric::Apparent,
+            depth: Some(Bound::Limit(0)),
+            ignored,
+            ..Selection::default()
+        };
+        let cases = [
+            ("INCLUDE", &classified, selection(IgnoredEntries::Include)),
+            ("EXCLUDE", &classified, selection(IgnoredEntries::Exclude)),
+            ("ONLY", &classified, selection(IgnoredEntries::Only)),
+            ("NO CONTROLS", &unobserved, selection(IgnoredEntries::Include)),
+            ("REFUSED CONTROL", &refused, selection(IgnoredEntries::Include)),
+        ];
+        let mut actual = String::new();
+        for (label, index, selection) in cases {
+            let report = run(index, &query(&[ViewSpec::Tree], selection));
+            actual.push_str(label);
+            actual.push('\n');
+            actual.push_str(
+                &crate::report_format::render(&report, crate::report_format::Format::Text, true)
+                    .expect("colored tree")
+                    .replace('\u{1b}', "<ESC>"),
+            );
+            actual.push('\n');
+        }
+        assert_eq!(actual, include_str!("../../tests/golden/tree-populations.txt"));
+    }
+
+    #[test]
+    fn tree_remainder_ignored_share_is_unknown_without_control_observation() {
+        let mut index =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        index.apply_ok(&Observation::new(vec![upsert("file", EntryKind::File, attrs(10, 0))]));
+        let report = run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection { depth: Some(Bound::Limit(0)), ..Selection::default() },
+            ),
+        );
+        let Section::Tree { root, omissions, .. } = &report.sections[0] else {
+            panic!("expected tree")
+        };
+        let hidden = TreeRemainder::from_tree(root.as_deref(), omissions).expect("hidden file");
+        assert_eq!((hidden.bytes, hidden.ignored), (Some(10), None));
     }
 
     fn ignored_of(row: &SummaryRow) -> IgnoredTally {

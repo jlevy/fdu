@@ -41,7 +41,12 @@ The default is `list` in `tree` format, in allocated bytes, largest first, to de
 It shows directory subtrees and file leaves contributing at least 1% of the selected
 root. Breadth and total rows are unbounded unless requested; `--depth`, `--min-share`,
 `--breadth`, and `--limit` compose independently.
-Hidden and ignored entries are included.
+Colored trees distinguish non-gitignored and gitignored usage within each bar; faint
+dots show unused width.
+Percentages below 1% are gray, and sizes at least 1 GiB are bold.
+Cyan names are bright and bold.
+Directories get a gray `/` suffix, except `.` and `..`; file names and structured paths
+do not change. Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
 A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 
@@ -103,7 +108,10 @@ A tree’s `remainder` contains hidden recursive `files`, `bytes`, `allocated`, 
 applicable `reasons`; `null` means nothing hidden.
 Per-boundary `entries` counts hidden roots, while `files` counts regular files
 recursively. Unknown amounts are null.
-The text equivalent is one root-level `… and SIZE (N files) more` line.
+The text equivalent is one root-level line with the same bar, percentage, and size
+columns as the tree rows, followed by `… and N more files`. These columns represent the
+combined hidden share of the selected root.
+Unknown size or count stays unknown; an unknown hidden size has no numeric share.
 Fully expanded, fully observed trees have no remainder or omission diagnostics.
 Check completeness separately: unreadable directories and scan-depth restrictions still
 apply.

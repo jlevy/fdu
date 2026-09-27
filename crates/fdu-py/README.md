@@ -215,9 +215,9 @@ with nullable `files`, `bytes`, and `allocated` totals and bound reasons in stab
 order. It is `None` when nothing is hidden.
 Parent totals already include the remainder, so do not add it to them.
 The terminal gives that remainder one root-level line, such as
-`… and 1.2 MiB (12,345 files) more`. Machine reports use `fdu.report/9`. Machine List
-output is complete unless explicitly limited.
-Details and exact fields are in the
+`… and 12,345 more files`, with its combined size and root share in the usual columns.
+Machine reports use `fdu.report/9`. Machine List output is complete unless explicitly
+limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).
 

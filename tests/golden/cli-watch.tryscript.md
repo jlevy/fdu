@@ -139,17 +139,17 @@ $ node -e "require('node:fs').mkdirSync('repaint'); require('node:fs').writeFile
 ```console
 $ node bin/watch-repaint-capture.mjs repaint
 TREE
-       4 B  ██████████   100%  . 1 file
-       4 B  ██████████   100%    seed.txt
+██████████   100%         4 B  . 1 file
+██████████   100%         4 B    seed.txt
 
 SUMMARY
        4 B  1 file, 0 directories
 
 ──── [STAMP] ────
 TREE
-      16 B  ██████████   100%  . 2 files
-      12 B  ████████░░    75%    added.txt
-       4 B  ███░░░░░░░    25%    seed.txt
+██████████   100%        16 B  . 2 files
+████████░░    75%        12 B    added.txt
+███░░░░░░░    25%         4 B    seed.txt
 
 SUMMARY
       16 B  2 files, 0 directories

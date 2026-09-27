@@ -42,7 +42,7 @@ rather than elided — the field stays visible in a diff, which is the point of 
 ```console
 $ fdu --cache off --view summary --size apparent project
      269 B  7 files, 3 directories (128 B gitignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -59,7 +59,7 @@ $ fdu --cache off --view types --size apparent project
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -87,7 +87,7 @@ EXTENSIONS
 
 SUMMARY
      269 B  7 files, 3 directories (128 B gitignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -106,7 +106,7 @@ $ fdu --cache off --view extensions --size apparent extension-levels
       32 B  .zip         1 file
       25 B  .c++         1 file
       10 B  .md~         1 file
-! perf: walked 4 files / 107 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 4 files (107 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -124,7 +124,7 @@ dist[SEP]acorn-0.1.0.tar.gz
 docs[SEP]FAQ.MD
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -132,18 +132,18 @@ src[SEP]omega.rs
 
 ```console
 $ fdu --cache off --view tree --size apparent --depth all project
-     269 B  ██████████   100%  . 7 files (128 B gitignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
-      48 B  ██░░░░░░░░    18%    README.md
-      36 B  █░░░░░░░░░    13%    src 2 files
-      18 B  █░░░░░░░░░     7%      alpha.rs
-      18 B  █░░░░░░░░░     7%      omega.rs
-      28 B  █░░░░░░░░░    10%    Makefile
-      23 B  █░░░░░░░░░     9%    docs 1 file
-      23 B  █░░░░░░░░░     9%      FAQ.MD
-       6 B  ░░░░░░░░░░     2%    .gitignore
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -162,7 +162,7 @@ SUMMARY
 TYPES  (1 of 5)
      128 B   47.6%  archive            1 file
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -174,7 +174,7 @@ TYPES  (1 of 5)
 $ fdu --cache off --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files ([HUMAN_SIZE]); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -187,7 +187,7 @@ $ fdu --cache off --view files --include "*.{md,rs}" project
 README.md
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files ([HUMAN_SIZE]); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -196,7 +196,7 @@ src[SEP]omega.rs
 ```console
 $ fdu --cache off --view files --include "*.{md,rs}" --exclude "src/**" project
 README.md
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files ([HUMAN_SIZE]); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -207,7 +207,7 @@ $ fdu --cache off --view files --kind dir project
 dist
 docs
 src
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files ([HUMAN_SIZE]); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -224,14 +224,14 @@ what is underneath it.
 ```console
 $ fdu --cache off --view summary --kind file --size apparent project
      269 B  7 files, 0 directories (128 B gitignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --cache off --view summary --kind dir --size apparent project
      187 B  4 files, 3 directories (128 B gitignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -240,7 +240,7 @@ $ fdu --cache off --view summary --kind dir --size apparent project
 ```console
 $ fdu --cache off --view files --kind file --min-size 100 --size apparent project
 dist[SEP]acorn-0.1.0.tar.gz
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -252,7 +252,7 @@ $ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent
 dist[SEP]acorn-0.1.0.tar.gz
 README.md
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -264,7 +264,7 @@ $ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --siz
 .gitignore
 src[SEP]omega.rs
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -274,12 +274,12 @@ src[SEP]omega.rs
 
 ```console
 $ fdu --cache off --view tree --depth 0 --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B gitignored)
-                                 … and 269 B (7 files) more
+██████████   100%       269 B  . 7 files (128 B gitignored)
+██████████   100%       269 B    … and 7 more files
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 0
 ! tip: expand deeper: --depth=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -297,24 +297,24 @@ SUMMARY
      269 B  7 files, 3 directories (128 B gitignored)
 
 TREE
-     269 B  ██████████   100%  . 7 files (128 B gitignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B gitignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B gitignored)
-      48 B  ██░░░░░░░░    18%    README.md
-      36 B  █░░░░░░░░░    13%    src 2 files
-      18 B  █░░░░░░░░░     7%      alpha.rs
-      18 B  █░░░░░░░░░     7%      omega.rs
-      28 B  █░░░░░░░░░    10%    Makefile
-      23 B  █░░░░░░░░░     9%    docs 1 file
-      23 B  █░░░░░░░░░     9%      FAQ.MD
-       6 B  ░░░░░░░░░░     2%    .gitignore
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
 
 EXTENSIONS
      128 B  .tar.gz      1 file (128 B gitignored)
       71 B  .md          2 files
       36 B  .rs          2 files
       34 B  (none)       2 files
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -331,16 +331,16 @@ SUMMARY
      141 B  6 files, 2 directories
 
 TREE
-     141 B  ██████████   100%  . 6 files
-      48 B  ███░░░░░░░    34%    README.md
-      36 B  ███░░░░░░░    26%    src 2 files
-      18 B  █░░░░░░░░░    13%      alpha.rs
-      18 B  █░░░░░░░░░    13%      omega.rs
-      28 B  ██░░░░░░░░    20%    Makefile
-      23 B  ██░░░░░░░░    16%    docs 1 file
-      23 B  ██░░░░░░░░    16%      FAQ.MD
-       6 B  ░░░░░░░░░░     4%    .gitignore
-! perf: walked 6 files / 141 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       141 B  . 6 files
+███░░░░░░░    34%        48 B    README.md
+███░░░░░░░    26%        36 B    src/ 2 files
+█░░░░░░░░░    13%        18 B      alpha.rs
+█░░░░░░░░░    13%        18 B      omega.rs
+██░░░░░░░░    20%        28 B    Makefile
+██░░░░░░░░    16%        23 B    docs/ 1 file
+██░░░░░░░░    16%        23 B      FAQ.MD
+░░░░░░░░░░     4%         6 B    .gitignore
+! perf: walked 6 files (141 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -350,10 +350,10 @@ SUMMARY
      128 B  1 file, 1 directory
 
 TREE
-     128 B  ██████████   100%  . 1 file
-     128 B  ██████████   100%    dist 1 file
-     128 B  ██████████   100%      acorn-0.1.0.tar.gz
-! perf: walked 2 files / 134 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       128 B  . 1 file
+██████████   100%       128 B    dist/ 1 file
+██████████   100%       128 B      acorn-0.1.0.tar.gz
+! perf: walked 2 files (134 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -453,7 +453,7 @@ $ fdu --cache off --view summary --size apparent long-rule
 ! note: ignore classification incomplete: 1 ignore file not applied (1 with a line over the 16 KiB line limit); affected: .
 ! note: ignored subtotals are unavailable where governing rules could not be verified
 ! tip: apply refused ignore files: raise --gitignore-line-limit above 16 KiB, or set it to all
-! perf: walked 2 files / 16 KiB; ignore 1 file / 0 rules, 1 refused; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 2 files (16 KiB); ignore 1 file (0 rules), 1 refused; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -784,14 +784,14 @@ the tree, where `--kind file` counts only the one file modified recently.
 ```console
 $ fdu --cache off --size apparent --modified-since 30d --view summary builds
      240 B  4 files, 10 directories
-! perf: walked 4 files / 240 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 4 files (240 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --cache off --size apparent --modified-since 30d --kind file --view summary builds
       90 B  1 file, 0 directories
-! perf: walked 4 files / 240 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 4 files (240 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

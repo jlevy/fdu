@@ -86,6 +86,10 @@ exact `share_metric`, numerator, and denominator.
 The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
 Significant files appear as leaves alongside directory totals.
+Each tree row shows a share bar, percentage of the selected root, size, then its
+indented name. The single remainder row, when present, uses those same columns for all
+hidden descendants together and ends `… and N more files`. Unknown quantities are
+labeled unknown rather than estimated.
 
 | Format | List output |
 | --- | --- |

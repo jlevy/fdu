@@ -9,16 +9,21 @@
 //! result data; frontends route the categorized messages from [`diagnostic_lines`] to
 //! their diagnostic stream. Machine formats must remain parseable and ANSI-free.
 //!
-//! Human rows use cyan names, ordinary foreground totals and file counts, and gray
+//! Human rows use bright bold cyan names, ordinary foreground file counts, and gray
 //! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
 //! file counts belong directly after the name, outside parentheses. Secondary breakdowns
-//! such as nonblank/blank counts use the same gray parenthetical role.
+//! such as nonblank/blank counts use the same gray parenthetical role. Human directory
+//! names have a gray slash except `.` and `..`. Sizes >= 1 GiB are bold even in gray
+//! details; exact shares below 1% are gray. Pad cells before applying ANSI styles.
+//! Colored bars split foreground non-gitignored and gray gitignored usage, with faint
+//! dots for unused cells. Plain bars keep their original glyphs.
 //!
-//! One remainder annotation per tree occupies the filename column below its root,
-//! leaving numeric and bar columns empty. Name the omitted amount explicitly and count
-//! recursive hidden files; that amount is already included in directory totals. Unknown
-//! coverage must say unknown size. Keep rerun flags out of rows: collect applicable
-//! remedies once per report in `report_epilogue`.
+//! Tree columns are bar, root percentage, size, then indented name. One gray remainder
+//! row per tree uses those same columns for its combined hidden usage and names the
+//! recursive hidden file count. That usage is already included in directory totals.
+//! Unknown coverage must show unknown size and no fabricated bar or percentage.
+//! Keep rerun flags out of rows: collect applicable remedies once per report in
+//! `report_epilogue`.
 //!
 //! The category, ordering, and debugging contract lives beside that collector; CLI
 //! stream/color handling lives in `write_report_diagnostics`. The contributor guide is
@@ -65,24 +70,19 @@ use crate::query::{
 pub const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 
 /// Directory names in a tree, so structure reads at a glance.
-pub const STYLE_NAME: AnsiStyle = AnsiColor::Cyan.on_default();
+pub const STYLE_NAME: AnsiStyle = AnsiColor::BrightCyan.on_default().bold();
 
-/// Relative-size bars in a tree.
-const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
-
-/// Category labels share the cyan name role across all human views.
-pub const STYLE_CATEGORY: AnsiStyle = STYLE_NAME;
+/// Category labels keep ordinary cyan; bold bright cyan identifies names.
+pub const STYLE_CATEGORY: AnsiStyle = AnsiColor::Cyan.on_default();
 
 /// Secondary information: parenthetical detail, omissions, notes, tips, and telemetry.
-/// Keep this gray and non-bold so the measured result remains visually primary.
+/// Keep this gray and non-bold except for the shared >= 1 GiB size emphasis.
 pub const STYLE_DETAIL: AnsiStyle = AnsiColor::BrightBlack.on_default();
 
 /// Established label width for non-language metric summaries.
 const TEXT_METRIC_LABEL_WIDTH: usize = 18;
 /// Floor for the extensions view's label column.
 const TEXT_TYPE_LABEL_WIDTH: usize = 12;
-/// Size (10), bar (10), percent (5), and three two-space gutters.
-const TREE_NAME_COLUMN: usize = 10 + 10 + 5 + 3 * 2;
 
 /// Machine-output schema identity.
 ///
@@ -1217,6 +1217,35 @@ pub fn escaped_human(text: &str) -> String {
         .collect()
 }
 
+/// Style a human size after padding: large values are bold, including gray details.
+/// Plain and structured numbers never depend on styling; the threshold uses bytes.
+pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> String {
+    let style = if secondary { STYLE_DETAIL } else { AnsiStyle::new() };
+    let style = if bytes >= 1 << 30 { style.bold() } else { style };
+    let text = format!("{:>width$}", human_bytes(bytes));
+    if bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
+}
+
+/// Style a root share using its exact ratio, before display rounding.
+fn percentage_cell(part: u64, whole: u64, decimals: usize, width: usize, color: bool) -> String {
+    let text = format!("{:>width$}", human_percentage(part, whole, decimals));
+    if whole > 0 && u128::from(part) * 100 < u128::from(whole) {
+        detail(&text, color)
+    } else {
+        text
+    }
+}
+
+/// Human directory markers are presentation only, never part of structured paths.
+fn human_name(name: &str, kind: EntryKind, color: bool) -> String {
+    let slash = kind == EntryKind::Dir && !matches!(name, "." | "..") && !name.ends_with('/');
+    format!(
+        "{}{}",
+        paint(&escaped_human(name), STYLE_NAME, color),
+        if slash { detail("/", color) } else { String::new() }
+    )
+}
+
 fn detail(text: &str, color: bool) -> String {
     paint(text, STYLE_DETAIL, color)
 }
@@ -1288,10 +1317,12 @@ fn render_text(report: &Report, color: bool) -> String {
                 render_text_metric_files(&mut out, rows, color);
             }
             Section::Files { view, rows, .. } => match view {
-                ViewSpec::Largest => render_text_ranked_files(&mut out, rows, color, |row| {
-                    human_bytes(pick(report.size, row.bytes, row.allocated))
-                }),
-                ViewSpec::Recent => render_text_ranked_files(&mut out, rows, color, |row| {
+                ViewSpec::Largest => {
+                    render_text_ranked_files(&mut out, rows, color, Some(report.size), |row| {
+                        human_bytes(pick(report.size, row.bytes, row.allocated))
+                    });
+                }
+                ViewSpec::Recent => render_text_ranked_files(&mut out, rows, color, None, |row| {
                     format_rfc3339_nanos(row.mtime_ns)
                 }),
                 _ => {
@@ -1418,7 +1449,8 @@ fn render_text_metrics(
     };
     for row in &summary.rows {
         let selected = pick(size, row.bytes, row.allocated);
-        let percentage = human_percentage(row.share.numerator, row.share.denominator, 1);
+        let percentage =
+            percentage_cell(row.share.numerator, row.share.denominator, 1, TEXT_SHARE_WIDTH, color);
         let mut suffix =
             format!("{} {}", human_count(row.files), plural(row.files, "file", "files"));
         if let Some(physical_lines) = row.metrics.physical_lines.filter(|lines| *lines > 0) {
@@ -1490,8 +1522,8 @@ fn render_text_metrics(
         }
         let _ = writeln!(
             out,
-            "{:>TEXT_SIZE_WIDTH$}  {:>TEXT_SHARE_WIDTH$}  {} {suffix}",
-            human_bytes(selected),
+            "{}  {}  {} {suffix}",
+            styled_bytes(selected, TEXT_SIZE_WIDTH, color, false),
             percentage,
             label_cell(
                 &escaped_human(human_metric_label(view, &row.id)),
@@ -1603,9 +1635,9 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
         annotation.push(')');
         let _ = writeln!(
             out,
-            "{:>10}  {:>6}  {} {}",
+            "{:>10}  {}  {} {}",
             human_count(row.selected.metrics.code_lines),
-            human_percentage(row.share.numerator, row.share.denominator, 1),
+            percentage_cell(row.share.numerator, row.share.denominator, 1, 6, color),
             paint(human_language_name(&row.language), STYLE_NAME, color),
             detail(&annotation, color)
         );
@@ -1667,17 +1699,21 @@ fn ignored_suffix(
         IgnoredEntries::Only => None,
     };
     shown.map_or_else(String::new, |share| {
-        format!(
-            " {}",
-            detail(
-                &format!("({} gitignored)", human_bytes(pick(size, share.bytes, share.allocated))),
-                color
+        let bytes = pick(size, share.bytes, share.allocated);
+        if bytes < 1 << 30 || !color {
+            format!(" {}", detail(&format!("({} gitignored)", human_bytes(bytes)), color))
+        } else {
+            format!(
+                " {}{}{}",
+                detail("(", color),
+                styled_bytes(bytes, 0, color, true),
+                detail(" gitignored)", color)
             )
-        )
+        }
     })
 }
 
-/// Render a tree section with fixed size, bar, and percentage columns.
+/// Render a tree section with fixed bar, percentage, and size columns.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
 fn render_text_tree(
@@ -1695,7 +1731,6 @@ fn render_text_tree(
         let mut stack = vec![(root, 0)];
         while let Some((node, depth)) = stack.pop() {
             let bytes = pick(size, node.bytes, node.allocated);
-            let share = ratio(bytes, grand);
             let indent = "  ".repeat(depth);
             let count = if node.kind == EntryKind::File {
                 String::new()
@@ -1704,11 +1739,16 @@ fn render_text_tree(
             };
             let _ = writeln!(
                 out,
-                "{:>10}  {}  {:>5}  {indent}{}{}{}",
-                human_bytes(bytes),
-                bar(share, color),
-                human_percentage(bytes, grand, 0),
-                paint(&escaped_human(&node.name), STYLE_NAME, color),
+                "{}  {}  {}  {indent}{}{}{}",
+                usage_bar(
+                    bytes,
+                    grand,
+                    node.ignored.map(|value| pick(size, value.bytes, value.allocated)),
+                    color
+                ),
+                percentage_cell(bytes, grand, 0, 5, color),
+                styled_bytes(bytes, 10, color, false),
+                human_name(&node.name, node.kind, color),
                 count,
                 ignored_suffix(node.ignored, size, selected, color),
             );
@@ -1718,7 +1758,8 @@ fn render_text_tree(
     // One annotation at the highest displayed level, even when several independent
     // bounds hide descendants at different depths. Reasons belong in the epilogue.
     if let Some(hidden) = hidden {
-        render_tree_remainder(out, &hidden, usize::from(root.is_some()), size, color);
+        let grand = root.map(|node| pick(size, node.bytes, node.allocated));
+        render_tree_remainder(out, &hidden, grand, usize::from(root.is_some()), size, color);
     }
 }
 
@@ -1726,6 +1767,7 @@ fn render_text_tree(
 fn render_tree_remainder(
     out: &mut String,
     remainder: &crate::query::TreeRemainder,
+    grand: Option<u64>,
     depth: usize,
     size: SizeMetric,
     color: bool,
@@ -1734,19 +1776,31 @@ fn render_tree_remainder(
         SizeMetric::Apparent => remainder.bytes,
         SizeMetric::Allocated => remainder.allocated,
     };
-    let measure = bytes.map_or_else(|| "unknown size".to_owned(), human_bytes);
+    let measure = bytes.map_or_else(
+        || detail(&format!("{:>10}", "unknown"), color),
+        |bytes| styled_bytes(bytes, 10, color, true),
+    );
+    // With no visible root, a known remainder represents the whole selected root.
+    // A missing measurement cannot honestly produce either a bar or a percentage.
+    let (usage_bar, percentage) = match bytes.zip(grand.or(bytes)) {
+        Some((bytes, grand)) => (
+            usage_bar(
+                bytes,
+                grand,
+                remainder.ignored.map(|value| pick(size, value.bytes, value.allocated)),
+                color,
+            ),
+            detail(&format!("{:>5}", human_percentage(bytes, grand, 0)), color),
+        ),
+        None => (" ".repeat(10), detail(&format!("{:>5}", "—"), color)),
+    };
     let files = remainder.files.map_or_else(
-        || "unknown file count".to_owned(),
-        |files| format!("{} {}", human_count(files), plural(files, "file", "files")),
+        || "more files (count unknown)".to_owned(),
+        |files| format!("{} more {}", human_count(files), plural(files, "file", "files")),
     );
-    let note = format!("… and {measure} ({files}) more");
-    let _ = writeln!(
-        out,
-        "{:width$}{}",
-        "",
-        detail(&note, color),
-        width = TREE_NAME_COLUMN + 2 * depth
-    );
+    let indent = "  ".repeat(depth);
+    let note = detail(&format!("{indent}… and {files}"), color);
+    let _ = writeln!(out, "{usage_bar}  {percentage}  {measure}  {note}");
 }
 
 /// Render a types section as aligned rows.
@@ -1761,8 +1815,8 @@ fn render_text_types(
     for row in rows {
         let _ = writeln!(
             out,
-            "{:>TEXT_SIZE_WIDTH$}  {} {} {}{}",
-            human_bytes(pick(size, row.bytes, row.allocated)),
+            "{}  {} {} {}{}",
+            styled_bytes(pick(size, row.bytes, row.allocated), TEXT_SIZE_WIDTH, color, false),
             label_cell(&escaped_human(&row.extension), width, STYLE_CATEGORY, color),
             human_count(row.files),
             plural(row.files, "file", "files"),
@@ -1802,12 +1856,21 @@ fn render_text_ranked_files(
     out: &mut String,
     rows: &[FileRow],
     color: bool,
+    size: Option<SizeMetric>,
     measure: impl Fn(&FileRow) -> String,
 ) {
     let width = rows.iter().map(|row| display_width(&measure(row))).max().unwrap_or_default();
     for row in rows {
-        let path = escaped_human(&row.path.to_string_lossy());
-        let _ = writeln!(out, "{:>width$}  {}", measure(row), paint(&path, STYLE_NAME, color));
+        let value = size.map_or_else(
+            || format!("{:>width$}", measure(row)),
+            |size| styled_bytes(pick(size, row.bytes, row.allocated), width, color, false),
+        );
+        let _ = writeln!(
+            out,
+            "{}  {}",
+            value,
+            human_name(&row.path.to_string_lossy(), row.kind, color)
+        );
     }
 }
 
@@ -1819,7 +1882,6 @@ fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
         .unwrap_or_default();
     for row in rows {
         let value = row.sort_value.map_or_else(|| "—".to_string(), human_count);
-        let path = escaped_human(&row.path.to_string_lossy());
         let classification =
             row.classification.as_ref().map_or_else(String::new, |classification| {
                 let mut parts =
@@ -1839,7 +1901,7 @@ fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
             out,
             "{:>width$}  {}{}",
             value,
-            paint(&path, STYLE_NAME, color),
+            human_name(&row.path.to_string_lossy(), row.kind, color),
             classification
         );
     }
@@ -1854,8 +1916,8 @@ fn render_text_summary(
 ) {
     let _ = writeln!(
         out,
-        "{:>10}  {} {}, {} {}{}",
-        human_bytes(pick(size, row.bytes, row.allocated)),
+        "{}  {} {}, {} {}{}",
+        styled_bytes(pick(size, row.bytes, row.allocated), 10, color, false),
         human_count(row.files),
         plural(row.files, "file", "files"),
         human_count(row.dirs),
@@ -2029,7 +2091,33 @@ fn bar(share: f64, color: bool) -> String {
     const WIDTH: usize = 10;
     let filled = ((share.clamp(0.0, 1.0) * WIDTH as f64).round() as usize).min(WIDTH);
     let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(WIDTH - filled));
-    paint(&rendered, STYLE_BAR, color)
+    if color { detail(&rendered, true) } else { rendered }
+}
+
+/// Split a colored bar into measured populations; plain bars retain their glyphs.
+/// Round the total first, then cap the ignored segment to keep exactly ten cells.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool) -> String {
+    if !color {
+        return bar(ratio(bytes, total), false);
+    }
+    let filled = (ratio(bytes, total) * 10.0).round() as usize;
+    if ignored.is_none() {
+        return format!(
+            "{}{}",
+            "▒".repeat(filled),
+            paint(&"·".repeat(10 - filled), STYLE_DETAIL.dimmed(), true)
+        );
+    }
+    let ignored = ignored
+        .map_or(0, |value| (ratio(value.min(bytes), total) * 10.0).round() as usize)
+        .min(filled);
+    format!(
+        "{}{}{}",
+        "█".repeat(filled - ignored),
+        detail(&"█".repeat(ignored), true),
+        paint(&"·".repeat(10 - filled), STYLE_DETAIL.dimmed(), true)
+    )
 }
 
 /// Render a count with thousands separators, the way every fdu report does.
@@ -3038,7 +3126,7 @@ mod tests {
                 "{view:?} disagrees with whether it styles a label"
             );
             assert_eq!(
-                strip_ansi(&coloured),
+                strip_ansi(&coloured).replace('·', "░").replace('▒', "█"),
                 plain,
                 "{view:?} lays out differently once colour is on"
             );
@@ -3406,10 +3494,10 @@ mod tests {
         assert_eq!(
             text,
             concat!(
-                "     120 B  ██████████   100%  . 2 files\n",
-                "     100 B  ████████░░    83%    src 1 file\n",
-                "     100 B  ████████░░    83%      main.rs\n",
-                "      20 B  ██░░░░░░░░    17%    notes.md\n",
+                "██████████   100%       120 B  . 2 files\n",
+                "████████░░    83%       100 B    src/ 1 file\n",
+                "████████░░    83%       100 B      main.rs\n",
+                "██░░░░░░░░    17%        20 B    notes.md\n",
             )
         );
 
@@ -3883,11 +3971,11 @@ mod tests {
                 "     164 B  2 files, 2 directories (128 B gitignored)\n",
                 "\n",
                 "TREE\n",
-                "     164 B  ██████████   100%  . 2 files (128 B gitignored)\n",
-                "     128 B  ████████░░    78%    dist 1 file (128 B gitignored)\n",
-                "     128 B  ████████░░    78%      a.gz (128 B gitignored)\n",
-                "      36 B  ██░░░░░░░░    22%    src 1 file\n",
-                "      36 B  ██░░░░░░░░    22%      b.rs\n",
+                "██████████   100%       164 B  . 2 files (128 B gitignored)\n",
+                "████████░░    78%       128 B    dist/ 1 file (128 B gitignored)\n",
+                "████████░░    78%       128 B      a.gz (128 B gitignored)\n",
+                "██░░░░░░░░    22%        36 B    src/ 1 file\n",
+                "██░░░░░░░░    22%        36 B      b.rs\n",
                 "\n",
                 "EXTENSIONS\n",
                 "     128 B  .gz          1 file (128 B gitignored)\n",
@@ -4169,12 +4257,12 @@ mod tests {
         assert!(
             colored.contains(&format!(
                 "{} 3,508 files {}",
-                paint("a(b)\\n界", STYLE_NAME, true),
+                human_name("a(b)\n界", EntryKind::Dir, true),
                 detail("(43 B gitignored)", true)
             )),
             "{colored:?}"
         );
-        assert_eq!(strip_ansi(&colored), plain);
+        assert_eq!(strip_ansi(&colored).replace('·', "░").replace('▒', "█"), plain);
         assert!(!colored.contains("a(b)\n界"));
 
         let mut summary = fixture(&[ViewSpec::Summary]);
@@ -4382,6 +4470,46 @@ mod tests {
         assert_eq!(bar(0.5, false), "█████░░░░░");
         assert_eq!(bar(2.0, false), "██████████");
         assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn human_styles_respect_exact_thresholds_and_directory_identity() {
+        let gib = 1 << 30;
+        assert_eq!(styled_bytes(gib - 1, 10, true, false), format!("{:>10}", human_bytes(gib - 1)));
+        assert_eq!(
+            styled_bytes(gib, 10, true, false),
+            paint("   1.0 GiB", AnsiStyle::new().bold(), true)
+        );
+        assert_eq!(styled_bytes(gib, 0, true, true), paint("1.0 GiB", STYLE_DETAIL.bold(), true));
+        assert_eq!(styled_bytes(gib, 0, false, true), "1.0 GiB");
+        assert_eq!(percentage_cell(99, 10_000, 0, 5, true), detail("  <1%", true));
+        assert_eq!(percentage_cell(100, 10_000, 0, 5, true), "   1%");
+        for name in [".", ".."] {
+            assert_eq!(human_name(name, EntryKind::Dir, false), name);
+        }
+        assert_eq!(
+            human_name("build", EntryKind::Dir, true),
+            format!("{}{}", paint("build", STYLE_NAME, true), detail("/", true))
+        );
+        assert_eq!(human_name("build", EntryKind::File, false), "build");
+        assert_eq!(human_name("build", EntryKind::Dir, false), "build/");
+    }
+
+    #[test]
+    fn colored_bars_partition_selected_usage_and_keep_ten_cells() {
+        let split = usage_bar(60, 100, Some(20), true);
+        assert_eq!(
+            split,
+            format!("████{}{}", detail("██", true), paint("····", STYLE_DETAIL.dimmed(), true))
+        );
+        assert_eq!(strip_ansi(&split).chars().count(), 10);
+        assert_eq!(usage_bar(60, 100, Some(20), false), "██████░░░░");
+        assert_eq!(strip_ansi(&usage_bar(60, 60, Some(60), true)), "██████████");
+        assert_eq!(
+            usage_bar(60, 60, Some(60), true),
+            format!("{}{}", detail("██████████", true), paint("", STYLE_DETAIL.dimmed(), true))
+        );
+        assert_eq!(strip_ansi(&usage_bar(0, 0, None, true)), "··········");
     }
 
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";

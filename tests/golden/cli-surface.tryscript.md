@@ -185,8 +185,14 @@ The default is `list` in `tree` format, in allocated bytes, largest first, to de
 It shows directory subtrees and file leaves contributing at least 1% of the selected
 root. Breadth and total rows are unbounded unless requested; `--depth`, `--min-share`,
 `--breadth`, and `--limit` compose independently.
-Hidden and ignored entries are included.
+Colored trees distinguish non-gitignored and gitignored usage within each bar; faint
+dots show unused width.
+Percentages below 1% are gray, and sizes at least 1 GiB are bold.
+Cyan names are bright and bold.
+Directories get a gray `/` suffix, except `.` and `..`; file names and structured paths
+do not change. Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
+A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 
 `--analyze` chooses what may be read and `--view` chooses what is printed.
 The language commands differ only on the analysis axis: without code analysis
@@ -246,7 +252,10 @@ A tree’s `remainder` contains hidden recursive `files`, `bytes`, `allocated`, 
 applicable `reasons`; `null` means nothing hidden.
 Per-boundary `entries` counts hidden roots, while `files` counts regular files
 recursively. Unknown amounts are null.
-The text equivalent is one root-level `… and SIZE (N files) more` line.
+The text equivalent is one root-level line with the same bar, percentage, and size
+columns as the tree rows, followed by `… and N more files`. These columns represent the
+combined hidden share of the selected root.
+Unknown size or count stays unknown; an unknown hidden size has no numeric share.
 Fully expanded, fully observed trees have no remainder or omission diagnostics.
 Check completeness separately: unreadable directories and scan-depth restrictions still
 apply.
@@ -774,7 +783,7 @@ CACHE BEHAVIOR
 
 IGNORE RULES
   Fresh scans read applicable .gitignore files by default; cache-only uses retained
-  rules. Summary, tree, and extension rows show ignored size as `(128 B gitignored)`.
+  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
   Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
   .git is unignored unless a rule names it. --ignored=include is default.
   --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.
@@ -832,10 +841,10 @@ fdu 0.1.0[DEV_REVISION]
 
 ```console
 $ fdu --cache off --color never --size apparent .
-       0 B  ░░░░░░░░░░      —  . 0 files
+░░░░░░░░░░      —         0 B  . 0 files
 ! note: no size denominator: selected root size is zero
 ! tip: show smaller entries: --min-share=0%
-! perf: walked 0 files / 0 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: walked 0 files (0 B); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
