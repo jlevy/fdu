@@ -19,8 +19,10 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource};
-use crate::content::{AnalysisSet, ContentProvenance, CoverageReason, LogicalWordStats, MetricDef};
+use crate::classify::{Classification, ContentFamily, DetectionConfidence, DetectionSource};
+use crate::content::{
+    AnalysisSet, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats, MetricDef,
+};
 use crate::control::ControlCoverage;
 use crate::engine_contract::{EntryKind, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
@@ -1180,12 +1182,36 @@ pub(crate) fn report_in(
     let row_consumers =
         query.views.iter().copied().filter(|view| needs_unfiltered_entry_rows(*view)).count();
     let unfiltered_rows = (walked.is_none() && row_consumers > 1).then(|| every_entry(index));
+    let metric_consumers =
+        query.views.iter().copied().filter(|view| needs_metric_resolution(*view)).count();
+    let mut shared_metric_summaries = (walked.is_none() && metric_consumers > 1).then(|| {
+        metric_summaries(
+            &query.views,
+            index,
+            query,
+            content,
+            unfiltered_rows
+                .as_deref()
+                .expect("multiple metric views share their unfiltered entry rows"),
+        )
+    });
 
     let mut sections: Vec<Section> = query
         .views
         .iter()
-        .map(|view| {
-            build_section(*view, index, query, content, walked.as_ref(), unfiltered_rows.as_deref())
+        .enumerate()
+        .map(|(position, view)| {
+            let shared_metric_summary =
+                shared_metric_summaries.as_mut().and_then(|summaries| summaries[position].take());
+            build_section(
+                *view,
+                index,
+                query,
+                content,
+                walked.as_ref(),
+                unfiltered_rows.as_deref(),
+                shared_metric_summary,
+            )
         })
         .collect();
 
@@ -1509,6 +1535,11 @@ fn needs_unfiltered_entry_rows(view: ViewSpec) -> bool {
     )
 }
 
+/// Content-grouping views that resolve the same current classification and analysis row.
+fn needs_metric_resolution(view: ViewSpec) -> bool {
+    matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
+}
+
 /// The entry rows a view aggregates: the filtered walk, a shared unfiltered walk, or a
 /// fresh [`every_entry`] when this is the only consumer.
 fn entry_rows<'a>(
@@ -1531,6 +1562,7 @@ fn build_section(
     content: AnalysisSet,
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
+    shared_metric_summary: Option<MetricSummary>,
 ) -> Section {
     if query.tree_for(view) {
         return Section::Tree { view, root: tree_node(index, query, walked) };
@@ -1547,14 +1579,9 @@ fn build_section(
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics {
                 view,
-                summary: Box::new(metric_summary(
-                    view,
-                    index,
-                    query,
-                    content,
-                    walked,
-                    unfiltered_rows,
-                )),
+                summary: Box::new(shared_metric_summary.unwrap_or_else(|| {
+                    metric_summary(view, index, query, content, walked, unfiltered_rows)
+                })),
             }
         }
         ViewSpec::List
@@ -1659,18 +1686,77 @@ fn metric_summary(
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
 ) -> MetricSummary {
-    let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
+    let mut accumulator = MetricAccumulator::new(view);
     let files = walked.map_or_else(
         || entry_rows(index, None, unfiltered_rows),
         |walked| Cow::Borrowed(walked.members.as_slice()),
     );
-    let mut grouped = BTreeMap::<String, MetricRow>::new();
     let wanted = index.content_identity(content);
     let held = index.content().and_then(|held| held.admit(&wanted));
     for file in files.iter().filter(|row| row.kind == EntryKind::File) {
         let cached = held.and_then(|content| content.file(&file.path));
         let classification = index.classify(&file.path);
-        let included = match view {
+        accumulator.push(content, file, cached, &classification);
+    }
+    accumulator.finish(query, content)
+}
+
+/// Build several unfiltered metric sections in one file pass.
+fn metric_summaries(
+    views: &[ViewSpec],
+    index: &Index,
+    query: &Query,
+    content: AnalysisSet,
+    rows: &[FileRow],
+) -> Vec<Option<MetricSummary>> {
+    let mut accumulators = views
+        .iter()
+        .copied()
+        .filter(|view| needs_metric_resolution(*view))
+        .map(MetricAccumulator::new)
+        .collect::<Vec<_>>();
+    let wanted = index.content_identity(content);
+    let held = index.content().and_then(|held| held.admit(&wanted));
+    for file in rows.iter().filter(|row| row.kind == EntryKind::File) {
+        let cached = held.and_then(|content| content.file(&file.path));
+        let classification = index.classify(&file.path);
+        for accumulator in &mut accumulators {
+            accumulator.push(content, file, cached, &classification);
+        }
+    }
+
+    let mut finished =
+        accumulators.into_iter().map(|accumulator| accumulator.finish(query, content));
+    let summaries = views
+        .iter()
+        .map(|view| needs_metric_resolution(*view).then(|| finished.next().expect("metric view")))
+        .collect();
+    debug_assert!(finished.next().is_none());
+    summaries
+}
+
+struct MetricAccumulator {
+    view: ViewSpec,
+    group: MetricGroup,
+    grouped: BTreeMap<String, MetricRow>,
+}
+
+impl MetricAccumulator {
+    fn new(view: ViewSpec) -> Self {
+        debug_assert!(needs_metric_resolution(view));
+        let group =
+            if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
+        Self { view, group, grouped: BTreeMap::new() }
+    }
+
+    fn push(
+        &mut self,
+        content: AnalysisSet,
+        file: &FileRow,
+        cached: Option<&FileAnalysis>,
+        classification: &Classification,
+    ) {
+        let included = match self.view {
             ViewSpec::Languages => classification.family == ContentFamily::Code,
             ViewSpec::Documents => {
                 matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup)
@@ -1685,13 +1771,13 @@ fn metric_summary(
             | ViewSpec::Summary => false,
         };
         if !included {
-            continue;
+            return;
         }
-        let id = match group {
+        let id = match self.group {
             MetricGroup::Type => classification.file_type.as_str().to_string(),
             MetricGroup::Family => classification.family.as_str().to_string(),
         };
-        let row = grouped.entry(id.clone()).or_insert_with(|| MetricRow {
+        let row = self.grouped.entry(id.clone()).or_insert_with(|| MetricRow {
             analysis: content,
             id,
             family: classification.family,
@@ -1737,7 +1823,7 @@ fn metric_summary(
             if let (Some(coverage), Some(outcome)) = (&mut row.words_coverage, record.words) {
                 *coverage.entry(outcome.coverage()).or_default() += 1;
             }
-            let selected = match view {
+            let selected = match self.view {
                 ViewSpec::Languages if content.includes_code() => {
                     record.code.map(|outcome| outcome.coverage())
                 }
@@ -1787,121 +1873,128 @@ fn metric_summary(
         }
     }
 
-    for row in grouped.values_mut() {
-        row.finish_derived_metrics();
-    }
+    fn finish(self, query: &Query, content: AnalysisSet) -> MetricSummary {
+        let Self { view, group, mut grouped } = self;
 
-    let mut total = MetricRow {
-        analysis: content,
-        id: "total".to_string(),
-        family: ContentFamily::Unknown,
-        files: 0,
-        bytes: 0,
-        allocated: 0,
-        analyzed_files: 0,
-        metrics: ReportMetricValues::for_analysis(content),
-        logical_word_stats: LogicalWordStats::default(),
-        visible_logical_word_stats: LogicalWordStats::default(),
-        document_raw_words: 0,
-        document_word_stats: LogicalWordStats::default(),
-        document_metric_files: 0,
-        coverage: BTreeMap::new(),
-        lines_coverage: BTreeMap::new(),
-        code_coverage: content.includes_code().then(BTreeMap::new),
-        words_coverage: content.includes_words().then(BTreeMap::new),
-        detection_sources: BTreeMap::new(),
-        detection_confidence: BTreeMap::new(),
-        generated_files: 0,
-        vendored_files: 0,
-        documentation_files: 0,
-        share: MetricShare::default(),
-    };
-    for row in grouped.values() {
-        total.files = total.files.saturating_add(row.files);
-        total.bytes = total.bytes.saturating_add(row.bytes);
-        total.allocated = total.allocated.saturating_add(row.allocated);
-        total.analyzed_files = total.analyzed_files.saturating_add(row.analyzed_files);
-        total.metrics.add_assign(&row.metrics);
-        total.logical_word_stats.add_assign(row.logical_word_stats);
-        total.visible_logical_word_stats.add_assign(row.visible_logical_word_stats);
-        total.document_raw_words = total.document_raw_words.saturating_add(row.document_raw_words);
-        total.document_word_stats.add_assign(row.document_word_stats);
-        total.document_metric_files =
-            total.document_metric_files.saturating_add(row.document_metric_files);
-        for (reason, count) in &row.coverage {
-            *total.coverage.entry(*reason).or_default() += count;
+        for row in grouped.values_mut() {
+            row.finish_derived_metrics();
         }
-        merge_coverage(&mut total.lines_coverage, &row.lines_coverage);
-        if let (Some(total), Some(row)) = (&mut total.code_coverage, &row.code_coverage) {
-            merge_coverage(total, row);
+
+        let mut total = MetricRow {
+            analysis: content,
+            id: "total".to_string(),
+            family: ContentFamily::Unknown,
+            files: 0,
+            bytes: 0,
+            allocated: 0,
+            analyzed_files: 0,
+            metrics: ReportMetricValues::for_analysis(content),
+            logical_word_stats: LogicalWordStats::default(),
+            visible_logical_word_stats: LogicalWordStats::default(),
+            document_raw_words: 0,
+            document_word_stats: LogicalWordStats::default(),
+            document_metric_files: 0,
+            coverage: BTreeMap::new(),
+            lines_coverage: BTreeMap::new(),
+            code_coverage: content.includes_code().then(BTreeMap::new),
+            words_coverage: content.includes_words().then(BTreeMap::new),
+            detection_sources: BTreeMap::new(),
+            detection_confidence: BTreeMap::new(),
+            generated_files: 0,
+            vendored_files: 0,
+            documentation_files: 0,
+            share: MetricShare::default(),
+        };
+        for row in grouped.values() {
+            total.files = total.files.saturating_add(row.files);
+            total.bytes = total.bytes.saturating_add(row.bytes);
+            total.allocated = total.allocated.saturating_add(row.allocated);
+            total.analyzed_files = total.analyzed_files.saturating_add(row.analyzed_files);
+            total.metrics.add_assign(&row.metrics);
+            total.logical_word_stats.add_assign(row.logical_word_stats);
+            total.visible_logical_word_stats.add_assign(row.visible_logical_word_stats);
+            total.document_raw_words =
+                total.document_raw_words.saturating_add(row.document_raw_words);
+            total.document_word_stats.add_assign(row.document_word_stats);
+            total.document_metric_files =
+                total.document_metric_files.saturating_add(row.document_metric_files);
+            for (reason, count) in &row.coverage {
+                *total.coverage.entry(*reason).or_default() += count;
+            }
+            merge_coverage(&mut total.lines_coverage, &row.lines_coverage);
+            if let (Some(total), Some(row)) = (&mut total.code_coverage, &row.code_coverage) {
+                merge_coverage(total, row);
+            }
+            if let (Some(total), Some(row)) = (&mut total.words_coverage, &row.words_coverage) {
+                merge_coverage(total, row);
+            }
+            for (source, count) in &row.detection_sources {
+                *total.detection_sources.entry(*source).or_default() += count;
+            }
+            for (confidence, count) in &row.detection_confidence {
+                *total.detection_confidence.entry(*confidence).or_default() += count;
+            }
+            total.generated_files = total.generated_files.saturating_add(row.generated_files);
+            total.vendored_files = total.vendored_files.saturating_add(row.vendored_files);
+            total.documentation_files =
+                total.documentation_files.saturating_add(row.documentation_files);
         }
-        if let (Some(total), Some(row)) = (&mut total.words_coverage, &row.words_coverage) {
-            merge_coverage(total, row);
+        total.finish_derived_metrics();
+        let byte_share_metric = match query.selection.size {
+            SizeMetric::Apparent => ShareMetric::ApparentBytes,
+            SizeMetric::Allocated => ShareMetric::AllocatedBytes,
+        };
+        let share_metric = match view {
+            // The requested analyzers, not the stored ones: a share is a fact about what the
+            // request asked to measure, and `validate_read` proved the index holds exactly it.
+            ViewSpec::Languages if content.includes_code() => ShareMetric::CodeLines,
+            ViewSpec::Documents if content.includes_words() => ShareMetric::DocumentWords,
+            ViewSpec::Languages | ViewSpec::Documents if content.is_enabled() => {
+                ShareMetric::RawWords
+            }
+            ViewSpec::Languages | ViewSpec::Documents | ViewSpec::Types | ViewSpec::Families => {
+                byte_share_metric
+            }
+            ViewSpec::List
+            | ViewSpec::Tree
+            | ViewSpec::Extensions
+            | ViewSpec::Files
+            | ViewSpec::Largest
+            | ViewSpec::Recent
+            | ViewSpec::Summary => {
+                unreachable!("only grouped views reach metric_summary")
+            }
+        };
+        let denominator = share_value(&total, share_metric);
+        total.share = MetricShare { numerator: denominator, denominator };
+        let mut rows = grouped.into_values().collect::<Vec<_>>();
+        for row in &mut rows {
+            row.share = MetricShare { numerator: share_value(row, share_metric), denominator };
         }
-        for (source, count) in &row.detection_sources {
-            *total.detection_sources.entry(*source).or_default() += count;
-        }
-        for (confidence, count) in &row.detection_confidence {
-            *total.detection_confidence.entry(*confidence).or_default() += count;
-        }
-        total.generated_files = total.generated_files.saturating_add(row.generated_files);
-        total.vendored_files = total.vendored_files.saturating_add(row.vendored_files);
-        total.documentation_files =
-            total.documentation_files.saturating_add(row.documentation_files);
-    }
-    total.finish_derived_metrics();
-    let byte_share_metric = match query.selection.size {
-        SizeMetric::Apparent => ShareMetric::ApparentBytes,
-        SizeMetric::Allocated => ShareMetric::AllocatedBytes,
-    };
-    let share_metric = match view {
-        // The requested analyzers, not the stored ones: a share is a fact about what the
-        // request asked to measure, and `validate_read` proved the index holds exactly it.
-        ViewSpec::Languages if content.includes_code() => ShareMetric::CodeLines,
-        ViewSpec::Documents if content.includes_words() => ShareMetric::DocumentWords,
-        ViewSpec::Languages | ViewSpec::Documents if content.is_enabled() => ShareMetric::RawWords,
-        ViewSpec::Languages | ViewSpec::Documents | ViewSpec::Types | ViewSpec::Families => {
-            byte_share_metric
-        }
-        ViewSpec::List
-        | ViewSpec::Tree
-        | ViewSpec::Extensions
-        | ViewSpec::Files
-        | ViewSpec::Largest
-        | ViewSpec::Recent
-        | ViewSpec::Summary => {
-            unreachable!("only grouped views reach metric_summary")
-        }
-    };
-    let denominator = share_value(&total, share_metric);
-    total.share = MetricShare { numerator: denominator, denominator };
-    let mut rows = grouped.into_values().collect::<Vec<_>>();
-    for row in &mut rows {
-        row.share = MetricShare { numerator: share_value(row, share_metric), denominator };
-    }
-    sort_rows(
-        &mut rows,
-        query,
-        view,
-        |row, metric| match view {
-            ViewSpec::Languages | ViewSpec::Documents => share_value(row, share_metric),
-            _ => match metric {
-                SizeMetric::Apparent => row.bytes,
-                SizeMetric::Allocated => row.allocated,
+        sort_rows(
+            &mut rows,
+            query,
+            view,
+            |row, metric| match view {
+                ViewSpec::Languages | ViewSpec::Documents => share_value(row, share_metric),
+                _ => match metric {
+                    SizeMetric::Apparent => row.bytes,
+                    SizeMetric::Allocated => row.allocated,
+                },
             },
-        },
-        |row| row.files,
-        |_| None,
-        |row| row.id.clone(),
-    );
-    let total_rows = truncate(&mut rows, query.limit_for(view));
-    MetricSummary {
-        group,
-        total,
-        rows,
-        total_rows,
-        share_metric,
-        words_per_page: query.words_per_page.max(1),
+            |row| row.files,
+            |_| None,
+            |row| row.id.clone(),
+        );
+        let total_rows = truncate(&mut rows, query.limit_for(view));
+        MetricSummary {
+            group,
+            total,
+            rows,
+            total_rows,
+            share_metric,
+            words_per_page: query.words_per_page.max(1),
+        }
     }
 }
 
@@ -3256,6 +3349,49 @@ mod tests {
             panic!("extensions")
         };
         assert_eq!((*total, rows.len()), (3, 3));
+    }
+
+    #[test]
+    fn one_pass_metric_summaries_match_independent_views() {
+        let root = tempfile::tempdir().expect("root");
+        fs::write(root.path().join("main.rs"), "fn main() {}\n").expect("rust");
+        fs::write(root.path().join("guide.md"), "# Guide\n\nWords.\n").expect("markdown");
+        let (mut index, _) = crate::scan::scan_into_index(
+            root.path(),
+            &crate::ScanConfig { read_controls: false, ..crate::ScanConfig::default() },
+        )
+        .expect("scan");
+        crate::content::analyze_index(
+            &mut index,
+            crate::content::AnalysisRequest {
+                profile: AnalysisSet::ALL,
+                ..crate::content::AnalysisRequest::default()
+            },
+        );
+
+        let views = [
+            ViewSpec::Types,
+            ViewSpec::Summary,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+        ];
+        let query = query(&views, Selection::default());
+        let rows = every_entry(&index);
+        let summaries = metric_summaries(&views, &index, &query, AnalysisSet::ALL, &rows);
+
+        assert!(summaries[1].is_none(), "non-metric views keep their own projection");
+        for (position, view) in
+            views.iter().copied().enumerate().filter(|(_, view)| needs_metric_resolution(*view))
+        {
+            let independent =
+                metric_summary(view, &index, &query, AnalysisSet::ALL, None, Some(&rows));
+            assert_eq!(
+                format!("{:?}", summaries[position].as_ref().expect("metric summary")),
+                format!("{independent:?}"),
+                "{view:?} changed in the one-pass multi-view aggregation"
+            );
+        }
     }
 
     #[test]
