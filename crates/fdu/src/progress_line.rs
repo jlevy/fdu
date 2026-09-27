@@ -925,7 +925,7 @@ mod tests {
 
     /// Counts and sizes hold their columns as they grow, so nothing after them moves:
     /// the frame is one width from the first file to seven figures, and from bytes to
-    /// `1023 GiB`. Past that a column widens rather than cuts a number.
+    /// `999 GiB`. Grouped four-digit sizes widen rather than cutting a number.
     #[test]
     fn counts_and_sizes_are_right_aligned_in_fixed_columns() {
         let frame = |files, directories, bytes| {
@@ -942,7 +942,7 @@ mod tests {
         );
         assert_eq!(
             frame(9_999_999, 9_999_999, 1_098_437_885_952),
-            "⠼ .  Scanning      9,999,999 files · 9,999,999 dirs · 1023 GiB  3.1 s"
+            "⠼ .  Scanning      9,999,999 files · 9,999,999 dirs · 1,023 GiB  3.1 s"
         );
         let widths: Vec<usize> = [(7, 1, 512), (672_132, 111_897, 41_070_624_768)]
             .into_iter()

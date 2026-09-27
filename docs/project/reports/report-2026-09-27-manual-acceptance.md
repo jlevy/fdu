@@ -162,6 +162,31 @@ Classification checks concrete values before serialization masks only fields who
 paired golden explicitly uses a typed pattern.
 Literal sizes, schema values, and fixture-root identity remain checked.
 
+## Presentation Follow-Up Manual Pass
+
+The debug candidate built from the presentation follow-up on `f184a53e` (identified as a
+dirty development build) passed 22 independent assertions on a real filesystem fixture
+containing 1,006 regular files, an ignored subtree, and a sparse 2 GiB file.
+This is behavioral evidence for the working changes, not final clean-wheel provenance.
+
+- File counts and file rates use grouped integers; sizes at least 1 GiB are bold.
+- Notes, tips, and performance are gray; warnings are yellow without bold; fatal
+  prefixes are red and bold.
+- Directory suffixes are gray, while the root `.` has no suffix.
+  The CLI normalizes the requested `..` root to `.`, so the literal `..` renderer case
+  remains covered by the focused renderer test.
+- Bar widths 20, 0, and -1 behave as specified.
+- Quiet mode preserves stdout and silences informational stderr; an actual permission
+  failure still produces its warning.
+  Fixture permissions were restored afterward.
+- Include, exclude, only, and unread ignore classification were exercised in plain and
+  forced-color output.
+- Full JSON parses; `--full` matches explicit unlimited bounds.
+  All 1,009 tree nodes have no hidden remainder or omissions, and machine output has
+  empty diagnostic stderr for this complete fixture.
+
+Final clean-wheel installation and current-head CI are separate evidence in the PR.
+
 ## Remaining Acceptance
 
 The clean committed wheel is installed and verified, and all local handoff targets

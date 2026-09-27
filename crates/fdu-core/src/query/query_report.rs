@@ -4724,6 +4724,11 @@ mod tests {
             assert!(
                 report.notes.iter().any(|note| note.contains("ignored subtotals are unavailable"))
             );
+            assert!(
+                crate::report_format::report_notes(&report)
+                    .iter()
+                    .all(|note| !note.contains("gitignored sizes are included"))
+            );
         }
         let hidden_report = run(
             &index,
@@ -4832,6 +4837,47 @@ mod tests {
             ]))
             .expect("apply");
         index
+    }
+
+    #[test]
+    fn ignored_size_interpretation_note_appears_once_only_when_relevant() {
+        let classified = classified_sample();
+        for (population, expected) in
+            [(IgnoredEntries::Include, 1), (IgnoredEntries::Exclude, 0), (IgnoredEntries::Only, 0)]
+        {
+            let report = run(
+                &classified,
+                &query(
+                    &[ViewSpec::Summary, ViewSpec::Tree, ViewSpec::Extensions],
+                    Selection {
+                        ignored: population,
+                        depth: Some(Bound::All),
+                        min_share: Some(ShareThreshold::parse("0%").expect("share")),
+                        ..Selection::default()
+                    },
+                ),
+            );
+            let notes = crate::report_format::report_notes(&report);
+            assert_eq!(
+                notes.iter().filter(|note| note.contains("gitignored sizes are included")).count(),
+                expected,
+                "{population:?}: {notes:?}"
+            );
+        }
+        let mut unobserved =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        unobserved.apply_ok(&Observation::new(vec![upsert(
+            "plain.rs",
+            EntryKind::File,
+            attrs(10, 0),
+        )]));
+        let blind =
+            run(&unobserved, &query(&[ViewSpec::Summary, ViewSpec::Tree], Selection::default()));
+        assert!(
+            crate::report_format::report_notes(&blind)
+                .iter()
+                .all(|note| !note.contains("gitignored sizes are included"))
+        );
     }
 
     #[test]

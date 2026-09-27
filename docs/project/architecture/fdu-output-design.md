@@ -28,15 +28,26 @@ These styles apply wherever human output presents those values.
 Tree rows put the share bar first, then the percentage of the selected root, size, and
 indented filename.
 Keep these columns aligned across directory, file, and remainder rows.
-Write `attic 3508 files (43 MiB gitignored)`: file counts are outside parentheses, while
-embedded gitignored amounts are parenthesized and gray.
+Write `attic/ 3,508 files (43 MiB gitignored)`: file counts are outside parentheses,
+while embedded gitignored amounts are parenthesized and gray.
 The gitignored amount is a subset already included in the row total, not additional
 usage.
 For example, `224 MiB ... (73 MiB gitignored)` means 224 MiB overall, including 73
 MiB classified by `.gitignore` rules.
 Secondary breakdowns follow the same convention, such as
-`477298 lines (439949 nonblank, 37349 blank)` with the parenthetical detail gray.
+`477,298 lines (439,949 nonblank, 37,349 blank)` with the parenthetical detail gray.
 Apply these roles consistently across human report views.
+
+## Number Formatting
+
+Human integer counts use comma grouping consistently: `13,580 files`, `1,234 rules`, and
+`205,709 files/s`. Reports, notes, progress, and performance use the shared
+`human_count` formatter; its `human_count_u128` implementation also handles wide rate
+calculations without losing precision.
+This is the single policy point for future localization or ungrouped display.
+Do not add grouping at individual call sites.
+Structured formats retain numeric values, and executable flag values retain their parser
+syntax. Durations, percentages, and scaled byte units keep their own precision rules.
 
 ## Streams and Categories
 
@@ -63,6 +74,14 @@ Watch repaints have no final one-shot performance total.
 Preserve failure exit status and diagnostic details when output fails or a background
 cache save fails.
 
+Add brief interpretation notes by default when the displayed facts can be misread:
+gitignored values are included in totals, and hidden file tallies are recursive subsets
+already included in directory totals.
+Emit each clarification once per report.
+`--quiet` (`-q`) suppresses notes, tips, performance lines, and transient progress.
+It preserves result stdout, warnings, errors, completeness facts, and exit status.
+Machine reports keep their structured facts; quiet controls diagnostic presentation.
+
 Apply color using stderr’s terminal state for diagnostics and stdout’s terminal state
 for results.
 Honor the existing color option and `NO_COLOR`. Redirected streams are plain
@@ -73,7 +92,13 @@ Machine data never contains ANSI escapes.
 
 Colored tree bars use normal foreground blocks for non-gitignored usage, gray blocks for
 gitignored usage, and faint dots for the unused width.
-Each bar has ten cells; its segments are rounded against the same selected root.
+Bars default to ten cells; `--bar-size` sets the width.
+Zero or negative values hide the bar and its following gutter.
+Segments are rounded against the same selected root.
+Widths above 4,096 are rejected before allocating the decorative bar.
+Rust `RenderOptions.bar_size` and Python `Report.render(bar_size=...)` expose the same
+rendering capability.
+Machine formats ignore bar width.
 Unknown ignore classification uses `▒` blocks for unclassified usage rather than
 claiming either population.
 Uncolored bars retain their plain block glyphs.
@@ -136,6 +161,23 @@ regular file, keeps the same aggregate measurements, returns `remainder: null`, 
 emits no omission notes or tips.
 Display bounds do not control scan completeness: `--scan-depth`, unreadable directories,
 and other discovery restrictions still apply.
+
+## Performance Summary
+
+Start with elapsed wall-clock time, followed by work and throughput:
+
+```text
+perf: took 66.0 ms to walk 13,580 files (225 MiB) at 205,709 files/s (3.583 GB/s); 675 gitignore rules (44 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+```
+
+Use parentheses for associated quantities, such as bytes after a file count and ignore
+files after their rule count.
+Slashes belong only in rate units.
+Total rates use the displayed wall-clock interval; GB/s describes represented file size,
+not measured storage bandwidth.
+Content-read rates describe bytes actually read.
+When ignore rules were not read, say `gitignore not read` rather than presenting zero as
+an observed count.
 
 ## Useful Diagnostics
 

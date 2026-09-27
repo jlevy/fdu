@@ -18,9 +18,11 @@
 //! Frontends route these lines to stderr after result stdout, including for structured
 //! output. Notes, tips, and performance are gray; warnings yellow without bold; fatal
 //! errors red and bold. Color follows the receiving stream's terminal/color settings.
+//! Quiet frontends suppress notes, tips, and performance, while retaining warnings and
+//! fatal errors. The collector remains a pure description of report facts.
 //! See `docs/project/architecture/fdu-output-design.md` for examples and test coverage.
 
-use crate::query::{Report, Section, SizeMetric, TreeOmissionReason};
+use crate::query::{IgnoredEntries, Report, Section, SizeMetric, TreeOmissionReason};
 
 /// Human diagnostics retain categories rather than parsing rendered text.
 #[derive(Clone, Debug, Default)]
@@ -71,6 +73,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     let mut tips = Vec::new();
     let mut reasons = Vec::new();
     let mut tree_omitted = false;
+    let mut ignored_subset_shown = false;
     let mut tree_bounds = Vec::new();
     let mut zero = false;
     let mut reason = |why| {
@@ -101,6 +104,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                 }
                 let mut local_reasons: Vec<_> = omissions.iter().map(|o| o.reason).collect();
                 while let Some(node) = stack.pop() {
+                    ignored_subset_shown |= node.ignored.is_some_and(|share| share.files > 0);
                     for omission in &node.omissions {
                         local_reasons.push(omission.reason);
                         tree_omitted = true;
@@ -125,8 +129,15 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
                     }
                 }
             }
-            Section::Extensions { share_omitted, .. } if *share_omitted > 0 => {
-                reason(TreeOmissionReason::Share);
+            Section::Extensions { rows, share_omitted, .. } => {
+                ignored_subset_shown |=
+                    rows.iter().any(|row| row.ignored.is_some_and(|share| share.files > 0));
+                if *share_omitted > 0 {
+                    reason(TreeOmissionReason::Share);
+                }
+            }
+            Section::Summary(row) => {
+                ignored_subset_shown |= row.ignored.is_some_and(|share| share.files > 0);
             }
             Section::Metrics { summary, .. } if summary.share_omitted > 0 => {
                 reason(TreeOmissionReason::Share);
@@ -136,6 +147,9 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
             }
             _ => {}
         }
+    }
+    if report.ignored_entries == IgnoredEntries::Include && ignored_subset_shown {
+        notes.push("note: gitignored sizes are included in row totals".to_owned());
     }
     if tree_omitted {
         notes.push("note: more includes hidden subtrees already counted in directory totals; files are counted recursively".to_owned());
@@ -169,6 +183,17 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
 fn bound_label(bound: crate::query::Bound) -> String {
     match bound {
         crate::query::Bound::All => "all".to_owned(),
-        crate::query::Bound::Limit(value) => value.to_string(),
+        crate::query::Bound::Limit(value) => super::human_count_u128(value as u128),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn displayed_bound_groups_large_counts() {
+        assert_eq!(bound_label(crate::query::Bound::Limit(999)), "999");
+        assert_eq!(bound_label(crate::query::Bound::Limit(1000)), "1,000");
     }
 }

@@ -90,6 +90,9 @@ Each tree row shows a share bar, percentage of the selected root, size, then its
 indented name. The single remainder row, when present, uses those same columns for all
 hidden descendants together and ends `… and N more files`. Unknown quantities are
 labeled unknown rather than estimated.
+`--bar-size=20` widens the bar; `--bar-size=0` or a negative value hides it.
+The default is 10 characters.
+This affects human trees only.
 
 | Format | List output |
 | --- | --- |
@@ -291,7 +294,7 @@ exclude comments, blank lines, and rejected patterns.
 Refused files are named separately.
 
 Total files/s and decimal GB/s divide walked files and represented size by the same
-elapsed duration shown at the end.
+elapsed wall-clock duration shown first in the `perf:` line.
 Represented size uses the selected apparent or allocated measure; it is not disk-read
 bandwidth. Actual content-read throughput uses bytes read and the content-analysis
 duration. On an unchanged tree the second run can show zero content bytes read and every
@@ -413,6 +416,18 @@ The zero-install fallback follows uv’s `exclude-newer` policy; see the
 is filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and
 later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
 The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
+
+## Quiet Diagnostics
+
+Use `--quiet` (or `-q`) to suppress notes, tips, performance lines, and progress while
+keeping the same result output.
+Warnings and errors remain visible on stderr, and exit status still reports incomplete
+or failed results. Structured output retains its facts.
+
+```shell
+fdu . --quiet
+fdu . --view tree --full --format json --quiet
+```
 
 ## Find Files and Export Complete Inventories
 

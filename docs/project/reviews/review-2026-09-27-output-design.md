@@ -116,6 +116,53 @@ pre-fix installed candidate and subsequent debug checks separately.
 The literal mixed remainder golden, full-expansion assertions, shared CLI/Python corpus,
 and terminal checks provide complementary enforcement.
 
+## Presentation Follow-Up Review
+
+Reviewed the follow-up tracked as `fdu-n4ow`: shared `RenderOptions`, configurable bars,
+quiet diagnostics, population styling, integer formatting, Python delegation, and the
+corresponding golden and documentation changes.
+Source review found the following issues, now corrected; final validation is recorded in
+the PR and manual acceptance report.
+
+### P1 — High: Unbounded Decorative Allocation
+
+An arbitrary bar width could reach string repetition and exhaust memory.
+The core now rejects human tree widths above `MAX_BAR_SIZE` (4,096), and the CLI rejects
+them as usage errors before starting filesystem work.
+Machine and flat formats ignore this decorative option.
+
+### P2 — Medium: Width Did Not Reach Every Renderer
+
+Parsing the CLI flag alone left one-shot and watch rendering at the default width.
+All rendering routes now pass core `RenderOptions`; Python delegates through the same
+native renderer. Negative CLI and Python widths normalize to zero.
+There is no second bar implementation in a frontend.
+
+### P3 — Low: Integer Grouping Missed Lifecycle Counts
+
+Cache-clear messages and performance file rates bypassed the report count formatter.
+These now use the shared full-width integer implementation, as do report rows,
+diagnostics, progress, and cache status.
+Structured numbers and executable option values retain their native representation.
+
+### Design and Test Assessment
+
+The renderer owns decorative width and its allocation bound; the report retains the same
+measurements. Quiet mode belongs to frontend diagnostic delivery and preserves warnings,
+errors, results, and exit status.
+This keeps request semantics independent of output styling.
+
+Focused tests cover width boundaries, early refusal, unchanged machine data, quiet
+warnings, exact integer grouping, and color roles.
+The shared golden corpus covers human output, quiet mode, custom/hidden bars, and the
+performance contract.
+A Windows golden expectation was also corrected: native flat paths use the platform
+separator, while human directory markers remain `/`.
+
+The output-design guide, module comments, usage guide, Python API documentation, and
+installed skill state the same contract.
+Remaining visual and release acceptance conditions are unchanged.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

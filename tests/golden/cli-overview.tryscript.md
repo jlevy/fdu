@@ -11,7 +11,8 @@ env:
   NO_COLOR: "1"
   TZ: UTC
 patterns:
-  PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
 ---
 # Realistic Default Overview
 
@@ -54,7 +55,7 @@ $ fdu --cache off --color never --size apparent realistic-project
 ░░░░░░░░░░     4%       285 B    benches/ 1 file
 ░░░░░░░░░░     4%       285 B      reconcile.rs
 ░░░░░░░░░░     2%       172 B    Cargo.toml
-! perf: walked 16 files (7.6 KiB); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 16 files (7.6 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -83,7 +84,7 @@ $ fdu --cache off --color never --size apparent --scan-depth 1 shallow-project
 ! note: display limits: below 1% of selected root
 ! note: incomplete subtrees remain visible below the size threshold
 ! tip: show smaller entries: --min-share=0%
-! perf: walked 2 files (9.7 KiB); ignore 0 files (0 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 2 files (9.7 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 

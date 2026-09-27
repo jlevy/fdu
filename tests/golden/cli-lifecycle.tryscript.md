@@ -14,6 +14,7 @@ env:
   XDG_CACHE_HOME: .cache
 patterns:
   BYTES: '\d+'
+  HUMAN_BYTES: '[0-9]{1,3}(?:,[0-9]{3})*'
   # Fingerprints change with the engine version and the type rules, not with the tree.
   FINGERPRINT: '\d+'
   CACHE_FILE: '[^\r\n]+\.metadata\.bin'
@@ -24,9 +25,10 @@ patterns:
   CACHE_FILE_SCALAR: '"?[^\r\n]+\.metadata\.bin"?'
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
-  PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
-  FILE_RATE: '[\d.]+[kMG]? files/s'
-  BYTE_RATE: '[\d.]+ (B|KiB|MiB|GiB)/s'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
+  FILE_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s'
+  BYTE_RATE: '[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB)/s'
 ---
 # Cache Lifecycle Flags
 
@@ -76,7 +78,8 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -100,7 +103,7 @@ Cache cleared.
 ```console
 $ fdu --no-gitignore --view summary --size apparent project
      269 B  7 files, 3 directories
-! perf: walked 7 files (269 B); no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -132,14 +135,16 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
 ```console
 $ fdu --cache only --view summary --size apparent project
      269 B  7 files, 3 directories (128 B gitignored)
-! perf: walked 0 files (0 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cache only
 ? 0
 ```
 
@@ -247,7 +252,7 @@ $ fdu --analyze lines --view families --size apparent project
       71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 2 documentation
       64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank)
        6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank)
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation
 ? 0
 ```
 
@@ -410,7 +415,8 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -445,7 +451,8 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -469,7 +476,7 @@ $ fdu --cache-status=all project
 [CACHE_FILE]  unrecognized, 0 bytes
 [CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
-3 stale snapshots ([BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
+3 stale snapshots ([HUMAN_BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
 2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
@@ -587,7 +594,8 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -600,7 +608,7 @@ planted: another engine
 ```console
 $ fdu --cache-status project
 [CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
-1 stale snapshot ([BYTES] bytes) cannot be served by this build; fdu --cache-clear PATH removes it.
+1 stale snapshot ([HUMAN_BYTES] bytes) cannot be served by this build; fdu --cache-clear PATH removes it.
 ? 0
 ```
 
@@ -626,7 +634,8 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -667,7 +676,8 @@ $ fdu --size apparent project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -685,7 +695,7 @@ $ fdu --cache-status=all project
 [CACHE_FILE]  unrecognized, 0 bytes
 [CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
-3 leftover files ([BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them, though a staging file waits until it is too old to be a running writer's.
+3 leftover files ([HUMAN_BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them, though a staging file waits until it is too old to be a running writer's.
 2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```

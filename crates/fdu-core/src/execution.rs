@@ -275,8 +275,8 @@ impl PerformanceSummary {
         // GB/s = bytes/ns; keep three decimal places without floating point overflow.
         let milli_gb_per_second = u128::from(bytes) * 1_000 / ns;
         format!(
-            "{} files/s, {}.{:03} GB/s represented",
-            files_per_second,
+            "{} files/s ({}.{:03} GB/s)",
+            crate::report_format::human_count_u128(files_per_second),
             milli_gb_per_second / 1_000,
             milli_gb_per_second % 1_000
         )
@@ -591,11 +591,11 @@ mod tests {
         };
         assert_eq!(
             work.total_throughput(std::time::Duration::from_secs(2), SizeMetric::Apparent),
-            "100 files/s, 2.000 GB/s represented"
+            "100 files/s (2.000 GB/s)"
         );
         assert_eq!(
             work.total_throughput(std::time::Duration::from_secs(2), SizeMetric::Allocated),
-            "100 files/s, 0.500 GB/s represented"
+            "100 files/s (0.500 GB/s)"
         );
         assert_eq!(
             work.total_throughput(std::time::Duration::ZERO, SizeMetric::Apparent),
@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(
             PerformanceSummary::default()
                 .total_throughput(std::time::Duration::from_secs(1), SizeMetric::Apparent),
-            "0 files/s, 0.000 GB/s represented"
+            "0 files/s (0.000 GB/s)"
         );
     }
 

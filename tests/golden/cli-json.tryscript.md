@@ -357,6 +357,7 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
     }
   ]
 }
+! note: gitignored sizes are included in row totals
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 1, row limit 2
 ! tip: expand deeper: --depth=all

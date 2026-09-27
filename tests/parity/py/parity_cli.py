@@ -155,6 +155,8 @@ class Args:
         # Accepted for grammar parity only: the shim never draws, and neither does the
         # binary anywhere the parity harness runs it.
         self.progress = "auto"
+        self.bar_size = 10
+        self.quiet = False
         self.cache = fdu.CachePolicy.AUTO
         self.cache_dir: str | None = None
         self.allow_partial = False
@@ -248,6 +250,10 @@ def parse_args(argv: list[str]) -> Args:
             args.color = take()
         elif flag == "--progress":
             args.progress = take()
+        elif flag == "--bar-size":
+            args.bar_size = max(0, int(take()))
+        elif flag in ("--quiet", "-q"):
+            args.quiet = True
         elif flag == "--breadth":
             args.breadth = parse_bound(take())
         elif flag == "--min-share":
@@ -475,11 +481,12 @@ def render(args: Args, report: fdu.Report) -> str:
     # The one renderer, reached through the API rather than reimplemented. A shim that
     # drew its own bars and padding would be testing the reimplementation.
     color = args.color == "always"
-    for note in report.notes:
-        print(note, file=sys.stderr)
-    for tip in report.tips:
-        print(tip, file=sys.stderr)
-    return report.render(args.format, color=color)
+    if not args.quiet:
+        for note in report.notes:
+            print(note, file=sys.stderr)
+        for tip in report.tips:
+            print(tip, file=sys.stderr)
+    return report.render(args.format, color=color, bar_size=args.bar_size)
 
 
 def exit_code(args: Args, status: fdu.Status) -> int:

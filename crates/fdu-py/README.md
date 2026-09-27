@@ -216,6 +216,8 @@ order. It is `None` when nothing is hidden.
 Parent totals already include the remainder, so do not add it to them.
 The terminal gives that remainder one root-level line, such as
 `… and 12,345 more files`, with its combined size and root share in the usual columns.
+Use `report.render(bar_size=20)` for wider bars, or `bar_size=0` (also negative values)
+to hide them; the default is 10. Machine formats are unchanged.
 Machine reports use `fdu.report/9`. Machine List output is complete unless explicitly
 limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and

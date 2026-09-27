@@ -16,7 +16,10 @@
 //! names have a gray slash except `.` and `..`. Sizes >= 1 GiB are bold even in gray
 //! details; exact shares below 1% are gray. Pad cells before applying ANSI styles.
 //! Colored bars split foreground non-gitignored and gray gitignored usage, with faint
-//! dots for unused cells. Plain bars keep their original glyphs.
+//! dots for unused cells. Plain bars keep their original glyphs. Human tree bar width
+//! is caller-selectable, including zero to remove the bar and its gutter; machine
+//! formats and non-tree views ignore it. Human integer quantities share one grouping
+//! policy through [`human_count`] and [`human_count_u128`].
 //!
 //! Tree columns are bar, root percentage, size, then indented name. One gray remainder
 //! row per tree uses those same columns for its combined hidden usage and names the
@@ -123,6 +126,25 @@ pub enum Format {
     Yaml,
 }
 
+/// Maximum tree bar width accepted by the human renderer.
+/// Bounds decoration allocation without changing measured report data.
+pub const MAX_BAR_SIZE: usize = 4096;
+
+/// Presentation choices for a human report; machine formats ignore both fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderOptions {
+    /// Whether to emit terminal color and emphasis.
+    pub color: bool,
+    /// Width of tree usage bars in cells; zero removes the bar and its gutter.
+    pub bar_size: usize,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self { color: false, bar_size: 10 }
+    }
+}
+
 /// Start one document in a multi-document stream for `format`.
 pub const fn document_start(format: Format) -> &'static str {
     match format {
@@ -185,9 +207,26 @@ impl Format {
 /// projection. Request the desired format on the query before reading: a detached,
 /// folded tree does not retain the complete flat inventory.
 pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<String> {
+    render_with_options(report, format, RenderOptions { color, ..RenderOptions::default() })
+}
+
+/// Render with explicit human presentation choices.
+///
+/// Machine and flat formats retain their existing bytes regardless of `bar_size`.
+///
+/// # Errors
+///
+/// Returns an invalid-request error for an incompatible format or a human tree bar wider
+/// than [`MAX_BAR_SIZE`].
+pub fn render_with_options(
+    report: &Report,
+    format: Format,
+    options: RenderOptions,
+) -> crate::Result<String> {
     let format = checked_format(report, format)?;
+    checked_bar_size(report, format, options)?;
     Ok(match format {
-        Format::Text | Format::Tree => render_text(report, color),
+        Format::Text | Format::Tree => render_text(report, options),
         Format::Paths | Format::Long => render_flat(report, format),
         Format::Json => render_report_machine(report, true, JsonSink::pretty()),
         Format::Jsonl => render_report_jsonl(report),
@@ -224,7 +263,7 @@ fn human_age(age: Option<i128>) -> String {
     } else {
         (seconds, "s")
     };
-    format!("{}{amount}{unit}", if age < 0 { "-" } else { "" })
+    format!("{}{}{unit}", if age < 0 { "-" } else { "" }, human_count_u128(amount))
 }
 
 /// Notes excluded from flat stdout, for a frontend's diagnostic stream.
@@ -247,7 +286,8 @@ pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
     }
     if let Some(depth) = report.scope.max_depth {
         notes.push(format!(
-            "note: scan scope limited to depth {depth}; subtree metrics cover this scope"
+            "note: scan scope limited to depth {}; subtree metrics cover this scope",
+            human_count_u128(depth as u128)
         ));
     }
     for section in &report.sections {
@@ -302,6 +342,22 @@ fn checked_format(report: &Report, format: Format) -> crate::Result<Format> {
     Ok(format)
 }
 
+fn checked_bar_size(report: &Report, format: Format, options: RenderOptions) -> crate::Result<()> {
+    if matches!(format, Format::Text | Format::Tree)
+        && report.sections.iter().any(|section| matches!(section, Section::Tree { .. }))
+        && options.bar_size > MAX_BAR_SIZE
+    {
+        return Err(crate::Error::InvalidRequest(
+            crate::query::Rejection::new(
+                options.bar_size.to_string(),
+                format!("at most {MAX_BAR_SIZE} cells"),
+            )
+            .on("bar_size"),
+        ));
+    }
+    Ok(())
+}
+
 /// Write a report directly to an output stream.
 ///
 /// Machine formats retain only serializer depth while walking the report. Text remains a
@@ -312,10 +368,29 @@ pub fn write(
     color: bool,
     out: &mut dyn io::Write,
 ) -> io::Result<()> {
+    write_with_options(report, format, RenderOptions { color, ..RenderOptions::default() }, out)
+}
+
+/// Write with explicit human presentation choices.
+///
+/// Machine and flat formats retain their existing bytes regardless of `bar_size`.
+///
+/// # Errors
+///
+/// Returns an I/O error when writing fails, the format is incompatible with the report,
+/// or a human tree bar exceeds [`MAX_BAR_SIZE`].
+pub fn write_with_options(
+    report: &Report,
+    format: Format,
+    options: RenderOptions,
+    out: &mut dyn io::Write,
+) -> io::Result<()> {
     let format = checked_format(report, format)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+    checked_bar_size(report, format, options)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
     match format {
-        Format::Text | Format::Tree => out.write_all(render_text(report, color).as_bytes()),
+        Format::Text | Format::Tree => out.write_all(render_text(report, options).as_bytes()),
         Format::Paths | Format::Long => out.write_all(render_flat(report, format).as_bytes()),
         Format::Json => write_report_machine(report, true, JsonSink::pretty_to(out)),
         Format::Jsonl => write_report_jsonl(report, out),
@@ -1265,7 +1340,8 @@ fn detail(text: &str, color: bool) -> String {
 /// format when arbitrary native filenames must be consumed without loss.
 /// One block needs no label to be
 /// unambiguous, so the header appears precisely when it disambiguates something.
-fn render_text(report: &Report, color: bool) -> String {
+fn render_text(report: &Report, options: RenderOptions) -> String {
+    let color = options.color;
     let mut out = String::new();
     let headed = report.sections.len() > 1;
     for (index, section) in report.sections.iter().enumerate() {
@@ -1296,7 +1372,7 @@ fn render_text(report: &Report, color: bool) -> String {
                     limits,
                     report.size,
                     report.ignored_entries,
-                    color,
+                    options,
                 );
             }
             Section::Extensions { rows, share_omitted, .. } => {
@@ -1497,7 +1573,10 @@ fn render_text_metrics(
                 suffix,
                 ", {} words {}",
                 human_count(page.words),
-                detail(&format!("({}.{:01} pages)", page_tenths / 10, page_tenths % 10), color)
+                detail(
+                    &format!("({}.{:01} pages)", human_count(page_tenths / 10), page_tenths % 10),
+                    color,
+                )
             );
         }
         if row.generated_files > 0 {
@@ -1723,8 +1802,9 @@ fn render_text_tree(
     _limits: &crate::query::TreeDisplayLimits,
     size: SizeMetric,
     selected: IgnoredEntries,
-    color: bool,
+    options: RenderOptions,
 ) {
+    let RenderOptions { color, bar_size } = options;
     let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
     if let Some(root) = root {
         let grand = pick(size, root.bytes, root.allocated);
@@ -1737,15 +1817,23 @@ fn render_text_tree(
             } else {
                 format!(" {} {}", human_count(node.files), plural(node.files, "file", "files"))
             };
+            let bar_prefix = if bar_size == 0 {
+                String::new()
+            } else {
+                format!(
+                    "{}  ",
+                    usage_bar(
+                        bytes,
+                        grand,
+                        node.ignored.map(|value| pick(size, value.bytes, value.allocated)),
+                        color,
+                        bar_size,
+                    )
+                )
+            };
             let _ = writeln!(
                 out,
-                "{}  {}  {}  {indent}{}{}{}",
-                usage_bar(
-                    bytes,
-                    grand,
-                    node.ignored.map(|value| pick(size, value.bytes, value.allocated)),
-                    color
-                ),
+                "{bar_prefix}{}  {}  {indent}{}{}{}",
                 percentage_cell(bytes, grand, 0, 5, color),
                 styled_bytes(bytes, 10, color, false),
                 human_name(&node.name, node.kind, color),
@@ -1759,7 +1847,7 @@ fn render_text_tree(
     // bounds hide descendants at different depths. Reasons belong in the epilogue.
     if let Some(hidden) = hidden {
         let grand = root.map(|node| pick(size, node.bytes, node.allocated));
-        render_tree_remainder(out, &hidden, grand, usize::from(root.is_some()), size, color);
+        render_tree_remainder(out, &hidden, grand, usize::from(root.is_some()), size, options);
     }
 }
 
@@ -1770,8 +1858,9 @@ fn render_tree_remainder(
     grand: Option<u64>,
     depth: usize,
     size: SizeMetric,
-    color: bool,
+    options: RenderOptions,
 ) {
+    let RenderOptions { color, bar_size } = options;
     let bytes = match size {
         SizeMetric::Apparent => remainder.bytes,
         SizeMetric::Allocated => remainder.allocated,
@@ -1789,10 +1878,11 @@ fn render_tree_remainder(
                 grand,
                 remainder.ignored.map(|value| pick(size, value.bytes, value.allocated)),
                 color,
+                bar_size,
             ),
             detail(&format!("{:>5}", human_percentage(bytes, grand, 0)), color),
         ),
-        None => (" ".repeat(10), detail(&format!("{:>5}", "—"), color)),
+        None => (" ".repeat(bar_size), detail(&format!("{:>5}", "—"), color)),
     };
     let files = remainder.files.map_or_else(
         || "more files (count unknown)".to_owned(),
@@ -1800,7 +1890,8 @@ fn render_tree_remainder(
     );
     let indent = "  ".repeat(depth);
     let note = detail(&format!("{indent}… and {files}"), color);
-    let _ = writeln!(out, "{usage_bar}  {percentage}  {measure}  {note}");
+    let bar_prefix = if bar_size == 0 { String::new() } else { format!("{usage_bar}  ") };
+    let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {note}");
 }
 
 /// Render a types section as aligned rows.
@@ -2083,40 +2174,41 @@ fn ratio(part: u64, whole: u64) -> f64 {
     share.clamp(0.0, 1.0)
 }
 
-// Rounding a fraction to one of eleven bar widths is exactly the case where float-cast
-// lints have nothing to protect: the value is clamped to [0, 1] before the cast and the
-// result is clamped to WIDTH after it.
+// Rounding a bounded share to a requested bar width is presentation arithmetic:
+// clamp the ratio and the resulting cell count before constructing the glyphs.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-fn bar(share: f64, color: bool) -> String {
-    const WIDTH: usize = 10;
-    let filled = ((share.clamp(0.0, 1.0) * WIDTH as f64).round() as usize).min(WIDTH);
-    let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(WIDTH - filled));
+fn bar(share: f64, color: bool, width: usize) -> String {
+    let filled = ((share.clamp(0.0, 1.0) * width as f64).round() as usize).min(width);
+    let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(width - filled));
     if color { detail(&rendered, true) } else { rendered }
 }
 
 /// Split a colored bar into measured populations; plain bars retain their glyphs.
-/// Round the total first, then cap the ignored segment to keep exactly ten cells.
+/// Round the total first, then cap the ignored segment to keep exactly `width` cells.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool) -> String {
-    if !color {
-        return bar(ratio(bytes, total), false);
+fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: usize) -> String {
+    if width == 0 {
+        return String::new();
     }
-    let filled = (ratio(bytes, total) * 10.0).round() as usize;
+    if !color {
+        return bar(ratio(bytes, total), false, width);
+    }
+    let filled = ((ratio(bytes, total) * width as f64).round() as usize).min(width);
     if ignored.is_none() {
         return format!(
             "{}{}",
             "▒".repeat(filled),
-            paint(&"·".repeat(10 - filled), STYLE_DETAIL.dimmed(), true)
+            paint(&"·".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
         );
     }
     let ignored = ignored
-        .map_or(0, |value| (ratio(value.min(bytes), total) * 10.0).round() as usize)
+        .map_or(0, |value| (ratio(value.min(bytes), total) * width as f64).round() as usize)
         .min(filled);
     format!(
         "{}{}{}",
         "█".repeat(filled - ignored),
         detail(&"█".repeat(ignored), true),
-        paint(&"·".repeat(10 - filled), STYLE_DETAIL.dimmed(), true)
+        paint(&"·".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
     )
 }
 
@@ -2126,6 +2218,14 @@ fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool) -> Strin
 /// depended on its own front end, which is the inverse of the rule that the CLI invents
 /// nothing. A crate boundary rejects that outright, which is how it was found.
 pub fn human_count(value: u64) -> String {
+    human_count_u128(u128::from(value))
+}
+
+/// Group a full-width count using the same human policy as [`human_count`].
+///
+/// Keep the grouping rule here so a future locale or no-grouping choice changes both
+/// widths together without losing precision in rates wider than u64.
+pub fn human_count_u128(value: u128) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, byte) in digits.bytes().enumerate() {
@@ -2156,12 +2256,12 @@ pub fn human_bytes(bytes: u64) -> String {
         unit += 1;
     }
     if unit == 0 {
-        format!("{bytes} B")
+        format!("{} B", human_count(bytes))
     } else if whole < 10 {
         let tenths = (remainder * 10) / 1024;
-        format!("{whole}.{tenths} {}", UNITS[unit])
+        format!("{}.{tenths} {}", human_count(whole), UNITS[unit])
     } else {
-        format!("{whole} {}", UNITS[unit])
+        format!("{} {}", human_count(whole), UNITS[unit])
     }
 }
 
@@ -2576,10 +2676,11 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     .as_ref()
                     .is_some_and(|content| matches!(content.state, crate::ContentState::Stale(_)));
                 lines.push(format!(
-                    "{}  {} entries, {} metadata bytes, {content_bytes} {}content bytes  {}",
+                    "{}  {} entries, {} metadata bytes, {} {}content bytes  {}",
                     status.path.display(),
-                    info.entries,
-                    status.bytes,
+                    human_count(info.entries),
+                    human_count(status.bytes),
+                    human_count(content_bytes),
                     if stale_content { "stale " } else { "" },
                     info.root.display()
                 ));
@@ -2599,9 +2700,10 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     StaleReason::Unreadable => "unreadable by this build".to_string(),
                 };
                 lines.push(format!(
-                    "{}  stale ({why}), {} metadata bytes, {content_bytes} content bytes",
+                    "{}  stale ({why}), {} metadata bytes, {} content bytes",
                     status.path.display(),
-                    status.bytes
+                    human_count(status.bytes),
+                    human_count(content_bytes)
                 ));
             }
             CacheState::Leftover(kind) => {
@@ -2617,7 +2719,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                 lines.push(format!(
                     "{}  leftover ({what}), {} bytes",
                     status.path.display(),
-                    status.bytes
+                    human_count(status.bytes)
                 ));
             }
             CacheState::Unrecognized => {
@@ -2626,7 +2728,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                 lines.push(format!(
                     "{}  unrecognized, {} bytes",
                     status.path.display(),
-                    status.bytes
+                    human_count(status.bytes)
                 ));
             }
             // Root scope synthesises a status for the path a snapshot *would* occupy, so a
@@ -2643,7 +2745,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
         let (subject, object) = if stale == 1 {
             ("1 stale snapshot".to_string(), "it")
         } else {
-            (format!("{stale} stale snapshots"), "them")
+            (format!("{} stale snapshots", human_count_u128(stale as u128)), "them")
         };
         let remedy = match scope {
             CacheScope::Root => format!("fdu --cache-clear PATH removes {object}"),
@@ -2653,7 +2755,8 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             }
         };
         lines.push(format!(
-            "{subject} ({stale_bytes} bytes) cannot be served by this build; {remedy}."
+            "{subject} ({} bytes) cannot be served by this build; {remedy}.",
+            human_count(stale_bytes)
         ));
     }
     if leftover > 0 {
@@ -2663,7 +2766,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
         let (subject, predicate, object) = if leftover == 1 {
             ("1 leftover file".to_string(), "is", "it")
         } else {
-            (format!("{leftover} leftover files"), "are", "them")
+            (format!("{} leftover files", human_count_u128(leftover as u128)), "are", "them")
         };
         // A staging file is reclaimed only once it is too old to belong to a running
         // writer, and a status knows no file's age, so the promise names the exception
@@ -2674,18 +2777,24 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             ""
         };
         lines.push(format!(
-            "{subject} ({leftover_bytes} bytes) {predicate} fdu's own, left by an interrupted \
-             write; fdu --cache-clear=all reclaims {object}{caveat}."
+            "{subject} ({} bytes) {predicate} fdu's own, left by an interrupted \
+             write; fdu --cache-clear=all reclaims {object}{caveat}.",
+            human_count(leftover_bytes)
         ));
     }
     if unrecognized > 0 {
         let (subject, predicate, object) = if unrecognized == 1 {
             ("1 unrecognized file".to_string(), "is not an fdu snapshot", "it")
         } else {
-            (format!("{unrecognized} unrecognized files"), "are not fdu snapshots", "them")
+            (
+                format!("{} unrecognized files", human_count_u128(unrecognized as u128)),
+                "are not fdu snapshots",
+                "them",
+            )
         };
         lines.push(format!(
-            "{subject} ({unrecognized_bytes} bytes) {predicate}, so fdu leaves {object} in place."
+            "{subject} ({} bytes) {predicate}, so fdu leaves {object} in place.",
+            human_count(unrecognized_bytes)
         ));
     }
     lines.join("\n")
@@ -3987,7 +4096,8 @@ mod tests {
                 "src\n",
                 "src/b.rs\n",
             )
-            .replace('/', std::path::MAIN_SEPARATOR_STR)
+            .replace("dist/a.gz", &format!("dist{}a.gz", std::path::MAIN_SEPARATOR))
+            .replace("src/b.rs", &format!("src{}b.rs", std::path::MAIN_SEPARATOR))
         );
         // A share of ignored directories alone holds no bytes, so text says nothing of it.
         let dirs_only = IgnoredTally { files: 0, dirs: 1, bytes: 0, allocated: 0 };
@@ -4460,15 +4570,28 @@ mod tests {
     fn human_bytes_reads_at_scale() {
         assert_eq!(human_bytes(0), "0 B");
         assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(999), "999 B");
+        assert_eq!(human_bytes(1000), "1,000 B");
         assert_eq!(human_bytes(1024), "1.0 KiB");
         assert_eq!(human_bytes(1024 * 1024 * 20), "20 MiB");
     }
 
     #[test]
+    fn human_counts_share_one_full_width_grouping_policy() {
+        assert_eq!(human_count(999), "999");
+        assert_eq!(human_count(1000), "1,000");
+        assert_eq!(
+            human_count_u128(u128::MAX),
+            "340,282,366,920,938,463,463,374,607,431,768,211,455"
+        );
+        assert_eq!(human_age(Some(1000 * 86400 * 1_000_000_000)), "1,000d");
+    }
+
+    #[test]
     fn bars_are_fixed_at_ten_cells_and_saturate() {
-        assert_eq!(bar(0.0, false), "░░░░░░░░░░");
-        assert_eq!(bar(0.5, false), "█████░░░░░");
-        assert_eq!(bar(2.0, false), "██████████");
+        assert_eq!(bar(0.0, false, 10), "░░░░░░░░░░");
+        assert_eq!(bar(0.5, false, 10), "█████░░░░░");
+        assert_eq!(bar(2.0, false, 10), "██████████");
         assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
     }
 
@@ -4497,19 +4620,76 @@ mod tests {
 
     #[test]
     fn colored_bars_partition_selected_usage_and_keep_ten_cells() {
-        let split = usage_bar(60, 100, Some(20), true);
+        let split = usage_bar(60, 100, Some(20), true, 10);
         assert_eq!(
             split,
             format!("████{}{}", detail("██", true), paint("····", STYLE_DETAIL.dimmed(), true))
         );
         assert_eq!(strip_ansi(&split).chars().count(), 10);
-        assert_eq!(usage_bar(60, 100, Some(20), false), "██████░░░░");
-        assert_eq!(strip_ansi(&usage_bar(60, 60, Some(60), true)), "██████████");
+        assert_eq!(usage_bar(60, 100, Some(20), false, 10), "██████░░░░");
+        assert_eq!(strip_ansi(&usage_bar(60, 60, Some(60), true, 10)), "██████████");
         assert_eq!(
-            usage_bar(60, 60, Some(60), true),
+            usage_bar(60, 60, Some(60), true, 10),
             format!("{}{}", detail("██████████", true), paint("", STYLE_DETAIL.dimmed(), true))
         );
-        assert_eq!(strip_ansi(&usage_bar(0, 0, None, true)), "··········");
+        assert_eq!(strip_ansi(&usage_bar(0, 0, None, true, 10)), "··········");
+    }
+
+    #[test]
+    fn render_options_resize_or_remove_tree_bars_without_changing_data() {
+        let report = fixture_for(&Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection {
+                size: SizeMetric::Apparent,
+                depth: Some(Bound::Limit(0)),
+                ..Selection::default()
+            },
+            ..Query::default()
+        });
+        for width in [0, 10, 20] {
+            let options = RenderOptions { color: false, bar_size: width };
+            let text = render_with_options(&report, Format::Text, options).expect("tree");
+            let lines = text.lines().collect::<Vec<_>>();
+            assert_eq!(lines.len(), 2, "{width}: {text:?}");
+            for line in &lines {
+                if width == 0 {
+                    assert!(line.starts_with(" 100%"), "{line:?}");
+                } else {
+                    assert!(line.starts_with(&"█".repeat(width)), "{line:?}");
+                    assert!(line["█".repeat(width).len()..].starts_with("   100%"));
+                }
+            }
+            assert!(lines[0].ends_with("120 B  . 2 files"), "{text:?}");
+            assert!(lines[1].ends_with("120 B    … and 2 more files"), "{text:?}");
+            let mut streamed = Vec::new();
+            write_with_options(&report, Format::Text, options, &mut streamed).expect("stream");
+            assert_eq!(streamed, text.as_bytes());
+        }
+        assert_eq!(
+            render_with_options(&report, Format::Json, RenderOptions { color: true, bar_size: 20 })
+                .expect("machine"),
+            render(&report, Format::Json, false)
+        );
+        let excessive = RenderOptions { color: false, bar_size: MAX_BAR_SIZE + 1 };
+        assert!(
+            render_with_options(&report, Format::Text, excessive)
+                .expect_err("tree width must be bounded")
+                .to_string()
+                .contains("bar_size")
+        );
+        let mut output = Vec::new();
+        assert_eq!(
+            write_with_options(&report, Format::Text, excessive, &mut output)
+                .expect_err("streaming tree width must be bounded")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert!(output.is_empty());
+        let summary = fixture(&[ViewSpec::Summary]);
+        assert_eq!(
+            render_with_options(&summary, Format::Text, excessive).expect("no tree bar"),
+            render(&summary, Format::Text, false)
+        );
     }
 
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";

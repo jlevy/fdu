@@ -1098,8 +1098,8 @@ def _projection_result(value: object) -> ProjectionResult:
         notes = tuple(str(note) for note in _sequence(report["notes"], "report notes"))
         handle = report["renderer"]
 
-        def renderer(format: str, color: bool) -> str:
-            return cast(str, _opened_call(handle.render, format, color))
+        def renderer(format: str, color: bool, bar_size: int) -> str:
+            return cast(str, _opened_call(handle.render, format, color, bar_size))
 
         return ReportResult(
             "report",

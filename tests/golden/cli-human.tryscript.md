@@ -12,7 +12,8 @@ env:
   TZ: UTC
 patterns:
   SCAN_PATH: '[^\r\n]+'
-  PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
   HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
   AGE: '\s*-?\d+(s|m|h|d|w|mo|y)'
   SEP: '[/\\]'
@@ -34,10 +35,11 @@ $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    … and 1 more file
+! note: gitignored sizes are included in row totals
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: row limit 10
 ! tip: show more rows: --limit=all
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -60,7 +62,8 @@ $ fdu --cache off --color never --size apparent --view tree --full project
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -77,7 +80,8 @@ $ fdu --cache off --color never --size apparent --view tree --depth=all --breadt
 █░░░░░░░░░     9%        23 B    docs/ 1 file
 █░░░░░░░░░     9%        23 B      FAQ.MD
 ░░░░░░░░░░     2%         6 B    .gitignore
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -114,7 +118,7 @@ $ fdu --cache off --color never --size apparent --view tree --limit=0 project
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -125,11 +129,12 @@ $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
 ██████████   100%       269 B  . 7 files (128 B gitignored)
 █████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
 ██████████   100%       269 B    … and 7 more files
+! note: gitignored sizes are included in row totals
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 1, row limit 2
 ! tip: expand deeper: --depth=all
 ! tip: show more rows: --limit=all
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -148,7 +153,7 @@ $ fdu --cache off --color never --view types --limit 10 --size apparent project
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -187,10 +192,11 @@ FAMILIES
 
 SUMMARY
      269 B  7 files, 3 directories (128 B gitignored)
+! note: gitignored sizes are included in row totals
 ! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
 ! note: display limits: depth 1
 ! tip: expand deeper: --depth=all
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -205,7 +211,7 @@ the property behind piping it into `xargs`.
 $ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files ([HUMAN_SIZE]); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -222,7 +228,7 @@ $ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
-! perf: walked 7 files ([HUMAN_SIZE]); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -240,8 +246,45 @@ src[SEP]omega.rs
 
 SUMMARY
       36 B  2 files, 0 directories
-! perf: walked 7 files (269 B); ignore 1 file (1 rules); content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
+```
+
+## Tree Bar Width
+
+The bar width changes only the tree presentation.
+Zero and negative widths omit the bar and its gutter; the percentages, sizes, names, and
+remainder stay visible.
+
+```console
+$ fdu --cache off --quiet --color never --size apparent --view tree --depth 0 --bar-size 20 project
+████████████████████   100%       269 B  . 7 files (128 B gitignored)
+████████████████████   100%       269 B    … and 7 more files
+? 0
+```
+
+```console
+$ fdu --cache off --quiet --color never --size apparent --view tree --depth 0 --bar-size 0 project
+ 100%       269 B  . 7 files (128 B gitignored)
+ 100%       269 B    … and 7 more files
+? 0
+```
+
+```console
+$ fdu --cache off --quiet --color never --size apparent --view tree --depth 0 --bar-size -1 project
+ 100%       269 B  . 7 files (128 B gitignored)
+ 100%       269 B    … and 7 more files
+? 0
+```
+
+## Oversized Human Tree Bars Fail Before Scanning
+
+An oversized human tree bar is a usage error before the root is touched.
+
+```console
+$ fdu --bar-size 4097 --view tree missing-tree
+fdu: invalid --bar-size "4097": expected at most 4096 cells
+? 2
 ```
 
 <!-- This document follows common-doc-guidelines.md.
