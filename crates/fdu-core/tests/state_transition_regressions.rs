@@ -12,6 +12,26 @@ use fdu_core::query::{Basis, Query, Request, report};
 use fdu_core::scan::{ScanConfig, reconcile, reconcile_handle, reconcile_subtree, scan_into_index};
 use fdu_core::{CachePolicy, Coverage, IndexHandle, OpenPath};
 
+/// Whether a fixture's permission denial took effect.
+///
+/// A process that ignores permission bits, such as root in a container, reads a mode-000
+/// entry anyway. Like the other permission fixtures, such a host fails loudly unless it
+/// is declared with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1`, in which case the test skips.
+fn denial_enforced<T>(probe: std::io::Result<T>, restore: impl FnOnce()) -> bool {
+    if let Err(denied) = probe {
+        assert_eq!(denied.kind(), std::io::ErrorKind::PermissionDenied);
+        return true;
+    }
+    restore();
+    if std::env::var_os("FDU_TEST_ALLOW_NO_PERMISSION_BITS").as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!("skipped by FDU_TEST_ALLOW_NO_PERMISSION_BITS=1: host permits denied access");
+        return false;
+    }
+    panic!("permission fixture precondition failed: host permits mode-000 access");
+}
+
 #[test]
 fn control_read_failure_has_identical_cold_serial_and_parallel_rules() {
     for (subtree, threads) in [(".gitignore", 1), ("", 1), ("", 2)] {
@@ -24,8 +44,11 @@ fn control_read_failure_has_identical_cold_serial_and_parallel_rules() {
         assert!(baseline.is_complete());
         fs::write(&control, b"# none\n").expect("change rules");
         fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("chmod");
-        let denied = fs::read(&control).expect_err("fixture must enforce permission bits");
-        assert_eq!(denied.kind(), std::io::ErrorKind::PermissionDenied);
+        if !denial_enforced(fs::read(&control), || {
+            fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore");
+        }) {
+            return;
+        }
 
         let result = reconcile_subtree(&mut warm, Path::new(subtree), &config, &mut |_| {});
         let cold = scan_into_index(root.path(), &config);
@@ -55,8 +78,11 @@ fn warm_partial_report_retains_reconciliation_error() {
     let snapshot = cache.path().join("snapshot.fdu");
     fdu_core::snapshot::save(&index, &snapshot).expect("save");
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("chmod");
-    let denied = fs::read_dir(&blocked).expect_err("fixture must enforce directory permissions");
-    assert_eq!(denied.kind(), std::io::ErrorKind::PermissionDenied);
+    if !denial_enforced(fs::read_dir(&blocked), || {
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).expect("restore");
+    }) {
+        return;
+    }
 
     let opened = fdu_core::open(
         &Basis {
@@ -87,9 +113,11 @@ fn cold_partial_can_become_complete_after_direct_and_shared_root_retries() {
         fs::write(blocked.join("file.txt"), b"held").expect("file");
         let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("chmod");
-        let denied =
-            fs::read_dir(&blocked).expect_err("fixture must enforce directory permissions");
-        assert_eq!(denied.kind(), std::io::ErrorKind::PermissionDenied);
+        if !denial_enforced(fs::read_dir(&blocked), || {
+            fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).expect("restore");
+        }) {
+            return;
+        }
         let scanned = scan_into_index(root.path(), &config);
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).expect("restore");
         let (mut index, initial) = scanned.expect("cold partial");
