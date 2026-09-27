@@ -9,9 +9,9 @@ document records the directory-query implementation decisions.
 Its original requirements to preserve depth 2, ten children, directory-only leaves,
 older ignored flags, and report schema `/7` describe that increment, not the current
 interface. The
-[analysis and presentation plan](plan-2026-09-26-code-analysis-presentation.md) owns the
-current depth-5, 1%-share defaults, significant file leaves, population controls, and
-report schema `/8`. Use the [usage guide](../../../usage.md) and
+[analysis and presentation plan](../done/plan-2026-09-26-code-analysis-presentation.md)
+owns the current depth-5, 1%-share defaults, significant file leaves, population
+controls, and report schema `/8`. Use the [usage guide](../../../usage.md) and
 [machine-output reference](../../../machine-output.md) for current commands and schemas.
 
 **Tracking:** Epic `fdu-65x1`; plan publication `fdu-79n0`;
@@ -911,7 +911,7 @@ Final gate and CI evidence will be recorded on the implementation PR before comp
 - [Engine architecture](../../architecture/fdu-engine-architecture.md)
 - [Surface architecture](../../architecture/fdu-surface-architecture.md)
 - [Current usage guide](../../../usage.md)
-- [View vocabulary and output contract](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
+- [View vocabulary and output contract](../done/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

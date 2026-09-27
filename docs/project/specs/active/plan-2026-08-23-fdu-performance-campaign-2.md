@@ -4,7 +4,10 @@
 
 **Author:** fdu project
 
-**Status:** Active. This plan owns the current prioritization; the queue orderings in
+**Status:** Active.
+Completed experiments settle their measured cells; the H148 Linux PGO
+screen did not adopt a release profile, which remains `fdu-pdne`. This plan owns the
+current prioritization; the queue orderings in
 [the structural review](../../research/research-2026-08-14-structural-performance-review.md)
 and
 [the consumer structural-headroom review](../../research/research-2026-08-15-consumer-structural-headroom.md)
@@ -527,14 +530,14 @@ strategy and the record is visible in review.
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
   remaining Darwin queue after the H116–H120 overnight
-- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
-  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
+- [Linux parallel validation](../done/plan-2026-09-19-linux-parallel-validation.md) —
+  H139–H143 recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
   virtualized host; base `main`, merges onto `main` then #97
-- [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
-  leftover records, H147/H72 keeps, and H148 PGO screen on
+- [Linux performance iteration](../done/plan-2026-09-20-linux-performance-iteration.md)
+  — leftover records, H147/H72 keeps, and H148 PGO screen on
   [#97](https://github.com/jlevy/fdu/pull/97)
-- [Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md) — H148 / exp-154 folded onto
-  #97
+- [Linux PGO screen](../done/plan-2026-09-20-linux-pgo-screen.md) — H148 / exp-154
+  folded onto #97
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

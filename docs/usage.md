@@ -233,7 +233,7 @@ A unique-file allocation measure is planned separately in the
 [checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md).
 It is not an available size mode today.
 The
-[directory inventory assessment](project/specs/active/plan-2026-09-26-directory-inventory-accounting.md)
+[directory inventory assessment](project/specs/done/plan-2026-09-26-directory-inventory-accounting.md)
 records current evidence and the remaining design work.
 
 ### Select by `.gitignore`

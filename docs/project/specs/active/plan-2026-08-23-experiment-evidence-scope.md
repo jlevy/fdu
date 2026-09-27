@@ -4,9 +4,11 @@
 
 **Author:** fdu project
 
-**Status:** Draft. Owns the structural fix; the mechanism landed in
-[PR #38](https://github.com/jlevy/fdu/pull/38) is the first slice of Phase 1 and this
-plan absorbs the rest.
+**Status:** Active, partly implemented.
+[PR #38](https://github.com/jlevy/fdu/pull/38) landed the first Phase 1 provenance
+mechanism.
+Subject profiles, `verdict.scope`, rendered qualifiers, build enforcement, and
+the Phase 2 scope rule remain open under the beads in the implementation plan.
 
 ## Overview
 

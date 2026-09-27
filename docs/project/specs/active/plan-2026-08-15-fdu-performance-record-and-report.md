@@ -4,11 +4,14 @@
 
 **Author:** fdu project
 
-**Status:** Active. Phase A landed and Phase B’s harness landed; Phase B’s artifact
-backfill is blocked on a quiet host, and Phase C is open.
-Phase D landed in a different shape from the one below: a generated, charted
-[performance evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md)
-rather than one section per improvement, with per-platform absolute walls still to add.
+**Status:** Active. Phase A and Phase B’s harness landed.
+Phase B’s artifact backfill still requires a quiet host; Phase C’s cross-platform
+coverage matrix and re-runs remain open.
+Phase D has a generated, charted
+[performance evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md),
+but its per-improvement sections and per-platform absolute walls remain open.
+The quiet-host peer cell `fdu-ow8y` is unresolved; PR #132’s exploratory macOS
+comparison does not replace it.
 Scheduled as Phase E of
 [the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md), which owns the
 work order; this plan owns what the record must contain.

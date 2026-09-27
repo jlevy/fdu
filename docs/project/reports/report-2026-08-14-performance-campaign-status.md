@@ -7,6 +7,12 @@
 **Status:** Orientation through 2026-08-23. Live pickup is
 [the runbook standing](../guides/performance-loop-runbook.md#current-standing-2026-09-18).
 
+The [current work map](../../../TODO.md#performance-and-evidence) records remaining
+owners after the 2026-09-27 tracking review.
+The merged #132 benchmark refresh is qualified exploratory evidence; `fdu-ow8y` still
+owns the unresolved quiet native/wheel release cell, and `fdu-s234` owns the
+claim-policy reconciliation.
+
 ## Who this is for
 
 You need no prior context.
@@ -117,7 +123,7 @@ code — but it counts what the code *believes* it did.
 The process tier is real kernel data that cannot be fooled and cannot attribute.
 The external tier is authoritative and far too slow to leave on.
 
-The mechanism lives in the [`fdu::counters`](../../../crates/fdu/src/counters.rs)
+The mechanism lives in the [`fdu::counters`](../../../crates/fdu-core/src/counters.rs)
 subsystem: thread-local non-atomic storage folded into process globals, a runtime enable
 flag, a certified counting global allocator, and capability-specific Linux and macOS
 process collectors.
