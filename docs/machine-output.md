@@ -1,11 +1,27 @@
 # Machine Output and Directory Inventories
 
-All reports use `fdu.report/8`, including metadata-only and content-analyzed reports.
+All reports use `fdu.report/9`, including metadata-only and content-analyzed reports.
 Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
 The [schema rule](project/guides/release-process.md) requires a new version when a
 published shape changes.
 Content analysis does not select another schema.
+
+## Recursive Trees and Hidden Content
+
+For a full recursive roll-up, use `--view tree --full` without a scan-depth restriction.
+Fully observed trees then have `remainder: null` and no omission records.
+Check `status.complete` independently: unrestricted display cannot repair an unreadable
+directory or incomplete discovery.
+
+Each bounded tree section includes a shared `remainder`: recursive `files`, apparent
+`bytes`, `allocated` bytes, and applicable `reasons`. Unknown totals are `null`, never
+zero. These are the same values rendered as `… and SIZE (N files) more` in text.
+The section’s `limits` give exact bound values.
+Per-node `omissions` retain detailed first-exclusion boundaries: `entries` counts direct
+hidden roots, while `files` counts regular files throughout those hidden subtrees.
+Sum disjoint boundaries, never parent and child directory totals.
+See the [output design system](project/architecture/fdu-output-design.md).
 
 ## List Rows
 
@@ -68,8 +84,9 @@ The default is depth 5, share `1%`, and unlimited breadth and rows.
 `tree` is null when no data row is admitted, including `--limit=0`.
 
 Sections and nodes carry `omissions`. Each item names `reason` (`share`, `breadth`,
-`depth`, or `rows`), the number of direct child roots omitted in `entries`, and exact
-`bytes`/`allocated` remainder when known, otherwise null.
+`depth`, or `rows`), the number of direct child roots omitted in `entries`, the
+recursive regular-file count in `files`, and the `bytes`/`allocated` remainder.
+Counts and sizes are null when unknown.
 Each omission belongs to its first excluding bound, so these disjoint child subtrees can
 be counted without double counting.
 The root denominator and aggregate totals are unchanged by display bounds.

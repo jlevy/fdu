@@ -636,10 +636,62 @@ pub struct TreeOmission {
     pub reason: TreeOmissionReason,
     /// Direct child roots omitted at this boundary.
     pub entries: usize,
+    /// Exact recursive regular-file tally, distinct from direct child roots.
+    pub files: Option<u64>,
     /// Exact apparent remainder when the subtree measurements are complete.
     pub bytes: Option<u64>,
     /// Exact allocated remainder when the subtree measurements are complete.
     pub allocated: Option<u64>,
+}
+
+/// Disjoint hidden content across a whole projected tree, shared by every format.
+/// Directory totals overlap their children and must never be summed here. Each omitted
+/// boundary covers a subtree absent from the rendered nodes, so its descendants cannot
+/// contribute a second time. Unknown or overflowing constituents propagate as `None`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeRemainder {
+    /// Recursive regular files in hidden subtrees, not the number of hidden roots.
+    pub files: Option<u64>,
+    /// Apparent bytes in hidden subtrees.
+    pub bytes: Option<u64>,
+    /// Allocated bytes in hidden subtrees.
+    pub allocated: Option<u64>,
+    /// Applicable boundaries in stable share, depth, breadth, row order.
+    pub reasons: Vec<TreeOmissionReason>,
+}
+
+impl TreeRemainder {
+    /// Summarize retained omission facts without changing the selected population.
+    pub fn from_tree(root: Option<&TreeNode>, omissions: &[TreeOmission]) -> Option<Self> {
+        let mut result =
+            Self { files: Some(0), bytes: Some(0), allocated: Some(0), reasons: Vec::new() };
+        let mut add = |omission: &TreeOmission| {
+            result.files = result.files.zip(omission.files).and_then(|(a, b)| a.checked_add(b));
+            result.bytes = result.bytes.zip(omission.bytes).and_then(|(a, b)| a.checked_add(b));
+            result.allocated =
+                result.allocated.zip(omission.allocated).and_then(|(a, b)| a.checked_add(b));
+            if !result.reasons.contains(&omission.reason) {
+                result.reasons.push(omission.reason);
+            }
+        };
+        for omission in omissions {
+            add(omission);
+        }
+        let mut stack: Vec<_> = root.into_iter().collect();
+        while let Some(node) = stack.pop() {
+            for omission in &node.omissions {
+                add(omission);
+            }
+            stack.extend(node.children.iter());
+        }
+        result.reasons.sort_by_key(|why| match why {
+            TreeOmissionReason::Share => 0,
+            TreeOmissionReason::Depth => 1,
+            TreeOmissionReason::Breadth => 2,
+            TreeOmissionReason::Rows => 3,
+        });
+        (!result.reasons.is_empty()).then_some(result)
+    }
 }
 
 /// Resolved, independent display bounds for one hierarchical section.
@@ -1178,6 +1230,10 @@ pub struct Report {
     /// machine consumer reads the omission from which sections are absent, and adding a
     /// field to the envelope would be a schema change for something only humans read.
     pub notes: Vec<String>,
+    /// Actionable suggestions, rendered once after factual notes; excluded from wire data.
+    pub tips: Vec<String>,
+    /// Surface vocabulary for actionable display-bound suggestions.
+    pub axes: &'static AxisNames,
     /// Which size metric this report answers in.
     ///
     /// Carried on the report so a renderer shows the same number the ordering used;
@@ -1211,29 +1267,23 @@ pub struct Report {
 /// CLI also prints a note quoting how many bytes analysis read, which is walk telemetry the
 /// report envelope does not carry, so that one stays with the performance footer where the
 /// rest of the run's telemetry lives.
-pub(crate) fn display_notes(query: &Query, ignore_rules: &ControlCoverage) -> Vec<String> {
+pub(crate) fn display_notes(
+    query: &Query,
+    ignore_rules: &ControlCoverage,
+) -> (Vec<String>, Vec<String>) {
     let mut notes = Vec::new();
+    let mut tips = Vec::new();
     if !query.omitted_views.is_empty() {
         let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
-        let guidance = query
-            .omitted_views
-            .iter()
-            .map(|view| match view {
-                ViewSpec::Code => {
-                    format!("code requires content analysis: add {} code", query.axes.analyze)
-                }
-                ViewSpec::Documents => format!(
-                    "documents require content analysis: add {} lines, code, words, or all",
-                    query.axes.analyze
-                ),
-                _ => unreachable!("only analyzer-dependent views are omitted"),
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        notes.push(format!("note: omitted {} — {guidance}", names.join(", ")));
+        notes.push(format!("note: omitted {}: content analysis required", names.join(", ")));
+        let analysis = if query.omitted_views.contains(&ViewSpec::Code) { "code" } else { "lines" };
+        tips.push(format!("tip: include omitted views: add {} {analysis}", query.axes.analyze));
     }
-    notes.extend(refused_controls_note(ignore_rules, query.axes));
-    notes
+    if let Some((note, tip)) = refused_controls_note(ignore_rules, query.axes) {
+        notes.push(note);
+        tips.extend(tip);
+    }
+    (notes, tips)
 }
 
 /// Directories a refused-controls note names before it counts the rest.
@@ -1247,7 +1297,10 @@ const REFUSED_DIRECTORIES_NAMED: usize = 5;
 /// listed; otherwise the note names every limit that could have refused an unlisted file.
 /// The remedy raises exactly the limits it named, each by the name the requesting surface
 /// uses, so lifting one never reads as lifting the other.
-fn refused_controls_note(ignore_rules: &ControlCoverage, axes: &AxisNames) -> Option<String> {
+fn refused_controls_note(
+    ignore_rules: &ControlCoverage,
+    axes: &AxisNames,
+) -> Option<(String, Option<String>)> {
     use crate::control::ControlRefusalReason::{Budget, LineLimit};
 
     let ControlCoverage::Observed(observed) = ignore_rules else {
@@ -1318,16 +1371,23 @@ fn refused_controls_note(ignore_rules: &ControlCoverage, axes: &AxisNames) -> Op
         })
         .collect();
     let remedy = match raises.as_slice() {
-        [] => String::new(),
-        [raise] => format!(" To apply them, raise {raise}, or set it to all"),
-        raises => format!(" To apply them, raise {}, or set them to all", raises.join(" and ")),
+        [] => None,
+        [raise] => {
+            Some(format!("tip: apply refused ignore files: raise {raise}, or set it to all"))
+        }
+        raises => Some(format!(
+            "tip: apply refused ignore files: raise {}, or set them to all",
+            raises.join(" and ")
+        )),
     };
     let files = crate::report_format::human_count(observed.refused);
     let noun = if observed.refused == 1 { "file" } else { "files" };
-    Some(format!(
-        "note: {files} .gitignore {noun} not applied ({why}), so ignored shares under {} are \
-         not exact; sizes are.{remedy}",
-        directories.join(", ")
+    Some((
+        format!(
+            "note: ignore classification incomplete: {files} ignore {noun} not applied ({why}); affected: {}",
+            directories.join(", ")
+        ),
+        remedy,
     ))
 }
 
@@ -1425,9 +1485,29 @@ pub(crate) fn report_in(
         }
     }
     let ignore_rules = index.control_coverage();
-    let mut notes = display_notes(query, &ignore_rules);
+    let (mut notes, mut tips) = display_notes(query, &ignore_rules);
+    if content.is_enabled()
+        && query.selection.sort.is_none_or(|sort| !matches!(sort, SortKey::Metric(_)))
+        && !query.views.iter().any(|view| {
+            matches!(
+                view,
+                ViewSpec::Types
+                    | ViewSpec::Families
+                    | ViewSpec::Languages
+                    | ViewSpec::Code
+                    | ViewSpec::Documents
+            )
+        })
+    {
+        notes.push("note: requested analysis is not displayed by the selected views".to_owned());
+        tips.push(format!("tip: show analysis: {} families, languages, or full", query.axes.view));
+    }
+    if matches!(&ignore_rules, ControlCoverage::Observed(observed) if observed.refusals.len() > REFUSED_DIRECTORIES_NAMED)
+    {
+        tips.push(format!("tip: show retained ignore-file details: {} json", query.axes.format));
+    }
     if tree_measurements.is_some_and(|values| values.values().any(|value| !value.complete)) {
-        notes.push("note: incomplete subtrees may appear below the share threshold; known sizes remain filtered".to_owned());
+        notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());
     }
     if index.observes_controls() && !index.ignored_classification_complete_below(Path::new("")) {
         notes.push(
@@ -1439,6 +1519,8 @@ pub(crate) fn report_in(
         age_reference_ns,
         format: query.format,
         notes,
+        tips,
+        axes: query.axes,
         status: TreeStatus::of(index, request),
         provenance: ReportProvenance::of(index, content, generated_at),
         scope: index.scope(),
@@ -1483,6 +1565,8 @@ pub(crate) fn report_summary(
         format: request.query.format,
         // A compact summary resolves one view and drops none.
         notes: Vec::new(),
+        tips: Vec::new(),
+        axes: request.query.axes,
         status,
         provenance,
         scope,
@@ -2625,6 +2709,7 @@ fn tree_node(
         let omitted = TreeOmission {
             reason: TreeOmissionReason::Rows,
             entries: 1,
+            files: complete.then_some(root.files),
             bytes: complete.then_some(root.bytes),
             allocated: complete.then_some(root.allocated),
         };
@@ -2652,7 +2737,10 @@ fn record_omission(
     let allocated = complete
         .then(|| rows.iter().try_fold(0u64, |sum, (row, _)| sum.checked_add(row.allocated)))
         .flatten();
-    node.omissions.push(TreeOmission { reason, entries: rows.len(), bytes, allocated });
+    let files = complete
+        .then(|| rows.iter().try_fold(0u64, |sum, (row, _)| sum.checked_add(row.files)))
+        .flatten();
+    node.omissions.push(TreeOmission { reason, entries: rows.len(), files, bytes, allocated });
     node.truncated = true;
 }
 
@@ -2669,6 +2757,7 @@ fn cap_tree_rows(root: TreeNode, cap: usize, complete: bool) -> TreeNode {
             let omission = TreeOmission {
                 reason: TreeOmissionReason::Rows,
                 entries: 1,
+                files: complete.then_some(item.node.files),
                 bytes: complete.then_some(item.node.bytes),
                 allocated: complete.then_some(item.node.allocated),
             };
@@ -2679,6 +2768,8 @@ fn cap_tree_rows(root: TreeNode, cap: usize, complete: bool) -> TreeNode {
                 .find(|existing| existing.reason == TreeOmissionReason::Rows)
             {
                 existing.entries += 1;
+                existing.files =
+                    existing.files.zip(omission.files).and_then(|(a, b)| a.checked_add(b));
                 existing.bytes =
                     existing.bytes.zip(omission.bytes).and_then(|(a, b)| a.checked_add(b));
                 existing.allocated =
@@ -3711,7 +3802,7 @@ mod tests {
         assert!(omitted.contains(&ViewSpec::Documents));
 
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        let notes = display_notes(&query, &ControlCoverage::NotObserved);
+        let (notes, _) = display_notes(&query, &ControlCoverage::NotObserved);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("code") && notes[0].contains("documents"), "{notes:?}");
 
@@ -3720,7 +3811,7 @@ mod tests {
             .expect("full resolves with analyzers");
         assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
-        assert!(display_notes(&query, &ControlCoverage::NotObserved).is_empty());
+        assert!(display_notes(&query, &ControlCoverage::NotObserved).0.is_empty());
     }
 
     /// A rule belongs to the library; the words a caller can act on belong to their
@@ -3737,82 +3828,67 @@ mod tests {
         use crate::control::{
             ControlLimits, ControlObservation, ControlRefusalReason, RefusedControl,
         };
-
-        let refused = |directory: &str, reason| RefusedControl {
-            path: Path::new(directory).join(".gitignore"),
-            reason,
-        };
-        let note = |limits, refusals: Vec<RefusedControl>, count: u64| {
+        let defaults = ControlLimits::default();
+        for (reason, wanted, unwanted) in [
+            (ControlRefusalReason::Budget, "--gitignore-budget", "--gitignore-line-limit"),
+            (ControlRefusalReason::LineLimit, "--gitignore-line-limit", "--gitignore-budget"),
+        ] {
             let coverage = ControlCoverage::Observed(ControlObservation {
+                limits: defaults,
+                applied: 7,
+                rules: 0,
+                refused: 1,
+                refusals: vec![RefusedControl {
+                    path: Path::new("vendor").join(".gitignore"),
+                    reason,
+                }],
+            });
+            let (note, tip) = refused_controls_note(&coverage, &AxisNames::FLAGS).expect("refusal");
+            assert!(
+                note.starts_with(
+                    "note: ignore classification incomplete: 1 ignore file not applied"
+                )
+            );
+            assert!(note.contains("vendor"));
+            assert!(!note.contains("--"), "facts do not repeat flag advice");
+            let tip = tip.expect("bounded refusal has a remedy");
+            assert!(tip.starts_with("tip:"));
+            assert!(tip.contains(wanted));
+            assert!(!tip.contains(unwanted));
+        }
+        let coverage = |limits, refused| {
+            ControlCoverage::Observed(ControlObservation {
                 limits,
                 applied: 7,
                 rules: 0,
-                refused: count,
-                refusals,
-            });
-            refused_controls_note(&coverage, &AxisNames::FLAGS).expect("a refusal is noted")
+                refused,
+                refusals: (0..crate::MAX_RETAINED_ISSUES)
+                    .map(|i| RefusedControl {
+                        path: Path::new(&format!("d{i:02}")).join(".gitignore"),
+                        reason: ControlRefusalReason::Budget,
+                    })
+                    .collect(),
+            })
         };
-        let defaults = ControlLimits::default();
-        let (budget, line_limit) = (ControlRefusalReason::Budget, ControlRefusalReason::LineLimit);
-
-        assert_eq!(
-            note(defaults, vec![refused("", budget), refused("pkg/a", budget)], 2),
-            "note: 2 .gitignore files not applied (2 over the 4.0 MiB ignore-rule budget), so \
-             ignored shares under ., pkg/a are not exact; sizes are. To apply them, raise \
-             --gitignore-budget above 4.0 MiB, or set it to all"
-        );
-        assert_eq!(
-            note(defaults, vec![refused("vendor", line_limit)], 1),
-            "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so \
-             ignored shares under vendor are not exact; sizes are. To apply them, raise \
-             --gitignore-line-limit above 16 KiB, or set it to all"
-        );
-        assert_eq!(
-            note(defaults, vec![refused("a", budget), refused("b", line_limit)], 2),
-            "note: 2 .gitignore files not applied (1 over the 4.0 MiB ignore-rule budget, 1 with \
-             a line over the 16 KiB line limit), so ignored shares under a, b are not exact; \
-             sizes are. To apply them, raise --gitignore-budget above 4.0 MiB and \
-             --gitignore-line-limit above 16 KiB, or set them to all"
-        );
-
-        // Truncated, the note names every limit that could have refused an unlisted file:
-        // both when both are bounded, and only the budget once the line limit is lifted.
-        let listed: Vec<_> = (0..crate::MAX_RETAINED_ISSUES)
-            .map(|index| refused(&format!("d{index:02}"), budget))
-            .collect();
-        assert_eq!(
-            note(defaults, listed.clone(), 1_000),
-            "note: 1,000 .gitignore files not applied (over the 4.0 MiB ignore-rule budget or \
-             with a line over the 16 KiB line limit), so ignored shares under d00, d01, d02, \
-             d03, d04, 995 more are not exact; sizes are. To apply them, raise \
-             --gitignore-budget above 4.0 MiB and --gitignore-line-limit above 16 KiB, or set \
-             them to all"
-        );
-        assert_eq!(
-            note(ControlLimits { line_limit: None, ..defaults }, listed, 1_000),
-            "note: 1,000 .gitignore files not applied (over the 4.0 MiB ignore-rule budget), so \
-             ignored shares under d00, d01, d02, d03, d04, 995 more are not exact; sizes are. \
-             To apply them, raise --gitignore-budget above 4.0 MiB, or set it to all"
-        );
-
-        // No engine path records a refusal by an unbounded limit, and the snapshot loader
-        // rejects one, but a hand-built observation can still carry it: the note names the
-        // limit without a size rather than a zero one, and raises only bounded limits.
-        assert_eq!(
-            note(ControlLimits { budget: None, ..defaults }, vec![refused("a", budget)], 1),
-            "note: 1 .gitignore file not applied (1 over the ignore-rule budget), so ignored \
-             shares under a are not exact; sizes are."
-        );
-
-        let complete = ControlCoverage::Observed(ControlObservation {
-            limits: defaults,
-            applied: 3,
-            rules: 0,
-            refused: 0,
-            refusals: Vec::new(),
-        });
-        assert_eq!(refused_controls_note(&complete, &AxisNames::FLAGS), None);
-        assert_eq!(refused_controls_note(&ControlCoverage::NotObserved, &AxisNames::FLAGS), None);
+        let (note, tip) =
+            refused_controls_note(&coverage(defaults, 1000), &AxisNames::FLAGS).expect("truncated");
+        assert!(note.contains("995 more"));
+        assert!(!note.contains("d05"));
+        let tip = tip.expect("both bounded limits may explain unlisted refusals");
+        assert!(tip.contains("--gitignore-budget") && tip.contains("--gitignore-line-limit"));
+        let (_, tip) = refused_controls_note(
+            &coverage(ControlLimits { line_limit: None, ..defaults }, 1000),
+            &AxisNames::FLAGS,
+        )
+        .expect("truncated");
+        assert!(!tip.expect("budget remedy").contains("--gitignore-line-limit"));
+        let (_, tip) = refused_controls_note(
+            &coverage(ControlLimits { budget: None, line_limit: None }, 64),
+            &AxisNames::FLAGS,
+        )
+        .expect("retained refusal");
+        assert!(tip.is_none(), "do not suggest raising unbounded limits");
+        assert!(refused_controls_note(&ControlCoverage::NotObserved, &AxisNames::FLAGS).is_none());
     }
 
     #[test]
@@ -3833,7 +3909,7 @@ mod tests {
             // Anchored on the whole phrase, because `--analyze` contains `analyze`: a bare
             // `contains` for the other surface's spelling matches its own. That is the same
             // tokenisation trap the watch-scope substitution had to avoid.
-            let note = display_notes(&query, &ControlCoverage::NotObserved).remove(0);
+            let note = display_notes(&query, &ControlCoverage::NotObserved).1.remove(0);
             assert!(note.contains(&format!("add {mine} ")), "{note} must name {mine}");
             assert!(!note.contains(&format!("add {theirs} ")), "{note} must not name {theirs}");
         }
@@ -3937,6 +4013,150 @@ mod tests {
         );
         assert_eq!(root.omissions[0].reason, TreeOmissionReason::Share);
         assert_eq!(root.omissions[0].bytes, Some(9));
+    }
+
+    /// Each display boundary hides a disjoint subtree. The breadth omission covers
+    /// two files under one directory, so omitted child roots cannot stand in for files.
+    fn mixed_remainder_index() -> Index {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("A", EntryKind::Dir, attrs(0, 0)),
+            upsert("A/a1", EntryKind::Dir, attrs(0, 0)),
+            upsert("A/a1/x", EntryKind::Dir, attrs(0, 0)),
+            upsert("A/a1/x/leaf", EntryKind::File, attrs(1960, 0)),
+            upsert("A/a1/tiny", EntryKind::File, attrs(40, 0)),
+            upsert("A/a2", EntryKind::Dir, attrs(0, 0)),
+            upsert("A/a2/file", EntryKind::File, attrs(2000, 0)),
+            upsert("B", EntryKind::Dir, attrs(0, 0)),
+            upsert("B/b1", EntryKind::Dir, attrs(0, 0)),
+            upsert("B/b1/file", EntryKind::File, attrs(2000, 0)),
+            upsert("B/b2", EntryKind::Dir, attrs(0, 0)),
+            upsert("B/b2/file", EntryKind::File, attrs(2000, 0)),
+            upsert("C", EntryKind::Dir, attrs(0, 0)),
+            upsert("C/c1", EntryKind::Dir, attrs(0, 0)),
+            upsert("C/c1/first", EntryKind::File, attrs(1000, 0)),
+            upsert("C/c1/second", EntryKind::File, attrs(1000, 0)),
+        ]));
+        index
+    }
+
+    #[test]
+    fn nested_mixed_omissions_have_one_exact_remainder_golden() {
+        let index = mixed_remainder_index();
+        let selection = Selection {
+            size: SizeMetric::Apparent,
+            depth: Some(Bound::Limit(3)),
+            breadth: Some(Bound::Limit(2)),
+            limit: Some(Bound::Limit(8)),
+            min_share: Some(ShareThreshold::parse("0.5%").expect("share")),
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Tree], selection));
+        let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+            panic!("expected tree")
+        };
+        let remainder = TreeRemainder::from_tree(Some(root), omissions).expect("hidden content");
+        assert_eq!((root.files, root.bytes, root.allocated), (7, 10_000, 10_752));
+        assert_eq!(
+            (remainder.files, remainder.bytes, remainder.allocated),
+            (Some(6), Some(8_000), Some(8_704))
+        );
+        assert_eq!(
+            remainder.reasons,
+            vec![
+                TreeOmissionReason::Share,
+                TreeOmissionReason::Depth,
+                TreeOmissionReason::Breadth,
+                TreeOmissionReason::Rows
+            ]
+        );
+        assert_eq!(
+            crate::report_format::render(&report, crate::report_format::Format::Text, false)
+                .expect("render"),
+            include_str!("../../tests/golden/remainder-tree.txt"),
+        );
+    }
+
+    #[test]
+    fn unbounded_tree_expands_every_entry_without_a_remainder_or_diagnostics() {
+        let index = mixed_remainder_index();
+        let selection = Selection {
+            size: SizeMetric::Apparent,
+            depth: Some(Bound::All),
+            breadth: Some(Bound::All),
+            limit: Some(Bound::All),
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Tree], selection));
+        let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+            panic!("expected tree")
+        };
+        let mut paths = std::collections::BTreeSet::new();
+        let mut stack = vec![root.as_ref()];
+        while let Some(node) = stack.pop() {
+            assert!(node.omissions.is_empty() && !node.truncated);
+            paths.insert(node.path.to_string_lossy().replace('\\', "/"));
+            stack.extend(&node.children);
+        }
+        assert_eq!(
+            paths,
+            [
+                "",
+                "A",
+                "A/a1",
+                "A/a1/tiny",
+                "A/a1/x",
+                "A/a1/x/leaf",
+                "A/a2",
+                "A/a2/file",
+                "B",
+                "B/b1",
+                "B/b1/file",
+                "B/b2",
+                "B/b2/file",
+                "C",
+                "C/c1",
+                "C/c1/first",
+                "C/c1/second"
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+        );
+        assert_eq!((root.files, root.dirs, root.bytes, root.allocated), (7, 9, 10_000, 10_752));
+        assert!(omissions.is_empty());
+        assert!(TreeRemainder::from_tree(Some(root), omissions).is_none());
+        assert!(report.notes.is_empty() && report.tips.is_empty());
+    }
+
+    #[test]
+    fn an_unlisted_hidden_branch_makes_remainder_counts_and_sizes_unknown() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("known", EntryKind::File, attrs(100, 0)),
+            upsert("denied", EntryKind::Dir, attrs(0, 0)),
+        ]));
+        index.set_initial_scan_freshness(&[crate::Error::io(
+            Path::new("/root").join("denied"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+        )]);
+        let selection = Selection {
+            size: SizeMetric::Apparent,
+            depth: Some(Bound::Limit(0)),
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Tree], selection));
+        let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+            panic!("expected tree")
+        };
+        let remainder = TreeRemainder::from_tree(Some(root), omissions).expect("depth bound");
+        assert_eq!((remainder.files, remainder.bytes, remainder.allocated), (None, None, None));
+        assert_eq!(remainder.reasons, vec![TreeOmissionReason::Depth]);
+        let text = crate::report_format::render(&report, crate::report_format::Format::Text, false)
+            .expect("render");
+        assert!(text.contains("… and unknown size (unknown file count) more"));
     }
 
     /// A failed listing must not turn off the default threshold for verified siblings.

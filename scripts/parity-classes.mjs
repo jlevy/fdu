@@ -34,11 +34,44 @@ const KNOBS =
   /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--cache|--watch|cache policy|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
+// A report's bound suggestions name the same setter differently on each surface.
+// The full line, including action and value, is pinned so no other tip can borrow this
+// exception merely because it contains a familiar word.
+const TIP_PAIRS = [
+  ['tip: show smaller entries: --min-share=0%', 'tip: show smaller entries: min_share=0%'],
+  ['tip: expand deeper: --depth=all', 'tip: expand deeper: depth=all'],
+  ['tip: show more children: --breadth=all', 'tip: show more children: breadth=all'],
+  ['tip: show more rows: --limit=all', 'tip: show more rows: limit=all'],
+];
+const sameBoundTip = (removed, added) => {
+  const marker = removed.startsWith('! ') ? '! ' : '';
+  return TIP_PAIRS.some(([cli, api]) => removed === marker + cli && added === marker + api);
+};
+const usesBoundTip = (line) =>
+  /^(! )?tip: /.test(line) &&
+  /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
+
 // A class that no longer explains anything is removed, not kept "just in case". Its
 // matcher would still match, so it would quietly absorb a real regression: `execution-tier`
 // covered eight sessions until fdu.report exposed the one-shot contract, and its matcher
 // keyed on "source" and cache-emptiness -- exactly what a cache regression would look like.
 export const CLASSES = [
+  {
+    id: 'bound-tip-vocabulary',
+    title: 'Bound suggestions name the same setter on each surface',
+    why: [
+      'The command line names bound flags and Python names corresponding fields.',
+      'Only the four exact action, setter, and value pairs emitted by the shared',
+      'report renderer are accepted; every other line remains identical.',
+    ],
+    matches: ({ removed, added }) =>
+      removed.length > 0 &&
+      removed.length === added.length &&
+      removed.every((line, i) =>
+        sameSeparator(line) === sameSeparator(added[i]) || sameBoundTip(line, added[i]),
+      ) &&
+      removed.some((line, i) => sameBoundTip(line, added[i])),
+  },
   {
     id: 'surface-label',
     title: 'Each surface names its own parameter',
@@ -52,6 +85,7 @@ export const CLASSES = [
     matches: ({ removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
+      !removed.some(usesBoundTip) &&
       removed.every((line, i) => sameName(line) === sameName(added[i])) &&
       removed.some((line, i) => line !== added[i]),
   },
@@ -73,39 +107,9 @@ export const CLASSES = [
     matches: ({ removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
+      !removed.some(usesBoundTip) &&
       removed.every((line, i) => withoutKnobs(line) === withoutKnobs(added[i])) &&
       removed.some((line, i) => line !== added[i]),
-  },
-  {
-    id: 'run-telemetry',
-    title: 'Output carrying walk telemetry the report schema excludes',
-    why: [
-      'A note quoting how many bytes analysis read, or the performance footer itself.',
-      'Both are telemetry about the run rather than facts about the report, and the',
-      'envelope deliberately carries none, so a Report cannot reproduce them. The omission',
-      'note is NOT this: that one is a fact about the report, travels on it, and every',
-      'surface states it in its own vocabulary.',
-    ],
-    // Everything that is not telemetry has to be unchanged, line for line. Counting the
-    // remainder instead let this class absorb a genuinely different answer: a session
-    // whose command-line output lost a `note:` line could also report a different tally
-    // and still be explained, because one removed line was matched by one added line
-    // whatever the two said. That is the opposite of what a class is for -- the header
-    // above requires a class to say what the difference IS.
-    //
-    // Compared through sameSeparator for the reason given where it is defined: a golden
-    // writes the separator as [SEP] and the package prints the literal, so a hunk that
-    // merely contains a path would otherwise read as a changed answer and this class
-    // would stop explaining the sessions it exists for.
-    matches: ({ removed, added }) => {
-      const telemetry = (line) => /^note:|^Performance:/.test(line);
-      const rest = removed.filter((line) => !telemetry(line));
-      return (
-        removed.some(telemetry) &&
-        rest.length === added.length &&
-        rest.every((line, index) => sameSeparator(line) === sameSeparator(added[index]))
-      );
-    },
   },
   {
     id: 'discovery-surface',

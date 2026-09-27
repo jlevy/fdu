@@ -167,11 +167,8 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
                 encoding="utf-8",
                 check=True,
             ).stdout
-            # The CLI appends a performance footer; the schema excludes that telemetry and
-            # a Report does not carry the counts behind it, so it is the one difference.
-            body = "\n".join(
-                line for line in cli.splitlines() if not line.startswith("Performance:")
-            ).rstrip()
+            # CLI diagnostics and run telemetry are on stderr; stdout is the report body.
+            body = cli.rstrip()
             # Two separate runs, so the walk timestamps differ. Normalised the same way
             # the golden corpus masks them: the values are unstable, the shape is not.
             assert _stable(rendered.rstrip()) == _stable(body), (
@@ -235,10 +232,11 @@ def check_a_report_states_its_own_omissions(root: Path) -> None:
     assert any("documents" in note for note in report.notes), report.notes
 
     # Named in this surface's vocabulary: there is no --analyze in Python (fdu-4apt).
-    for note in report.notes:
-        assert "--analyze" not in note, note
-        assert "--view" not in note, note
-    assert any("add analyze " in note for note in report.notes), report.notes
+    for line in (*report.notes, *report.tips):
+        assert "--analyze" not in line, line
+        assert "--view" not in line, line
+    assert any("add analyze " in tip for tip in report.tips), report.tips
+    assert all(note not in report.render(fdu.Format.TEXT) for note in report.notes)
 
     # The same rule as a hard error, in the same vocabulary.
     try:
@@ -250,7 +248,8 @@ def check_a_report_states_its_own_omissions(root: Path) -> None:
         assert "--analyze" not in str(error), error
 
     # Nothing dropped, nothing said.
-    assert not fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,))).notes
+    complete = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)))
+    assert not complete.notes and not complete.tips
 
 
 def check_every_failure_is_an_fdu_error(root: Path) -> None:
@@ -419,10 +418,13 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     assert unknown_note == (
         "note: ignored subtotals are unavailable where governing rules could not be verified"
     ), unknown_note
-    assert "under . are not exact" in note, note
-    assert "raise control_line_limit above 16 KiB, or set it to all" in note, note
+    assert "affected: ." in note, note
+    assert "line over the 16 KiB line limit" in note, note
+    assert observed_report.tips == (
+        "tip: apply refused ignore files: raise control_line_limit above 16 KiB, or set it to all",
+    ), observed_report.tips
     assert "control_budget" not in note, note
-    assert note in observed_report.render(fdu.Format.TEXT), note
+    assert note not in observed_report.render(fdu.Format.TEXT), note
     # Lifting the budget leaves the line limit refusing; lifting the line limit applies it.
     budget_lifted = fdu.scan(root, scan=fdu.ScanOptions(control_budget=fdu.Bound.ALL))
     assert budget_lifted.status.ignore_rules == fdu.ControlObservation(
@@ -664,6 +666,10 @@ def check_population_code_and_cache(entrypoint: Path) -> None:
         ).sections[0]
         assert isinstance(empty, fdu.TreeSection)
         assert empty.tree is None and empty.omissions[0].reason is fdu.TreeOmissionReason.ROWS
+        assert empty.omissions[0].files is not None
+        assert empty.remainder is not None
+        assert empty.remainder.files == empty.omissions[0].files
+        assert empty.remainder.reasons == (fdu.TreeOmissionReason.ROWS,)
         assert fdu.clear_cache(root, cache_dir=cache)
         assert not fdu.list_caches(cache_dir=cache)
 
@@ -729,7 +735,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/8"
+    assert wire["schema"] == "fdu.report/9"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 

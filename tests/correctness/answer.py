@@ -1,4 +1,4 @@
-"""Read `fdu.report/8` JSON for the correctness runbook scripts.
+"""Read `fdu.report/9` JSON for the correctness runbook scripts.
 
 Both comparison scripts compare an answer with a cold oracle and check separately how the
 answer was produced. The answer is the report without the two root fields that describe a

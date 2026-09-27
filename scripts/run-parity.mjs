@@ -91,7 +91,7 @@ for (const entry of readdirSync(golden)) {
   if (entry.endsWith('.tryscript.md')) {
     const text = readFileSync(from, 'utf8')
       .split('\n')
-      .filter((line) => !line.startsWith('Performance: '))
+      .filter((line) => !line.startsWith('! perf: '))
       .join('\n');
     writeFileSync(join(corpus, entry), text);
   } else if (statSync(from).isDirectory()) {

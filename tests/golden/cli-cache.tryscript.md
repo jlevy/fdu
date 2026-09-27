@@ -27,7 +27,7 @@ patterns:
 ```console
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -76,11 +76,20 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -99,7 +108,7 @@ cache absent
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -148,11 +157,20 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -174,7 +192,7 @@ rewrite is for.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -223,11 +241,20 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 269,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -246,7 +273,7 @@ fixture expanded
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -295,11 +322,20 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -311,7 +347,7 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -360,11 +396,20 @@ $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -385,7 +430,7 @@ $ fdu --watch --cache only project
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -434,11 +479,21 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 82, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 3, "bytes": 82, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 3,
+        "bytes": 82,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! note: incomplete subtrees remain visible below the size threshold
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -457,7 +512,7 @@ snapshot corrupted
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -506,11 +561,21 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 82, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 3, "bytes": 82, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 3,
+        "bytes": 82,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! note: incomplete subtrees remain visible below the size threshold
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -531,7 +596,7 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -580,18 +645,27 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
 ```console
 $ fdu --no-gitignore --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -634,11 +708,20 @@ $ fdu --no-gitignore --cache only --view tree --format json --size apparent --de
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -648,7 +731,7 @@ It leaves the stronger snapshot usable by a subsequent default cache-only reques
 ```console
 $ fdu --no-gitignore --cache read-only --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -693,13 +776,14 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --limit 0 p
     }
   ]
 }
+! tip: show more rows: --limit=all
 ? 0
 ```
 
 ```console
 $ fdu --cache only --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -750,6 +834,7 @@ $ fdu --cache only --format json --size apparent --limit 0 project
     }
   ]
 }
+! tip: show more rows: --limit=all
 ? 0
 ```
 
@@ -760,7 +845,7 @@ way out.
 ```console
 $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/8",
+  "schema": "fdu.report/9",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -803,11 +888,20 @@ $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit
       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
       "tree": null,
       "omissions": [
-        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
-      ]
+        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
+      ],
+      "remainder": {
+        "files": 7,
+        "bytes": 294,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
+      }
     }
   ]
 }
+! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: display limits: row limit 0
+! tip: show more rows: --limit=all
 ? 0
 ```
 

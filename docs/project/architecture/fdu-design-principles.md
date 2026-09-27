@@ -25,6 +25,10 @@ resembled what other tools do.
 The first two are the deepest: model every key concept explicitly, in one place, and as
 a consequence, let caching improve performance without ever changing semantics.
 
+Human output follows the [output design](fdu-output-design.md): data and diagnostics use
+separate streams, categories have stable prefixes, and omissions explain their
+accounting without repeating advice.
+
 For what is built and what comes next, see the dated plans under
 [`docs/project/specs`](../specs/). For where the design comes from and which prior art
 each piece draws on, see

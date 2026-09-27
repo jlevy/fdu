@@ -341,6 +341,28 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
     assert os.fsencode(cache.path) == b"n\x80"
 
 
+def test_tree_remainder_keeps_recursive_files_and_nullable_totals() -> None:
+    section_wire = _tree_section(None)
+    section_wire["omissions"] = [
+        {"reason": "rows", "entries": 2, "files": None, "bytes": None, "allocated": 4096}
+    ]
+    section_wire["remainder"] = {
+        "files": None,
+        "bytes": None,
+        "allocated": 4096,
+        "reasons": ["depth", "rows"],
+    }
+    section = report_from_dict(_envelope([section_wire])).sections[0]
+    assert isinstance(section, TreeSection)
+    assert section.omissions[0].entries == 2
+    assert section.omissions[0].files is None
+    assert section.remainder is not None
+    assert section.remainder.files is None and section.remainder.bytes is None
+    assert section.remainder.allocated == 4096
+    assert section.remainder.reasons == (fdu.TreeOmissionReason.DEPTH, fdu.TreeOmissionReason.ROWS)
+    assert report_from_dict(_envelope([_tree_section(None)])).sections[0].remainder is None
+
+
 def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
     depth = 4_000
     node: dict[str, object] = {
@@ -456,7 +478,7 @@ def _tree_section(tree: object) -> dict[str, object]:
 
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/8",
+        "schema": "fdu.report/9",
         "generator": "fdu 0.1.0",
         "root": "/root",
         "request": {
