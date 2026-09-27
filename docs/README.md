@@ -33,6 +33,10 @@ live change feed, and the Rust and Python libraries.
 - [Presentation design and composable display limits](project/research/research-2026-09-26-presentation-design.md)
 - [File-type and content metrics](project/research/research-2026-08-12-fast-file-content-metrics.md)
 
+## Implementation Plans
+
+- [Codebase analysis and consistent presentation](project/specs/active/plan-2026-09-26-code-analysis-presentation.md)
+
 ## Performance Evidence
 
 - [Current performance status](project/reports/report-2026-08-14-performance-campaign-status.md)
