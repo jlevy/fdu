@@ -359,8 +359,7 @@ fdu PATH --kind dir --include .venv --include node_modules --include target --vi
 ```
 
 The second command reads the snapshot the first one left with `--cache on`, without
-revalidating it.
-Keep the root, cache destination, and scan population the same.
+revalidating it. Keep the root, cache destination, and scan population the same.
 The third command combines flat rows and Summary in one machine report.
 Ignored directories are included by default.
 
@@ -721,8 +720,8 @@ CACHE BEHAVIOR
   --cache=auto, the default, uses the cache only where the kind of run gains from
   it. A metadata report neither reads nor writes one: checking a snapshot costs as
   much as the scan it would save, and no later report reads it. Content analysis
-  and --watch read, revalidate, and write it. --cache=on also writes after every
-  complete scan, leaving a snapshot for a later --stale-ok or watch.
+  and long-lived sessions read, revalidate, and write it. --cache=on also writes
+  after every complete scan, leaving a snapshot for a later --stale-ok answer.
 
   Content analysis is where repeated-run caching pays most. The first run reads
   eligible file bodies. A compatible later run reuses results for unchanged files

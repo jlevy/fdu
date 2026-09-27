@@ -70,7 +70,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 3 |
+| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 4 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -244,6 +244,7 @@ dead end.
 | 160 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp160--linux-oneshot-index-release-off-the-answer-path-clears-3-on-defaulttree) | H156 | `default-tree` | -3.2% | ✅ accepted |
 | 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
 | 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
+| 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp163--linux-auto-cache-policy-stops-oneshot-snapshot-writes-clears-3-on-defaulttree) | H160 | `default-tree` | -13.8% | ✅ accepted |
 
 ## The experiments
 
@@ -5453,6 +5454,35 @@ Cost to carry: 60 lines; no new dependencies.
 Full record:
 [`exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md`](../experiments/exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md)
 
+### exp-163 — Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree
+
+✅ accepted · 2026-09-27 · H160 · commit `93cd1bb1`
+
+Control: b6fc9140 probe: auto writes the snapshot after every one-shot metadata report
+
+Candidate: 93cd1bb1 probe: auto persists only where a later request reads it
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1507.0 | 1304.8 | -13.81% | [-15.99%, -10.65%] |
+| component (ms) | 1485.3 | 1282.0 | -13.98% | [-16.17%, -10.64%] |
+| cpu (ms) | 4532.7 | 4335.9 | -3.69% | [-5.35%, -1.12%] |
+| user (ms) | 1360.3 | 1163.9 | -12.98% | [-17.33%, -8.77%] |
+| system (ms) | 3172.8 | 3173.9 | +1.19% (n.s.) | [-0.11%, +3.41%] |
+| peak rss (MiB) | 424.0 | 325.9 | -23.16% | [-24.29%, -21.67%] |
+
+Other jobs, wall time: `cold-scan-index` -1.3% (n.s.), `default-tree-first` -32.7%.
+
+Cost to carry: 150 lines; no new dependencies.
+
+**Accepted:** default-tree -13.81% [-15.99%, -10.65%]; placebo cold-scan-index includes
+zero.
+
+Full record:
+[`exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md`](../experiments/exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5620,6 +5650,15 @@ Baselines show one value because they measure a state rather than a change.
 | 081 | Borrow impact paths until the bounded result escapes | `opened-discovery` | 286.8 | 282.2 | -1.1% | ❌ rejected |
 | 082 | Move scanner commits directly into the journal | `opened-discovery` | 284.5 | 281.2 | -0.0% | ❌ rejected |
 
+### linux-balanced-1m (1,000,001 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 160 | Linux one-shot index release off the answer path clears 3% on default-tree | `default-tree` | 1,611.5 | 1,541.7 | -3.2% | ✅ accepted |
+| 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
+| 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
+| 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5636,14 +5675,6 @@ Baselines show one value because they measure a state rather than a change.
 | 057 | Reject repeated adaptive worker windows on APFS | `adaptive-scan-index` | 1,871.8 | 2,963.2 | +58.5% | ❌ rejected |
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
-
-### linux-balanced-1m (1,000,001 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 160 | Linux one-shot index release off the answer path clears 3% on default-tree | `default-tree` | 1,611.5 | 1,541.7 | -3.2% | ✅ accepted |
-| 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
-| 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

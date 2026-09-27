@@ -117,14 +117,15 @@ reducer without a separate engine or a caller-asserted trust flag.
 
 One-shot execution retains less state only when the request is one unfiltered summary
 with no content analysis and no ignore classification, under a delivery that neither
-answers from the snapshot (`stale_ok`) nor asks to keep one (`CachePolicy::On`).
-That derived-report optimization must produce the same `Report` contract; it is not a
-second engine or a user-selectable fast mode.
+answers from the snapshot (`stale_ok`) nor asks to keep one (`CachePolicy::On`). That
+derived-report optimization must produce the same `Report` contract; it is not a second
+engine or a user-selectable fast mode.
 It writes no snapshot, so a later `stale_ok` read finds none.
 
-Persistence is the plan's decision too (`Plan::persists`). Under `CachePolicy::Auto` a
-one-shot metadata report writes nothing, since no later one-shot report reads it; content
-analysis, retained sessions, watches, and refreshes write, because a later reader exists.
+Persistence is the plan’s decision too (`Plan::persists`). Under `CachePolicy::Auto` a
+one-shot metadata report writes nothing, since no later one-shot report reads it;
+content analysis, retained sessions, watches, and refreshes write, because a later
+reader exists.
 
 #### Retained state changes cost, never answers
 

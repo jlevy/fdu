@@ -697,9 +697,9 @@ $ fdu --cache on --view tree --format jsonl --size apparent project
 A one-shot report never loads the snapshot for a metadata query: revalidating one stats
 every entry regardless, so the load would be added to the walk, never instead of it.
 Under `auto` it writes nothing either, because no later report reads what it would
-store; the snapshot `on` left stays for the stale answer below. Sessions opened through
-the library hold their index and do amortise the load; this is the one-shot contract
-only.
+store; the snapshot `on` left stays for the stale answer below.
+Sessions opened through the library hold their index and do amortise the load; this is
+the one-shot contract only.
 
 ```console
 $ fdu --view tree --format jsonl --size apparent project

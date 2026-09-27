@@ -768,9 +768,9 @@ H147 used for the Linux transient recycle keep; H148 recorded on
 cost on [#120](https://github.com/jlevy/fdu/pull/120); H152 and H153 are the exact
 `content-query` oracle and shared-resolution keep; H154 and H155 are the Linux
 replication and post-H153 profile follow-ups; H156–H159 are the Linux tool comparison of
-[2026-09-27](../reports/report-2026-09-27-fdu-linux-tool-comparison.md); next free
-unused id is H160) so no id ever means two things.
-Each is stated so it can be wrong, with the metric that would show it.
+[2026-09-27](../reports/report-2026-09-27-fdu-linux-tool-comparison.md); H160 is the
+cache-policy default that followed it; next free unused id is H161) so no id ever means
+two things. Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
 The 2026-09-18 honesty pass (`fdu-p0nc`) reconciled this table with the engine that
@@ -865,6 +865,7 @@ engine. Revisit a prior result only when that difference touches its mechanism.
 | H157 | After H156, the detached consumer allocates two one-element extension maps per file only to merge and free them, and walkers allocate every name twice. Folding a file straight into its parent and moving the owned name removes 39% of allocations and should cut the index tier. | `cold-scan-index` wall down at least 3% with the interval below zero | **Rejected** (exp-161, quiet). −2.22% [−4.04%, +0.04%]; component −4.12% [−7.40%, +1.25%]. Allocations 7.03M → 4.28M. The product CLI job, paired in the tool harness, measured −3.71% [−4.71%, −1.97%]; that is a lead for a pre-registered product-job rerun (`fdu-o6um`), not a keep. |
 | H158 | The detached walker publishes after every chunk, even one that makes nothing claimable, so the parked consumer is woken on nearly every send (105,732 `futex` calls per million entries). Holding leaf-only chunks until a batch fills keeps parent-first causality and removes the wakes. | `cold-scan-index` wall down at least 3% with the interval below zero | **Rejected** (exp-162, quiet). +0.88% [−0.17%, +1.94%] with `futex` calls down to 17,938. The wakes are real but off the critical path on four cores. |
 | H159 | On Linux the remaining index-tier gap to pdu and diskus is glibc arena contention from cross-thread frees in the detached builder, not allocation volume. A different allocator, or a builder whose buffers are freed on the thread that allocated them, closes it. Not H74’s index result, which predates the detached builder. | Screen: CLI indexed tree and transient summary under `LD_PRELOAD` mimalloc, jemalloc, tcmalloc. Keep only a dependency-free structural change measured under the accept rule | **Open** (screen, 2026-09-27). Unchanged binary under `LD_PRELOAD`: indexed 1.39 → 1.11–1.13 s, summary 0.98 → 0.82 s; `glibc.malloc.arena_max=1` 3.3 s. Context-switch profile names consumer frees of walker-owned child lists and directory path keys. `fdu-578e`. |
+| H160 | A one-shot metadata report never reads the snapshot (H108), and no later one-shot report reads what it writes, yet under `auto` it encodes, checksums, writes, and syncs a full image every run. Letting `auto` decide per analysis, and skip persistence for one-shot metadata reports, removes that work without changing any answer; `--cache on` keeps it for callers who want a snapshot. | `default-tree` wall down at least 3% with the interval below zero; `cold-scan-index`, which writes nothing on either arm, includes zero | **Accepted** (exp-163, quiet). `default-tree` −13.81% [−15.99%, −10.65%]; `default-tree-first` −32.74% [−33.57%, −24.41%]; placebo `cold-scan-index` −1.32% [−3.54%, +1.25%]. CLI screen: `fdu .` 1.51 → 1.25 s, equal to `--cache off`. Unmeasured on macOS, where the brief estimates 0.3–0.5 s. |
 
 The ordered pickup — metric, subject, what would falsify, what not to retry — is
 [the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). Quiet
@@ -1080,8 +1081,8 @@ change to the walker or the index should be judged on.
 and records the `transient-summary` work class.
 `PERF_TOOL_CONTRACT` defaults to that transient contract.
 `fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, and,
-since `auto` stopped persisting one-shot metadata reports, no snapshot write — and is the
-only contract that measures what a user gets by typing nothing else.
+since `auto` stopped persisting one-shot metadata reports, no snapshot write — and is
+the only contract that measures what a user gets by typing nothing else.
 
 Prefer `fdu-index-summary` for engine work and the default contract for user-visible
 claims; a change can move one and not the other, and for three campaigns nothing
@@ -1090,8 +1091,9 @@ measured the second, which is how a default-path regression stayed invisible whi
 The default contract may write a snapshot (every binary before that change did), so the
 harness gives it an isolated cache directory for the run: measuring against the
 operator’s own cache would let an unrelated earlier run set this one’s starting state,
-and would leave a snapshot of the subject tree behind. It is a legal anchor but not a summary contract, so it cannot carry a
-held-out release claim.
+and would leave a snapshot of the subject tree behind.
+It is a legal anchor but not a summary contract, so it cannot carry a held-out release
+claim.
 
 The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and
 fast total-only lower bounds (`dua`, `diskus`, and macOS `dumac`). `ncdu` is a useful

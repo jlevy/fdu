@@ -85,9 +85,9 @@ snapshot of another population.
 The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, in a run that writes, replaces the root’s one snapshot
-each time the run retains an index (`fdu-w3l5` tracks keying snapshots by scope). A
-`--no-gitignore` summary answered by the transient tier, described below, retains none,
-so it replaces nothing.
+each time the run retains an index (`fdu-w3l5` tracks keying snapshots by scope).
+A `--no-gitignore` summary answered by the transient tier, described below, retains
+none, so it replaces nothing.
 That projection applies to one-shot reports, Rust and Python `open`, cache-only reads,
 warm revalidation, and watch startup.
 A projected index never replaces the stronger controls-on snapshot, even after a watch
@@ -218,9 +218,9 @@ It is not used by every execution plan.
 Under the default `auto` policy a one-shot metadata report neither reads nor writes a
 snapshot: revalidation stats every entry regardless, so loading one is purely additive
 cost, and no later one-shot report reads what it would write.
-`--cache on` writes after every complete indexed scan, and an unfiltered `--view summary`
-under `--no-gitignore`, which the transient tier otherwise answers without an index,
-builds the index it writes.
+`--cache on` writes after every complete indexed scan, and an unfiltered
+`--view summary` under `--no-gitignore`, which the transient tier otherwise answers
+without an index, builds the index it writes.
 [The policy axis](#the-policy-axis) lists which paths read and write.
 
 ## Layer Two: Derived Content Data
@@ -326,7 +326,8 @@ belongs.
 
 `--cache` takes three values, and `auto` means something different per kind of request,
 because whether a store pays depends on whether a later request reads it.
-The [cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
+The
+[cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
 has the measurements behind each row.
 
 | Request | `auto` (default) | `on` | `off` |
@@ -339,23 +340,27 @@ has the measurements behind each row.
 revalidation then re-stats costs more than a cold walk, and caching never changes an
 answer, so there is nothing to gain by forcing a read.
 
-`--stale-ok` (Python `stale_ok=True`, Rust [`Delivery::stale_ok`](../../../crates/fdu-core/src/query/query_request.rs))
-is a separate choice from the policy, because it changes what the answer promises rather
-than what the run stores: it reads the snapshot, never touches the filesystem, and never
+`--stale-ok` (Python `stale_ok=True`, Rust
+[`Delivery::stale_ok`](../../../crates/fdu-core/src/query/query_request.rs)) is a
+separate choice from the policy, because it changes what the answer promises rather than
+what the run stores: it reads the snapshot, never touches the filesystem, and never
 writes. It is refused with `--cache off`, which reads nothing, with `--watch`, and by a
 refresh.
 
 What each path writes, in more detail:
 
 - **One-shot report.** A metadata-only report under `auto` scans cold and leaves the
-  store as it found it. A report with analysis takes the warm path, which writes the
-  snapshot only when reconciliation changed something. The metadata snapshot is written
-  beside the sidecar because the two are one pair in the cache lifecycle: status names a
-  sidecar without its snapshot a leftover, and `--cache-clear=all` removes it.
-- **`open` and the first answer of `--watch`.** Both load a usable snapshot and reconcile
-  it; `off` starts cold. A retained `open` with `stale_ok` loads without revalidation; a
-  watch refuses it. A warm open writes when reconciliation changes something, and a cold
-  open writes after a complete scan.
+  store as it found it.
+  A report with analysis takes the warm path, which writes the snapshot only when
+  reconciliation changed something.
+  The metadata snapshot is written beside the sidecar because the two are one pair in
+  the cache lifecycle: status names a sidecar without its snapshot a leftover, and
+  `--cache-clear=all` removes it.
+- **`open` and the first answer of `--watch`.** Both load a usable snapshot and
+  reconcile it; `off` starts cold.
+  A retained `open` with `stale_ok` loads without revalidation; a watch refuses it.
+  A warm open writes when reconciliation changes something, and a cold open writes after
+  a complete scan.
 - **Live updates.** Unless the policy is `off`, both command-line and Python watches use
   the engine session’s throttled persistence.
   Python `Index.refresh` applies the same write policy after reconciliation.
@@ -374,8 +379,8 @@ What each path writes, in more detail:
 A stale answer is the one tier that can be stale, and it says so: its report carries
 `source: cache_only` and `freshness: stale`. It fails outright when no usable snapshot
 exists rather than quietly scanning, because a fast path that is sometimes a full walk —
-with nothing in the output to say which happened — is worse than no fast path. The
-failure names `--cache on` as the way to leave one.
+with nothing in the output to say which happened — is worse than no fast path.
+The failure names `--cache on` as the way to leave one.
 `--watch --stale-ok` is refused: starting observation cannot verify the interval between
 snapshot capture and observation registration.
 
@@ -393,8 +398,8 @@ on standard error.
 write authorization (`Plan::persists`) for every route.
 The [executors](../../../crates/fdu-core/src/lib.rs) perform the authorized work;
 [`Session`](../../../crates/fdu-core/src/watch_session.rs) owns watch throttling.
-`--cache auto` does not promise a reusable baseline after an arbitrary command; `--cache
-on` does, after any complete one.
+`--cache auto` does not promise a reusable baseline after an arbitrary command;
+`--cache on` does, after any complete one.
 `--allow-partial` changes exit acceptance; it does not make a partial scan’s snapshot
 cacheable.
 

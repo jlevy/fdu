@@ -525,9 +525,9 @@ anything is rendered.
 Cache behavior is one explicit policy axis, and every machine-format report carries its
 `source`, `freshness`, `complete`, and `errors`; human text reports errors and partial
 results on standard error.
-The cache policy is the user’s choice: `auto` lets the plan read and write only where the
-kind of request gains from it, `on` also keeps a snapshot after every complete scan, and
-`off` stays out of the cache.
+The cache policy is the user’s choice: `auto` lets the plan read and write only where
+the kind of request gains from it, `on` also keeps a snapshot after every complete scan,
+and `off` stays out of the cache.
 Within it, the execution plan may pick the cheapest route that can answer, and routes
 differ only in cost and provenance, never in the answer.
 

@@ -217,8 +217,7 @@ fdu PATH --kind dir --include .venv --include node_modules --include target --vi
 ```
 
 The second command reads the snapshot the first one left with `--cache on`, without
-revalidating it.
-Keep the root, cache destination, and scan population the same.
+revalidating it. Keep the root, cache destination, and scan population the same.
 The third command combines flat rows and Summary in one machine report.
 Ignored directories are included by default.
 

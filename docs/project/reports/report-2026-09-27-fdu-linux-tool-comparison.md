@@ -192,8 +192,8 @@ whose per-sample scan-policy traces make it 4.5 MB uncompressed.
 ## Interpretation and Limits
 
 Both matrices ran fdu with `--cache off`, as the macOS comparison did.
-The default `fdu .` also writes a metadata snapshot, which added about 0.26 s at this
-size; the
+The default `fdu .` then also wrote a metadata snapshot, which added about 0.26 s at
+this size (a later change stopped that write for one-shot reports: H160, exp-163); the
 [cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
 measures that cost, explains the macOS and Linux rankings from their CPU split, and
 proposes defaults. Summary mode ran with `--no-gitignore` because reading ignore rules

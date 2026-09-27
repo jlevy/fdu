@@ -941,7 +941,14 @@ walker-allocated child lists and path keys.
 Start there; an allocator dependency comes only after a structural fix is measured (H74,
 H85).
 
-Next free experiment id is **exp-163** and next free unused hypothesis id is **H160**.
+**H160 accepted** (exp-163): `--cache auto` no longer persists a one-shot metadata
+report, which no later one-shot report reads; `--cache on` keeps the write.
+`default-tree` −13.81% [−15.99%, −10.65%], `default-tree-first` −32.74%, placebo
+`cold-scan-index` includes zero.
+The `default-tree` job’s snapshot is now prepared by `cold-open-save`, since the default
+command writes none; compare `default-tree` runs across this change with that in mind.
+
+Next free experiment id is **exp-164** and next free unused hypothesis id is **H161**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle

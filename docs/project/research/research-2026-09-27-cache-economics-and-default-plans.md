@@ -4,7 +4,7 @@
 
 **Author:** fdu project, with Claude Code
 
-**Status:** Complete; the proposal awaits a decision
+**Status:** Complete; Option A adopted as `--cache auto|on|off` (H160, exp-163)
 
 ## Overview
 
@@ -376,10 +376,33 @@ Expected Linux outcome at a million entries, before D: `fdu .` 1.51 s → about 
 → toward 1.09 s (C.2); default summary 1.45 s → about 0.93 s (C.1). Each needs its own
 measurement under the accept rule.
 
+## Decision
+
+Option A was adopted in the shape of a three-valued policy, so the default reflects the
+kind of request rather than one rule for all of them:
+
+| Request | `auto` (default) | `on` | `off` |
+| --- | --- | --- | --- |
+| One-shot metadata report | no read, no write | writes after every complete scan | nothing |
+| Content analysis | reads and writes snapshot and sidecar | same | nothing |
+| `open`, watch, refresh | reads, revalidates, writes | same | nothing |
+
+`--cache only` became `--stale-ok`, a delivery choice rather than a policy, and
+`--cache on` is the documented way to leave a snapshot for it; a failed `--stale-ok`
+names that remedy. `refresh` and `read-only` were removed.
+Python `open` keeps writing under `auto`, because a session is its own later reader.
+Analysis keeps writing the metadata snapshot beside its sidecar, because the cache
+lifecycle treats a sidecar without its snapshot as a leftover that `--cache-clear=all`
+removes.
+
+Measured as H160 (exp-163, quiet, 12 pairs): `default-tree` −13.81% [−15.99%, −10.65%],
+`default-tree-first` −32.74%; a CLI screen put `fdu .` at 1.25 s against 1.51 s before,
+equal to `--cache off`.
+
 ## Next Steps
 
-- [ ] Decide Option A, including whether it applies to Python `open` defaults
-  (`fdu-0t1v`)
+- [x] Decide Option A, including whether it applies to Python `open` defaults
+  (`fdu-0t1v`): adopted as above; `open` keeps writing
 - [ ] Measure the ignore-aware summary reducer (C.1, `fdu-1ovb`) under the accept rule
 - [ ] Re-prioritize H66 (`fdu-sk7v`) and H159 (`fdu-578e`)
 - [ ] Measure default-invocation contracts on Linux and macOS through the harness

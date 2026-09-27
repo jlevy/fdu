@@ -302,9 +302,8 @@ analysis record cached, while metadata verification still occurs.
 `--stale-ok` answers from the snapshot without touching the source tree: the answer is
 labelled stale, and the run fails on a miss rather than silently falling back to
 scanning. It also requires compatible content data when analysis is requested, and it
-cannot be combined with `--cache=off` or `--watch`.
-Earlier releases accepted `--cache=only`, `refresh`, and `read-only`; each is refused
-with its replacement named.
+cannot be combined with `--cache=off` or `--watch`. Earlier releases accepted
+`--cache=only`, `refresh`, and `read-only`; each is refused with its replacement named.
 Use `fdu --cache-status=all` to inspect cache files and `fdu --cache-clear=all` to
 remove current, stale, and recognized leftover fdu data.
 Unrecognized files are never removed.

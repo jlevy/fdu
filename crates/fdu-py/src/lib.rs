@@ -1509,6 +1509,7 @@ mod tests {
                     },
                     delivery: Delivery {
                         cache: CachePolicy::Off,
+                        stale_ok: false,
                         cache_path: None,
                         accept_partial: false,
                         watch: None,

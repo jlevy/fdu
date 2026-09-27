@@ -104,8 +104,8 @@ Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; 
 An unfiltered `summary` that reads no `.gitignore` is answered by the transient tier,
 which retains no index, and under `auto` no one-shot metadata report writes a snapshot:
 the cache cannot save the walk that request is already doing.
-With nothing stored, `--stale-ok` has nothing to read, and it says so rather than quietly
-scanning.
+With nothing stored, `--stale-ok` has nothing to read, and it says so rather than
+quietly scanning.
 
 ```console
 $ fdu --cache-clear project

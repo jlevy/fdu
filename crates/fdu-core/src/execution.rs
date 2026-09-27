@@ -112,7 +112,7 @@ impl Plan {
     }
     /// Whether this plan may write the snapshot and its content sidecar.
     ///
-    /// Each tier still writes only under its own rule ([`Self::writes`]); this is the
+    /// Each tier still writes only under its own rule (`Plan::writes`); this is the
     /// authorization those rules start from, and a caller deciding whether to warn that a
     /// run leaves nothing behind asks it here rather than of the policy, whose meaning
     /// under `Auto` depends on the route and the analysis.

@@ -12,8 +12,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Breaking:** `--cache` takes `auto`, `on`, or `off`, and `auto` depends on the kind
   of request. A one-shot metadata report under `auto` no longer writes a snapshot, since
   no later one-shot report reads it; content analysis, `--watch`, and an opened index
-  still read, revalidate, and write. `--cache on` writes after every complete scan.
-  Python's `CachePolicy` is `AUTO`, `ON`, `OFF`; Rust's `CachePolicy` is `Auto`, `On`,
+  still read, revalidate, and write.
+  `--cache on` writes after every complete scan.
+  Python’s `CachePolicy` is `AUTO`, `ON`, `OFF`; Rust’s `CachePolicy` is `Auto`, `On`,
   `Off`, and `Plan::persists` replaces `CachePolicy::writes`.
 - **Breaking:** `--cache only` is now `--stale-ok` (Python `stale_ok=True`, Rust
   `Delivery::stale_ok`), which answers from the snapshot without touching the tree.
