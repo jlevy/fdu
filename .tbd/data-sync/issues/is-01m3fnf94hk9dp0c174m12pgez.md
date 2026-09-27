@@ -5,8 +5,8 @@ title: Recognize JavaScript regex literals in code SLOC
 kind: bug
 status: closed
 priority: 2
-version: 7
-spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md
 delegate: sol-code-metrics
 labels: []
 dependencies:
@@ -20,7 +20,7 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-26T20:10:58.064Z
-updated_at: 2026-09-27T03:12:08.578Z
+updated_at: 2026-09-27T08:18:09.667Z
 started_at: 2026-09-27T01:19:37.404Z
 closed_at: 2026-09-27T03:12:08.578Z
 close_reason: "Implemented and versioned the streaming lexer repairs in PR133. All30 independently adjudicated syntax fixtures match; focused chunk-boundary tests and the core suite pass. Evidence: codebase-analysis-conditional-2026-09-26.json."

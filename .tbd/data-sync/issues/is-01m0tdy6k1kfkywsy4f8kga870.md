@@ -5,8 +5,8 @@ title: Warm snapshots rebuild derived state under the wrong registry
 kind: bug
 status: closed
 priority: 0
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 6
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
   - metabrowser
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0tra5gw0ap6nbbzgt7egvr4
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:51.648Z
-updated_at: 2026-08-24T21:12:02.652Z
+updated_at: 2026-09-27T08:16:48.156Z
 closed_at: 2026-08-24T21:12:02.651Z
 close_reason: |
   Shipped. `make check` green.

@@ -5,11 +5,12 @@ title: Add a dense mode to gen_tree.py and default content jobs to it
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-experiment-evidence-scope.md
 labels: []
 dependencies: []
+parent_id: is-01m3gyw6q417g550gsk5tgpv0v
 created_at: 2026-08-23T05:36:09.571Z
-updated_at: 2026-08-23T05:36:09.571Z
+updated_at: 2026-09-27T08:17:51.469Z
 ---
 gen_tree.py writes holes via os.truncate above 256 bytes -- right for metadata-tier work, actively misleading for content-tier work, since reading a hole costs nothing and inflates any per-file bookkeeping win. Add a mode that writes real bytes; keep the 15,977-file sparse subject available for continuity with exp-064.

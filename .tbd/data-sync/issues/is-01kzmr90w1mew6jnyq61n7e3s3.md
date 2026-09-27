@@ -5,8 +5,8 @@ title: Normalize embedded skill line endings across platforms
 kind: bug
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
 labels:
   - cli
   - windows
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzmnxy0xvkvazmqvdwsjm20h
 parent_id: is-01kzmnx3taexx4cq4m722p0yp0
 created_at: 2026-08-10T02:33:23.584Z
-updated_at: 2026-08-10T02:41:28.342Z
+updated_at: 2026-09-27T08:16:52.471Z
 closed_at: 2026-08-10T02:41:28.341Z
 close_reason: Fixed in 1382ac6 by normalizing CRLF to LF before exact-version substitution and adding deterministic CRLF-input coverage. Final-head Windows native job 93339351245 passed all Rust tests and golden scenarios.
 ---

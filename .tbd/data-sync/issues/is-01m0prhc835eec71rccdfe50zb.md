@@ -5,13 +5,13 @@ title: Asyncio adapters and thread-affinity docs for watch, with an SSE-resume e
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 5
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:32:08.066Z
-updated_at: 2026-08-23T21:57:41.518Z
+updated_at: 2026-09-27T08:17:11.816Z
 closed_at: 2026-08-23T21:57:41.518Z
 close_reason: "fdu.aio.watch_batches ships the event-loop handoff: a worker thread that opens the watch, drains it, and closes it, yielding the same typed batches with real backpressure through a bounded queue. Opening on the worker rather than handing one in keeps thread affinity intact rather than merely documented — PyWatch is unsendable, which the first attempt discovered by panicking. examples/sse_resume.py maps since(clock)/ChangeSet.truncated to Last-Event-ID resume, with its decision as a pure function so the resync branch is tested without evicting 64k journal ops; the smoke test loads the file that ships. Thread affinity, interval-versus-frame-budget, and poll selection documented in the package README, which also lost a now-false claim that overlapping calls on one Index are rejected."
 resolution: null

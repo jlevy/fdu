@@ -5,8 +5,8 @@ title: "Phase 1: Query/Report core — views, selection, formats, CLI axes rewor
 kind: feature
 status: closed
 priority: 1
-version: 9
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 10
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -20,7 +20,7 @@ child_order_hints:
   - is-01kzs52rb1a9gekzex8hc7a91x
   - is-01kzs52y7ad9b2gs4jsa3as68g
 created_at: 2026-08-10T23:59:22.456Z
-updated_at: 2026-08-11T21:20:36.967Z
+updated_at: 2026-09-27T08:16:53.009Z
 closed_at: 2026-08-11T21:20:36.967Z
 close_reason: "Phase 1 delivered: query module (Selection, ViewSpec, Query, Report, pure report()), the parse_when/parse_size grammars, allocated threaded through the size metric, four formats behind fdu.report/1, the five-axis CLI rework, and Python Index.report(). The two follow-up tests it was missing are closed too (fdu-rti1 stream schema, fdu-3vgt watermark round trip). Remaining Phase 1 item fdu-f6dn is a time-zone decision, not implementation, and now hangs off the epic."
 ---

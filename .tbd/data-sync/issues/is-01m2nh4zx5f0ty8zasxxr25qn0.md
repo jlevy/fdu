@@ -1,17 +1,17 @@
 ---
 type: is
 id: is-01m2nh4zx5f0ty8zasxxr25qn0
-title: Write a field-level reference for the fdu.report/5, fdu.report/6, fdu.cache/1, and fdu.stream/1 machine schemas
+title: Complete field-level reference for report/8, cache/3, and stream/2
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 labels:
   - stack-followup
   - docs
 dependencies: []
 created_at: 2026-09-16T16:35:11.395Z
-updated_at: 2026-09-16T16:35:11.395Z
+updated_at: 2026-09-27T08:15:15.263Z
 ---
 No live document states fdu's machine-output envelopes field by field, at `16efcd0`.
 

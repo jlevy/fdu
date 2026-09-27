@@ -5,8 +5,8 @@ title: Unify ignored-population selection and derive required scan and content w
 kind: feature
 status: closed
 priority: 2
-version: 13
-spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
+version: 14
+spec_path: docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md
 delegate: codex-integration
 labels: []
 dependencies:
@@ -26,7 +26,7 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-26T20:17:51.263Z
-updated_at: 2026-09-27T03:12:08.841Z
+updated_at: 2026-09-27T08:18:11.128Z
 started_at: 2026-09-27T01:19:38.212Z
 closed_at: 2026-09-27T03:12:08.840Z
 close_reason: Unified population and real traversal/read pruning across Rust, CLI, and Python in PR133. Full16,787-case path-independence matrix passes, including population and cache histories; unknown controls remain explicit. Correctness and work counters are linked from the plan.

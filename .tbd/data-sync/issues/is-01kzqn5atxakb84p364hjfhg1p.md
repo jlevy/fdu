@@ -5,15 +5,15 @@ title: "P3: watch golden tests with injected changes"
 kind: task
 status: closed
 priority: 1
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 9
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzqn66p0pmck4yg6pexhww2z
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:36:40.284Z
-updated_at: 2026-08-11T21:11:27.907Z
+updated_at: 2026-09-27T08:17:00.870Z
 closed_at: 2026-08-11T21:11:27.906Z
 close_reason: "Watch stream goldened via the watch-capture Node helper: causal sequencing (each step waits for the record its own action caused, matched on op and path past a cursor), loud timeout on a missing record, named patterns for clock and filesystem-dependent sizes. 71 golden blocks total."
 ---

@@ -5,13 +5,13 @@ title: Walk telemetry as typed values in Python
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:32:18.623Z
-updated_at: 2026-08-23T19:00:44.876Z
+updated_at: 2026-09-27T08:17:54.388Z
 closed_at: 2026-08-23T19:00:44.876Z
 close_reason: PerformanceSummary constructors made public (from_open_report) and extended (from_reconcile, which zeroes restored-record fields a refresh cannot have); RunState carries the run's telemetry; Index.telemetry exposes it as a frozen WalkTelemetry dataclass beside the report, never inside the envelope. Covered by a core unit test and a smoke check that a refresh replaces rather than accumulates.
 resolution: null

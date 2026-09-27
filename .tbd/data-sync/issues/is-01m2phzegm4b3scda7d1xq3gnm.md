@@ -5,7 +5,8 @@ title: End-to-end verification of the final 0.1.0 release candidate
 kind: task
 status: closed
 priority: 0
-version: 10
+version: 11
+spec_path: docs/project/guides/release-process.md
 delegate: claude-code@spud10
 labels:
   - release
@@ -22,7 +23,7 @@ parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 hold: null
 hold_until: null
 created_at: 2026-09-17T02:08:52.755Z
-updated_at: 2026-09-26T00:50:50.878Z
+updated_at: 2026-09-27T08:15:13.849Z
 started_at: 2026-09-26T00:00:09.719Z
 closed_at: 2026-09-26T00:50:50.877Z
 close_reason: Final candidate, CI wheel, five-platform artifacts, peer totals, and handoff gates verified

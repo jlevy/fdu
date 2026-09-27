@@ -5,8 +5,8 @@ title: "P1: CLI rework to five axes with docs and benchmark manifests"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzqn2s3rwkxhb8ag9v4e6t24
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:34:44.273Z
-updated_at: 2026-08-11T16:12:47.910Z
+updated_at: 2026-09-27T08:16:58.220Z
 closed_at: 2026-08-11T16:12:47.909Z
 close_reason: "cli.rs reworked onto the five axes: flags parse into (ScanConfig, Query, Format) and the old rendering methods are deleted in favor of report_format. Comma-list conventions with duplicate/empty rejection; repeatable pattern flags; bounds accept 'all'; parsing precedes open(). Two bugs found by running it: text renderer showed apparent bytes while sorting by the selected metric (report now carries the metric), and tree expansion plus all three renderers recursed (now iterative, and TreeNode drops iteratively since derived drop glue recurses per level). 196 lib tests green. Docs/goldens/manifests follow in fdu-40rp."
 ---

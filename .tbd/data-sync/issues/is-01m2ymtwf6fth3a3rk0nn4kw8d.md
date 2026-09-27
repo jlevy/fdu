@@ -5,8 +5,8 @@ title: "Linux performance iteration after #94"
 kind: epic
 status: closed
 priority: 1
-version: 18
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 19
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - linux
   - campaign-2
@@ -23,7 +23,7 @@ child_order_hints:
   - is-01m2yxpttkwtmzseh6xe3r73kw
   - is-01m32jzamqf58124kga00kdbd0
 created_at: 2026-09-20T05:32:44.390Z
-updated_at: 2026-09-21T18:17:10.551Z
+updated_at: 2026-09-27T08:17:24.994Z
 closed_at: 2026-09-20T08:25:26.146Z
 close_reason: "Leftover queue recorded on #97 / stack #102 through exp-154 (H144–H148). Engine keeps H147 and H72. PGO screen accepted; Cargo.toml unchanged. fdu-tk1b stays open for bare-metal thread policy."
 ---

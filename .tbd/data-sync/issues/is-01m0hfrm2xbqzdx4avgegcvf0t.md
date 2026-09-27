@@ -5,8 +5,8 @@ title: "Content axis: composable --analyze set and the display contract"
 kind: epic
 status: closed
 priority: 1
-version: 11
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 12
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 child_order_hints:
@@ -20,7 +20,7 @@ child_order_hints:
   - is-01m0hg9fca6p7hs5xw2qp04315
   - is-01m0hg9fppyeggat22bf4m99me
 created_at: 2026-08-21T06:22:36.118Z
-updated_at: 2026-08-21T07:16:00.042Z
+updated_at: 2026-09-27T08:17:02.614Z
 closed_at: 2026-08-21T07:16:00.041Z
 close_reason: "Phase 5 complete: content axis, display contract, containment reuse, docs and goldens. make check green."
 ---

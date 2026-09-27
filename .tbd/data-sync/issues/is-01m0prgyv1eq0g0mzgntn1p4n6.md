@@ -5,15 +5,15 @@ title: "Partitioned tallies surfaces: --tags and --plane, Selection.plane, per-p
 kind: feature
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 7
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:31:54.336Z
-updated_at: 2026-08-25T05:05:39.919Z
+updated_at: 2026-09-27T08:17:09.038Z
 closed_at: 2026-08-25T05:05:39.918Z
 close_reason: |
   Shipped across all three surfaces.

@@ -5,13 +5,13 @@ title: "Complete Bugbot review of PR #5"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-11T19:45:14.112Z
-updated_at: 2026-08-12T16:49:06.921Z
+updated_at: 2026-09-27T08:17:40.890Z
 closed_at: 2026-08-12T16:49:06.920Z
 close_reason: All actionable review findings through the final Bugbot pass are implemented and verified. make check passes; make perf-ledger followed by the Flowmark check is clean; the dev version marker was proven clean-to-dirty-to-clean without moving HEAD.
 ---

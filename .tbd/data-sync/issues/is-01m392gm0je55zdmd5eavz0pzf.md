@@ -5,7 +5,8 @@ title: Add fdu --install-skill (project and user scope, idempotent, refuses fore
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
+spec_path: docs/project/specs/active/plan-2026-09-27-cli-and-skill-followups.md
 labels:
   - skill
 dependencies:
@@ -13,7 +14,7 @@ dependencies:
     target: is-01m392gn7x58wqkjdzxng113py
 parent_id: is-01m392gedkq4bn4qbxbedkt29f
 created_at: 2026-09-24T06:44:12.433Z
-updated_at: 2026-09-24T08:42:47.516Z
+updated_at: 2026-09-27T08:17:33.172Z
 closed_at: 2026-09-24T08:42:47.491Z
 close_reason: "Shipped in PR #122 (merged to main as 0162e951, 2026-09-24): make check and cross-lint on tree 14e8c200, CI green, delta reviews approved."
 resolution: null

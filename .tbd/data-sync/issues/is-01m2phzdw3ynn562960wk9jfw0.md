@@ -5,7 +5,8 @@ title: Repository security settings before announcing 0.1.0
 kind: chore
 status: closed
 priority: 0
-version: 3
+version: 4
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
   - security
@@ -14,7 +15,7 @@ dependencies:
     target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:52.098Z
-updated_at: 2026-09-26T01:01:19.703Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-26T01:01:19.702Z
 close_reason: Enabled and verified private vulnerability reporting, immutable releases, v* tag update/deletion ruleset, secret scanning, and push protection for the public repository.
 resolution: null

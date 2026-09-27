@@ -5,8 +5,8 @@ title: "P1: value grammars parse_when and parse_size"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels:
   - runbook-verified
 dependencies:
@@ -14,7 +14,7 @@ dependencies:
     target: is-01kzqn07pd0n9fvf00r6ate71f
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:33:42.789Z
-updated_at: 2026-08-11T07:04:24.009Z
+updated_at: 2026-09-27T08:16:56.767Z
 closed_at: 2026-08-11T06:50:18.313Z
 close_reason: "Implemented crates/fdu/src/query/parse.rs with parse_when, parse_size, and system_time_to_nanos, plus Error::InvalidValue carrying a suggestion. 18 table-driven tests cover every accepted form and every rejection message. No new dependencies. Deviation recorded: bare local date-times are rejected rather than assumed UTC (needs a tz database); follow-up bead filed."
 ---

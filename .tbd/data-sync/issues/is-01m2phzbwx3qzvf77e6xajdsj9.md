@@ -5,7 +5,8 @@ title: Wheel console command ignores Ctrl-C during --watch (uvx, uv tool install
 kind: bug
 status: closed
 priority: 0
-version: 3
+version: 4
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
   - python
@@ -14,7 +15,7 @@ dependencies:
     target: is-01m2phzegm4b3scda7d1xq3gnm
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:50.077Z
-updated_at: 2026-09-18T03:07:28.138Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-18T03:07:28.138Z
 close_reason: "Implemented on PR #87: SIGINT, registry READMEs, caret pins, version stamp/LF, 0.2 API note, 200ms interval, transient-summary --no-gitignore, python-smoke --python, JSON 2^53."
 ---

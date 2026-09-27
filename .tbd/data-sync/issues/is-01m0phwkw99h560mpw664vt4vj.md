@@ -5,11 +5,12 @@ title: "Add verdict.scope: transfers, subject-specific, or untested"
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-experiment-evidence-scope.md
 labels: []
 dependencies: []
+parent_id: is-01m3gyw6q417g550gsk5tgpv0v
 created_at: 2026-08-23T05:35:56.297Z
-updated_at: 2026-09-17T02:10:59.742Z
+updated_at: 2026-09-27T08:17:48.989Z
 ---
 Required for new artifacts. Backfill the existing 66 as untested except exp-064 (subject-specific) and exp-065 (transfers). untested is not a lesser accept -- it is an accept whose scope is unestablished, and the consequence is that it may not be quoted outside its own artifact.

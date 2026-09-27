@@ -5,8 +5,8 @@ title: "P2: cache introspection library functions"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzqn44q2r4r04yjsweznvyxe
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:35:36.034Z
-updated_at: 2026-08-11T16:53:35.719Z
+updated_at: 2026-09-27T08:16:59.312Z
 closed_at: 2026-08-11T16:53:35.718Z
 close_reason: cache module with cache_status/list_caches/clear_cache/clear_all_caches over a new bounded snapshot::read_header, fixing the opaque-hash-file problem; unrecognized files are listed but never deleted, absent dir is empty not an error. CLI --cache-status[=root|all] and --cache-clear[=root|all] run before scan validation, suppress the report, clear-before-status, echo target before acting, render through the format axis. require_equals needed because clap otherwise ate the positional PATH. 4 library tests plus 9 golden blocks.
 ---

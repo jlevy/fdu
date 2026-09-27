@@ -5,13 +5,13 @@ title: Standardize repository Markdown formatting on pinned flowmark-rs
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-12T16:02:34.505Z
-updated_at: 2026-08-12T16:15:17.543Z
+updated_at: 2026-09-27T08:17:43.609Z
 closed_at: 2026-08-12T16:15:17.542Z
 close_reason: Pinned flowmark-rs 0.3.2 in benchmarks/uv.lock, standardized formatting on flowmark --auto ., enforced it in CI, and formatted every supported repository file.
 ---

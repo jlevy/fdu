@@ -5,13 +5,14 @@ title: "Release evidence omits fdu-core: inspect_artifacts.py and registry_state
 kind: bug
 status: closed
 priority: 1
-version: 3
+version: 4
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-15T00:30:23.359Z
-updated_at: 2026-09-15T16:21:33.055Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-15T16:21:33.054Z
 close_reason: "d071aba (PR #61): inspect_artifacts.py requires and inspects fdu-core and fdu crates in publication order and records package per artifact (manifest and SHA256SUMS name both); registry_state.py classifies each crate on crates.io separately and rejects a manifest missing or adding a crate. Negative tests for a missing and an uninspected fdu-core."
 resolution: null

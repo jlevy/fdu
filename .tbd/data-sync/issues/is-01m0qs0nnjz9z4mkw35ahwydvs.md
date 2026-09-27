@@ -5,15 +5,15 @@ title: "Scripted watch events: a deterministic backend seam for the InvalidateRe
 kind: feature
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0qs19pg77zfmd3s2kg7k905
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T16:59:43.666Z
-updated_at: 2026-08-23T22:12:09.011Z
+updated_at: 2026-09-27T08:17:16.812Z
 closed_at: 2026-08-23T22:12:09.010Z
 close_reason: "WatchBackend::Scripted reads a line-oriented event file that replaces the notify backend and nothing else — same coalescing, same stat verification, same delta path. End-to-end tests now pin two contracts nothing exercised before: a dropped-event flag escalates the subtree the backend named, and an unpaired rename escalates to the root because there is no safe bound on where the counterpart landed. Both assertions were written backwards first and corrected to what the engine actually guarantees. A third test pins the seam's safety property: a scripted create for a file that does not exist becomes a Remove, so a script can claim something may have changed but cannot state a fact the filesystem denies. Format is tab-separated lines rather than JSONL: the engine has no JSON parser and a test seam is a poor reason to acquire one."
 resolution: null

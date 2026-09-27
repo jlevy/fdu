@@ -5,8 +5,8 @@ title: "P2: CachePolicy in open() with fail-closed 'only'"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzqn3c33pyf3vh7070ehnfss
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:35:16.599Z
-updated_at: 2026-08-11T16:44:43.045Z
+updated_at: 2026-09-27T08:16:58.762Z
 closed_at: 2026-08-11T16:44:43.044Z
 close_reason: CachePolicy {Auto,Refresh,ReadOnly,Only,Off} in open(), replacing cache_path+save_on_open. OpenPath gains CacheOnly; cache-only marks the index unverified so freshness reports stale (a test caught it inheriting Fresh from the snapshot), and fails closed with no usable snapshot. Foreign-root/scope snapshots filtered at load. CLI --cache flag, Python parity, help and SKILL.md rewritten around the five axes. 6 library tests for the policy matrix plus 5 golden blocks covering cold->warm->cache-only.
 ---

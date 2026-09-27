@@ -5,13 +5,14 @@ title: Install the verified release candidate globally as a uv tool for manual t
 kind: chore
 status: closed
 priority: 2
-version: 3
+version: 4
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
 dependencies: []
 parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 created_at: 2026-09-17T02:08:53.117Z
-updated_at: 2026-09-26T17:26:08.377Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-26T17:26:08.375Z
 close_reason: Published fdu 0.1.0 wheel installed globally with uv tool install --no-build --python 3.12; fdu --version and a real JSON report passed.
 resolution: null

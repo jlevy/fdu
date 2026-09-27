@@ -5,8 +5,8 @@ title: Add a portable version-pinned fdu agent skill
 kind: feature
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
 labels:
   - cli
   - skill
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzmnxy0xvkvazmqvdwsjm20h
 parent_id: is-01kzmnx3taexx4cq4m722p0yp0
 created_at: 2026-08-10T01:52:09.988Z
-updated_at: 2026-09-24T06:44:16.263Z
+updated_at: 2026-09-27T08:16:51.222Z
 closed_at: 2026-08-10T02:09:06.194Z
 close_reason: Implemented fdu --skill as a self-contained version-pinned local-first Agent Skill. Full rendered output is golden-tested, formatting is Flowmark-clean, and machine output remains ANSI-free.
 ---

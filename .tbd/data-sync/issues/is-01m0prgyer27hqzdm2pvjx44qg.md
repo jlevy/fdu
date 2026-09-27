@@ -5,8 +5,8 @@ title: "Tag model foundation: rules, tiers, entry bits, and the tag_rules finger
 kind: feature
 status: closed
 priority: 1
-version: 14
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 15
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
   - type: blocks
@@ -21,7 +21,7 @@ dependencies:
     target: is-01m0t5t2sa2rn3qm3m4dycv7hv
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:31:53.944Z
-updated_at: 2026-08-24T17:19:28.069Z
+updated_at: 2026-09-27T08:17:08.110Z
 closed_at: 2026-08-24T17:19:28.068Z
 close_reason: |
   Shipped as `crates/fdu-core/src/tags.rs` plus wiring across the engine and all three

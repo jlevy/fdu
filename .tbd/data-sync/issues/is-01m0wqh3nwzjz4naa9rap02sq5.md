@@ -5,8 +5,8 @@ title: Clock cap-refused upserts that mutate existing index state
 kind: bug
 status: closed
 priority: 1
-version: 8
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 9
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
@@ -23,7 +23,7 @@ labels:
 dependencies: []
 parent_id: is-01m0vx6yw0f8bddcwggvk2ha0p
 created_at: 2026-08-25T15:09:57.307Z
-updated_at: 2026-09-17T02:10:35.586Z
+updated_at: 2026-09-27T08:17:20.397Z
 closed_at: 2026-09-17T02:10:35.585Z
 close_reason: "Superseded by exact commits (947cd49): budget refusal preflighted per operation before any mutation (index.rs:2117-2121, 2225-2229); test refresh_refusal_is_atomic_with_the_shared_file_budget"
 resolution: canceled

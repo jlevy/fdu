@@ -5,13 +5,13 @@ title: TreeNode remainder aggregates for bounded trees
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:32:19.068Z
-updated_at: 2026-08-23T19:23:17.778Z
+updated_at: 2026-09-27T08:17:55.293Z
 closed_at: 2026-08-23T19:23:17.777Z
 close_reason: "TreeNode.truncated becomes a derived accessor over a new remainder: Option<Remainder>, the aggregate (rows, files, dirs, bytes, allocated) of the child rows a depth or limit bound withheld. Emitted in all four formats — the text truncation row now states what it dropped instead of a bare ellipsis. Asserted against the same query with the bound lifted, in Rust and in the Python smoke. Planes join the aggregate when partitioned tallies land (fdu-mvt3/fdu-7rwf)."
 resolution: null

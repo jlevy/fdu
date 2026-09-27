@@ -5,12 +5,12 @@ title: The files view truncates silently while the tree view marks it
 kind: bug
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
 created_at: 2026-08-21T21:32:17.460Z
-updated_at: 2026-09-16T16:50:16.674Z
+updated_at: 2026-09-27T08:17:46.336Z
 closed_at: 2026-09-16T16:50:16.673Z
 close_reason: "a6b670c (PR #39): files is unbounded by default, and a files listing bounded with --limit states what it dropped and names --limit all in its header and machine bound; --limit help now reads 'Rows to show, per group'."
 resolution: null

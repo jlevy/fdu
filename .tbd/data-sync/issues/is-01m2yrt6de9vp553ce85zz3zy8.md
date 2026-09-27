@@ -5,15 +5,15 @@ title: "H85 screen: transient scan() still cross-thread frees on Linux"
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-09-20-linux-performance-iteration.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md
 labels:
   - linux
   - campaign-2
 dependencies: []
 parent_id: is-01m2ymtwf6fth3a3rk0nn4kw8d
 created_at: 2026-09-20T06:42:16.110Z
-updated_at: 2026-09-20T06:54:07.706Z
+updated_at: 2026-09-27T08:17:26.964Z
 closed_at: 2026-09-20T06:54:07.706Z
 close_reason: "H85 rejected against 20% bar (exp-150): quiet linux-v6.12 -4.98%; 450k screening -11.31% n=7; RSS flat. Do not lower H85. 3% keep is H147/exp-151."
 ---

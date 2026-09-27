@@ -5,7 +5,8 @@ title: 0.1.0 first-user stability and usability
 kind: epic
 status: in_progress
 priority: 0
-version: 13
+version: 15
+spec_path: docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md
 labels:
   - release
   - docs
@@ -21,7 +22,8 @@ child_order_hints:
   - is-01m2sdz7grv5t98yetzb6agehg
   - is-01m2sdz7sbfmng3zmymwz66vrr
   - is-01m2tvwkjpgkktrx36jmtje70x
+  - is-01m3gytmfnbfpermqzna1c7jm8
 created_at: 2026-09-18T01:06:55.254Z
-updated_at: 2026-09-18T18:19:03.123Z
+updated_at: 2026-09-27T08:15:12.438Z
 ---
 Ground-up readiness for the first public release as a new GitHub visitor would see it: landing-page clarity, CLI/Rust/Python/watch discoverability, pre-publish packaged-artifact simulation, and the post-publish checklist once crates.io and PyPI exist.

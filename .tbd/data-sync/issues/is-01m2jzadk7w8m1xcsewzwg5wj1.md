@@ -5,7 +5,8 @@ title: "Address review: PR #61 — release workflow fixes (review 5212995288)"
 kind: task
 status: closed
 priority: 1
-version: 10
+version: 11
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
 dependencies: []
@@ -20,7 +21,7 @@ child_order_hints:
   - is-01m2jzba574teh1krgtb2122y6
   - is-01m2jzbn8fn9ek39ebfp0wf1yz
 created_at: 2026-09-15T16:45:06.022Z
-updated_at: 2026-09-15T17:10:24.811Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-15T17:10:24.808Z
 close_reason: All eight findings of review 5212995288 fixed on claude/release-workflow-fixes through 4db083b; CI green (19/19); disposition map at https://github.com/jlevy/fdu/pull/61#issuecomment-5684623694
 resolution: null

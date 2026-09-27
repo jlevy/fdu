@@ -5,8 +5,8 @@ title: "P1: formats text/json/jsonl/yaml and the fdu.report/1 schema"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzqn4rdq9vy4qvcve073rfhf
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:34:32.614Z
-updated_at: 2026-08-11T16:01:40.602Z
+updated_at: 2026-09-27T08:16:57.943Z
 closed_at: 2026-08-11T16:01:40.601Z
 close_reason: "report_format.rs renders text/json/jsonl/yaml over query::Report with the fdu.report/1 schema constant and a schema-bump guard test. format_rfc3339 added to query/parse.rs as the exact inverse of parse_when (6 round-trip cases). Hand-written rather than serde: three dependency additions with the YAML half unsettled, against a small closed schema and an existing hand-written-JSON precedent; decision recorded in the module header. 10 tests including a JSON-balance check across every view."
 ---

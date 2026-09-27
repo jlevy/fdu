@@ -3,12 +3,16 @@ type: is
 id: is-01kzyevbq7jcb3nyvwq15edmh2
 title: Land or close the two long-open PRs whose reviews are already resolved
 kind: chore
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 labels: []
 dependencies: []
 created_at: 2026-08-13T21:01:03.079Z
-updated_at: 2026-08-13T21:01:03.079Z
+updated_at: 2026-09-27T08:13:00.480Z
+closed_at: 2026-09-27T08:13:00.479Z
+close_reason: "Both requested PRs #4 and #11 are closed without merge; the requested land-or-close disposition is complete. This does not claim their implementations landed."
+resolution: null
+duplicate_of: null
 ---
 PR #4 (fix(cache): address PR #3 review, open since 2026-08-11, 7 commits not in main) and PR #11 (refactor: clarify Rust module filenames, open since 2026-08-13; scripts/check-rust-module-names.mjs is not on main) both have every review thread resolved with fix replies, and their review beads (fdu-dirt, fdu-cjo1) are closed. Their content is nonetheless unlanded. Decide per PR: merge, or close with the reason recorded so the closed review beads stop implying delivered work.

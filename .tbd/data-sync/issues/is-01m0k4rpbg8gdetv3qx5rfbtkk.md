@@ -5,13 +5,13 @@ title: Add largest and recent as documented aliases over files
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
 parent_id: is-01m0k4qrz1rb300efa1s5z86w6
 created_at: 2026-08-21T21:48:52.975Z
-updated_at: 2026-09-16T16:50:15.112Z
+updated_at: 2026-09-27T08:17:06.468Z
 closed_at: 2026-09-16T16:50:15.111Z
 close_reason: "a6b670c (PR #39): largest and recent are ViewSpec presets (size and mtime order, 20 rows, regular files only), overridable by --sort and --limit, and --docs states the equivalence. Resolved in fdu-core, not the CLI layer, and --kind cannot widen them to directories."
 resolution: null

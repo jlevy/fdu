@@ -5,7 +5,7 @@ title: Directory filtering and list presentation formats for stale build invento
 kind: epic
 status: in_progress
 priority: 1
-version: 24
+version: 25
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
 delegate: claude-code@spud10
 labels: []
@@ -26,7 +26,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:36:54.755Z
-updated_at: 2026-09-21T21:04:55.811Z
+updated_at: 2026-09-27T07:48:21.864Z
 started_at: 2026-09-20T01:38:30.390Z
 ---
 Plan: `docs/project/specs/active/plan-2026-09-20-directory-query-formats.md`. Publish the plan separately on `codex/directory-query-plan`, stacked on the latest branch, PR #94 (`perf/campaign-linux-2026-09-19`) above #92. Implementation follows in a separate PR above the reviewed plan. The tracked spec owns the complete design and implementation breakdown.
@@ -239,3 +239,5 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 ## Notes
 
 Plan PR #96; implementation PR #103 (draft, 2026-09-21). See fdu-arv8 for verification status.
+
+2026-09-27 status reconciliation: PR #117 delivered the directory-query implementation previously developed in drafts #96/#103. Verification fdu-arv8 is closed against the accepted current analysis/presentation contract (depth 5, 1% share, independent bounds, significant file leaves, population control, report schema /8); its earlier default-preservation requirement was superseded by that plan. All 19 implementation CI jobs passed at 44f106ae in run 36303716655. The epic stays open for fdu-2udc (unqualified time/size predicate semantics), fdu-uea9 (unfiltered flat-read cost), and fdu-afc4 (named Paths/Long benchmark jobs). Historical notes above are retained; current plan/index guidance is consolidated in PR #135.

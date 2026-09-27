@@ -5,15 +5,15 @@ title: "[feature] Selection.max_size: the upper size bound the catalog contract 
 kind: feature
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 4
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T20:45:10.436Z
-updated_at: 2026-08-24T23:08:45.497Z
+updated_at: 2026-09-27T08:17:19.677Z
 closed_at: 2026-08-24T23:08:45.496Z
 close_reason: |
   Shipped with `fdu-662n` in one commit. `make check` green, parity holds.

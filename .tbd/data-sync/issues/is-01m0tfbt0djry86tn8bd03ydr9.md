@@ -5,14 +5,14 @@ title: Replace the stale implementation bead count with the live graph
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 3
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T18:08:46.091Z
-updated_at: 2026-08-24T19:22:02.381Z
+updated_at: 2026-09-27T08:18:00.822Z
 closed_at: 2026-08-24T19:22:02.380Z
 close_reason: |
   Fixed. The sentence was stale as it landed, exactly as the finding says -- `fdu-u7vo`

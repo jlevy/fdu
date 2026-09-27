@@ -5,13 +5,13 @@ title: Fix stale dirty marker in checkout build versions
 kind: bug
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vhvfdyrrhmz3343qh5nr
 created_at: 2026-08-12T16:22:09.235Z
-updated_at: 2026-08-12T16:48:51.558Z
+updated_at: 2026-09-27T08:17:44.314Z
 closed_at: 2026-08-12T16:48:51.556Z
 close_reason: "Restored Cargo's recursive package tracking with cargo:rerun-if-changed=. while retaining HEAD/ref tracking. Verified on clean commit 8525e2b: version was g8525e2bd9, adding a package-source edit rebuilt to g8525e2bd9.dirty, and removing the edit rebuilt back to g8525e2bd9 without moving HEAD."
 ---

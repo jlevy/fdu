@@ -5,13 +5,13 @@ title: "P2: background snapshot save overlapped with rendering"
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:35:27.375Z
-updated_at: 2026-08-11T16:47:16.271Z
+updated_at: 2026-09-27T08:16:59.032Z
 closed_at: 2026-08-11T16:47:16.270Z
 close_reason: open_with_pending_save returns a joinable PendingSave; blocking open() joins it. CLI renders while the write runs and joins before raising a render error, so a broken pipe cannot abandon a finished scan's snapshot. Drop also joins. Failed save warns on stderr without changing the exit code. Only complete scans are written, with a Unix test proving a partial scan leaves the previous complete snapshot untouched. 4 tests.
 ---

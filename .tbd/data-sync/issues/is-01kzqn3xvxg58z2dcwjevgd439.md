@@ -5,15 +5,15 @@ title: "P2: document two-layer cache and tiered verification"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzqn66p0pmck4yg6pexhww2z
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:35:54.237Z
-updated_at: 2026-08-11T17:00:59.792Z
+updated_at: 2026-09-27T08:17:38.478Z
 closed_at: 2026-08-11T17:00:59.791Z
 close_reason: docs/project/guides/cache-design.md covers both layers, the tier rule with its three subtle consequences, fingerprint choice and the racily-clean window, the policy table, and unbuilt work. SKILL.md carries the agent-facing summary.
 ---

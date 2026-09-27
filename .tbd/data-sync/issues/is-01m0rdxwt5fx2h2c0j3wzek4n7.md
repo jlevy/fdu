@@ -5,15 +5,15 @@ title: Vendor the File Rollup conformance packet and run it against fdu's classi
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+version: 5
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0rahh7entj80k486sxs5k45
 hold: null
 hold_until: null
 created_at: 2026-08-23T23:05:12.772Z
-updated_at: 2026-09-17T02:11:16.231Z
+updated_at: 2026-09-27T08:17:17.514Z
 closed_at: 2026-09-17T02:11:16.230Z
 close_reason: Same work as the conformance packet expansion
 resolution: duplicate

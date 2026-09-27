@@ -3,9 +3,9 @@ type: is
 id: is-01m2ymmc4c03yvnc10myb2jmk6
 title: Native watch tests report success when the host delivers no events
 kind: bug
-status: in_progress
+status: closed
 priority: 2
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex@spud10
 labels:
@@ -17,8 +17,12 @@ parent_id: is-01m2yh8kc79nw7bn6k6xw8g3bp
 hold: null
 hold_until: null
 created_at: 2026-09-20T05:29:11.049Z
-updated_at: 2026-09-23T02:28:53.545Z
+updated_at: 2026-09-27T08:15:15.752Z
 started_at: 2026-09-20T05:35:29.834Z
+closed_at: 2026-09-27T08:15:15.751Z
+close_reason: "Implemented native-watch warmup precondition with explicit FDU_TEST_ALLOW_NO_NATIVE_WATCH override; silence after successful warmup still fails. watch.rs, watch_session_integration.rs and AGENTS.md; composed gate fdu-n2ok and current PR #133 CI 36303716655 pass."
+resolution: null
+duplicate_of: null
 ---
 Confirmed during release correctness validation: unchanged PR91 a_created_file_arrives_as_an_upsert printed a skipped-precondition message after120seconds and libtest reported passed inside the macOS sandbox, while the identical binary/test passed with a real event in0.15seconds outside the sandbox. Similar native-watch precondition helpers return early when no events arrive. A green gate can therefore cover no native watch behavior. Require an explicit environment opt-out for hosts deliberately lacking event delivery; otherwise fail with an actionable precondition diagnostic. Keep CI strict and document the opt-out separately from successful assertion evidence. Coordinate with fdu-wgu8 permission-precondition cleanup; do not simply extend timeouts or weaken post-precondition assertions.
 

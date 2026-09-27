@@ -5,7 +5,8 @@ title: "Maintainer: crates.io and PyPI accounts, 2FA, and protected release envi
 kind: chore
 status: closed
 priority: 0
-version: 10
+version: 11
+spec_path: docs/project/guides/release-process.md
 labels:
   - release
   - security
@@ -21,7 +22,7 @@ child_order_hints:
   - is-01m395wcbdbx8ndh16agfhmrhy
   - is-01m3btqe7263yd5sgcs02sa2d0
 created_at: 2026-09-18T00:55:07.111Z
-updated_at: 2026-09-26T17:25:40.534Z
+updated_at: 2026-09-27T08:15:13.849Z
 closed_at: 2026-09-26T17:25:40.533Z
 close_reason: Protected release environment passed the workflow gate; both crates.io trusted publishers now bind jlevy/fdu release.yml to release; the bootstrap secret was deleted and its token revoked.
 resolution: null

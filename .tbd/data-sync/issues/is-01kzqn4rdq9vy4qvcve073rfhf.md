@@ -5,8 +5,8 @@ title: "P3: --watch CLI loop, fdu.stream/1, and signal handling"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
   - type: blocks
@@ -17,7 +17,7 @@ dependencies:
     target: is-01kzqn5vw0t83yh77s92f6njf9
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:36:21.430Z
-updated_at: 2026-08-11T19:23:47.602Z
+updated_at: 2026-09-27T08:16:59.856Z
 closed_at: 2026-08-11T17:08:48.083Z
 close_reason: Session composes IndexHandle+Watcher+Query; --watch loop with fdu.stream/1 tagged change records, dirty-gated aggregate repaint, and event-driven detection throughout. Selection filters the stream, with removals filtered only by path and escalations never filtered. --watch + --scan-depth is a usage error that teaches scope-vs-selection. watch joins default features while cli-only and no-default-features still build. 5 integration tests against real filesystem events, including the idle-cost contract.
 ---

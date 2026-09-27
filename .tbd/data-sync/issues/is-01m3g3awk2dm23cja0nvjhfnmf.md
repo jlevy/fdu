@@ -5,8 +5,8 @@ title: Expose ignore rule counts and clearly defined total report throughput
 kind: feature
 status: closed
 priority: 2
-version: 5
-spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md
 delegate: codex-integration
 labels: []
 dependencies:
@@ -16,7 +16,7 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-27T00:13:14.209Z
-updated_at: 2026-09-27T03:12:09.151Z
+updated_at: 2026-09-27T08:18:14.013Z
 started_at: 2026-09-27T01:28:14.244Z
 closed_at: 2026-09-27T03:12:09.151Z
 close_reason: Implemented across engine, CLI, Python, schemas and docs in PR133.183 shared CLI goldens,886 core tests,68 cross-format cases, full16,787-case path matrix, cache fault proofs, and Apple/Windows cross-lint pass. Final packaging/CI handoff remains tracked by fdu-7jtp.

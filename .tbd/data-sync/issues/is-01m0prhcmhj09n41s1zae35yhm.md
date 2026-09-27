@@ -5,8 +5,8 @@ title: "Session integration shape: mid-walk progress, async form, session-to-wat
 kind: task
 status: closed
 priority: 1
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
+version: 8
+spec_path: docs/project/specs/archive/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01m0rw7cddvwh9vetyxkmgrvsm
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:32:08.465Z
-updated_at: 2026-09-17T02:10:55.342Z
+updated_at: 2026-09-27T08:17:12.685Z
 closed_at: 2026-09-17T02:10:55.342Z
 close_reason: Superseded by OpenedIndex (fdu-mkga, 194x, 9jzp, bnsk); async bridge is fdu-o5ne
 resolution: canceled
