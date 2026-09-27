@@ -441,7 +441,8 @@ def check_an_index_can_opt_out_of_control_state() -> None:
         rules=1,
         refused=0,
     )
-    assert lifted.report().notes == ()
+    # Test control diagnostics without platform-dependent tree display omissions.
+    assert lifted.report(fdu.Query(views=(fdu.View.SUMMARY,))).notes == ()
 
     # A default report and a default open share one snapshot scope. An opted-out open
     # projects that snapshot's equal entry tier into a blind index on every cache route.
