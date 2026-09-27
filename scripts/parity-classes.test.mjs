@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CLASSES, classify, parseSessions } from "./parity-classes.mjs";
+import { CLASSES, classify, normalisePortableValues, parseSessions } from "./parity-classes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CORPUS = path.join(ROOT, "tests", "parity", "deviations-python.diff");
@@ -72,6 +72,32 @@ test("portable golden paths require the exact fixture root and unchanged other f
     classify(session(["otherroot: [SCAN_PATH]"], ["otherroot: [SANDBOX]/project"], "Cache", cache)),
     null,
     "a YAML field whose name only ends in root must not match",
+  );
+});
+
+test("portable numeric masking touches observed values only and rejects literal drift", () => {
+  const observed = normalisePortableValues(
+    '-"allocated": 123\n-"age_reference_ns": [AGE_NS]\n-"observed_at_ns": [MTIME_NS]\n-"allocated": [ALLOCATED]\n+"allocated": 999\n+"age_reference_ns": -456\n+"observed_at_ns": 789\n+"allocated": NaN\n',
+  );
+  assert.equal(
+    observed,
+    '-"allocated": 123\n-"age_reference_ns": [AGE_NS]\n-"observed_at_ns": [MTIME_NS]\n-"allocated": [ALLOCATED]\n+"allocated": 999\n+"age_reference_ns": [AGE_NS_VALUE]\n+"observed_at_ns": [MTIME_NS_VALUE]\n+"allocated": NaN\n',
+  );
+  const golden = '-"age_reference_ns": [AGE_NS], "observed_at_ns": [MTIME_NS], "allocated": [ALLOCATED]\n';
+  assert.equal(
+    normalisePortableValues(golden + '+"age_reference_ns": 1, "observed_at_ns": 2, "allocated": 4096\n'),
+    normalisePortableValues(golden + '+"age_reference_ns": 9, "observed_at_ns": 8, "allocated": 8192\n'),
+    'two observations of the same typed fields serialize to one stable artifact line',
+  );
+  assert.equal(
+    classify(session(['"allocated": 123'], ['"allocated": [ALLOCATED_VALUE]'])),
+    null,
+    'a literal golden allocated value is never a portable wildcard',
+  );
+  assert.equal(
+    classify(session(['"allocated": [ALLOCATED]'], ['"allocated": NaN'])),
+    null,
+    'malformed numeric output remains visible',
   );
 });
 

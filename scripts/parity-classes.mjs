@@ -17,6 +17,54 @@
 // label, a note -- reads as unexplained for a reason that has nothing to do with it.
 const sameSeparator = (line) => line.replace(/\[SEP\]/g, '/');
 
+// tryscript expands named patterns into concrete values on the Python side of a diff.
+// After classification checks those values, keep the artifact stable across runs.
+// Only '+' lines are observed output; '-' golden expectations remain untouched.
+export function normalisePortableValues(text) {
+    const lines = text.split('\n');
+    let removed = [];
+    let added = [];
+    const flush = () => {
+      if (removed.length === added.length) {
+        for (let i = 0; i < removed.length; i += 1) {
+          let value = added[i].value;
+          for (const [field, named, marker] of [
+            ['age_reference_ns', 'AGE_NS', 'AGE_NS_VALUE'],
+            ['observed_at_ns', 'MTIME_NS', 'MTIME_NS_VALUE'],
+            ['allocated', 'ALLOCATED', 'ALLOCATED_VALUE'],
+          ]) {
+            const fieldValues = (line) =>
+              [...line.matchAll(new RegExp(`("${field}":\\s*)(\\[[A-Z_]+\\]|-?\\d+)`, 'g'))];
+            const expected = fieldValues(removed[i]);
+            const actual = fieldValues(value);
+            if (expected.length !== actual.length) continue;
+            let occurrence = 0;
+            value = value.replace(
+              new RegExp(`("${field}":\\s*)(-?\\d+)`, 'g'),
+              (match, prefix) =>
+                expected[occurrence++]?.[2] === `[${named}]` ? `${prefix}[${marker}]` : match,
+            );
+          }
+          lines[added[i].index] = `+${value}`;
+        }
+      }
+      removed = [];
+      added = [];
+    };
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (/^(?:FAIL |PASS |  ✗ |  ✓ )/.test(line)) {
+        flush();
+      } else if (line.startsWith('-')) {
+        removed.push(line.slice(1));
+      } else if (line.startsWith('+')) {
+        added.push({ index: i, value: line.slice(1) });
+      }
+    }
+    flush();
+    return lines.join('\n');
+}
+
 // The golden stores a portable scan-root pattern, while the Python replay prints its
 // concrete sandbox root. Match only the fixture root for that session: accepting any
 // [SANDBOX] path would conceal a Python request that scanned a different directory.
@@ -39,11 +87,11 @@ const portablePatternMatches = (line, actual, file) => {
   // shapes; every other field must still compare byte-for-byte.
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = escaped
-    .replaceAll('\\[AGE_NS\\]', '-?\\d+')
+    .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
     // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
     // numeric. The same named golden pattern appears in both fields.
-    .replaceAll('\\[MTIME_NS\\]', '(?:\\[MTIME_NS\\]|-?\\d+)')
-    .replaceAll('\\[ALLOCATED\\]', '\\d+');
+    .replaceAll('\\[MTIME_NS\\]', '(?:\\[MTIME_NS\\]|\\[MTIME_NS_VALUE\\]|-?\\d+)')
+    .replaceAll('\\[ALLOCATED\\]', '(?:\\[ALLOCATED_VALUE\\]|\\d+)');
   return new RegExp(`^${pattern}$`).test(sameSeparator(actual));
 };
 

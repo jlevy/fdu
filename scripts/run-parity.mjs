@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { CLASSES, classify, parseSessions } from './parity-classes.mjs';
+import { CLASSES, classify, normalisePortableValues, parseSessions } from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -204,7 +204,9 @@ const summary = [
   '',
 ].join('\n');
 
-const observed = HEADER + summary + body;
+// Classify concrete output first. The artifact masks only observed numeric values
+// already checked against the golden's typed patterns, so recordings stay stable.
+const observed = HEADER + summary + normalisePortableValues(body);
 
 if (observed.slice(HEADER.length).trim().length === 0) {
   console.error('run-parity: the corpus produced no differences at all.');
