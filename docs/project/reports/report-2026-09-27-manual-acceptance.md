@@ -125,6 +125,19 @@ where `$FDU_WHEEL_SMOKE` denotes this task’s external scratch directory.
 The wheel was built from uncommitted source; this check does not establish a clean
 release build.
 
+## Clean Local Installation
+
+The committed stack candidate `fdu 0.1.0-dev+g4b1bd5f5a` was built as a wheel and
+installed with `uv tool install --force --no-build --no-index`. Its SHA-256 is
+`6d38ba25670240f5dae83e296fb77288312c455a91043cfcbd8eb183d9c1983c`. The generated user
+skill matches the installed command’s `--skill` output byte-for-byte.
+An installed-binary probe verified schema 9, null remainder and empty stderr with full
+expansion, and one six-file remainder with a depth-zero projection.
+Bound notes and the single depth tip appeared on stderr only.
+The evidence is retained as `clean_install_verification` in the JSON artifact.
+Subsequent parity-harness and test changes do not alter this binary’s behavior; final CI
+is still a separate gate.
+
 ## Local Gate Progress
 
 The resumed handoff gate passed all-features core tests (897), library-only core tests
@@ -141,7 +154,8 @@ Final path/terminal checks and committed candidate CI are tracked separately.
 
 The full golden, package/parity, and handoff gates are tracked separately from these
 manual observations.
-A clean committed wheel must still carry the final fixes through installation and CI.
+The clean committed wheel is installed and verified; final CI and its authoritative
+parity recording remain required.
 Light/dark visual judgment, fresh-session skill discovery, and post-publication upgrade
 acceptance remain explicitly open.
 

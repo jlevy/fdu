@@ -412,5 +412,15 @@
       "Wheel built from uncommitted checkout; no clean release build claim.",
       "Light/dark desktop visual judgment, fresh-agent skill discovery, and published upgrade remain unverified."
     ]
+  },
+  "clean_install_verification": {
+    "version": "fdu 0.1.0-dev+g4b1bd5f5a",
+    "schema": "fdu.report/9",
+    "full_remainder": null,
+    "full_stderr": "",
+    "depth_zero_stdout": "    24 KiB  ██████████   100%  . 6 files (4.0 KiB ignored)\n                                 … and 24 KiB (6 files) more\n",
+    "depth_zero_stderr": "note: more includes hidden subtrees already counted in directory totals; files are counted recursively\nnote: display limits: depth 0\ntip: expand deeper: --depth=all\nperf: walked 6 files / 24 KiB; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 640.1 µs (9373 files/s, 0.038 GB/s represented)\n",
+    "wheel_sha256": "6d38ba25670240f5dae83e296fb77288312c455a91043cfcbd8eb183d9c1983c",
+    "user_skill_matches": true
   }
 }
