@@ -422,5 +422,15 @@
     "depth_zero_stderr": "note: more includes hidden subtrees already counted in directory totals; files are counted recursively\nnote: display limits: depth 0\ntip: expand deeper: --depth=all\nperf: walked 6 files / 24 KiB; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 640.1 µs (9373 files/s, 0.038 GB/s represented)\n",
     "wheel_sha256": "6d38ba25670240f5dae83e296fb77288312c455a91043cfcbd8eb183d9c1983c",
     "user_skill_matches": true
+  },
+  "handoff_gate": {
+    "full_command": "make -k check",
+    "full_result": "all targets passed except old parity recording",
+    "parity_producer_commit": "282d3c1f",
+    "parity_run": "https://github.com/jlevy/fdu/actions/runs/36349895447",
+    "parity_sha256": "0c3019a4e13589897c690445b1d7681c896e11b54d0e66d7cbe02ce3311ba7b8",
+    "parity_rerun": "make parity-check passed: 8 classification tests, 52 matched recorded differences",
+    "cross_run_stability": "two independent Linux observations normalize to identical bytes",
+    "status": "all local handoff targets passed; final adoption-commit CI pending"
   }
 }

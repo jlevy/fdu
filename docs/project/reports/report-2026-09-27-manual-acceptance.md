@@ -138,24 +138,35 @@ The evidence is retained as `clean_install_verification` in the JSON artifact.
 Subsequent parity-harness and test changes do not alter this binary’s behavior; final CI
 is still a separate gate.
 
-## Local Gate Progress
+## Local Handoff Gate
 
-The resumed handoff gate passed all-features core tests (897), library-only core tests
-(815), the 192-command shared golden corpus, strict Python checks and 70 Python tests,
-concurrency checks, wheel and source-package smoke tests, documentation, performance
-evidence checks, minimum-Rust-version checks, and dependency audits.
-The harness unit tests passed 37 cases and release tests passed 72. The final row-tip
-consistency correction passed the shared corpus and portability guards.
-Linux CI must supply the updated authoritative parity recording; the previous recording
-describes the older output contract.
-Final path/terminal checks and committed candidate CI are tracked separately.
+The complete `make -k check` run passed every target except the old parity recording.
+That included 897 all-build-feature core tests, 815 library-only core tests, 192 shared
+golden commands, strict Python checks and 70 Python tests, concurrency checks, wheel and
+source-package smoke tests, documentation, performance-evidence checks,
+minimum-Rust-version checks, and dependency audits.
+The path-independence subset passed 2,267 cases; all three terminal tests, 37 harness
+tests, and 72 release tests passed.
+
+Adopted the exact authoritative `deviations-python-linux` artifact from
+[Linux CI run 36349895447](https://github.com/jlevy/fdu/actions/runs/36349895447),
+produced at `282d3c1f`. Its SHA-256 is
+`0c3019a4e13589897c690445b1d7681c896e11b54d0e66d7cbe02ce3311ba7b8`. `make parity-check`
+then passed locally: all eight classification tests and all 52 recorded differences
+matched. Every local handoff target has therefore passed; the full invocation and parity
+rerun are distinct evidence steps.
+
+Recording review also compared two independent Linux observations after applying the
+same normalization: they were byte-identical.
+Classification checks concrete values before serialization masks only fields whose
+paired golden explicitly uses a typed pattern.
+Literal sizes, schema values, and fixture-root identity remain checked.
 
 ## Remaining Acceptance
 
-The full golden, package/parity, and handoff gates are tracked separately from these
-manual observations.
-The clean committed wheel is installed and verified; final CI and its authoritative
-parity recording remain required.
+The clean committed wheel is installed and verified, and all local handoff targets
+passed. Final CI on the artifact-adoption commit is recorded in the PR rather than
+inferred from these local observations.
 Light/dark visual judgment, fresh-session skill discovery, and post-publication upgrade
 acceptance remain explicitly open.
 

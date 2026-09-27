@@ -8,7 +8,7 @@ Scope includes the shared remainder, report schema 9, Python values, `--full`,
 diagnostic streams, colors, golden migration, and the manual acceptance fixes.
 
 Two stderr-color findings and one repeated-tip finding were found and corrected.
-Verification of their final committed candidate remains part of the handoff gate.
+All local handoff targets passed; final adoption-commit CI remains a separate gate.
 No further correctness finding was identified in disjoint remainder accounting or the
 Python model mapping.
 This review does not waive the acceptance limits in the
@@ -89,6 +89,18 @@ output preserves it.
 Full expansion remains available without changing discovery or analysis.
 These choices satisfy the requested presentation without introducing separate CLI-only
 accounting.
+
+## Validation Corrections
+
+The full gate and CI exposed stale assertions for the bumped analyzer identity and
+Windows control diagnostics.
+The latter now requests Summary, retaining the exact no-control-note assertion without
+unrelated tree-limit notes.
+The parity harness now classifies only declared portable path/numeric patterns and exact
+surface vocabulary. It checks concrete differences before stabilizing recording values;
+negative tests reject wrong roots, changed literal sizes, malformed values, and
+unrelated fields. The adopted recording is the exact Linux CI artifact, checked locally
+and against two independent normalized Linux observations.
 
 ## Documentation and Evidence
 
