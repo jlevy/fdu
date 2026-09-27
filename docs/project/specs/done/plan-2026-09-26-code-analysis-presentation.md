@@ -4,8 +4,8 @@
 
 **Author:** Codex
 
-**Status:** Complete; tally corrections validated locally, CI pending (`fdu-z0og`,
-`fdu-idn5`)
+**Status:** Complete; tally corrections and fresh installed acceptance validated
+(`fdu-z0og`, `fdu-idn5`); final matrix evidence is in PR #136
 
 Implementation is complete in PR #133; the documentation/examples layer is PR #135.
 Merge and release are separate steps.
