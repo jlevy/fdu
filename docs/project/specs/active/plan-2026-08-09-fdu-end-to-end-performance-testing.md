@@ -15,6 +15,12 @@ One harness change follows from that: campaign-2 requires a nominated real tree 
 paired set for any accept decision, because a generated corpus was measured hiding about
 15 points of fdu’s distance from the floor — enough to invert a peer ranking.
 
+[PR #132](https://github.com/jlevy/fdu/pull/132) published a separate, exploratory
+paired tool comparison on a generated macOS tree under an uncontrolled host regime.
+It does not resolve `fdu-ow8y`’s predeclared quiet native and wheel-installed release
+CLI cell or complete this plan’s dedicated-host Phase 1 matrix.
+Keep the subject, work-class, and host qualifiers attached to any use of those numbers.
+
 ## Overview
 
 Build a reproducible performance-evidence system for fdu from corpus generation through
