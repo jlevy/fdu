@@ -25,7 +25,7 @@ const fixtureRoot = (file = '') => {
   if (/\/(?:cli-axes|cli-cache|cli-json)\.tryscript\.md$/.test(file)) return 'project';
   return null;
 };
-const samePortablePattern = (line, file) => {
+const portablePatternMatches = (line, actual, file) => {
   let value = sameSeparator(line);
   const fixture = fixtureRoot(file);
   if (fixture) {
@@ -33,7 +33,18 @@ const samePortablePattern = (line, file) => {
       .replaceAll('"root": "[SCAN_PATH]"', `"root": "[SANDBOX]/${fixture}"`)
       .replace(/^root: \[SCAN_PATH\]$/, `root: [SANDBOX]/${fixture}`);
   }
-  return value;
+  // tryscript reports a whole changed line. A JSONL envelope therefore also contains
+  // the golden's numeric platform patterns when only its root path exposed the line.
+  // Honor only the patterns already named by the golden, with their original numeric
+  // shapes; every other field must still compare byte-for-byte.
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = escaped
+    .replaceAll('\\[AGE_NS\\]', '-?\\d+')
+    // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
+    // numeric. The same named golden pattern appears in both fields.
+    .replaceAll('\\[MTIME_NS\\]', '(?:\\[MTIME_NS\\]|-?\\d+)')
+    .replaceAll('\\[ALLOCATED\\]', '\\d+');
+  return new RegExp(`^${pattern}$`).test(sameSeparator(actual));
 };
 
 /** Flags and parameters name the same thing: --modified-since is modified_since. */
@@ -66,6 +77,9 @@ const sameBoundTip = (removed, added) => {
   const marker = removed.startsWith('! ') ? '! ' : '';
   return TIP_PAIRS.some(([cli, api]) => removed === marker + cli && added === marker + api);
 };
+const sameAnalysisTip = (removed, added) =>
+  removed === 'tip: include omitted views: add --analyze code' &&
+  added === 'tip: include omitted views: add analyze code';
 const usesBoundTip = (line) =>
   /^(! )?tip: /.test(line) &&
   /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
@@ -81,13 +95,20 @@ export const CLASSES = [
     why: [
       'The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a',
       'platform separator. The Python replay prints the sandbox root and a literal',
-      'separator. Only the exact fixture root and otherwise identical lines match.',
+      'separator. Only the exact fixture root and otherwise identical lines match;',
+      'exact bound and omitted-view tip translations can accompany those lines.',
     ],
     matches: ({ file, removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
-      removed.every((line, i) => samePortablePattern(line, file) === sameSeparator(added[i])) &&
-      removed.some((line, i) => line !== added[i]),
+      removed.every((line, i) =>
+        portablePatternMatches(line, added[i], file) ||
+        sameBoundTip(line, added[i]) ||
+        sameAnalysisTip(line, added[i]),
+      ) &&
+      removed.some((line, i) =>
+        line !== added[i] && portablePatternMatches(line, added[i], file),
+      ),
   },
   {
     id: 'bound-tip-vocabulary',

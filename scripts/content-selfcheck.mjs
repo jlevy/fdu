@@ -148,7 +148,7 @@ try {
   assert.deepEqual(codeReport.analysis.analyze, ["lines", "code"]);
   assert.deepEqual(codeReport.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
-    { id: "code-sloc-v1", version: 2 },
+    { id: "code-sloc-v1", version: 3 },
   ]);
   const code = codeReport.reports[0].metrics;
   assert.equal(code.share_metric, "code_lines");

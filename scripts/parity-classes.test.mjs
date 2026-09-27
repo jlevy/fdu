@@ -27,6 +27,25 @@ test("portable golden paths require the exact fixture root and unchanged other f
     classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/content-project", 7)], "Content", content))?.id,
     "portable-golden-pattern",
   );
+  const envelope = (root, age, observed, allocated, files = 7, schema = "fdu.report/9") =>
+    `{"schema": "${schema}", "root": "${root}", "age_reference_ns": ${age}, "observed_at_ns": ${observed}, "allocated": ${allocated}, "files": ${files}}`;
+  const golden = envelope("[SCAN_PATH]", "[AGE_NS]", "[MTIME_NS]", "[ALLOCATED]");
+  const concrete = (age, allocated, files = 7, schema = "fdu.report/9", observed = "456") =>
+    envelope("[SANDBOX]/project", age, observed, allocated, files, schema);
+  assert.equal(
+    classify(session([golden], [concrete("-123", "4096")], "JSONL", cache))?.id,
+    "portable-golden-pattern",
+    "whole JSONL lines retain the golden's typed numeric patterns",
+  );
+  for (const actual of [
+    concrete("NaN", "4096"),
+    concrete("-123", "unknown"),
+    concrete("-123", "4096", 7, "fdu.report/9", "unknown"),
+    concrete("-123", "4096", 8),
+    concrete("-123", "4096", 7, "fdu.report/8"),
+  ]) {
+    assert.equal(classify(session([golden], [actual], "JSONL", cache)), null, actual);
+  }
   assert.equal(
     classify(session(["80 B  assets[SEP]logo.png"], ["80 B  assets/logo.png"]))?.id,
     "portable-golden-pattern",
