@@ -1,0 +1,1758 @@
+{
+  "description": "Controlled presentation probe; timings are observations, not benchmark claims. Text fixture paths are relative.",
+  "cli_version": "fdu 0.1.0",
+  "fixture_files": {
+    ".gitignore": "# Root rules\nignored/\n*.log\n",
+    "main.rs": "fn main() {\n    // Comment\n}\n",
+    "README.md": "# Example\n\nTwo words.\n",
+    "ignored/vendor.rs": "fn generated() {}\n",
+    "docs/.gitignore": "# Nested rule\n*.tmp\n",
+    "docs/notes.txt": "hello\n\nworld\n",
+    "docs/scratch.tmp": "temporary\n",
+    "run.log": "log\n"
+  },
+  "cases": [
+    {
+      "view": "tree",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=tree",
+        "--format=text"
+      ],
+      "plain": "     144 B  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588   100%  . (8 files) (32 B ignored)\n      43 B  \u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591    30%    docs (3 files) (10 B ignored)\n      18 B  \u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591    12%    ignored (1 file) (18 B ignored)\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 185 KiB/s; analysis 8 fresh at 10.6k files/s, 0 cached; cold scan; total 7.9 ms\nnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\n",
+      "colored": "     144 B  \u001b[32m\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u001b[0m   100%  \u001b[36m.\u001b[0m (8 files) (32 B ignored)\n      43 B  \u001b[32m\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u001b[0m    30%    \u001b[36mdocs\u001b[0m (3 files) (10 B ignored)\n      18 B  \u001b[32m\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u001b[0m    12%    \u001b[36mignored\u001b[0m (1 file) (18 B ignored)\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 505 KiB/s; analysis 8 fresh at 28.7k files/s, 0 cached; cold scan; total 902.5 \u00b5s\u001b[0m\n\u001b[90mnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "summary",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=summary",
+        "--format=text"
+      ],
+      "plain": "     144 B  8 files, 2 directories (32 B ignored)\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 746 KiB/s; analysis 8 fresh at 42.4k files/s, 0 cached; cold scan; total 725.0 \u00b5s\nnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\n",
+      "colored": "     144 B  8 files, 2 directories (32 B ignored)\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 494 KiB/s; analysis 8 fresh at 28.1k files/s, 0 cached; cold scan; total 897.0 \u00b5s\u001b[0m\n\u001b[90mnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "extensions",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=extensions",
+        "--format=text"
+      ],
+      "plain": "      48 B  (none)       2 files\n      47 B  .rs          2 files (18 B ignored)\n      22 B  .md          1 file\n      13 B  .txt         1 file\n      10 B  .tmp         1 file (10 B ignored)\n       4 B  .log         1 file (4 B ignored)\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 548 KiB/s; analysis 8 fresh at 31.2k files/s, 0 cached; cold scan; total 789.0 \u00b5s\nnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\n",
+      "colored": "      48 B  \u001b[32m(none)\u001b[0m       2 files\n      47 B  \u001b[32m.rs\u001b[0m          2 files (18 B ignored)\n      22 B  \u001b[32m.md\u001b[0m          1 file\n      13 B  \u001b[32m.txt\u001b[0m         1 file\n      10 B  \u001b[32m.tmp\u001b[0m         1 file (10 B ignored)\n       4 B  \u001b[32m.log\u001b[0m         1 file (4 B ignored)\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 778 KiB/s; analysis 8 fresh at 44.3k files/s, 0 cached; cold scan; total 707.8 \u00b5s\u001b[0m\n\u001b[90mnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "types",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=types",
+        "--format=text"
+      ],
+      "plain": "      48 B   33.3%  unknown            2 files, 5 lines (5 nonblank, 0 blank), 9 words (0.0 pages), 1 documentation\n      47 B   32.6%  rust               2 files, 4 lines (3 code, 1 comment, 0 blank), 9 words (0.0 pages)\n      22 B   15.3%  markdown           1 file, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation\n      13 B    9.0%  text               1 file, 3 lines (2 nonblank, 1 blank), 2 words (0.0 pages), 1 documentation\n      10 B    6.9%  unknown:.tmp       1 file, 1 lines (1 nonblank, 0 blank), 2 words (0.0 pages), 1 documentation\n       4 B    2.8%  unknown:.log       1 file, 1 lines (1 nonblank, 0 blank), 1 words (0.0 pages)\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 523 KiB/s; analysis 8 fresh at 29.8k files/s, 0 cached; cold scan; total 914.2 \u00b5s\n",
+      "colored": "      48 B   33.3%  \u001b[32munknown\u001b[0m            2 files, 5 lines (5 nonblank, 0 blank), 9 words (0.0 pages), 1 documentation\n      47 B   32.6%  \u001b[32mrust\u001b[0m               2 files, 4 lines (3 code, 1 comment, 0 blank), 9 words (0.0 pages)\n      22 B   15.3%  \u001b[32mmarkdown\u001b[0m           1 file, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation\n      13 B    9.0%  \u001b[32mtext\u001b[0m               1 file, 3 lines (2 nonblank, 1 blank), 2 words (0.0 pages), 1 documentation\n      10 B    6.9%  \u001b[32munknown:.tmp\u001b[0m       1 file, 1 lines (1 nonblank, 0 blank), 2 words (0.0 pages), 1 documentation\n       4 B    2.8%  \u001b[32munknown:.log\u001b[0m       1 file, 1 lines (1 nonblank, 0 blank), 1 words (0.0 pages)\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 834 KiB/s; analysis 8 fresh at 47.5k files/s, 0 cached; cold scan; total 754.7 \u00b5s\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "families",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=families",
+        "--format=text"
+      ],
+      "plain": "      62 B   43.1%  unknown            4 files, 7 lines (7 nonblank, 0 blank), 11 words (0.0 pages), 2 documentation\n      47 B   32.6%  code               2 files, 4 lines (3 code, 1 comment, 0 blank), 9 words (0.0 pages)\n      35 B   24.3%  prose              2 files, 6 lines (4 nonblank, 2 blank), 5 words (0.0 pages), 2 documentation\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 511 KiB/s; analysis 8 fresh at 29.1k files/s, 0 cached; cold scan; total 925.4 \u00b5s\n",
+      "colored": "      62 B   43.1%  \u001b[32munknown\u001b[0m            4 files, 7 lines (7 nonblank, 0 blank), 11 words (0.0 pages), 2 documentation\n      47 B   32.6%  \u001b[32mcode\u001b[0m               2 files, 4 lines (3 code, 1 comment, 0 blank), 9 words (0.0 pages)\n      35 B   24.3%  \u001b[32mprose\u001b[0m              2 files, 6 lines (4 nonblank, 2 blank), 5 words (0.0 pages), 2 documentation\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 785 KiB/s; analysis 8 fresh at 44.7k files/s, 0 cached; cold scan; total 774.9 \u00b5s\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "languages",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=languages",
+        "--format=text"
+      ],
+      "plain": "Percentage column: code lines\n      47 B  100.0%  Rust  2 files, 4 lines (3 code, 1 comment, 0 blank), 9 words (0.0 pages)\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 444 KiB/s; analysis 8 fresh at 25.3k files/s, 0 cached; cold scan; total 929.0 \u00b5s\n",
+      "colored": "\u001b[90mPercentage column: code lines\u001b[0m\n      47 B  100.0%  \u001b[32mRust\u001b[0m  2 files, 4 lines (3 code, 1 comment, 0 blank), 9 words (0.0 pages)\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 479 KiB/s; analysis 8 fresh at 27.3k files/s, 0 cached; cold scan; total 901.3 \u00b5s\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "documents",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=documents",
+        "--format=text"
+      ],
+      "plain": "Percentage column: document words\n      22 B   60.0%  markdown           1 file, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation\n      13 B   40.0%  text               1 file, 3 lines (2 nonblank, 1 blank), 2 words (0.0 pages), 1 documentation\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 606 KiB/s; analysis 8 fresh at 34.5k files/s, 0 cached; cold scan; total 779.4 \u00b5s\n",
+      "colored": "\u001b[90mPercentage column: document words\u001b[0m\n      22 B   60.0%  \u001b[32mmarkdown\u001b[0m           1 file, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation\n      13 B   40.0%  \u001b[32mtext\u001b[0m               1 file, 3 lines (2 nonblank, 1 blank), 2 words (0.0 pages), 1 documentation\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 617 KiB/s; analysis 8 fresh at 35.1k files/s, 0 cached; cold scan; total 791.2 \u00b5s\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "largest",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=largest",
+        "--format=text"
+      ],
+      "plain": "29 B  main.rs\n28 B  .gitignore\n22 B  README.md\n20 B  docs/.gitignore\n18 B  ignored/vendor.rs\n13 B  docs/notes.txt\n10 B  docs/scratch.tmp\n 4 B  run.log\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 620 KiB/s; analysis 8 fresh at 35.3k files/s, 0 cached; cold scan; total 797.8 \u00b5s\nnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\n",
+      "colored": "29 B  main.rs\n28 B  .gitignore\n22 B  README.md\n20 B  docs/.gitignore\n18 B  ignored/vendor.rs\n13 B  docs/notes.txt\n10 B  docs/scratch.tmp\n 4 B  run.log\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 800 KiB/s; analysis 8 fresh at 45.6k files/s, 0 cached; cold scan; total 705.7 \u00b5s\u001b[0m\n\u001b[90mnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "recent",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=recent",
+        "--format=text"
+      ],
+      "plain": "2026-09-26T23:57:42.759284764Z  run.log\n2026-09-26T23:57:42.759160470Z  docs/scratch.tmp\n2026-09-26T23:57:42.759027176Z  docs/notes.txt\n2026-09-26T23:57:42.758865881Z  docs/.gitignore\n2026-09-26T23:57:42.758538457Z  ignored/vendor.rs\n2026-09-26T23:57:42.758217742Z  README.md\n2026-09-26T23:57:42.758084198Z  main.rs\n2026-09-26T23:57:42.757924112Z  .gitignore\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 754 KiB/s; analysis 8 fresh at 42.9k files/s, 0 cached; cold scan; total 703.9 \u00b5s\nnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\n",
+      "colored": "2026-09-26T23:57:42.759284764Z  run.log\n2026-09-26T23:57:42.759160470Z  docs/scratch.tmp\n2026-09-26T23:57:42.759027176Z  docs/notes.txt\n2026-09-26T23:57:42.758865881Z  docs/.gitignore\n2026-09-26T23:57:42.758538457Z  ignored/vendor.rs\n2026-09-26T23:57:42.758217742Z  README.md\n2026-09-26T23:57:42.758084198Z  main.rs\n2026-09-26T23:57:42.757924112Z  .gitignore\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 693 KiB/s; analysis 8 fresh at 39.4k files/s, 0 cached; cold scan; total 822.6 \u00b5s\u001b[0m\n\u001b[90mnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "files",
+      "format": "text",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=files",
+        "--format=text"
+      ],
+      "plain": ".gitignore\nREADME.md\ndocs\ndocs/.gitignore\ndocs/notes.txt\ndocs/scratch.tmp\nignored\nignored/vendor.rs\nmain.rs\nrun.log\nPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 610 KiB/s; analysis 8 fresh at 34.7k files/s, 0 cached; cold scan; total 800.5 \u00b5s\nnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\n",
+      "colored": ".gitignore\nREADME.md\ndocs\ndocs/.gitignore\ndocs/notes.txt\ndocs/scratch.tmp\nignored\nignored/vendor.rs\nmain.rs\nrun.log\n\u001b[90mPerformance: walked 8 files / 144 B; ignore rules 2 files; content read 144 B at 530 KiB/s; analysis 8 fresh at 30.2k files/s, 0 cached; cold scan; total 813.4 \u00b5s\u001b[0m\n\u001b[90mnote: --analyze lines,code,words read 144 B; no selected view displays content metrics \u2014 try --view families, languages, or full\u001b[0m\n",
+      "has_ansi": true,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "list",
+      "format": "paths",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=list",
+        "--format=paths"
+      ],
+      "plain": "docs\nmain.rs\n.gitignore\nREADME.md\ndocs/.gitignore\nignored\nignored/vendor.rs\ndocs/notes.txt\ndocs/scratch.tmp\nrun.log\n",
+      "colored": "docs\nmain.rs\n.gitignore\nREADME.md\ndocs/.gitignore\nignored\nignored/vendor.rs\ndocs/notes.txt\ndocs/scratch.tmp\nrun.log\n",
+      "has_ansi": false,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "list",
+      "format": "long",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=list",
+        "--format=long"
+      ],
+      "plain": "      43 B       1s docs\n      29 B       1s main.rs\n      28 B       1s .gitignore\n      22 B       1s README.md\n      20 B       1s docs/.gitignore\n      18 B       1s ignored\n      18 B       1s ignored/vendor.rs\n      13 B       1s docs/notes.txt\n      10 B       1s docs/scratch.tmp\n       4 B       1s run.log\n",
+      "colored": "      43 B       1s docs\n      29 B       1s main.rs\n      28 B       1s .gitignore\n      22 B       1s README.md\n      20 B       1s docs/.gitignore\n      18 B       1s ignored\n      18 B       1s ignored/vendor.rs\n      13 B       1s docs/notes.txt\n      10 B       1s docs/scratch.tmp\n       4 B       1s run.log\n",
+      "has_ansi": false,
+      "same_body_after_removing_sgr": true
+    },
+    {
+      "view": "summary",
+      "format": "json",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=summary",
+        "--format=json"
+      ],
+      "plain": "{\n  \"schema\": \"fdu.report/7\",\n  \"generator\": \"fdu 0.1.0\",\n  \"root\": \"FIXTURE_ROOT\",\n  \"age_reference_ns\": 1790467064496089000,\n  \"request\": {\n    \"scope\": {\n      \"max_depth\": null,\n      \"follow_symlinks\": false,\n      \"one_filesystem\": false,\n      \"exclude_special\": false,\n      \"read_controls\": true\n    },\n    \"analyze\": [\"lines\", \"code\", \"words\"],\n    \"size\": \"apparent\",\n    \"views\": [\"summary\"],\n    \"omitted_views\": []\n  },\n  \"status\": {\n    \"complete\": true,\n    \"coverage\": {\"kind\": \"complete\"},\n    \"errors\": [],\n    \"errors_omitted\": 0\n  },\n  \"provenance\": {\n    \"source\": \"cold_scan\",\n    \"freshness\": \"fresh\",\n    \"scan_started_at\": \"2026-09-26T23:57:44.496333000Z\",\n    \"generated_at\": \"2026-09-26T23:57:44.496951000Z\",\n    \"tiers\": {\n      \"entries\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064496333000},\n      \"content\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064496709000}\n    }\n  },\n  \"ignore_rules\": {\n    \"limits\": {\"budget\": 4194304, \"line_limit\": 16384},\n    \"applied\": 2,\n    \"refused\": 0,\n    \"refusals\": []\n  },\n  \"analysis\": {\n    \"analyze\": [\"lines\", \"code\", \"words\"],\n    \"type_rules_fingerprint\": 12438660251313372799,\n    \"options_fingerprint\": 12638149817160282822,\n    \"analyzers\": [\n      {\"id\": \"content-basic-v1\", \"version\": 1},\n      {\"id\": \"code-sloc-v1\", \"version\": 1},\n      {\"id\": \"text-logical-v1\", \"version\": 1},\n      {\"id\": \"markdown-prose-v1\", \"version\": 1}\n    ]\n  },\n  \"reports\": [\n    {\n      \"view\": \"summary\",\n      \"summary\": {\n        \"files\": 8,\n        \"dirs\": 2,\n        \"bytes\": 144,\n        \"allocated\": 32768,\n        \"ignored\": {\"files\": 3, \"dirs\": 1, \"bytes\": 32, \"allocated\": 12288},\n        \"newest_mtime_ns\": 1790467062759284764\n      }\n    }\n  ]\n}\n",
+      "colored": "{\n  \"schema\": \"fdu.report/7\",\n  \"generator\": \"fdu 0.1.0\",\n  \"root\": \"FIXTURE_ROOT\",\n  \"age_reference_ns\": 1790467064561471000,\n  \"request\": {\n    \"scope\": {\n      \"max_depth\": null,\n      \"follow_symlinks\": false,\n      \"one_filesystem\": false,\n      \"exclude_special\": false,\n      \"read_controls\": true\n    },\n    \"analyze\": [\"lines\", \"code\", \"words\"],\n    \"size\": \"apparent\",\n    \"views\": [\"summary\"],\n    \"omitted_views\": []\n  },\n  \"status\": {\n    \"complete\": true,\n    \"coverage\": {\"kind\": \"complete\"},\n    \"errors\": [],\n    \"errors_omitted\": 0\n  },\n  \"provenance\": {\n    \"source\": \"cold_scan\",\n    \"freshness\": \"fresh\",\n    \"scan_started_at\": \"2026-09-26T23:57:44.561672000Z\",\n    \"generated_at\": \"2026-09-26T23:57:44.562459000Z\",\n    \"tiers\": {\n      \"entries\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064561672000},\n      \"content\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064562143000}\n    }\n  },\n  \"ignore_rules\": {\n    \"limits\": {\"budget\": 4194304, \"line_limit\": 16384},\n    \"applied\": 2,\n    \"refused\": 0,\n    \"refusals\": []\n  },\n  \"analysis\": {\n    \"analyze\": [\"lines\", \"code\", \"words\"],\n    \"type_rules_fingerprint\": 12438660251313372799,\n    \"options_fingerprint\": 12638149817160282822,\n    \"analyzers\": [\n      {\"id\": \"content-basic-v1\", \"version\": 1},\n      {\"id\": \"code-sloc-v1\", \"version\": 1},\n      {\"id\": \"text-logical-v1\", \"version\": 1},\n      {\"id\": \"markdown-prose-v1\", \"version\": 1}\n    ]\n  },\n  \"reports\": [\n    {\n      \"view\": \"summary\",\n      \"summary\": {\n        \"files\": 8,\n        \"dirs\": 2,\n        \"bytes\": 144,\n        \"allocated\": 32768,\n        \"ignored\": {\"files\": 3, \"dirs\": 1, \"bytes\": 32, \"allocated\": 12288},\n        \"newest_mtime_ns\": 1790467062759284764\n      }\n    }\n  ]\n}\n",
+      "has_ansi": false,
+      "same_body_after_removing_sgr": false,
+      "comparison_note": "Independent invocations differ in timestamps; raw byte equality is not a color-parity assertion."
+    },
+    {
+      "view": "summary",
+      "format": "jsonl",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=summary",
+        "--format=jsonl"
+      ],
+      "plain": "{\"schema\": \"fdu.report/7\", \"generator\": \"fdu 0.1.0\", \"root\": \"FIXTURE_ROOT\", \"age_reference_ns\": 1790467064627337000, \"request\": {\"scope\": {\"max_depth\": null, \"follow_symlinks\": false, \"one_filesystem\": false, \"exclude_special\": false, \"read_controls\": true}, \"analyze\": [\"lines\", \"code\", \"words\"], \"size\": \"apparent\", \"views\": [\"summary\"], \"omitted_views\": []}, \"status\": {\"complete\": true, \"coverage\": {\"kind\": \"complete\"}, \"errors\": [], \"errors_omitted\": 0}, \"provenance\": {\"source\": \"cold_scan\", \"freshness\": \"fresh\", \"scan_started_at\": \"2026-09-26T23:57:44.627505000Z\", \"generated_at\": \"2026-09-26T23:57:44.628092000Z\", \"tiers\": {\"entries\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064627505000}, \"content\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064627885000}}}, \"ignore_rules\": {\"limits\": {\"budget\": 4194304, \"line_limit\": 16384}, \"applied\": 2, \"refused\": 0, \"refusals\": []}, \"analysis\": {\"analyze\": [\"lines\", \"code\", \"words\"], \"type_rules_fingerprint\": 12438660251313372799, \"options_fingerprint\": 12638149817160282822, \"analyzers\": [{\"id\": \"content-basic-v1\", \"version\": 1}, {\"id\": \"code-sloc-v1\", \"version\": 1}, {\"id\": \"text-logical-v1\", \"version\": 1}, {\"id\": \"markdown-prose-v1\", \"version\": 1}]}}\n{\"view\": \"summary\", \"summary\": {\"files\": 8, \"dirs\": 2, \"bytes\": 144, \"allocated\": 32768, \"ignored\": {\"files\": 3, \"dirs\": 1, \"bytes\": 32, \"allocated\": 12288}, \"newest_mtime_ns\": 1790467062759284764}}\n",
+      "colored": "{\"schema\": \"fdu.report/7\", \"generator\": \"fdu 0.1.0\", \"root\": \"FIXTURE_ROOT\", \"age_reference_ns\": 1790467064691905000, \"request\": {\"scope\": {\"max_depth\": null, \"follow_symlinks\": false, \"one_filesystem\": false, \"exclude_special\": false, \"read_controls\": true}, \"analyze\": [\"lines\", \"code\", \"words\"], \"size\": \"apparent\", \"views\": [\"summary\"], \"omitted_views\": []}, \"status\": {\"complete\": true, \"coverage\": {\"kind\": \"complete\"}, \"errors\": [], \"errors_omitted\": 0}, \"provenance\": {\"source\": \"cold_scan\", \"freshness\": \"fresh\", \"scan_started_at\": \"2026-09-26T23:57:44.692098000Z\", \"generated_at\": \"2026-09-26T23:57:44.692696000Z\", \"tiers\": {\"entries\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064692098000}, \"content\": {\"source\": \"scanned\", \"freshness\": \"fresh\", \"observed_at_ns\": 1790467064692475000}}}, \"ignore_rules\": {\"limits\": {\"budget\": 4194304, \"line_limit\": 16384}, \"applied\": 2, \"refused\": 0, \"refusals\": []}, \"analysis\": {\"analyze\": [\"lines\", \"code\", \"words\"], \"type_rules_fingerprint\": 12438660251313372799, \"options_fingerprint\": 12638149817160282822, \"analyzers\": [{\"id\": \"content-basic-v1\", \"version\": 1}, {\"id\": \"code-sloc-v1\", \"version\": 1}, {\"id\": \"text-logical-v1\", \"version\": 1}, {\"id\": \"markdown-prose-v1\", \"version\": 1}]}}\n{\"view\": \"summary\", \"summary\": {\"files\": 8, \"dirs\": 2, \"bytes\": 144, \"allocated\": 32768, \"ignored\": {\"files\": 3, \"dirs\": 1, \"bytes\": 32, \"allocated\": 12288}, \"newest_mtime_ns\": 1790467062759284764}}\n",
+      "has_ansi": false,
+      "same_body_after_removing_sgr": false,
+      "comparison_note": "Independent invocations differ in timestamps; raw byte equality is not a color-parity assertion."
+    },
+    {
+      "view": "summary",
+      "format": "yaml",
+      "args": [
+        ".",
+        "--cache=off",
+        "--size=apparent",
+        "--analyze=all",
+        "--limit=all",
+        "--view=summary",
+        "--format=yaml"
+      ],
+      "plain": "schema: fdu.report/7\ngenerator: \"fdu 0.1.0\"\nroot: FIXTURE_ROOT\nage_reference_ns: 1790467064757158000\nrequest:\n  scope:\n    max_depth: null\n    follow_symlinks: false\n    one_filesystem: false\n    exclude_special: false\n    read_controls: true\n  analyze: [lines, code, words]\n  size: apparent\n  views: [summary]\n  omitted_views: []\nstatus:\n  complete: true\n  coverage: {kind: complete}\n  errors: []\n  errors_omitted: 0\nprovenance:\n  source: cold_scan\n  freshness: fresh\n  scan_started_at: \"2026-09-26T23:57:44.757321000Z\"\n  generated_at: \"2026-09-26T23:57:44.757953000Z\"\n  tiers:\n    entries: {source: scanned, freshness: fresh, observed_at_ns: 1790467064757321000}\n    content: {source: scanned, freshness: fresh, observed_at_ns: 1790467064757750000}\nignore_rules:\n  limits: {budget: 4194304, line_limit: 16384}\n  applied: 2\n  refused: 0\n  refusals: []\nanalysis:\n  analyze: [lines, code, words]\n  type_rules_fingerprint: 12438660251313372799\n  options_fingerprint: 12638149817160282822\n  analyzers:\n    - {id: content-basic-v1, version: 1}\n    - {id: code-sloc-v1, version: 1}\n    - {id: text-logical-v1, version: 1}\n    - {id: markdown-prose-v1, version: 1}\nreports:\n  -\n    view: summary\n    summary:\n      files: 8\n      dirs: 2\n      bytes: 144\n      allocated: 32768\n      ignored: {files: 3, dirs: 1, bytes: 32, allocated: 12288}\n      newest_mtime_ns: 1790467062759284764\n",
+      "colored": "schema: fdu.report/7\ngenerator: \"fdu 0.1.0\"\nroot: FIXTURE_ROOT\nage_reference_ns: 1790467064821454000\nrequest:\n  scope:\n    max_depth: null\n    follow_symlinks: false\n    one_filesystem: false\n    exclude_special: false\n    read_controls: true\n  analyze: [lines, code, words]\n  size: apparent\n  views: [summary]\n  omitted_views: []\nstatus:\n  complete: true\n  coverage: {kind: complete}\n  errors: []\n  errors_omitted: 0\nprovenance:\n  source: cold_scan\n  freshness: fresh\n  scan_started_at: \"2026-09-26T23:57:44.821629000Z\"\n  generated_at: \"2026-09-26T23:57:44.822389000Z\"\n  tiers:\n    entries: {source: scanned, freshness: fresh, observed_at_ns: 1790467064821629000}\n    content: {source: scanned, freshness: fresh, observed_at_ns: 1790467064822048000}\nignore_rules:\n  limits: {budget: 4194304, line_limit: 16384}\n  applied: 2\n  refused: 0\n  refusals: []\nanalysis:\n  analyze: [lines, code, words]\n  type_rules_fingerprint: 12438660251313372799\n  options_fingerprint: 12638149817160282822\n  analyzers:\n    - {id: content-basic-v1, version: 1}\n    - {id: code-sloc-v1, version: 1}\n    - {id: text-logical-v1, version: 1}\n    - {id: markdown-prose-v1, version: 1}\nreports:\n  -\n    view: summary\n    summary:\n      files: 8\n      dirs: 2\n      bytes: 144\n      allocated: 32768\n      ignored: {files: 3, dirs: 1, bytes: 32, allocated: 12288}\n      newest_mtime_ns: 1790467062759284764\n",
+      "has_ansi": false,
+      "same_body_after_removing_sgr": false,
+      "comparison_note": "Independent invocations differ in timestamps; raw byte equality is not a color-parity assertion."
+    }
+  ],
+  "json_difference_paths": [
+    "age_reference_ns",
+    "provenance.scan_started_at",
+    "provenance.generated_at",
+    "provenance.tiers.entries.observed_at_ns",
+    "provenance.tiers.content.observed_at_ns"
+  ],
+  "limit_probe": {
+    "fixture_files": {
+      "d00/sample.e00": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d01/sample.e01": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d02/sample.e02": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d03/sample.e03": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d04/sample.e04": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d05/sample.e05": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d06/sample.e06": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d07/sample.e07": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d08/sample.e08": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d09/sample.e09": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d10/sample.e10": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "d11/sample.e11": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "large/a/b/c/d/e/leaf.txt": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "cases": [
+      {
+        "name": "tree-default",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=tree"
+        ],
+        "reports": [
+          {
+            "view": "tree",
+            "tree": {
+              "name": ".",
+              "path": "",
+              "kind": "dir",
+              "bytes": 2200,
+              "allocated": 53248,
+              "files": 13,
+              "dirs": 18,
+              "ignored": {
+                "files": 0,
+                "dirs": 0,
+                "bytes": 0,
+                "allocated": 0
+              },
+              "newest_mtime_ns": 1790467699806252022,
+              "truncated": true,
+              "children": [
+                {
+                  "name": "large",
+                  "path": "large",
+                  "kind": "dir",
+                  "bytes": 1000,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 5,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699806252022,
+                  "truncated": false,
+                  "children": [
+                    {
+                      "name": "a",
+                      "path": "large/a",
+                      "kind": "dir",
+                      "bytes": 1000,
+                      "allocated": 4096,
+                      "files": 1,
+                      "dirs": 4,
+                      "ignored": {
+                        "files": 0,
+                        "dirs": 0,
+                        "bytes": 0,
+                        "allocated": 0
+                      },
+                      "newest_mtime_ns": 1790467699806252022,
+                      "truncated": true,
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "name": "d00",
+                  "path": "d00",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803088892,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d01",
+                  "path": "d01",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803468559,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d02",
+                  "path": "d02",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803682976,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d03",
+                  "path": "d03",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803958977,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d04",
+                  "path": "d04",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804188894,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d05",
+                  "path": "d05",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804375728,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d06",
+                  "path": "d06",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804543395,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d07",
+                  "path": "d07",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804735770,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d08",
+                  "path": "d08",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804920645,
+                  "truncated": false,
+                  "children": []
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "tree-breadth-one",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=tree",
+          "--limit=1",
+          "--depth=all"
+        ],
+        "reports": [
+          {
+            "view": "tree",
+            "tree": {
+              "name": ".",
+              "path": "",
+              "kind": "dir",
+              "bytes": 2200,
+              "allocated": 53248,
+              "files": 13,
+              "dirs": 18,
+              "ignored": {
+                "files": 0,
+                "dirs": 0,
+                "bytes": 0,
+                "allocated": 0
+              },
+              "newest_mtime_ns": 1790467699806252022,
+              "truncated": true,
+              "children": [
+                {
+                  "name": "large",
+                  "path": "large",
+                  "kind": "dir",
+                  "bytes": 1000,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 5,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699806252022,
+                  "truncated": false,
+                  "children": [
+                    {
+                      "name": "a",
+                      "path": "large/a",
+                      "kind": "dir",
+                      "bytes": 1000,
+                      "allocated": 4096,
+                      "files": 1,
+                      "dirs": 4,
+                      "ignored": {
+                        "files": 0,
+                        "dirs": 0,
+                        "bytes": 0,
+                        "allocated": 0
+                      },
+                      "newest_mtime_ns": 1790467699806252022,
+                      "truncated": false,
+                      "children": [
+                        {
+                          "name": "b",
+                          "path": "large/a/b",
+                          "kind": "dir",
+                          "bytes": 1000,
+                          "allocated": 4096,
+                          "files": 1,
+                          "dirs": 3,
+                          "ignored": {
+                            "files": 0,
+                            "dirs": 0,
+                            "bytes": 0,
+                            "allocated": 0
+                          },
+                          "newest_mtime_ns": 1790467699806252022,
+                          "truncated": false,
+                          "children": [
+                            {
+                              "name": "c",
+                              "path": "large/a/b/c",
+                              "kind": "dir",
+                              "bytes": 1000,
+                              "allocated": 4096,
+                              "files": 1,
+                              "dirs": 2,
+                              "ignored": {
+                                "files": 0,
+                                "dirs": 0,
+                                "bytes": 0,
+                                "allocated": 0
+                              },
+                              "newest_mtime_ns": 1790467699806252022,
+                              "truncated": false,
+                              "children": [
+                                {
+                                  "name": "d",
+                                  "path": "large/a/b/c/d",
+                                  "kind": "dir",
+                                  "bytes": 1000,
+                                  "allocated": 4096,
+                                  "files": 1,
+                                  "dirs": 1,
+                                  "ignored": {
+                                    "files": 0,
+                                    "dirs": 0,
+                                    "bytes": 0,
+                                    "allocated": 0
+                                  },
+                                  "newest_mtime_ns": 1790467699806252022,
+                                  "truncated": false,
+                                  "children": [
+                                    {
+                                      "name": "e",
+                                      "path": "large/a/b/c/d/e",
+                                      "kind": "dir",
+                                      "bytes": 1000,
+                                      "allocated": 4096,
+                                      "files": 1,
+                                      "dirs": 0,
+                                      "ignored": {
+                                        "files": 0,
+                                        "dirs": 0,
+                                        "bytes": 0,
+                                        "allocated": 0
+                                      },
+                                      "newest_mtime_ns": 1790467699806252022,
+                                      "truncated": false,
+                                      "children": []
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "tree-depth-zero",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=tree",
+          "--depth=0"
+        ],
+        "reports": [
+          {
+            "view": "tree",
+            "tree": {
+              "name": ".",
+              "path": "",
+              "kind": "dir",
+              "bytes": 2200,
+              "allocated": 53248,
+              "files": 13,
+              "dirs": 18,
+              "ignored": {
+                "files": 0,
+                "dirs": 0,
+                "bytes": 0,
+                "allocated": 0
+              },
+              "newest_mtime_ns": 1790467699806252022,
+              "truncated": true,
+              "children": []
+            }
+          }
+        ]
+      },
+      {
+        "name": "tree-depth-five",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=tree",
+          "--depth=5",
+          "--limit=all"
+        ],
+        "reports": [
+          {
+            "view": "tree",
+            "tree": {
+              "name": ".",
+              "path": "",
+              "kind": "dir",
+              "bytes": 2200,
+              "allocated": 53248,
+              "files": 13,
+              "dirs": 18,
+              "ignored": {
+                "files": 0,
+                "dirs": 0,
+                "bytes": 0,
+                "allocated": 0
+              },
+              "newest_mtime_ns": 1790467699806252022,
+              "truncated": false,
+              "children": [
+                {
+                  "name": "large",
+                  "path": "large",
+                  "kind": "dir",
+                  "bytes": 1000,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 5,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699806252022,
+                  "truncated": false,
+                  "children": [
+                    {
+                      "name": "a",
+                      "path": "large/a",
+                      "kind": "dir",
+                      "bytes": 1000,
+                      "allocated": 4096,
+                      "files": 1,
+                      "dirs": 4,
+                      "ignored": {
+                        "files": 0,
+                        "dirs": 0,
+                        "bytes": 0,
+                        "allocated": 0
+                      },
+                      "newest_mtime_ns": 1790467699806252022,
+                      "truncated": false,
+                      "children": [
+                        {
+                          "name": "b",
+                          "path": "large/a/b",
+                          "kind": "dir",
+                          "bytes": 1000,
+                          "allocated": 4096,
+                          "files": 1,
+                          "dirs": 3,
+                          "ignored": {
+                            "files": 0,
+                            "dirs": 0,
+                            "bytes": 0,
+                            "allocated": 0
+                          },
+                          "newest_mtime_ns": 1790467699806252022,
+                          "truncated": false,
+                          "children": [
+                            {
+                              "name": "c",
+                              "path": "large/a/b/c",
+                              "kind": "dir",
+                              "bytes": 1000,
+                              "allocated": 4096,
+                              "files": 1,
+                              "dirs": 2,
+                              "ignored": {
+                                "files": 0,
+                                "dirs": 0,
+                                "bytes": 0,
+                                "allocated": 0
+                              },
+                              "newest_mtime_ns": 1790467699806252022,
+                              "truncated": false,
+                              "children": [
+                                {
+                                  "name": "d",
+                                  "path": "large/a/b/c/d",
+                                  "kind": "dir",
+                                  "bytes": 1000,
+                                  "allocated": 4096,
+                                  "files": 1,
+                                  "dirs": 1,
+                                  "ignored": {
+                                    "files": 0,
+                                    "dirs": 0,
+                                    "bytes": 0,
+                                    "allocated": 0
+                                  },
+                                  "newest_mtime_ns": 1790467699806252022,
+                                  "truncated": true,
+                                  "children": []
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "d00",
+                  "path": "d00",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803088892,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d01",
+                  "path": "d01",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803468559,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d02",
+                  "path": "d02",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803682976,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d03",
+                  "path": "d03",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699803958977,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d04",
+                  "path": "d04",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804188894,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d05",
+                  "path": "d05",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804375728,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d06",
+                  "path": "d06",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804543395,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d07",
+                  "path": "d07",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804735770,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d08",
+                  "path": "d08",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699804920645,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d09",
+                  "path": "d09",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699805194604,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d10",
+                  "path": "d10",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699805373104,
+                  "truncated": false,
+                  "children": []
+                },
+                {
+                  "name": "d11",
+                  "path": "d11",
+                  "kind": "dir",
+                  "bytes": 100,
+                  "allocated": 4096,
+                  "files": 1,
+                  "dirs": 0,
+                  "ignored": {
+                    "files": 0,
+                    "dirs": 0,
+                    "bytes": 0,
+                    "allocated": 0
+                  },
+                  "newest_mtime_ns": 1790467699805691146,
+                  "truncated": false,
+                  "children": []
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "extensions-default",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=extensions"
+        ],
+        "reports": [
+          {
+            "view": "extensions",
+            "bound": {
+              "shown": 10,
+              "total": 13
+            },
+            "extensions": [
+              {
+                "extension": ".txt",
+                "files": 1,
+                "bytes": 1000,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e00",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e01",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e02",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e03",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e04",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e05",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e06",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e07",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e08",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "extensions-all",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=extensions",
+          "--limit=all"
+        ],
+        "reports": [
+          {
+            "view": "extensions",
+            "bound": null,
+            "extensions": [
+              {
+                "extension": ".txt",
+                "files": 1,
+                "bytes": 1000,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e00",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e01",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e02",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e03",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e04",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e05",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e06",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e07",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e08",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e09",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e10",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              },
+              {
+                "extension": ".e11",
+                "files": 1,
+                "bytes": 100,
+                "allocated": 4096,
+                "ignored": {
+                  "files": 0,
+                  "bytes": 0,
+                  "allocated": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "files-default",
+        "args": [
+          ".",
+          "--cache=off",
+          "--size=apparent",
+          "--color=never",
+          "--format=json",
+          "--view=files"
+        ],
+        "reports": [
+          {
+            "view": "files",
+            "bound": null,
+            "files": [
+              {
+                "path": "d00",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803088892,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 991698108,
+                "ignored": false
+              },
+              {
+                "path": "d00/sample.e00",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803088892,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 991698108,
+                "ignored": false
+              },
+              {
+                "path": "d01",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803468559,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 991318441,
+                "ignored": false
+              },
+              {
+                "path": "d01/sample.e01",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803468559,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 991318441,
+                "ignored": false
+              },
+              {
+                "path": "d02",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803682976,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 991104024,
+                "ignored": false
+              },
+              {
+                "path": "d02/sample.e02",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803682976,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 991104024,
+                "ignored": false
+              },
+              {
+                "path": "d03",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803958977,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 990828023,
+                "ignored": false
+              },
+              {
+                "path": "d03/sample.e03",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699803958977,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 990828023,
+                "ignored": false
+              },
+              {
+                "path": "d04",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804188894,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 990598106,
+                "ignored": false
+              },
+              {
+                "path": "d04/sample.e04",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804188894,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 990598106,
+                "ignored": false
+              },
+              {
+                "path": "d05",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804375728,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 990411272,
+                "ignored": false
+              },
+              {
+                "path": "d05/sample.e05",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804375728,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 990411272,
+                "ignored": false
+              },
+              {
+                "path": "d06",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804543395,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 990243605,
+                "ignored": false
+              },
+              {
+                "path": "d06/sample.e06",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804543395,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 990243605,
+                "ignored": false
+              },
+              {
+                "path": "d07",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804735770,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 990051230,
+                "ignored": false
+              },
+              {
+                "path": "d07/sample.e07",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804735770,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 990051230,
+                "ignored": false
+              },
+              {
+                "path": "d08",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804920645,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 989866355,
+                "ignored": false
+              },
+              {
+                "path": "d08/sample.e08",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699804920645,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 989866355,
+                "ignored": false
+              },
+              {
+                "path": "d09",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699805194604,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 989592396,
+                "ignored": false
+              },
+              {
+                "path": "d09/sample.e09",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699805194604,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 989592396,
+                "ignored": false
+              },
+              {
+                "path": "d10",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699805373104,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 989413896,
+                "ignored": false
+              },
+              {
+                "path": "d10/sample.e10",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699805373104,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 989413896,
+                "ignored": false
+              },
+              {
+                "path": "d11",
+                "kind": "dir",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699805691146,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 989095854,
+                "ignored": false
+              },
+              {
+                "path": "d11/sample.e11",
+                "kind": "file",
+                "bytes": 100,
+                "allocated": 4096,
+                "mtime_ns": 1790467699805691146,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 989095854,
+                "ignored": false
+              },
+              {
+                "path": "large",
+                "kind": "dir",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": 1,
+                "dirs": 5,
+                "complete": true,
+                "age_ns": 988534978,
+                "ignored": false
+              },
+              {
+                "path": "large/a",
+                "kind": "dir",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": 1,
+                "dirs": 4,
+                "complete": true,
+                "age_ns": 988534978,
+                "ignored": false
+              },
+              {
+                "path": "large/a/b",
+                "kind": "dir",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": 1,
+                "dirs": 3,
+                "complete": true,
+                "age_ns": 988534978,
+                "ignored": false
+              },
+              {
+                "path": "large/a/b/c",
+                "kind": "dir",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": 1,
+                "dirs": 2,
+                "complete": true,
+                "age_ns": 988534978,
+                "ignored": false
+              },
+              {
+                "path": "large/a/b/c/d",
+                "kind": "dir",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": 1,
+                "dirs": 1,
+                "complete": true,
+                "age_ns": 988534978,
+                "ignored": false
+              },
+              {
+                "path": "large/a/b/c/d/e",
+                "kind": "dir",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": 1,
+                "dirs": 0,
+                "complete": true,
+                "age_ns": 988534978,
+                "ignored": false
+              },
+              {
+                "path": "large/a/b/c/d/e/leaf.txt",
+                "kind": "file",
+                "bytes": 1000,
+                "allocated": 4096,
+                "mtime_ns": 1790467699806252022,
+                "files": null,
+                "dirs": null,
+                "complete": null,
+                "age_ns": 988534978,
+                "ignored": false
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "sanitization": "Absolute fixture root replaced by FIXTURE_ROOT; relative paths and metric values retained.",
+  "platform": {
+    "os": "Darwin",
+    "version": "26.5.2",
+    "architecture": "arm64"
+  }
+}
