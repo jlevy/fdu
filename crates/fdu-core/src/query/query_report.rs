@@ -1895,7 +1895,7 @@ fn build_section(
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
     tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
-    shared_metric_summary: Option<MetricSummary>,
+    shared_metric_summary: Option<Box<MetricSummary>>,
 ) -> Section {
     if query.tree_for(view) {
         let (root, omissions) = tree_node(index, query, content, walked, tree_measurements);
@@ -1922,9 +1922,9 @@ fn build_section(
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics {
                 view,
-                summary: Box::new(shared_metric_summary.unwrap_or_else(|| {
-                    metric_summary(view, index, query, content, walked, unfiltered_rows)
-                })),
+                summary: shared_metric_summary.unwrap_or_else(|| {
+                    Box::new(metric_summary(view, index, query, content, walked, unfiltered_rows))
+                }),
             }
         }
         ViewSpec::List
@@ -2086,7 +2086,7 @@ fn metric_summaries(
     query: &Query,
     content: AnalysisSet,
     rows: &[FileRow],
-) -> Vec<Option<MetricSummary>> {
+) -> Vec<Option<Box<MetricSummary>>> {
     let mut accumulators = views
         .iter()
         .copied()
@@ -2103,8 +2103,12 @@ fn metric_summaries(
         }
     }
 
+    // Boxed where each is finished: a summary is a few hundred bytes, and carrying it by
+    // value through the per-view closure and `build_section` put those bytes in every
+    // frame on the path a deep tree renders on, which on a Windows debug build was enough
+    // to overflow the 64 KiB stack `deep_rendering_is_stack_safe` allows.
     let mut finished =
-        accumulators.into_iter().map(|accumulator| accumulator.finish(query, content));
+        accumulators.into_iter().map(|accumulator| Box::new(accumulator.finish(query, content)));
     let summaries = views
         .iter()
         .map(|view| needs_metric_resolution(*view).then(|| finished.next().expect("metric view")))
