@@ -333,6 +333,8 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ An Unknown Scope Names Both Accepted Values
 PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✓ An Explicit Path Gives a Useful Project-Shaped Report
+  ✓ Unknown Branches Do Not Disable Filtering for Known Sizes
+  ✓ Unknown Branches Do Not Disable Filtering for Known Sizes
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
