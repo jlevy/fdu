@@ -1241,8 +1241,11 @@ def render(document: Mapping[str, Any]) -> str:
         "",
         _hardlink_note(tree_document),
         "",
-        "| Tool | Work class | Median wall | Versus paired anchor | 95% interval | Peak RSS |",
-        "| --- | --- | ---: | ---: | ---: | ---: |",
+        (
+            "| Tool | Work class | Median wall | Files/s | Allocated GB/s | "
+            "Versus paired anchor | 95% interval | Peak RSS |"
+        ),
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     anchor = document["anchor"]
     anchor_metrics = document["overall"][anchor]["metrics"]
@@ -1253,6 +1256,7 @@ def render(document: Mapping[str, Any]) -> str:
                 anchor,
                 document["tools"][anchor]["work_class"],
                 _seconds(anchor_metrics["wall_ns"]),
+                *_throughput(tree_document, anchor_metrics["wall_ns"]),
                 "baseline",
                 "—",
                 _mib(anchor_metrics["peak_rss_bytes"]),
@@ -1274,6 +1278,7 @@ def render(document: Mapping[str, Any]) -> str:
                     name,
                     contract["work_class"],
                     _seconds(wall),
+                    *_throughput(tree_document, wall),
                     change[0],
                     change[1],
                     _mib(rss),
@@ -1283,6 +1288,13 @@ def render(document: Mapping[str, Any]) -> str:
         )
     lines.extend(
         [
+            "",
+            (
+                f"Rates divide the subject's {tree_document['counts']['files']:,} regular "
+                f"files and {tree_document['sizes']['allocated_bytes']:,} allocated bytes by "
+                "each row's wall median. GB is decimal (1,000,000,000 bytes); the byte rate "
+                "describes metadata coverage, not file-body read bandwidth."
+            ),
             "",
             "## Release qualification",
             "",
@@ -1332,6 +1344,19 @@ def render(document: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _throughput(
+    tree_document: Mapping[str, Any], wall: Mapping[str, Any]
+) -> Tuple[str, str]:
+    """Format regular-file and allocated-byte coverage from a wall median."""
+    wall_ns = wall.get("median")
+    if not isinstance(wall_ns, (int, float)) or wall_ns <= 0:
+        return "—", "—"
+    seconds = wall_ns / 1_000_000_000
+    files = int(tree_document["counts"]["files"])
+    allocated_bytes = int(tree_document["sizes"]["allocated_bytes"])
+    return f"{files / seconds:,.0f}", f"{allocated_bytes / seconds / 1_000_000_000:.3f}"
 
 
 def _warm_cache_evidence(warmups: int) -> Dict[str, Any]:
