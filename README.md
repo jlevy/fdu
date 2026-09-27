@@ -282,24 +282,26 @@ of code at roughly 4M lines/sec after caching.
 [The 2026-09-18 installed-CLI QA](docs/project/reports/report-2026-09-18-cli-installed-qa.md)
 has the log.
 
-**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
-with its cache disabled built a reusable exact index and ten-row tree over a generated
-1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
-tool on an M1 Pro with a local APFS SSD, warm filesystem cache, one independent
-full-tree fingerprint.
-The host was busy (load 7.7–9.9 on ten cores).
-The absolute seconds are a loaded-host number; the paired percentages are the
-comparison.
+**Exploratory macOS calibration, 2026-09-26.** A fresh process with its cache disabled
+built a reusable exact index and ten-row tree over a generated 1,000,001-entry corpus in
+a **5.991-second median**: **146,050 files/s** and **0.499 allocated GB/s**. The matrix
+used twelve adjacent paired trials per tool on an M1 Pro with an internal APFS SSD, warm
+filesystem cache, and one independent full-tree fingerprint.
+The host regime was uncontrolled, so the absolute seconds describe that loaded host; the
+paired percentages are the stronger comparison.
 
-| Tool | Work returned | Median | Versus paired fdu |
-| --- | --- | ---: | ---: |
-| **fdu** | reusable exact index and ten-row tree | **5.206 s** | baseline |
-| dumac | allocated-byte total only | 5.637 s | **+11.3%** |
-| diskus | scalar total only | 6.972 s | +34.7% |
-| dust | allocated-byte total only | 8.292 s | +60.6% |
-| dua | scalar total only | 8.744 s | +63.1% |
-| BSD `du` | one total, serial | 51.226 s | +898% |
-| GNU `du` | one total, serial | 65.775 s | +1177% |
+| Tool | Work returned | Median | Files/s | Allocated GB/s | Versus paired fdu |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **fdu** | reusable exact index and ten-row tree | **5.991 s** | **146,050** | **0.499** | baseline |
+| dumac | allocated-byte total only | 6.333 s | 138,169 | 0.472 | **+8.2%** |
+| diskus | scalar total only | 8.653 s | 101,124 | 0.345 | +45.1% |
+| pdu | rendered tree | 9.246 s | 94,640 | 0.323 | +53.1% |
+| dust | allocated-byte total only | 9.604 s | 91,112 | 0.311 | +59.5% |
+| dua | scalar total only | 9.746 s | 89,783 | 0.306 | +63.5% |
+| gdu | rendered tree | 10.390 s | 84,217 | 0.287 | +64.1% |
+| BSD `du` | one total, serial | 49.341 s | 17,734 | 0.061 | +716.9% |
+| ncdu | reusable index | 60.560 s | 14,448 | 0.049 | +909.7% |
+| GNU `du` | one total, serial | 62.118 s | 14,086 | 0.048 | +954.6% |
 
 Each competitor was reduced to one number.
 fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
@@ -316,12 +318,22 @@ and counts neither a symbolic link’s own size nor a directory’s.
 [The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
 has the tables.
 
-fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
+Files/s divides 875,000 regular files by median wall time.
+Allocated GB/s divides the tree’s 2,986,741,760 allocated bytes by median wall time
+using decimal GB; it describes metadata coverage, not file-content read bandwidth.
+Positive relative percentages mean the competitor took longer than its immediately
+adjacent fdu run.
+
+fdu’s peak RSS here was 285.9 MiB against dumac’s 29.6 MiB, because fdu retained a
 million-entry index and dumac retained one integer.
 `fdu --no-gitignore --view summary` keeps the aggregate-only tier, which returns the
-same tallies without retaining that index: **15.0 MiB** against 285.4 MiB for the tree
-view in a separate fdu-only round-robin.
+same tallies without retaining that index; the separate 2026-09-16 fdu-only round-robin
+measured **15.0 MiB** against 285.4 MiB for the tree view.
 That tier buys memory, not time.
+
+[The full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+records the work-class caveats, 95% intervals, host state, exact binaries, storage
+placement, and raw samples.
 
 Linux evidence is real and improving, from virtualized hosts.
 The most recent campaign on a 450k-entry tree, measured against its own starting point:
