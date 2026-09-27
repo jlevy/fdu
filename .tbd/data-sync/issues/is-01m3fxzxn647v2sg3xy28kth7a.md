@@ -5,11 +5,20 @@ title: Prune excluded ignored subtrees under the unified population policy
 kind: feature
 status: open
 priority: 2
-version: 2
-spec_path: docs/project/research/research-2026-09-26-codebase-analysis.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m3fnvw9aarv10r96g3x7tn9m
+  - type: blocks
+    target: is-01m3g53gjm5c6ks1t77k1az0qh
+  - type: blocks
+    target: is-01m3g3awk2dm23cja0nvjhfnmf
+  - type: blocks
+    target: is-01m3g53hk9nr8ff52d3xj77ttj
+parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 created_at: 2026-09-26T22:39:51.973Z
-updated_at: 2026-09-26T23:09:18.570Z
+updated_at: 2026-09-27T00:50:04.586Z
 ---
 Implement and verify traversal pruning for --ignored=exclude as part of the unified ignored-population design in fdu-gdg0. No separate scan-ignored flag. Follow effective ancestor and negation rules, do not prune unknown classifications, distinguish control reads from content reads, and mark pruned totals unavailable. Exercise rule changes and all-to-excluded/excluded-to-all cache transitions with enumeration counters. The unified exclusion option must not ship as a report-only filter.

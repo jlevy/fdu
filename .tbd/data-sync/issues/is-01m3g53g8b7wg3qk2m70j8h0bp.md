@@ -5,11 +5,25 @@ title: Implement code analysis and presentation redesign
 kind: epic
 status: open
 priority: 2
-version: 1
+version: 14
 spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
 labels: []
 dependencies: []
+child_order_hints:
+  - is-01m3fnf8c8sg1mf6jprhb9e0x2
+  - is-01m3fnf8sgc6xm43ydwwapfpnz
+  - is-01m3fnf94hk9dp0c174m12pgez
+  - is-01m3fnvw9aarv10r96g3x7tn9m
+  - is-01m3fnvwn015anap11wcfv6d0m
+  - is-01m3fxzxn647v2sg3xy28kth7a
+  - is-01m3g3aqfqvh8d0bddvvrnbnyk
+  - is-01m3g3atcmtntbefj5cmysvg00
+  - is-01m3g3awk2dm23cja0nvjhfnmf
+  - is-01m3g53gjm5c6ks1t77k1az0qh
+  - is-01m3g53gx1d4p4bd1hd8qhqye5
+  - is-01m3g53h7t1qggkvgs1wvn9z0n
+  - is-01m3g53hk9nr8ff52d3xj77ttj
 created_at: 2026-09-27T00:44:09.355Z
-updated_at: 2026-09-27T00:44:09.355Z
+updated_at: 2026-09-27T00:50:03.366Z
 ---
 Deliver counting correctness, population and work selection, reporting, adaptive limits, telemetry, the approved macOS cache-location change, and validation. Optional classification and complexity evaluations require explicit retain/defer decisions.
