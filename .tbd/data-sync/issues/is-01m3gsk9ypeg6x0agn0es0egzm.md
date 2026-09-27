@@ -3,14 +3,18 @@ type: is
 id: is-01m3gsk9ypeg6x0agn0es0egzm
 title: Document code analysis with a worked repository example
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-26-directory-inventory-accounting.md
 labels: []
 dependencies: []
 created_at: 2026-09-27T06:42:18.708Z
-updated_at: 2026-09-27T06:51:14.736Z
+updated_at: 2026-09-27T07:10:17.887Z
+closed_at: 2026-09-27T07:10:17.887Z
+close_reason: "Assessment and verified examples delivered in stacked PR #135; issue #93 confirmed implemented by #117, per-path hard-link accounting documented with measured evidence, future unique allocation retains fdu-579b/fdu-8ybz ownership. Full make check and all 19 CI jobs pass."
+resolution: null
+duplicate_of: null
 ---
 User requested a clear illustration of code analysis on the fdu repository in the public docs. Capture actual output, label its snapshot scope, explain shares and coverage, and add it to the README with a usage link.
 
