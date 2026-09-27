@@ -66,6 +66,12 @@ defaults. Use `--limit=all` where a bounded view should print every row.
 `--depth` limits reported tree levels, not scan depth; `--scan-depth` limits what can be
 scanned and therefore changes the cache scope.
 
+Numeric content sorts such as `--sort=code_lines` require their analyzer.
+Use `files`, `list`, `tree`, or a metric grouping such as `languages` or `code` for
+these rankings. `extensions` groups metadata only and rejects content-metric sorts.
+The Code overview shows combined language totals with non-ignored and ignored
+contributions in parentheses; unknown classification is separate.
+
 Sizes use allocated bytes by default.
 Add `--size=apparent` for logical file lengths.
 

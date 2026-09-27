@@ -1146,6 +1146,15 @@ impl ReconcileTarget<'_> {
         }
     }
 
+    fn control_classification_known(&self, path: &Path) -> Result<bool> {
+        match self {
+            Self::Direct(index) => Ok(index.control_classification_known(path)),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.read_with(|index| index.control_classification_known(path))
+            }
+        }
+    }
+
     fn apply(&mut self, started_at: u64, observation: &Observation) -> Result<crate::ApplyOutcome> {
         match self {
             Self::Direct(index) => index.apply(observation),
@@ -4982,11 +4991,21 @@ fn reconcile_target(
         return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
     }
     let subtree = if config.population != crate::query::IgnoredEntries::Include
-        && crate::control::is_control_file(&subtree)
+        && !subtree.as_os_str().is_empty()
     {
-        // The rule can admit entries the held index has never seen. A control-file
-        // reconciliation must inspect its siblings, including absent baselines.
-        subtree.parent().map_or_else(PathBuf::new, Path::to_path_buf)
+        // A narrowed tier may have pruned the requested entry or an ancestor. Start
+        // from its nearest retained parent so the governing control is read before the
+        // directory listing decides whether the boundary itself belongs in the tier.
+        // A control-file edit also needs this parent listing to discover siblings that
+        // were absent under the previous rule.
+        let mut parent = subtree.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+        while !parent.as_os_str().is_empty()
+            && (target.expectation(&parent)?.state == PathState::Absent
+                || !target.control_classification_known(&parent)?)
+        {
+            parent = parent.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+        }
+        parent
     } else {
         subtree
     };
@@ -8543,6 +8562,107 @@ mod tests {
         assert!(excluded.is_complete(), "{:?}", excluded.scan.errors);
         assert!(index.lookup(Path::new("target")).is_none());
         assert_eq!(excluded.scan.dirs_read, 1, "ignored target was not reopened");
+    }
+
+    #[test]
+    fn excluded_subtree_refresh_keeps_ignored_file_and_directory_out_of_scope() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"target/\n*.log\n");
+        write_file(&root.path().join("target/deep/file.rs"), b"code");
+        write_file(&root.path().join("debug.log"), b"ignored");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            ..ScanConfig::default()
+        };
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(cold.is_complete());
+        assert!(index.lookup(Path::new("target")).is_none());
+        assert!(index.lookup(Path::new("debug.log")).is_none());
+
+        for path in ["target", "debug.log"] {
+            let refresh = reconcile_subtree(&mut index, Path::new(path), &config, &mut |_| {})
+                .expect("subtree refresh");
+            assert!(refresh.is_complete(), "{path}: {:?}", refresh.scan.errors);
+            assert!(index.lookup(Path::new(path)).is_none(), "{path} is outside scope");
+        }
+        assert_eq!(index.total().dirs, 0);
+    }
+
+    #[test]
+    fn handled_subtree_refresh_recovers_pruned_ancestry_after_control_edit() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"target/\n");
+        write_file(&root.path().join("target/deep/file.rs"), b"code");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            ..ScanConfig::default()
+        };
+        let (index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(cold.is_complete());
+        let handle = IndexHandle::new(index);
+
+        let hidden = reconcile_subtree_handle(
+            &handle,
+            Path::new("target/deep/file.rs"),
+            &config,
+            &mut |_| {},
+        )
+        .expect("refresh pruned descendant");
+        assert!(hidden.is_complete());
+        assert!(
+            !handle
+                .read_with(|index| index.lookup(Path::new("target")).is_some())
+                .expect("read after hidden refresh")
+        );
+
+        write_file(&root.path().join(".gitignore"), b"");
+        let exposed = reconcile_subtree_handle(&handle, Path::new("target"), &config, &mut |_| {})
+            .expect("refresh changed control");
+        assert!(exposed.is_complete());
+        assert!(
+            handle
+                .read_with(|index| index.lookup(Path::new("target/deep/file.rs")).is_some())
+                .expect("read after control recovery")
+        );
+
+        write_file(&root.path().join(".gitignore"), b"target/\n");
+        let hidden_again =
+            reconcile_subtree_handle(&handle, Path::new("target"), &config, &mut |_| {})
+                .expect("refresh restored control");
+        assert!(hidden_again.is_complete());
+        assert!(
+            !handle
+                .read_with(|index| index.lookup(Path::new("target")).is_some())
+                .expect("read after restored control")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn targeted_refresh_keeps_unknown_population_below_unreadable_ancestor_control() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let root = tempfile::tempdir().expect("root");
+        let control = root.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        write_file(&root.path().join("a/keep.rs"), b"unknown membership");
+        let config =
+            ScanConfig { population: crate::query::IgnoredEntries::Only, ..ScanConfig::default() };
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("unreadable");
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(!cold.is_complete());
+        assert!(index.lookup(Path::new("a/keep.rs")).is_some());
+        assert_eq!(index.ignored_classification(Path::new("a/keep.rs")), None);
+
+        let refreshed = reconcile_subtree(&mut index, Path::new("a/keep.rs"), &config, &mut |_| {});
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore control");
+        let refreshed = refreshed.expect("targeted refresh");
+        assert!(!refreshed.is_complete(), "unreadable governing control was not visited");
+        assert!(index.lookup(Path::new("a/keep.rs")).is_some(), "unknown must stay retained");
+        assert_eq!(index.ignored_classification(Path::new("a/keep.rs")), None);
     }
 
     #[test]

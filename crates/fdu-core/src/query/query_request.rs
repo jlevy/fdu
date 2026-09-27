@@ -648,6 +648,13 @@ impl Request {
                 crate::content::METRICS.iter().find(|metric| metric.name == name).ok_or_else(
                     || invalid(self.query.axes.sort, name, "expected a registered numeric metric"),
                 )?;
+            if self.query.views.contains(&ViewSpec::Extensions) {
+                return Err(invalid(
+                    self.query.axes.sort,
+                    name,
+                    "extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view",
+                ));
+            }
             if !basis.content.contains(metric.owner) {
                 let analyzer = if metric.owner.includes_code() {
                     "code"
@@ -2010,6 +2017,24 @@ mod tests {
         request_with(&[ViewSpec::Files], selection, basis(AnalysisSet::NONE.with_code(), true))
             .validate()
             .expect("code metrics are available with the code analyzer");
+    }
+
+    #[test]
+    fn extension_view_refuses_metric_sort_before_reading() {
+        let held = basis(AnalysisSet::NONE.with_code(), true);
+        let selection =
+            Selection { sort: Some(SortKey::Metric("code_lines")), ..Selection::default() };
+        let request = request_with(&[ViewSpec::Extensions], selection.clone(), held.clone());
+        let expected = invalid(
+            request.query.axes.sort,
+            "code_lines",
+            "extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view",
+        );
+        assert_eq!(request.validate(), Err(expected.clone()));
+        assert_eq!(request.validate_read(&held), Err(expected));
+        request_with(&[ViewSpec::Files], selection, held)
+            .validate()
+            .expect("files retain metric sorting");
     }
 
     /// A scope this build cannot honour is refused by request validation itself.

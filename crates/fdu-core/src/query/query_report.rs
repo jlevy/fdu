@@ -2208,7 +2208,10 @@ fn code_overview(
         metric: MetricAggregate,
     }
 
-    let files = entry_rows(index, walked, unfiltered_rows);
+    let files = walked.map_or_else(
+        || entry_rows(index, None, unfiltered_rows),
+        |walked| Cow::Borrowed(walked.members.as_slice()),
+    );
     let held = index.content().and_then(|tier| tier.admit(&index.content_identity(content)));
     let split = query.selection.ignored == IgnoredEntries::Include && index.observes_controls();
     let sort_key = query.selection.sort.unwrap_or(SortKey::Metric("code_lines"));
@@ -4255,6 +4258,34 @@ mod tests {
         let Section::Files { rows, .. } = &dirs.sections[0] else { panic!("directories") };
         assert_eq!((rows[0].path.as_path(), rows[0].sort_value), (Path::new("src"), Some(2)));
         assert_eq!((rows[1].path.as_path(), rows[1].sort_value), (Path::new("generated"), Some(1)));
+    }
+
+    #[test]
+    fn code_overview_counts_selected_directory_members_once() {
+        let root = tempfile::tempdir().expect("root");
+        fs::create_dir_all(root.path().join("src/deep")).expect("directories");
+        fs::write(root.path().join("src/main.rs"), "fn main() {}\n").expect("main");
+        fs::write(root.path().join("src/deep/keep.rs"), "fn keep() {}\n").expect("keep");
+        fs::write(root.path().join("src/deep/skip.rs"), "fn skip() {}\n").expect("skip");
+        fs::write(root.path().join("outside.rs"), "fn outside() {}\n").expect("outside");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        crate::content::analyze_index(
+            &mut index,
+            crate::content::AnalysisRequest { profile: AnalysisSet::NONE.with_code(), workers: 1 },
+        );
+        let selection = Selection {
+            include: vec![pattern("src"), pattern("deep")],
+            exclude: vec![pattern("skip.rs")],
+            ..Selection::default()
+        };
+        let answer = run(&index, &query(&[ViewSpec::Code], selection));
+        let Section::Code(overview) = &answer.sections[0] else { panic!("code overview") };
+        assert_eq!(overview.selected.source_files, 2);
+        assert_eq!(overview.selected.analyzed_files, 2);
+        assert_eq!(overview.selected.metrics.code_lines, 2);
+        assert_eq!(overview.languages.len(), 1);
+        assert_eq!(overview.languages[0].selected.source_files, 2);
     }
 
     #[test]

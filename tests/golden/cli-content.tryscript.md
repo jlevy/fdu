@@ -669,18 +669,51 @@ The overview still counts every selected source file and all 40 code lines.
 $ fdu --cache off --analyze code --view code --sort code_lines --reverse --min-share 7% --limit all --size apparent code-project
 40 code lines (53 comment, 12 blank)
 15 of 15 source files analyzed across 15 languages (include population)
-40 non-ignored, 0 ignored (measured code lines)
+40 non-ignored code lines (0 ignored)
 Language shares of measured code lines
 8 languages omitted by --min-share; --min-share 0% to show
-         3    7.5%  C++ (1/1 analyzed)
-         3    7.5%  C# (1/1 analyzed)
-         3    7.5%  Go (1/1 analyzed)
-         3    7.5%  JavaScript (1/1 analyzed)
-         3    7.5%  PHP (1/1 analyzed)
-         4   10.0%  Shell (1/1 analyzed)
-         5   12.5%  Python (1/1 analyzed)
+         3    7.5%  C++ (1/1 analyzed; 3 non-ignored, 0 ignored)
+         3    7.5%  C# (1/1 analyzed; 3 non-ignored, 0 ignored)
+         3    7.5%  Go (1/1 analyzed; 3 non-ignored, 0 ignored)
+         3    7.5%  JavaScript (1/1 analyzed; 3 non-ignored, 0 ignored)
+         3    7.5%  PHP (1/1 analyzed; 3 non-ignored, 0 ignored)
+         4   10.0%  Shell (1/1 analyzed; 4 non-ignored, 0 ignored)
+         5   12.5%  Python (1/1 analyzed; 5 non-ignored, 0 ignored)
 Performance: walked 15 files / 1.4 KiB; ignore 0 files / 0 rules; content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
+```
+
+## Directory Selection Shares One Population Across Code Views
+
+Matching a directory includes its eligible contents in aggregate views.
+The overlapping file match must not count Rust twice, and the exclusion still removes
+Python.
+
+```console
+$ fdu --cache off --analyze code --include src --include main.rs --exclude "*.py" --view code,languages,summary --size apparent content-project
+CODE
+3 code lines (0 comment, 1 blank)
+1 of 1 source files analyzed across 1 languages (include population)
+3 non-ignored code lines (0 ignored)
+Language shares of measured code lines
+         3  100.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
+
+LANGUAGES
+Percentage column: code lines
+      38 B  100.0%  Rust  1 file, 4 lines (3 code, 0 comment, 1 blank)
+
+SUMMARY
+      38 B  1 file, 1 directory
+Performance: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+## Unsupported Metric Sorts Fail Before Filesystem Access
+
+```console
+$ fdu missing-review-root --cache off --analyze code --view extensions --sort code_lines
+fdu: invalid --sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
+? 2
 ```
 
 ## The Analyzer Set Chooses the View
@@ -722,10 +755,10 @@ Performance: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 
 $ fdu --cache off --color never --size apparent --analyze code content-project
 4 code lines (1 comment, 2 blank)
 2 of 2 source files analyzed across 2 languages (include population)
-4 non-ignored, 0 ignored (measured code lines)
+4 non-ignored code lines (0 ignored)
 Language shares of measured code lines
-         3   75.0%  Rust (1/1 analyzed)
-         1   25.0%  Python (1/1 analyzed)
+         3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
+         1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
 Performance: walked 7 files / 256 B; ignore 0 files / 0 rules; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -744,10 +777,10 @@ $ fdu --cache off --color never --size apparent --analyze code,words content-pro
 CODE
 4 code lines (1 comment, 2 blank)
 2 of 2 source files analyzed across 2 languages (include population)
-4 non-ignored, 0 ignored (measured code lines)
+4 non-ignored code lines (0 ignored)
 Language shares of measured code lines
-         3   75.0%  Rust (1/1 analyzed)
-         1   25.0%  Python (1/1 analyzed)
+         3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
+         1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
 
 DOCUMENTS
 Percentage column: document words
@@ -857,10 +890,10 @@ EXTENSIONS  (2 of 6; --limit all for every one)
 CODE
 4 code lines (1 comment, 2 blank)
 2 of 2 source files analyzed across 2 languages (include population)
-4 non-ignored, 0 ignored (measured code lines)
+4 non-ignored code lines (0 ignored)
 Language shares of measured code lines
-         3   75.0%  Rust (1/1 analyzed)
-         1   25.0%  Python (1/1 analyzed)
+         3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
+         1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
 
 DOCUMENTS
 Percentage column: document words

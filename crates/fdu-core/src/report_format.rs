@@ -1484,10 +1484,9 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
     if let (Some(non_ignored), Some(ignored)) = (&overview.non_ignored, &overview.ignored) {
         let _ = writeln!(
             out,
-            "{} non-ignored, {} ignored {}",
+            "{} non-ignored code lines {}",
             human_count(non_ignored.metrics.code_lines),
-            human_count(ignored.metrics.code_lines),
-            detail("(measured code lines)", color)
+            detail(&format!("({} ignored)", human_count(ignored.metrics.code_lines)), color)
         );
     }
     if overview.unknown.source_files > 0 {
@@ -1532,20 +1531,30 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
     let _ = writeln!(out, "{}", detail("Language shares of measured code lines", color));
     render_share_omission(out, overview.share_omitted, "languages", color);
     for row in &overview.languages {
+        let mut annotation = format!(
+            "({}/{} analyzed",
+            human_count(row.selected.analyzed_files),
+            human_count(row.selected.source_files)
+        );
+        if let (Some(non_ignored), Some(ignored)) = (&row.non_ignored, &row.ignored) {
+            let _ = write!(
+                annotation,
+                "; {} non-ignored, {} ignored",
+                human_count(non_ignored.metrics.code_lines),
+                human_count(ignored.metrics.code_lines)
+            );
+        }
+        if row.unknown.source_files > 0 {
+            let _ = write!(annotation, ", {} unknown", human_count(row.unknown.metrics.code_lines));
+        }
+        annotation.push(')');
         let _ = writeln!(
             out,
             "{:>10}  {:>6}  {} {}",
             human_count(row.selected.metrics.code_lines),
             human_percentage(row.share.numerator, row.share.denominator, 1),
             paint(human_language_name(&row.language), STYLE_NAME, color),
-            detail(
-                &format!(
-                    "({}/{} analyzed)",
-                    human_count(row.selected.analyzed_files),
-                    human_count(row.selected.source_files)
-                ),
-                color
-            )
+            detail(&annotation, color)
         );
     }
 }
@@ -4213,6 +4222,63 @@ mod tests {
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
             assert!(!render(&largest, format, true).contains('\u{1b}'));
         }
+    }
+
+    #[test]
+    fn code_population_details_keep_known_and_unknown_contributions_visible() {
+        use crate::query::{CodeLanguageRow, MetricShare};
+        let tally = |lines| CodeTally {
+            source_files: 1,
+            analyzed_files: 1,
+            metrics: crate::content::CodeMetrics { code_lines: lines, ..Default::default() },
+            ..Default::default()
+        };
+        let mut overview = CodeOverview {
+            population: IgnoredEntries::Include,
+            selected: CodeTally { source_files: 3, analyzed_files: 3, ..tally(110) },
+            non_ignored: Some(tally(80)),
+            ignored: Some(tally(20)),
+            unknown: tally(10),
+            unclassified_files: 0,
+            analyzed_languages: 1,
+            total_languages: 1,
+            share_omitted: 0,
+            languages: vec![CodeLanguageRow {
+                language: "rust".into(),
+                selected: CodeTally { source_files: 3, analyzed_files: 3, ..tally(110) },
+                non_ignored: Some(tally(80)),
+                ignored: Some(tally(20)),
+                unknown: tally(10),
+                share: MetricShare { numerator: 110, denominator: 110 },
+            }],
+            share_metric: ShareMetric::CodeLines,
+        };
+        let mut report = fixture(&[ViewSpec::Summary]);
+        report.sections = vec![Section::Code(Box::new(overview.clone()))];
+        let colored = render(&report, Format::Text, true);
+        assert!(
+            colored.contains("80 non-ignored code lines \x1b[90m(20 ignored)\x1b[0m"),
+            "{colored:?}"
+        );
+        assert!(
+            colored
+                .contains("\x1b[90m(3/3 analyzed; 80 non-ignored, 20 ignored, 10 unknown)\x1b[0m"),
+            "{colored:?}"
+        );
+        assert_eq!(strip_ansi(&colored), render(&report, Format::Text, false));
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            assert!(!render(&report, format, true).contains('\u{1b}'));
+        }
+        overview.population = IgnoredEntries::Only;
+        overview.non_ignored = None;
+        overview.ignored = None;
+        overview.unknown = CodeTally::default();
+        overview.languages[0].non_ignored = None;
+        overview.languages[0].ignored = None;
+        overview.languages[0].unknown = CodeTally::default();
+        report.sections = vec![Section::Code(Box::new(overview))];
+        let text = render(&report, Format::Text, false);
+        assert!(!text.contains("non-ignored") && !text.contains(" unknown"), "{text}");
     }
 
     #[test]

@@ -6,7 +6,9 @@
 
 **Status:** Complete
 
-**Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`.
+**Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`;
+[senior review follow-up](https://github.com/jlevy/fdu/pull/133#issuecomment-5853335891)
+`fdu-khdv`.
 
 ## Overview
 
@@ -165,8 +167,11 @@ The code overview includes:
 1. Selected population and code-line total, analyzed source-file count, and analyzed
    language count, with comment/blank totals.
 2. All languages, ordered by code lines descending and stable language-name ties.
-3. With `include`, non-ignored, ignored, and combined columns; with `exclude` or `only`,
-   one selected-population column.
+3. With `include`, combined totals and non-ignored/ignored contributions for the
+   overview and each language.
+   Human output keeps the combined total primary and the breakdown in supplementary
+   parentheses; machine output carries separate fields.
+   With `exclude` or `only`, show the selected population without a redundant breakdown.
 4. An explicit share denominator and coverage for unsupported, unreadable, changed, or
    unclassified files.
 
@@ -180,6 +185,8 @@ Unrequested, not scanned, not analyzed, failed, and measured zero remain distinc
 Extend numeric sorting through the existing metric registry, starting with `code_lines`.
 Require the owning analyzer, default numeric ranks to descending, use path ties, and
 place unavailable values after measured ones.
+The metadata-only `extensions` view rejects content-metric sorting and names supported
+metadata sorts or a metric-capable view.
 Directory metrics aggregate selected contents; overlapping displayed directories never
 double-count a summary.
 

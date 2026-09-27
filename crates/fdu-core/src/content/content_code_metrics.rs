@@ -16,8 +16,27 @@ pub struct CodeAccumulator {
     state: State,
     line: Vec<u8>,
     previous_cr: bool,
-    regex_allowed: bool,
+    javascript: JavaScriptContext,
     metrics: MetricValues,
+}
+
+#[derive(Debug)]
+struct JavaScriptContext {
+    regex_allowed: bool,
+    pending_control_paren: bool,
+    paren_control: Vec<bool>,
+    after_dot: bool,
+}
+
+impl Default for JavaScriptContext {
+    fn default() -> Self {
+        Self {
+            regex_allowed: true,
+            pending_control_paren: false,
+            paren_control: Vec::new(),
+            after_dot: false,
+        }
+    }
 }
 
 impl CodeAccumulator {
@@ -30,7 +49,7 @@ impl CodeAccumulator {
             state: State::Normal,
             line: Vec::new(),
             previous_cr: false,
-            regex_allowed: true,
+            javascript: JavaScriptContext::default(),
             metrics: MetricValues::default(),
         })
     }
@@ -64,8 +83,7 @@ impl CodeAccumulator {
     }
 
     fn finish_line(&mut self) {
-        let class =
-            classify_line(self.syntax, &mut self.state, &mut self.regex_allowed, &self.line);
+        let class = classify_line(self.syntax, &mut self.state, &mut self.javascript, &self.line);
         self.metrics.physical_lines = self.metrics.physical_lines.saturating_add(1);
         match class {
             LineClass::Code => {
@@ -225,7 +243,7 @@ enum LineClass {
 fn classify_line(
     syntax: Syntax,
     state: &mut State,
-    regex_allowed: &mut bool,
+    javascript: &mut JavaScriptContext,
     line: &[u8],
 ) -> LineClass {
     let mut index = usize::from(line.starts_with(&[0xef, 0xbb, 0xbf]));
@@ -245,7 +263,17 @@ fn classify_line(
 
     if let State::Heredoc { terminator, indent, php } = state {
         let candidate = if *indent {
-            &line[line.iter().take_while(|b| b.is_ascii_whitespace()).count()..]
+            let indentation = line
+                .iter()
+                .take_while(|byte| {
+                    if syntax.language == Language::Shell {
+                        **byte == b'\t'
+                    } else {
+                        byte.is_ascii_whitespace()
+                    }
+                })
+                .count();
+            &line[indentation..]
         } else {
             line
         };
@@ -309,7 +337,7 @@ fn classify_line(
                     }
                     *state = State::Normal;
                     if syntax.language == Language::JavaScript {
-                        *regex_allowed = false;
+                        javascript.regex_allowed = false;
                     }
                     index += 1;
                     continue;
@@ -324,7 +352,7 @@ fn classify_line(
                 {
                     *state = State::Normal;
                     if syntax.language == Language::JavaScript {
-                        *regex_allowed = false;
+                        javascript.regex_allowed = false;
                     }
                     index += width;
                 } else {
@@ -378,7 +406,7 @@ fn classify_line(
                 } else if byte == b'/' && !in_class {
                     *state = State::Normal;
                     index += 1;
-                    *regex_allowed = false;
+                    javascript.regex_allowed = false;
                     continue;
                 }
                 *state = State::Regex { escaped, in_class };
@@ -402,7 +430,7 @@ fn classify_line(
                 }
                 if syntax.language == Language::JavaScript
                     && byte == b'/'
-                    && *regex_allowed
+                    && javascript.regex_allowed
                     && !line[index..].starts_with(b"//")
                     && !line[index..].starts_with(b"/*")
                 {
@@ -539,9 +567,14 @@ fn classify_line(
                             .count()
                             + index;
                         let word = &line[index..end];
-                        *regex_allowed = matches!(
+                        javascript.pending_control_paren = !javascript.after_dot
+                            && matches!(word, b"if" | b"while" | b"for" | b"with");
+                        javascript.after_dot = false;
+                        javascript.regex_allowed = matches!(
                             word,
                             b"return"
+                                | b"else"
+                                | b"do"
                                 | b"throw"
                                 | b"case"
                                 | b"delete"
@@ -557,7 +590,26 @@ fn classify_line(
                         index = end;
                         continue;
                     }
-                    *regex_allowed = matches!(
+                    if byte == b'(' {
+                        javascript.paren_control.push(javascript.pending_control_paren);
+                        javascript.pending_control_paren = false;
+                        javascript.after_dot = false;
+                        javascript.regex_allowed = true;
+                        code = true;
+                        index += 1;
+                        continue;
+                    }
+                    if byte == b')' {
+                        javascript.regex_allowed = javascript.paren_control.pop().unwrap_or(false);
+                        javascript.pending_control_paren = false;
+                        javascript.after_dot = false;
+                        code = true;
+                        index += 1;
+                        continue;
+                    }
+                    javascript.pending_control_paren = false;
+                    javascript.after_dot = byte == b'.';
+                    javascript.regex_allowed = matches!(
                         byte,
                         b'=' | b'('
                             | b'['
@@ -880,6 +932,8 @@ mod tests {
             ("ruby", b"s = %q{outer {inner\n# body\n}}\n# comment\n", (3, 1)),
             ("ruby", b"s = <<~TEXT\n# body\n  TEXT\n# comment\n", (3, 1)),
             ("shell", b"cat <<'TEXT'\n# body\nTEXT\n# comment\n", (3, 1)),
+            ("shell", b"cat <<-TEXT\n TEXT\n# body\nTEXT\n# comment\n", (4, 1)),
+            ("shell", b"cat <<-TEXT\n\tTEXT\n# comment\n", (2, 1)),
             ("sql", b"SELECT $tag$first\n-- body\nlast$tag$;\n-- comment\n", (3, 1)),
             ("php", b"$s = <<<TEXT\n// body\nTEXT;\n// comment\n", (3, 1)),
         ];
@@ -898,6 +952,12 @@ mod tests {
             ("typescript", b"return /[/*]/.test(value);\n// comment\nnext();\n", (2, 1, 0)),
             ("javascript", b"const quotient = total\n / count; /* real comment */\nconst re = /[/*]/;\nnext();\n", (4, 0, 0)),
             ("javascript", b"const text = \"plain\" / count;\nconst re = /[/*]/;\nnext();\n", (3, 0, 0)),
+            ("javascript", b"if (ok) /[/*]/.test(value);\nconst next = 1;\n", (2, 0, 0)),
+            ("javascript", b"if (first) {}\nif (ok) /[/*]/.test(value);\nnext();\n", (3, 0, 0)),
+            ("typescript", b"while (ready && check(x)) /[/*]/.test(value);\nnext();\n", (2, 0, 0)),
+            ("javascript", b"if (ok &&\n check(x)) /[/*]/.test(value);\nnext();\n", (3, 0, 0)),
+            ("javascript", b"if (ok) fn(value) / count;\n/* comment */\n", (1, 1, 0)),
+            ("javascript", b"const ratio = object.if(value) / count;\n/* comment */\n", (1, 1, 0)),
         ];
         for (language, source, expected) in cases {
             for split in 0..=source.len() {
