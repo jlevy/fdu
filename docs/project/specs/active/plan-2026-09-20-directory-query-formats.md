@@ -4,13 +4,20 @@
 
 **Author:** fdu project
 
-**Status:** Implemented; final validation and stacked PR delivery in progress.
-The plan is PR #96. The implementation layer builds directly on its file/function map.
+**Status:** Implemented in [PR #117](https://github.com/jlevy/fdu/pull/117). This
+document records the directory-query implementation decisions.
+Its original requirements to preserve depth 2, ten children, directory-only leaves,
+older ignored flags, and report schema `/7` describe that increment, not the current
+interface. The
+[analysis and presentation plan](plan-2026-09-26-code-analysis-presentation.md) owns the
+current depth-5, 1%-share defaults, significant file leaves, population controls, and
+report schema `/8`. Use the [usage guide](../../../usage.md) and
+[machine-output reference](../../../machine-output.md) for current commands and schemas.
 
 **Tracking:** Epic `fdu-65x1`; plan publication `fdu-79n0`;
 [issue #93](https://github.com/jlevy/fdu/issues/93).
 
-## Overview
+## Original Implementation Scope
 
 Find stale `.venv`, `node_modules`, and Cargo `target` directories by name and subtree
 modification age, and report each matching directory’s size and age.
@@ -18,15 +25,11 @@ Keep the current default directory-tree output unchanged while making the axes c
 entry kind is a filter, `list` is the metadata default view, and `tree`, `paths`, and
 `long` are explicit human presentation formats.
 
-This plan is a separate PR on `codex/directory-query-plan`, based on
-`perf/campaign-linux-2026-09-19` at `c234da2b`, the latest stack layer:
-[PR #91](https://github.com/jlevy/fdu/pull/91) →
-[PR #92](https://github.com/jlevy/fdu/pull/92) →
-[PR #94](https://github.com/jlevy/fdu/pull/94) → this plan.
-Implementation will be reviewed separately above the plan.
-No runtime or public usage behavior changes in this PR. All design and delivery context
-needed to implement it is recorded below; bead descriptions carry execution status and
-evidence.
+The initial plan and implementation drafts were PRs #96 and #103; PR #117 delivered
+their combined work.
+Epic `fdu-65x1` remains open for `fdu-2udc` (unqualified time/size predicate semantics),
+`fdu-uea9` (unfiltered flat-read cost), and `fdu-afc4` (named Paths/Long benchmark
+jobs). These follow-ups do not make the directory-rollup capability unimplemented.
 
 ## Goals
 
@@ -62,11 +65,13 @@ Keeping the existing default output preserves the useful disk-usage overview.
 
 ## Background
 
-Matching a directory such as `.venv` currently selects its inode instead of its subtree
-size. Matching its descendants produces many rows and applies age predicates to
-individual entries. Users need to find environments and build outputs by directory name,
-filter them by aggregate size and modification age, and obtain one result per matching
-directory from a reusable retained index.
+Before this implementation, matching a directory such as `.venv` selected its inode
+instead of its subtree size.
+Matching its descendants produced many rows and applied age predicates to individual
+entries.
+Users need to find environments and build outputs by directory name, filter them
+by aggregate size and modification age, and obtain one result per matching directory
+from a reusable retained index.
 
 The interface separates selection, the report being requested, and presentation.
 Directories are an entry-kind filter, not a separate view.
