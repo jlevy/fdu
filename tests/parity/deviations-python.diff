@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 24 sessions differ, and every one of them has a named cause.
+# 25 sessions differ, and every one of them has a named cause.
 #
-#  14  Each surface names its own parameter  [surface-label]
+#  15  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -219,6 +219,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
   ✓ Common-Language SLOC Is a Complete Partition
   ✓ Metric Order, Reverse, and Share Threshold Compose
+  ✓ Directory Selection Shares One Population Across Code Views
+  ✗ Unsupported Metric Sorts Fail Before Filesystem Access
+@@ -1,1 +1,1 @@
+-fdu: invalid --sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
++fdu: invalid sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
