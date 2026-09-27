@@ -27,7 +27,7 @@ A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
 $ fdu
-A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
+Fastest native du replacement and detailed file analytics for Python and Rust
 
 Usage: fdu [OPTIONS] <PATH>
        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
