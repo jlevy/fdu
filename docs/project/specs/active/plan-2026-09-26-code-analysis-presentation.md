@@ -466,7 +466,7 @@ Test counts and raw coverage percentages are diagnostics, not completion targets
 - [x] Audit test ownership, coverage, duplication, portability, determinism, and runtime
   (`fdu-tbtm`). Map the acceptance contracts to the tests that prove them, identify
   untested failure paths, and record keep/consolidate/replace decisions with reasons.
-- [ ] Implement warranted improvements (`fdu-sc1w`). Prefer concise language-neutral
+- [x] Implement warranted improvements (`fdu-sc1w`). Prefer concise language-neutral
   tryscript sessions for public behavior when they preserve equivalent evidence.
   Reuse authoritative fixtures and remove redundant setup or assertions.
   Keep focused tests for lexer chunk boundaries, exact arithmetic, allocations,

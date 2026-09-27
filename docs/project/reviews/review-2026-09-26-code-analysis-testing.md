@@ -34,7 +34,7 @@ The test-source inventory uses the same tracked files at base and now:
 | Selector | Files | Base lines | Current lines |
 | --- | ---: | ---: | ---: |
 | `crates/fdu-core/tests/*.rs` | 6 | 2,884 | 2,880 |
-| `crates/fdu-py/tests/*.py` | 7 | 2,824 | 2,959 |
+| `crates/fdu-py/tests/*.py` | 7 | 2,824 | 2,961 |
 | `tests/path_independence/*.py` | 7 | 2,532 | 2,573 |
 
 Correctness scripts remain at 729 lines.
@@ -50,15 +50,22 @@ The exact session test and corpus lint pass.
 This trace data is larger than the nine CLI session files and must be counted even
 though its runner is one Rust test.
 
-The focused `query_report` selection ran 45 tests in 0.01 seconds of reported test time
-on macOS; the separate two-test allocation guard ran in 0.04 seconds after build.
-The gate recorded 802 core library tests in 44.03 seconds, six opened-root session tests
-in 31.10 seconds, and 67 Python package tests in 1.40 seconds.
-The shared golden corpus passed 183 of 183 commands after the new public cases.
-These figures exclude compilation, Cargo lock waiting, and setup.
-There is no reliable complete gate wall time because concurrent edits caused transient
-rebuilds. Full parity and path-independence wall times still need the final gate’s
-measured log; no runtime reduction can be claimed from this audit.
+On bare-metal macOS 26.5.2/arm64 with external APFS scratch, the final local gate
+recorded 886 core tests in 27.07 seconds, six opened-root session tests in 27.22
+seconds, and 183 shared golden commands in 6.08 seconds.
+The two allocation guards passed in 0.04 seconds.
+Python package validation passed all 69 tests in 0.74 seconds after a fresh
+native-extension build.
+These tier times exclude compilation and setup.
+
+The full path-independence matrix passed 16,787 cases against 64 cold answers in 147.496
+seconds (147.750 seconds for the make target): 12,674 matching answers, 3,322 expected
+refusals, and 791 expected stale-cache outcomes, with no unregistered differences.
+Its installed-wheel routes cover `report`, `open`, and `scan`. Linux CI recorded the
+shared-corpus parity artifact, and its complete diff was reviewed.
+The local handoff gate and the CI rerun remain pending.
+The full matrix overlapped the early gate, so these are observed runtimes under shared
+host load, not a quiet-host benchmark or evidence of a runtime reduction.
 
 ## Findings and Actions
 
@@ -69,6 +76,7 @@ measured log; no runtime reduction can be claimed from this audit.
    The core file-row oracle separately proves unavailable metrics sort last in either
    direction; copying that edge into the large public golden would add little
    independent evidence.
+
 2. **Path independence axes: addressed selectively.** The subset now asks for a Code
    metric sort with reverse and share threshold, and a Tree with depth, breadth, and
    share bounds. The old depth cases now name Tree explicitly; their previous flat
@@ -77,38 +85,45 @@ measured log; no runtime reduction can be claimed from this audit.
    pass. Cache destination precedence stays in core path tests and lifecycle goldens;
    adding it to the matrix would multiply cache histories without a distinct answer
    contract.
+
 3. **Root-independent cache-all behavior: addressed.** The Python shim now resolves
    `fdu.cache_directory()` directly from the core cache destination policy.
    A focused Python test covers the public API; two shared lifecycle goldens call
    all-cache status and clear with a nonexistent scan root.
    The installed-wheel replay is part of the final gate, so the parity verdict remains
    pending until that run completes.
+
 4. **Full golden observability: retained.** `check-golden-observability.mjs` rejects
    product-output extraction, `check-golden-invocations.mjs` pins the binary, and the
    portability check rejects local literals.
    The corpus uses one source for CLI and Python replay.
    Keep these guards and review full diffs; do not shorten the 5,179 lines by replacing
    complete responses with `jq` or broad wildcards.
+
 5. **Costly independent proofs: retained.** The cache fault injections, allocation
    bounds, independent reference model, native watch, and Linux-owned parity recording
    prove contracts a short tryscript cannot.
    No test was identified as vacuous enough to delete safely from inspection alone.
    A consolidation should name the independent invariant retained before removing an
    assertion.
+
 6. **Share-filter omissions: addressed.** Code, grouped metric, and extension sections
    now expose `share_omitted` separately from the row-cap bound.
    Text names `--min-share 0%` for share omissions and `--limit all` for row-cap
    omissions; machine output retains selected totals.
    Core arithmetic and the 183-command corpus cover both representations.
+
 7. **Cache fixture identity: addressed.** The lifecycle planter and the orphaned
    analysis-sidecar fixture now use the engine’s recognized suffixes.
    The full cache golden still records unrecognized-file preservation as a separate
    behavior.
+
 8. **Watch child cleanup: addressed in the Rust integration tier.**
    `crates/fdu/tests/watch_persistence.rs` now owns its child with a guard that
    terminates and reaps it when an assertion fails.
    The tryscript watch helpers already kill their children on their expected success and
    failure paths; no separate leak was established there.
+
 9. **Watch route pipes: addressed in the path-independence harness.** The final matrix
    run exposed repeated `ResourceWarning` reports for unclosed stdout and stderr pipes
    from its watch child.
@@ -116,16 +131,23 @@ measured log; no runtime reduction can be claimed from this audit.
    pipes on every exit.
    All 37 isolated harness tests pass; direct successful and rejected watch startups
    return without a pipe warning.
-10. **Python population route: addressed in the matrix adapter.** The full matrix caught
-    28 unregistered differences for excluded and ignored-only populations: the Python
-    `open` and `scan` routes applied the selection only to the report, after their
-    retained index had already chosen a different population.
+
+10. **Python population route: addressed in the matrix adapter.** The cross-route matrix
+    caught 28 unregistered differences for excluded and ignored-only populations: the
+    Python `open` and `scan` routes applied the selection only to the report, after
+    their retained index had already chosen a different population.
     Both routes now pass the requested population to the producer and use `INCLUDE` when
     the selection leaves it unspecified.
-    An initial full rerun exposed the missing default and failed 1,678 route
-    comparisons; the corrected full rerun is pending.
+    A rerun also exposed the missing default; the corrected full matrix passes all
+    16,787 cases without adding an exception.
     The real cross-route matrix owns this regression, so no mocked forwarding test was
     kept.
+
+11. **Installed-wheel tree contract: addressed.** Linux wheel CI caught an assertion
+    that a file-only directory at the display-depth boundary omitted no rows.
+    With significant file leaves, that boundary now omits the file row.
+    The same smoke case checks the visible child names, truncation, and typed depth
+    reason; its installed-wheel replay passes locally.
 
 The final proof should record complete gate wall times under one build state, verify
 installed-wheel parity, and cite the existing cache fault-injection guards that reject
