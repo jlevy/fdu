@@ -316,7 +316,7 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/9; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -2996,7 +2996,7 @@ mod tests {
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/9\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/10\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -3119,7 +3119,7 @@ mod tests {
         assert!(json_diagnostic.is_empty());
         let json = String::from_utf8(json_out).expect("UTF-8 JSON");
         assert!(json.trim().starts_with('{') && json.trim().ends_with('}'));
-        assert!(json.contains("\"schema\": \"fdu.report/9\""));
+        assert!(json.contains("\"schema\": \"fdu.report/10\""));
         assert!(json.contains("\"view\": \"summary\""));
     }
 

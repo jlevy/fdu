@@ -73,6 +73,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     let mut tips = Vec::new();
     let mut reasons = Vec::new();
     let mut tree_omitted = false;
+    let mut tree_remainder_shown = false;
     let mut ignored_subset_shown = false;
     let mut tree_bounds = Vec::new();
     let mut zero = false;
@@ -87,6 +88,8 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
         }
         match section {
             Section::Tree { root, omissions, limits, .. } => {
+                tree_remainder_shown |=
+                    crate::query::TreeRemainder::from_tree(root.as_deref(), omissions).is_some();
                 for omission in omissions {
                     tree_omitted = true;
                     reason(omission.reason);
@@ -151,11 +154,11 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     if report.ignored_entries == IgnoredEntries::Include && ignored_subset_shown {
         notes.push("note: gitignored sizes are included in row totals".to_owned());
     }
-    if tree_omitted {
-        notes.push("note: more includes hidden subtrees already counted in directory totals; files are counted recursively".to_owned());
-        if !tree_bounds.is_empty() {
-            notes.push(format!("note: display limits: {}", tree_bounds.join(", ")));
-        }
+    if tree_remainder_shown {
+        notes.push("note: more covers unlisted root branches; listed directory totals already include their descendants".to_owned());
+    }
+    if tree_omitted && !tree_bounds.is_empty() {
+        notes.push(format!("note: display limits: {}", tree_bounds.join(", ")));
     }
     if zero {
         notes.push("note: no size denominator: selected root size is zero".to_owned());

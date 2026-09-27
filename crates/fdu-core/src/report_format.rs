@@ -14,9 +14,9 @@
 //! file counts belong directly after the name, outside parentheses. Secondary breakdowns
 //! such as nonblank/blank counts use the same gray parenthetical role. Human directory
 //! names have a gray slash except `.` and `..`. Sizes >= 1 GiB are bold even in gray
-//! details; exact shares below 1% are gray. Pad cells before applying ANSI styles.
-//! Colored bars split foreground non-gitignored and gray gitignored usage, with faint
-//! dots for unused cells. Plain bars keep their original glyphs. Human tree bar width
+//! details; zero sizes and exact shares below 1% are gray. Pad cells before applying ANSI styles.
+//! Colored bars use green solid non-gitignored and shaded gitignored usage, with faint
+//! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
 //! policy through [`human_count`] and [`human_count_u128`].
@@ -75,6 +75,8 @@ pub const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 /// Directory names in a tree, so structure reads at a glance.
 pub const STYLE_NAME: AnsiStyle = AnsiColor::BrightCyan.on_default().bold();
 
+const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
+
 /// Category labels keep ordinary cyan; bold bright cyan identifies names.
 pub const STYLE_CATEGORY: AnsiStyle = AnsiColor::Cyan.on_default();
 
@@ -91,7 +93,7 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/9";
+pub const REPORT_SCHEMA: &str = "fdu.report/10";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
@@ -1292,13 +1294,13 @@ pub fn escaped_human(text: &str) -> String {
         .collect()
 }
 
-/// Style a human size after padding: large values are bold, including gray details.
+/// Style a human size after padding: zero is gray; large values are bold, including gray details.
 /// Plain and structured numbers never depend on styling; the threshold uses bytes.
 pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> String {
-    let style = if secondary { STYLE_DETAIL } else { AnsiStyle::new() };
+    let style = if secondary || bytes == 0 { STYLE_DETAIL } else { AnsiStyle::new() };
     let style = if bytes >= 1 << 30 { style.bold() } else { style };
     let text = format!("{:>width$}", human_bytes(bytes));
-    if bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
+    if bytes > 0 && bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
 }
 
 /// Style a root share using its exact ratio, before display rounding.
@@ -1486,12 +1488,14 @@ fn human_percentage(part: u64, whole: u64, decimals: usize) -> String {
     if whole == 0 {
         return "—".to_string();
     }
-    let threshold = match decimals {
-        0 => 1.0,
-        1 => 0.1,
+    let scale = match decimals {
+        0 => 100_u128,
+        1 => 1_000_u128,
         _ => panic!("human percentage supports whole and tenths only"),
     };
-    if part > 0 && ratio(part, whole) * 100.0 < threshold {
+    // Test the less-than label exactly; float conversion can round a value just
+    // below 1% (or 0.1%) onto the boundary when the byte totals exceed 2^53.
+    if part > 0 && u128::from(part) * scale < u128::from(whole) {
         return if decimals == 0 {
             "<1%".to_string()
         } else {
@@ -2176,39 +2180,42 @@ fn ratio(part: u64, whole: u64) -> f64 {
 
 // Rounding a bounded share to a requested bar width is presentation arithmetic:
 // clamp the ratio and the resulting cell count before constructing the glyphs.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-fn bar(share: f64, color: bool, width: usize) -> String {
-    let filled = ((share.clamp(0.0, 1.0) * width as f64).round() as usize).min(width);
-    let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(width - filled));
-    if color { detail(&rendered, true) } else { rendered }
+/// Nearest whole-cell share, with half cells rounded up and no floating-point loss.
+fn bar_cells(part: u64, whole: u64, width: usize) -> usize {
+    if whole == 0 {
+        return 0;
+    }
+    let numerator = u128::from(part.min(whole)) * width as u128;
+    usize::try_from((numerator + u128::from(whole) / 2) / u128::from(whole))
+        .expect("a bounded share fits the supplied width")
 }
 
 /// Split a colored bar into measured populations; plain bars retain their glyphs.
-/// Round the total first, then cap the ignored segment to keep exactly `width` cells.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+/// Round the total against the root, then apportion its visible cells by the row's
+/// population ratio. Independent root-relative rounding can erase a majority ignored
+/// population in a one-cell bar. Shading distinguishes populations within green;
+/// unknown classification uses medium shading. Numeric columns remain authoritative.
 fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
+    let filled = bar_cells(bytes, total, width);
     if !color {
-        return bar(ratio(bytes, total), false, width);
+        return format!("{}{}", "█".repeat(filled), "░".repeat(width - filled));
     }
-    let filled = ((ratio(bytes, total) * width as f64).round() as usize).min(width);
     if ignored.is_none() {
         return format!(
             "{}{}",
-            "▒".repeat(filled),
-            paint(&"·".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
+            paint(&"▒".repeat(filled), STYLE_BAR, true),
+            paint(&"░".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
         );
     }
-    let ignored = ignored
-        .map_or(0, |value| (ratio(value.min(bytes), total) * width as f64).round() as usize)
-        .min(filled);
+    let ignored = bar_cells(ignored.unwrap_or(0), bytes, filled);
     format!(
         "{}{}{}",
-        "█".repeat(filled - ignored),
-        detail(&"█".repeat(ignored), true),
-        paint(&"·".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
+        paint(&"█".repeat(filled - ignored), STYLE_BAR, true),
+        paint(&"▓".repeat(ignored), STYLE_BAR, true),
+        paint(&"░".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
     )
 }
 
@@ -3877,7 +3884,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/9\""));
+        assert!(json.contains("\"schema\": \"fdu.report/10\""));
         assert!(json.contains("\"request\": {"));
         assert!(json.contains("\"status\": {"));
         assert!(json.contains("\"provenance\": {"));
@@ -3892,7 +3899,7 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/9");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/10");
         assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
@@ -4178,11 +4185,11 @@ mod tests {
     #[test]
     fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/9\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/10\""));
         assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/9\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/10\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -4589,14 +4596,18 @@ mod tests {
 
     #[test]
     fn bars_are_fixed_at_ten_cells_and_saturate() {
-        assert_eq!(bar(0.0, false, 10), "░░░░░░░░░░");
-        assert_eq!(bar(0.5, false, 10), "█████░░░░░");
-        assert_eq!(bar(2.0, false, 10), "██████████");
+        assert_eq!(usage_bar(0, 100, Some(0), false, 10), "░░░░░░░░░░");
+        assert_eq!(usage_bar(50, 100, Some(0), false, 10), "█████░░░░░");
+        assert_eq!(usage_bar(200, 100, Some(0), false, 10), "██████████");
         assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
+        assert_eq!(bar_cells(u64::MAX / 2, u64::MAX, 1), 0);
+        assert_eq!(bar_cells(u64::MAX / 2 + 1, u64::MAX, 1), 1);
     }
 
     #[test]
     fn human_styles_respect_exact_thresholds_and_directory_identity() {
+        assert_eq!(styled_bytes(0, 0, true, false), "\x1b[90m0 B\x1b[0m");
+        assert_eq!(styled_bytes(0, 0, false, false), "0 B");
         let gib = 1 << 30;
         assert_eq!(styled_bytes(gib - 1, 10, true, false), format!("{:>10}", human_bytes(gib - 1)));
         assert_eq!(
@@ -4607,6 +4618,9 @@ mod tests {
         assert_eq!(styled_bytes(gib, 0, false, true), "1.0 GiB");
         assert_eq!(percentage_cell(99, 10_000, 0, 5, true), detail("  <1%", true));
         assert_eq!(percentage_cell(100, 10_000, 0, 5, true), "   1%");
+        assert_eq!(human_percentage(u64::MAX / 100, u64::MAX, 0), "<1%");
+        assert_eq!(human_percentage(u64::MAX / 100 + 1, u64::MAX, 0), "1%");
+        assert_eq!(human_percentage(u64::MAX / 1_000, u64::MAX, 1), "<0.1%");
         for name in [".", ".."] {
             assert_eq!(human_name(name, EntryKind::Dir, false), name);
         }
@@ -4623,16 +4637,31 @@ mod tests {
         let split = usage_bar(60, 100, Some(20), true, 10);
         assert_eq!(
             split,
-            format!("████{}{}", detail("██", true), paint("····", STYLE_DETAIL.dimmed(), true))
+            format!(
+                "{}{}{}",
+                paint("████", STYLE_BAR, true),
+                paint("▓▓", STYLE_BAR, true),
+                paint("░░░░", STYLE_DETAIL.dimmed(), true)
+            )
         );
         assert_eq!(strip_ansi(&split).chars().count(), 10);
         assert_eq!(usage_bar(60, 100, Some(20), false, 10), "██████░░░░");
-        assert_eq!(strip_ansi(&usage_bar(60, 60, Some(60), true, 10)), "██████████");
+        assert_eq!(strip_ansi(&usage_bar(60, 60, Some(60), true, 10)), "▓▓▓▓▓▓▓▓▓▓");
         assert_eq!(
             usage_bar(60, 60, Some(60), true, 10),
-            format!("{}{}", detail("██████████", true), paint("", STYLE_DETAIL.dimmed(), true))
+            format!(
+                "{}{}{}",
+                paint("", STYLE_BAR, true),
+                paint("▓▓▓▓▓▓▓▓▓▓", STYLE_BAR, true),
+                paint("", STYLE_DETAIL.dimmed(), true)
+            )
         );
-        assert_eq!(strip_ansi(&usage_bar(0, 0, None, true, 10)), "··········");
+        assert_eq!(strip_ansi(&usage_bar(0, 0, None, true, 10)), "░░░░░░░░░░");
+        let mostly_ignored = usage_bar(130, 2_120, Some(96), true, 10);
+        assert_eq!(strip_ansi(&mostly_ignored), "▓░░░░░░░░░");
+        assert!(mostly_ignored.contains("\x1b[32m▓\x1b[0m"));
+        assert_eq!(strip_ansi(&usage_bar(130, 2_120, Some(96), true, 20)), "▓░░░░░░░░░░░░░░░░░░░");
+        assert_eq!(strip_ansi(&usage_bar(130, 2_120, Some(96), true, 100)).matches('▓').count(), 4);
     }
 
     #[test]

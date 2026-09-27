@@ -22,7 +22,8 @@ Directory names have a gray trailing `/`, except `.` and `..`; regular file name
 do not. Path and structured formats keep their original path values.
 Sizes of at least 1 GiB are bold, including gray parenthetical sizes and performance
 details. The threshold uses exact bytes, before rounding.
-Smaller sizes and file counts use the ordinary foreground color.
+Zero sizes such as `0 B` are gray.
+Other smaller sizes and file counts use the ordinary foreground color.
 Percentages below 1% are gray, using the exact ratio before rounding.
 These styles apply wherever human output presents those values.
 Tree rows put the share bar first, then the percentage of the selected root, size, and
@@ -90,16 +91,22 @@ Machine data never contains ANSI escapes.
 
 ## Omitted Rows
 
-Colored tree bars use normal foreground blocks for non-gitignored usage, gray blocks for
-gitignored usage, and faint dots for the unused width.
+Colored tree bars use green solid blocks (`█`) for non-gitignored usage, green
+dark-shade blocks (`▓`) for gitignored usage, and faint gray light-shade blocks (`░`)
+for the unused width.
 Bars default to ten cells; `--bar-size` sets the width.
 Zero or negative values hide the bar and its following gutter.
-Segments are rounded against the same selected root.
+The filled width is rounded against the selected root, then its cells are divided by the
+row’s gitignored proportion.
+This keeps a predominantly gitignored one-cell bar shaded instead of losing that
+population to independent rounding.
+Whole cells are an approximation: numeric amounts are exact at their displayed
+precision; increase `--bar-size` for finer resolution.
 Widths above 4,096 are rejected before allocating the decorative bar.
 Rust `RenderOptions.bar_size` and Python `Report.render(bar_size=...)` expose the same
 rendering capability.
 Machine formats ignore bar width.
-Unknown ignore classification uses `▒` blocks for unclassified usage rather than
+Unknown ignore classification uses green `▒` blocks for unclassified usage rather than
 claiming either population.
 Uncolored bars retain their plain block glyphs.
 
@@ -113,8 +120,14 @@ selected root.
 █░░░░░░░░░    12%     1.2 MiB  … and 12,345 more files
 ```
 
-The size and recursive file count cover disjoint hidden subtrees across the entire tree.
-They are already included in directory totals.
+The size and recursive file count cover unlisted immediate branches of the selected
+root.
+A listed directory represents its entire recursive total, even when descendants are
+not expanded; those descendants do not contribute again to the remainder.
+For a complete tree, listed root-child totals plus the remainder equal the root total.
+The root row provides context and is not subtracted from itself.
+When no root children are listed, the remainder can equal the entire root.
+Nested omission boundaries still explain display limits without inflating this summary.
 Count regular files inside hidden directories, not just their directory roots.
 A machine omission boundary’s `entries` field counts direct hidden roots (files or
 directories); it is distinct from `files`. Unknown measurements remain `null` in
@@ -127,15 +140,16 @@ remain essential when coverage is incomplete.
 The core `TreeRemainder` model supplies every format.
 JSON, JSONL, and YAML tree sections expose `remainder` with `files`, `bytes`,
 `allocated`, and the applicable `reasons` in stable order.
-`remainder: null` means nothing was hidden.
+`remainder: null` means all root branches are represented; descendants may still be
+collapsed under listed directories.
 The existing `limits` fields provide the corresponding bound values; per-node
 `omissions` retain detailed boundaries for debugging.
-Report schema `fdu.report/9` includes these fields.
+Report schema `fdu.report/10` uses this root-branch accounting for the remainder.
 
 Explain accounting and applicable bounds once at the end, then offer remedies:
 
 ```text
-note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+note: more covers unlisted root branches; listed directory totals already include their descendants
 note: display limits: below 1% of selected root, depth 5
 tip: show smaller entries: --min-share=0%
 tip: expand deeper: --depth=all

@@ -6,4 +6,4 @@
 ██░░░░░░░░    20%     1.9 KiB        file
 ████░░░░░░    40%     3.9 KiB    B/ 2 files
 ██░░░░░░░░    20%     1.9 KiB      b1/ 1 file
-████████░░    80%     7.8 KiB    … and 6 more files
+██░░░░░░░░    20%     1.9 KiB    … and 2 more files

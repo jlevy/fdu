@@ -80,7 +80,7 @@ $ fdu --cache off --color never --size apparent --scan-depth 1 shallow-project
 ██████████   100%     9.7 KiB    large
 ░░░░░░░░░░     0%         0 B    pending/ 0 files
 ░░░░░░░░░░    <1%         1 B    … and 1 more file
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: below 1% of selected root
 ! note: incomplete subtrees remain visible below the size threshold
 ! tip: show smaller entries: --min-share=0%

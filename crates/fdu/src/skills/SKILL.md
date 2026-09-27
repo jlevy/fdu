@@ -112,13 +112,15 @@ fd’s. Paths output escapes control characters; use structured output for arbit
 native filenames. Directory rows include descendants and overlap; add
 `--view list,summary` for a path-union total rather than summing rows.
 
-A tree’s `remainder` contains hidden recursive `files`, `bytes`, `allocated`, and
-applicable `reasons`; `null` means nothing hidden.
+A tree’s `remainder` contains recursive `files`, `bytes`, `allocated`, and applicable
+`reasons` outside its displayed root-level rows; `null` means nothing is hidden there.
+A displayed directory already represents its whole subtree, including descendants whose
+rows were bounded away.
 Per-boundary `entries` counts hidden roots, while `files` counts regular files
 recursively. Unknown amounts are null.
 The text equivalent is one root-level line with the same bar, percentage, and size
 columns as the tree rows, followed by `… and N more files`. These columns represent the
-combined hidden share of the selected root.
+remaining share of the selected root.
 Unknown size or count stays unknown; an unknown hidden size has no numeric share.
 Fully expanded, fully observed trees have no remainder or omission diagnostics.
 Check completeness separately: unreadable directories and scan-depth restrictions still
@@ -381,7 +383,7 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/9`, a `--watch`
+- `schema` before parsing anything else: a report carries `fdu.report/10`, a `--watch`
   stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. Treat an
   unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)

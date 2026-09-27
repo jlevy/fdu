@@ -669,13 +669,14 @@ impl IgnoredSize {
     }
 }
 
-/// Disjoint hidden content across a whole projected tree, shared by every format.
-/// Directory totals overlap their children and must never be summed here. Each omitted
-/// boundary covers a subtree absent from the rendered nodes, so its descendants cannot
-/// contribute a second time. Unknown or overflowing constituents propagate as `None`.
+/// Content not represented by a listed row in a projected tree, shared by every format.
+/// The root gives context; each displayed direct child represents its entire recursive
+/// subtree, even where expansion below that child is bounded. Only the root's immediate
+/// omission boundaries contribute, or the omitted root when no root row is shown.
+/// Unknown or overflowing constituents propagate as `None`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreeRemainder {
-    /// Recursive regular files in hidden subtrees, not the number of hidden roots.
+    /// Recursive regular files outside displayed top-level subtrees.
     pub files: Option<u64>,
     /// Apparent bytes in hidden subtrees.
     pub bytes: Option<u64>,
@@ -689,7 +690,7 @@ pub struct TreeRemainder {
 }
 
 impl TreeRemainder {
-    /// Summarize retained omission facts without changing the selected population.
+    /// Summarize the selected population not represented by displayed top-level rows.
     pub fn from_tree(root: Option<&TreeNode>, omissions: &[TreeOmission]) -> Option<Self> {
         let mut result = Self {
             files: Some(0),
@@ -709,15 +710,11 @@ impl TreeRemainder {
                 result.reasons.push(omission.reason);
             }
         };
-        for omission in omissions {
+        // A displayed child directory already carries all of its descendants in its
+        // rollup. Omissions below it limit expansion, not the represented population.
+        let boundary = root.map_or(omissions, |root| root.omissions.as_slice());
+        for omission in boundary {
             add(omission);
-        }
-        let mut stack: Vec<_> = root.into_iter().collect();
-        while let Some(node) = stack.pop() {
-            for omission in &node.omissions {
-                add(omission);
-            }
-            stack.extend(node.children.iter());
         }
         result.reasons.sort_by_key(|why| match why {
             TreeOmissionReason::Share => 0,
@@ -4115,22 +4112,292 @@ mod tests {
         assert_eq!((root.files, root.bytes, root.allocated), (7, 10_000, 10_752));
         assert_eq!(
             (remainder.files, remainder.bytes, remainder.allocated),
-            (Some(6), Some(8_000), Some(8_704))
+            (Some(2), Some(2_000), Some(2_048))
         );
-        assert_eq!(
-            remainder.reasons,
-            vec![
-                TreeOmissionReason::Share,
-                TreeOmissionReason::Depth,
-                TreeOmissionReason::Breadth,
-                TreeOmissionReason::Rows
-            ]
-        );
+        assert_eq!(remainder.reasons, vec![TreeOmissionReason::Breadth]);
         assert_eq!(
             crate::report_format::render(&report, crate::report_format::Format::Text, false)
                 .expect("render"),
             include_str!("../../tests/golden/remainder-tree.txt"),
         );
+    }
+
+    #[test]
+    fn displayed_directories_represent_their_descendants_even_when_expansion_stops() {
+        let index = mixed_remainder_index();
+        let selection = Selection {
+            size: SizeMetric::Apparent,
+            depth: Some(Bound::Limit(1)),
+            breadth: Some(Bound::All),
+            limit: Some(Bound::All),
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Tree], selection));
+        let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+            panic!("expected tree")
+        };
+        assert_eq!((root.files, root.bytes), (7, 10_000));
+        assert_eq!(root.children.len(), 3);
+        assert!(root.children.iter().all(|child| child.kind == EntryKind::Dir));
+        assert!(root.children.iter().any(|child| !child.omissions.is_empty()));
+        assert!(TreeRemainder::from_tree(Some(root), omissions).is_none());
+        let diagnostics = crate::report_format::diagnostic_lines(&report);
+        assert!(!diagnostics.notes.iter().any(|note| note.contains("more covers")));
+        assert!(diagnostics.notes.iter().any(|note| note.contains("depth 1")));
+        assert!(
+            diagnostics.tips.contains(&format!("tip: expand deeper: {}=all", report.axes.depth))
+        );
+
+        let depth_zero = run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection {
+                    size: SizeMetric::Apparent,
+                    depth: Some(Bound::Limit(0)),
+                    min_share: Some(ShareThreshold::parse("0%").expect("share")),
+                    ..Selection::default()
+                },
+            ),
+        );
+        let Section::Tree { root: Some(root), omissions, .. } = &depth_zero.sections[0] else {
+            panic!("expected tree")
+        };
+        let remainder = TreeRemainder::from_tree(Some(root), omissions).expect("root alone");
+        assert_eq!((remainder.files, remainder.bytes), (Some(7), Some(10_000)));
+    }
+
+    #[test]
+    fn selected_leaf_ledger_conserves_every_top_level_tree_partition() {
+        // This ledger is independent of the index rollups and omission records. A listed
+        // direct child represents all selected leaves below it, whether or not its own
+        // children were expanded. The root is context, not a second represented set.
+        let files = [
+            ("src/main.rs", 100, 512, false),
+            ("src/lib.rs", 200, 512, false),
+            ("src/debug.log", 25, 512, true),
+            ("docs/guide.md", 300, 512, false),
+            ("build/cache/out.bin", 1_000, 1_024, true),
+        ];
+        let dirs = [("src", false), ("docs", false), ("build", true), ("build/cache", true)];
+        let index = classified_sample();
+        let within = |path: &str, parent: &Path| {
+            parent.as_os_str().is_empty() || Path::new(path).starts_with(parent)
+        };
+        for (population, excluded) in [
+            (IgnoredEntries::Include, None),
+            (IgnoredEntries::Exclude, None),
+            (IgnoredEntries::Only, None),
+            (IgnoredEntries::Include, Some("build")),
+            (IgnoredEntries::Include, Some("*.rs")),
+        ] {
+            let admitted = |path: &str, ignored: bool| {
+                population.admits(ignored)
+                    && !matches!(excluded, Some("build") if Path::new(path).starts_with("build"))
+                    && !matches!(excluded, Some("*.rs") if Path::new(path)
+                        .extension()
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("rs")))
+            };
+            let selected_files: Vec<_> = files
+                .iter()
+                .copied()
+                .filter(|(path, _, _, ignored)| admitted(path, *ignored))
+                .collect();
+            let selected_dirs: Vec<_> =
+                dirs.iter().copied().filter(|(path, ignored)| admitted(path, *ignored)).collect();
+            for size in [SizeMetric::Apparent, SizeMetric::Allocated] {
+                for share in ["0%", "1%", "50%", "100%"] {
+                    for depth in [Bound::Limit(0), Bound::Limit(1), Bound::All] {
+                        for breadth in
+                            [Bound::Limit(0), Bound::Limit(1), Bound::Limit(2), Bound::All]
+                        {
+                            for limit in
+                                [Bound::Limit(0), Bound::Limit(1), Bound::Limit(3), Bound::All]
+                            {
+                                let selection = Selection {
+                                    ignored: population,
+                                    exclude: excluded
+                                        .map_or_else(Vec::new, |name| vec![pattern(name)]),
+                                    size,
+                                    min_share: Some(ShareThreshold::parse(share).expect("share")),
+                                    depth: Some(depth),
+                                    breadth: Some(breadth),
+                                    limit: Some(limit),
+                                    ..Selection::default()
+                                };
+                                let report = run(
+                                    &index,
+                                    &query(&[ViewSpec::Summary, ViewSpec::Tree], selection.clone()),
+                                );
+                                let Section::Summary(summary) = &report.sections[0] else {
+                                    panic!("summary")
+                                };
+                                let Section::Tree { root, omissions, .. } = &report.sections[1]
+                                else {
+                                    panic!("tree")
+                                };
+                                let expected = (
+                                    selected_files.len() as u64,
+                                    selected_dirs.len() as u64,
+                                    selected_files.iter().map(|file| file.1).sum::<u64>(),
+                                    selected_files.iter().map(|file| file.2).sum::<u64>(),
+                                );
+                                let context = format!("{selection:?}");
+                                assert_eq!(
+                                    (summary.files, summary.dirs, summary.bytes, summary.allocated),
+                                    expected,
+                                    "summary: {context}"
+                                );
+                                if let Some(root) = root {
+                                    assert_eq!(
+                                        (root.files, root.dirs, root.bytes, root.allocated),
+                                        expected,
+                                        "root: {context}"
+                                    );
+                                    let mut stack = vec![root.as_ref()];
+                                    while let Some(node) = stack.pop() {
+                                        let contained: Vec<_> = selected_files
+                                            .iter()
+                                            .filter(|file| within(file.0, &node.path))
+                                            .collect();
+                                        let contained_dirs = selected_dirs
+                                            .iter()
+                                            .filter(|dir| {
+                                                within(dir.0, &node.path)
+                                                    && Path::new(dir.0) != node.path
+                                            })
+                                            .count()
+                                            as u64;
+                                        let ignored: Vec<_> =
+                                            contained.iter().filter(|file| file.3).collect();
+                                        let ignored_dirs = selected_dirs
+                                            .iter()
+                                            .filter(|dir| {
+                                                dir.1
+                                                    && within(dir.0, &node.path)
+                                                    && Path::new(dir.0) != node.path
+                                            })
+                                            .count()
+                                            as u64;
+                                        assert_eq!(
+                                            (node.files, node.dirs, node.bytes, node.allocated),
+                                            (
+                                                contained.len() as u64,
+                                                contained_dirs,
+                                                contained.iter().map(|file| file.1).sum::<u64>(),
+                                                contained.iter().map(|file| file.2).sum::<u64>(),
+                                            ),
+                                            "node {:?}: {context}",
+                                            node.path
+                                        );
+                                        assert_eq!(
+                                            node.ignored.map(|part| (
+                                                part.files,
+                                                part.dirs,
+                                                part.bytes,
+                                                part.allocated
+                                            )),
+                                            Some((
+                                                ignored.len() as u64,
+                                                ignored_dirs,
+                                                ignored.iter().map(|file| file.1).sum::<u64>(),
+                                                ignored.iter().map(|file| file.2).sum::<u64>(),
+                                            )),
+                                            "ignored {:?}: {context}",
+                                            node.path
+                                        );
+                                        stack.extend(node.children.iter());
+                                    }
+                                }
+                                let represented: Vec<_> = root
+                                    .iter()
+                                    .flat_map(|root| root.children.iter().map(|child| &child.path))
+                                    .collect();
+                                let uncovered: Vec<_> = selected_files
+                                    .iter()
+                                    .filter(|file| {
+                                        !represented.iter().any(|path| within(file.0, path))
+                                    })
+                                    .collect();
+                                let remainder =
+                                    TreeRemainder::from_tree(root.as_deref(), omissions);
+                                if let Some(remainder) = remainder {
+                                    assert_eq!(
+                                        (remainder.files, remainder.bytes, remainder.allocated),
+                                        (
+                                            Some(uncovered.len() as u64),
+                                            Some(uncovered.iter().map(|file| file.1).sum::<u64>()),
+                                            Some(uncovered.iter().map(|file| file.2).sum::<u64>()),
+                                        ),
+                                        "remainder: {context}"
+                                    );
+                                    assert_eq!(
+                                        remainder.ignored.map(|part| (part.bytes, part.allocated)),
+                                        Some((
+                                            uncovered
+                                                .iter()
+                                                .filter(|file| file.3)
+                                                .map(|file| file.1)
+                                                .sum(),
+                                            uncovered
+                                                .iter()
+                                                .filter(|file| file.3)
+                                                .map(|file| file.2)
+                                                .sum(),
+                                        )),
+                                        "remainder ignored: {context}"
+                                    );
+                                } else {
+                                    assert!(uncovered.is_empty(), "missing remainder: {context}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn empty_tree_and_unrepresentable_remainder_stay_honest() {
+        let empty = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let report = run(
+            &empty,
+            &query(
+                &[ViewSpec::Tree],
+                Selection {
+                    depth: Some(Bound::Limit(0)),
+                    min_share: Some(ShareThreshold::parse("1%").expect("share")),
+                    ..Selection::default()
+                },
+            ),
+        );
+        let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+            panic!("empty tree")
+        };
+        assert_eq!((root.files, root.dirs, root.bytes, root.allocated), (0, 0, 0, 0));
+        assert!(TreeRemainder::from_tree(Some(root), omissions).is_none());
+
+        let first = TreeOmission {
+            reason: TreeOmissionReason::Share,
+            entries: 1,
+            files: Some(u64::MAX),
+            bytes: Some(u64::MAX),
+            allocated: Some(u64::MAX),
+            ignored: Some(IgnoredSize { bytes: u64::MAX, allocated: u64::MAX }),
+        };
+        let second = TreeOmission {
+            reason: TreeOmissionReason::Breadth,
+            entries: 1,
+            files: Some(1),
+            bytes: Some(1),
+            allocated: None,
+            ignored: Some(IgnoredSize { bytes: 1, allocated: 1 }),
+        };
+        let remainder = TreeRemainder::from_tree(None, &[first, second]).expect("omissions");
+        assert_eq!((remainder.files, remainder.bytes, remainder.allocated), (None, None, None));
+        assert_eq!(remainder.ignored, None);
     }
 
     #[test]
@@ -4881,7 +5148,7 @@ mod tests {
     }
 
     #[test]
-    fn tree_remainder_keeps_the_disjoint_ignored_share() {
+    fn tree_remainder_counts_only_unrepresented_root_children() {
         let index = classified_sample();
         let remainder = |selection| {
             let report = run(&index, &query(&[ViewSpec::Tree], selection));
@@ -4898,15 +5165,15 @@ mod tests {
             ..Selection::default()
         });
         let usage = |ignored: Option<IgnoredSize>| ignored.map(|part| (part.bytes, part.allocated));
-        assert_eq!(usage(mixed.ignored), Some((1_025, 1_536)));
         assert_eq!(
-            mixed.reasons,
-            vec![TreeOmissionReason::Share, TreeOmissionReason::Depth, TreeOmissionReason::Breadth]
+            (mixed.files, mixed.bytes, usage(mixed.ignored)),
+            (Some(1), Some(300), Some((0, 0)))
         );
+        assert_eq!(mixed.reasons, vec![TreeOmissionReason::Breadth]);
 
         for limit in [Bound::Limit(1), Bound::Limit(0)] {
             let rows = remainder(Selection { limit: Some(limit), ..Selection::default() });
-            assert_eq!((rows.bytes, usage(rows.ignored)), (Some(1_625), usage(mixed.ignored)));
+            assert_eq!((rows.bytes, usage(rows.ignored)), (Some(1_625), Some((1_025, 1_536))));
         }
         let excluded = remainder(Selection {
             depth: Some(Bound::Limit(0)),
@@ -4919,7 +5186,7 @@ mod tests {
             ignored: IgnoredEntries::Only,
             ..Selection::default()
         });
-        assert_eq!((only.bytes, usage(only.ignored)), (Some(1_025), usage(mixed.ignored)));
+        assert_eq!((only.bytes, usage(only.ignored)), (Some(1_025), Some((1_025, 1_536))));
     }
 
     #[test]

@@ -14,6 +14,10 @@ Python model mapping.
 This review does not waive the acceptance limits in the
 [manual validation report](../reports/report-2026-09-27-manual-acceptance.md).
 
+The later [tally arithmetic review](review-2026-09-27-tally-arithmetic.md) supersedes
+this review’s remainder semantics and bar design: the earlier tests verified disjoint
+unexpanded leaves, but the intended summary covers unrepresented root branches.
+
 ## Findings and Disposition
 
 ### O1 — Medium: Machine Format Suppressed Fatal Diagnostic Color

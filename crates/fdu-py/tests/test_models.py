@@ -478,7 +478,7 @@ def _tree_section(tree: object) -> dict[str, object]:
 
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/9",
+        "schema": "fdu.report/10",
         "generator": "fdu 0.1.0",
         "root": "/root",
         "request": {
