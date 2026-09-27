@@ -108,6 +108,10 @@ present.
 | Standard lines of code | `fdu . --analyze=code` |
 | Keep the tree live | `fdu . --watch` |
 | Machine output | `fdu . --format=json` |
+| Complete recursive tree | `fdu . --view tree --full --format json` |
+| Every directory with recursive usage | `fdu . --kind dir --full --sort name --format json` |
+| Every regular file | `fdu . --view files --kind file --full --format json` |
+| Find Rust files | `fdu . --kind file --include '*.rs' --full --format paths` |
 
 `--view` chooses what is reported; several views share one walk.
 `--analyze` is the only switch that reads file bodies.
@@ -119,6 +123,15 @@ error.
 writes a portable skill for coding agents where they look for it (`fdu --skill` prints
 it); see [Set Up with Any Coding Agent](#set-up-with-any-coding-agent).
 The full grammar is in the [usage guide](docs/usage.md).
+
+`--full` is shorthand for `--depth=all --breadth=all --limit=all --min-share=0%`;
+explicit bounds override it.
+It expands the selected view without changing scan scope or analysis.
+Use path output for find/fd-style searches, or JSON for the same selection with exact
+usage fields. Directory rows contain recursive totals and can overlap; regular-file rows
+contain each file’s own size.
+See
+[complete inventories and find/fd examples](docs/usage.md#find-files-and-export-complete-inventories).
 
 ## Find Stale Build Directories
 
@@ -391,6 +404,9 @@ A deliberately unsupported local host may set `FDU_TEST_ALLOW_NO_PERMISSION_BITS
 CI must leave both variables unset so a passing test proves its assertions ran.
 
 [AGENTS.md](AGENTS.md) is how to operate on the repository.
+The [output design system](docs/project/architecture/fdu-output-design.md) governs
+report layout, diagnostic categories, colors, and stdout/stderr separation; its
+implementation rules are documented beside the shared renderer and diagnostic collector.
 [The supply-chain policy](SUPPLY-CHAIN-SECURITY.md) applies before any dependency
 change. Performance work follows
 [the performance loop](docs/project/guides/performance-loop.md) and is deliberately

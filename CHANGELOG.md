@@ -23,7 +23,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   GB/s.
 - Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and Linux default
   to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
-- Report schema is `fdu.report/8`; cache status is `fdu.cache/3`. Python exposes
+- Report schema is `fdu.report/9`; cache status is `fdu.cache/3`. Python exposes
   matching population, code overview, display limits, and cache destination controls.
 
 ## [0.1.0] - 2026-09-25

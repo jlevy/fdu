@@ -275,7 +275,7 @@ def footer_line(path: Path) -> str:
     if not path.exists():
         return ""
     for line in reversed(path.read_text(encoding="utf-8", errors="replace").splitlines()):
-        if "Performance:" in line:
+        if "perf:" in line:
             return line.strip()
     return ""
 
@@ -364,7 +364,7 @@ class Runner:
             timeout=timeout,
         )
         note_parts: list[str] = []
-        footer = footer_line(out_path)
+        footer = footer_line(err_path)
         if exit_code == TIMEOUT_EXIT_CODE:
             note_parts.append("timeout/interrupted")
         if exit_code in SIGKILL_EXIT_CODES:

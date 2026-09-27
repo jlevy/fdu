@@ -325,7 +325,9 @@ class Watch(Iterator[tuple[Change, ...]]):
             # session would quietly give a newer one.
             return cast(str, _call(handle.render, format, color))
 
-        return replace(report_from_dict(wire, notes), _renderer=renderer)
+        return replace(
+            report_from_dict(wire, notes), tips=tuple(_call(handle.tips)), _renderer=renderer
+        )
 
     def close(self) -> None:
         self._native.close()
@@ -385,7 +387,7 @@ class Index:
         def renderer(format: str, color: bool) -> str:
             return cast(str, _call(handle.render, format, color))
 
-        return replace(report, _renderer=renderer)
+        return replace(report, tips=tuple(_call(handle.tips)), _renderer=renderer)
 
     def total(self) -> RollUp:
         return rollup_from_dict(_call(self._native.total), self.provenance())
@@ -600,7 +602,7 @@ def report(
         # exists to avoid.
         return cast(str, _call(handle.render, format, color))
 
-    return replace(parsed, _renderer=renderer)
+    return replace(parsed, tips=tuple(_call(handle.tips)), _renderer=renderer)
 
 
 def watch_rule(at: datetime | int) -> str:

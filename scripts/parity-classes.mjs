@@ -17,6 +17,84 @@
 // label, a note -- reads as unexplained for a reason that has nothing to do with it.
 const sameSeparator = (line) => line.replace(/\[SEP\]/g, '/');
 
+// tryscript expands named patterns into concrete values on the Python side of a diff.
+// After classification checks those values, keep the artifact stable across runs.
+// Only '+' lines are observed output; '-' golden expectations remain untouched.
+export function normalisePortableValues(text) {
+    const lines = text.split('\n');
+    let removed = [];
+    let added = [];
+    const flush = () => {
+      if (removed.length === added.length) {
+        for (let i = 0; i < removed.length; i += 1) {
+          let value = added[i].value;
+          for (const [field, named, marker] of [
+            ['age_reference_ns', 'AGE_NS', 'AGE_NS_VALUE'],
+            ['observed_at_ns', 'MTIME_NS', 'MTIME_NS_VALUE'],
+            ['allocated', 'ALLOCATED', 'ALLOCATED_VALUE'],
+          ]) {
+            const fieldValues = (line) =>
+              [...line.matchAll(new RegExp(`("${field}":\\s*)(\\[[A-Z_]+\\]|-?\\d+)`, 'g'))];
+            const expected = fieldValues(removed[i]);
+            const actual = fieldValues(value);
+            if (expected.length !== actual.length) continue;
+            let occurrence = 0;
+            value = value.replace(
+              new RegExp(`("${field}":\\s*)(-?\\d+)`, 'g'),
+              (match, prefix) =>
+                expected[occurrence++]?.[2] === `[${named}]` ? `${prefix}[${marker}]` : match,
+            );
+          }
+          lines[added[i].index] = `+${value}`;
+        }
+      }
+      removed = [];
+      added = [];
+    };
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (/^(?:FAIL |PASS |  ✗ |  ✓ )/.test(line)) {
+        flush();
+      } else if (line.startsWith('-')) {
+        removed.push(line.slice(1));
+      } else if (line.startsWith('+')) {
+        added.push({ index: i, value: line.slice(1) });
+      }
+    }
+    flush();
+    return lines.join('\n');
+}
+
+// The golden stores a portable scan-root pattern, while the Python replay prints its
+// concrete sandbox root. Match only the fixture root for that session: accepting any
+// [SANDBOX] path would conceal a Python request that scanned a different directory.
+const fixtureRoot = (file = '') => {
+  if (file.endsWith('/cli-content.tryscript.md')) return 'content-project';
+  if (/\/(?:cli-axes|cli-cache|cli-json)\.tryscript\.md$/.test(file)) return 'project';
+  return null;
+};
+const portablePatternMatches = (line, actual, file) => {
+  let value = sameSeparator(line);
+  const fixture = fixtureRoot(file);
+  if (fixture) {
+    value = value
+      .replaceAll('"root": "[SCAN_PATH]"', `"root": "[SANDBOX]/${fixture}"`)
+      .replace(/^root: \[SCAN_PATH\]$/, `root: [SANDBOX]/${fixture}`);
+  }
+  // tryscript reports a whole changed line. A JSONL envelope therefore also contains
+  // the golden's numeric platform patterns when only its root path exposed the line.
+  // Honor only the patterns already named by the golden, with their original numeric
+  // shapes; every other field must still compare byte-for-byte.
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = escaped
+    .replaceAll('\\[AGE_NS\\]', '(?:\\[AGE_NS_VALUE\\]|-?\\d+)')
+    // normalise() already masks `newest_mtime_ns`, but leaves `observed_at_ns`
+    // numeric. The same named golden pattern appears in both fields.
+    .replaceAll('\\[MTIME_NS\\]', '(?:\\[MTIME_NS\\]|\\[MTIME_NS_VALUE\\]|-?\\d+)')
+    .replaceAll('\\[ALLOCATED\\]', '(?:\\[ALLOCATED_VALUE\\]|\\d+)');
+  return new RegExp(`^${pattern}$`).test(sameSeparator(actual));
+};
+
 /** Flags and parameters name the same thing: --modified-since is modified_since. */
 const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
 
@@ -34,11 +112,68 @@ const KNOBS =
   /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--cache|--watch|cache policy|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
+// A report's bound suggestions name the same setter differently on each surface.
+// The full line, including action and value, is pinned so no other tip can borrow this
+// exception merely because it contains a familiar word.
+const TIP_PAIRS = [
+  ['tip: show smaller entries: --min-share=0%', 'tip: show smaller entries: min_share=0%'],
+  ['tip: expand deeper: --depth=all', 'tip: expand deeper: depth=all'],
+  ['tip: show more children: --breadth=all', 'tip: show more children: breadth=all'],
+  ['tip: show more rows: --limit=all', 'tip: show more rows: limit=all'],
+];
+const sameBoundTip = (removed, added) => {
+  const marker = removed.startsWith('! ') ? '! ' : '';
+  return TIP_PAIRS.some(([cli, api]) => removed === marker + cli && added === marker + api);
+};
+const sameAnalysisTip = (removed, added) =>
+  removed === 'tip: include omitted views: add --analyze code' &&
+  added === 'tip: include omitted views: add analyze code';
+const usesBoundTip = (line) =>
+  /^(! )?tip: /.test(line) &&
+  /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
+
 // A class that no longer explains anything is removed, not kept "just in case". Its
 // matcher would still match, so it would quietly absorb a real regression: `execution-tier`
 // covered eight sessions until fdu.report exposed the one-shot contract, and its matcher
 // keyed on "source" and cache-emptiness -- exactly what a cache regression would look like.
 export const CLASSES = [
+  {
+    id: 'portable-golden-pattern',
+    title: 'Portable golden spelling of the same fixture path',
+    why: [
+      'The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a',
+      'platform separator. The Python replay prints the sandbox root and a literal',
+      'separator. Only the exact fixture root and otherwise identical lines match;',
+      'exact bound and omitted-view tip translations can accompany those lines.',
+    ],
+    matches: ({ file, removed, added }) =>
+      removed.length > 0 &&
+      removed.length === added.length &&
+      removed.every((line, i) =>
+        portablePatternMatches(line, added[i], file) ||
+        sameBoundTip(line, added[i]) ||
+        sameAnalysisTip(line, added[i]),
+      ) &&
+      removed.some((line, i) =>
+        line !== added[i] && portablePatternMatches(line, added[i], file),
+      ),
+  },
+  {
+    id: 'bound-tip-vocabulary',
+    title: 'Bound suggestions name the same setter on each surface',
+    why: [
+      'The command line names bound flags and Python names corresponding fields.',
+      'Only the four exact action, setter, and value pairs emitted by the shared',
+      'report renderer are accepted; every other line remains identical.',
+    ],
+    matches: ({ removed, added }) =>
+      removed.length > 0 &&
+      removed.length === added.length &&
+      removed.every((line, i) =>
+        sameSeparator(line) === sameSeparator(added[i]) || sameBoundTip(line, added[i]),
+      ) &&
+      removed.some((line, i) => sameBoundTip(line, added[i])),
+  },
   {
     id: 'surface-label',
     title: 'Each surface names its own parameter',
@@ -52,6 +187,7 @@ export const CLASSES = [
     matches: ({ removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
+      !removed.some(usesBoundTip) &&
       removed.every((line, i) => sameName(line) === sameName(added[i])) &&
       removed.some((line, i) => line !== added[i]),
   },
@@ -73,39 +209,9 @@ export const CLASSES = [
     matches: ({ removed, added }) =>
       removed.length > 0 &&
       removed.length === added.length &&
+      !removed.some(usesBoundTip) &&
       removed.every((line, i) => withoutKnobs(line) === withoutKnobs(added[i])) &&
       removed.some((line, i) => line !== added[i]),
-  },
-  {
-    id: 'run-telemetry',
-    title: 'Output carrying walk telemetry the report schema excludes',
-    why: [
-      'A note quoting how many bytes analysis read, or the performance footer itself.',
-      'Both are telemetry about the run rather than facts about the report, and the',
-      'envelope deliberately carries none, so a Report cannot reproduce them. The omission',
-      'note is NOT this: that one is a fact about the report, travels on it, and every',
-      'surface states it in its own vocabulary.',
-    ],
-    // Everything that is not telemetry has to be unchanged, line for line. Counting the
-    // remainder instead let this class absorb a genuinely different answer: a session
-    // whose command-line output lost a `note:` line could also report a different tally
-    // and still be explained, because one removed line was matched by one added line
-    // whatever the two said. That is the opposite of what a class is for -- the header
-    // above requires a class to say what the difference IS.
-    //
-    // Compared through sameSeparator for the reason given where it is defined: a golden
-    // writes the separator as [SEP] and the package prints the literal, so a hunk that
-    // merely contains a path would otherwise read as a changed answer and this class
-    // would stop explaining the sessions it exists for.
-    matches: ({ removed, added }) => {
-      const telemetry = (line) => /^note:|^Performance:/.test(line);
-      const rest = removed.filter((line) => !telemetry(line));
-      return (
-        removed.some(telemetry) &&
-        rest.length === added.length &&
-        rest.every((line, index) => sameSeparator(line) === sameSeparator(added[index]))
-      );
-    },
   },
   {
     id: 'discovery-surface',

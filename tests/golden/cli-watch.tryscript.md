@@ -139,7 +139,6 @@ $ node -e "require('node:fs').mkdirSync('repaint'); require('node:fs').writeFile
 ```console
 $ node bin/watch-repaint-capture.mjs repaint
 TREE
-Tree scope: at least 1% of selected root through depth 5
        4 B  ██████████   100%  . 1 file
        4 B  ██████████   100%    seed.txt
 
@@ -148,7 +147,6 @@ SUMMARY
 
 ──── [STAMP] ────
 TREE
-Tree scope: at least 1% of selected root through depth 5
       16 B  ██████████   100%  . 2 files
       12 B  ████████░░    75%    added.txt
        4 B  ███░░░░░░░    25%    seed.txt

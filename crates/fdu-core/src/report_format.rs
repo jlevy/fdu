@@ -3,6 +3,28 @@
 //! Formats are serializations, not features: every view renders in every format, so a
 //! caller picks the shape of the answer and the shape of the bytes independently.
 //!
+//! # Output design system
+//!
+//! Keep measured results and explanatory diagnostics separate. Renderers return only
+//! result data; frontends route the categorized messages from [`diagnostic_lines`] to
+//! their diagnostic stream. Machine formats must remain parseable and ANSI-free.
+//!
+//! Human rows use cyan names, ordinary foreground totals and file counts, and gray
+//! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
+//! file counts belong directly after the name, outside parentheses. Secondary breakdowns
+//! such as nonblank/blank counts use the same gray parenthetical role.
+//!
+//! One remainder annotation per tree occupies the filename column below its root,
+//! leaving numeric and bar columns empty. Name the omitted amount explicitly and count
+//! recursive hidden files; that amount is already included in directory totals. Unknown
+//! coverage must say unknown size. Keep rerun flags out of rows: collect applicable
+//! remedies once per report in `report_epilogue`.
+//!
+//! The category, ordering, and debugging contract lives beside that collector; CLI
+//! stream/color handling lives in `write_report_diagnostics`. The contributor guide is
+//! `docs/project/architecture/fdu-output-design.md`. Changes must keep the shared golden
+//! corpus, Python parity, and terminal stream/color assertions consistent.
+//!
 //! # Why these are hand-written
 //!
 //! `serde` plus a JSON crate plus a YAML crate would be three dependency additions —
@@ -11,6 +33,12 @@
 //! crate already hand-writes its JSON, and hand-writing keeps the machine formats
 //! provably free of a serializer's own opinions about key order and number formatting.
 //! Key order is fixed by the code, which is what makes the goldens byte-stable.
+
+mod report_epilogue;
+
+pub use report_epilogue::{
+    DiagnosticLines, diagnostic_lines, diagnostics, report_notes, report_tips,
+};
 
 use std::fmt::Write as _;
 use std::io;
@@ -42,25 +70,25 @@ pub const STYLE_NAME: AnsiStyle = AnsiColor::Cyan.on_default();
 /// Relative-size bars in a tree.
 const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 
-/// Extensions in a type breakdown.
-pub const STYLE_CATEGORY: AnsiStyle = AnsiColor::Green.on_default();
+/// Category labels share the cyan name role across all human views.
+pub const STYLE_CATEGORY: AnsiStyle = STYLE_NAME;
 
-/// Telemetry: what the tool did, as against what it found.
-///
-/// The same role the CLI's performance footer and display notes use, so a bound stated in
-/// a header reads as reporting rather than as data — see the styling system in `cli.rs`.
+/// Secondary information: parenthetical detail, omissions, notes, tips, and telemetry.
+/// Keep this gray and non-bold so the measured result remains visually primary.
 pub const STYLE_DETAIL: AnsiStyle = AnsiColor::BrightBlack.on_default();
 
 /// Established label width for non-language metric summaries.
 const TEXT_METRIC_LABEL_WIDTH: usize = 18;
 /// Floor for the extensions view's label column.
 const TEXT_TYPE_LABEL_WIDTH: usize = 12;
+/// Size (10), bar (10), percent (5), and three two-space gutters.
+const TREE_NAME_COLUMN: usize = 10 + 10 + 5 + 3 * 2;
 
 /// Machine-output schema identity.
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/8";
+pub const REPORT_SCHEMA: &str = "fdu.report/9";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
@@ -201,28 +229,37 @@ fn human_age(age: Option<i128>) -> String {
 
 /// Notes excluded from flat stdout, for a frontend's diagnostic stream.
 pub fn flat_diagnostics(report: &Report) -> Vec<String> {
-    let mut notes = report.notes.clone();
+    flat_diagnostic_lines(report).into_lines()
+}
+
+/// Categorized flat-output diagnostics; paths and long rows stay alone on stdout.
+pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
+    let DiagnosticLines { mut notes, tips } = diagnostic_lines(report);
     if report.provenance.source == ReportSource::CacheOnly {
-        notes.push("cache-only result: retained contents have not been revalidated".into());
+        notes.push("note: cache-only result: retained contents have not been revalidated".into());
     }
     if !report.status.complete || report.provenance.freshness != Freshness::Fresh {
         notes.push(format!(
-            "result freshness: {}; complete: {}",
+            "note: result freshness: {}; complete: {}",
             freshness_label(report.provenance.freshness),
             report.status.complete
         ));
     }
     if let Some(depth) = report.scope.max_depth {
-        notes
-            .push(format!("scan scope limited to depth {depth}; subtree metrics cover this scope"));
+        notes.push(format!(
+            "note: scan scope limited to depth {depth}; subtree metrics cover this scope"
+        ));
     }
     for section in &report.sections {
-        let bound = bound_note(section);
-        if !bound.is_empty() {
-            notes.push(bound.trim().to_string());
+        if let Some((shown, total)) = bounded_rows(section) {
+            notes.push(format!(
+                "note: {} of {} rows shown",
+                human_count(shown as u64),
+                human_count(total as u64),
+            ));
         }
     }
-    notes
+    DiagnosticLines { notes, tips }
 }
 
 fn render_flat(report: &Report, format: Format) -> String {
@@ -656,6 +693,28 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
                 None => emit_scalar(sink, Scalar::Null),
             });
             emit_tree_omissions(sink, omissions);
+            sink.event(Event::Key("remainder"));
+            match crate::query::TreeRemainder::from_tree(root.as_deref(), omissions) {
+                Some(remainder) => {
+                    sink.event(Event::BeginMap(Shape::Block));
+                    for (key, value) in [
+                        ("files", remainder.files),
+                        ("bytes", remainder.bytes),
+                        ("allocated", remainder.allocated),
+                    ] {
+                        sink.event(Event::Key(key));
+                        emit_scalar(sink, value.map_or(Scalar::Null, Scalar::U64));
+                    }
+                    sink.event(Event::Key("reasons"));
+                    sink.event(Event::BeginSeq(Shape::Inline));
+                    for reason in remainder.reasons {
+                        emit_scalar(sink, Scalar::Str(reason.label()));
+                    }
+                    sink.event(Event::EndSeq);
+                    sink.event(Event::EndMap);
+                }
+                None => emit_scalar(sink, Scalar::Null),
+            }
         }
         Section::Extensions { rows, total, share_omitted } => {
             emit_bound_field(sink, rows.len(), *total);
@@ -1061,6 +1120,8 @@ fn emit_tree_omissions(sink: &mut impl Sink, omissions: &[crate::query::TreeOmis
         sink.event(Event::BeginMap(Shape::Inline));
         emit_str_field(sink, "reason", omission.reason.label());
         emit_u64_field(sink, "entries", omission.entries as u64);
+        sink.event(Event::Key("files"));
+        emit_scalar(sink, omission.files.map_or(Scalar::Null, Scalar::U64));
         sink.event(Event::Key("bytes"));
         match omission.bytes {
             Some(value) => emit_scalar(sink, Scalar::U64(value)),
@@ -1170,9 +1231,10 @@ fn detail(text: &str, color: bool) -> String {
 /// similar-looking rows arrived concatenated, and the reader had to work out which view
 /// each block came from by remembering the order they were requested in.
 ///
-/// A single-view report is left bare, which is what keeps `fdu --view files` a listing
-/// of paths and nothing else — the property behind `fdu --view files | xargs` — and
-/// keeps the default one-view report exactly as it was. One block needs no label to be
+/// A single-view report is left bare, which keeps `fdu --view files` a listing of
+/// paths and nothing else. Paths escape control characters for display; use a structured
+/// format when arbitrary native filenames must be consumed without loss.
+/// One block needs no label to be
 /// unambiguous, so the header appears precisely when it disambiguates something.
 fn render_text(report: &Report, color: bool) -> String {
     let mut out = String::new();
@@ -1242,13 +1304,6 @@ fn render_text(report: &Report, color: bool) -> String {
                 render_text_summary(&mut out, row, report.size, report.ignored_entries, color);
             }
         }
-    }
-    // Remarks about the report, after the report and before the caller's own epilogue.
-    // These used to print after the CLI's performance footer, which read as though
-    // something followed the terminator; and living in the CLI meant only the CLI could
-    // tell anyone a view had been dropped (fdu-x8u6).
-    for note in &report.notes {
-        let _ = writeln!(out, "{}", detail(note, color));
     }
     out
 }
@@ -1450,10 +1505,8 @@ fn render_text_metrics(
 
 fn render_share_omission(out: &mut String, omitted: usize, noun: &str, color: bool) {
     if omitted > 0 {
-        let note = format!(
-            "{} {noun} omitted by --min-share; --min-share 0% to show",
-            human_count(omitted as u64)
-        );
+        let note =
+            format!("… {} {noun} omitted (below share threshold)", human_count(omitted as u64));
         let _ = writeln!(out, "{}", detail(&note, color));
     }
 }
@@ -1630,107 +1683,69 @@ fn render_text_tree(
     out: &mut String,
     root: Option<&TreeNode>,
     omissions: &[crate::query::TreeOmission],
-    limits: &crate::query::TreeDisplayLimits,
+    _limits: &crate::query::TreeDisplayLimits,
     size: SizeMetric,
     selected: IgnoredEntries,
     color: bool,
 ) {
-    enum Row<'a> {
-        Node(&'a TreeNode, usize),
-        Omission(&'a crate::query::TreeOmission, usize),
-    }
-
-    let depth = match limits.depth {
-        crate::query::Bound::All => "all".to_string(),
-        crate::query::Bound::Limit(depth) => depth.to_string(),
-    };
-    let scope = format!(
-        "Tree scope: at least {} of selected root through depth {depth}",
-        limits.min_share.label()
-    );
-    let _ = writeln!(out, "{}", detail(&scope, color));
-
-    let Some(root) = root else {
-        for omission in omissions {
-            render_tree_omission(out, omission, 0, size, color);
+    let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
+    if let Some(root) = root {
+        let grand = pick(size, root.bytes, root.allocated);
+        let mut stack = vec![(root, 0)];
+        while let Some((node, depth)) = stack.pop() {
+            let bytes = pick(size, node.bytes, node.allocated);
+            let share = ratio(bytes, grand);
+            let indent = "  ".repeat(depth);
+            let count = if node.kind == EntryKind::File {
+                String::new()
+            } else {
+                format!(" {} {}", human_count(node.files), plural(node.files, "file", "files"))
+            };
+            let _ = writeln!(
+                out,
+                "{:>10}  {}  {:>5}  {indent}{}{}{}",
+                human_bytes(bytes),
+                bar(share, color),
+                human_percentage(bytes, grand, 0),
+                paint(&escaped_human(&node.name), STYLE_NAME, color),
+                count,
+                ignored_suffix(node.ignored, size, selected, color),
+            );
+            stack.extend(node.children.iter().rev().map(|child| (child, depth + 1)));
         }
-        return;
-    };
-    let grand = pick(size, root.bytes, root.allocated);
-    if grand == 0 {
-        let _ = writeln!(
-            out,
-            "{}",
-            detail(
-                "No share denominator: selected root size is zero; --min-share=0% shows the structure",
-                color
-            )
-        );
     }
-    // Children are pushed in reverse so they pop back in their sorted order. A
-    // truncation row is pushed first so it appears after the retained children.
-    let mut stack = vec![Row::Node(root, 0)];
-    while let Some(row) = stack.pop() {
-        match row {
-            Row::Node(node, depth) => {
-                let bytes = pick(size, node.bytes, node.allocated);
-                let share = ratio(bytes, grand);
-                let indent = "  ".repeat(depth);
-                let count = if node.kind == EntryKind::File {
-                    String::new()
-                } else {
-                    format!(" {} {}", human_count(node.files), plural(node.files, "file", "files"))
-                };
-                let _ = writeln!(
-                    out,
-                    "{:>10}  {}  {:>5}  {indent}{}{}{}",
-                    human_bytes(bytes),
-                    bar(share, color),
-                    human_percentage(bytes, grand, 0),
-                    paint(&escaped_human(&node.name), STYLE_NAME, color),
-                    count,
-                    ignored_suffix(node.ignored, size, selected, color),
-                );
-                for omission in node.omissions.iter().rev() {
-                    stack.push(Row::Omission(omission, depth + 1));
-                }
-                for child in node.children.iter().rev() {
-                    stack.push(Row::Node(child, depth + 1));
-                }
-            }
-            Row::Omission(omission, depth) => {
-                render_tree_omission(out, omission, depth, size, color);
-            }
-        }
+    // One annotation at the highest displayed level, even when several independent
+    // bounds hide descendants at different depths. Reasons belong in the epilogue.
+    if let Some(hidden) = hidden {
+        render_tree_remainder(out, &hidden, usize::from(root.is_some()), size, color);
     }
 }
 
-fn render_tree_omission(
+/// Human projection of the same remainder serialized in machine formats.
+fn render_tree_remainder(
     out: &mut String,
-    omission: &crate::query::TreeOmission,
+    remainder: &crate::query::TreeRemainder,
     depth: usize,
     size: SizeMetric,
     color: bool,
 ) {
-    use crate::query::TreeOmissionReason;
-    let remedy = match omission.reason {
-        TreeOmissionReason::Share => "--min-share=0%",
-        TreeOmissionReason::Breadth => "--breadth=all",
-        TreeOmissionReason::Depth => "--depth=all",
-        TreeOmissionReason::Rows => "--limit=all",
+    let bytes = match size {
+        SizeMetric::Apparent => remainder.bytes,
+        SizeMetric::Allocated => remainder.allocated,
     };
-    let measure = match size {
-        SizeMetric::Apparent => omission.bytes,
-        SizeMetric::Allocated => omission.allocated,
-    }
-    .map_or_else(|| "size incomplete".to_string(), human_bytes);
-    let note = format!(
-        "… {} {} omitted by {} ({measure}); {remedy} to show",
-        human_count(omission.entries as u64),
-        plural(omission.entries as u64, "entry", "entries"),
-        omission.reason.label()
+    let measure = bytes.map_or_else(|| "unknown size".to_owned(), human_bytes);
+    let files = remainder.files.map_or_else(
+        || "unknown file count".to_owned(),
+        |files| format!("{} {}", human_count(files), plural(files, "file", "files")),
     );
-    let _ = writeln!(out, "{}{}", "  ".repeat(depth), detail(&note, color));
+    let note = format!("… and {measure} ({files}) more");
+    let _ = writeln!(
+        out,
+        "{:width$}{}",
+        "",
+        detail(&note, color),
+        width = TREE_NAME_COLUMN + 2 * depth
+    );
 }
 
 /// Render a types section as aligned rows.
@@ -1755,33 +1770,27 @@ fn render_text_types(
     }
 }
 
-/// What a section dropped, or nothing when it dropped nothing.
-///
-/// Lives in the header rather than after the rows because a footer is lost to `head`,
-/// which is exactly where a reader most needs telling — `fdu --view largest | head -5`
-/// would otherwise cut off the only notice that 192,851 rows are missing. In a `full`
-/// report a header also keeps each bound attached to the section it describes.
-///
-/// The flag that lifts the bound is named here too: a truncation the caller cannot remove
-/// is a limitation wearing a default's clothes.
-fn bound_note(section: &Section) -> String {
+/// Counts row omissions after share filtering, so a share threshold alone never
+/// produces a row-limit remedy.
+fn bounded_rows(section: &Section) -> Option<(usize, usize)> {
     let (shown, total) = match section {
         Section::Code(overview) => (overview.languages.len(), overview.total_languages),
         Section::Files { rows, total, .. } => (rows.len(), *total),
         Section::Extensions { rows, total, .. } => (rows.len(), *total),
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
-        // A tree marks its dropped children in place, at the depth they were dropped; a
-        // summary is one row and cannot be bounded.
-        Section::Tree { .. } | Section::Summary(_) => (0, 0),
+        // Trees carry their own omission records; summary cannot be bounded.
+        Section::Tree { .. } | Section::Summary(_) => return None,
     };
-    if shown >= total {
+    (shown < total).then_some((shown, total))
+}
+
+/// Factual row count near a bounded section. Actionable guidance is emitted once at
+/// the end of the report by the shared diagnostic collector.
+fn bound_note(section: &Section) -> String {
+    let Some((shown, total)) = bounded_rows(section) else {
         return String::new();
-    }
-    format!(
-        "  ({} of {}; --limit all for every one)",
-        human_count(shown as u64),
-        human_count(total as u64)
-    )
+    };
+    format!("  ({} of {})", human_count(shown as u64), human_count(total as u64))
 }
 
 /// A bounded flat listing, showing the measure it was ranked by.
@@ -2970,7 +2979,12 @@ mod tests {
 
         let text = render(&bounded, Format::Text, false);
         assert!(text.contains(&format!("(1 of {full}")), "the header states the bound: {text}");
-        assert!(text.contains("--limit all"), "and names the flag that lifts it: {text}");
+        assert!(!text.contains("--limit"), "actionable guidance stays out of the body: {text}");
+        assert_eq!(
+            report_tips(&bounded),
+            vec!["tip: show more rows: limit=all"],
+            "the shared epilogue names the row remedy once"
+        );
         let json = render(&bounded, Format::Json, false);
         assert!(json.contains(&format!("\"shown\": 1, \"total\": {full}")), "{json:.200}");
         let yaml = render(&bounded, Format::Yaml, false);
@@ -3391,7 +3405,6 @@ mod tests {
         assert_eq!(
             text,
             concat!(
-                "Tree scope: at least 1% of selected root through depth 5\n",
                 "     120 B  ██████████   100%  . 2 files\n",
                 "     100 B  ████████░░    83%    src 1 file\n",
                 "     100 B  ████████░░    83%      main.rs\n",
@@ -3399,7 +3412,7 @@ mod tests {
             )
         );
 
-        let lines: Vec<&str> = text.lines().skip(1).collect();
+        let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0].find("120 B"), lines[1].find("100 B"));
         assert_eq!(lines[0].find('█'), lines[1].find('█'));
     }
@@ -3666,7 +3679,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/8\""));
+        assert!(json.contains("\"schema\": \"fdu.report/9\""));
         assert!(json.contains("\"request\": {"));
         assert!(json.contains("\"status\": {"));
         assert!(json.contains("\"provenance\": {"));
@@ -3681,7 +3694,7 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/8");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/9");
         assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
@@ -3770,29 +3783,25 @@ mod tests {
         assert!(yaml.contains(&expected), "{yaml}");
 
         let flags = Query { axes: &crate::query::AxisNames::FLAGS, ..query.clone() };
-        let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
-                    limit), so ignored shares under vendor are not exact; sizes are. To apply \
-                    them, raise --gitignore-line-limit above 16 KiB, or set it to all";
-        let text = render(
-            &report(
-                &observed,
-                &crate::test_support::read_of(&observed, flags.clone()),
-                &provenance,
-            )
-            .expect("report"),
-            Format::Text,
-            false,
-        );
-        let unknown_note =
-            "note: ignored subtotals are unavailable where governing rules could not be verified";
-        assert!(text.ends_with(&format!("{note}\n{unknown_note}\n")), "{text}");
-        let fields =
-            report(&observed, &crate::test_support::read_of(&observed, query.clone()), &provenance)
+        let candidate =
+            report(&observed, &crate::test_support::read_of(&observed, flags), &provenance)
                 .expect("report");
-        assert_eq!(
-            fields.notes,
-            [note.replace("--gitignore-line-limit", "control_line_limit"), unknown_note.to_owned()]
+        let text = render(&candidate, Format::Text, false);
+        assert!(
+            !text.contains("note:") && !text.contains("tip:"),
+            "stdout holds only formatted data"
         );
+        let lines = diagnostics(&candidate);
+        assert!(
+            lines.iter().any(|line| line.starts_with("note: ignore classification incomplete:")
+                && line.contains("vendor"))
+        );
+        assert!(lines.last().expect("remedy").contains("--gitignore-line-limit"));
+        let fields =
+            report(&observed, &crate::test_support::read_of(&observed, query), &provenance)
+                .expect("report");
+        assert!(report_tips(&fields).iter().any(|tip| tip.contains("control_line_limit")));
+        assert!(!diagnostics(&fields).iter().any(|line| line.contains("--gitignore-line-limit")));
     }
 
     /// Every row that carries an ignored share says so in every format: text appends it
@@ -3873,7 +3882,6 @@ mod tests {
                 "     164 B  2 files, 2 directories (128 B ignored)\n",
                 "\n",
                 "TREE\n",
-                "Tree scope: at least 1% of selected root through depth 5\n",
                 "     164 B  ██████████   100%  . 2 files (128 B ignored)\n",
                 "     128 B  ████████░░    78%    dist 1 file (128 B ignored)\n",
                 "     128 B  ████████░░    78%      a.gz (128 B ignored)\n",
@@ -3971,11 +3979,11 @@ mod tests {
     #[test]
     fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/8\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/9\""));
         assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/8\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/9\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }

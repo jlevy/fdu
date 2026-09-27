@@ -2,7 +2,7 @@
 
 use super::MetricValues;
 
-/// Streaming `code-sloc-v1` counter for a supported language (analyzer version 2).
+/// Streaming `code-sloc-v1` counter for a supported language (analyzer version 3).
 ///
 /// The counter retains the current logical line, its allocated capacity, and parser
 /// state. A one-line minified or generated source can therefore require file-sized
@@ -17,6 +17,7 @@ pub struct CodeAccumulator {
     line: Vec<u8>,
     previous_cr: bool,
     javascript: JavaScriptContext,
+    shell: ShellContext,
     metrics: MetricValues,
 }
 
@@ -26,6 +27,13 @@ struct JavaScriptContext {
     pending_control_paren: bool,
     paren_control: Vec<bool>,
     after_dot: bool,
+}
+
+#[derive(Debug, Default)]
+struct ShellContext {
+    // The number of unmatched parentheses in a shell arithmetic expression.
+    // `<<` there is a shift operator, not a heredoc opener.
+    arithmetic_parens: usize,
 }
 
 impl Default for JavaScriptContext {
@@ -50,6 +58,7 @@ impl CodeAccumulator {
             line: Vec::new(),
             previous_cr: false,
             javascript: JavaScriptContext::default(),
+            shell: ShellContext::default(),
             metrics: MetricValues::default(),
         })
     }
@@ -83,7 +92,13 @@ impl CodeAccumulator {
     }
 
     fn finish_line(&mut self) {
-        let class = classify_line(self.syntax, &mut self.state, &mut self.javascript, &self.line);
+        let class = classify_line(
+            self.syntax,
+            &mut self.state,
+            &mut self.javascript,
+            &mut self.shell,
+            &self.line,
+        );
         self.metrics.physical_lines = self.metrics.physical_lines.saturating_add(1);
         match class {
             LineClass::Code => {
@@ -244,6 +259,7 @@ fn classify_line(
     syntax: Syntax,
     state: &mut State,
     javascript: &mut JavaScriptContext,
+    shell: &mut ShellContext,
     line: &[u8],
 ) -> LineClass {
     let mut index = usize::from(line.starts_with(&[0xef, 0xbb, 0xbf]));
@@ -428,6 +444,34 @@ fn classify_line(
                         continue;
                     }
                 }
+                if syntax.language == Language::Shell {
+                    if shell.arithmetic_parens == 0 && line[index..].starts_with(b"$((") {
+                        shell.arithmetic_parens = 2;
+                        code = true;
+                        whitespace_boundary = false;
+                        index += 3;
+                        continue;
+                    }
+                    if shell.arithmetic_parens == 0
+                        && whitespace_boundary
+                        && line[index..].starts_with(b"((")
+                    {
+                        shell.arithmetic_parens = 2;
+                        code = true;
+                        whitespace_boundary = false;
+                        index += 2;
+                        continue;
+                    }
+                    if shell.arithmetic_parens > 0 {
+                        match byte {
+                            b'(' => {
+                                shell.arithmetic_parens = shell.arithmetic_parens.saturating_add(1);
+                            }
+                            b')' => shell.arithmetic_parens -= 1,
+                            _ => {}
+                        }
+                    }
+                }
                 if syntax.language == Language::JavaScript
                     && byte == b'/'
                     && javascript.regex_allowed
@@ -489,8 +533,10 @@ fn classify_line(
                         continue;
                     }
                 }
-                if let Some((terminator, indent, php)) =
-                    heredoc_open(syntax.language, &line[index..])
+                if let Some((terminator, indent, php)) = (syntax.language != Language::Shell
+                    || shell.arithmetic_parens == 0)
+                    .then(|| heredoc_open(syntax.language, &line[index..]))
+                    .flatten()
                 {
                     code = true;
                     *state = State::Heredoc { terminator, indent, php };
@@ -633,7 +679,8 @@ fn classify_line(
                     );
                 }
                 code = true;
-                whitespace_boundary = false;
+                whitespace_boundary = syntax.language == Language::Shell
+                    && matches!(byte, b';' | b'&' | b'|' | b'(' | b')' | b'<' | b'>');
                 index += 1;
             }
         }
@@ -940,6 +987,31 @@ mod tests {
         for (language, source, expected) in cases {
             let metrics = count(language, &[source]);
             assert_eq!((metrics.code_lines, metrics.comment_lines), *expected, "{language}");
+        }
+    }
+
+    #[test]
+    fn shell_comments_and_arithmetic_shifts_do_not_hold_lexer_state() {
+        let cases: &[PartitionCase<'_>] = &[
+            // A command separator starts a new shell word, so the unmatched quote is
+            // comment text and cannot turn the next line into a multiline string.
+            ("shell", b"true;# \"unterminated\n# following\nprintf ok\n", (2, 1, 0)),
+            // In arithmetic expansion and arithmetic commands, `<<` shifts a value.
+            // Neither spelling opens a heredoc that consumes the following comment.
+            ("shell", b"N=2\nx=$((1<<N))\n# following\n", (2, 1, 0)),
+            ("shell", b"N=2\n((1<<N))\n# following\n", (2, 1, 0)),
+            // A hash within a shell word is literal, while a real heredoc body is code.
+            ("shell", b"printf '%s' foo#bar\ncat <<TEXT\n# literal\nTEXT\n# comment\n", (4, 1, 0)),
+        ];
+        for (language, source, expected) in cases {
+            for split in 0..=source.len() {
+                let metrics = count(language, &[&source[..split], &source[split..]]);
+                assert_eq!(
+                    (metrics.code_lines, metrics.comment_lines, metrics.code_blank_lines),
+                    *expected,
+                    "source {source:?}, split {split}"
+                );
+            }
         }
     }
 

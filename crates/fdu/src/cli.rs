@@ -25,8 +25,8 @@ use fdu_core::query::IgnoredEntries;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
 use fdu_core::query::{
-    AxisNames, Delivery, ReadSpec, ReportSource, Request, RequestError, RequestSpec, SizeMetric,
-    ViewSpec, WatchDelivery, parse_cache_policy,
+    AxisNames, Delivery, ReadSpec, Report, ReportSource, Request, RequestError, RequestSpec,
+    SizeMetric, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -58,13 +58,21 @@ const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 // colours, which is what makes them read as one tool.
 //
 //   heading      cyan bold      ALL CAPS, no trailing colon
-//   warning      yellow bold
+//   warning      yellow
 //   error        red bold
 //   cause        dimmed         the chain under an error
 //   telemetry    bright black   the performance footer, notes, watch rules
 //
 // Colour applies only when the destination is a live terminal, and never to a machine
 // format or under NO_COLOR; `ColorContext` owns that decision and `paint` applies it.
+
+/// Independent terminal/color decisions for result and diagnostic streams.
+#[cfg(feature = "watch")]
+#[derive(Clone, Copy)]
+struct StreamColors {
+    output: bool,
+    diagnostic: bool,
+}
 
 /// The one header style every human surface uses.
 ///
@@ -73,7 +81,7 @@ const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 /// case convention rather than each inventing one. `report_format` re-exports this as the
 /// view-header style so there is a single definition to change.
 const STYLE_HEADING: AnsiStyle = report_format::STYLE_HEADING;
-const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
+const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default();
 pub(crate) const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
 const STYLE_CAUSE: AnsiStyle = AnsiStyle::new().dimmed();
 const STYLE_PERFORMANCE: AnsiStyle = report_format::STYLE_DETAIL;
@@ -188,6 +196,9 @@ MORE COMPOSITIONS
   fdu ~/Downloads --view=extensions
   fdu . --view=types,families --format=json
   fdu . --analyze=words --view=documents
+  fdu PATH --view tree --full --format json                 complete recursive tree
+  fdu PATH --kind dir --full --format json                  recursive directory totals
+  fdu PATH --kind file --full --format paths                find/fd-style file inventory
   fdu PATH --view=largest --limit=100                        the 100 largest files
   fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
   fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
@@ -197,6 +208,9 @@ MORE COMPOSITIONS
   largest and recent are presets over files, not more views to learn:
     largest = files --sort size --limit 20, regular files only
     recent  = files --sort mtime --limit 20, regular files only
+  --full expands to --depth=all --breadth=all --limit=all --min-share=0%.
+  Explicit bounds override it regardless of order. It leaves view, scan scope,
+  population, and analysis unchanged. --view=full chooses views instead.
   --sort and --limit still override them. files alone is complete: every
   matching entry, in name order. full combines applicable views, without list/files.
 
@@ -301,18 +315,22 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/8; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/9; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
-  One-shot text reports end with a gray performance line; machine formats omit it.
+  Tree remainder totals are shared by every format: recursive files, apparent and
+  allocated bytes, and applicable reasons. Null means nothing hidden; unknown counts
+  or sizes stay null. Text shows one root-level line: ... and SIZE (N files) more.
+  Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
+  One-shot text reports end with gray perf: on stderr; machine formats omit it.
   It counts ignore files and accepted rules, including repeated governing sources.
   Total files/s and decimal GB/s use the displayed elapsed duration. GB/s represents
   walked file size; actual body-read throughput is reported separately.
   JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
-  Results go to stdout; warnings and errors go to stderr.
+  Results go to stdout; all diagnostics, including warnings and errors, go to stderr.
   The command never prompts or pages. A progress line is drawn on stderr only for a
   person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
   Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
@@ -533,6 +551,10 @@ pub struct Cli {
     #[arg(long, value_name = "PERCENT", help_heading = "SELECTION")]
     pub min_share: Option<String>,
 
+    /// Show all rows: --depth=all --breadth=all --limit=all --min-share=0%. Explicit bounds override this shorthand.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
+    pub full: bool,
+
     /// Order results: size, count, mtime, name, or a requested metric such as `code_lines`.
     #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
@@ -546,7 +568,7 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: list, tree, files, extensions, types, families, languages, documents,
+    /// Views: list, tree, files, extensions, types, families, languages, code, documents,
     /// largest, recent, summary, or full. Defaults to list with no analysis, otherwise to
     /// a view that displays the requested analysis.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
@@ -765,8 +787,23 @@ impl Cli {
                 stdout_is_terminal,
             )
             .enabled();
+            let diagnostic_color = ColorContext::from_environment(
+                self.color,
+                false,
+                false,
+                terminal.stderr_is_terminal,
+            )
+            .enabled();
             let indicator = progress_plan.draw.then_some((progress_plan, progress_io));
-            return Self::run_watch(out, diagnostic, format, &request, &delivery, color, indicator);
+            return Self::run_watch(
+                out,
+                diagnostic,
+                format,
+                &request,
+                &delivery,
+                StreamColors { output: color, diagnostic: diagnostic_color },
+                indicator,
+            );
         }
 
         let report_started = Instant::now();
@@ -835,12 +872,14 @@ impl Cli {
         // Joined before returning, and before the render error is raised: a broken pipe
         // must not abandon a finished scan's snapshot, because the next run would then
         // pay for a cold scan that this one had already done.
-        if let Err(error) = pending_save.join() {
-            let _ = writeln!(
-                diagnostic,
-                "{}",
-                paint(&format!("warning: {error}"), STYLE_WARNING, stderr_is_terminal)
-            );
+        let diagnostic_color =
+            ColorContext::from_environment(self.color, false, false, stderr_is_terminal).enabled();
+        let save_warning = pending_save.join().err().map(|error| format!("warn: {error}"));
+        if render_result.is_err() {
+            // A failed report write still joins the save and tells the caller if it failed.
+            if let Some(warning) = &save_warning {
+                let _ = writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, diagnostic_color));
+            }
         }
         render_result?;
 
@@ -849,8 +888,21 @@ impl Cli {
             if !rendered.is_empty() && !rendered.ends_with('\n') {
                 writeln!(out)?;
             }
+        }
+        out.flush()?;
+
+        // The answer stays on stdout. Facts, suggestions, and operational diagnostics
+        // share stderr; the human report's run summary closes that stream.
+        write_report_diagnostics(
+            diagnostic,
+            &report,
+            format,
+            diagnostic_color,
+            save_warning.as_deref(),
+        )?;
+        if matches!(format, report_format::Format::Text | report_format::Format::Tree) {
             writeln!(
-                out,
+                diagnostic,
                 "{}",
                 paint(
                     &performance_footer(
@@ -860,31 +912,11 @@ impl Cli {
                         request.query.selection.size,
                     ),
                     STYLE_PERFORMANCE,
-                    color,
+                    diagnostic_color,
                 )
             )?;
-            for note in
-                display_notes(&request.query.views, request.basis.content, performance.bytes_read)
-            {
-                writeln!(out, "{}", paint(&note, STYLE_PERFORMANCE, color))?;
-            }
         }
-
-        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
-            for note in report_format::flat_diagnostics(&report) {
-                writeln!(diagnostic, "{note}")?;
-            }
-        }
-        if matches!(format, report_format::Format::Text | report_format::Format::Tree)
-            && !report.status.complete
-        {
-            let color =
-                ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
-                    .enabled();
-            for warning in status_warnings(&report.status) {
-                let _ = writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color));
-            }
-        }
+        diagnostic.flush()?;
 
         let plan = fdu_core::plan(&request, &delivery, fdu_core::Route::OneShot)?;
         Ok(match plan.outcome(&report.status) {
@@ -946,11 +978,13 @@ impl Cli {
         format: report_format::Format,
         request: &Request,
         delivery: &Delivery,
-        color: bool,
+        colors: StreamColors,
         indicator: Option<(ProgressPlan, ProgressIo)>,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::query::ViewSpec;
         use fdu_core::watch_session::Session;
+
+        let StreamColors { output: color, diagnostic: diagnostic_color } = colors;
 
         // The repaint interval the delivery already carries, rather than a second reading
         // of `--interval`: `run` refused an unparseable one before it opened anything, and
@@ -974,7 +1008,7 @@ impl Cli {
             }
             None => Session::start(request.clone(), delivery.clone())?,
         };
-        Self::persist_live(&mut session, diagnostic, color);
+        Self::persist_live(&mut session, diagnostic, diagnostic_color);
 
         // A streaming run keeps only the views it can render incrementally plus the
         // aggregates it repaints; both come from the same query, so nothing here is a
@@ -995,12 +1029,8 @@ impl Cli {
         }
         let initial = session.report(SystemTime::now())?;
         report_format::write(&initial, format, color, out)?;
-        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
-            for note in report_format::flat_diagnostics(&initial) {
-                writeln!(diagnostic, "{note}")?;
-            }
-        }
         out.flush()?;
+        write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, None)?;
 
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
@@ -1009,7 +1039,7 @@ impl Cli {
                 // Nothing arrived in the window. Repaint only if something is pending,
                 // so a quiet tree produces no output and no work at all.
                 if has_aggregates && dirty_since_render {
-                    Self::render_live(out, diagnostic, &session, format, color)?;
+                    Self::render_live(out, diagnostic, &session, format, color, diagnostic_color)?;
                     dirty_since_render = false;
                     last_render = SystemTime::now();
                 }
@@ -1017,7 +1047,7 @@ impl Cli {
                 // arrived too soon after the last save would otherwise wait for the next
                 // change to persist it, and the next change may never come: a burst
                 // followed by silence is the single most likely way a watch session ends.
-                Self::persist_live(&mut session, diagnostic, color);
+                Self::persist_live(&mut session, diagnostic, diagnostic_color);
                 continue;
             };
 
@@ -1027,7 +1057,7 @@ impl Cli {
             dirty_since_render |= batch.dirty;
             let elapsed = last_render.elapsed().unwrap_or_default();
             if has_aggregates && dirty_since_render && elapsed >= interval {
-                Self::render_live(out, diagnostic, &session, format, color)?;
+                Self::render_live(out, diagnostic, &session, format, color, diagnostic_color)?;
                 dirty_since_render = false;
                 last_render = SystemTime::now();
             }
@@ -1038,7 +1068,7 @@ impl Cli {
             // to the render interval so a churny tree does not rewrite constantly; the
             // pending flag is what guarantees a throttled change still reaches disk once
             // the tree goes quiet.
-            Self::persist_live(&mut session, diagnostic, color);
+            Self::persist_live(&mut session, diagnostic, diagnostic_color);
         }
     }
 
@@ -1052,11 +1082,8 @@ impl Cli {
         if let fdu_core::watch_session::SaveOutcome::Failed(error) =
             session.persist_due(Instant::now())
         {
-            let _ = writeln!(
-                diagnostic,
-                "{}",
-                paint(&format!("warning: {error}"), STYLE_WARNING, color)
-            );
+            let _ =
+                writeln!(diagnostic, "{}", paint(&format!("warn: {error}"), STYLE_WARNING, color));
         }
     }
 
@@ -1094,6 +1121,7 @@ impl Cli {
         session: &fdu_core::watch_session::Session,
         format: report_format::Format,
         color: bool,
+        diagnostic_color: bool,
     ) -> anyhow::Result<()> {
         let generated_at = SystemTime::now();
         let report = session.report(generated_at)?;
@@ -1111,12 +1139,8 @@ impl Cli {
             write!(out, "{}", report_format::document_start(format))?;
         }
         report_format::write(&report, format, color, out)?;
-        if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
-            for note in report_format::flat_diagnostics(&report) {
-                writeln!(diagnostic, "{note}")?;
-            }
-        }
         out.flush()?;
+        write_report_diagnostics(diagnostic, &report, format, diagnostic_color, None)?;
         Ok(())
     }
 
@@ -1355,10 +1379,10 @@ impl Cli {
                 modified_before: self.modified_before.as_deref(),
                 kinds: self.kind.as_deref(),
                 ignored: self.ignored.as_deref(),
-                depth: self.depth.as_deref(),
-                limit: self.limit.as_deref(),
-                breadth: self.breadth.as_deref(),
-                min_share: self.min_share.as_deref(),
+                depth: self.depth.as_deref().or(self.full.then_some("all")),
+                limit: self.limit.as_deref().or(self.full.then_some("all")),
+                breadth: self.breadth.as_deref().or(self.full.then_some("all")),
+                min_share: self.min_share.as_deref().or(self.full.then_some("0%")),
                 sort: self.sort.as_deref(),
                 reverse: self.reverse,
                 size: Some(&self.size),
@@ -1491,7 +1515,7 @@ fn performance_footer(
         }
     };
     format!(
-        "Performance: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {} ({})",
+        "perf: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {} ({})",
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
         report_format::human_bytes(walked_bytes),
@@ -1587,34 +1611,12 @@ fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
     if count == 1 { singular } else { plural }
 }
 
-/// Whether a view renders anything the content analyzers produce.
-///
-/// This is the check behind the "paid for nothing" note.  It is deliberately a match
-/// rather than a property of `ViewSpec`, so adding a view forces a decision here about
-/// whether it displays content metrics.
-const fn view_displays_analysis(view: ViewSpec) -> bool {
-    match view {
-        ViewSpec::Types
-        | ViewSpec::Families
-        | ViewSpec::Languages
-        | ViewSpec::Code
-        | ViewSpec::Documents => true,
-        ViewSpec::List
-        | ViewSpec::Tree
-        | ViewSpec::Extensions
-        | ViewSpec::Largest
-        | ViewSpec::Recent
-        | ViewSpec::Files
-        | ViewSpec::Summary => false,
-    }
-}
-
 /// Views to render, plus any `--view full` could not satisfy.
 #[cfg(test)]
 #[derive(Debug)]
 struct ResolvedViews {
-    selected: Vec<ViewSpec>,
-    omitted: Vec<ViewSpec>,
+    selected: Vec<fdu_core::query::ViewSpec>,
+    omitted: Vec<fdu_core::query::ViewSpec>,
 }
 
 /// Resolve the view axis against the content axis.
@@ -1627,12 +1629,48 @@ struct ResolvedViews {
 fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
     // The whole axis -- list grammar, `full` expansion, and the default -- lives in the
     // library, so the CLI and the Python API cannot disagree about what a spec means.
-    let (selected, omitted) =
-        ViewSpec::resolve(spec, profile, "--view").map_err(|message| anyhow::anyhow!(message))?;
+    let (selected, omitted) = fdu_core::query::ViewSpec::resolve(spec, profile, "--view")
+        .map_err(|message| anyhow::anyhow!(message))?;
     Ok(ResolvedViews { selected, omitted })
 }
 
-/// The text-mode warnings for an incomplete report, one per retained issue.
+/// Output-design boundary: flush result stdout before emitting notes, operational
+/// warnings, and deduplicated tips to stderr. The caller appends `perf:` last for human
+/// one-shot reports. Machine stdout receives no diagnostics or terminal escapes.
+///
+/// Use stderr's color decision: note/tip/perf are gray, warn is yellow without bold,
+/// and fatal rendering in `finish` is red bold. Preserve paths and causes on warning
+/// lines; details and remedies follow the shared `report_epilogue` contract.
+fn write_report_diagnostics(
+    diagnostic: &mut dyn Write,
+    report: &Report,
+    format: report_format::Format,
+    color: bool,
+    save_warning: Option<&str>,
+) -> io::Result<()> {
+    let lines = if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
+        report_format::flat_diagnostic_lines(report)
+    } else {
+        report_format::diagnostic_lines(report)
+    };
+    for line in lines.notes {
+        writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
+    }
+    if let Some(warning) = save_warning {
+        writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, color))?;
+    }
+    if !report.status.complete {
+        for warning in status_warnings(&report.status) {
+            writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color))?;
+        }
+    }
+    for line in lines.tips {
+        writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
+    }
+    diagnostic.flush()
+}
+
+/// The warnings for an incomplete report, one per retained issue.
 ///
 /// The retention bound keeps the first [`fdu_core::MAX_RETAINED_ISSUES`] details, and the
 /// last line says how many it dropped, so the terminal is never told less than the
@@ -1644,14 +1682,14 @@ fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
         .iter()
         .map(|issue| match &issue.path {
             Some(path) if !path.as_os_str().is_empty() && !names_path(&issue.message, path) => {
-                format!("warning: {}: {}", path.display(), issue.message)
+                format!("warn: {}: {}", path.display(), issue.message)
             }
-            _ => format!("warning: {}", issue.message),
+            _ => format!("warn: {}", issue.message),
         })
         .collect();
     if status.errors_omitted > 0 {
         warnings.push(format!(
-            "warning: {} more {} omitted; details are kept for the first {}",
+            "warn: {} more {} omitted; details are kept for the first {}",
             human_count(status.errors_omitted),
             if status.errors_omitted == 1 { "error" } else { "errors" },
             fdu_core::MAX_RETAINED_ISSUES,
@@ -1673,28 +1711,6 @@ fn names_path(message: &str, path: &Path) -> bool {
         matches!(before, None | Some('/' | '\\' | ' ' | '"' | '\'' | '`'))
             && matches!(after, None | Some(':' | ' ' | '"' | '\'' | '`' | ')' | ','))
     })
-}
-
-/// Notes that keep the display contract legible in human output.
-///
-/// Both are the same rule read in opposite directions: a run displays what it paid for,
-/// and a view it could not render is named rather than quietly dropped.  Machine formats
-/// carry neither, because the `reports` array already enumerates exactly which views were
-/// produced — a consumer reads the omission from what is absent.
-fn display_notes(views: &[ViewSpec], profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
-    // Only the note that needs telemetry. The omission note is a fact about the report and
-    // travels on it, so every surface states it rather than just this one (fdu-x8u6).
-    //
-    // Never an error: warming the content sidecar so a later run is warm is a supported
-    // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
-    if profile.is_enabled() && !views.iter().any(|view| view_displays_analysis(*view)) {
-        return vec![format!(
-            "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or full",
-            profile.labels().join(","),
-            report_format::human_bytes(bytes_read),
-        )];
-    }
-    Vec::new()
 }
 
 /// Run `fdu` through its real process boundary and return its stable numeric exit code.
@@ -1799,13 +1815,8 @@ fn run_with_io(
             out.flush()?;
             Ok(outcome)
         });
-    let diagnostic_color = ColorContext::from_environment(
-        cli.color,
-        cli.machine_format(),
-        cli.skill,
-        stderr_is_terminal,
-    )
-    .enabled();
+    let diagnostic_color =
+        ColorContext::from_environment(cli.color, false, false, stderr_is_terminal).enabled();
     finish(result, diagnostic, diagnostic_color)
 }
 
@@ -2031,6 +2042,7 @@ mod tests {
     use super::*;
     use crate::progress_ticker::{ERASE_LINE, SharedBuffer, Timing};
     use fdu_core::EntryKind;
+    use fdu_core::query::ViewSpec;
     use fdu_core::query::{Bound, ScopeAxis, SizeMetric, SortKey};
     #[cfg(feature = "watch")]
     use std::time::UNIX_EPOCH;
@@ -2063,19 +2075,19 @@ mod tests {
         assert_eq!(
             complete,
             [
-                "warning: docs/a.md: Permission denied (os error 13)",
-                "warning: I/O error at /abs/src: Permission denied (os error 13)",
-                "warning: content analysis results became stale",
-                "warning: d: Permission denied (os error 13)",
+                "warn: docs/a.md: Permission denied (os error 13)",
+                "warn: I/O error at /abs/src: Permission denied (os error 13)",
+                "warn: content analysis results became stale",
+                "warn: d: Permission denied (os error 13)",
             ]
         );
         let one = status_warnings(&status(vec![issue(None, "x")], 1));
         assert_eq!(
             one.last().map(String::as_str),
-            Some("warning: 1 more error omitted; details are kept for the first 64")
+            Some("warn: 1 more error omitted; details are kept for the first 64")
         );
         let many = status_warnings(&status(Vec::new(), 1_234));
-        assert_eq!(many, ["warning: 1,234 more errors omitted; details are kept for the first 64"]);
+        assert_eq!(many, ["warn: 1,234 more errors omitted; details are kept for the first 64"]);
     }
 
     /// One population axis parses all modes and rejects misspellings.
@@ -2141,7 +2153,7 @@ mod tests {
         };
         assert_eq!(
             footer(&ControlCoverage::NotObserved),
-            "Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms (2333 files/s, 0.000 GB/s represented)"
+            "perf: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms (2333 files/s, 0.000 GB/s represented)"
         );
         // The walked bytes are the answer's metric, allocated unless `--size apparent`.
         assert!(
@@ -2151,7 +2163,7 @@ mod tests {
                 Duration::from_millis(3),
                 SizeMetric::Allocated,
             )
-            .starts_with("Performance: walked 7 files / 28 KiB; ")
+            .starts_with("perf: walked 7 files / 28 KiB; ")
         );
         let observed = |applied, refusals: Vec<RefusedControl>| {
             ControlCoverage::Observed(ControlObservation {
@@ -2335,6 +2347,7 @@ mod tests {
             limit: None,
             breadth: None,
             min_share: None,
+            full: false,
             sort: None,
             reverse: false,
             size: SIZE_DEFAULT.to_string(),
@@ -2491,6 +2504,50 @@ mod tests {
     fn an_empty_list_entry_is_rejected() {
         let message = query_error(&Cli { view: Some("tree,,types".to_string()), ..cli() });
         assert!(message.contains("empty entry"), "{message}");
+    }
+
+    #[test]
+    fn full_is_the_explicit_bounds_request_and_specific_flags_override_it() {
+        let bounds = |query: fdu_core::query::Query| {
+            (
+                query.selection.depth,
+                query.selection.breadth,
+                query.selection.limit,
+                query.selection.min_share,
+            )
+        };
+        let shorthand = Cli::try_parse_from(["fdu", ".", "--full"]).expect("parse");
+        let explicit = Cli::try_parse_from([
+            "fdu",
+            ".",
+            "--depth=all",
+            "--breadth=all",
+            "--limit=all",
+            "--min-share=0%",
+        ])
+        .expect("parse");
+        assert_eq!(
+            bounds(shorthand.resolved_query().expect("query")),
+            bounds(explicit.resolved_query().expect("query"))
+        );
+        for args in [
+            vec!["fdu", ".", "--full", "--depth=3", "--breadth=2", "--limit=8", "--min-share=2%"],
+            vec!["fdu", ".", "--depth=3", "--breadth=2", "--limit=8", "--min-share=2%", "--full"],
+        ] {
+            let actual = Cli::try_parse_from(args).expect("parse").resolved_query().expect("query");
+            let expected = Cli::try_parse_from([
+                "fdu",
+                ".",
+                "--depth=3",
+                "--breadth=2",
+                "--limit=8",
+                "--min-share=2%",
+            ])
+            .expect("parse")
+            .resolved_query()
+            .expect("query");
+            assert_eq!(bounds(actual), bounds(expected));
+        }
     }
 
     #[test]
@@ -2744,12 +2801,6 @@ mod tests {
         ];
         for (profile, expected) in cases {
             assert_eq!(ViewSpec::default_for(profile), expected, "default view for {profile:?}");
-            if profile.is_enabled() {
-                assert!(
-                    view_displays_analysis(ViewSpec::default_for(profile)),
-                    "a paid-for run must default to a view that shows what it bought"
-                );
-            }
         }
     }
 
@@ -2793,44 +2844,6 @@ mod tests {
             .expect_err("full cannot be combined")
             .to_string();
         assert!(combined.contains("cannot be combined"), "{combined}");
-    }
-
-    /// The display contract has two directions, and they now live in two places.
-    ///
-    /// What a request could not display is a fact about the report, so it travels on the
-    /// report and every surface states it. What a request paid to read is telemetry about
-    /// the run, which the report envelope deliberately excludes, so it stays here with the
-    /// performance footer. Splitting them is what let the Python surface say the first
-    /// (fdu-x8u6); this pins each to its own home.
-    #[test]
-    fn the_display_contract_reports_unspent_reads_from_the_cli() {
-        let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
-        let notes = display_notes(&unspent.selected, AnalysisSet::ALL, 1_200);
-        assert_eq!(notes.len(), 1, "{notes:?}");
-        assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
-        assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
-        // The note is advice, so every view it suggests must be one --view accepts.
-        let (_, suggested) = notes[0].split_once("try --view ").expect("the note suggests views");
-        for view in suggested.split([',', ' ']).filter(|word| !word.is_empty() && *word != "or") {
-            let resolved = ViewSpec::resolve(Some(view), AnalysisSet::ALL, "--view");
-            assert!(resolved.is_ok(), "the note suggests --view {view}: {resolved:?}");
-        }
-
-        // A view that does display the metrics earns no note at all.
-        let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");
-        assert!(display_notes(&spent.selected, AnalysisSet::ALL, 1_200).is_empty());
-
-        // Neither does a metadata-only run, which bought nothing to display.
-        let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
-        assert!(display_notes(&plain.selected, AnalysisSet::NONE, 0).is_empty());
-
-        // And the omission note is no longer the CLI's to make, in either direction.
-        let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
-        assert!(!omitted.omitted.is_empty(), "full without analyzers must drop documents");
-        assert!(
-            display_notes(&omitted.selected, AnalysisSet::NONE, 0).is_empty(),
-            "the omission travels on the report now"
-        );
     }
 
     /// Principle 13, the direction that protects the user: no view, at any content
@@ -2903,7 +2916,7 @@ mod tests {
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/8\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/9\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -2923,18 +2936,30 @@ mod tests {
             ..cli()
         };
 
-        let mut plain = Vec::new();
+        let (mut plain, mut diagnostics) = (Vec::new(), Vec::new());
         command
-            .run(&mut plain, &mut Vec::new(), false, &TerminalFacts::default(), ProgressIo::inert())
+            .run(
+                &mut plain,
+                &mut diagnostics,
+                false,
+                &TerminalFacts::default(),
+                ProgressIo::inert(),
+            )
             .expect("plain report");
         let plain = String::from_utf8(plain).expect("plain UTF-8");
-        // `summary` displays no content metric, so this run also earns the paid-for-
-        // nothing note; the footer is the line before it rather than the last line.
-        let footer =
-            plain.lines().find(|line| line.contains("Performance:")).expect("performance footer");
+        let diagnostics = String::from_utf8(diagnostics).expect("plain diagnostics");
+        assert!(!plain.contains("perf:"), "the answer stays on stdout: {plain}");
+        assert!(!plain.contains("note:"), "facts stay on stderr: {plain}");
+        assert!(!plain.contains("tip:"), "suggestions stay on stderr: {plain}");
+        let lines: Vec<&str> = diagnostics.lines().collect();
+        let note = lines.iter().position(|line| line.starts_with("note:")).expect("display fact");
+        let tip =
+            lines.iter().position(|line| line.starts_with("tip:")).expect("display suggestion");
+        assert!(note < tip && tip < lines.len() - 1, "diagnostic category order: {diagnostics}");
+        let footer = diagnostics.lines().last().expect("performance footer");
         assert!(
             footer.starts_with(
-                "Performance: walked 2 files / 8 B; ignore 0 files / 0 rules; content read 8 B at "
+                "perf: walked 2 files / 8 B; ignore 0 files / 0 rules; content read 8 B at "
             ),
             "{plain}"
         );
@@ -2943,30 +2968,30 @@ mod tests {
         assert!(footer.contains("cold scan; total "), "{footer}");
         assert!(!footer.contains('\u{1b}'), "color-disabled output must not contain ANSI");
 
-        let mut colored = Vec::new();
+        let (mut colored, mut colored_diagnostics) = (Vec::new(), Vec::new());
         Cli { color: ColorWhen::Always, ..command }
             .run(
                 &mut colored,
-                &mut Vec::new(),
+                &mut colored_diagnostics,
                 false,
                 &TerminalFacts::default(),
                 ProgressIo::inert(),
             )
             .expect("colored report");
         let colored = String::from_utf8(colored).expect("colored UTF-8");
-        let footer = colored
-            .lines()
-            .find(|line| line.contains("Performance:"))
-            .expect("colored performance footer");
+        let colored_diagnostics =
+            String::from_utf8(colored_diagnostics).expect("colored diagnostics");
+        assert!(!colored.contains("perf:"), "the answer stays on stdout: {colored}");
+        for prefix in ["note:", "tip:"] {
+            let line =
+                colored_diagnostics.lines().find(|line| line.contains(prefix)).expect(prefix);
+            assert!(line.starts_with("\u{1b}[90m"), "gray {prefix}: {colored_diagnostics:?}");
+        }
+        let footer = colored_diagnostics.lines().last().expect("colored performance footer");
         assert!(
-            footer.starts_with("\u{1b}[90mPerformance:"),
+            footer.starts_with("\u{1b}[90mperf:"),
             "the footer must use terminal gray when color is active: {colored:?}"
         );
-        // The notes are footer-adjacent telemetry and share its dimming, so a terminal
-        // reading the report sees one quiet block rather than a bright interruption.
-        let note =
-            colored.lines().find(|line| line.contains("note: --analyze")).expect("colored note");
-        assert!(note.starts_with("\u{1b}[90mnote:"), "notes share the footer style: {colored:?}");
     }
 
     /// The footer's walked size is measured as the answer is, so it reads as the summary
@@ -2984,23 +3009,23 @@ mod tests {
                 size: size.to_string(),
                 ..cli()
             };
-            let mut out = Vec::new();
+            let (mut out, mut diagnostic) = (Vec::new(), Vec::new());
             command
                 .run(
                     &mut out,
-                    &mut Vec::new(),
+                    &mut diagnostic,
                     false,
                     &TerminalFacts::default(),
                     ProgressIo::inert(),
                 )
                 .expect("summary report");
             let out = String::from_utf8(out).expect("UTF-8");
+            let diagnostic = String::from_utf8(diagnostic).expect("UTF-8 diagnostics");
             let row = out.lines().next().expect("the summary row").trim_start();
             let answer = row.split("  ").next().expect("the row's size");
-            let footer =
-                out.lines().find(|line| line.starts_with("Performance:")).expect("the footer");
+            let footer = diagnostic.lines().last().expect("the footer");
             assert!(
-                footer.starts_with(&format!("Performance: walked 2 files / {answer}; ")),
+                footer.starts_with(&format!("perf: walked 2 files / {answer}; ")),
                 "--size {size}: {out}"
             );
         }
@@ -3027,7 +3052,7 @@ mod tests {
 
         assert_eq!(
             footer,
-            "Performance: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s (4938 files/s, 0.000 GB/s represented)"
+            "perf: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s (4938 files/s, 0.000 GB/s represented)"
         );
     }
 
@@ -3043,18 +3068,20 @@ mod tests {
                 format: format.to_string(),
                 ..cli()
             };
-            let mut output = Vec::new();
+            let (mut output, mut diagnostic) = (Vec::new(), Vec::new());
             command
                 .run(
                     &mut output,
-                    &mut Vec::new(),
+                    &mut diagnostic,
                     false,
                     &TerminalFacts::default(),
                     ProgressIo::inert(),
                 )
                 .expect("machine report");
             let output = String::from_utf8(output).expect("machine UTF-8");
-            assert!(!output.contains("Performance:"), "{format}: {output}");
+            let diagnostic = String::from_utf8(diagnostic).expect("machine diagnostics");
+            assert!(!output.contains("perf:"), "{format}: {output}");
+            assert!(!diagnostic.contains("perf:"), "{format}: {diagnostic}");
         }
     }
 
@@ -3373,6 +3400,31 @@ mod tests {
     }
 
     #[test]
+    fn machine_result_format_does_not_disable_fatal_stderr_color() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        for (choice, colored) in [("always", true), ("never", false)] {
+            let args = [
+                OsString::from("fdu"),
+                temp.path().join("missing").into_os_string(),
+                OsString::from("--format=json"),
+                OsString::from(format!("--color={choice}")),
+            ];
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let status = run_with_io(
+                &args,
+                &mut out,
+                &mut err,
+                false,
+                &TerminalFacts::default(),
+                ProgressIo::inert(),
+            );
+            assert_eq!(status, 1);
+            assert!(out.is_empty());
+            assert_eq!(err.contains(&0x1b), colored);
+        }
+    }
+
+    #[test]
     fn run_outcomes_and_broken_pipes_have_stable_exit_codes() {
         let mut diagnostic = Vec::new();
         assert_eq!(finish(Ok(RunOutcome::Complete), &mut diagnostic, false), 0);
@@ -3408,6 +3460,28 @@ mod tests {
             ci: None,
             vt_enabled: true,
         }
+    }
+
+    #[test]
+    fn warnings_are_yellow_without_bold_and_fatal_errors_are_red_bold() {
+        let sgr = |text: &str| -> Vec<String> {
+            text.split("\u{1b}[")
+                .skip(1)
+                .filter_map(|part| part.split_once('m').map(|(code, _)| code))
+                .flat_map(|code| code.split(';').map(str::to_string))
+                .collect()
+        };
+        let warning = paint("warn: incomplete", STYLE_WARNING, true);
+        let warning_codes = sgr(&warning);
+        assert!(warning_codes.iter().any(|code| code == "33"), "yellow warning: {warning:?}");
+        assert!(!warning_codes.iter().any(|code| code == "1"), "warning is not bold: {warning:?}");
+
+        let mut diagnostic = Vec::new();
+        assert_eq!(finish(Err(anyhow::anyhow!("failed")), &mut diagnostic, true), 1);
+        let fatal = String::from_utf8(diagnostic).expect("UTF-8 diagnostic");
+        let error_codes = sgr(&fatal);
+        assert!(error_codes.iter().any(|code| code == "31"), "red error: {fatal:?}");
+        assert!(error_codes.iter().any(|code| code == "1"), "bold error: {fatal:?}");
     }
 
     fn parse(args: &[&str]) -> Cli {
@@ -3555,10 +3629,10 @@ mod tests {
         parsed.progress_plan(terminal, &request)
     }
 
-    /// An interactive run that finishes inside the first-frame delay writes nothing on
-    /// stderr: no frame, no erase, and for a clean run nothing at all.
+    /// An interactive run inside the first-frame delay prints its summary without a
+    /// progress frame or erase sequence.
     #[test]
-    fn an_interactive_run_inside_the_delay_writes_nothing_to_stderr() {
+    fn an_interactive_run_inside_the_delay_draws_no_progress_frame() {
         let interactive = interactive_terminal();
         let mut out = Vec::new();
         let err = SharedBuffer::default();
@@ -3593,8 +3667,9 @@ mod tests {
             run_with_io(&args, &mut out, &mut err.clone(), true, &interactive, shipped()),
             0
         );
-        assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
-        assert!(err.contents().is_empty(), "{:?}", err.text());
+        assert!(!String::from_utf8(out).expect("UTF-8").contains("perf:"));
+        assert!(err.text().lines().last().is_some_and(|line| line.starts_with("perf:")));
+        assert!(!err.text().contains(ERASE_LINE), "{:?}", err.text());
     }
 
     /// A tree whose walk outlasts the ticker thread's start by a wide margin, so a
@@ -3650,9 +3725,8 @@ mod tests {
         panic!("the ticker drew no frame in five runs");
     }
 
-    /// The frames drawn while the tree was walked, then the erase, then the report's
-    /// warning: the erase is the last thing on stderr before the warning, and nothing
-    /// of the line follows it.
+    /// The frames drawn while the tree was walked, then the erase, then report
+    /// diagnostics. No frame follows the erase.
     #[cfg(unix)]
     #[test]
     fn the_line_is_erased_before_the_first_warning() {
@@ -3697,16 +3771,26 @@ mod tests {
         std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o755))
             .expect("restore permissions so the directory can be removed");
         assert_eq!(status, 2, "a partial scan");
-        assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
+        assert!(!String::from_utf8(out).expect("UTF-8").contains("perf:"));
+        assert!(text.lines().last().is_some_and(|line| line.starts_with("perf:")));
 
-        let warning = text.find("warning:").expect("a status warning on stderr");
+        let warning = text.find("warn:").expect("a status warning on stderr");
+        let first_diagnostic = ["note:", "warn:", "tip:", "perf:"]
+            .iter()
+            .filter_map(|prefix| text.find(prefix))
+            .min()
+            .expect("a diagnostic after the scan");
         assert!(
-            text[..warning].ends_with(ERASE_LINE),
-            "the erase is the last thing before the warning:\n{text:?}"
+            text[..first_diagnostic].ends_with(ERASE_LINE),
+            "the erase is the last thing before diagnostics:\n{text:?}"
         );
-        assert!(text[..warning].starts_with(&format!("{ERASE_LINE}⠋ ")), "{text:?}");
-        assert!(!text[warning..].contains(ERASE_LINE), "the line was drawn after the warning");
-        assert!(!text[warning..].contains('\r'), "{text:?}");
+        assert!(text[..first_diagnostic].starts_with(&format!("{ERASE_LINE}⠋ ")), "{text:?}");
+        assert!(
+            !text[first_diagnostic..].contains(ERASE_LINE),
+            "the line was drawn after diagnostics"
+        );
+        assert!(!text[first_diagnostic..].contains('\r'), "{text:?}");
+        assert!(warning < text.rfind("perf:").expect("performance summary"));
     }
 
     /// The frames, then the erase, then the error `finish` prints: a run whose report
@@ -3747,9 +3831,9 @@ mod tests {
     }
 
     /// The same run, the same tree, and the same drawing resources, but no person at
-    /// the terminal: nothing reaches stderr, whatever `--progress` says.
+    /// the terminal: only diagnostics reach stderr, whatever `--progress` says.
     #[test]
-    fn a_non_interactive_run_writes_nothing_extra_to_stderr() {
+    fn a_non_interactive_run_draws_no_progress_frame() {
         let root = wide_tree();
         for terminal in [
             TerminalFacts::default(),
@@ -3780,9 +3864,10 @@ mod tests {
                     drawing_io(&err),
                 );
                 assert_eq!(status, 0);
-                assert!(String::from_utf8(out).expect("UTF-8").contains("Performance:"));
+                assert!(!String::from_utf8(out).expect("UTF-8").contains("perf:"));
+                assert!(err.text().lines().last().is_some_and(|line| line.starts_with("perf:")));
                 assert!(
-                    err.contents().is_empty(),
+                    !err.text().contains(ERASE_LINE),
                     "{terminal:?} --progress {mode}:\n{:?}",
                     err.text()
                 );
