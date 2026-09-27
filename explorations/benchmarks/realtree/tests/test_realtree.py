@@ -52,6 +52,20 @@ class ReferenceTreeTests(unittest.TestCase):
         )
         self.assertEqual(document["max_depth"], 3)
 
+    def test_fingerprint_keeps_directory_blocks_apart_from_file_blocks(self) -> None:
+        document = tree.fingerprint(self.root, label="fixture")
+        directories = [self.root, self.root / "nested", self.root / "nested" / "deeper"]
+        files = [path for path in self.root.rglob("*") if path.is_file()]
+
+        self.assertEqual(
+            document["sizes"]["directory_allocated_bytes"],
+            sum(tree._allocated_bytes(os.lstat(path)) for path in directories),
+        )
+        self.assertEqual(
+            document["sizes"]["allocated_bytes"],
+            sum(tree._allocated_bytes(os.lstat(path)) for path in files),
+        )
+
     def test_allocated_bytes_use_apparent_size_when_blocks_are_unavailable(self) -> None:
         metadata = SimpleNamespace(st_size=7, st_blocks=2)
         with mock.patch("benchmarks.realtree.tree.os.name", "posix"):
@@ -858,6 +872,89 @@ class HostRegimeTests(unittest.TestCase):
         self.assertEqual(busy, 50.0)
         self.assertIsNone(reason)
         sleep.assert_called_once_with(measure.HOST_CPU_BOUNDARY_INTERVAL_SECONDS)
+
+
+    def test_linux_cpu_pressure_uses_a_short_proc_stat_delta(self) -> None:
+        # user, nice, system, idle, iowait, irq, softirq, steal
+        first = (100, 0, 50, 800, 10, 0, 0, 0)
+        second = (110, 0, 60, 860, 20, 0, 0, 10)
+        with (
+            mock.patch.object(
+                measure, "_linux_cpu_ticks", side_effect=[(first, None), (second, None)]
+            ),
+            mock.patch.object(measure.time, "sleep") as sleep,
+        ):
+            busy, reason = measure._linux_cpu_busy_pct()
+
+        # 40 busy ticks (iowait and steal included) out of 100.
+        self.assertEqual(busy, 40.0)
+        self.assertIsNone(reason)
+        sleep.assert_called_once_with(measure.HOST_CPU_BOUNDARY_INTERVAL_SECONDS)
+
+    def test_linux_quiet_cell_ignores_the_benchmarks_own_load_average(self) -> None:
+        """Load average remembers the previous samples; CPU occupancy does not."""
+        regime = measure.HostRegime(name="quiet", initial={})
+        after_own_work = {"system": "Linux", "load_1m_per_cpu": 0.9, "cpu_busy_pct": 2.0}
+        busy = {**after_own_work, "cpu_busy_pct": measure.QUIET_MAX_CPU_BUSY_PCT + 0.01}
+
+        self.assertEqual(
+            measure._host_pressure_reasons(regime, after_own_work, after_own_work), []
+        )
+        reasons = measure._host_pressure_reasons(regime, after_own_work, busy)
+        self.assertEqual(len(reasons), 1)
+        self.assertIn("CPU busy exceeded", reasons[0])
+        self.assertIn("after the sample", reasons[0])
+
+    def test_linux_quiet_cell_refuses_an_unreadable_cpu_counter(self) -> None:
+        regime = measure.HostRegime(name="quiet", initial={})
+        unreadable = {"system": "Linux", "load_1m_per_cpu": 0.0, "cpu_busy_pct": None}
+
+        reasons = measure._host_pressure_reasons(regime, unreadable, unreadable)
+        self.assertEqual(len(reasons), 2)
+        self.assertTrue(all("occupancy was unavailable" in reason for reason in reasons))
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "reads /proc/stat")
+    def test_linux_cpu_ticks_parse_the_live_aggregate_line(self) -> None:
+        ticks, reason = measure._linux_cpu_ticks()
+
+        self.assertIsNone(reason)
+        self.assertEqual(len(ticks), 8)
+
+
+    def test_a_peak_rss_inherited_from_the_harness_is_withheld(self) -> None:
+        usage = SimpleNamespace(
+            ru_maxrss=58_000,
+            ru_utime=0.0,
+            ru_stime=0.0,
+            ru_majflt=0,
+            ru_minflt=0,
+            ru_inblock=0,
+            ru_oublock=0,
+            ru_nvcsw=0,
+            ru_nivcsw=0,
+        )
+        with mock.patch.object(measure.sys, "platform", "linux"):
+            censored = measure._resources_from_wait4(usage, rss_floor=60_000 * 1024)
+            measured = measure._resources_from_wait4(usage, rss_floor=40_000 * 1024)
+            unbounded = measure._resources_from_wait4(usage)
+
+        self.assertIsNone(censored["peak_rss_bytes"])
+        self.assertEqual(measured["peak_rss_bytes"], 58_000 * 1024)
+        self.assertEqual(unbounded["peak_rss_bytes"], 58_000 * 1024)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "reads /proc/self/status")
+    def test_linux_rss_floor_is_this_processs_high_water_mark(self) -> None:
+        floor = measure._inherited_rss_floor_bytes()
+
+        self.assertIsInstance(floor, int)
+        self.assertGreater(floor, 0)
+        spawned = measure._spawn(["/bin/true"], timeout_seconds=10)
+        self.assertEqual(spawned["peak_rss_floor_bytes"] >= floor, True)
+        self.assertIsNone(spawned["resources"]["peak_rss_bytes"])
+
+    def test_rss_floor_is_absent_where_exec_does_not_inherit_it(self) -> None:
+        with mock.patch.object(measure.sys, "platform", "darwin"):
+            self.assertIsNone(measure._inherited_rss_floor_bytes())
 
 
 class ProfileParsingTests(unittest.TestCase):

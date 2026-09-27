@@ -68,15 +68,19 @@ def instrument_key(argv):
     return {"summary": "aggregate", "scan-index": "index"}.get(argv[1], argv[1])
 
 
-def pressure(load_per_cpu):
-    """A Linux host-pressure snapshot in the shape `measure` records."""
-    return {"system": "Linux", "logical_cpu_count": 4, "load_1m": None,
-            "load_1m_per_cpu": load_per_cpu, "cpu_busy_pct": None,
+def pressure(cpu_busy_pct):
+    """A Linux host-pressure snapshot in the shape `measure` records.
+
+    Linux cells are judged by instantaneous CPU occupancy; the lagging load average is
+    recorded as context and deliberately set busy here so a test cannot pass on it.
+    """
+    return {"system": "Linux", "logical_cpu_count": 4, "load_1m": 3.6,
+            "load_1m_per_cpu": 0.9, "cpu_busy_pct": cpu_busy_pct,
             "power_source": None, "thermal_pressure": None, "controlled_load_alive": None}
 
 
-QUIET = pressure(0.01)
-BUSY = pressure(0.9)
+QUIET = pressure(1.0)
+BUSY = pressure(90.0)
 
 
 def pressure_sequence(*snapshots):
@@ -703,7 +707,7 @@ class HoldsEveryTrialToTheQuietBar(unittest.TestCase):
         self.assertEqual(subject["invalid_trials"], 0)
         self.sleep.assert_not_called()
 
-    def test_quiet_is_refused_when_load_cannot_be_read(self):
+    def test_quiet_is_refused_when_pressure_cannot_be_read(self):
         with self.assertRaises(floor.FloorError) as raised:
             run_subject(CONSISTENT, quiet=True, snapshots=(pressure(None),))
         self.assertIn("unavailable", str(raised.exception))
@@ -717,7 +721,7 @@ class HoldsEveryTrialToTheQuietBar(unittest.TestCase):
                                  snapshots=(*entry, *first_round, BUSY))
         # The warmup round stayed quiet; both measured rounds breached.
         self.assertEqual(subject["invalid_trials"], 2 * len(floor.DEFAULT_INSTRUMENTS))
-        self.assertTrue(any("load/core exceeded" in reason for reason in subject["invalid_reasons"]))
+        self.assertTrue(any("CPU busy exceeded" in reason for reason in subject["invalid_reasons"]))
 
     def test_an_uncontrolled_run_records_pressure_without_judging_it(self):
         subject, _ = run_subject(CONSISTENT, quiet=False, snapshots=(BUSY,))

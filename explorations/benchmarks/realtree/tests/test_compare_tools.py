@@ -414,6 +414,44 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertEqual(observed, 8_192)
         self.assertIsNone(error)
 
+    def test_dust_adapter_counts_directory_blocks_where_the_filesystem_has_them(self) -> None:
+        # ext4 gives every directory a block; dust sums it and fdu does not.
+        oracle = {
+            "counts": {"symlinks": 0},
+            "hardlinks": {"duplicate_allocated_bytes": 0},
+            "sizes": {"allocated_bytes": 8_192, "directory_allocated_bytes": 8_192},
+        }
+
+        observed, error = compare_tools._dust_semantics(b"16384B corpus\n", "", oracle)
+        self.assertEqual(observed, 16_384)
+        self.assertIsNone(error)
+
+        _observed, error = compare_tools._dust_semantics(b"8192B corpus\n", "", oracle)
+        self.assertIn("disagrees with independent oracle", error or "")
+
+    def test_a_censored_peak_rss_renders_as_a_bound(self) -> None:
+        censored = [
+            {"metrics": {"peak_rss_bytes": None}, "peak_rss_floor_bytes": 50 * 1024 * 1024},
+            {"metrics": {"peak_rss_bytes": None}, "peak_rss_floor_bytes": 60 * 1024 * 1024},
+        ]
+        mixed = [*censored, {"metrics": {"peak_rss_bytes": 70 * 1024 * 1024}}]
+
+        self.assertEqual(compare_tools._censored_peak_rss(censored), 60 * 1024 * 1024)
+        self.assertIsNone(compare_tools._censored_peak_rss(mixed))
+        self.assertEqual(
+            compare_tools._rss_cell(None, {"peak_rss_at_most_bytes": 60 * 1024 * 1024}),
+            "≤ 60.0 MiB",
+        )
+        self.assertEqual(compare_tools._rss_cell(None, {}), "—")
+        self.assertEqual(
+            compare_tools._rss_cell({"median": 3 * 1024 * 1024}, {}), "3.0 MiB"
+        )
+
+    def test_throughput_renders_a_tool_with_no_valid_sample(self) -> None:
+        tree = {"counts": {"files": 9}, "sizes": {"allocated_bytes": 4096}}
+
+        self.assertEqual(compare_tools._throughput(tree, None), ("—", "—"))
+
     def test_dust_adapter_fails_closed_on_every_invalid_output_class(self) -> None:
         oracle = {
             "counts": {"symlinks": 0},
@@ -568,6 +606,43 @@ class ToolComparisonTests(unittest.TestCase):
                 json.dumps({**base, **change}).encode()
             )
             self.assertIsNotNone(error)
+
+    def test_current_report_layout_is_read_from_provenance_and_status(self) -> None:
+        """`fdu.report/7` nests the run facts; a flat reader rejected every sample."""
+        base = {
+            "schema": "fdu.report/7",
+            "root": "/private/one",
+            "status": {"complete": True, "coverage": {"kind": "complete"}, "errors": []},
+            "provenance": {
+                "source": "cold_scan",
+                "freshness": "fresh",
+                "generated_at": "2026-01-01T00:00:01Z",
+            },
+            "reports": [{"view": "summary", "summary": {"files": 3}}],
+        }
+        later = {
+            **base,
+            "root": "/private/two",
+            "provenance": {**base["provenance"], "generated_at": "2027-01-01T00:00:01Z"},
+        }
+
+        first, first_error = compare_tools._summary_semantic_digest(json.dumps(base).encode())
+        second, second_error = compare_tools._summary_semantic_digest(json.dumps(later).encode())
+        self.assertIsNone(first_error)
+        self.assertIsNone(second_error)
+        self.assertEqual(first, second)
+
+        for key, change in (
+            ("provenance", {"source": "snapshot", "freshness": "fresh"}),
+            ("provenance", {"source": "cold_scan", "freshness": "stale"}),
+            ("status", {"complete": False, "errors": []}),
+            ("status", {"complete": True, "errors": [{"message": "unreadable"}]}),
+        ):
+            with self.subTest(key=key, change=change):
+                _digest, error = compare_tools._summary_semantic_digest(
+                    json.dumps({**base, key: change}).encode()
+                )
+                self.assertIsNotNone(error)
 
     def test_summary_oracle_checks_counts_and_both_byte_totals(self) -> None:
         oracle = {
