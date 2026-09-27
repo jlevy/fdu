@@ -48,6 +48,13 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     let denied = root.path().join("denied");
     fs::create_dir(&denied).expect("create denied directory");
     fs::write(denied.join("hidden.txt"), b"hidden").expect("write hidden file");
+    // Match the portable engine golden: an unreadable branch plus an exact 1%
+    // sibling, tiny verified entries, and a verified empty file.
+    for (name, size) in [("large", 9898), ("one-percent", 100), ("tiny", 1), ("zero", 0)] {
+        fs::write(root.path().join(name), vec![b'x'; size]).expect("write sized file");
+    }
+    fs::create_dir(root.path().join("small")).expect("create healthy directory");
+    fs::write(root.path().join("small/tiny"), b"x").expect("write small file");
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("deny reads");
 
     let run = |allow_partial: bool| {
@@ -70,7 +77,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
         .expect("run traced partial fdu");
 
     let human = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--cache", "off", "--color", "never"])
+        .args(["--cache", "off", "--color", "never", "--size", "apparent"])
         .arg(root.path())
         .output()
         .expect("run human fdu");
@@ -101,6 +108,10 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert_eq!(human.status.code(), Some(2));
     let human_stdout = String::from_utf8(human.stdout).expect("human stdout is UTF-8");
     let human_stderr = String::from_utf8(human.stderr).expect("human stderr is UTF-8");
+    assert!(
+        human_stdout.starts_with(include_str!("../../fdu-core/tests/golden/partial-tree.txt")),
+        "partial CLI report differs from the engine golden: {human_stdout}"
+    );
     assert!(!human_stdout.contains("warning:"), "diagnostic leaked to stdout: {human_stdout}");
     assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
 }

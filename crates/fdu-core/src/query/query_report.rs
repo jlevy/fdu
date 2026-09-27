@@ -1369,9 +1369,21 @@ pub(crate) fn report_in(
 
     let query = &request.query;
     let content = request.basis.content;
-    // One traversal serves every filtered view in the request, so asking for three views
-    // costs one pass rather than three.
-    let walked = query.needs_selection_walk().then(|| walk(index, &query.selection, identity));
+    // Share subtree measurements between selection predicates and partial-tree proof.
+    // Complete unfiltered metadata reports keep their retained-rollup fast path.
+    let needs_walk = query.needs_selection_walk();
+    let needs_tree_measurements = query.views.iter().any(|view| query.tree_for(*view))
+        && !query.min_share_for().admits(0, 1)
+        && (index.state().coverage != crate::Coverage::Complete
+            || index.scope().max_depth.is_some());
+    let directories = (needs_tree_measurements
+        || (needs_walk
+            && (query.selection.kinds.is_empty()
+                || query.selection.kinds.contains(&EntryKind::Dir))))
+    .then(|| query_subtrees::measure(index, &query.selection, identity));
+    // One traversal serves every filtered view in the request.
+    let walked = needs_walk.then(|| walk(index, &query.selection, identity, directories.as_ref()));
+    let tree_measurements = directories.as_ref().filter(|_| needs_tree_measurements);
     // Unfiltered metric and file views share one `FileRow` walk only when more than one
     // section consumes it. A single section keeps ownership of its one traversal, so a
     // bounded file view does not clone every path before sorting and truncating it.
@@ -1384,7 +1396,15 @@ pub(crate) fn report_in(
         .views
         .iter()
         .map(|view| {
-            build_section(*view, index, query, content, walked.as_ref(), unfiltered_rows.as_deref())
+            build_section(
+                *view,
+                index,
+                query,
+                content,
+                walked.as_ref(),
+                unfiltered_rows.as_deref(),
+                tree_measurements,
+            )
         })
         .collect();
 
@@ -1406,6 +1426,9 @@ pub(crate) fn report_in(
     }
     let ignore_rules = index.control_coverage();
     let mut notes = display_notes(query, &ignore_rules);
+    if tree_measurements.is_some_and(|values| values.values().any(|value| !value.complete)) {
+        notes.push("note: incomplete subtrees may appear below the share threshold; known sizes remain filtered".to_owned());
+    }
     if index.observes_controls() && !index.ignored_classification_complete_below(Path::new("")) {
         notes.push(
             "note: ignored subtotals are unavailable where governing rules could not be verified"
@@ -1534,7 +1557,12 @@ fn unfiltered_summary(index: &Index, id: EntryId, path: &Path) -> SummaryRow {
 ///
 /// Iterative rather than recursive: this engine is built for trees deep enough that a
 /// recursive post-order would exhaust the stack.
-fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked {
+fn walk(
+    index: &Index,
+    selection: &Selection,
+    identity: NameIdentity,
+    directories: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
+) -> Walked {
     let observed = index.observes_controls();
     let mut walked = Walked {
         observed,
@@ -1554,10 +1582,6 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
         "a selection by ignored state over an unobserving index is refused before the walk"
     );
 
-    // Directory predicates see subtree values even in mixed listings. A file-only
-    // selection needs no directory measurements and retains its existing query cost.
-    let directories = (selection.kinds.is_empty() || selection.kinds.contains(&EntryKind::Dir))
-        .then(|| query_subtrees::measure(index, selection, identity));
     // (id, path, post-order, covered by a selected ancestor)
     let mut stack = vec![(EntryId::ROOT, PathBuf::new(), false, false)];
     while let Some((id, path, expanded, covered)) = stack.pop() {
@@ -1605,7 +1629,7 @@ fn walk(index: &Index, selection: &Selection, identity: NameIdentity) -> Walked 
             let classification_admitted =
                 classification.is_some() || selection.ignored == IgnoredEntries::Include;
             let mut measured = *attrs;
-            let subtree = directories.as_ref().and_then(|values| values.get(&child)).copied();
+            let subtree = directories.and_then(|values| values.get(&child)).copied();
             if let Some(subtree) = subtree {
                 measured.size = subtree.bytes;
                 measured.allocated = subtree.allocated;
@@ -1763,9 +1787,10 @@ fn build_section(
     content: AnalysisSet,
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
+    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
 ) -> Section {
     if query.tree_for(view) {
-        let (root, omissions) = tree_node(index, query, content, walked);
+        let (root, omissions) = tree_node(index, query, content, walked, tree_measurements);
         let limits = TreeDisplayLimits {
             depth: query.depth_for(view),
             min_share: query.min_share_for(),
@@ -2563,6 +2588,7 @@ fn tree_node(
     query: &Query,
     content: AnalysisSet,
     walked: Option<&Walked>,
+    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
 ) -> (Option<TreeNode>, Vec<TreeOmission>) {
     let unfiltered = (walked.is_none() && matches!(query.selection.sort, Some(SortKey::Metric(_))))
         .then(|| every_entry(index));
@@ -2604,7 +2630,7 @@ fn tree_node(
         };
         return (None, vec![omitted]);
     }
-    expand(index, query, walked, &metric_values, EntryId::ROOT, &mut root, 0);
+    expand(index, query, walked, &metric_values, tree_measurements, &mut root);
     if let Some(cap) = query.limit_for(ViewSpec::Tree).limit() {
         root = cap_tree_rows(root, cap, index.state().coverage == crate::Coverage::Complete);
     }
@@ -2688,9 +2714,8 @@ fn expand(
     query: &Query,
     walked: Option<&Walked>,
     metric_values: &BTreeMap<PathBuf, u64>,
-    root_id: EntryId,
+    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
     node: &mut TreeNode,
-    start_depth: usize,
 ) {
     /// One node awaiting its children.
     struct Pending {
@@ -2717,8 +2742,8 @@ fn expand(
             omissions: Vec::new(),
             truncated: false,
         },
-        id: root_id,
-        depth: start_depth,
+        id: EntryId::ROOT,
+        depth: 0,
         parent: None,
     }];
 
@@ -2740,13 +2765,19 @@ fn expand(
                 SizeMetric::Apparent => row.bytes,
                 SizeMetric::Allocated => row.allocated,
             };
-            let eligible = !complete || threshold.admits(value, grand);
+            // A complete child below a partial root's observed total is also below
+            // the true (at least as large) total. Only an incomplete child's own
+            // unknown contents prevent that proof; unrelated scan errors do not.
+            let child_complete = row.kind == EntryKind::File
+                || tree_measurements
+                    .is_none_or(|values| values.get(child).is_some_and(|subtree| subtree.complete));
+            let eligible = !child_complete || threshold.admits(value, grand);
             if !eligible {
                 below_share.push((row.clone(), *child));
             }
             eligible
         });
-        record_omission(&mut built[cursor].node, TreeOmissionReason::Share, &below_share, complete);
+        record_omission(&mut built[cursor].node, TreeOmissionReason::Share, &below_share, true);
         if !query.depth_for(ViewSpec::Tree).admits(depth) {
             record_omission(&mut built[cursor].node, TreeOmissionReason::Depth, &rows, complete);
             cursor += 1;
@@ -3906,6 +3937,63 @@ mod tests {
         );
         assert_eq!(root.omissions[0].reason, TreeOmissionReason::Share);
         assert_eq!(root.omissions[0].bytes, Some(9));
+    }
+
+    /// A failed listing must not turn off the default threshold for verified siblings.
+    /// The whole rendered report is golden; exact arithmetic and unknown retention stay
+    /// visible together rather than passing as isolated bounds/status assertions.
+    #[test]
+    fn partial_tree_keeps_default_share_pruning_golden() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("large", EntryKind::File, attrs(9898, 0)),
+            upsert("one-percent", EntryKind::File, attrs(100, 0)),
+            upsert("tiny", EntryKind::File, attrs(1, 0)),
+            upsert("zero", EntryKind::File, attrs(0, 0)),
+            upsert("small", EntryKind::Dir, attrs(0, 0)),
+            upsert("small/tiny", EntryKind::File, attrs(1, 0)),
+            upsert("denied", EntryKind::Dir, attrs(0, 0)),
+        ]));
+        index.set_initial_scan_freshness(&[crate::Error::io(
+            Path::new("/root").join("denied"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "failed listing"),
+        )]);
+        let selection = Selection { size: SizeMetric::Apparent, ..Selection::default() };
+        let report = run(&index, &query(&[ViewSpec::Tree], selection.clone()));
+        assert!(!report.status.complete);
+        assert_eq!(
+            crate::report_format::render(&report, crate::report_format::Format::Text, false)
+                .expect("render"),
+            include_str!("../../tests/golden/partial-tree.txt"),
+        );
+        // A filtered partial tree uses the selected total (102 B), not the whole
+        // observed root (10,000 B), while reusing selection's subtree measurement.
+        let filtered = run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection {
+                    exclude: vec![pattern("large")],
+                    min_share: Some(ShareThreshold::parse("50%").expect("share")),
+                    ..selection.clone()
+                },
+            ),
+        );
+        let filtered_root = tree_of(&filtered);
+        assert_eq!(filtered_root.children.len(), 2);
+        assert_eq!(filtered_root.children[0].name, "one-percent");
+        assert_eq!(filtered_root.children[1].name, "denied");
+        let unbounded = run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection {
+                    min_share: Some(ShareThreshold::parse("0%").expect("share")),
+                    ..selection
+                },
+            ),
+        );
+        assert_eq!(tree_of(&unbounded).children.len(), 6, "zero share lifts only share pruning");
     }
 
     #[test]

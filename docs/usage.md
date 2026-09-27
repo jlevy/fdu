@@ -103,6 +103,11 @@ an alphabetic inventory.
 Both default to `all`, except the 20-row largest/recent presets.
 `--depth all` expands all levels and `--min-share 0%` admits all sizes.
 Display bounds compose and leave aggregate measurements unchanged.
+On a partial scan, verified small files and complete subtrees still obey the share
+threshold against the observed root total.
+Incomplete subtrees remain visible because their unseen contents could be significant; a
+note explains this exception.
+An unrelated scan error does not disable pruning.
 
 Shares compare exact values against the selected root total, including threshold
 equality. A child at 1% of its parent but below 1% of the root is hidden by the default.

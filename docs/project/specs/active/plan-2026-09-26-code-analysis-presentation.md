@@ -283,6 +283,13 @@ Complete nonnegative additive sizes bound the 1%/depth-5 default to at most 501 
 rows including the root.
 Unknown/partial measures do not satisfy that proof: preserve potentially significant
 branches within explicit bounds and report incompleteness.
+Apply that exception per subtree: a failed listing must not disable share pruning for
+verified files or complete sibling subtrees.
+Use the observed selected-root total as the lower-bound denominator and retain
+incomplete branches whose unseen contents could cross the threshold.
+A shared engine/command-line golden covers this interaction, alongside a portable
+bounded-discovery tryscript case (fdu-k46n).
+
 A zero root has no share denominator; show the root and explain it, with `0%` available
 for a structural listing.
 

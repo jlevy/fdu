@@ -59,6 +59,33 @@ Performance: walked 16 files / 7.6 KiB; ignore 0 files / 0 rules; content read 0
 ? 0
 ```
 
+## Unknown Branches Do Not Disable Filtering for Known Sizes
+
+A scan-depth boundary gives a portable unknown subtree without depending on permission
+bits.
+Its unseen contents might be large, so the branch stays visible, while the verified
+one-byte sibling is hidden.
+The partial-error counterpart uses the complete `partial-tree.txt` engine golden through
+the real CLI permission test; both guard the same default threshold rather than testing
+status and limits separately.
+
+```console
+$ node -e "const fs=require('node:fs'); fs.mkdirSync('shallow-project/pending',{recursive:true}); fs.writeFileSync('shallow-project/large','x'.repeat(10000)); fs.writeFileSync('shallow-project/tiny','x'); fs.writeFileSync('shallow-project/pending/hidden','x'.repeat(20000));"
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --scan-depth 1 shallow-project
+Tree scope: at least 1% of selected root through depth 5
+   9.7 KiB  ██████████   100%  . 2 files
+   9.7 KiB  ██████████   100%    large
+       0 B  ░░░░░░░░░░     0%    pending 0 files
+  … 1 entry omitted by share (1 B); --min-share=0% to show
+note: incomplete subtrees may appear below the share threshold; known sizes remain filtered
+Performance: walked 2 files / 9.7 KiB; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

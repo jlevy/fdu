@@ -357,9 +357,11 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
 ## Scan Depth Is an Explicit Complete Scope
 
 The report is complete for the scope it was asked for, and says so at the top.
-The directories retained at the depth limit were never listed, so each of their rows
-says `complete: false`: their sizes and counts are lower bounds and their age is null,
-where a lower-bound maximum would have read as an old directory.
+The directories retained at the depth limit were never listed.
+Keep these unknown branches despite their zero observed sizes; their unseen contents
+could exceed the share threshold.
+Their newest modification time is null because a lower-bound maximum cannot establish an
+age.
 
 ```console
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
@@ -421,10 +423,8 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
         "dirs": 3,
         "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
         "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "omissions": [
-          {"reason": "share", "entries": 3, "bytes": 0, "allocated": 0}
-        ],
+        "truncated": false,
+        "omissions": [],
         "children": [
           {
             "name": "README.md",
@@ -464,6 +464,48 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "dirs": 0,
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": [MTIME_NS],
+            "truncated": false,
+            "omissions": [],
+            "children": []
+          },
+          {
+            "name": "dist",
+            "path": "dist",
+            "kind": "dir",
+            "bytes": 0,
+            "allocated": 0,
+            "files": 0,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": null,
+            "truncated": false,
+            "omissions": [],
+            "children": []
+          },
+          {
+            "name": "docs",
+            "path": "docs",
+            "kind": "dir",
+            "bytes": 0,
+            "allocated": 0,
+            "files": 0,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": null,
+            "truncated": false,
+            "omissions": [],
+            "children": []
+          },
+          {
+            "name": "src",
+            "path": "src",
+            "kind": "dir",
+            "bytes": 0,
+            "allocated": 0,
+            "files": 0,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": null,
             "truncated": false,
             "omissions": [],
             "children": []
