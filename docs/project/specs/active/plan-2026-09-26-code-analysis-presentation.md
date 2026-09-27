@@ -4,7 +4,7 @@
 
 **Author:** Codex
 
-**Status:** In Progress
+**Status:** Complete
 
 **Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`.
 
@@ -434,7 +434,7 @@ cleanup.
 
 ### Phase 3: Integrated Evidence and Bounded Follow-Ups
 
-- [ ] Run the acceptance matrix and release-quality validation (`fdu-7jtp`), including
+- [x] Run the acceptance matrix and release-quality validation (`fdu-7jtp`), including
   package installation and cross-platform cache tests.
 - [x] Record paired cold/warm costs and work counters on mixed repositories, long-line
   files, generated sources, and trees dominated by ignored content.
@@ -471,7 +471,7 @@ Test counts and raw coverage percentages are diagnostics, not completion targets
   Reuse authoritative fixtures and remove redundant setup or assertions.
   Keep focused tests for lexer chunk boundaries, exact arithmetic, allocations,
   concurrency, and failure injection where a golden would lose coverage or precision.
-- [ ] Verify the revised suite (`fdu-cdp6`). Review complete golden diffs and preserve
+- [x] Verify the revised suite (`fdu-cdp6`). Review complete golden diffs and preserve
   narrow stable-field patterns, exit codes, stderr, side effects, and schema coverage.
   Demonstrate that representative critical guards reject deliberately broken behavior.
   Record before/after test-code and fixture size and observed runtime, with the tested

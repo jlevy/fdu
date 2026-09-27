@@ -25,7 +25,7 @@ the integrated behavior and performance findings.
 
 ## Current Footprint and Runtime Evidence
 
-Against base revision `4016fd99`, nine tryscript files grew from 4,876 to 5,179 lines
+Against base revision `4016fd99`, nine tryscript files grew from 4,876 to 5,209 lines
 and now hold 183 command blocks.
 The 62 tracked fixture files remain at 493 lines and 12,626 bytes; four golden helpers
 remain at 536 lines.
@@ -38,9 +38,16 @@ The test-source inventory uses the same tracked files at base and now:
 | `tests/path_independence/*.py` | 7 | 2,532 | 2,573 |
 
 Correctness scripts remain at 729 lines.
-Rust core and Python-binding test sources currently contain 962 `#[test]` annotations.
+The 54 inline Rust test modules grew from 34,010 to 35,107 lines (+1,097): core 31,087
+to 32,161, Python binding 167 unchanged, and CLI 2,756 to 2,779. This counts top-level
+modules under `crates/{fdu-core,fdu-py,fdu}/src` from their `#[cfg(...test...)]`
+attribute through the module’s closing brace, including comments and fixture literals.
+Of those modules, 51 end at EOF; the three others have separately verified boundaries.
+Isolated test-only functions/fields and dedicated support code outside those modules are
+excluded. The count includes the installation-guide tests brought in from main.
+Rust core and Python-binding test sources contain 962 `#[test]` annotations.
 These are inventory counts, not a coverage score.
-Inline Rust test code and generated evidence are outside the listed line totals.
+Generated evidence is outside the listed test-code line totals.
 The same tracked file paths and newline count were used at base and at this working-tree
 snapshot. The separate opened-root golden corpus has six complete sessions and 185
 records at both revisions.
@@ -50,11 +57,13 @@ The exact session test and corpus lint pass.
 This trace data is larger than the nine CLI session files and must be counted even
 though its runner is one Rust test.
 
-On bare-metal macOS 26.5.2/arm64 with external APFS scratch, the final local gate
-recorded 886 core tests in 27.07 seconds, six opened-root session tests in 27.22
-seconds, and 183 shared golden commands in 6.08 seconds.
+On bare-metal macOS 26.5.2/arm64 with external APFS scratch, the integrated local gate
+recorded 886 core tests in 25.93 seconds, six parallel-equivalence tests in 26.07
+seconds, and 183 shared golden commands in 6.05 seconds.
+The six opened-root golden sessions are exercised by one test within the core suite;
+they do not have a separately measured tier time.
 The two allocation guards passed in 0.04 seconds.
-Python package validation passed all 69 tests in 0.74 seconds after a fresh
+Python package validation passed all 69 tests in 0.44 seconds after a fresh
 native-extension build.
 These tier times exclude compilation and setup.
 
@@ -63,7 +72,15 @@ seconds (147.750 seconds for the make target): 12,674 matching answers, 3,322 ex
 refusals, and 791 expected stale-cache outcomes, with no unregistered differences.
 Its installed-wheel routes cover `report`, `open`, and `scan`. Linux CI recorded the
 shared-corpus parity artifact, and its complete diff was reviewed.
-The local handoff gate and the CI rerun remain pending.
+All 19 jobs in
+[CI run 36291040472](https://github.com/jlevy/fdu/actions/runs/36291040472) pass,
+including native Linux/macOS/Windows tests and Python 3.12/3.14 wheels on all three
+platforms. The complete local `make check` passed in 870.17 seconds (14 minutes 30
+seconds), including builds, package installation, and all required tiers.
+Its 2,267-case subset matrix passed in 35.216 seconds; local parity matched all 24
+recorded, classified deviations.
+The final gate used the integrated source after the stack incorporated the merged
+installation documentation.
 The full matrix overlapped the early gate, so these are observed runtimes under shared
 host load, not a quiet-host benchmark or evidence of a runtime reduction.
 
@@ -90,14 +107,13 @@ host load, not a quiet-host benchmark or evidence of a runtime reduction.
    `fdu.cache_directory()` directly from the core cache destination policy.
    A focused Python test covers the public API; two shared lifecycle goldens call
    all-cache status and clear with a nonexistent scan root.
-   The installed-wheel replay is part of the final gate, so the parity verdict remains
-   pending until that run completes.
+   The installed-wheel replay passes in the final local gate and Linux CI.
 
 4. **Full golden observability: retained.** `check-golden-observability.mjs` rejects
    product-output extraction, `check-golden-invocations.mjs` pins the binary, and the
    portability check rejects local literals.
    The corpus uses one source for CLI and Python replay.
-   Keep these guards and review full diffs; do not shorten the 5,179 lines by replacing
+   Keep these guards and review full diffs; do not shorten the 5,209 lines by replacing
    complete responses with `jq` or broad wildcards.
 
 5. **Costly independent proofs: retained.** The cache fault injections, allocation
@@ -149,11 +165,30 @@ host load, not a quiet-host benchmark or evidence of a runtime reduction.
     The same smoke case checks the visible child names, truncation, and typed depth
     reason; its installed-wheel replay passes locally.
 
-The final proof should record complete gate wall times under one build state, verify
-installed-wheel parity, and cite the existing cache fault-injection guards that reject
-broken serving behavior.
-Linux remains the authority for parity recordings; native watch remains
-platform-dependent evidence.
+## Sensitivity and Remaining Limits
+
+The
+[correctness evidence](../research/evidence/code-analysis-correctness-2026-09-26.json)
+records two deliberately broken cache variants: disabling writes fails all 23 serving
+checks as missing snapshots, and falsely serving partial snapshots fails all 23 refusal
+checks. The six parity-class tests also reject changed answers disguised as legitimate
+surface differences.
+The invocation, observability, and portability guards pass, and complete golden diffs
+were reviewed rather than blindly regenerated.
+
+The final gate uses the installed wheel for parity and the path-independence subset.
+The full matrix additionally covers its configured request/history/mutation combinations
+on this host; it does not establish coverage of every possible filesystem or language
+construct. Linux owns the parity recording, while native watch behavior has separate
+Linux, macOS, and Windows CI evidence.
+The macOS correctness fixture could not exercise device nodes or non-UTF-8 filenames;
+those omissions are explicit in its evidence artifact.
+
+The review added public cases and repaired harness defects without creating another
+harness, duplicating the Python golden corpus, weakening expected output, or deleting an
+independent invariant.
+Necessary test growth is recorded above; no coverage percentage or runtime improvement
+is claimed.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

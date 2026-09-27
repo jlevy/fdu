@@ -7,7 +7,7 @@ Review of the uncommitted implementation against research-plan revision
 Python bindings and value models, shared test harnesses, and documentation.
 The review followed the tbd precommit and code-review shortcuts.
 
-**Verdict: implementation findings addressed; final integration checks pending.** The
+**Verdict: implementation findings addressed; integration validation passed.** The
 findings below were discovered and corrected during review, before release.
 The [testing architecture review](review-2026-09-26-code-analysis-testing.md) records
 which evidence each test layer owns and the remaining verification work.
@@ -127,13 +127,23 @@ from the previous alpha layout is promised.
   Cross-compilation and CI provide separate evidence.
 - The Python parity artifact must be recorded on Linux; it is not regenerated locally.
 
+## Verification Results
+
+The complete local `make check` passed in 870.17 seconds on the integrated revision.
+Apple and Windows cross-lint passed; all 19 jobs in
+[CI run 36291040472](https://github.com/jlevy/fdu/actions/runs/36291040472) passed.
+The reviewed Linux parity artifact matches the local replay, and the full CLI/Python
+path-independence matrix passed 16,787 cases without unregistered differences.
+[PR #133](https://github.com/jlevy/fdu/pull/133) contains the implementation above the
+research-only PR #130. No release or tag was created.
+
 ## Verification Checklist
 
 - [x] Review implementation and fix actionable findings.
 - [x] Add the testing-review phase and dependency-linked beads.
-- [ ] Complete the final local handoff gate and platform checks.
-- [ ] Review Linux-recorded parity evidence and finish CI.
-- [ ] Update plan completion, commit, publish the implementation PR, and sync beads.
+- [x] Complete the final local handoff gate and platform checks.
+- [x] Review Linux-recorded parity evidence and finish CI.
+- [x] Update plan completion, commit, publish the implementation PR, and sync beads.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
