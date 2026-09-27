@@ -40,6 +40,7 @@ engine, query, and command-line audits.
 | T3 | Medium | Synthetic aggregates beyond `u64` capacity can wrap or panic | Open boundary defect, `fdu-sqyk` |
 | T4 | Medium | Nested-only omissions emitted a note referring to an absent remainder | Note now requires an actual remainder; bounds and tips remain |
 | T5 | Low | Floating-point conversion could label an extreme value below 1% as 1% | Less-than threshold now uses exact integer arithmetic |
+| T6 | Medium | Deep-render test pruned zero-byte descendants before exercising them | Explicit unlimited selection and independent 1,025-node assertion; macOS and Windows pass |
 
 The chosen design keeps one engine remainder model for every format.
 It changes the summary’s meaning rather than subtracting overlapping directory rows in
@@ -183,10 +184,31 @@ Library-only and minimum-Rust checks, source-package installation, concurrency, 
 path-independence cases, 72 release tests, three terminal tests, audits, and
 performance-evidence checks passed.
 The exact-percentage boundary regression passed.
-The Linux-recorded parity artifact still needs CI refresh for schema 10 and the changed
-accounting note; it has not been regenerated locally.
-The new candidate is not installed yet.
-CI and installation evidence will follow in the PR review record.
+The Linux-recorded parity artifact was adopted from
+[CI run 36359389050](https://github.com/jlevy/fdu/actions/runs/36359389050), commit
+`f03eeb551a861a049ece821bfabc8766b7eca8d4`. Its SHA-256 is
+`40dac093e2f231e5f5d3b718bdbd3e101978a651ccc37a0f44b4282bd3894747`. The reviewed
+differences cover schema 10, the accounting note, root-only remainder values, and skill
+wording; no new deviation class was introduced.
+
+The final rebuilt and installed candidate `0.1.0-dev+g0d5f9a10a` passed an independent
+77-check audit across 19 invocations, covering both byte measures, full expansion, bound
+composition, ignore controls, JSON and YAML facts, ANSI colors, and quiet diagnostics.
+The installed skill matches its bundled source byte-for-byte.
+Final matrix status is recorded in the
+[PR review](https://github.com/jlevy/fdu/pull/136).
+
+### Deep-Tree Validation Gap
+
+One Windows CI run exhausted the deep-render test thread’s 64 KiB stack; a subsequent
+run of the same test body passed.
+The cause of that intermittent result is not yet established.
+Inspection found a separate definite gap: its zero-byte fixture used the default 1%
+filter, so it pruned the descendants before rendering.
+The corrected test explicitly removes every display bound, independently asserts all
+1,025 nodes and no omissions, and marks query, render, stream, and drop phases for
+failure diagnosis. It passes on macOS with the original 64 KiB stack.
+Windows validation remains pending under `fdu-4793`.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
