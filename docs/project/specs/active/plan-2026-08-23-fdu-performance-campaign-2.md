@@ -268,9 +268,9 @@ exp-106 (H107 rejected on metabrowser), exp-107 (H108 confirmed: second `fdu PAT
 `cold scan`), then H112 timers kept, H115 accepted (−9.69% cache-hit wall), H120
 accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, H116/H118/H119 rejected or
 screened, and H124 rejected (exp-121). H152 then added the exact multi-view report
-oracle, and H153 accepted a cross-platform one-pass metric aggregation on the current
-137,085-entry metabrowser tree: `content-query` wall −47.01% [−47.49%, −45.23%],
-component −59.94%, with RSS and minor faults non-inferior.
+oracle, and H153 accepted a platform-neutral one-pass metric aggregation, measured on
+Darwin, on the current 137,085-entry metabrowser tree: `content-query` wall −47.01%
+[−47.49%, −45.23%], component −59.94%, with RSS and minor faults non-inferior.
 Linux magnitude remains unmeasured.
 The live next-up list, host-regime note, and subject sizes are in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).

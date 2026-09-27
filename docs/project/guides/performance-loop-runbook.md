@@ -51,7 +51,11 @@ component fell 59.94% over 12 uncontrolled pairs.
 Peak RSS and minor faults were non-inferior.
 The kept code is platform-neutral; Linux transfer is expected but unmeasured.
 H152 / exp-158 is the exact report oracle and current-path determination that preceded
-it.
+it. The probe performs one fresh scan and line-analysis setup, then constructs four
+unfiltered metric views 100 times.
+Bare `--analyze all` defaults to one Families view and does not exercise this
+optimization; `--analyze all --view full` can use it during report construction, but its
+end-to-end effect has not been measured.
 
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
 `os_cache: warm-steady`, **uncontrolled**.

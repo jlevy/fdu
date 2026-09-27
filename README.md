@@ -3,12 +3,13 @@
 **Fast disk usage skill, `du` replacement, and file roll-up engine for Python and
 Rust.**
 
-On our million-entry macOS benchmark, fdu delivers **over 8× the throughput of standard
-`du`**, **about 60% more than dust**, a Rust `du` replacement, and **roughly 10% more
-than [dumac](https://github.com/healeycodes/dumac#readme)**, previously the fastest disk
-usage roll-up tool we knew of for macOS. Unlike dumac’s size total, fdu builds a
-reusable index with counts, sizes, recency, and file-type tallies for every directory.
-See [Speed](#speed) for the paired measurements and limits.
+On our million-entry macOS benchmark, fdu delivered **over 8× the throughput of standard
+`du`**, **about 60% more than dust**, and **roughly 10% more than
+[dumac](https://github.com/healeycodes/dumac#readme)** while building a reusable index
+with counts, sizes, recency, and file-type tallies for every directory.
+These paired results used warm filesystem caches under background load, and the tools
+return different amounts of information.
+See [Speed](#speed) for the measurements and limits.
 
 Use fdu to find what takes up space, locate old build directories, or summarize a tree
 without writing a filesystem walker.
@@ -298,6 +299,22 @@ means thousands and GB is decimal.
 See the
 [full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
 for methodology, memory use, confidence intervals, and exact results.
+
+### Multi-View Reports
+
+Report construction has a separate result.
+On a 137,085-entry macOS tree, a loop that constructed the unfiltered Types, Families,
+Languages, and Documents views 100 times from an already line-analyzed index took 12.0
+seconds, down from 29.9 seconds—about **2.5× faster**, or roughly 120 ms instead of 299
+ms per report.
+
+This is not a scan or end-to-end full-analysis speedup.
+It applies only to unfiltered requests with multiple metric views; the default
+disk-usage command and single-view analysis are unchanged.
+The implementation is platform-neutral Rust, but its Linux magnitude has not yet been
+measured. See
+[the experiment](docs/project/experiments/exp-159-share-content-metric-resolution-across-views.md)
+for the paired interval, host regime, and resource qualification.
 
 Linux offers the same reports, live updates, and Python and Rust APIs.
 A [fresh Linux comparison](explorations/benchmarks/README.md#linux-comparison-rerun) is

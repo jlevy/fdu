@@ -15,10 +15,12 @@ Absolute timings, every experiment’s paired effect with its interval, and why 
 must not be divided into each other:
 [the performance evidence report](report-2026-08-20-fdu-performance-evidence.md).
 
-## Where it stands
+## Latest Comparison Against the Original Baseline
 
-Every accepted change together, measured against the pre-work baseline in one
-interleaved run of 12 paired trials (exp-032).
+exp-032 measured the changes present at that checkpoint against the pre-work baseline in
+one interleaved run of 12 paired trials.
+Later experiments below are separate incremental comparisons; this table does not
+measure the current engine.
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
@@ -5348,9 +5350,9 @@ and tests guard it.
 266 insertions and 130 deletions in query_report.rs, including focused tests; no
 dependencies, unsafe code, public API, or persistent identity
 
-**Accepted:** one-pass shared metric resolution cut wall 47.01% [45.23%, 47.49%] with
-exact report identity and non-inferior RSS/minor faults; keep the platform-neutral
-algorithmic cut.
+**Accepted:** one-pass shared metric resolution cut the 100-report probe wall 47.01%
+[45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the
+platform-neutral algorithmic cut.
 
 Full record:
 [`exp-159-share-content-metric-resolution-across-views.md`](../experiments/exp-159-share-content-metric-resolution-across-views.md)

@@ -184,7 +184,7 @@ experiment:
     primary_job: content-query
     primary_metric: wall_ns
     change_pct: -47.005
-    reason: "one-pass shared metric resolution cut wall 47.01% [45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the platform-neutral algorithmic cut"
+    reason: "one-pass shared metric resolution cut the 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the platform-neutral algorithmic cut"
     commit: d0902cfd
     kept: candidate
 ---
@@ -246,13 +246,19 @@ Subject: live `metabrowser-clone` at commit `091d4043`, 137,085 entries, 127,104
 generated and installed state and is not reconstructible.
 The harness verified its exact fingerprint before and after the run.
 
-Job: `content-query`, which constructs Types, Families, Languages, and Documents 100
-times after scan and content analysis setup.
+Job: `content-query`, which performs one fresh scan and line-analysis setup, then
+constructs the unfiltered Types, Families, Languages, and Documents views 100 times.
+It does not run every analyzer.
 Three warmups, 12 timed pairs, interleaved, warm-steady cache.
 Every sample ran the exact report oracle.
 The cell was predeclared `uncontrolled`; instantaneous CPU busy was 17.58% initially and
 17.11% finally, thermal pressure was normal, and no sample was invalid.
 No RAM disk.
+
+Component time covers the 100-report construction loop.
+Whole-probe wall also includes the one-time scan and line-analysis setup, correctness
+work outside the component timer, and teardown.
+Neither number is a single end-to-end `--analyze all` measurement.
 
 | Arm | Wall median | Component | User CPU | Peak RSS |
 | --- | ---: | ---: | ---: | ---: |
