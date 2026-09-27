@@ -64,7 +64,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 71 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 73 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
@@ -236,6 +236,8 @@ dead end.
 | 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
 | 156 | [Progress indicator without a handle against main](#exp156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
 | 157 | [Progress handle attached against no handle](#exp157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
+| 158 | [Current content-query oracle and leftover](#exp158--current-contentquery-oracle-and-leftover) | H152 | `content-query` | +1.0% | ✅ accepted |
+| 159 | [Share content metric resolution across views](#exp159--share-content-metric-resolution-across-views) | H153 | `content-query` | -47.0% | ✅ accepted |
 
 ## The experiments
 
@@ -5283,6 +5285,76 @@ uncontrolled cell at 100% to 72% busy, user CPU -0.63%; needs a quiet re-run.
 Full record:
 [`exp-157-progress-handle-attached-against-no-handle.md`](../experiments/exp-157-progress-handle-attached-against-no-handle.md)
 
+### exp-158 — Current content-query oracle and leftover
+
+✅ accepted · 2026-09-27 · H152 · commit `1ba06b19`
+
+Control: release probe at 1ba06b19
+
+Candidate: byte-identical release probe at 1ba06b19
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 37903.9 | 38337.2 | +1.02% (regression) | [+0.05%, +15.62%] |
+| component (ms) | 29518.4 | 29615.7 | +1.03% (regression) | [+0.03%, +15.54%] |
+| cpu (ms) | 56169.6 | 56371.9 | +1.16% (n.s.) | [-5.41%, +3.20%] |
+| user (ms) | 34979.5 | 35102.9 | +0.59% (regression) | [+0.03%, +1.06%] |
+| system (ms) | 21123.9 | 20036.4 | -3.00% (n.s.) | [-14.65%, +9.55%] |
+| peak rss (MiB) | 1257.4 | 1256.2 | -0.07% (n.s.) | [-0.50%, +0.26%] |
+
+Wall-time tail: control p95 is 1.07x its median and candidate 1.57x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 80 lines; no new dependencies; new failure mode: the outside-timer
+differential oracle depends on independent single-view report construction and adds wall
+work outside the component timer.
+
+78 insertions and 2 deletions in perf_probe.rs, including a mutation test; no engine
+behavior, dependency, unsafe code, or public API change
+
+**Accepted:** same-binary attachment +1.02% [0.05%, 15.62%] is uncontrolled host noise;
+exact report oracle landed and current code inspection named four repeated per-file
+metric resolutions for H153.
+
+Full record:
+[`exp-158-current-content-query-oracle-and-leftover.md`](../experiments/exp-158-current-content-query-oracle-and-leftover.md)
+
+### exp-159 — Share content metric resolution across views
+
+✅ accepted · 2026-09-27 · H153 · commit `d0902cfd`
+
+Control: release probe at 1ba06b19 with independent metric resolution
+
+Candidate: release probe at d0902cfd with one-pass shared metric resolution
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 38629.3 | 20636.4 | -47.01% | [-47.49%, -45.23%] |
+| component (ms) | 29908.0 | 12009.1 | -59.94% | [-60.80%, -58.59%] |
+| cpu (ms) | 53785.7 | 36263.3 | -32.12% | [-33.60%, -30.71%] |
+| user (ms) | 34902.1 | 17199.9 | -50.75% | [-51.10%, -50.45%] |
+| system (ms) | 18964.8 | 19134.3 | +2.37% (n.s.) | [-1.74%, +9.26%] |
+| peak rss (MiB) | 1259.4 | 1257.0 | -0.17% (n.s.) | [-0.54%, +0.18%] |
+
+Cost to carry: 396 lines; no new dependencies; new failure mode: multi-view metric
+summaries could be returned out of request order; the combined-versus-independent oracle
+and tests guard it.
+
+266 insertions and 130 deletions in query_report.rs, including focused tests; no
+dependencies, unsafe code, public API, or persistent identity
+
+**Accepted:** one-pass shared metric resolution cut wall 47.01% [45.23%, 47.49%] with
+exact report identity and non-inferior RSS/minor faults; keep the platform-neutral
+algorithmic cut.
+
+Full record:
+[`exp-159-share-content-metric-resolution-across-views.md`](../experiments/exp-159-share-content-metric-resolution-across-views.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5534,6 +5606,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
+
+### metabrowser-clone (137,085 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
+| 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ✅ accepted |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

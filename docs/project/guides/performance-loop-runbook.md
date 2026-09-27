@@ -24,12 +24,14 @@ serving, watch, `.gitignore` default-on, and a content sidecar.
 Campaign 1 and campaign 2 remain the history; this standing is a registry and
 measurement layer on top of them, not a rewrite of H86.
 
-This standing was measured on `perf/campaign-next-2026-09-19`, stacked on
+The historical Darwin stack was measured on `perf/campaign-next-2026-09-19`, stacked on
 [#91](https://github.com/jlevy/fdu/pull/91) (`perf/campaign-quiet-2026-09-18` at
 `e667b739`, which holds H115, H120, and the R1–R2 / S1–S3 review fixes).
 Both merged to `main` on 2026-09-20 (`6e3d2937` / `a290aedc`) and both branches were
 deleted, so a new Darwin round starts from `main`, not from either of them.
 Never force-push: the committed evidence cites SHAs.
+The 2026-09-27 H152–H153 round started from `origin/main` at `4c4917f4`; its kept engine
+increment is `d0902cfd`.
 
 ### Standing Best and Regime
 
@@ -40,6 +42,16 @@ accept (−13.11%). **H125 / exp-124** remains the restore-count completeness ac
 (−8.03%). **H115 / exp-112** remains the restore-rebuild accept (−9.69%). **H120 /
 exp-117** is the standing content-hit RSS best before H129 (peak RSS −10.13%; streaming
 restore kept); H129 also moved peak RSS −11.83% on its own pair.
+
+**H153 / exp-159** is the latest `content-query` increment.
+One streaming pass now resolves each file’s content record and current path
+classification for every requested unfiltered metric view.
+On the current 137,085-entry `metabrowser-clone`, wall fell 47.01% [45.23%, 47.49%] and
+component fell 59.94% over 12 uncontrolled pairs.
+Peak RSS and minor faults were non-inferior.
+The kept code is platform-neutral; Linux transfer is expected but unmeasured.
+H152 / exp-158 is the exact report oracle and current-path determination that preceded
+it.
 
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
 `os_cache: warm-steady`, **uncontrolled**.
@@ -440,6 +452,24 @@ Control leftover HEAD probe; candidate H138. Quiet this tick refused at 93.2%. P
 **uncontrolled**. Initial busy 69.09%; final 70.06%. Wall −18.76% [−22.86%, −13.69%].
 Component −24.61% [−29.82%, −20.56%]. Engine kept (`a5c98d59`).
 
+**exp-158 / H152** adds an outside-timer exact `content-query` report oracle and records
+the current baseline.
+The byte-identical attachment measured ~29.5–29.6 s component for 100 four-view reports
+(~295 ms/report); its +1.02% [0.05%, 15.62%] wall statistic is uncontrolled host noise.
+The 8 s whole-process sample was dominated by untimed analysis setup (`read` 62.97%,
+`open` 17.22%), so it is not a query-path percentage.
+Inspection named four repeated per-file content lookups and current path
+classifications.
+
+**exp-159 / H153** removes that repetition in one streaming pass.
+The first implementation retained one owned classification per file and was discarded
+because minor faults rose 29.58%. The kept form (`d0902cfd`) applies one resolution to
+all metric accumulators and drops it immediately: wall −47.01% [−47.49%, −45.23%],
+component −59.94%, user CPU −50.75%, peak RSS −0.17%, minor faults −0.05%. Exact
+combined-versus-independent reports matched, all 12 pairs were valid, and the tree
+stayed unchanged. Pair uncontrolled; initial/final instantaneous busy 17.58% / 17.11%,
+thermal normal.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -469,26 +499,26 @@ established. Re-run H151 on a quiet host before calling the attached handle free
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
-The rustup store is 77k entries, not the 175k recorded in exp-066. Re-observed shapes
-live in
+The rustup store is 77k entries, not the 175k recorded in exp-066. Re-observed
+2026-09-27 shapes live in
 [`nominated-subjects-darwin-arm64.json`](../reports/nominated-subjects-darwin-arm64.json).
 Absolute paths live only in the gitignored `explorations/benchmarks/subjects.local.json`
 (labels: `rustup-toolchains`, `metabrowser-clone`, `system-private-frameworks`,
 `cargo-registry-src`). Read them from there.
 Do not type a path into a commit.
 
-`cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
+`cargo-registry-src` (23,985 entries) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
 / H124 / H125 / H126 / H127 / H128 / H129 / H130 / H131 / H132 / H133 / H134 / H135 /
-H136 / H137 / H138 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120,
-exp-121, exp-123, exp-124, exp-125, exp-126, exp-128, exp-129, exp-130, exp-131,
-exp-132, exp-133, exp-134, exp-135, exp-136, exp-137); same shape as exp-106, engine
-digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries /
-133,654 files (digest `cc517e78…`); commit a fresh subjects document with the next
-metabrowser cell (`make perf-subjects`). The CLI QA medium tree was skipped:
-deciding-scale but mutating.
+H136 / H137 / H138 / H152 / H153 subject (exp-108 through exp-112, exp-114, exp-115,
+exp-117, exp-120, exp-121, exp-123, exp-124, exp-125, exp-126, exp-128, exp-129,
+exp-130, exp-131, exp-132, exp-133, exp-134, exp-135, exp-136, exp-137, exp-158,
+exp-159). The 2026-09-27 re-observe is 137,085 entries / 127,104 files, digest
+`0eed491e…`; exp-158 and exp-159 verified that shape unchanged and carry the fresh
+nominated-subject document.
+The CLI QA medium tree was skipped: deciding-scale but mutating.
 `system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
 ### Next Up
@@ -889,7 +919,7 @@ Read ~8–9 ms. Digest identical.
 Load/core 0.059–0.102 held.
 Do not retry H116. H83 remains format.
 
-Next free experiment id is **exp-158** and next free unused hypothesis id is **H152**.
+Next free experiment id is **exp-160** and next free unused hypothesis id is **H156**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
@@ -897,6 +927,19 @@ keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150�
 (exp-156–157) the Darwin progress-handle cost on
 [#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
 exp-113 remains reserved unused.
+
+Next cross-platform pickup:
+
+1. **H154** (`fdu-wbhe`) — replicate H153 on a reconstructible Linux deciding subject
+   before claiming Linux magnitude.
+   The same pure-Rust mechanism should transfer, but that is not evidence.
+   Proposed exp-160.
+2. **H155** (`fdu-83wn`) — on the current engine, profile after setup before proposing
+   another `content-query` cut.
+   Direct metric reduction without materializing shared `FileRow`s is the next bounded
+   algorithmic candidate only if the post-H153 profile names at least 3% wall.
+3. Re-run H151 only when the quiet start gate holds.
+   Do not spend an uncontrolled cell on the progress handle again.
 
 ## Before the First Round
 
