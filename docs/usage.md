@@ -115,7 +115,7 @@ Omission rows name share, breadth, depth, or row limits; they do not consume dat
 `--limit 0` shows no data rows, while `--depth 0` shows only the root.
 Explicit hierarchy controls require a hierarchical view; `--scan-depth` independently
 limits discovery. Paths and Long omit the performance footer; bounds, rule coverage,
-cache-only status, and watch invalidations are reported on stderr.
+stale-answer status, and watch invalidations are reported on stderr.
 Paths is a lossy line-oriented listing: control characters are escaped so one row stays
 one line, undecodable bytes become U+FFFD, and every other character, the platform
 separator and a literal backslash included, is written verbatim.
@@ -260,9 +260,11 @@ The first command on a root can always scan it.
 
 Metadata-only one-shot reports still have to inspect current metadata: an in-place file
 edit changes no parent-directory timestamp.
-Under `--cache=auto`, fdu therefore skips loading a metadata snapshot when loading it
-cannot make that report cheaper, although a complete indexed scan may write a snapshot
-that opened, watch, cache-only, or later analysis work can consume.
+Under `--cache=auto`, the default, such a report therefore neither loads a metadata
+snapshot, which cannot make it cheaper, nor writes one, which no later report reads.
+Content analysis, `--watch`, and an opened index do read, revalidate, and write it.
+Use `--cache=on` to leave a snapshot after a one-shot report, for a later `--stale-ok`
+answer or a warm watch.
 
 Content results are different.
 They live in a sidecar keyed by analyzer identities and semantic options.
@@ -293,14 +295,16 @@ analysis record cached, while metadata verification still occurs.
 
 | Policy | Behavior |
 | --- | --- |
-| `auto` | Use a compatible cache where the execution plan benefits; write complete indexed results |
-| `refresh` | Ignore existing cache, scan, and write a complete indexed result |
-| `read-only` | Read compatible cache where useful but never write it |
-| `only` | Read cache without touching the source tree; explicitly stale and fails on a miss |
+| `auto` | Read and write where this kind of run gains from it: analysis, `--watch`, and opened indexes, not one-shot metadata reports |
+| `on` | Read where `auto` reads, and write after every complete indexed scan |
 | `off` | Neither read nor write fdu cache data |
 
-`--cache=only` also requires compatible content data when analysis is requested.
-It never silently falls back to scanning.
+`--stale-ok` answers from the snapshot without touching the source tree: the answer is
+labelled stale, and the run fails on a miss rather than silently falling back to
+scanning. It also requires compatible content data when analysis is requested, and it
+cannot be combined with `--cache=off` or `--watch`.
+Earlier releases accepted `--cache=only`, `refresh`, and `read-only`; each is refused
+with its replacement named.
 Use `fdu --cache-status=all` to inspect cache files and `fdu --cache-clear=all` to
 remove current, stale, and recognized leftover fdu data.
 Unrecognized files are never removed.
@@ -364,7 +368,7 @@ stops.
 Check `complete` and `errors` before trusting totals, `freshness` and `source` before
 presenting them as current, row or section bounds before assuming exhaustiveness, and
 metric `coverage` before presenting analysis as complete.
-`--cache=only` is the only mode that can return stale freshness.
+`--stale-ok` is the only mode that can return stale freshness.
 
 Exit status 0 is complete success.
 Status 1 is a fatal filesystem or cache failure.

@@ -299,9 +299,11 @@ fn only_ignored_code_analysis_is_complete_across_cache_routes() {
     fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("unignored code");
     fs::write(root.path().join("vendor/lib.rs"), b"fn lib() {}\n").expect("ignored code");
 
-    for policy in ["off", "auto", "only"] {
+    for policy in [&["--cache", "off"][..], &["--cache", "auto"], &["--stale-ok"]] {
+        let policy = policy.join(" ");
         let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
-            .args(["--cache", policy, "--cache-dir"])
+            .args(policy.split(' '))
+            .arg("--cache-dir")
             .arg(cache.path())
             .args(["--ignored", "only", "--analyze", "code", "--format", "json"])
             .arg(root.path())

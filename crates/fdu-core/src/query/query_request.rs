@@ -216,6 +216,15 @@ impl Basis {
 pub struct Delivery {
     /// How the snapshot cache may be used.
     pub cache: CachePolicy,
+    /// Answer from the snapshot alone, without touching the tree.
+    ///
+    /// The one delivery whose answer can be stale, and it says so: the report's
+    /// provenance is `cache_only` and its freshness `stale`. It fails when no usable
+    /// snapshot exists rather than quietly scanning, because a fast path that is sometimes
+    /// a full walk, with nothing in the output to say which happened, is worse than none.
+    /// It writes nothing, and it is refused with [`CachePolicy::Off`], with a watch, and
+    /// by a refresh, none of which can take an unverified snapshot as their answer.
+    pub stale_ok: bool,
     /// Where the snapshot for this root lives, or `None` for no cache at all.
     pub cache_path: Option<PathBuf>,
     /// Whether a partial answer is accepted as a success.
@@ -235,6 +244,7 @@ impl Delivery {
     pub fn new(cache: CachePolicy, cache_path: Option<PathBuf>) -> Self {
         Self {
             cache,
+            stale_ok: false,
             cache_path,
             accept_partial: false,
             watch: None,
@@ -244,22 +254,29 @@ impl Delivery {
         }
     }
 
+    /// Ordinary execution settings that answer from the snapshot at `cache_path` alone.
+    pub fn stale_ok(cache_path: Option<PathBuf>) -> Self {
+        Self { stale_ok: true, ..Self::new(CachePolicy::Auto, cache_path) }
+    }
+
     /// Representative deliveries for checking policy independently of route.
-    /// Worker counts and cache location are fixed; every cache, partial-answer, and
-    /// watch choice is represented.
+    /// Worker counts and cache location are fixed; every cache, stale-answer,
+    /// partial-answer, and watch choice is represented.
     pub fn enumerate() -> impl Iterator<Item = Self> {
         [
-            CachePolicy::Auto,
-            CachePolicy::Refresh,
-            CachePolicy::ReadOnly,
-            CachePolicy::Only,
-            CachePolicy::Off,
+            (CachePolicy::Auto, false),
+            (CachePolicy::On, false),
+            (CachePolicy::Off, false),
+            (CachePolicy::Auto, true),
+            (CachePolicy::On, true),
+            (CachePolicy::Off, true),
         ]
         .into_iter()
-        .flat_map(|cache| {
+        .flat_map(|(cache, stale_ok)| {
             [false, true].into_iter().flat_map(move |accept_partial| {
                 [None, Some(WatchDelivery::default())].into_iter().map(move |watch| Self {
                     cache,
+                    stale_ok,
                     cache_path: Some(PathBuf::from("cache.fdu")),
                     accept_partial,
                     watch,
@@ -590,7 +607,13 @@ impl Request {
     ///
     /// Each was a guard on one surface, which is why a library caller and a Python caller
     /// could ask for what the command line refuses.
+    ///
+    /// One refusal applies to every route: a stale answer comes from the snapshot, which
+    /// [`CachePolicy::Off`] never reads ([`RequestError::StaleOkCacheOff`]).
     pub fn validate_delivery(&self, delivery: &Delivery) -> Result<(), RequestError> {
+        if delivery.stale_ok && delivery.cache == CachePolicy::Off {
+            return Err(RequestError::StaleOkCacheOff);
+        }
         if delivery.watch.is_none() {
             return Ok(());
         }
@@ -600,7 +623,7 @@ impl Request {
         if self.basis.content.is_enabled() {
             return Err(RequestError::WatchContent);
         }
-        if delivery.cache == CachePolicy::Only {
+        if delivery.stale_ok {
             return Err(RequestError::WatchCacheOnly);
         }
         Ok(())
@@ -927,6 +950,8 @@ pub enum RequestError {
     WatchContent,
     /// A watch was asked to start from a snapshot nothing verifies.
     WatchCacheOnly,
+    /// A stale answer was asked of a delivery that never reads the snapshot.
+    StaleOkCacheOff,
     /// An operation names another root than the retained index it would mutate.
     RootMismatch {
         /// Root held by the index.
@@ -1014,9 +1039,15 @@ impl RequestError {
                 axes.analyze, axes.watch
             ),
             Self::WatchCacheOnly => format!(
-                "{watch} cannot start from {cache} only: nothing verifies what changed between \
-                 the snapshot and the start of the watch; use {cache} auto or read-only",
+                "{watch} cannot start from a {stale_ok} answer: nothing verifies what changed \
+                 between the snapshot and the start of the watch; drop {stale_ok}",
                 watch = axes.watch,
+                stale_ok = axes.stale_ok,
+            ),
+            Self::StaleOkCacheOff => format!(
+                "{stale_ok} answers from the snapshot, which {cache} off never reads; drop one \
+                 of them",
+                stale_ok = axes.stale_ok,
                 cache = axes.cache,
             ),
             Self::ViewLimit { attempted, limit } => {
@@ -1265,15 +1296,37 @@ pub fn bound_nanos(value: &str, when: SystemTime, axis: &'static str) -> Result<
     })
 }
 
-/// Parse a cache policy: `auto`, `refresh`, `read-only`, `only`, or `off`.
+/// Parse a cache policy: `auto`, `on`, or `off`.
+///
+/// The three values that earlier releases also accepted are refused with the replacement,
+/// since each still appears in scripts and a bare list of values would not say where
+/// `only` went.
 pub fn parse_cache_policy(value: &str, axis: &'static str) -> Result<CachePolicy, RequestError> {
+    let stale_ok = if axis == AxisNames::FLAGS.cache {
+        AxisNames::FLAGS.stale_ok
+    } else {
+        AxisNames::FIELDS.stale_ok
+    };
     match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Ok(CachePolicy::Auto),
-        "refresh" => Ok(CachePolicy::Refresh),
-        "read-only" => Ok(CachePolicy::ReadOnly),
-        "only" => Ok(CachePolicy::Only),
+        "on" => Ok(CachePolicy::On),
         "off" => Ok(CachePolicy::Off),
-        other => Err(invalid(axis, other, "expected one of auto, refresh, read-only, only, off")),
+        "only" => Err(invalid(
+            axis,
+            "only",
+            format!("answering from the snapshot alone is now {stale_ok}"),
+        )),
+        "refresh" => Err(invalid(
+            axis,
+            "refresh",
+            "removed; use on to write the snapshot after every complete run",
+        )),
+        "read-only" => Err(invalid(
+            axis,
+            "read-only",
+            "removed; auto no longer writes after a one-shot metadata report, and off reads nothing",
+        )),
+        other => Err(invalid(axis, other, "expected one of auto, on, off")),
     }
 }
 
@@ -1343,9 +1396,8 @@ mod tests {
                  fdu can represent (about 1677 to 2262)",
             ),
             (
-                "invalid --cache \"readonly\": expected one of auto, refresh, read-only, only, off",
-                "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, \
-                 only, off",
+                "invalid --cache \"readonly\": expected one of auto, on, off",
+                "invalid cache policy \"readonly\": expected one of auto, on, off",
             ),
         ];
         for ((grammar, flag, field), (flag_text, field_text)) in cases.into_iter().zip(expected) {
@@ -1385,14 +1437,31 @@ mod tests {
         }
         assert_eq!(parse_size_metric("Allocated", axis), Ok(SizeMetric::Allocated));
         assert_eq!(parse_size_metric("apparent", axis), Ok(SizeMetric::Apparent));
-        for (spelling, policy) in [
-            ("auto", CachePolicy::Auto),
-            ("refresh", CachePolicy::Refresh),
-            ("read-only", CachePolicy::ReadOnly),
-            ("ONLY", CachePolicy::Only),
-            ("off", CachePolicy::Off),
-        ] {
+        for (spelling, policy) in
+            [("auto", CachePolicy::Auto), ("ON", CachePolicy::On), ("off", CachePolicy::Off)]
+        {
             assert_eq!(parse_cache_policy(spelling, axis), Ok(policy));
+        }
+        // The retired values name their replacement, in each surface's own words.
+        for (spelling, flags, fields) in [
+            (
+                "only",
+                "invalid --cache \"only\": answering from the snapshot alone is now --stale-ok",
+                "invalid cache policy \"only\": answering from the snapshot alone is now stale_ok",
+            ),
+            (
+                "refresh",
+                "invalid --cache \"refresh\": removed; use on to write the snapshot after every \
+                 complete run",
+                "invalid cache policy \"refresh\": removed; use on to write the snapshot after \
+                 every complete run",
+            ),
+        ] {
+            let message = |axis| {
+                parse_cache_policy(spelling, axis).expect_err("retired").message(&AxisNames::FLAGS)
+            };
+            assert_eq!(message(AxisNames::FLAGS.cache), flags);
+            assert_eq!(message(AxisNames::FIELDS.cache), fields);
         }
         let epoch = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2);
         assert_eq!(bound_nanos("@2", epoch, axis), Ok(2_000_000_000));
@@ -1473,10 +1542,17 @@ mod tests {
             ),
             (
                 RequestError::WatchCacheOnly,
-                "--watch cannot start from --cache only: nothing verifies what changed between the \
-                 snapshot and the start of the watch; use --cache auto or read-only",
-                "watch cannot start from cache policy only: nothing verifies what changed between \
-                 the snapshot and the start of the watch; use cache policy auto or read-only",
+                "--watch cannot start from a --stale-ok answer: nothing verifies what changed \
+                 between the snapshot and the start of the watch; drop --stale-ok",
+                "watch cannot start from a stale_ok answer: nothing verifies what changed between \
+                 the snapshot and the start of the watch; drop stale_ok",
+            ),
+            (
+                RequestError::StaleOkCacheOff,
+                "--stale-ok answers from the snapshot, which --cache off never reads; drop one of \
+                 them",
+                "stale_ok answers from the snapshot, which cache policy off never reads; drop one \
+                 of them",
             ),
             (
                 RequestError::ViewLimit { attempted: 17, limit: 16 },
@@ -2195,6 +2271,7 @@ mod tests {
     #[test]
     fn a_watch_refuses_what_it_cannot_keep_current() {
         let one_shot = Delivery {
+            stale_ok: false,
             cache: CachePolicy::Auto,
             cache_path: None,
             accept_partial: false,
@@ -2227,12 +2304,12 @@ mod tests {
         let plain = built(&RequestSpec::new(root()));
         plain.validate_delivery(&watching).expect("a full-scope metadata watch is deliverable");
         assert_eq!(
-            plain.validate_delivery(&Delivery { cache: CachePolicy::Only, ..watching.clone() }),
+            plain.validate_delivery(&Delivery { stale_ok: true, ..watching.clone() }),
             Err(RequestError::WatchCacheOnly),
             "nothing verifies the window between the snapshot and the start of the watch"
         );
         plain
-            .validate_delivery(&Delivery { cache: CachePolicy::Only, ..one_shot })
+            .validate_delivery(&Delivery { stale_ok: true, ..one_shot })
             .expect("a one-shot report is exactly what a snapshot answers");
     }
 
@@ -2246,7 +2323,8 @@ mod tests {
     #[test]
     fn the_watch_rules_speak_in_one_order() {
         let cache_only_watch = Delivery {
-            cache: CachePolicy::Only,
+            cache: CachePolicy::Auto,
+            stale_ok: true,
             cache_path: None,
             accept_partial: false,
             watch: Some(WatchDelivery::default()),
@@ -2271,7 +2349,7 @@ mod tests {
             assert_eq!(built(&spec).validate_delivery(&cache_only_watch), Err(expected));
         }
         built(&RequestSpec::new(root()))
-            .validate_delivery(&Delivery { cache: CachePolicy::Auto, ..cache_only_watch })
+            .validate_delivery(&Delivery { stale_ok: false, ..cache_only_watch })
             .expect("nothing left to refuse");
     }
 
@@ -2282,6 +2360,7 @@ mod tests {
     #[test]
     fn a_watch_refuses_one_filesystem_where_the_build_honors_it() {
         let watch = Delivery {
+            stale_ok: false,
             cache: CachePolicy::Auto,
             cache_path: None,
             accept_partial: false,

@@ -61,10 +61,28 @@ No cached snapshots.
 ? 0
 ```
 
-## A Report Leaves a Snapshot Behind
+## The Default Report Leaves Nothing Behind
+
+Under `--cache auto` a one-shot metadata report writes no snapshot: no later report
+reads one.
 
 ```console
-$ fdu --size apparent project
+$ fdu --view summary --size apparent project
+     269 B  7 files, 3 directories (128 B ignored)
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache-status project
+No cached snapshots.
+? 0
+```
+
+## `--cache on` Leaves a Snapshot Behind
+
+```console
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
@@ -81,15 +99,13 @@ Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; 
 ? 0
 ```
 
-## The Compact Summary Retains Nothing, and Cache-Only Says So
+## A Stale Answer Needs a Snapshot Something Left
 
 An unfiltered `summary` that reads no `.gitignore` is answered by the transient tier,
-which retains no index and so has no snapshot to write: the cache cannot save the walk
-that request is already doing.
-A tier that retained nothing has nothing for `--cache only` to read, and it says so
-rather than quietly scanning.
-A default summary reads `.gitignore` to report its ignored share, which needs the index,
-so it saves a snapshot like any other report.
+which retains no index, and under `auto` no one-shot metadata report writes a snapshot:
+the cache cannot save the walk that request is already doing.
+With nothing stored, `--stale-ok` has nothing to read, and it says so rather than quietly
+scanning.
 
 ```console
 $ fdu --cache-clear project
@@ -112,16 +128,16 @@ No cached snapshots.
 ```
 
 ```console
-$ fdu --no-gitignore --cache only --view summary project
-fdu: snapshot is not usable: no usable snapshot for this root and scan scope; the `only` cache policy never scans, so use `auto`, which scans when none serves
+$ fdu --no-gitignore --stale-ok --view summary project
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a stale answer never scans, so run the request once with the `on` cache policy to leave one, or ask for a verified answer, which scans when none serves
 ? 1
 ```
 
-An ordinary report retains the index, so it does leave a snapshot that `--cache only`
+A report under `--cache on` retains the index and leaves a snapshot, which `--stale-ok`
 can then answer from without touching the tree.
 
 ```console
-$ fdu --size apparent project
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
@@ -139,7 +155,7 @@ Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; 
 ```
 
 ```console
-$ fdu --cache only --view summary --size apparent project
+$ fdu --stale-ok --view summary --size apparent project
      269 B  7 files, 3 directories (128 B ignored)
 Performance: walked 0 files / 0 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
@@ -400,7 +416,7 @@ Cache already empty.
 ## Clear and Status Compose, With Clear First
 
 ```console
-$ fdu --size apparent project
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
@@ -436,7 +452,7 @@ which is sized at nothing: what a filesystem calls a directory’s size is its o
 accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
-$ fdu --size apparent project
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
@@ -579,7 +595,7 @@ $ fdu --cache-status=all project
 ## One Root’s Stale Snapshot Is Cleared by Its Path
 
 ```console
-$ fdu --size apparent project
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
@@ -619,7 +635,7 @@ Cache cleared.
 ## A Root’s Cache Path Holding Another File Is Left Alone
 
 ```console
-$ fdu --size apparent project
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
@@ -661,7 +677,7 @@ own debris alone. Clearing the directory takes them, but only a staging file too
 belong to a running writer, and only a sidecar no snapshot still wants.
 
 ```console
-$ fdu --size apparent project
+$ fdu --cache on --size apparent project
 Tree scope: at least 1% of selected root through depth 5
      269 B  ██████████   100%  . 7 files (128 B ignored)
      128 B  █████░░░░░    48%    dist 1 file (128 B ignored)

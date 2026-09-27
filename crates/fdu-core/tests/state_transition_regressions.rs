@@ -90,7 +90,7 @@ fn warm_partial_report_retains_reconciliation_error() {
             scope: config.into(),
             content: AnalysisSet::NONE,
         },
-        &fdu_core::query::Delivery::new(CachePolicy::ReadOnly, Some(snapshot)),
+        &fdu_core::query::Delivery::new(CachePolicy::Auto, Some(snapshot)),
     );
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).expect("restore");
 

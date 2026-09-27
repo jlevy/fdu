@@ -683,10 +683,10 @@ fdu: invalid --depth "two": expected a whole number or `all`
 
 Every report says which tier answered it, so no policy can quietly serve old data.
 
-### A First Run Scans Cold and Leaves a Snapshot
+### `--cache on` Scans Cold and Leaves a Snapshot
 
 ```console
-$ fdu --view tree --format jsonl --size apparent project
+$ fdu --cache on --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/8", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": []}
 ? 0
@@ -696,9 +696,10 @@ $ fdu --view tree --format jsonl --size apparent project
 
 A one-shot report never loads the snapshot for a metadata query: revalidating one stats
 every entry regardless, so the load would be added to the walk, never instead of it.
-The run rewrites the snapshot instead, which is what keeps the cache-only tier below
-current. Sessions opened through the library hold their index and do amortise the load;
-this is the one-shot contract only.
+Under `auto` it writes nothing either, because no later report reads what it would
+store; the snapshot `on` left stays for the stale answer below. Sessions opened through
+the library hold their index and do amortise the load; this is the one-shot contract
+only.
 
 ```console
 $ fdu --view tree --format jsonl --size apparent project
@@ -707,29 +708,42 @@ $ fdu --view tree --format jsonl --size apparent project
 ? 0
 ```
 
-### Cache-Only Answers Without Touching the Tree, and Says It Is Stale
+### `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
 
 ```console
-$ fdu --cache only --view tree --format jsonl --size apparent project
+$ fdu --stale-ok --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/8", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": []}
 ? 0
 ```
 
-### Refresh Ignores the Snapshot and Scans Cold Again
+### Retired Policies Name Their Replacement
 
 ```console
-$ fdu --cache refresh --view tree --format jsonl --size apparent project
-{"schema": "fdu.report/8", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
-{"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": []}
-? 0
+$ fdu --cache only project
+fdu: invalid --cache "only": answering from the snapshot alone is now --stale-ok
+? 2
+```
+
+```console
+$ fdu --cache refresh project
+fdu: invalid --cache "refresh": removed; use on to write the snapshot after every complete run
+? 2
+```
+
+### A Stale Answer Needs a Policy That Reads
+
+```console
+$ fdu --cache off --stale-ok project
+fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
+? 2
 ```
 
 ### An Unknown Policy Lists Every Valid One
 
 ```console
 $ fdu --cache sometimes project
-fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only, off
+fdu: invalid --cache "sometimes": expected one of auto, on, off
 ? 2
 ```
 
@@ -737,7 +751,7 @@ fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only
 
 ```console
 $ fdu --cache readonly project
-fdu: invalid --cache "readonly": expected one of auto, refresh, read-only, only, off
+fdu: invalid --cache "readonly": expected one of auto, on, off
 ? 2
 ```
 

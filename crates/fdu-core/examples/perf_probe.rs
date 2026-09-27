@@ -452,29 +452,29 @@ fn execute_repeated(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     match arguments.mode {
         Mode::CodeSloc => content_analysis(arguments, code_request()),
-        Mode::CodeSlocCacheHit => content_open(arguments, CachePolicy::Only, code_request()),
+        Mode::CodeSlocCacheHit => content_open(arguments, true, code_request()),
         Mode::CodeSlocSeed => {
-            let mut output = content_open(arguments, CachePolicy::Auto, code_request())?;
+            let mut output = content_open(arguments, false, code_request())?;
             output.summary.complete = true;
             Ok(output)
         }
         Mode::ContentBasic | Mode::ContentBinaryGate => {
             content_analysis(arguments, basic_request())
         }
-        Mode::ContentCacheHit => content_open(arguments, CachePolicy::Only, basic_request()),
+        Mode::ContentCacheHit => content_open(arguments, true, basic_request()),
         Mode::ContentDisabled => content_analysis(arguments, AnalysisRequest::default()),
-        Mode::ContentOpen => content_open(arguments, CachePolicy::Auto, basic_request()),
+        Mode::ContentOpen => content_open(arguments, false, basic_request()),
         Mode::ContentQuery => content_query(arguments),
         Mode::ContentSeed => {
-            let mut output = content_open(arguments, CachePolicy::Auto, basic_request())?;
+            let mut output = content_open(arguments, false, basic_request())?;
             output.summary.complete = true;
             Ok(output)
         }
         Mode::DetectAmbiguous => classification_probe(arguments, true),
         Mode::DetectResolved => classification_probe(arguments, false),
-        Mode::DocumentCacheHit => content_open(arguments, CachePolicy::Only, document_request()),
+        Mode::DocumentCacheHit => content_open(arguments, true, document_request()),
         Mode::DocumentSeed => {
-            let mut output = content_open(arguments, CachePolicy::Auto, document_request())?;
+            let mut output = content_open(arguments, false, document_request())?;
             output.summary.complete = true;
             Ok(output)
         }
@@ -688,12 +688,18 @@ fn content_analysis(arguments: &Arguments, request: AnalysisRequest) -> ProbeRes
 
 fn content_open(
     arguments: &Arguments,
-    policy: CachePolicy,
+    stale_ok: bool,
     analysis: AnalysisRequest,
 ) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    let (basis, delivery) =
-        open_plan(&arguments.root, &arguments.scan, policy, Some(snapshot.clone()), analysis);
+    let (basis, mut delivery) = open_plan(
+        &arguments.root,
+        &arguments.scan,
+        CachePolicy::Auto,
+        Some(snapshot.clone()),
+        analysis,
+    );
+    delivery.stale_ok = stale_ok;
     let started = Instant::now();
     let (index, report) = fdu_core::open(&basis, &delivery)?;
     let component = started.elapsed();
@@ -905,9 +911,9 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 /// would be a tier whose speed nobody could trust.
 fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     // Once `--no-controls` has turned `.gitignore` observation off, `cache_path: None`
-    // with `CachePolicy::Off` is what keeps the planner on the transient tier: `Refresh`
-    // would demand an index to write, and `Only` would demand a snapshot to read. Off is
-    // also what the measured invocation uses.
+    // with `CachePolicy::Off` is what keeps the planner on the transient tier: `On` would
+    // demand an index to write, and a stale answer a snapshot to read. Off is also what
+    // the measured invocation uses.
     let (basis, delivery) = open_plan(
         &arguments.root,
         &arguments.scan,
@@ -960,20 +966,21 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 
-/// The default command, `fdu <dir>`: scan, index, rendered tree, snapshot write.
+/// The default command, `fdu <dir>`: scan, index, and rendered tree.
 ///
 /// This is the path a user takes by typing nothing else, and no ledger job measured it
 /// before this mode existed: `cold-scan-index`, the proxy every cumulative checkpoint
-/// used, is the walk plus the index build and excludes both the render and the write,
-/// which the cache-layers plan priced at about a third of a default run. Two defects found
-/// in the PR #38 review live in exactly that blind spot (`fdu-2um8`, `fdu-n75m`).
+/// used, is the walk plus the index build and excludes the render and, until the default
+/// stopped writing one, the snapshot write, which the cache-layers plan priced at about a
+/// third of a default run. Two defects found in the PR #38 review live in exactly that
+/// blind spot (`fdu-2um8`, `fdu-n75m`).
 ///
 /// Faithful to the command line rather than to the cheapest probe-able shape: cache
 /// policy `Auto` with a real cache path, the tree view at its default depth, the text
-/// renderer run to completion, and the save joined before returning -- which is what the
-/// command line does before it exits. `prepare_report` never reads the snapshot for a
-/// metadata query (revalidation would stat every entry anyway), so a repeated run over an
-/// unchanged tree scans cold and writes again; `snapshot_written` says whether it did.
+/// renderer run to completion, and any save joined before returning -- which is what the
+/// command line does before it exits. Under `Auto` a one-shot metadata report neither
+/// reads nor writes the snapshot, so a run over a tree whose snapshot a session left
+/// behind scans cold and leaves the file alone; `snapshot_written` says whether it did.
 ///
 /// The oracle is `tallies`, read off the tree's root node, because the index is consumed
 /// inside `prepare_report` and never returned -- the same reason the aggregate tier has no
@@ -1169,16 +1176,17 @@ fn snapshot_identity(path: &Path) -> Option<(u64, Option<std::time::SystemTime>)
 /// `snapshot-save` calls `snapshot::save` directly, so it never exercises what a
 /// cache-writing run actually costs: `spawn_save`'s hand-off to the writer thread and
 /// the join that a one-shot caller performs before exiting. That is the shape of
-/// `fdu --cache refresh`, the default first run against a tree, and it was
-/// unmeasurable under the accept rule until this job existed.
+/// `fdu --cache on` over a tree with no snapshot, and of the first `open` or watch, and
+/// it was unmeasurable under the accept rule until this job existed.
 fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    // Refresh rather than Auto: the job must always walk and always write, or a
-    // stray snapshot would silently turn one trial into a warm open.
+    // `On` so the job always writes. It reads as an `open` does, so the harness removes
+    // the snapshot before every trial, and a stray one is refused below rather than
+    // silently turning one trial into a warm open.
     let (basis, delivery) = open_plan(
         &arguments.root,
         &arguments.scan,
-        CachePolicy::Refresh,
+        CachePolicy::On,
         Some(snapshot.clone()),
         AnalysisRequest::default(),
     );
@@ -1188,6 +1196,9 @@ fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let component = started.elapsed();
     if !report.is_complete() {
         return Err(ProbeError("cold-open-save scan was partial".into()));
+    }
+    if report.path_taken != fdu_core::OpenPath::ColdScan {
+        return Err(ProbeError("cold-open-save found a snapshot and did not scan cold".into()));
     }
     let mut summary = summarize_index(arguments, &index)?;
     summary.complete = report.is_complete();
@@ -2988,7 +2999,7 @@ mod tests {
     }
 
     #[test]
-    fn default_tree_snapshot_matches_the_non_watch_cli_scope() {
+    fn default_tree_leaves_no_snapshot_and_a_written_one_matches_the_cli_scope() {
         let root = tempfile::tempdir().expect("root tempdir");
         let scratch = tempfile::tempdir().expect("scratch tempdir");
         let snapshot = scratch.path().join("snapshot.fdu");
@@ -3009,16 +3020,21 @@ mod tests {
         let output = default_tree(&arguments).expect("default-tree probe");
 
         assert_eq!(output.summary.files, 2, "the CLI still counts ignored files");
+        // The default command is a one-shot metadata report, which `auto` never persists.
+        assert!(!snapshot.exists(), "the default command leaves no snapshot");
+        assert_eq!(output.summary.snapshot_written, Some(false));
         // The probe observes control state by default, as the command line does, so the
-        // snapshot it writes carries that scope.
+        // snapshot a writing job leaves under the same settings carries that scope.
         assert!(arguments.scan.read_controls, "the default command observes .gitignore");
-        let (mut basis, delivery) = open_plan(
+        cold_open_save(&arguments).expect("write the snapshot the default command skips");
+        let (mut basis, mut delivery) = open_plan(
             root.path(),
             &arguments.scan,
-            CachePolicy::Only,
+            CachePolicy::Auto,
             Some(snapshot),
             AnalysisRequest::default(),
         );
+        delivery.stale_ok = true;
         // Inspect the stored identity: controls-off reads may lawfully project a
         // controls-on snapshot, so admission alone cannot prove which scope was saved.
         assert!(

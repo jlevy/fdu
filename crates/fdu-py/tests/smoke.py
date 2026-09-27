@@ -438,7 +438,7 @@ def main() -> None:
     fdu_py.open(str(cache_root), cache="auto")
     status = fdu_py.cache_status(str(cache_root))
     assert status is not None and status["state"] == "current", status
-    cached_index = fdu_py.open(str(cache_root), cache="only")
+    cached_index = fdu_py.open(str(cache_root), stale_ok=True)
     # Coverage and currency are independent: the cache represents the full scope even
     # though this cache-only open deliberately did not revalidate it.
     assert cached_index.complete is True, cached_index.freshness
@@ -457,7 +457,7 @@ def main() -> None:
     assert partial.complete is True, partial.errors
     assert partial.errors == [], partial.errors
 
-    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="lines")
+    cached_partial = fdu_py.open(str(partial_root), stale_ok=True, analyze="lines")
     assert cached_partial.complete is True, cached_partial.errors
     assert cached_partial.freshness == "stale", cached_partial.freshness
     assert cached_partial.errors == [], cached_partial.errors
@@ -471,7 +471,7 @@ def main() -> None:
     try:
         cached_partial.refresh()
     except ValueError as error:
-        assert "only" in str(error) and "refresh" in str(error), str(error)
+        assert "stale" in str(error) and "refresh" in str(error), str(error)
     else:
         raise AssertionError("cache-only refresh must be refused")
     assert cached_partial.complete is True, cached_partial.errors
@@ -544,7 +544,7 @@ def main() -> None:
     # opened from one alone cannot be watched either.
     cache_only_index = fdu_py.open(str(watch_root), cache="auto")
     del cache_only_index
-    cache_only_index = fdu_py.open(str(watch_root), cache="only")
+    cache_only_index = fdu_py.open(str(watch_root), stale_ok=True)
     try:
         cache_only_index.watch(interval=0.1)
     except ValueError as error:

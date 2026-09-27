@@ -92,12 +92,98 @@ cache absent
 ? 0
 ```
 
-## The First Cached Open Is Cold and Writes One Snapshot
+## The Default Report Leaves No Snapshot
+
+Under `--cache auto` a one-shot metadata report neither reads nor writes the cache:
+checking a snapshot costs as much as the scan it would save, and no later report reads
+one.
+
+### Report Under the Default Policy
+
+```console
+$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/8",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "age_reference_ns": [AGE_NS],
+  "request": {
+    "scope": {
+      "max_depth": null,
+      "follow_symlinks": false,
+      "one_filesystem": false,
+      "exclude_special": false,
+      "read_controls": true,
+      "population": "include"
+    },
+    "analyze": [],
+    "size": "apparent",
+    "sort_metric": null,
+    "views": ["tree"],
+    "omitted_views": []
+  },
+  "status": {
+    "complete": true,
+    "coverage": {"kind": "complete"},
+    "errors": [],
+    "errors_omitted": 0
+  },
+  "provenance": {
+    "source": "cold_scan",
+    "freshness": "fresh",
+    "scan_started_at": "[RFC3339]",
+    "generated_at": "[RFC3339]",
+    "tiers": {
+      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
+      "content": null
+    }
+  },
+  "ignore_rules": {
+    "limits": {"budget": 4194304, "line_limit": 16384},
+    "applied": 1,
+    "rules": 1,
+    "refused": 0,
+    "refusals": []
+  },
+  "analysis": null,
+  "reports": [
+    {
+      "view": "tree",
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
+      ]
+    }
+  ]
+}
+? 0
+```
+
+### Verify the Default Created No Cache
+
+```console
+$ node -e "const fs=require('node:fs'); if (fs.existsSync('.cache')) process.exit(1); console.log('cache absent')"
+cache absent
+? 0
+```
+
+### A Stale Answer Has Nothing to Read
+
+`--stale-ok` never scans, so with no snapshot it fails and names both ways out.
+
+```console
+$ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a stale answer never scans, so run the request once with the `on` cache policy to leave one, or ask for a verified answer, which scans when none serves
+? 1
+```
+
+## `--cache on` Is Cold and Writes One Snapshot
 
 ### Create the Snapshot
 
 ```console
-$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -168,8 +254,7 @@ snapshot present
 
 Loading the snapshot cannot save a one-shot metadata report any work: revalidation stats
 every entry regardless, so the read would only ever add to the walk.
-The report scans fresh and rewrites the snapshot, and the tier below shows what the
-rewrite is for.
+Under `auto` the report scans fresh and leaves the snapshot as it found it.
 
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
@@ -243,8 +328,10 @@ fixture expanded
 
 ### Report the Changed Tree
 
+`--cache on` writes the snapshot again after the scan.
+
 ```console
-$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -303,13 +390,13 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 ? 0
 ```
 
-### The Rewrite Kept the Snapshot Current for Cache-Only
+### The Rewrite Kept the Snapshot Current for a Stale Answer
 
-Every one-shot report rewrites the snapshot it skipped reading, so the no-scan tier
+A `--cache on` report rewrites the snapshot it skipped reading, so the no-scan tier
 answers with the changed total rather than the one the first run recorded.
 
 ```console
-$ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
+$ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -375,8 +462,8 @@ between when it was written and when a watch starts, so the first answer could d
 a tree that has already moved and every later one would build on it.
 
 ```console
-$ fdu --watch --cache only project
-! fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
+$ fdu --watch --stale-ok project
+! fdu: --watch cannot start from a --stale-ok answer: nothing verifies what changed between the snapshot and the start of the watch; drop --stale-ok
 ? 2
 ```
 
@@ -454,8 +541,10 @@ snapshot corrupted
 
 ### Recover with a Cold Scan
 
+A run that writes replaces the corrupt file.
+
 ```console
-$ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
+$ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -525,11 +614,11 @@ snapshot replaced
 ## Reading No .gitignore Is a Separate Scope
 
 A report that turns `.gitignore` off records a scope without classification.
-A cache-only report that also turns it off may answer from a default snapshot, because
+A `--stale-ok` report that also turns it off may answer from a default snapshot, because
 it reads only the sizes a default scan also recorded; it says it read no rules.
 
 ```console
-$ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -589,7 +678,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 ```
 
 ```console
-$ fdu --no-gitignore --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
+$ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -642,11 +731,11 @@ $ fdu --no-gitignore --cache only --view tree --format json --size apparent --de
 ? 0
 ```
 
-A read-only one-shot metadata report scans cold without installing control state.
-It leaves the stronger snapshot usable by a subsequent default cache-only request.
+A default one-shot metadata report scans cold and writes nothing, so it leaves the
+stronger snapshot usable by a subsequent default `--stale-ok` request.
 
 ```console
-$ fdu --no-gitignore --cache read-only --format json --size apparent --limit 0 project
+$ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -697,7 +786,7 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --limit 0 p
 ```
 
 ```console
-$ fdu --cache only --format json --size apparent --limit 0 project
+$ fdu --stale-ok --format json --size apparent --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -754,11 +843,11 @@ $ fdu --cache only --format json --size apparent --limit 0 project
 ```
 
 The reverse cannot work: a snapshot written without the rules has no classification for
-a default request to report, so a cache-only default request refuses it and names the
+a default request to report, so a default `--stale-ok` request refuses it and names the
 way out.
 
 ```console
-$ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit 0 project
+$ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
@@ -812,8 +901,8 @@ $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit
 ```
 
 ```console
-$ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
-fdu: snapshot is not usable: no usable snapshot for this root and scan scope: the cached snapshot has no .gitignore state, because the request that wrote it did not observe it, and this request does; the `only` cache policy never scans, so use `auto`, or turn .gitignore observation off as that request did
+$ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope: the cached snapshot has no .gitignore state, because the request that wrote it did not observe it, and this request does; a stale answer never scans, so ask for a verified answer, which scans when none serves, or turn .gitignore observation off as that request did
 ? 1
 ```
 

@@ -467,7 +467,7 @@ fn a_session_refuses_what_its_callers_delivery_cannot_carry() {
     let cache_only = Session::new(
         handle.clone(),
         request(dir.path(), AnalysisSet::NONE, Query::default()),
-        &RequestDelivery { cache: CachePolicy::Only, ..watching(&config) },
+        &RequestDelivery { cache: CachePolicy::Auto, stale_ok: true, ..watching(&config) },
         WatchConfig::default(),
     );
     assert!(

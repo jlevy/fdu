@@ -30,9 +30,9 @@ So every case records the mechanism as well as the answer, read from the report�
 
 | Request | Second run reports | Why |
 | --- | --- | --- |
-| Metadata only | `cold_scan` | A metadata walk is cheap, so it re-walks by design. Its proof that the snapshot serves is the cache-only run, which must exit 0, report `cache_only`, and label the answer `stale`. |
+| Metadata only | `cold_scan` | A metadata walk is cheap, so it re-walks by design. Its proof that the snapshot a `--cache on` run left serves is the `--stale-ok` run, which must exit 0, report `cache_only`, and label the answer `stale`. |
 | `--analyze …` | content tier `revalidated` | The content sidecar is the expensive tier and is the one that must serve. The report-level `warm_revalidate` only says the entries came from a snapshot. |
-| `--cache only` | `cache_only` | Serves without verifying, and labels the answer stale. |
+| `--stale-ok` | `cache_only` | Serves without verifying, and labels the answer stale. |
 
 A run whose answers all match but whose mechanism column is wrong has proved nothing.
 The first time this procedure ran, every invocation was failing on an unknown flag and
@@ -45,9 +45,9 @@ either serves `cache_only` or exits 1 — so against a build that never wrote a 
 cache-only exited 1, the check was skipped, and seventeen of the twenty-three cases
 printed `ok` against a cache that never served.
 Verify each pass by breaking the thing it watches.
-Over the refusal-free tree, a wrapper that rewrites `--cache auto` to `--cache off` must
+Over the refusal-free tree, a wrapper that rewrites `--cache on` to `--cache off` must
 make every case report `NO-SNAPSHOT` and both scripts exit 1. Over the refusal tree, a
-wrapper that answers `--cache only` with the cold output relabeled `cache_only` must
+wrapper that answers `--stale-ok` with the cold output relabeled `cache_only` must
 make every case report `PARTIAL-STORED` and `--refusals-only` exit 1. A partial answer
 exits 2, so a check that trusted a zero exit would have called that stored snapshot
 `withheld`; the first version of this pass did.

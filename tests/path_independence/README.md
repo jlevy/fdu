@@ -12,24 +12,24 @@ Each case asks a request after some history and compares the parsed answer with 
 run of the same request on the same tree (`--cache off`). The effective `request`,
 `status` (completeness, errors, and coverage), and all answer content must match.
 Only the nested `provenance` object is excluded.
-Three outcomes other than equality are allowed: a named failure under `--cache only`, a
-stale answer under `--cache only` that equals a cold run before the tree changed and
-says `provenance.freshness: stale`, and a refusal where the cold run refuses too.
+Three outcomes other than equality are allowed: a named failure under `--stale-ok`, a
+stale answer under `--stale-ok` that equals a cold run before the tree changed and says
+`provenance.freshness: stale`, and a refusal where the cold run refuses too.
 Every route that reads after the same history under the same policy must return the same
 kind of outcome.
 
 | Phase | History before the measured request |
 | --- | --- |
 | `cold` | None, under `auto` on an empty cache |
-| `warm` | One warming request, then each policy |
-| `serves` | A complete explicit `refresh` of the identical request, then `only` through the command line and both cache-reading Python routes |
-| `selfwarm` | The request itself, then `auto`, `read-only`, and `only` in turn |
+| `warm` | One warming request, then `auto`, `on`, and `--stale-ok` |
+| `serves` | A complete `--cache on` run of the identical request, then `--stale-ok` through the command line and both cache-reading Python routes |
+| `selfwarm` | The request itself, then `auto`, `on`, and `--stale-ok` in turn |
 | `mutation` | A warming request, then a file change: rewrite, touch, add, delete, `.gitignore` edits, a symlink retarget, or an unreadable directory |
 | `cross` | Cold and warm, read through `fdu.report`, `fdu.open`, and `fdu.scan`, one-shot CLI reports, and the complete initial CLI watch report |
 
 [`matrix.py`](matrix.py) defines the requests, warmers, mutations, and the two tiers.
 The watch route participates only where its delivery is supported: metadata analysis, a
-full scan scope, and a cache policy other than `only`. Core request tests and the CLI
+full scan scope, and any delivery but `--stale-ok`. Core request tests and the CLI
 golden corpus separately pin the named refusals for unsupported watch deliveries.
 The subset runs in `make check` and in CI on every pull request.
 It includes code-only warming before mutations, so a later lines request exercises the

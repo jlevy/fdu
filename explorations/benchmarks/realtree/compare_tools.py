@@ -139,17 +139,17 @@ CONTRACTS: Dict[str, ToolContract] = {
     # the gap that let a default-path regression go unmeasured through three campaigns.
     #
     # Under the cost model this plan neither reads nor revalidates a snapshot, so each
-    # trial is the same work as the last: a cold scan, an index, a rendered tree, and a
-    # snapshot write. That is what makes it a stable job rather than a first-run-only
-    # measurement, and it is why the write belongs inside the timed region — a default
-    # run pays it every time.
+    # trial is the same work as the last: a cold scan, an index, and a rendered tree.
+    # Under `--cache auto` it writes no snapshot either; a binary from before that
+    # policy wrote one on every run, inside the timed region, because a default run paid
+    # it every time. The run is isolated from the operator's cache either way.
     "fdu-default-tree": ToolContract(
         name="fdu-default-tree",
         work_class="default-tree",
         description=(
             "the bare default invocation: complete scan, reusable exact metadata "
-            "index, rendered default tree, and a persisted snapshot written on every "
-            "run"
+            "index, and rendered default tree; a binary that persists a snapshot by "
+            "default writes it inside the timed run"
         ),
         argv=("{binary}", "--color", "never", "{root}"),
         version_argv=("{binary}", "--version"),

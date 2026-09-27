@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 25 sessions differ, and every one of them has a named cause.
+# 26 sessions differ, and every one of them has a named cause.
 #
-#  15  Each surface names its own parameter  [surface-label]
+#  16  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -144,10 +144,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --depth "two": expected a whole number or `all`
 +fdu: invalid depth "two": expected a whole number or `all`
-  ✓ A First Run Scans Cold and Leaves a Snapshot
+  ✓ `--cache on` Scans Cold and Leaves a Snapshot
   ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
-  ✓ Cache-Only Answers Without Touching the Tree, and Says It Is Stale
-  ✓ Refresh Ignores the Snapshot and Scans Cold Again
+  ✓ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
+  ✓ Retired Policies Name Their Replacement
+  ✓ Retired Policies Name Their Replacement
+  ✗ A Stale Answer Needs a Policy That Reads
+@@ -1,1 +1,1 @@
+-fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
++fdu: stale_ok answers from the snapshot, which cache policy off never reads; drop one of them
   ✓ An Unknown Policy Lists Every Valid One
   ✓ The Unreleased Cache Alias Is Rejected
   ✓ Old Build Directories Use Subtree Size and Latest Activity
@@ -161,17 +166,20 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
+  ✓ Report Under the Default Policy
+  ✓ Verify the Default Created No Cache
+  ✓ A Stale Answer Has Nothing to Read
   ✓ Create the Snapshot
   ✓ Verify Exactly One Snapshot Exists
   ✓ A Second One-Shot Report Scans Cold Again
   ✓ Expand the Fixture
   ✓ Report the Changed Tree
-  ✓ The Rewrite Kept the Snapshot Current for Cache-Only
+  ✓ The Rewrite Kept the Snapshot Current for a Stale Answer
   ✗ Watching Rejects a Snapshot Nothing Verified
     stderr:
 @@ -1,1 +1,1 @@
--fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
-+fdu: watch cannot start from cache policy only: nothing verifies what changed between the snapshot and the start of the watch; use cache policy auto or read-only
+-fdu: --watch cannot start from a --stale-ok answer: nothing verifies what changed between the snapshot and the start of the watch; drop --stale-ok
++fdu: watch cannot start from a stale_ok answer: nothing verifies what changed between the snapshot and the start of the watch; drop stale_ok
   ✓ A Different Semantic Scan Scope Misses the Snapshot
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
@@ -294,13 +302,15 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ All-Cache Actions Need No Scan Root
   ✓ All-Cache Actions Need No Scan Root
   ✓ Status Before Anything Is Cached
-  ✓ A Report Leaves a Snapshot Behind
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
+  ✓ The Default Report Leaves Nothing Behind
+  ✓ The Default Report Leaves Nothing Behind
+  ✓ `--cache on` Leaves a Snapshot Behind
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
   ✓ Status Maps a Hash-Named File Back to Its Tree
   ✓ Status Renders Through the Format Axis
   ✓ Status Renders Through the Format Axis
@@ -338,7 +348,7 @@ PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,199 +1,1 @@
+@@ -1,201 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -SET UP WITH ANY CODING AGENT
@@ -479,21 +489,23 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  --words-per-page changes only report-time page derivation.
 -  Unchanged results are restored from a separate sidecar written by the same
 -  analyzer set; any other set, wider or narrower, reads the files again.
--  --cache=only never opens source files and fails if requested content is absent.
+-  --stale-ok never opens source files and fails if requested content is absent.
 -
 -CACHE BEHAVIOR
--  No ordinary view requires a preexisting cache. Metadata-only one-shot reports
--  still inspect current metadata; under --cache=auto they skip loading a snapshot
--  that cannot make that work cheaper, though a complete indexed scan may write one.
+-  --cache=auto, the default, uses the cache only where the kind of run gains from
+-  it. A metadata report neither reads nor writes one: checking a snapshot costs as
+-  much as the scan it would save, and no later report reads it. Content analysis
+-  and --watch read, revalidate, and write it. --cache=on also writes after every
+-  complete scan, leaving a snapshot for a later --stale-ok or watch.
 -
 -  Content analysis is where repeated-run caching pays most. The first run reads
 -  eligible file bodies. A compatible later run reuses results for unchanged files
 -  and reads only changed or newly eligible bodies; the performance footer reports
 -  fresh and cached analysis separately. Repeat the same --analyze command to see it.
 -
--  --cache=only is different: it does no filesystem verification, requires a
--  compatible snapshot and content sidecar for the requested analysis, and labels
--  its answer stale. --cache=off neither reads nor writes fdu's cache.
+-  --stale-ok answers from the snapshot alone: it does no filesystem verification,
+-  requires a compatible snapshot and content sidecar for the requested analysis,
+-  and labels its answer stale. --cache=off neither reads nor writes fdu's cache.
 -
 -  macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
 -  --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
@@ -501,7 +513,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  stores derived metrics, not source bodies. Status and clear use the same directory.
 -
 -IGNORE RULES
--  Fresh scans read applicable .gitignore files by default; cache-only uses retained
+-  Fresh scans read applicable .gitignore files by default; --stale-ok uses retained
 -  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
 -  Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
 -  .git is unignored unless a rule names it. --ignored=include is default.

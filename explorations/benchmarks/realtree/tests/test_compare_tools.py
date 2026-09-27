@@ -740,9 +740,10 @@ class DefaultTreeContractTests(unittest.TestCase):
     """The contract for what users actually type, and its one dangerous requirement.
 
     Every other fdu contract passes `--cache off`, so the harness never had to care
-    where a tool keeps state. This one measures the default invocation, which writes a
-    snapshot, and measuring that against the operator's real cache directory would let
-    an unrelated earlier run decide this run's starting state.
+    where a tool keeps state. This one measures the default invocation, which may write a
+    snapshot (every binary before `--cache auto` stopped writing one did), and measuring
+    that against the operator's real cache directory would let an unrelated earlier run
+    decide this run's starting state.
     """
 
     def test_the_contract_is_the_bare_default_invocation(self) -> None:
@@ -754,7 +755,7 @@ class DefaultTreeContractTests(unittest.TestCase):
         self.assertNotIn("--view", contract.argv)
         self.assertNotIn("--depth", contract.argv)
         self.assertEqual(contract.argv, ("{binary}", "--color", "never", "{root}"))
-        self.assertIn("persisted snapshot written on every run", contract.description)
+        self.assertIn("writes it inside the timed run", contract.description)
 
     def test_it_is_the_only_contract_declaring_a_cache_write(self) -> None:
         writers = {

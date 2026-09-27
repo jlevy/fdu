@@ -1214,13 +1214,14 @@ class OracleSelectionTests(unittest.TestCase):
     def test_the_default_command_is_measured_first_run_and_repeated(self) -> None:
         # The two defects found in the PR #38 review are properties of the repeated run:
         # a snapshot that exists and is rewritten anyway. A job that emptied the path each
-        # trial would measure the first run only and could never see either.
+        # trial would measure the first run only and could never see either. The default
+        # command no longer writes one, so a writing job prepares it.
         first, repeated = measure.PROBE_JOBS["default-tree-first"], measure.PROBE_JOBS["default-tree"]
         self.assertTrue(first.writes_snapshot)
         self.assertFalse(first.needs_snapshot)
         self.assertTrue(repeated.needs_snapshot)
         self.assertFalse(repeated.writes_snapshot)
-        self.assertEqual(repeated.snapshot_preparation_mode, "default-tree")
+        self.assertEqual(repeated.snapshot_preparation_mode, "cold-open-save")
         self.assertEqual(first.argv, repeated.argv)
 
 

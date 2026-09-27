@@ -383,6 +383,8 @@ pub struct AxisNames {
     pub words_per_page: &'static str,
     /// The cache policy.
     pub cache: &'static str,
+    /// The request to answer from the snapshot alone.
+    pub stale_ok: &'static str,
     /// The request to repeat the answer as a watch.
     pub watch: &'static str,
 }
@@ -421,6 +423,7 @@ impl AxisNames {
         size: "--size",
         words_per_page: "--words-per-page",
         cache: "--cache",
+        stale_ok: "--stale-ok",
         watch: "--watch",
     };
 
@@ -460,6 +463,7 @@ impl AxisNames {
         size: "size",
         words_per_page: "words_per_page",
         cache: "cache policy",
+        stale_ok: "stale_ok",
         watch: "watch",
     };
 }

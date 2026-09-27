@@ -1079,18 +1079,18 @@ change to the walker or the index should be judged on.
 `fdu-transient-summary` adds `--no-gitignore` so the request stays on the transient plan
 and records the `transient-summary` work class.
 `PERF_TOOL_CONTRACT` defaults to that transient contract.
-`fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, snapshot
-written on every run — and is the only contract that measures what a user gets by typing
-nothing else.
+`fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, and,
+since `auto` stopped persisting one-shot metadata reports, no snapshot write — and is the
+only contract that measures what a user gets by typing nothing else.
 
 Prefer `fdu-index-summary` for engine work and the default contract for user-visible
 claims; a change can move one and not the other, and for three campaigns nothing
 measured the second, which is how a default-path regression stayed invisible while every
 `--cache off` cell looked healthy.
-The default contract writes a snapshot, so the harness gives it an isolated cache
-directory for the run: measuring against the operator’s own cache would let an unrelated
-earlier run set this one’s starting state, and would leave a snapshot of the subject
-tree behind. It is a legal anchor but not a summary contract, so it cannot carry a
+The default contract may write a snapshot (every binary before that change did), so the
+harness gives it an isolated cache directory for the run: measuring against the
+operator’s own cache would let an unrelated earlier run set this one’s starting state,
+and would leave a snapshot of the subject tree behind. It is a legal anchor but not a summary contract, so it cannot carry a
 held-out release claim.
 
 The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and

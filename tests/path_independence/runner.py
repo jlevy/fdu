@@ -2,7 +2,7 @@
 
 The invariant (see the explicit core models plan, "The Rule"): for a request, tree
 state, delivery, and any history, a run returns the cold run's content and tree status,
-a named failure, or, under `--cache only`, a labelled stale answer equal to a cold run at
+a named failure, or, under `--stale-ok`, a labelled stale answer equal to a cold run at
 an earlier state. The nested `provenance` object is excluded from the comparison; the
 request, status, and all answer content remain compared. Every route returns the same
 kind of outcome for the same request, delivery, and history.
@@ -43,7 +43,7 @@ from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
 
 Outcome = Literal["complete", "partial", "failure"]
 
-# The one failure `--cache only` may answer with: no stored state serves the request.
+# The one failure `--stale-ok` may answer with: no stored state serves the request.
 # The command line exits 1 with this message, and Python raises fdu.FduError with it.
 CACHE_MISS = "snapshot is not usable"
 
@@ -242,7 +242,7 @@ def compare(
 ) -> Verdict:
     """Judge `measured` against the cold `oracle`.
 
-    `earlier` is a cold run at the state before a mutation; under `--cache only` an answer
+    `earlier` is a cold run at the state before a mutation; under `--stale-ok` an answer
     equal to it is the allowed stale outcome, provided it says so.
     `must_serve` is used after an explicit complete refresh of the identical request:
     refusing that snapshot or quietly scanning instead is a broken cache contract.
@@ -260,7 +260,7 @@ def compare(
             ):
                 return Verdict("same")
             return Verdict("differs", ("<error>",), (oracle.stderr, measured.stderr))
-        if policy == "only" and is_cache_miss(measured) and not must_serve:
+        if policy == matrix.STALE_OK and is_cache_miss(measured) and not must_serve:
             return Verdict("refused")
         return Verdict("outcome_class", (f"<outcome:{oracle.outcome}>{measured.outcome}>",))
     if oracle.outcome == "failure":
@@ -276,7 +276,7 @@ def compare(
     diff = json_diff(oracle_content, measured_content)
     if not diff:
         return Verdict("same")
-    if policy == "only" and earlier is not None and earlier.answer is not None:
+    if policy == matrix.STALE_OK and earlier is not None and earlier.answer is not None:
         earlier_content, _ = normalize(earlier.answer)
         if earlier_content == measured_content:
             if provenance["freshness"] == "stale":
@@ -312,16 +312,17 @@ class Surfaces:
 
 def _cache_env(xdg: Path) -> dict[str, str]:
     xdg.mkdir(parents=True, exist_ok=True)
-    # Each invocation gets its own cache home; `user_cache_dir` honors XDG_CACHE_HOME on
-    # every platform, so no run reads another's stored state.
-    return dict(os.environ, XDG_CACHE_HOME=str(xdg))
+    # Each invocation gets its own cache home, so no run reads another's stored state.
+    # FDU_CACHE_DIR outranks XDG_CACHE_HOME, so an operator's setting would otherwise
+    # share one directory across every case; both name the same place here.
+    return dict(os.environ, XDG_CACHE_HOME=str(xdg), FDU_CACHE_DIR=str(xdg / "fdu"))
 
 
 def run_cli(
     surfaces: Surfaces, root: Path, request: matrix.Spec, policy: str, xdg: Path
 ) -> Invocation:
     """Ask `request` on the command line."""
-    argv = [str(surfaces.fdu_bin), str(root), "--format", "json", "--cache", policy]
+    argv = [str(surfaces.fdu_bin), str(root), "--format", "json", *matrix.cache_args(policy)]
     argv += matrix.cli_args(request)
     done = subprocess.run(argv, capture_output=True, text=True, env=_cache_env(xdg), check=False)
     try:
@@ -340,7 +341,7 @@ def watch_can_serve(request: matrix.Spec, policy: str) -> bool:
     """
     scope = request.get("scope", {})
     return (
-        policy != "only"
+        policy != matrix.STALE_OK
         and request.get("analyze", "none") == "none"
         and "scan_depth" not in scope
         and not scope.get("one_fs", False)
@@ -357,8 +358,7 @@ def run_cli_watch_initial(
         "--watch",
         "--format",
         "jsonl",
-        "--cache",
-        policy,
+        *matrix.cache_args(policy),
     ]
     argv += matrix.cli_args(request)
     process = subprocess.Popen(
@@ -626,7 +626,7 @@ class MatrixRun:
         return _parallel(one, cases)
 
     def phase_selfwarm(self) -> list[CaseResult]:
-        """Each request after itself: `auto` twice, then `read-only`, then `only`."""
+        """Each request after itself under `auto`, then `auto`, `on`, and `stale-ok` in turn."""
 
         def one(request_id: str) -> list[CaseResult]:
             request = matrix.REQUESTS[request_id]
@@ -649,9 +649,9 @@ class MatrixRun:
         """A complete forced write must serve the identical unchanged request.
 
         These positive controls complement answer equality: a cache that always misses
-        otherwise passes by scanning cold or returning an allowed refusal. Refresh
-        requires indexed persistence even for a summary that Auto can answer without
-        retaining an index.
+        otherwise passes by scanning cold or returning an allowed refusal. `on` requires
+        indexed persistence even for a summary that `auto` answers without retaining an
+        index.
         """
         requests = ("default", "nogi", "a_lines", "a_code", "a_words", "a_all")
         routes = [matrix.CLI_ROUTE]
@@ -663,14 +663,16 @@ class MatrixRun:
             request = matrix.REQUESTS[request_id]
             xdg = self.ws.fresh(f"serves-{route}-{request_id}")
             try:
-                seed = run_cli(self.surfaces, self.facts.root, request, "refresh", xdg)
-                key = case_key("serves", route, "only", "refresh-self", "-", request_id)
+                seed = run_cli(self.surfaces, self.facts.root, request, "on", xdg)
+                key = case_key("serves", route, matrix.STALE_OK, "on-self", "-", request_id)
                 if seed.outcome != "complete":
-                    verdict = Verdict("outcome_class", ("<refresh:not-complete>",))
+                    verdict = Verdict("outcome_class", ("<on:not-complete>",))
                     return [CaseResult(key, verdict, self.cold[request_id], seed)]
-                measured = run_route(self.surfaces, route, self.facts.root, request, "only", xdg)
+                measured = run_route(
+                    self.surfaces, route, self.facts.root, request, matrix.STALE_OK, xdg
+                )
                 oracle = self.cold[request_id]
-                verdict = compare(oracle, measured, policy="only", must_serve=True)
+                verdict = compare(oracle, measured, policy=matrix.STALE_OK, must_serve=True)
                 return [CaseResult(key, verdict, oracle, measured, (seed.command,))]
             finally:
                 self.ws.discard(xdg)
@@ -772,7 +774,7 @@ class MatrixRun:
             results: list[CaseResult] = []
             outcomes: dict[str, dict[str, Outcome]] = defaultdict(dict)
             readers = [matrix.CLI_ROUTE, matrix.CLI_WATCH_ROUTE, "py-report", "py-open"]
-            policies: tuple[str, ...] = ("off",) if warmer is None else ("auto", "only")
+            policies: tuple[str, ...] = ("off",) if warmer is None else ("auto", matrix.STALE_OK)
             for policy in policies:
                 for route in readers + (["py-scan"] if warmer is None else []):
                     if route == matrix.CLI_WATCH_ROUTE and not watch_can_serve(request, policy):

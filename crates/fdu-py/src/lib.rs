@@ -60,7 +60,8 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         // Everything else is the operation failing on its own terms: the cache had no
         // usable snapshot, a lock was poisoned, a watch worker stopped. The arguments were
         // fine, so calling these ValueError told a caller to look in the wrong place -- and
-        // it made `--cache only` exit 2 as a usage error where the command line exits 1
+        // it made `--cache only`, now `--stale-ok`, exit 2 as a usage error where the command
+        // line exits 1
         // (fdu-4msv).
         operational => PyRuntimeError::new_err(operational.to_string()),
     }
@@ -943,6 +944,7 @@ impl PyOneShot {
     root,
     *,
     cache = "auto",
+    stale_ok = false,
     cache_dir = None,
     max_depth = None,
     one_filesystem = false,
@@ -978,6 +980,7 @@ fn report_once(
     py: Python<'_>,
     root: PathBuf,
     cache: &str,
+    stale_ok: bool,
     cache_dir: Option<PathBuf>,
     max_depth: Option<usize>,
     one_filesystem: bool,
@@ -1044,6 +1047,7 @@ fn report_once(
     let delivery = Delivery {
         cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
             .map_err(|error| value_error(&error))?,
+        stale_ok,
         cache_path: fdu_core::default_cache_path_in(&root, cache_dir.as_deref())
             .map_err(to_py_err)?,
         workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
@@ -1261,6 +1265,7 @@ fn clear_all_caches(py: Python<'_>, cache_dir: Option<PathBuf>) -> PyResult<Boun
     root,
     *,
     cache = "auto",
+    stale_ok = false,
     cache_dir = None,
     max_depth = None,
     one_filesystem = false,
@@ -1280,6 +1285,7 @@ fn open(
     py: Python<'_>,
     root: PathBuf,
     cache: &str,
+    stale_ok: bool,
     cache_dir: Option<PathBuf>,
     max_depth: Option<usize>,
     one_filesystem: bool,
@@ -1303,6 +1309,7 @@ fn open(
     let delivery = Delivery {
         cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
             .map_err(|error| value_error(&error))?,
+        stale_ok,
         cache_path: fdu_core::default_cache_path_in(&root, cache_dir.as_deref())
             .map_err(to_py_err)?,
         workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
@@ -1365,6 +1372,7 @@ fn scan(
     // A bare scan consults no cache at all, so its delivery names none.
     let delivery = Delivery {
         cache: CachePolicy::Off,
+        stale_ok: false,
         cache_path: None,
         workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
         batch_size: fdu_core::ScanConfig::default().batch_size,
@@ -1395,7 +1403,7 @@ fn main(py: Python<'_>) -> PyResult<u8> {
 #[pyfunction]
 fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let contract = PyDict::new(py);
-    contract.set_item("cache_policies", ["auto", "refresh", "read-only", "only", "off"])?;
+    contract.set_item("cache_policies", ["auto", "on", "off"])?;
     contract.set_item("analysis", ["none", "lines", "code", "words", "all"])?;
     // Derived, never copied. A hand-written list here is a second definition of a
     // grammar the library owns, and a parity test comparing two copies of the same
@@ -1464,17 +1472,13 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn cache_policy_accepts_only_the_canonical_read_only_spelling() {
+    fn cache_policy_names_the_stale_answer_in_this_apis_words() {
         let axis = AxisNames::FIELDS.cache;
-        assert_eq!(
-            parse_cache_policy("read-only", axis).expect("the canonical policy name parses"),
-            CachePolicy::ReadOnly
-        );
-        let refused = parse_cache_policy("readonly", axis)
-            .expect_err("an unreleased alias must not become a contract");
+        assert_eq!(parse_cache_policy("on", axis).expect("a policy"), CachePolicy::On);
+        let refused = parse_cache_policy("only", axis).expect_err("retired");
         assert_eq!(
             refused.message(&AxisNames::FIELDS),
-            "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, only, off"
+            "invalid cache policy \"only\": answering from the snapshot alone is now stale_ok"
         );
     }
 

@@ -113,9 +113,9 @@ class Job:
     #: is the point: a tier with no digest still has an oracle, and which one it faces
     #: is a property of the tier rather than a concession made per run.
     oracle: str = "index-digest"
-    #: The job writes the snapshot itself, so it needs a path but not a prepared
+    #: The job may write the snapshot itself, so it needs a path but not a prepared
     #: file — and the path must be empty at the start of every trial, or the job
-    #: would be measured overwriting rather than creating.
+    #: would be measured overwriting rather than creating, or finding one to ignore.
     writes_snapshot: bool = False
     #: Probe mode used by untimed snapshot preparation. Content-cache jobs need both
     #: the metadata snapshot and its independently versioned content sidecar.
@@ -368,9 +368,9 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description=(
             "The default command on a tree it has never seen: `fdu <dir>` with no "
-            "snapshot present -- scan, index, the rendered tree, and the snapshot write "
-            "the user's next run will find. Cache policy auto, tree view at its default "
-            "depth, the save joined before exit, exactly as the command line does."
+            "snapshot present -- scan, index, and the rendered tree. Cache policy auto, "
+            "which writes no snapshot for a one-shot metadata report, tree view at its "
+            "default depth, any save joined before exit, exactly as the command line does."
         ),
         oracle="tallies",
         writes_snapshot=True,
@@ -381,16 +381,15 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "default-tree", "--root", "{root}", "--snapshot", "{snapshot}"),
         start_state="warm",
         description=(
-            "The default command repeated over an unchanged tree with its own snapshot "
-            "present from the previous run. `prepare_report` does not read the snapshot "
-            "for a metadata query, so this is a cold scan plus whatever the run does "
-            "with the file it finds; `snapshot_written` in the probe summary says "
-            "whether it rewrote it. The shape of the second `fdu <dir>` a user types, "
-            "and the job the two default-path defects are judged on."
+            "The default command over an unchanged tree with a snapshot present, as a "
+            "session or `--cache on` leaves one. `prepare_report` does not read the "
+            "snapshot for a metadata query, so this is a cold scan plus whatever the run "
+            "does with the file it finds; `snapshot_written` in the probe summary says "
+            "whether it rewrote it. The job the two default-path defects are judged on."
         ),
         oracle="tallies",
         needs_snapshot=True,
-        snapshot_preparation_mode="default-tree",
+        snapshot_preparation_mode="cold-open-save",
         parallel_cpu=True,
     ),
     "cold-scan-index": Job(
@@ -589,7 +588,7 @@ PROBE_JOBS: Dict[str, Job] = {
         description=(
             "A cold scan that also writes its cache, through the real open path: "
             "index build, the writer hand-off, and the join a one-shot caller makes "
-            "before exiting. The shape of `fdu --cache refresh`."
+            "before exiting. The shape of `fdu --cache on` with no snapshot present."
         ),
         writes_snapshot=True,
         parallel_cpu=True,

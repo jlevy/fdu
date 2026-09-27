@@ -9,6 +9,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking:** `--cache` takes `auto`, `on`, or `off`, and `auto` depends on the kind
+  of request. A one-shot metadata report under `auto` no longer writes a snapshot, since
+  no later one-shot report reads it; content analysis, `--watch`, and an opened index
+  still read, revalidate, and write. `--cache on` writes after every complete scan.
+  Python's `CachePolicy` is `AUTO`, `ON`, `OFF`; Rust's `CachePolicy` is `Auto`, `On`,
+  `Off`, and `Plan::persists` replaces `CachePolicy::writes`.
+- **Breaking:** `--cache only` is now `--stale-ok` (Python `stale_ok=True`, Rust
+  `Delivery::stale_ok`), which answers from the snapshot without touching the tree.
+  Leave a snapshot for it with `--cache on`.
 - `--ignored=include|exclude|only` controls population.
   Exclusion prunes safely ignored subtrees and skips their content analysis; only
   analyzes ignored bodies.
@@ -25,6 +34,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
 - Report schema is `fdu.report/8`; cache status is `fdu.cache/3`. Python exposes
   matching population, code overview, display limits, and cache destination controls.
+
+### Removed
+
+- **Breaking:** `--cache refresh` and `--cache read-only`, with their Python and Rust
+  counterparts. Each retired value is refused with its replacement named.
 
 ## [0.1.0] - 2026-09-25
 

@@ -264,21 +264,23 @@ CONTENT ANALYSIS
   --words-per-page changes only report-time page derivation.
   Unchanged results are restored from a separate sidecar written by the same
   analyzer set; any other set, wider or narrower, reads the files again.
-  --cache=only never opens source files and fails if requested content is absent.
+  --stale-ok never opens source files and fails if requested content is absent.
 
 CACHE BEHAVIOR
-  No ordinary view requires a preexisting cache. Metadata-only one-shot reports
-  still inspect current metadata; under --cache=auto they skip loading a snapshot
-  that cannot make that work cheaper, though a complete indexed scan may write one.
+  --cache=auto, the default, uses the cache only where the kind of run gains from
+  it. A metadata report neither reads nor writes one: checking a snapshot costs as
+  much as the scan it would save, and no later report reads it. Content analysis
+  and --watch read, revalidate, and write it. --cache=on also writes after every
+  complete scan, leaving a snapshot for a later --stale-ok or watch.
 
   Content analysis is where repeated-run caching pays most. The first run reads
   eligible file bodies. A compatible later run reuses results for unchanged files
   and reads only changed or newly eligible bodies; the performance footer reports
   fresh and cached analysis separately. Repeat the same --analyze command to see it.
 
-  --cache=only is different: it does no filesystem verification, requires a
-  compatible snapshot and content sidecar for the requested analysis, and labels
-  its answer stale. --cache=off neither reads nor writes fdu's cache.
+  --stale-ok answers from the snapshot alone: it does no filesystem verification,
+  requires a compatible snapshot and content sidecar for the requested analysis,
+  and labels its answer stale. --cache=off neither reads nor writes fdu's cache.
 
   macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
   --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
@@ -286,7 +288,7 @@ CACHE BEHAVIOR
   stores derived metrics, not source bodies. Status and clear use the same directory.
 
 IGNORE RULES
-  Fresh scans read applicable .gitignore files by default; cache-only uses retained
+  Fresh scans read applicable .gitignore files by default; --stale-ok uses retained
   rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
   Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
   .git is unignored unless a rule names it. --ignored=include is default.
@@ -610,9 +612,13 @@ pub struct Cli {
     pub progress: ProgressMode,
 
     // ---- mode: how the cache is used ----
-    /// Cache policy: auto, refresh, read-only, only (unverified), or off.
+    /// Cache policy: auto (where it pays for this run), on, or off.
     #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
     pub cache: String,
+
+    /// Answer from the cached snapshot without scanning; the answer may be stale.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
+    pub stale_ok: bool,
 
     /// Cache directory; overrides `FDU_CACHE_DIR` and the platform default.
     #[arg(long, value_name = "DIR", help_heading = "DELIVERY")]
@@ -735,6 +741,7 @@ impl Cli {
         let request = self.request(path, SystemTime::now())?;
         let delivery = Delivery {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
+            stale_ok: self.stale_ok,
             cache_path: default_cache_path_in(path, self.cache_dir.as_deref())?,
             workers: fdu_core::query::Workers {
                 analysis: self.analysis_workers,
@@ -2348,6 +2355,7 @@ mod tests {
             color: ColorWhen::Auto,
             progress: ProgressMode::Auto,
             cache: "off".to_string(),
+            stale_ok: false,
             cache_dir: None,
             cache_status: None,
             cache_clear: None,
@@ -2465,19 +2473,18 @@ mod tests {
     }
 
     #[test]
-    fn the_undocumented_readonly_cache_alias_is_rejected() {
+    fn the_cache_policy_has_three_values_and_retired_ones_name_their_replacement() {
+        let parse = |value: &str| Cli { cache: value.to_string(), ..cli() }.parse_cache_policy();
+        assert_eq!(parse("on").expect("a policy"), CachePolicy::On);
         assert_eq!(
-            Cli { cache: "read-only".to_string(), ..cli() }
-                .parse_cache_policy()
-                .expect("the canonical policy name parses"),
-            CachePolicy::ReadOnly
+            parse("only").expect_err("retired").to_string(),
+            "invalid --cache \"only\": answering from the snapshot alone is now --stale-ok"
         );
-        let error = Cli { cache: "readonly".to_string(), ..cli() }
-            .parse_cache_policy()
-            .expect_err("an unreleased alias must not become a contract");
         assert_eq!(
-            error.to_string(),
-            "invalid --cache \"readonly\": expected one of auto, refresh, read-only, only, off"
+            parse("readonly")
+                .expect_err("an unreleased alias must not become a contract")
+                .to_string(),
+            "invalid --cache \"readonly\": expected one of auto, on, off"
         );
     }
 

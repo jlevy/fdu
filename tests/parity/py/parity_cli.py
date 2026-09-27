@@ -62,10 +62,24 @@ def parse_analysis(value: str) -> str:
     return value
 
 
+# The values earlier releases accepted, each refused with its replacement as the command
+# line refuses it.
+RETIRED_CACHE_POLICIES = {
+    "only": "answering from the snapshot alone is now --stale-ok",
+    "refresh": "removed; use on to write the snapshot after every complete run",
+    "read-only": (
+        "removed; auto no longer writes after a one-shot metadata report, and off reads nothing"
+    ),
+}
+
+
 def parse_cache(value: str) -> fdu.CachePolicy:
     try:
         return fdu.CachePolicy(value)
     except ValueError:
+        retired = RETIRED_CACHE_POLICIES.get(value.strip().lower())
+        if retired is not None:
+            raise UsageError(f'invalid --cache "{value}": {retired}') from None
         known = ", ".join(p.value for p in fdu.CachePolicy)
         raise UsageError(f'invalid --cache "{value}": expected one of {known}') from None
 
@@ -155,6 +169,7 @@ class Args:
         # binary anywhere the parity harness runs it.
         self.progress = "auto"
         self.cache = fdu.CachePolicy.AUTO
+        self.stale_ok = False
         self.cache_dir: str | None = None
         self.allow_partial = False
         self.watch = False
@@ -255,6 +270,8 @@ def parse_args(argv: list[str]) -> Args:
             args.cache_dir = take()
         elif flag == "--cache":
             args.cache = parse_cache(take())
+        elif flag == "--stale-ok":
+            args.stale_ok = True
         elif flag == "--allow-partial":
             args.allow_partial = True
         elif flag == "--watch":
@@ -460,6 +477,7 @@ def _open(args: Args) -> fdu.Index:
     return fdu.open(
         args.root or ".",
         cache=args.cache,
+        stale_ok=args.stale_ok,
         cache_dir=args.cache_dir,
         scan=scan_options(args),
         analysis=analysis,
@@ -514,6 +532,7 @@ def main(argv: list[str] | None = None) -> int:
         args.root or ".",
         build_query(args),
         cache=args.cache,
+        stale_ok=args.stale_ok,
         cache_dir=args.cache_dir,
         scan=scan_options(args),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),

@@ -116,11 +116,15 @@ reducer rules and returns an ordinary `Index`. Subsequent public mutations use t
 reducer without a separate engine or a caller-asserted trust flag.
 
 One-shot execution retains less state only when the request is one unfiltered summary
-with no content analysis and no ignore classification, under a cache policy that neither
-answers from the snapshot nor explicitly rewrites it.
+with no content analysis and no ignore classification, under a delivery that neither
+answers from the snapshot (`stale_ok`) nor asks to keep one (`CachePolicy::On`).
 That derived-report optimization must produce the same `Report` contract; it is not a
 second engine or a user-selectable fast mode.
-It writes no snapshot, so a later cache-only read finds none.
+It writes no snapshot, so a later `stale_ok` read finds none.
+
+Persistence is the plan's decision too (`Plan::persists`). Under `CachePolicy::Auto` a
+one-shot metadata report writes nothing, since no later one-shot report reads it; content
+analysis, retained sessions, watches, and refreshes write, because a later reader exists.
 
 #### Retained state changes cost, never answers
 
@@ -418,7 +422,7 @@ required filesystem reconciliation before returning a fresh answer.
 It never serves an unverified snapshot as fresh or replaces a complete cached tree with
 a partial cold result.
 
-Cache-only mode is the explicit exception: it performs no filesystem verification,
+A `stale_ok` delivery is the explicit exception: it performs no filesystem verification,
 labels the source as cached, and fails when no usable snapshot exists.
 The caller receives a complete `Index` and an `OpenReport` describing the path taken,
 work, and any partial errors.
@@ -944,7 +948,7 @@ every route. The loader validates the stored control payload but discards it and
 constructs the index directly in the requested blind scope.
 That projected index cannot overwrite the stronger snapshot.
 A controls-off snapshot cannot serve a controls-on request; that direction scans cold or
-misses under cache-only policy.
+misses under `stale_ok`.
 
 ## Operational Concerns
 

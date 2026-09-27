@@ -1559,7 +1559,7 @@ mod tests {
         let forged = replace_entry_name(&image, 2, OsStr::new("a/"));
         fs::write(&snapshot_path, forged).expect("write checksummed alias");
 
-        let only = crate::OpenFixture { policy: crate::CachePolicy::Only, ..config };
+        let only = crate::OpenFixture { stale_ok: true, ..config };
         assert!(
             matches!(crate::open_fixture(&root, &only), Err(Error::Snapshot(_))),
             "a malformed snapshot cannot shrink the cache-only completeness denominator"

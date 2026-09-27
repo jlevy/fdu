@@ -88,7 +88,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
-| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--cache-dir DIR`, `--watch`, `--analysis-workers N` |
+| Mode | How is work performed? | `--cache auto\|on\|off`, `--stale-ok`, `--cache-dir DIR`, `--watch`, `--analysis-workers N` |
 
 Scope determines what is scanned and cached.
 In a one-shot report, the ignored population also determines which subtrees and file
@@ -97,15 +97,15 @@ A retained index can answer narrower queries when it holds the required facts.
 
 Work has three layers.
 A single unfiltered `--no-gitignore --view summary PATH` is the one exact composition
-that retains only aggregate tallies and no index, under every cache policy except `only`
-and `refresh`, whose contracts are about the snapshot itself.
-Under the rest a snapshot cannot save the walk that request is already doing, so it
-neither reads nor writes one.
+that retains only aggregate tallies and no index, except under `--cache on` and
+`--stale-ok`, whose contracts are about the snapshot itself.
+Otherwise a snapshot cannot save the walk that request is already doing, so it neither
+reads nor writes one.
 Without `--no-gitignore` the summary reads `.gitignore` to report its ignored share,
 which needs the index.
 Ordinary metadata requests retain the reusable index but never read regular-file
-contents. One-shot metadata reports under `auto` skip loading a snapshot when it cannot
-avoid the current metadata walk, though a complete indexed report may write one.
+contents. One-shot metadata reports under `auto` neither load a snapshot, which cannot
+avoid the current metadata walk, nor write one; `--cache on` writes one.
 Any `--analyze` value other than `none` opts into a separate content sidecar.
 fdu reads eligible files whose requested result is absent or stale; a compatible
 repeated run reuses unchanged records.
@@ -176,7 +176,7 @@ time. Total files/s and decimal GB/s use that elapsed time; represented GB/s is 
 content-read bandwidth.
 Content-read throughput uses the analysis duration.
 Known binary files can contribute walked bytes but zero read bytes.
-Cache-only runs report zero walked files because they never consult the tree.
+`--stale-ok` runs report zero walked files because they never consult the tree.
 The line is gray only when color is active and has no ANSI escapes otherwise.
 Paths, Long, JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit
 it.
@@ -211,12 +211,13 @@ Extensions supports metadata sorts only; use a metric-capable view for content r
 List all matching directories, then tally the covered paths from the same snapshot:
 
 ```bash
-fdu PATH --kind dir --include .venv --include node_modules --include target --long
-fdu PATH --kind dir --include .venv --include node_modules --include target --view summary --cache only
+fdu PATH --kind dir --include .venv --include node_modules --include target --long --cache on
+fdu PATH --kind dir --include .venv --include node_modules --include target --view summary --stale-ok
 fdu PATH --kind dir --include .venv --include node_modules --include target --view files,summary --sort size --format json
 ```
 
-The second command reads the first command’s snapshot without revalidating it.
+The second command reads the snapshot the first one left with `--cache on`, without
+revalidating it.
 Keep the root, cache destination, and scan population the same.
 The third command combines flat rows and Summary in one machine report.
 Ignored directories are included by default.
@@ -271,7 +272,7 @@ Request another report from the retained index for that change, without scanning
 ## Read What `.gitignore` Covers
 
 Fresh scans read applicable per-directory `.gitignore` files by default.
-Cache-only reports use retained rule state, and `--no-gitignore` disables the rules.
+`--stale-ok` reports use retained rule state, and `--no-gitignore` disables the rules.
 Summary, tree, and extension rows show ignored size as a gray parenthetical such as
 `(128 B ignored)` when color is enabled.
 The performance line counts ignore files and accepted rules.
@@ -351,7 +352,7 @@ Check the process exit status and these fields:
   deep-detected type or origin label as exact
 
 `provenance.source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only
-`--cache only` can return `provenance.freshness: stale`, and it says so rather than
+`--stale-ok` can return `provenance.freshness: stale`, and it says so rather than
 implying currency; it fails outright when no usable snapshot exists rather than silently
 scanning.
 
@@ -362,10 +363,13 @@ and use `--allow-partial` only when incomplete totals are acceptable.
 ## Cache Behavior
 
 No ordinary view requires a preexisting cache.
+`--cache auto`, the default, uses the cache only where the kind of run gains from it.
 Metadata-only one-shot reports include current sizes or timestamps, so they must inspect
-every entry; under `auto` they skip loading a snapshot when it cannot make that
-verification cheaper.
-A complete indexed scan may still write one.
+every entry; under `auto` they neither load a snapshot, which cannot make that
+verification cheaper, nor write one, which no later report reads.
+Content analysis, `--watch`, and an opened index read, revalidate, and write it.
+`--cache on` also writes after every complete scan, which is how to leave a snapshot for
+a later `--stale-ok` answer.
 
 Content analysis is where ordinary repeated runs benefit most.
 The first compatible run reads eligible bodies; a later run restores unchanged records
@@ -374,7 +378,7 @@ A stored analyzer set answers only the same set: a different one, wider or narro
 reads the files again and replaces it.
 The performance footer reports fresh and cached analysis separately.
 
-`--cache=only` is a distinct contract: it never verifies the source tree, labels the
+`--stale-ok` is a distinct contract: it never verifies the source tree, labels the
 answer stale, and fails unless compatible metadata and any requested content analysis
 already exist. `--cache=off` neither reads nor writes fdu cache data.
 

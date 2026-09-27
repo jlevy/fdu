@@ -483,18 +483,24 @@ def open(
     *,
     ignored: IgnoredEntries = IgnoredEntries.INCLUDE,
     cache: CachePolicy = CachePolicy.AUTO,
+    stale_ok: bool = False,
     cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
     """Open a root using the requested cache policy, then return a retained index.
 
+    An opened index is its own later reader, so under ``CachePolicy.AUTO`` it reads and
+    revalidates a usable snapshot and writes one back. ``stale_ok=True`` answers from the
+    snapshot alone without touching the tree; such an index can be neither refreshed nor
+    watched.
+
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
     default, and so does :func:`report`, so the two share one snapshot scope and each starts
     warm from the other's snapshot. ``ScanOptions(read_controls=False)`` turns observation
-    off: that ``open`` reads no control file and keeps a snapshot of another scope. A policy
-    that scans treats a snapshot of the other scope as a miss and scans cold, and
-    ``CachePolicy.ONLY``, which never scans, raises :class:`FduError` naming the remedy.
+    off: that ``open`` reads no control file and keeps a snapshot of another scope. A
+    scanning request treats a snapshot of the other scope as a miss and scans cold, and a
+    ``stale_ok`` one, which never scans, raises :class:`FduError` naming the remedy.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -503,6 +509,7 @@ def open(
         _native.open,
         root,
         cache=cache.value,
+        stale_ok=stale_ok,
         cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
@@ -551,11 +558,17 @@ def report(
     query: Query | None = None,
     *,
     cache: CachePolicy = CachePolicy.AUTO,
+    stale_ok: bool = False,
     cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Report:
     """One report, retaining the least state the request needs.
+
+    Under ``CachePolicy.AUTO`` a metadata report neither reads nor writes the snapshot
+    cache, and a content-analysis report reads and writes it; ``CachePolicy.ON`` writes
+    after every complete scan, which is how to leave a snapshot for a later
+    ``stale_ok=True`` report that answers without touching the tree.
 
     The contract the command line runs under, and until now the only way to get it was to
     be the command line. :func:`open` takes the session path: it retains an index and
@@ -581,6 +594,7 @@ def report(
         _native.report_once,
         str(root),
         cache=str(cache),
+        stale_ok=stale_ok,
         cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,

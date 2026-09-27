@@ -81,6 +81,7 @@ pub struct Plan {
     pub(crate) retained: RetainedState,
     pub(crate) load: Load,
     pub(crate) verify: Verify,
+    pub(crate) persist: bool,
     pub(crate) delivery: Delivery,
 }
 
@@ -108,6 +109,15 @@ impl Plan {
     /// The verification this plan performs.
     pub const fn verify(&self) -> Verify {
         self.verify
+    }
+    /// Whether this plan may write the snapshot and its content sidecar.
+    ///
+    /// Each tier still writes only under its own rule ([`Self::writes`]); this is the
+    /// authorization those rules start from, and a caller deciding whether to warn that a
+    /// run leaves nothing behind asks it here rather than of the policy, whose meaning
+    /// under `Auto` depends on the route and the analysis.
+    pub const fn persists(&self) -> bool {
+        self.persist
     }
     /// The caller's operational choices after validation.
     pub fn delivery(&self) -> &Delivery {
@@ -201,7 +211,7 @@ impl SaveTargets {
 
 impl Plan {
     pub(crate) fn writes(&self, run: RunFacts) -> SaveTargets {
-        let allowed = self.delivery.cache.writes() && self.delivery.cache_path.is_some();
+        let allowed = self.persist && self.delivery.cache_path.is_some();
         SaveTargets {
             metadata: allowed && run.entries_verified && run.entries_changed && !run.projected,
             content: allowed
@@ -327,12 +337,19 @@ impl PerformanceSummary {
 /// keep when it avoids expensive work — re-reading file bodies for content analysis, or a
 /// cold filesystem walk — not when it merely mirrors a walk that still has to happen.
 ///
-/// Two policies still require the index, for reasons that are about intent rather than
-/// cost.  [`CachePolicy::Only`] must answer from the snapshot without touching the tree,
-/// so it has no scan to reduce.  [`CachePolicy::Refresh`] is an explicit request to
-/// rewrite the snapshot, and honouring it means materialising the index that gets
-/// written — though with no cache path configured there is nothing to rewrite, and the
-/// compact tier answers it like any other summary.
+/// Two deliveries still require the index, for reasons that are about intent rather than
+/// cost.  [`Delivery::stale_ok`] must answer from the snapshot without touching the tree,
+/// so it has no scan to reduce.  [`CachePolicy::On`] is an explicit request to leave a
+/// current snapshot, and honouring it means materialising the index that gets written —
+/// though with no cache path configured there is nothing to write, and the compact tier
+/// answers it like any other summary.
+///
+/// Persistence follows the same reasoning as the read.  Under [`CachePolicy::Auto`] a
+/// one-shot metadata report writes nothing, because no later one-shot report reads what
+/// it would store: on a million-entry Linux tree the write was 0.26 s of a 1.51 s default
+/// run.  Content analysis writes, because its sidecar spares re-reading unchanged files
+/// and is paired with the snapshot beside it; sessions, watches, and refreshes write,
+/// because they are the later reader.
 pub fn plan(
     request: &Request,
     delivery: &Delivery,
@@ -368,30 +385,35 @@ pub fn plan(
             });
         }
     }
-    if route == Route::Refresh && delivery.cache == CachePolicy::Only {
+    if route == Route::Refresh && delivery.stale_ok {
         return Err(crate::query::RequestError::DeliveryUnsupported {
             route: "refresh",
-            reason: "the only cache policy cannot verify filesystem state",
+            reason: "a stale answer cannot verify filesystem state",
         });
     }
     let analysis_requested = request.basis.content.is_enabled();
     let summary_is_sufficient = request.query.views.as_slice() == [ViewSpec::Summary]
         && request.query.selection.is_unfiltered()
         && !request.basis.scope.read_controls;
-    let policy_requires_index = match delivery.cache {
-        CachePolicy::Only => true,
-        CachePolicy::Refresh => delivery.cache_path.is_some(),
-        CachePolicy::Off | CachePolicy::Auto | CachePolicy::ReadOnly => false,
-    };
-    // A one-shot metadata query cannot amortize loading and reconciling a snapshot:
-    // both paths stat every entry. On macOS/APFS (494,031 entries), warm revalidation
-    // cost 4.8 s versus 3.6 s cold, while the write it might avoid cost only ~50 ms.
-    // Content avoids body reads, and retained routes amortize their reusable index.
-    let read_snapshot = match delivery.cache {
-        CachePolicy::Only => true,
-        CachePolicy::Off | CachePolicy::Refresh => false,
-        CachePolicy::Auto | CachePolicy::ReadOnly => route != Route::OneShot || analysis_requested,
-    };
+    let policy_requires_index =
+        delivery.stale_ok || (delivery.cache == CachePolicy::On && delivery.cache_path.is_some());
+    // What a later request can reuse decides both directions. A one-shot metadata query
+    // cannot amortize loading and reconciling a snapshot: both paths stat every entry. On
+    // macOS/APFS (494,031 entries), warm revalidation cost 4.8 s versus 3.6 s cold. Nor
+    // does a later one-shot metadata query read what it would write. Content avoids body
+    // reads, and retained routes are their own later reader.
+    let stored_state_pays = route != Route::OneShot || analysis_requested;
+    let read_snapshot = delivery.stale_ok
+        || match delivery.cache {
+            CachePolicy::Off => false,
+            CachePolicy::Auto | CachePolicy::On => stored_state_pays,
+        };
+    let persist = !delivery.stale_ok
+        && match delivery.cache {
+            CachePolicy::Off => false,
+            CachePolicy::Auto => stored_state_pays,
+            CachePolicy::On => true,
+        };
     Ok(Plan {
         basis: request.basis.clone(),
         route,
@@ -405,7 +427,8 @@ pub fn plan(
             RetainedState::FullIndex
         },
         load: if read_snapshot { Load::Snapshot } else { Load::None },
-        verify: if delivery.cache == CachePolicy::Only { Verify::None } else { Verify::Filesystem },
+        verify: if delivery.stale_ok { Verify::None } else { Verify::Filesystem },
+        persist,
         delivery: delivery.clone(),
     })
 }
@@ -640,15 +663,13 @@ mod tests {
         let plan = plan(&request, &delivery, Route::Refresh).expect("plan");
         fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o000))
             .expect("deny header read");
-        for policy in [CachePolicy::Off, CachePolicy::ReadOnly] {
-            let nonwriting = Delivery { cache: policy, ..delivery.clone() };
-            let nonwriting_plan =
-                super::plan(&request, &nonwriting, Route::Refresh).expect("nonwriting plan");
-            assert!(
-                !crate::persist_index_changes(&index, &nonwriting_plan, true, true)
-                    .expect("nonwriting policy never reads the header")
-            );
-        }
+        let nonwriting = Delivery { cache: CachePolicy::Off, ..delivery.clone() };
+        let nonwriting_plan =
+            super::plan(&request, &nonwriting, Route::Refresh).expect("nonwriting plan");
+        assert!(
+            !crate::persist_index_changes(&index, &nonwriting_plan, true, true)
+                .expect("nonwriting policy never reads the header")
+        );
         fs::write(root.path().join("fresh.txt"), b"fresh").expect("mutation");
         crate::refresh(
             &mut index,
@@ -723,16 +744,15 @@ mod tests {
                     ..basis.clone()
                 }
             };
-            crate::open(&wrong, &Delivery { cache: CachePolicy::Refresh, ..delivery.clone() })
+            crate::open(&wrong, &Delivery { cache: CachePolicy::On, ..delivery.clone() })
                 .expect("incompatible snapshot");
             let (mut index, _) = crate::open(&basis, &Delivery::new(CachePolicy::Off, None))
                 .expect("retained index");
             let refreshed =
                 crate::refresh(&mut index, &basis, &delivery).expect("refresh reseeds cache");
             assert!(!refreshed.apply.mutated(), "the existing index was already current");
-            let (cached, _) =
-                crate::open(&basis, &Delivery { cache: CachePolicy::Only, ..delivery.clone() })
-                    .expect("cache-only can now answer");
+            let (cached, _) = crate::open(&basis, &Delivery { stale_ok: true, ..delivery.clone() })
+                .expect("cache-only can now answer");
             assert_eq!(cached.total().bytes, 8);
         }
     }
@@ -753,9 +773,8 @@ mod tests {
         fs::write(&path, b"new longer text\nsecond line\n").expect("mutation");
         let refreshed = crate::refresh(&mut index, &basis, &delivery).expect("refresh");
         assert!(refreshed.is_complete());
-        let (cached, report) =
-            crate::open(&basis, &Delivery { cache: CachePolicy::Only, ..delivery })
-                .expect("cache-only sees refreshed tiers");
+        let (cached, report) = crate::open(&basis, &Delivery { stale_ok: true, ..delivery })
+            .expect("cache-only sees refreshed tiers");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert_eq!(cached.total(), index.total());
         assert_eq!(
@@ -797,7 +816,7 @@ mod tests {
     /// The files a cache-only open of `delivery`'s snapshot answers with.
     #[cfg(unix)]
     fn cached_files(basis: &crate::query::Basis, delivery: &Delivery) -> u64 {
-        let cache_only = Delivery { cache: CachePolicy::Only, ..delivery.clone() };
+        let cache_only = Delivery { stale_ok: true, ..delivery.clone() };
         crate::open(basis, &cache_only).expect("cache-only open").0.total().files
     }
 
@@ -914,16 +933,16 @@ mod tests {
         let message = |delivery: &Delivery| {
             crate::open(&basis, delivery).expect_err("cache-only refusal").to_string()
         };
-        let no_location = message(&Delivery::new(CachePolicy::Only, None));
+        let no_location = message(&Delivery::stale_ok(None));
         assert!(no_location.contains("no cache location"), "{no_location}");
-        assert!(!no_location.contains("use auto"), "no write can succeed without a location");
-        let missing = message(&Delivery::new(CachePolicy::Only, Some(snapshot.clone())));
+        assert!(!no_location.contains("`on`"), "no write can succeed without a location");
+        let missing = message(&Delivery::stale_ok(Some(snapshot.clone())));
         assert!(missing.contains("no usable snapshot"), "{missing}");
-        assert!(missing.contains("auto"), "{missing}");
+        assert!(missing.contains("with the `on` cache policy"), "{missing}");
         let other_basis = crate::query::Basis { root: other.path().into(), ..basis.clone() };
         crate::open(&other_basis, &Delivery::new(CachePolicy::Auto, Some(snapshot.clone())))
             .expect("other snapshot");
-        let wrong_root = message(&Delivery::new(CachePolicy::Only, Some(snapshot)));
+        let wrong_root = message(&Delivery::stale_ok(Some(snapshot)));
         assert!(wrong_root.contains("different root"), "{wrong_root}");
     }
 
@@ -940,9 +959,10 @@ mod tests {
                 [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened]
             {
                 let result = plan(&request, &delivery, route);
-                let forbidden = (delivery.watch.is_some()
-                    || matches!(route, Route::Watch | Route::Refresh))
-                    && delivery.cache == CachePolicy::Only
+                let forbidden = delivery.stale_ok
+                    && (delivery.watch.is_some()
+                        || matches!(route, Route::Watch | Route::Refresh)
+                        || delivery.cache == CachePolicy::Off)
                     || route == Route::Opened
                         && (delivery.cache != CachePolicy::Off
                             || delivery.watch.is_some()
@@ -1006,9 +1026,14 @@ mod tests {
     }
 
     #[test]
-    fn write_policy_depends_only_on_delivery_and_observed_facts() {
+    fn tier_writes_depend_only_on_authorization_and_observed_facts() {
+        // Which routes are authorized is `plan`'s decision, pinned by
+        // `auto_persists_where_a_later_request_reads_what_it_stores`; this pins what each
+        // tier does with the authorization it was given.
         let routes = [Route::OneShot, Route::Retained, Route::Refresh, Route::Watch, Route::Opened];
-        for delivery in Delivery::enumerate() {
+        for (delivery, persist) in
+            Delivery::enumerate().flat_map(|delivery| [(delivery.clone(), false), (delivery, true)])
+        {
             for bits in 0_u8..64 {
                 let facts = RunFacts {
                     entries_verified: bits & 1 != 0,
@@ -1018,7 +1043,7 @@ mod tests {
                     projected: bits & 16 != 0,
                     paired_entries: bits & 32 != 0,
                 };
-                let allowed = delivery.cache.writes();
+                let allowed = persist;
                 let expected = SaveTargets {
                     metadata: allowed
                         && facts.entries_verified
@@ -1040,6 +1065,7 @@ mod tests {
                         retained: RetainedState::FullIndex,
                         load: Load::Snapshot,
                         verify: Verify::Filesystem,
+                        persist,
                         delivery: delivery.clone(),
                     };
                     assert_eq!(plan.writes(facts), expected, "{route:?} {delivery:?} {facts:?}");
@@ -1116,6 +1142,11 @@ mod tests {
         }
     }
 
+    /// `fixture`, answered from its snapshot alone.
+    fn stale(fixture: OpenFixture) -> OpenFixture {
+        OpenFixture { stale_ok: true, ..fixture }
+    }
+
     fn seed_controls_snapshot(root: &Path, cache_path: PathBuf) {
         fs::write(root.join(".gitignore"), b"ignored.log\n").expect("control file");
         fs::write(root.join("ignored.log"), b"ignored").expect("ignored file");
@@ -1128,7 +1159,7 @@ mod tests {
         let off = blind(CachePolicy::Off, Some(PathBuf::from("unused.fdu")));
         assert_eq!(planned(&off, &summary_query()).retained, RetainedState::Summary);
 
-        for policy in [CachePolicy::Auto, CachePolicy::Refresh, CachePolicy::ReadOnly] {
+        for policy in [CachePolicy::Auto, CachePolicy::On] {
             let unavailable = blind(policy, None);
             assert_eq!(planned(&unavailable, &summary_query()).retained, RetainedState::Summary);
         }
@@ -1158,27 +1189,28 @@ mod tests {
         // index and writing it back is additive cost with nothing to amortise it. The
         // compact tier stays selected so the common one-shot totals request pays for a
         // walk and nothing else.
-        for policy in [CachePolicy::Auto, CachePolicy::ReadOnly] {
-            let cached = blind(policy, Some(PathBuf::from("cache.fdu")));
-            assert_eq!(
-                planned(&cached, &summary_query()).retained,
-                RetainedState::Summary,
-                "{policy:?} must not be forced onto the index by a present snapshot"
-            );
-        }
+        let cached = blind(CachePolicy::Auto, Some(PathBuf::from("cache.fdu")));
+        assert_eq!(
+            planned(&cached, &summary_query()).retained,
+            RetainedState::Summary,
+            "a present snapshot must not force the index"
+        );
     }
 
     #[test]
-    fn policies_whose_intent_is_the_snapshot_itself_still_retain_the_index() {
-        // These two are not cost decisions. `Only` must answer without touching the tree,
-        // so it has no scan to reduce; `Refresh` is an explicit request to rewrite the
-        // snapshot, which means materialising the index that gets written.
-        for policy in [CachePolicy::Only, CachePolicy::Refresh] {
-            let cached = config(policy, Some(PathBuf::from("cache.fdu")));
+    fn deliveries_whose_intent_is_the_snapshot_itself_still_retain_the_index() {
+        // These two are not cost decisions. A stale answer must come without touching the
+        // tree, so it has no scan to reduce; `On` is an explicit request to leave a
+        // current snapshot, which means materialising the index that gets written.
+        let cached = || blind(CachePolicy::Auto, Some(PathBuf::from("cache.fdu")));
+        for (name, delivery) in [
+            ("stale", stale(cached())),
+            ("on", OpenFixture { policy: CachePolicy::On, ..cached() }),
+        ] {
             assert_eq!(
-                planned(&cached, &summary_query()).retained,
+                planned(&delivery, &summary_query()).retained,
                 RetainedState::FullIndex,
-                "{policy:?} needs the index to honour its contract"
+                "{name} needs the index to honour its contract"
             );
         }
     }
@@ -1192,7 +1224,7 @@ mod tests {
         // compact summary — the tree default was the measured case.
         let mut tree_query = summary_query();
         tree_query.views = vec![ViewSpec::Tree];
-        for policy in [CachePolicy::Auto, CachePolicy::ReadOnly] {
+        for policy in [CachePolicy::Auto, CachePolicy::On] {
             let cached = config(policy, Some(PathBuf::from("cache.fdu")));
             assert!(
                 planned(&cached, &tree_query).load != Load::Snapshot,
@@ -1203,8 +1235,8 @@ mod tests {
 
     #[test]
     fn the_snapshot_is_read_where_reading_pays_or_is_the_contract() {
-        // `Only` answers from the snapshot; reading it is the request itself.
-        let only = config(CachePolicy::Only, Some(PathBuf::from("cache.fdu")));
+        // A stale answer comes from the snapshot; reading it is the request itself.
+        let only = stale(config(CachePolicy::Auto, Some(PathBuf::from("cache.fdu"))));
         assert_eq!(planned(&only, &summary_query()).load, Load::Snapshot);
 
         // Analysis reuses the content sidecar, which avoids re-reading file bodies —
@@ -1218,11 +1250,43 @@ mod tests {
         };
         assert_eq!(planned(&analyzed, &summary_query()).load, Load::Snapshot);
 
-        // `Off` and `Refresh` never read by definition.
-        for policy in [CachePolicy::Off, CachePolicy::Refresh] {
-            let never = config(policy, Some(PathBuf::from("cache.fdu")));
-            assert_eq!(planned(&never, &summary_query()).load, Load::None, "{policy:?}");
+        // `Off` never reads by definition.
+        let never = config(CachePolicy::Off, Some(PathBuf::from("cache.fdu")));
+        assert_eq!(planned(&never, &summary_query()).load, Load::None);
+    }
+
+    #[test]
+    fn auto_persists_where_a_later_request_reads_what_it_stores() {
+        // The policy table in one place. A one-shot metadata report under `Auto` leaves
+        // nothing: no later one-shot report reads it, and it cost 0.26 s of a 1.51 s
+        // default run on a million-entry Linux tree. Analysis keeps its sidecar and the
+        // snapshot it pairs with; retained routes are their own later reader. `On` writes
+        // everywhere a verified answer is produced, `Off` and a stale answer nowhere.
+        let cache = Some(PathBuf::from("cache.fdu"));
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let persists = |fixture: &OpenFixture, query: &Query, route: Route| {
+            let (request, delivery) = split(Path::new("."), fixture, query);
+            plan(&request, &delivery, route).expect("valid plan").persists()
+        };
+        for (policy, one_shot, analysis, retained) in [
+            (CachePolicy::Auto, false, true, true),
+            (CachePolicy::On, true, true, true),
+            (CachePolicy::Off, false, false, false),
+        ] {
+            let metadata = config(policy, cache.clone());
+            assert_eq!(persists(&metadata, &tree, Route::OneShot), one_shot, "{policy:?}");
+            assert_eq!(
+                persists(&analyzing(metadata.clone()), &tree, Route::OneShot),
+                analysis,
+                "{policy:?} with analysis"
+            );
+            for route in [Route::Retained, Route::Refresh, Route::Watch] {
+                assert_eq!(persists(&metadata, &tree, route), retained, "{policy:?} {route:?}");
+            }
         }
+        let stale_answer = stale(config(CachePolicy::On, cache));
+        assert!(!persists(&stale_answer, &tree, Route::OneShot), "a stale answer writes nothing");
+        assert!(!persists(&stale_answer, &tree, Route::Retained), "a stale answer writes nothing");
     }
 
     #[test]
@@ -1261,13 +1325,14 @@ mod tests {
         fs::write(root.path().join("file.txt"), b"contents").expect("file");
         let cache = tempfile::tempdir().expect("cache dir");
         let auto = config(CachePolicy::Auto, Some(cache.path().join("cache.fdu")));
+        let on = OpenFixture { policy: CachePolicy::On, ..auto.clone() };
         let mut tree_query = summary_query();
         tree_query.views = vec![ViewSpec::Tree];
 
-        let (first, pending, _) = prepared(root.path(), &auto, &tree_query).expect("first report");
+        let (first, pending, _) = prepared(root.path(), &on, &tree_query).expect("first report");
         pending.join().expect("first save");
         assert_eq!(first.provenance.source, ReportSource::ColdScan);
-        assert!(auto.cache_path.as_deref().expect("path").exists(), "first run persists");
+        assert!(on.cache_path.as_deref().expect("path").exists(), "`on` persists");
 
         let (second, pending, performance) =
             prepared(root.path(), &auto, &tree_query).expect("second report");
@@ -1290,9 +1355,10 @@ mod tests {
     }
 
     #[test]
-    fn cache_only_still_answers_from_a_snapshot_left_by_a_one_shot_report() {
-        // Skipping the read must not skip the write: the snapshot a default run leaves
-        // behind is what `--cache only` answers from without touching the tree.
+    fn a_stale_answer_reads_what_an_on_report_leaves_and_auto_leaves_nothing() {
+        // `auto` skips the write a one-shot metadata report cannot use, so a stale answer
+        // after it has nothing to read and says how to leave something; `on` is that way,
+        // and what it leaves is answered from without touching the tree.
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("file.txt"), b"contents").expect("file");
         let cache = tempfile::tempdir().expect("cache dir");
@@ -1301,9 +1367,17 @@ mod tests {
         tree_query.views = vec![ViewSpec::Tree];
 
         let (_, pending, _) = prepared(root.path(), &auto, &tree_query).expect("report");
+        assert!(!pending.writes_metadata(), "`auto` starts no metadata write");
+        pending.join().expect("nothing to save");
+        assert!(!cache.path().join("cache.fdu").exists(), "`auto` leaves nothing");
+        let only = stale(config(CachePolicy::Auto, Some(cache.path().join("cache.fdu"))));
+        let missing = prepared(root.path(), &only, &tree_query).expect_err("nothing to read");
+        assert!(missing.to_string().contains("with the `on` cache policy"), "{missing}");
+
+        let on = OpenFixture { policy: CachePolicy::On, ..auto };
+        let (_, pending, _) = prepared(root.path(), &on, &tree_query).expect("report");
         pending.join().expect("save");
 
-        let only = config(CachePolicy::Only, Some(cache.path().join("cache.fdu")));
         let (from_cache, pending, performance, diagnostics) =
             prepared_with_diagnostics(root.path(), &only, &tree_query).expect("cache-only report");
         pending.join().expect("no save");
@@ -1321,7 +1395,7 @@ mod tests {
         fs::write(root.path().join("src/lib.rs"), b"library").expect("source file");
         seed_controls_snapshot(root.path(), cache_path.clone());
 
-        let controls_off = controls_config(CachePolicy::Only, cache_path, false);
+        let controls_off = stale(controls_config(CachePolicy::Auto, cache_path, false));
         let query = Query {
             views: vec![
                 ViewSpec::Summary,
@@ -1340,7 +1414,12 @@ mod tests {
             prepared(root.path(), &controls_off, &query).expect("projected report");
         pending.join().expect("no cache-only save");
 
-        let cold = OpenFixture { policy: CachePolicy::Off, cache_path: None, ..controls_off };
+        let cold = OpenFixture {
+            policy: CachePolicy::Off,
+            stale_ok: false,
+            cache_path: None,
+            ..controls_off
+        };
         let (mut expected, pending, _) =
             prepared(root.path(), &cold, &query).expect("controls-off cold report");
         pending.join().expect("no cold save");
@@ -1401,7 +1480,8 @@ mod tests {
     fn a_one_shot_report_observes_control_state_as_its_caller_configures() {
         // A default report reads every `.gitignore`, and a file past a bound is refused and
         // named without ending the report or its snapshot. A report that turns observation
-        // off reads neither file, and says so in its report and in any snapshot it writes.
+        // off reads neither file, and says so in its report and in any snapshot it writes;
+        // `on` makes each one write.
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("file.txt"), b"contents").expect("file");
         write_unobservable_controls(root.path());
@@ -1411,7 +1491,7 @@ mod tests {
         for read_controls in [true, false] {
             let cache = tempfile::tempdir().expect("cache dir");
             let cache_path = cache.path().join("cache.fdu");
-            let caller = controls_config(CachePolicy::Auto, cache_path.clone(), read_controls);
+            let caller = controls_config(CachePolicy::On, cache_path.clone(), read_controls);
             for query in [summary_query(), tree_query.clone()] {
                 let (report, pending, _) = prepared(root.path(), &caller, &query)
                     .expect("a refused control file ends nothing");
@@ -1474,23 +1554,27 @@ mod tests {
 
         // A usable snapshot exists, so a cache-only read of a scope this build supports
         // answers from it.
-        let warm = config(CachePolicy::Auto, Some(cache_path.clone()));
+        let warm = config(CachePolicy::On, Some(cache_path.clone()));
         let (_, pending, _) = prepared(root.path(), &warm, &summary_query()).expect("warm");
         pending.join().expect("save");
         let (_, pending, _) = prepared(
             root.path(),
-            &config(CachePolicy::Only, Some(cache_path.clone())),
+            &stale(config(CachePolicy::Auto, Some(cache_path.clone()))),
             &summary_query(),
         )
         .expect("the snapshot answers a supported scope");
         pending.join().expect("no save");
 
         let unsupported = ScanConfig { follow_symlinks: true, ..ScanConfig::default() };
-        for policy in
-            [CachePolicy::Only, CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
-        {
+        for (policy, stale_ok) in [
+            (CachePolicy::Auto, true),
+            (CachePolicy::Off, false),
+            (CachePolicy::Auto, false),
+            (CachePolicy::On, false),
+        ] {
             let asked = OpenFixture {
                 scan: unsupported.clone(),
+                stale_ok,
                 ..config(policy, Some(cache_path.clone()))
             };
             let refused = prepared(root.path(), &asked, &summary_query())
@@ -1542,9 +1626,9 @@ mod tests {
     }
 
     #[test]
-    fn a_default_reports_snapshot_serves_either_cache_only_report_but_not_the_reverse() {
+    fn an_on_reports_snapshot_serves_either_cache_only_report_but_not_the_reverse() {
         // Every surface reaches this planner observing control state by default, so a
-        // snapshot any default report wrote serves the next one. A cache-only report that
+        // snapshot a default-scope report wrote under `on` serves the next one. A cache-only report that
         // turns observation off also answers from it, reading only the all-entry facts. An
         // opted-out snapshot holds no classification, so it cannot serve a default report,
         // and the refusal says why and what recovers.
@@ -1556,12 +1640,12 @@ mod tests {
         for (writer, reader) in [(true, true), (true, false), (false, false), (false, true)] {
             let cache = tempfile::tempdir().expect("cache dir");
             let cache_path = cache.path().join("cache.fdu");
-            let write = controls_config(CachePolicy::Auto, cache_path.clone(), writer);
+            let write = controls_config(CachePolicy::On, cache_path.clone(), writer);
             let (_, pending, _) =
                 prepared(root.path(), &write, &tree_query).expect("writing report");
             pending.join().expect("save");
 
-            let read = controls_config(CachePolicy::Only, cache_path, reader);
+            let read = stale(controls_config(CachePolicy::Auto, cache_path, reader));
             match prepared(root.path(), &read, &tree_query) {
                 Ok((report, pending, _)) => {
                     pending.join().expect("no save");
@@ -1576,7 +1660,7 @@ mod tests {
                 Err(Error::Snapshot(message)) => {
                     assert!(!writer && reader, "writer {writer}, reader {reader}: {message}");
                     assert!(message.contains(".gitignore state"), "names the cause: {message}");
-                    assert!(message.contains("`auto`"), "names the remedy: {message}");
+                    assert!(message.contains("verified answer"), "names the remedy: {message}");
                 }
                 Err(other) => panic!("writer {writer}, reader {reader}: {other}"),
             }
@@ -1584,10 +1668,10 @@ mod tests {
     }
 
     #[test]
-    fn a_cache_only_open_answers_from_a_default_reports_snapshot() {
-        // A default report and a default `open` share one scope, so the one policy that
-        // forbids a scan answers the `open` from the report's snapshot, with the
-        // classification the report observed.
+    fn a_cache_only_open_answers_from_an_on_reports_snapshot() {
+        // A default-scope report and a default `open` share one scope, so the one delivery
+        // that forbids a scan answers the `open` from the snapshot the report left under
+        // `on`, with the classification the report observed.
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join(".gitignore"), b"*.log\n").expect("control file");
         fs::write(root.path().join("debug.log"), b"ignored").expect("ignored file");
@@ -1596,11 +1680,11 @@ mod tests {
         let mut tree_query = summary_query();
         tree_query.views = vec![ViewSpec::Tree];
 
-        let auto = config(CachePolicy::Auto, Some(cache_path.clone()));
-        let (_, pending, _) = prepared(root.path(), &auto, &tree_query).expect("report");
+        let on = config(CachePolicy::On, Some(cache_path.clone()));
+        let (_, pending, _) = prepared(root.path(), &on, &tree_query).expect("report");
         pending.join().expect("save");
 
-        let only = config(CachePolicy::Only, Some(cache_path));
+        let only = stale(config(CachePolicy::Auto, Some(cache_path)));
         let (index, report) = crate::open_fixture(root.path(), &only).expect("the shared snapshot");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert_eq!(index.is_ignored(Path::new("debug.log")).ok(), Some(Some(true)));
@@ -1609,8 +1693,9 @@ mod tests {
     #[test]
     fn an_open_that_opts_out_of_control_state_shares_an_opted_out_reports_snapshot() {
         // A report and an `open` that both turn observation off write and want one scope,
-        // so that open answers from the report's snapshot without touching the tree, under
-        // the one policy that forbids a scan, and says it cannot classify ignored entries.
+        // so that open answers from the snapshot the report left under `on` without
+        // touching the tree, as the one delivery that forbids a scan, and says it cannot
+        // classify ignored entries.
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("file.txt"), b"contents").expect("file");
         let cache = tempfile::tempdir().expect("cache dir");
@@ -1618,12 +1703,12 @@ mod tests {
         let mut tree_query = summary_query();
         tree_query.views = vec![ViewSpec::Tree];
 
-        let auto = blind(CachePolicy::Auto, Some(cache_path.clone()));
-        let (_, pending, _) = prepared(root.path(), &auto, &tree_query).expect("report");
+        let on = blind(CachePolicy::On, Some(cache_path.clone()));
+        let (_, pending, _) = prepared(root.path(), &on, &tree_query).expect("report");
         pending.join().expect("save");
         assert!(cache_path.exists(), "the report left a snapshot");
 
-        let only = blind(CachePolicy::Only, Some(cache_path));
+        let only = stale(blind(CachePolicy::Auto, Some(cache_path)));
         let (index, report) = crate::open_fixture(root.path(), &only).expect("the shared snapshot");
         assert_eq!(report.path_taken, OpenPath::CacheOnly);
         assert!(matches!(
@@ -1853,14 +1938,14 @@ mod tests {
         let cache_dir = tempfile::tempdir().expect("cache dir");
         let cache = cache_dir.path().join("snapshot.fdu");
         let (_, pending, _) =
-            prepared(root.path(), &config(CachePolicy::Auto, Some(cache.clone())), &tree)
+            prepared(root.path(), &config(CachePolicy::On, Some(cache.clone())), &tree)
                 .expect("a report that writes the snapshot");
         pending.join().expect("save");
 
         let progress = Progress::new();
         let (_, pending, performance) = prepared_with_progress(
             root.path(),
-            &config(CachePolicy::Only, Some(cache)),
+            &stale(config(CachePolicy::Auto, Some(cache))),
             &tree,
             &progress,
         )

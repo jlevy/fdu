@@ -50,7 +50,10 @@ STALE_REFERENCES = []
 
 
 def run(args, cache):
-    env = dict(os.environ, XDG_CACHE_HOME=str(cache), NO_COLOR="1")
+    # FDU_CACHE_DIR outranks XDG_CACHE_HOME, so both name the case's own directory.
+    env = dict(
+        os.environ, XDG_CACHE_HOME=str(cache), FDU_CACHE_DIR=str(cache / "fdu"), NO_COLOR="1"
+    )
     started = time.time_ns()
     p = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
     problem = reference_outside(p.stdout, started, time.time_ns())
@@ -103,7 +106,8 @@ def main():
         for ask, aargs in ASKS.items():
             cache = Path(tempfile.mkdtemp(prefix="fdu-cross-"))
             try:
-                run([str(root), "--format", "json", "--cache", "auto", *wargs], cache)
+                # `on`, so a metadata warmer leaves a snapshot as an analysis one does.
+                run([str(root), "--format", "json", "--cache", "on", *wargs], cache)
                 rc, out, _ = run([str(root), "--format", "json", "--cache", "auto", *aargs], cache)
                 got, want = body(out), cold[ask][1]
                 gotf, wantf = analyze_field(out), cold[ask][2]

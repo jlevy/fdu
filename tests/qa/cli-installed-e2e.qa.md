@@ -187,8 +187,8 @@ fdu --help | sed -n '1,80p'
 fdu 0.1.0-dev+g<sha>
 ```
 
-Help must list `--view`, `--analyze`, `--cache` (`auto`, `refresh`, `read-only`, `only`,
-`off`), `--cache-status`, `--cache-clear`, `--scan-depth`, `--watch`, and `--interval`.
+Help must list `--view`, `--analyze`, `--cache` (`auto`, `on`, `off`), `--stale-ok`,
+`--cache-status`, `--cache-clear`, `--scan-depth`, `--watch`, and `--interval`.
 
 **Verify**:
 

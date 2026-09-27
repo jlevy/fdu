@@ -84,9 +84,7 @@ def check_the_one_shot_retains_nothing(root: Path) -> None:
     # an argument error sent a caller looking in the wrong place, and made the CLI shim
     # exit 2 as a usage error where the command line exits 1.
     try:
-        fdu.report(
-            root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.ONLY, scan=blind
-        )
+        fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)), stale_ok=True, scan=blind)
     except fdu.InvalidArgumentError as error:  # pragma: no cover - the regression
         raise AssertionError(f"an unusable snapshot is not an argument error: {error}") from None
     except fdu.FduError:
@@ -441,19 +439,20 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     )
     assert lifted.report().notes == ()
 
-    # A default report and a default open share one snapshot scope. An opted-out open
-    # projects that snapshot's equal entry tier into a blind index on every cache route.
+    # A default-scope report and a default open share one snapshot scope; the report leaves
+    # its snapshot under `CachePolicy.ON`. An opted-out open projects that snapshot's equal
+    # entry tier into a blind index on every cache route.
     (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
     assert fdu.cache_path(root) is not None
     try:
-        fdu.report(root, fdu.Query(views=(fdu.View.TREE,)))
+        fdu.report(root, fdu.Query(views=(fdu.View.TREE,)), cache=fdu.CachePolicy.ON)
         assert fdu.open(root).report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
-        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
+        cached = fdu.open(root, stale_ok=True)
         assert cached.report().provenance.source is fdu.ReportSource.CACHE_ONLY
         projected = fdu.open(root, scan=opted_out)
         assert projected.report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
         assert projected.status.ignore_rules is None
-        projected_only = fdu.open(root, cache=fdu.CachePolicy.ONLY, scan=opted_out)
+        projected_only = fdu.open(root, stale_ok=True, scan=opted_out)
         assert projected_only.report().provenance.source is fdu.ReportSource.CACHE_ONLY
         assert projected_only.status.ignore_rules is None
     finally:
@@ -583,7 +582,7 @@ def check_refresh_and_watch_persist() -> None:
         path.write_text("new longer text\nsecond line\n", encoding="utf-8")
         refreshed = index.refresh()
         assert refreshed.status.complete
-        cached = fdu.open(root, cache=fdu.CachePolicy.ONLY, analysis=analysis)
+        cached = fdu.open(root, stale_ok=True, analysis=analysis)
         assert cached.total().bytes == index.total().bytes
         assert cached.total().files == index.total().files
         query = fdu.Query(views=(fdu.View.TYPES,))
@@ -593,7 +592,7 @@ def check_refresh_and_watch_persist() -> None:
         path.write_text("changed before watcher registration\n", encoding="utf-8")
         with watched.watch(fdu.WatchOptions(interval=0.01)) as feed:
             next(feed)
-            cached = fdu.open(root, cache=fdu.CachePolicy.ONLY)
+            cached = fdu.open(root, stale_ok=True)
             assert cached.total().bytes == path.stat().st_size
 
 
@@ -627,9 +626,7 @@ def check_population_code_and_cache(entrypoint: Path) -> None:
                 assert section.code.ignored is not None
                 assert section.code.non_ignored.code_lines == 1
                 assert section.code.ignored.code_lines == 2
-            cached = fdu.report(
-                root, query, analysis=analysis, cache=fdu.CachePolicy.ONLY, cache_dir=cache
-            )
+            cached = fdu.report(root, query, analysis=analysis, stale_ok=True, cache_dir=cache)
             assert cached.sections == report.sections
             cli = subprocess.run(
                 [
@@ -638,7 +635,7 @@ def check_population_code_and_cache(entrypoint: Path) -> None:
                     "--analyze=code",
                     "--format=json",
                     f"--ignored={population}",
-                    "--cache=only",
+                    "--stale-ok",
                     "--cache-dir",
                     str(cache),
                 ],
@@ -800,7 +797,7 @@ def main() -> None:
     cache_root = Path(tempfile.mkdtemp(prefix="fdu-public-cache-"))
     (cache_root / "cached.txt").write_text("cached", encoding="utf-8")
     fdu.open(cache_root, cache=fdu.CachePolicy.AUTO)
-    cached = fdu.open(cache_root, cache=fdu.CachePolicy.ONLY)
+    cached = fdu.open(cache_root, stale_ok=True)
     # Coverage and currency are independent: a snapshot can cover the complete scope
     # while remaining deliberately stale until revalidation.
     assert cached.status.complete is True

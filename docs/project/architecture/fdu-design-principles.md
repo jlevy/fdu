@@ -93,7 +93,7 @@ changes, a run returns one of four outcomes, compared on content and tree status
   cold answer over that part, with its tree status naming what is missing (retained
   facts under an unverified subtree are never served);
 - a failure that names why the delivery cannot answer;
-- under `--cache only`, the cold answer at a recorded earlier state, labelled stale.
+- under `--stale-ok`, the cold answer at a recorded earlier state, labelled stale.
 
 For one request, delivery, and history, every route and surface returns the same kind of
 outcome, and every machine format parses back to the same value.
@@ -525,11 +525,13 @@ anything is rendered.
 Cache behavior is one explicit policy axis, and every machine-format report carries its
 `source`, `freshness`, `complete`, and `errors`; human text reports errors and partial
 results on standard error.
-The cache policy is the user’s choice.
+The cache policy is the user’s choice: `auto` lets the plan read and write only where the
+kind of request gains from it, `on` also keeps a snapshot after every complete scan, and
+`off` stays out of the cache.
 Within it, the execution plan may pick the cheapest route that can answer, and routes
 differ only in cost and provenance, never in the answer.
 
-`--cache only` is the one tier that can be stale, and it says so: the loaded index is
+`--stale-ok` is the one tier that can be stale, and it says so: the loaded index is
 marked unverified rather than replaying the freshness it was saved with.
 It fails when no usable snapshot exists rather than silently scanning, because a fast
 path that is sometimes a full walk — with nothing in the output to say which happened —

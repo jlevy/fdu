@@ -76,12 +76,16 @@ def _copy_json(value: JsonValue) -> JsonValue:
 
 
 class CachePolicy(StrEnum):
-    """How :func:`fdu.open` may use the on-disk snapshot cache."""
+    """Whether :func:`fdu.open` and :func:`fdu.report` may read and write the snapshot cache.
+
+    ``AUTO`` uses the cache where the kind of request gains from it: a one-shot metadata
+    report neither reads nor writes it, while content analysis and an opened index read,
+    revalidate, and write it. ``ON`` also writes after every complete scan, leaving a
+    snapshot for a later ``stale_ok`` answer. ``OFF`` neither reads nor writes.
+    """
 
     AUTO = "auto"
-    REFRESH = "refresh"
-    READ_ONLY = "read-only"
-    ONLY = "only"
+    ON = "on"
     OFF = "off"
 
 
