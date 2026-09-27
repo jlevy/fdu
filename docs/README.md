@@ -33,7 +33,8 @@ live change feed, and the Rust and Python libraries.
 - [Performance evidence report](project/reports/report-2026-08-20-fdu-performance-evidence.md)
 - [Experiment ledger](project/reports/report-2026-08-10-fdu-performance-experiments.md)
 - [Performance loop](project/guides/performance-loop.md)
-- [Latest tool comparison](project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
+- [macOS tool comparison](project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+- [Linux tool comparison](project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 
 ## Build, Test, and Release
 

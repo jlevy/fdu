@@ -299,9 +299,24 @@ See the
 [full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
 for methodology, memory use, confidence intervals, and exact results.
 
-Linux offers the same reports, live updates, and Python and Rust APIs.
-A [fresh Linux comparison](explorations/benchmarks/README.md#linux-comparison-rerun) is
-queued after recent optimizations; older results do not establish the current ranking.
+On Linux the ranking depends on the job.
+The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 2026-09-27:
+
+| Tool | Work returned | Median wall-clock time | Wall time vs. fdu summary |
+| --- | --- | ---: | ---: |
+| **fdu `--view summary`** | exact totals, no index | **0.97 s** | baseline |
+| pdu | rendered tree | 1.09 s | +11% |
+| diskus | scalar total only | 1.10 s | +16% |
+| fdu | reusable exact index and ten-row tree | 1.38 s | — |
+| dust | allocated-byte total only | 1.70 s | +77% |
+| gdu, GNU `du`, ncdu, dua | tree or total | 2.6–4.0 s | +166% to +299% |
+
+fdu’s summary mode is the fastest tool measured, but building the reusable index is
+about 19% slower than pdu or diskus there.
+That gap is glibc allocator contention between fdu’s walker threads and its index
+builder, not filesystem work; see the
+[Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
+for the evidence and the work under way.
 Windows builds and passes tests but has not been performance-benchmarked.
 
 ## Why

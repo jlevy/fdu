@@ -68,6 +68,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 3 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -236,6 +237,9 @@ dead end.
 | 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
 | 156 | [Progress indicator without a handle against main](#exp156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
 | 157 | [Progress handle attached against no handle](#exp157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
+| 158 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp158--linux-oneshot-index-release-off-the-answer-path-clears-3-on-defaulttree) | H152 | `default-tree` | -3.2% | ✅ accepted |
+| 159 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp159--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H153 | `cold-scan-index` | -2.2% | ❌ rejected |
+| 160 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp160--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H154 | `cold-scan-index` | +0.9% | ❌ rejected |
 
 ## The experiments
 
@@ -5283,6 +5287,97 @@ uncontrolled cell at 100% to 72% busy, user CPU -0.63%; needs a quiet re-run.
 Full record:
 [`exp-157-progress-handle-attached-against-no-handle.md`](../experiments/exp-157-progress-handle-attached-against-no-handle.md)
 
+### exp-158 — Linux one-shot index release off the answer path clears 3% on default-tree
+
+✅ accepted · 2026-09-27 · H152 · commit `71c52591`
+
+Control: 4c4917f4 probe: one-shot index released on the caller or joined writer thread
+
+Candidate: same probe with release_index: a large last reference is released on a
+detached thread
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1611.5 | 1541.7 | -3.19% | [-4.88%, -1.79%] |
+| component (ms) | 1599.8 | 1521.9 | -3.79% | [-5.51%, -2.72%] |
+| cpu (ms) | 4714.6 | 4631.8 | -1.47% (n.s.) | [-2.76%, +0.37%] |
+| user (ms) | 1410.2 | 1339.8 | -5.19% | [-7.16%, -3.08%] |
+| system (ms) | 3315.9 | 3326.2 | +0.57% (n.s.) | [-1.92%, +4.06%] |
+| peak rss (MiB) | 416.9 | 415.9 | -0.01% (n.s.) | [-1.25%, +2.68%] |
+
+Other jobs, wall time: `cold-scan-index` +0.0% (n.s.), `default-tree-first` -5.4%
+(n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+**Accepted:** quiet balanced-1m default-tree -3.19% [-4.88%, -1.79%]; cold-scan-index
+placebo +0.00% [-2.24%, +2.15%]; product CLI --cache off indexed tree -4.31%
+[-5.99%, -3.25%] in the paired tool harness.
+
+Full record:
+[`exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md`](../experiments/exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)
+
+### exp-159 — Linux direct file fold and owned names miss 3% on cold-scan-index
+
+❌ rejected · 2026-09-27 · H153
+
+Control: H152 probe
+
+Candidate: H152 plus direct file fold into the parent roll-up and owned walker names
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3195.3 | 3119.3 | -2.22% (n.s.) | [-4.04%, +0.04%] |
+| component (ms) | 1284.1 | 1243.0 | -4.12% (n.s.) | [-7.40%, +1.25%] |
+| cpu (ms) | 6326.9 | 6238.0 | -1.54% (n.s.) | [-3.37%, +0.67%] |
+| user (ms) | 3040.1 | 2987.1 | -4.55% (n.s.) | [-5.39%, +1.46%] |
+| system (ms) | 3254.4 | 3272.6 | +0.21% (n.s.) | [-1.91%, +4.10%] |
+| peak rss (MiB) | 316.6 | 308.5 | -1.71% (n.s.) | [-5.29%, +1.49%] |
+
+Other jobs, wall time: `default-tree-first` -3.1% (n.s.).
+
+Cost to carry: 95 lines; no new dependencies.
+
+**Rejected:** quiet balanced-1m cold-scan-index -2.22% [-4.04%, +0.04%], component
+-4.12% [-7.40%, +1.25%]; allocations 7.03M to 4.28M; product CLI job -3.71%
+[-4.71%, -1.97%] is a lead for fdu-o6um, not a keep.
+
+Full record:
+[`exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md`](../experiments/exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md)
+
+### exp-160 — Linux detached leaf-listing hold cuts futex wakes but not wall
+
+❌ rejected · 2026-09-27 · H154
+
+Control: H152 plus H153 probe
+
+Candidate: same probe holding leaf-only chunks until a batch fills
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3135.3 | 3163.6 | +0.88% (n.s.) | [-0.17%, +1.94%] |
+| component (ms) | 1237.3 | 1233.6 | +0.24% (n.s.) | [-1.64%, +2.54%] |
+| cpu (ms) | 6218.5 | 6276.1 | -0.14% (n.s.) | [-0.64%, +2.45%] |
+| user (ms) | 2966.9 | 2946.5 | +0.02% (n.s.) | [-3.60%, +2.02%] |
+| system (ms) | 3275.6 | 3322.6 | +3.08% (n.s.) | [-1.36%, +4.08%] |
+| peak rss (MiB) | 315.0 | 316.4 | +0.64% (n.s.) | [-1.80%, +4.46%] |
+
+Other jobs, wall time: `default-tree-first` +1.1% (n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+**Rejected:** quiet balanced-1m cold-scan-index +0.88% [-0.17%, +1.94%]; futex calls
+105,732 to 17,938.
+
+Full record:
+[`exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md`](../experiments/exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5466,6 +5561,14 @@ Baselines show one value because they measure a state rather than a change.
 | 057 | Reject repeated adaptive worker windows on APFS | `adaptive-scan-index` | 1,871.8 | 2,963.2 | +58.5% | ❌ rejected |
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
+
+### linux-balanced-1m (1,000,001 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 158 | Linux one-shot index release off the answer path clears 3% on default-tree | `default-tree` | 1,611.5 | 1,541.7 | -3.2% | ✅ accepted |
+| 159 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
+| 160 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

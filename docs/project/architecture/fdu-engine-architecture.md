@@ -428,10 +428,15 @@ retained state has no consumer.
 It observes control state as `ScanConfig::read_controls` says, on by default as for
 `open()`, so a default report and a default index share one snapshot scope.
 One-shot and retained paths must answer the same request identically.
-`query::report` and `report_in` take `&Request` and, after `validate_read`, use
-`request.basis.content` for metric sections and the `analysis` metadata.
-The report echoes the request, never the store; every report uses the same schema
-version.
+A one-shot report owns an index nobody else can reach once its answer is built, so the
+last reference to a large one (64k entries or more) is released on a detached thread
+rather than before the call returns; a joined snapshot writer does the same with its
+reference. That thread holds no engine state and reports nothing, so nothing joins it:
+its only effect is returning memory, and a process that exits first lets the operating
+system reclaim it. `query::report` and `report_in` take `&Request` and, after
+`validate_read`, use `request.basis.content` for metric sections and the `analysis`
+metadata. The report echoes the request, never the store; every report uses the same
+schema version.
 
 Live paths refuse what they cannot keep current.
 `watch_session::Session::start` refuses analyzed content rather than reporting the

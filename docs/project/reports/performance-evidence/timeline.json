@@ -39391,6 +39391,821 @@
    "subject": "b718281f3051:158705:0c863b0ab28d",
    "title": "Progress handle attached against no handle",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe with release_index: a large last reference is released on a detached thread",
+   "change_pct": -3.194,
+   "commit": "71c52591",
+   "complexity": {
+    "lines_changed": 60,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "4c4917f4 probe: one-shot index released on the caller or joined writer thread",
+   "date": "2026-09-27",
+   "decision": "accepted",
+   "entries": 1000001,
+   "family": "Linux:f63cd4609c1b",
+   "hypotheses": [
+    "H152"
+   ],
+   "id": "exp-158",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1269763138,
+        "control": 1253298677
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.762,
+        "ci95_high_pct": 3.467,
+        "ci95_low_pct": 0.135,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 6259393000,
+        "control": 6270612000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.492,
+        "ci95_high_pct": 0.221,
+        "ci95_low_pct": -2.439,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 332398592,
+        "control": 330977280
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.284,
+        "ci95_high_pct": 4.308,
+        "ci95_low_pct": -4.105,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3238511500,
+        "control": 3214583500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.409,
+        "ci95_high_pct": 2.553,
+        "ci95_low_pct": -2.04,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 3028666000,
+        "control": 3044970000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.781,
+        "ci95_high_pct": 0.287,
+        "ci95_low_pct": -4.029,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 3143684313,
+        "control": 3133669723.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.003,
+        "ci95_high_pct": 2.154,
+        "ci95_low_pct": -2.238,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3143.6811693188306,
+      "control": 3133.66658983341
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1521902230.5,
+        "control": 1599756992.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.792,
+        "ci95_high_pct": -2.716,
+        "ci95_low_pct": -5.515,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 4631785500,
+        "control": 4714597500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.465,
+        "ci95_high_pct": 0.37,
+        "ci95_low_pct": -2.758,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 436051968,
+        "control": 437200896
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.015,
+        "ci95_high_pct": 2.679,
+        "ci95_low_pct": -1.255,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3326175500,
+        "control": 3315940500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.575,
+        "ci95_high_pct": 4.06,
+        "ci95_low_pct": -1.918,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1339810000,
+        "control": 1410215000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -5.187,
+        "ci95_high_pct": -3.083,
+        "ci95_low_pct": -7.162,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1541667482,
+        "control": 1611455018.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -3.194,
+        "ci95_high_pct": -1.788,
+        "ci95_low_pct": -4.885,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1541.6659403340598,
+      "control": 1611.453407046593
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1947017320,
+        "control": 2007719563.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -6.033,
+        "ci95_high_pct": 0.155,
+        "ci95_low_pct": -7.394,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 5149723500,
+        "control": 5198473500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.566,
+        "ci95_high_pct": 1.058,
+        "ci95_low_pct": -2.209,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 443701248,
+        "control": 440375296
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.725,
+        "ci95_high_pct": 5.093,
+        "ci95_low_pct": -4.422,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3784940000,
+        "control": 3738370000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.325,
+        "ci95_high_pct": 4.588,
+        "ci95_low_pct": -1.883,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1350824500,
+        "control": 1489399500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -8.436,
+        "ci95_high_pct": -1.224,
+        "ci95_low_pct": -12.603,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1968096735,
+        "control": 2019536236
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -5.411,
+        "ci95_high_pct": 0.787,
+        "ci95_low_pct": -6.936,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1968.0947669052332,
+      "control": 2019.5342164657836
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 158,
+   "path": "exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet balanced-1m default-tree -3.19% [-4.88%, -1.79%]; cold-scan-index placebo +0.00% [-2.24%, +2.15%]; product CLI --cache off indexed tree -4.31% [-5.99%, -3.25%] in the paired tool harness",
+   "reference_tools": [],
+   "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
+   "title": "Linux one-shot index release off the answer path clears 3% on default-tree",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "H152 plus direct file fold into the parent roll-up and owned walker names",
+   "change_pct": -2.222,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 95,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "H152 probe",
+   "date": "2026-09-27",
+   "decision": "rejected",
+   "entries": 1000001,
+   "family": "Linux:f63cd4609c1b",
+   "hypotheses": [
+    "H153"
+   ],
+   "id": "exp-159",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1243014864,
+        "control": 1284121085
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -4.124,
+        "ci95_high_pct": 1.249,
+        "ci95_low_pct": -7.404,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 6237974500,
+        "control": 6326949000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.539,
+        "ci95_high_pct": 0.665,
+        "ci95_low_pct": -3.366,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 323434496,
+        "control": 331933696
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.709,
+        "ci95_high_pct": 1.493,
+        "ci95_low_pct": -5.293,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3272590500,
+        "control": 3254373500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.214,
+        "ci95_high_pct": 4.096,
+        "ci95_low_pct": -1.911,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 2987089000,
+        "control": 3040098500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -4.555,
+        "ci95_high_pct": 1.46,
+        "ci95_low_pct": -5.393,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 3119321913,
+        "control": 3195268063.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -2.222,
+        "ci95_high_pct": 0.041,
+        "ci95_low_pct": -4.045,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3119.3187936812064,
+      "control": 3195.264868235132
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1810713590,
+        "control": 1831507078
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.161,
+        "ci95_high_pct": 5.487,
+        "ci95_low_pct": -7.413,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 4838063500,
+        "control": 4880242000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.965,
+        "ci95_high_pct": 0.727,
+        "ci95_low_pct": -3.618,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 434495488,
+        "control": 443267072
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -2.813,
+        "ci95_high_pct": 0.8,
+        "ci95_low_pct": -5.639,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3636620500,
+        "control": 3527192500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.671,
+        "ci95_high_pct": 4.996,
+        "ci95_low_pct": -1.185,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1221470000,
+        "control": 1332570500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -9.199,
+        "ci95_high_pct": -2.272,
+        "ci95_low_pct": -15.026,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1832389269.5,
+        "control": 1857329355.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -3.104,
+        "ci95_high_pct": 5.197,
+        "ci95_low_pct": -7.33,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1832.3874371125628,
+      "control": 1857.327498172502
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 159,
+   "path": "exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "quiet balanced-1m cold-scan-index -2.22% [-4.04%, +0.04%], component -4.12% [-7.40%, +1.25%]; allocations 7.03M to 4.28M; product CLI job -3.71% [-4.71%, -1.97%] is a lead for fdu-o6um, not a keep",
+   "reference_tools": [],
+   "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
+   "title": "Linux direct file fold and owned names miss 3% on cold-scan-index",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "same probe holding leaf-only chunks until a batch fills",
+   "change_pct": 0.879,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 60,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "H152 plus H153 probe",
+   "date": "2026-09-27",
+   "decision": "rejected",
+   "entries": 1000001,
+   "family": "Linux:f63cd4609c1b",
+   "hypotheses": [
+    "H154"
+   ],
+   "id": "exp-160",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1233600224,
+        "control": 1237255685
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.236,
+        "ci95_high_pct": 2.545,
+        "ci95_low_pct": -1.641,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 6276116500,
+        "control": 6218543500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.145,
+        "ci95_high_pct": 2.453,
+        "ci95_low_pct": -0.64,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 331800576,
+        "control": 330289152
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.643,
+        "ci95_high_pct": 4.462,
+        "ci95_low_pct": -1.802,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3322643000,
+        "control": 3275555500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.078,
+        "ci95_high_pct": 4.081,
+        "ci95_low_pct": -1.356,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 2946499500,
+        "control": 2966887500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.023,
+        "ci95_high_pct": 2.018,
+        "ci95_low_pct": -3.597,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 3163571738,
+        "control": 3135336371
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.879,
+        "ci95_high_pct": 1.943,
+        "ci95_low_pct": -0.17,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3163.5685744314255,
+      "control": 3135.3332356667643
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1888769832.5,
+        "control": 1860068207.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.484,
+        "ci95_high_pct": 12.884,
+        "ci95_low_pct": -5.988,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 4963402000,
+        "control": 4946707000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.799,
+        "ci95_high_pct": 3.19,
+        "ci95_low_pct": -3.332,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 441278464,
+        "control": 436625408
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.704,
+        "ci95_high_pct": 2.426,
+        "ci95_low_pct": -1.441,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3701889000,
+        "control": 3658402500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.093,
+        "ci95_high_pct": 5.101,
+        "ci95_low_pct": -2.144,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1222093000,
+        "control": 1264584500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -5.299,
+        "ci95_high_pct": 0.532,
+        "ci95_low_pct": -6.5,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1909796592.5,
+        "control": 1878841485.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.051,
+        "ci95_high_pct": 12.679,
+        "ci95_low_pct": -5.921,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1909.7946827053172,
+      "control": 1878.8396066603934
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "control",
+   "number": 160,
+   "path": "exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "quiet balanced-1m cold-scan-index +0.88% [-0.17%, +1.94%]; futex calls 105,732 to 17,938",
+   "reference_tools": [],
+   "subject": "f63cd4609c1b:1000001:3b1ec31b0900",
+   "title": "Linux detached leaf-listing hold cuts futex wakes but not wall",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-23",
@@ -39872,6 +40687,26 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 793658448,
+   "directories": 125001,
+   "entries": 1000001,
+   "experiments": [
+    "exp-158",
+    "exp-159",
+    "exp-160"
+   ],
+   "files": 875000,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "f63cd4609c1b:1000001:3b1ec31b0900",
+   "labels": [
+    "linux-balanced-1m"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -40295,21 +41130,21 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 17486,
+  "accepted_lines_changed": 17546,
   "decisions": {
-   "accepted": 90,
+   "accepted": 91,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 3,
-   "rejected": 49,
+   "rejected": 51,
    "superseded": 3
   },
-  "experiments": 157,
+  "experiments": 160,
   "first_date": "2026-08-10",
-  "hypotheses": 110,
-  "last_date": "2026-09-24",
+  "hypotheses": 113,
+  "last_date": "2026-09-27",
   "platforms": {
-   "Linux": 29,
+   "Linux": 32,
    "macOS": 128
   }
  },

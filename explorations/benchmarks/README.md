@@ -213,9 +213,18 @@ vnodes, or APFS metadata blocks remained resident.
 ### Linux Comparison Rerun
 
 Use the current release build on a quiet Linux host with the corpus on a local SSD. The
-older Linux studies tested earlier builds and different jobs; rerun before making a
-current ranking claim.
-Track the refresh as `fdu-nffc`.
+current result, warm-steady on a 4-vCPU virtualized ext4 host, is the
+[Linux tool comparison](../../docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md);
+the remaining regimes (bare-metal local SSD, pagecache-drop-only, controlled cold, XFS)
+are tracked as `fdu-nffc`.
+
+On Linux the quiet gate reads CPU occupancy from `/proc/stat` over one second before and
+after every sample, as the macOS gate reads Mach counters; load average is recorded but
+not judged, because it still counts the benchmark’s own previous samples.
+Linux also carries a process’s peak RSS across `execve`, so a tool cannot report less
+than the harness’s own high-water mark: the report renders such a peak as “≤ N MiB”, and
+a small tool’s true peak needs a separate measurement from a small launcher such as GNU
+`time`.
 
 Before setup, choose existing writable directories: `FDU_BUILD_DIR` for disposable
 builds and caches, and `FDU_BENCH_DIR` on the SSD being measured.

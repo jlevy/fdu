@@ -753,8 +753,9 @@ Treat both cells as inherited across that engine bump until one quiet 12-pair
 That remeasure is open and needs a quiet Linux host (load/core ≤ 0.25); it was not run
 here because this host would not hold the gate.
 4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
-Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
-Darwin-only).
+Same host class as exp-103. Linux quiet then used load/core ≤ 0.25; since 2026-09-27 it
+uses the same one-second CPU-busy ≤ 25% boundary as Darwin, read from `/proc/stat`,
+because load average counted the benchmark’s own previous samples.
 
 **H139 / exp-138** is the standing Linux cache-hit replication: **same**. Quiet 12-pair
 `content-cache-hit` of #91 `e667b739` (H115+H120) versus this engine on reconstructible
@@ -889,7 +890,22 @@ Read ~8–9 ms. Digest identical.
 Load/core 0.059–0.102 held.
 Do not retry H116. H83 remains format.
 
-Next free experiment id is **exp-158** and next free unused hypothesis id is **H152**.
+**H152–H155** are the
+[2026-09-27 Linux tool comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md)
+on the balanced 1M-entry tree, 4-vCPU Firecracker KVM, quiet.
+fdu’s summary mode leads pdu (+11%) and diskus (+16%); the indexed tree trails them by
+19% and 18%. **H152 accepted** (exp-158): a large one-shot index is released on a
+detached thread, `default-tree` −3.19% [−4.88%, −1.79%], product CLI `--cache off`
+−4.31% [−5.99%, −3.25%]. **H153 rejected** on its probe job (exp-159, −2.22%) but −3.71%
+on the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H154
+rejected** (exp-160): consumer `futex` wakes 106k → 18k, wall flat.
+**H155 open** (`fdu-578e`): the unchanged binary under `LD_PRELOAD` mimalloc closes the
+whole indexed gap, and the context-switch profile names the consumer’s frees of
+walker-allocated child lists and path keys.
+Start there; an allocator dependency comes only after a structural fix is measured (H74,
+H85).
+
+Next free experiment id is **exp-161** and next free unused hypothesis id is **H156**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
