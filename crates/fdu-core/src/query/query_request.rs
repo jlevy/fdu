@@ -22,7 +22,9 @@ use crate::control::{ControlLimits, DEFAULT_CONTROL_BUDGET, DEFAULT_CONTROL_LINE
 use crate::engine_contract::EntryKind;
 use crate::query::query_glob::Pattern;
 use crate::query::query_report::{AxisNames, Query, ViewSpec};
-use crate::query::query_selection::{Bound, IgnoredEntries, Selection, SizeMetric, SortKey};
+use crate::query::query_selection::{
+    Bound, IgnoredEntries, Selection, ShareThreshold, SizeMetric, SortKey,
+};
 use crate::query::query_values::{
     parse_control_budget, parse_control_line_limit, parse_size, parse_when, system_time_to_nanos,
 };
@@ -46,6 +48,8 @@ pub struct Scope {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Whether gitignore control files are observed.
     pub read_controls: bool,
+    /// Ignored population retained by this basis.
+    pub population: IgnoredEntries,
     /// Control admission limits.
     pub control_limits: ControlLimits,
 }
@@ -64,6 +68,7 @@ impl From<ScanConfig> for Scope {
             exclude_special: scan.exclude_special,
             types: scan.types,
             read_controls: scan.read_controls,
+            population: scan.population,
             control_limits: scan.control_limits,
         }
     }
@@ -79,6 +84,7 @@ impl Scope {
             exclude_special: self.exclude_special,
             types: self.types.clone(),
             read_controls: self.read_controls,
+            population: self.population,
             control_limits: self.control_limits,
             threads: delivery.workers.scan,
             batch_size: delivery.batch_size,
@@ -95,6 +101,7 @@ impl Scope {
             exclude_special: self.exclude_special,
             types: self.types.clone(),
             read_controls: self.read_controls,
+            population: self.population,
             control_limits: self.control_limits,
             ..ScanConfig::default()
         }
@@ -161,6 +168,7 @@ impl Basis {
                 one_filesystem: scope.one_filesystem,
                 exclude_special: scope.exclude_special,
                 read_controls: controls.is_observed(),
+                population: scope.population,
                 control_limits: match controls {
                     crate::ControlTierIdentity::Observed { limits } => limits,
                     crate::ControlTierIdentity::NotObserved => Self::UNOBSERVED_LIMITS,
@@ -183,7 +191,8 @@ impl Basis {
     /// [`RequestError`] for a value no grammar accepts, named as `axes` spells its axis.
     pub fn build(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> Result<Self, RequestError> {
         let content = parse_content(spec, axes)?;
-        let scope = parse_scope(spec, axes)?;
+        let mut scope = parse_scope(spec, axes)?;
+        scope.population = parse_population(spec.read.ignored, axes)?;
         Ok(Self { root: spec.root.to_path_buf(), scope, content })
     }
 
@@ -353,6 +362,10 @@ pub struct ReadSpec<'a> {
     pub ignored: Option<&'a str>,
     /// Rendered tree depth: a whole number or `all`.
     pub depth: Option<&'a str>,
+    /// Minimum displayed contribution to the selected root, as a percentage.
+    pub min_share: Option<&'a str>,
+    /// Maximum immediate children shown per directory: a whole number or `all`.
+    pub breadth: Option<&'a str>,
     /// Rows per view: a whole number or `all`.
     pub limit: Option<&'a str>,
     /// Ordering key: `size`, `count`, `mtime`, or `name`.
@@ -378,6 +391,8 @@ impl ReadSpec<'_> {
             kinds: None,
             ignored: None,
             depth: None,
+            min_share: None,
+            breadth: None,
             limit: None,
             sort: None,
             reverse: false,
@@ -498,7 +513,10 @@ impl Request {
         now: SystemTime,
         axes: &'static AxisNames,
     ) -> Result<Self, RequestError> {
-        let query = build_query(basis.content, spec, now, axes)?;
+        let mut query = build_query(basis.content, spec, now, axes)?;
+        if spec.ignored.is_none() {
+            query.selection.ignored = basis.scope.population;
+        }
         let request = Self::new(basis, query, now);
         request.validate()?;
         Ok(request)
@@ -521,7 +539,8 @@ impl Request {
         // the callers that fix a basis and read it many times.
         let content = parse_content(spec, axes)?;
         let query = build_query(content, &spec.read, now, axes)?;
-        let scope = parse_scope(spec, axes)?;
+        let mut scope = parse_scope(spec, axes)?;
+        scope.population = query.selection.ignored;
         Ok(Self::new(Basis { root: spec.root.to_path_buf(), scope, content }, query, now))
     }
 
@@ -624,7 +643,55 @@ impl Request {
             }
         }
         check_views(&self.query.views, basis.content)?;
-        check_observation(self.query.selection.ignored, basis.scope.read_controls)
+        if let Some(SortKey::Metric(name)) = self.query.selection.sort {
+            let metric =
+                crate::content::METRICS.iter().find(|metric| metric.name == name).ok_or_else(
+                    || invalid(self.query.axes.sort, name, "expected a registered numeric metric"),
+                )?;
+            if !basis.content.contains(metric.owner) {
+                let analyzer = if metric.owner.includes_code() {
+                    "code"
+                } else if metric.owner.includes_words() {
+                    "words"
+                } else {
+                    "lines"
+                };
+                return Err(RequestError::NeedsAnalyzer { item: metric.name, analyzer });
+            }
+        }
+        let hierarchy = self.query.views.iter().any(|view| self.query.tree_for(*view));
+        if self.query.selection.depth.is_some() && !hierarchy {
+            return Err(invalid(self.query.axes.depth, "", "requires a hierarchical view"));
+        }
+        if self.query.selection.breadth.is_some() && !hierarchy {
+            return Err(invalid(self.query.axes.breadth, "", "requires a hierarchical view"));
+        }
+        let additive = self.query.views.iter().any(|view| {
+            self.query.tree_for(*view)
+                || matches!(
+                    view,
+                    ViewSpec::Extensions
+                        | ViewSpec::Types
+                        | ViewSpec::Families
+                        | ViewSpec::Languages
+                        | ViewSpec::Documents
+                        | ViewSpec::Code
+                )
+        });
+        if self.query.selection.min_share.is_some() && !additive {
+            return Err(invalid(self.query.axes.min_share, "", "requires an additive view"));
+        }
+        check_observation(basis.scope.population, basis.scope.read_controls)?;
+        check_observation(self.query.selection.ignored, basis.scope.read_controls)?;
+        if basis.scope.population != IgnoredEntries::Include
+            && self.query.selection.ignored != basis.scope.population
+        {
+            return Err(RequestError::PopulationMismatch {
+                held: basis.scope.population,
+                requested: self.query.selection.ignored,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -635,6 +702,16 @@ fn parse_content(
 ) -> Result<AnalysisSet, RequestError> {
     spec.analyze.map_or(Ok(Request::DEFAULTS.content), |value| {
         AnalysisSet::parse_rejecting(value).map_err(|rejection| rejection.on(axes.analyze))
+    })
+}
+
+fn parse_population(
+    value: Option<&str>,
+    axes: &'static AxisNames,
+) -> Result<IgnoredEntries, RequestError> {
+    value.map_or(Ok(IgnoredEntries::Include), |value| {
+        IgnoredEntries::parse(value)
+            .map_err(|expected| Rejection::new(value, expected).on(axes.ignored))
     })
 }
 
@@ -687,6 +764,15 @@ fn build_query(
 
     let mut selection = Selection {
         depth: spec.depth.map(|value| parse_bound(value, axes.depth)).transpose()?,
+        min_share: spec
+            .min_share
+            .map(|value| {
+                ShareThreshold::parse(value).ok_or_else(|| {
+                    invalid(axes.min_share, value, "expected a percentage from 0% through 100%")
+                })
+            })
+            .transpose()?,
+        breadth: spec.breadth.map(|value| parse_bound(value, axes.breadth)).transpose()?,
         limit: spec.limit.map(|value| parse_bound(value, axes.limit)).transpose()?,
         reverse: spec.reverse,
         size: spec
@@ -717,10 +803,7 @@ fn build_query(
     if let Some(value) = spec.sort {
         selection.sort = Some(parse_sort(value, axes.sort)?);
     }
-    if let Some(value) = spec.ignored {
-        selection.ignored = IgnoredEntries::parse(value)
-            .map_err(|expected| Rejection::new(value, expected).on(axes.ignored))?;
-    }
+    selection.ignored = parse_population(spec.ignored, axes)?;
     let words_per_page =
         spec.words_per_page.map_or(Ok(Request::DEFAULTS.words_per_page), |value| {
             value
@@ -801,8 +884,22 @@ pub enum RequestError {
     },
     /// A view has no metadata-only projection, and the request enables no analyzer.
     ViewNeedsContent(ViewSpec),
+    /// A view or ordering key requires an analyzer the request did not enable.
+    NeedsAnalyzer {
+        /// Requested view or metric label.
+        item: &'static str,
+        /// Analysis unit to add.
+        analyzer: &'static str,
+    },
     /// A selection by ignored state over a scan that observes no `.gitignore`.
     IgnoredWithoutObservation(IgnoredEntries),
+    /// A retained narrow population cannot answer a read of another population.
+    PopulationMismatch {
+        /// Population retained by the holder.
+        held: IgnoredEntries,
+        /// Population this read selected.
+        requested: IgnoredEntries,
+    },
     /// A scan scope this build cannot honour, whatever the delivery.
     ScopeUnsupported {
         /// Which axis, so each surface names it in its own words.
@@ -861,6 +958,10 @@ impl RequestError {
                 view.label(),
                 axes.analyze
             ),
+            Self::NeedsAnalyzer { item, analyzer } => format!(
+                "{item} requires {analyzer} analysis: add {} {analyzer}; views and sorts never enable analysis implicitly",
+                axes.analyze
+            ),
             Self::IgnoredWithoutObservation(ignored) => format!(
                 "{} needs .gitignore classification, and {} turned it off; drop one of them",
                 match ignored {
@@ -869,6 +970,13 @@ impl RequestError {
                     IgnoredEntries::Include => axes.ignored,
                 },
                 axes.read_controls
+            ),
+            Self::PopulationMismatch { held, requested } => format!(
+                "{}={} cannot be read from retained {}={} scope",
+                axes.ignored,
+                requested.label(),
+                axes.ignored,
+                held.label()
             ),
             // The sentence the engine has always printed, with only the axis renamed: a
             // Python caller reads the words they wrote, and the command line names its
@@ -963,6 +1071,9 @@ fn watch_scope_message(axes: &AxisNames) -> String {
 pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<(), RequestError> {
     for view in views {
         match view {
+            ViewSpec::Code if !content.includes_code() => {
+                return Err(RequestError::NeedsAnalyzer { item: "code view", analyzer: "code" });
+            }
             ViewSpec::Documents if !content.is_enabled() => {
                 return Err(RequestError::ViewNeedsContent(*view));
             }
@@ -972,6 +1083,7 @@ pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<()
             | ViewSpec::Extensions
             | ViewSpec::Families
             | ViewSpec::Languages
+            | ViewSpec::Code
             | ViewSpec::Documents
             | ViewSpec::Files
             | ViewSpec::Largest
@@ -1101,14 +1213,23 @@ pub fn parse_bound(value: &str, axis: &'static str) -> Result<Bound, RequestErro
         .map_err(|_| invalid(axis, value, "expected a whole number or `all`"))
 }
 
-/// Parse an ordering key: `size`, `count`, `mtime`, or `name`.
+/// Parse a metadata ordering key or a registered numeric content metric.
 pub fn parse_sort(value: &str, axis: &'static str) -> Result<SortKey, RequestError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "size" => Ok(SortKey::Size),
         "count" => Ok(SortKey::Count),
         "mtime" => Ok(SortKey::Mtime),
         "name" => Ok(SortKey::Name),
-        other => Err(invalid(axis, other, "expected one of size, count, mtime, name")),
+        other => crate::content::METRICS.iter().find(|metric| metric.name == other).map_or_else(
+            || {
+                Err(invalid(
+                    axis,
+                    other,
+                    "expected size, count, mtime, name, or a registered numeric metric",
+                ))
+            },
+            |metric| Ok(SortKey::Metric(metric.name)),
+        ),
     }
 }
 
@@ -1201,8 +1322,8 @@ mod tests {
                 "invalid depth \"two\": expected a whole number or `all`",
             ),
             (
-                "invalid --sort \"newest\": expected one of size, count, mtime, name",
-                "invalid sort \"newest\": expected one of size, count, mtime, name",
+                "invalid --sort \"newest\": expected size, count, mtime, name, or a registered numeric metric",
+                "invalid sort \"newest\": expected size, count, mtime, name, or a registered numeric metric",
             ),
             (
                 "invalid --size \"logical\": expected allocated or apparent",
@@ -1251,6 +1372,7 @@ mod tests {
             ("count", SortKey::Count),
             ("MTIME", SortKey::Mtime),
             ("name", SortKey::Name),
+            ("CODE_LINES", SortKey::Metric("code_lines")),
         ] {
             assert_eq!(parse_sort(spelling, axis), Ok(key));
         }
@@ -1296,14 +1418,14 @@ mod tests {
             ),
             (
                 RequestError::IgnoredWithoutObservation(IgnoredEntries::Exclude),
-                "--exclude-ignored needs .gitignore classification, and --no-gitignore turned it \
+                "--ignored=exclude needs .gitignore classification, and --no-gitignore turned it \
                  off; drop one of them",
                 "ignored=exclude needs .gitignore classification, and read_controls turned it \
                  off; drop one of them",
             ),
             (
                 RequestError::IgnoredWithoutObservation(IgnoredEntries::Only),
-                "--only-ignored needs .gitignore classification, and --no-gitignore turned it \
+                "--ignored=only needs .gitignore classification, and --no-gitignore turned it \
                  off; drop one of them",
                 "ignored=only needs .gitignore classification, and read_controls turned it off; \
                  drop one of them",
@@ -1403,13 +1525,14 @@ mod tests {
     }
 
     #[test]
-    fn documents_is_the_only_view_that_needs_content() {
+    fn documents_and_code_are_the_views_that_need_content() {
         for content in [AnalysisSet::NONE, AnalysisSet::NONE.with_lines(), AnalysisSet::ALL] {
             for view in ViewSpec::ALL {
                 let refused = check_views(&[view], content).is_err();
                 assert_eq!(
                     refused,
-                    view == ViewSpec::Documents && !content.is_enabled(),
+                    (view == ViewSpec::Documents && !content.is_enabled())
+                        || (view == ViewSpec::Code && !content.includes_code()),
                     "{view:?}"
                 );
             }
@@ -1437,12 +1560,55 @@ mod tests {
     }
 
     /// A spec over the test root whose basis is every default and whose read is `read`.
+    #[allow(clippy::large_types_passed_by_value)]
     fn reading(read: ReadSpec<'_>) -> RequestSpec<'_> {
         RequestSpec { read, ..RequestSpec::new(root()) }
     }
 
     fn built(spec: &RequestSpec<'_>) -> Request {
         Request::build(spec, instant(), &AxisNames::FIELDS).expect("the spec parses")
+    }
+
+    #[test]
+    fn retained_population_allows_narrower_reads_only_from_include() {
+        let read = |basis: Basis, ignored| {
+            Request::read(
+                basis,
+                &ReadSpec { ignored, ..ReadSpec::default() },
+                instant(),
+                &AxisNames::FIELDS,
+            )
+        };
+        let include = Basis {
+            root: root().to_path_buf(),
+            scope: Scope::default(),
+            content: AnalysisSet::NONE,
+        };
+        assert_eq!(
+            read(include.clone(), Some("exclude")).expect("narrow exclude").query.selection.ignored,
+            IgnoredEntries::Exclude
+        );
+        assert_eq!(
+            read(include, Some("only")).expect("narrow only").query.selection.ignored,
+            IgnoredEntries::Only
+        );
+
+        let excluded = Basis {
+            root: root().to_path_buf(),
+            scope: Scope { population: IgnoredEntries::Exclude, ..Scope::default() },
+            content: AnalysisSet::NONE,
+        };
+        assert_eq!(
+            read(excluded.clone(), None).expect("basis default").query.selection.ignored,
+            IgnoredEntries::Exclude
+        );
+        assert!(matches!(
+            read(excluded, Some("only")),
+            Err(RequestError::PopulationMismatch {
+                held: IgnoredEntries::Exclude,
+                requested: IgnoredEntries::Only
+            })
+        ));
     }
 
     fn refusal(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> String {
@@ -1491,7 +1657,8 @@ mod tests {
         flat.query.format = Format::Paths;
         assert!(flat.query.needs_selection_walk());
         assert_eq!(flat.query.limit_for(ViewSpec::List), Bound::All);
-        assert_eq!(request.query.limit_for(ViewSpec::List), Bound::Limit(10));
+        assert_eq!(request.query.limit_for(ViewSpec::List), Bound::All);
+        assert_eq!(request.query.depth_for(ViewSpec::List), Bound::Limit(5));
     }
 
     #[test]
@@ -1567,6 +1734,8 @@ mod tests {
                 kinds: Some("file,dir"),
                 ignored: Some("include"),
                 depth: Some("all"),
+                min_share: Some("1%"),
+                breadth: Some("all"),
                 limit: Some("5"),
                 sort: Some("name"),
                 reverse: true,
@@ -1662,7 +1831,7 @@ mod tests {
             ),
             (
                 reading(ReadSpec { ignored: Some("maybe"), ..ReadSpec::new() }),
-                "invalid --exclude-ignored/--only-ignored \"maybe\": expected one of include, \
+                "invalid --ignored \"maybe\": expected one of include, \
                  exclude, only",
                 "invalid ignored \"maybe\": expected one of include, exclude, only",
             ),
@@ -1823,6 +1992,26 @@ mod tests {
         .expect("metadata grouping never requires content I/O");
     }
 
+    #[test]
+    fn code_view_and_metric_sort_require_their_registered_analyzer() {
+        let plain = basis(AnalysisSet::NONE, true);
+        let code = request_with(&[ViewSpec::Code], Selection::default(), plain.clone());
+        assert_eq!(
+            code.validate(),
+            Err(RequestError::NeedsAnalyzer { item: "code view", analyzer: "code" })
+        );
+        let selection =
+            Selection { sort: Some(SortKey::Metric("code_lines")), ..Selection::default() };
+        let files = request_with(&[ViewSpec::Files], selection.clone(), plain);
+        assert_eq!(
+            files.validate(),
+            Err(RequestError::NeedsAnalyzer { item: "code_lines", analyzer: "code" })
+        );
+        request_with(&[ViewSpec::Files], selection, basis(AnalysisSet::NONE.with_code(), true))
+            .validate()
+            .expect("code metrics are available with the code analyzer");
+    }
+
     /// A scope this build cannot honour is refused by request validation itself.
     ///
     /// Both entry points, because they cover different routes: `validate` is what a
@@ -1875,7 +2064,7 @@ mod tests {
             .expect_err("no entry can be shown to be ignored");
         assert_eq!(
             refused.message(&AxisNames::FLAGS),
-            "--exclude-ignored needs .gitignore classification, and --no-gitignore turned it \
+            "--ignored=exclude needs .gitignore classification, and --no-gitignore turned it \
              off; drop one of them"
         );
         let refused = request_with(&[ViewSpec::Summary], only, blind.clone())

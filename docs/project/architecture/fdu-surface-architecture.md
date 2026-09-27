@@ -127,7 +127,7 @@ still match, so it would silently absorb the next real regression.
   `Report` cannot reproduce the performance footer or a note quoting bytes read.
 - **The same rule in each surface’s knob names.** `--scan-depth` against `max_depth`,
   from one constant with the names substituted; `--gitignore-budget` against
-  `control_budget`, `--only-ignored` and `--no-gitignore` against `ignored=only` and
+  `control_budget`, `--ignored=only` and `--no-gitignore` against `ignored=only` and
   `read_controls`, and the other pairs `KNOBS` in `parity-classes.mjs` elides, from
   `AxisNames`.
 - **Discovery surfaces.** `--docs` and `--skill` are static documents, and
@@ -170,9 +170,9 @@ surface emits the same string.
 
 | Schema | Document | Constant |
 | --- | --- | --- |
-| `fdu.report/7` | A report, including its request, status, per-tier provenance, and any requested metric units | `REPORT_SCHEMA` |
+| `fdu.report/8` | A report, including its request, status, per-tier provenance, and any requested metric units | `REPORT_SCHEMA` |
 | `fdu.stream/2` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
-| `fdu.cache/2` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
+| `fdu.cache/3` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.

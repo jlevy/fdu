@@ -10,7 +10,7 @@
 // costs no new dependency.
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,7 @@ const fdu = process.env.FDU_BIN ?? join(root, 'target', 'debug', 'fdu');
 
 // A tree with enough shape that every view has rows to render.
 const tree = mkdtempSync(join(tmpdir(), 'fdu-yaml-'));
+process.on('exit', () => rmSync(tree, { recursive: true, force: true }));
 mkdirSync(join(tree, 'src'));
 mkdirSync(join(tree, 'docs'));
 writeFileSync(join(tree, 'src', 'main.rs'), 'fn main() {\n    // hi\n}\n');
@@ -53,15 +54,23 @@ try {
 }
 
 const views = [
-  'list', 'tree', 'types', 'extensions', 'families', 'languages', 'documents',
+  'list', 'tree', 'types', 'extensions', 'families', 'languages', 'documents', 'code',
   'files', 'largest', 'recent', 'summary',
 ];
 
+const treeBounds = (view) => ['tree', 'full'].includes(view)
+  ? ['--depth', 'all', '--min-share', '0%'] : [];
+
 let checked = 0;
 for (const view of views) {
-  const args = ['--cache', 'off', '--format', 'yaml', '--view', view, '-n', 'all', '--depth', 'all'];
+  const args = ['--cache', 'off', '--format', 'yaml', '--view', view, '-n', 'all', ...treeBounds(view)];
   // `documents` needs content, and analysing it also exercises the analysis block.
-  if (view === 'documents') args.push('--analyze', 'words');
+  if (view === 'documents') {
+    args.push('--analyze', 'words');
+  }
+  if (view === 'code') {
+    args.push('--analyze', 'code');
+  }
   const out = execFileSync(fdu, [...args, tree], { encoding: 'utf8' });
 
   const parsed = parse(out, { strict: true, uniqueKeys: true, intAsBigInt: true, version: '1.2' });
@@ -155,10 +164,15 @@ for (const version of ['1.1', '1.2']) {
 let compared = 0;
 for (const view of [...views, 'full']) {
   for (const analyze of ['none', 'lines', 'code', 'words', 'all']) {
-    if (view === 'documents' && !['words', 'all'].includes(analyze)) continue;
+    if (view === 'documents' && analyze === 'none') {
+      continue;
+    }
+    if (view === 'code' && !['code', 'all'].includes(analyze)) {
+      continue;
+    }
     const args = [
       '--cache', 'off', '--view', view, '--analyze', analyze,
-      '-n', 'all', '--depth', 'all', tree,
+      '-n', 'all', ...treeBounds(view), tree,
     ];
     const yaml = execFileSync(fdu, [...args, '--format', 'yaml'], { encoding: 'utf8' });
     assert.doesNotMatch(yaml, /[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/u,

@@ -26,7 +26,7 @@ Start with the report that answers the question:
 
 ```bash
 fdu .                                      # directory-size tree; metadata only
-fdu . --exclude-ignored                    # select what .gitignore rules leave
+fdu . --ignored=exclude                    # select what .gitignore rules leave
 fdu . --view=summary                       # one total with its ignored share
 fdu . --view=languages                     # detected language sizes; metadata only
 fdu . --view=families,types,extensions     # three file-kind breakdowns
@@ -37,8 +37,10 @@ fdu . --analyze=code                       # standard LOC by language
 fdu . --analyze=words                      # prose volume by document type
 ```
 
-The default is `list` in `tree` format, in allocated bytes, largest first, to depth 2,
-with at most ten children per directory.
+The default is `list` in `tree` format, in allocated bytes, largest first, to depth 5.
+It shows directory subtrees and file leaves contributing at least 1% of the selected
+root. Breadth and total rows are unbounded unless requested; `--depth`, `--min-share`,
+`--breadth`, and `--limit` compose independently.
 Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
 
@@ -80,16 +82,17 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--one-filesystem`, `--gitignore-budget SIZE\|all`, `--gitignore-line-limit SIZE\|all`, `--no-gitignore`, `--ignored=include\|exclude\|only` |
 | Content | Which file bodies are read? | `--analyze none\|lines\|code\|words\|all` |
-| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,documents,largest,recent,files`, or `--view full` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
+| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
-| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--watch`, `--analysis-workers N` |
+| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--cache-dir DIR`, `--watch`, `--analysis-workers N` |
 
-Scope versus selection is the distinction that matters: scope decides what is scanned
-and cached, so one cache serves every query, while selection filters the retained index
-at query time. Narrowing a selection never costs a rescan.
+Scope determines what is scanned and cached.
+In a one-shot report, the ignored population also determines which subtrees and file
+bodies may be skipped.
+A retained index can answer narrower queries when it holds the required facts.
 
 Work has three layers.
 A single unfiltered `--no-gitignore --view summary PATH` is the one exact composition
@@ -119,6 +122,8 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
+- `--view code` for source-line totals, coverage, and a complete language breakdown.
+  It requires `--analyze=code` and is the default view for that analyzer.
 - `--view documents` for prose metrics; it requires any enabled analyzer.
 - `--view largest` for the 20 largest regular files, and `--view recent` for the 20 most
   recently modified. Both are presets over `files`, not separate machinery: `largest` is
@@ -183,8 +188,15 @@ fdu --view files --include '*.{rs,toml}' PATH         # by pattern
 fdu --view tree --sort mtime PATH                     # an activity map
 ```
 
-`--depth` and `--limit` bound only the rendered view; `--scan-depth` bounds what is
-scanned and retained, so do not reach for it merely to shorten output.
+Tree output defaults to depth 5 and a minimum share of 1% of the selected root size.
+Significant files appear alongside directories.
+`--depth`, `--min-share`, `--breadth`, and `--limit` compose: depth bounds levels, share
+hides smaller branches, breadth caps children per directory, and limit caps data rows
+per section. Breadth and limit default to `all`; largest and recent retain their 20-row
+presets. Omission rows explain each bound without changing totals.
+
+Use `--min-share=0% --depth=all` for a complete tree.
+`--scan-depth` changes what is scanned and retained; display bounds only shorten output.
 
 ## Find Stale Environments and Build Outputs
 
@@ -234,20 +246,23 @@ Summary, tree, and extension rows end with the part of their size those rules ig
 rule files read.
 
 ```bash
-fdu PATH --exclude-ignored                              # folders by what the rules leave
-fdu PATH --view=files --only-ignored --format=jsonl     # every entry the rules cover
+fdu PATH --ignored=exclude                              # folders by what the rules leave
+fdu PATH --view=files --ignored=only --format=jsonl     # every entry the rules cover
 fdu PATH --no-gitignore                                 # read no rules, show no share
 ```
 
 Selecting a side changes sizes, ordering, and `--min-size` together, because they follow
-the entries shown.
-It filters retained results after the scan; it does not prune metadata
-work or content analysis.
+the entries shown. `--ignored=exclude` avoids enumerating safely ignored subtrees and
+reading ignored bodies.
+`--ignored=only` traverses the directories needed to discover ignored entries and
+analyzes only ignored bodies.
+The default `include` measures both populations and reports their contributions
+separately. Unknown classifications cannot justify pruning.
 `--no-gitignore` with either selection is a usage error.
 Only per-directory `.gitignore` files apply, not `core.excludesFile`,
 `.git/info/exclude`, or a global ignore file, and matching is case-sensitive.
 Unignored does not mean tracked: `.git` is unignored unless a rule names it.
-For recent working files, add both `--exclude-ignored` and `--exclude='.git/**'`. An
+For recent working files, add both `--ignored=exclude` and `--exclude='.git/**'`. An
 unreadable `.gitignore` makes the result partial (exit 2), while one past
 `--gitignore-budget` or `--gitignore-line-limit` is refused whole and named in a note:
 sizes stay exact, the ignored shares under that directory do not.
@@ -286,8 +301,8 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a report carries `fdu.report/7`, a `--watch`
-  stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/2`. Treat an
+- `schema` before parsing anything else: a report carries `fdu.report/8`, a `--watch`
+  stream carries `fdu.stream/2`, and `--cache-status` carries `fdu.cache/3`. Treat an
   unrecognized value as a version you cannot parse rather than guessing at the fields.
 - Integer fields that exceed 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript `JSON.parse`
@@ -332,10 +347,19 @@ The performance footer reports fresh and cached analysis separately.
 answer stale, and fails unless compatible metadata and any requested content analysis
 already exist. `--cache=off` neither reads nor writes fdu cache data.
 
-The snapshot is one file per root under the user cache directory.
+The cache defaults to `~/.cache/fdu` on macOS and Linux, and `%LOCALAPPDATA%/fdu` on
+Windows. Set an exact destination with `--cache-dir DIR` or `FDU_CACHE_DIR`; the flag
+wins. Otherwise `XDG_CACHE_HOME/fdu` overrides the platform default.
+Status and clear use the same destination.
+
+Each root has a `<16-hex-key>.metadata.bin` filesystem snapshot and, when analyzed, a
+matching `<16-hex-key>.analysis.bin` file of derived metrics.
+The key identifies the canonical root.
+Analysis files store counts and classifications, not copies of source bodies.
+These binary files are disposable; use cache status to inspect them.
 `--cache-status` maps a hash-named file back to the tree it describes, and
 `--cache-clear` removes it; both run without scanning.
-Cache status is its own document, carrying the `fdu.cache/2` schema in every machine
+Cache status is its own document, carrying the `fdu.cache/3` schema in every machine
 format rather than a report schema.
 A current snapshot’s row carries the `identity` of the entry and `.gitignore` tiers it
 holds, and every row a `content` object for the sidecar beside it, with its own `state`

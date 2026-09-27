@@ -7,6 +7,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `--ignored=include|exclude|only` controls population.
+  Exclusion prunes safely ignored subtrees and skips their content analysis; only
+  analyzes ignored bodies.
+- Tree output defaults to depth 5 and a 1% share of the selected root, with significant
+  file leaves. `--breadth` bounds children; `--limit` bounds rows per section.
+- Code analysis defaults to a source-line overview with language and population totals,
+  coverage, and metric sorting.
+  Correct multiline literals, heredocs, Rust lifetimes, and JavaScript regex handling;
+  invalidate prior code-analysis records.
+- Human output uses consistent names, primary totals, and gray parenthetical details.
+  Performance includes ignore-file and rule counts plus total files/s and represented
+  GB/s.
+- Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and Linux default
+  to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
+- Report schema is `fdu.report/8`; cache status is `fdu.cache/3`. Python exposes
+  matching population, code overview, display limits, and cache destination controls.
+
 ## [0.1.0] - 2026-09-25
 
 The first release. fdu walks a directory tree once and answers, for every directory at

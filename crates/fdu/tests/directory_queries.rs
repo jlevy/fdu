@@ -24,7 +24,7 @@ fn body(output: Output) -> String {
 }
 
 #[test]
-fn default_tree_is_unchanged_while_flat_formats_are_complete_and_bounds_are_visible() {
+fn adaptive_tree_keeps_significant_leaves_while_flat_formats_remain_complete() {
     let root = tempfile::tempdir().expect("fixture");
     for number in 0..16 {
         let directory = root.path().join(format!("build-{number:02}"));
@@ -41,7 +41,12 @@ fn default_tree_is_unchanged_while_flat_formats_are_complete_and_bounds_are_visi
     ] {
         assert_eq!(body(run(root.path(), arguments)), default);
     }
-    assert!(!default.contains("payload"), "files contribute totals without new tree leaves");
+    assert_eq!(
+        default.matches("payload").count(),
+        15,
+        "leaves at least 1% of 136 bytes remain visible"
+    );
+    assert!(!default.contains("build-00"), "one byte is below the root-relative threshold");
     let paths = run(root.path(), &["--kind", "dir", "--format", "paths"]);
     assert!(paths.status.success());
     let paths = String::from_utf8(paths.stdout).expect("paths");

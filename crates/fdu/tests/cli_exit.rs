@@ -278,3 +278,26 @@ fn installed_full_index_measurements_can_emit_the_versioned_scan_trace() {
     assert!(trace.contains("\"worker_policy\":"), "{trace}");
     assert!(trace.contains("\"backend\":"), "{trace}");
 }
+
+#[test]
+fn only_ignored_code_analysis_is_complete_across_cache_routes() {
+    let root = tempfile::tempdir().expect("root");
+    let cache = tempfile::tempdir().expect("cache");
+    fs::create_dir(root.path().join("vendor")).expect("vendor");
+    fs::write(root.path().join(".gitignore"), b"vendor/\n").expect("control");
+    fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("unignored code");
+    fs::write(root.path().join("vendor/lib.rs"), b"fn lib() {}\n").expect("ignored code");
+
+    for policy in ["off", "auto", "only"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--cache", policy, "--cache-dir"])
+            .arg(cache.path())
+            .args(["--ignored", "only", "--analyze", "code", "--format", "json"])
+            .arg(root.path())
+            .output()
+            .expect("run only-ignored report");
+        let stdout = String::from_utf8(output.stdout).expect("JSON output is UTF-8");
+        assert!(output.status.success(), "{policy}: {stdout}");
+        assert!(stdout.contains("\"complete\": true"), "{policy}: {stdout}");
+    }
+}

@@ -134,6 +134,7 @@ class View(StrEnum):
     TYPES = "types"
     EXTENSIONS = "extensions"
     LANGUAGES = "languages"
+    CODE = "code"
     DOCUMENTS = "documents"
     LARGEST = "largest"
     RECENT = "recent"
@@ -171,6 +172,19 @@ class SortKey(StrEnum):
     COUNT = "count"
     MTIME = "mtime"
     NAME = "name"
+
+    PHYSICAL_LINES = "physical_lines"
+    BLANK_LINES = "blank_lines"
+    NONBLANK_LINES = "nonblank_lines"
+    RAW_WORDS = "raw_words"
+    CODE_LINES = "code_lines"
+    COMMENT_LINES = "comment_lines"
+    CODE_BLANK_LINES = "code_blank_lines"
+    LOGICAL_WORDS = "logical_words"
+    PARAGRAPHS = "paragraphs"
+    VISIBLE_WORDS = "visible_words"
+    VISIBLE_LOGICAL_WORDS = "visible_logical_words"
+    DOCUMENT_WORDS = "document_words"
 
 
 class Analysis(StrEnum):
@@ -290,10 +304,11 @@ class Bound(StrEnum):
 class IgnoredEntries(StrEnum):
     """Which entries a report selects by their ``.gitignore`` classification.
 
-    A selection rather than a scan setting: every entry is classified, so choosing a side
-    never rescans. The command line spells ``EXCLUDE`` and ``ONLY`` as
-    ``--exclude-ignored`` and ``--only-ignored``. Anything but ``INCLUDE`` needs a scan
-    that reads ``.gitignore``, and is refused under ``ScanOptions(read_controls=False)``.
+    The one-shot report derives discovery and analysis from this population. Exclusion
+    prunes safely ignored subtrees; ``ONLY`` discovers matches through ordinary ancestors.
+    A retained Include index can answer either narrower selection without scanning.
+    The command line spells this ``--ignored=include|exclude|only``. Anything but
+    ``INCLUDE`` requires observed ignore controls.
     """
 
     #: Every entry; rows carry their ignored share.
@@ -346,6 +361,7 @@ class ControlObservation:
 
     limits: ControlLimits
     applied: int
+    rules: int
     #: Counted exactly, even when ``refusals`` is truncated.
     refused: int
     #: The first refused files in path order; shorter than ``refused`` when truncated.
@@ -380,6 +396,7 @@ def control_observation_from_dict(value: Mapping[str, Any]) -> ControlObservatio
     return ControlObservation(
         limits=limits,
         applied=int(value["applied"]),
+        rules=int(value["rules"]),
         refused=int(value["refused"]),
         refusals=tuple(
             RefusedControl(path=_wire_path(item), reason=ControlRefusalReason(item["reason"]))
@@ -448,12 +465,14 @@ class Selection:
     #: pre-validate and invent a second opinion about what is acceptable.
     depth: int | Bound | str | None = None
     limit: int | Bound | str | None = None
+    breadth: int | Bound | str | None = None
+    min_share: str | None = None
     sort: SortKey | None = None
     reverse: bool = False
     size: SizeMetric = _DEFAULT_SIZE
     #: Entries to consider by ``.gitignore`` classification. Sizes, ordering, and
     #: ``min_size`` follow the entries selected.
-    ignored: IgnoredEntries = IgnoredEntries.INCLUDE
+    ignored: IgnoredEntries | None = None
 
     def __post_init__(self) -> None:
         # A bare string is iterable, so without this guard `include="*.rs"` would run
@@ -466,7 +485,11 @@ class Selection:
         ):
             if isinstance(value, str):
                 raise TypeError(f"{name} takes a tuple of values; wrap the single value in a tuple")
-        for name, value in (("depth", self.depth), ("limit", self.limit)):
+        for name, value in (
+            ("depth", self.depth),
+            ("limit", self.limit),
+            ("breadth", self.breadth),
+        ):
             if isinstance(value, int) and value < 0:
                 raise ValueError(f"{name} must be non-negative or Bound.ALL")
         if isinstance(self.min_size, int) and self.min_size < 0:
@@ -655,6 +678,17 @@ class ExtensionRow:
 
 
 @dataclass(frozen=True, slots=True)
+class FileClassification:
+    file_type: str
+    family: str
+    source: str
+    confidence: str
+    generated: bool
+    vendored: bool
+    documentation: bool
+
+
+@dataclass(frozen=True, slots=True)
 class FileRow:
     path: Path
     kind: EntryKind
@@ -663,6 +697,8 @@ class FileRow:
     mtime_ns: int
     #: Whether ``.gitignore`` rules ignore this entry, or ``None`` when none was read.
     ignored: bool | None = None
+    sort_value: int | None = None
+    classification: FileClassification | None = None
     #: Directory subtree counts, excluding its root; absent for other entry kinds.
     files: int | None = None
     dirs: int | None = None
@@ -674,6 +710,21 @@ class FileRow:
     #: Signed modification age relative to Report.age_reference_ns; future is negative,
     #: and ``None`` when the reference is unrepresentable or the subtree is incomplete.
     age_ns: int | None = None
+
+
+class TreeOmissionReason(StrEnum):
+    SHARE = "share"
+    BREADTH = "breadth"
+    DEPTH = "depth"
+    ROWS = "rows"
+
+
+@dataclass(frozen=True, slots=True)
+class TreeOmission:
+    reason: TreeOmissionReason
+    entries: int
+    bytes: int | None
+    allocated: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -688,6 +739,7 @@ class TreeNode:
     newest_mtime_ns: int | None
     truncated: bool
     children: tuple[TreeNode, ...]
+    omissions: tuple[TreeOmission, ...] = ()
     #: The ignored share of this subtree, or ``None`` when no ``.gitignore`` was read.
     ignored: IgnoredTally | None = None
 
@@ -767,10 +819,12 @@ class ReportScope:
     one_filesystem: bool
     exclude_special: bool
     read_controls: bool
+    population: IgnoredEntries
 
 
 @dataclass(frozen=True, slots=True)
 class ReportRequest:
+    sort_metric: str | None
     scope: ReportScope
     analyze: tuple[Analysis, ...]
     size: SizeMetric
@@ -805,6 +859,7 @@ class ExtensionsSection:
     view: View
     extensions: tuple[ExtensionRow, ...]
     bound: SectionBound | None = None
+    share_omitted: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -821,9 +876,19 @@ class FilesSection:
 
 
 @dataclass(frozen=True, slots=True)
+class TreeDisplayLimits:
+    depth: int | None
+    min_share: str
+    breadth: int | None
+    rows: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class TreeSection:
     view: View
-    tree: TreeNode
+    tree: TreeNode | None
+    limits: TreeDisplayLimits
+    omissions: tuple[TreeOmission, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -834,10 +899,53 @@ class MetricsSection:
     total: MetricRow
     rows: tuple[MetricRow, ...]
     bound: SectionBound | None = None
+    share_omitted: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class CodeTally:
+    source_files: int
+    analyzed_files: int
+    code_lines: int
+    comment_lines: int
+    blank_lines: int
+    missing_records: int
+    coverage: MappingProxyType[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class CodeLanguageRow:
+    language: str
+    share: MetricShare
+    selected: CodeTally
+    non_ignored: CodeTally | None
+    ignored: CodeTally | None
+    unknown: CodeTally
+
+
+@dataclass(frozen=True, slots=True)
+class CodeOverview:
+    unclassified_files: int
+    population: IgnoredEntries
+    share_metric: str
+    analyzed_languages: int
+    selected: CodeTally
+    non_ignored: CodeTally | None
+    ignored: CodeTally | None
+    unknown: CodeTally
+    languages: tuple[CodeLanguageRow, ...]
+    bound: SectionBound | None = None
+    share_omitted: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class CodeSection:
+    view: View
+    code: CodeOverview
 
 
 type ReportSection = (
-    SummarySection | ExtensionsSection | FilesSection | TreeSection | MetricsSection
+    SummarySection | ExtensionsSection | FilesSection | TreeSection | MetricsSection | CodeSection
 )
 
 
@@ -924,7 +1032,7 @@ class Change:
     bytes: int | None = None
     allocated: int | None = None
     mtime_ns: int | None = None
-    #: Whether ignore rules ignore the entry, or ``None`` when the run read none.
+    #: Whether rules ignore the entry, or ``None`` when classification is unavailable.
     ignored: bool | None = None
     reason: str | None = None
 
@@ -971,8 +1079,9 @@ class EntryTierIdentity:
     """Which entries a store holds: the engine that built it, the scope it retained, and
     the type rules and reducer set its roll-ups were tallied under.
 
-    `.gitignore` observation is not part of it, because reading rules changes which entries
-    are ignored, never which exist or what they measure.
+    Include populations retain the same entries with or without `.gitignore`
+    observation. Narrowed populations carry the governing control policy because it
+    determines which entries are retained.
     """
 
     engine: int
@@ -980,6 +1089,8 @@ class EntryTierIdentity:
     follow_symlinks: bool
     one_filesystem: bool
     hidden_fingerprint: int
+    population: IgnoredEntries
+    control_fingerprint: int
     exclude_special: bool
     type_rules_fingerprint: int
     reducers_fingerprint: int
@@ -1084,6 +1195,8 @@ def _entry_tier_identity(value: Mapping[str, Any]) -> EntryTierIdentity:
         follow_symlinks=bool(value["follow_symlinks"]),
         one_filesystem=bool(value["one_filesystem"]),
         hidden_fingerprint=int(value["hidden_fingerprint"]),
+        population=IgnoredEntries(value["population"]),
+        control_fingerprint=int(value["control_fingerprint"]),
         exclude_special=bool(value["exclude_special"]),
         type_rules_fingerprint=int(value["type_rules_fingerprint"]),
         reducers_fingerprint=int(value["reducers_fingerprint"]),
@@ -1258,6 +1371,50 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
     )
 
 
+def _code_tally(value: dict[str, Any]) -> CodeTally:
+    return CodeTally(
+        source_files=int(value["source_files"]),
+        analyzed_files=int(value["analyzed_files"]),
+        code_lines=int(value["code_lines"]),
+        comment_lines=int(value["comment_lines"]),
+        blank_lines=int(value["blank_lines"]),
+        missing_records=int(value["missing_records"]),
+        coverage=_int_map(value["coverage"]),
+    )
+
+
+def _optional_code_tally(value: dict[str, Any] | None) -> CodeTally | None:
+    return None if value is None else _code_tally(value)
+
+
+def _code_overview(value: dict[str, Any]) -> CodeOverview:
+    return CodeOverview(
+        unclassified_files=int(value["unclassified_files"]),
+        share_omitted=int(value["share_omitted"]),
+        bound=None
+        if value["bound"] is None
+        else SectionBound(shown=int(value["bound"]["shown"]), total=int(value["bound"]["total"])),
+        population=IgnoredEntries(value["population"]),
+        share_metric=str(value["share_metric"]),
+        analyzed_languages=int(value["analyzed_languages"]),
+        selected=_code_tally(value["selected"]),
+        non_ignored=_optional_code_tally(value["non_ignored"]),
+        ignored=_optional_code_tally(value["ignored"]),
+        unknown=_code_tally(value["unknown"]),
+        languages=tuple(
+            CodeLanguageRow(
+                language=str(row["language"]),
+                share=MetricShare(int(row["share"]["numerator"]), int(row["share"]["denominator"])),
+                selected=_code_tally(row["selected"]),
+                non_ignored=_optional_code_tally(row["non_ignored"]),
+                ignored=_optional_code_tally(row["ignored"]),
+                unknown=_code_tally(row["unknown"]),
+            )
+            for row in value["languages"]
+        ),
+    )
+
+
 def _metric_row(value: dict[str, Any]) -> MetricRow:
     metrics = value["metrics"]
     coverage = value["coverage"]
@@ -1331,12 +1488,39 @@ def _ignored_files(value: object) -> ExtensionTally | None:
     )
 
 
+def _file_classification(value: dict[str, Any] | None) -> FileClassification | None:
+    if value is None:
+        return None
+    flags = value["flags"]
+    return FileClassification(
+        file_type=str(value["file_type"]),
+        family=str(value["family"]),
+        source=str(value["source"]),
+        confidence=str(value["confidence"]),
+        generated=bool(flags["generated"]),
+        vendored=bool(flags["vendored"]),
+        documentation=bool(flags["documentation"]),
+    )
+
+
 def _ignored_flag(value: object) -> bool | None:
     if value is None:
         return None
     if not isinstance(value, bool):
         raise TypeError("a file row's ignored flag must be a boolean or null")
     return value
+
+
+def _tree_omissions(values: list[dict[str, Any]]) -> tuple[TreeOmission, ...]:
+    return tuple(
+        TreeOmission(
+            reason=TreeOmissionReason(value["reason"]),
+            entries=int(value["entries"]),
+            bytes=_optional_int(value["bytes"]),
+            allocated=_optional_int(value["allocated"]),
+        )
+        for value in values
+    )
 
 
 def _tree(value: dict[str, Any]) -> TreeNode:
@@ -1367,6 +1551,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             ),
             truncated=bool(raw["truncated"]),
             children=tuple(built[id(child)] for child in children),
+            omissions=_tree_omissions(raw["omissions"]),
             ignored=_ignored_tally(raw["ignored"]),
         )
     return built[id(value)]
@@ -1421,6 +1606,8 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     ),
                 )
             )
+        elif view is View.CODE:
+            sections.append(CodeSection(view, _code_overview(raw["code"])))
         elif view is View.EXTENSIONS:
             rows = raw["extensions"]
             if not isinstance(rows, list):
@@ -1439,6 +1626,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                         for row in rows
                     ),
                     _bound(raw),
+                    share_omitted=int(raw["share_omitted"]),
                 )
             )
         elif "files" in raw and view in (
@@ -1466,6 +1654,8 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                             complete=_optional_bool(row["complete"]) if "complete" in row else None,
                             age_ns=_optional_int(row["age_ns"]) if "age_ns" in row else None,
                             ignored=_ignored_flag(row["ignored"]),
+                            sort_value=_optional_int(row["sort_value"]),
+                            classification=_file_classification(row["classification"]),
                         )
                         for row in rows
                     ),
@@ -1474,9 +1664,22 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
             )
         elif "tree" in raw and view in (View.LIST, View.TREE, View.FILES):
             tree = raw["tree"]
-            if not isinstance(tree, dict):
-                raise TypeError("tree section must be an object")
-            sections.append(TreeSection(view, _tree(tree)))
+            if tree is not None and not isinstance(tree, dict):
+                raise TypeError("tree section must be an object or null")
+            limits = raw["limits"]
+            sections.append(
+                TreeSection(
+                    view,
+                    None if tree is None else _tree(tree),
+                    TreeDisplayLimits(
+                        _limit(limits["depth"]),
+                        str(limits["min_share"]),
+                        _limit(limits["breadth"]),
+                        _limit(limits["rows"]),
+                    ),
+                    _tree_omissions(raw["omissions"]),
+                )
+            )
         else:
             metrics = raw["metrics"]
             if not isinstance(metrics, dict):
@@ -1493,6 +1696,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                     total=_metric_row(total),
                     rows=tuple(_metric_row(row) for row in rows),
                     bound=_bound(metrics),
+                    share_omitted=int(metrics["share_omitted"]),
                 )
             )
 
@@ -1512,6 +1716,9 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
     provenance = _report_provenance(raw_provenance)
     raw_scope = cast(dict[str, Any], raw_request["scope"])
     request = ReportRequest(
+        sort_metric=str(raw_request["sort_metric"])
+        if raw_request["sort_metric"] is not None
+        else None,
         scope=ReportScope(
             max_depth=(
                 int(raw_scope["max_depth"]) if raw_scope.get("max_depth") is not None else None
@@ -1520,6 +1727,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
             one_filesystem=bool(raw_scope["one_filesystem"]),
             exclude_special=bool(raw_scope["exclude_special"]),
             read_controls=bool(raw_scope["read_controls"]),
+            population=IgnoredEntries(raw_scope["population"]),
         ),
         analyze=tuple(Analysis(str(name)) for name in raw_request["analyze"]),
         size=SizeMetric(str(raw_request["size"])),

@@ -34,7 +34,7 @@ const TRAILER: &[u8; 8] = b"FDUCTEND";
 /// snapshot's prologue gives it, and the content tier identity after the path encoding:
 /// the entry tier the records were analyzed over, which holds their type rules, then the
 /// analyzer set, the options fingerprint, and the analyzers.
-const FORMAT_VERSION: u32 = 7;
+const FORMAT_VERSION: u32 = 8;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -95,11 +95,9 @@ fn duration_micros(duration: Duration) -> u64 {
     u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
-/// Derive the content-sidecar path without changing the metadata snapshot name.
+/// Derive the analysis sibling from a metadata snapshot path.
 pub fn content_cache_path(snapshot_path: &Path) -> PathBuf {
-    let mut name = snapshot_path.as_os_str().to_os_string();
-    name.push(".content");
-    PathBuf::from(name)
+    crate::cache::CachePaths::from_metadata(snapshot_path).analysis
 }
 
 /// Persist the content tier's sparse records as a separately invalidated sidecar, under the
@@ -1627,7 +1625,10 @@ mod tests {
     }
 
     #[test]
-    fn sidecar_name_preserves_the_metadata_snapshot_name() {
-        assert_eq!(content_cache_path(Path::new("tree.fdu")), PathBuf::from("tree.fdu.content"));
+    fn sidecar_name_pairs_with_the_metadata_snapshot_name() {
+        assert_eq!(
+            content_cache_path(Path::new("0123456789abcdef.metadata.bin")),
+            PathBuf::from("0123456789abcdef.analysis.bin")
+        );
     }
 }

@@ -147,6 +147,8 @@ pub struct ScanScope {
     pub hidden_fingerprint: u64,
     /// Whether filesystem objects outside files, directories, and symlinks are excluded.
     pub exclude_special: bool,
+    /// Ignored population retained by this scan.
+    pub population: crate::query::IgnoredEntries,
     /// Identity of the compiled ignore policy.
     pub ignore_rules_fingerprint: u64,
     /// Identity of the compiled type-classification policy.
@@ -232,6 +234,13 @@ impl ScanScope {
             one_filesystem: self.one_filesystem,
             hidden_fingerprint: self.hidden_fingerprint,
             exclude_special: self.exclude_special,
+            population: self.population,
+            control_fingerprint: if matches!(self.population, crate::query::IgnoredEntries::Include)
+            {
+                0
+            } else {
+                self.ignore_rules_fingerprint
+            },
         }
     }
 
@@ -1217,6 +1226,9 @@ pub enum InvalidateReason {
     /// arbitration boundary. The root is reconciled instead of doing filesystem I/O
     /// under the index lock or allowing an old sample to win.
     WatchContention,
+    /// A control edit may admit or remove entries under a narrowed ignored population,
+    /// including entries absent from the current index. Revisit its parent directory.
+    ControlPopulationChanged,
     /// Requested by the caller.
     Requested,
 }

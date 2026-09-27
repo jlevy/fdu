@@ -27,7 +27,7 @@ patterns:
 ```console
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -37,10 +37,12 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -63,6 +65,7 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -70,19 +73,11 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 269,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -104,7 +99,7 @@ cache absent
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -114,10 +109,12 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -140,6 +137,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -147,19 +145,11 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 269,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -169,7 +159,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 ### Verify Exactly One Snapshot Exists
 
 ```console
-$ node -e "const fs=require('node:fs'); const files=fs.readdirSync('.cache/fdu').filter((name) => name.endsWith('.fdu')); if (files.length !== 1) process.exit(1); console.log('snapshot present')"
+$ node -e "const fs=require('node:fs'); const files=fs.readdirSync('.cache/fdu').filter((name) => name.endsWith('.metadata.bin')); if (files.length !== 1) process.exit(1); console.log('snapshot present')"
 snapshot present
 ? 0
 ```
@@ -184,7 +174,7 @@ rewrite is for.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -194,10 +184,12 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -220,6 +212,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -227,19 +220,11 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 269,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 269, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -261,7 +246,7 @@ fixture expanded
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -271,10 +256,12 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -297,6 +284,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -304,19 +292,11 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -331,7 +311,7 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -341,10 +321,12 @@ $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -367,6 +349,7 @@ $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -374,19 +357,11 @@ $ fdu --cache only --view tree --format json --size apparent --depth 0 --limit 0
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -410,7 +385,7 @@ $ fdu --watch --cache only project
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -420,10 +395,12 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -446,6 +423,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -453,19 +431,11 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 82,
-        "allocated": [ALLOCATED],
-        "files": 3,
-        "dirs": 3,
-        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 82, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -477,7 +447,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
 ### Corrupt the Snapshot
 
 ```console
-$ node -e "const fs=require('node:fs'); const path=require('node:path'); const dir='.cache/fdu'; const file=fs.readdirSync(dir).find((name) => name.endsWith('.fdu')); if (!file) process.exit(1); fs.writeFileSync(path.join(dir, file), 'corrupt'); console.log('snapshot corrupted')"
+$ node -e "const fs=require('node:fs'); const path=require('node:path'); const dir='.cache/fdu'; const file=fs.readdirSync(dir).find((name) => name.endsWith('.metadata.bin')); if (!file) process.exit(1); fs.writeFileSync(path.join(dir, file), 'corrupt'); console.log('snapshot corrupted')"
 snapshot corrupted
 ? 0
 ```
@@ -487,7 +457,7 @@ snapshot corrupted
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -497,10 +467,12 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -523,6 +495,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -530,19 +503,11 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 82,
-        "allocated": [ALLOCATED],
-        "files": 3,
-        "dirs": 3,
-        "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 82, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -552,7 +517,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
 ### Verify the Corrupt File Was Replaced
 
 ```console
-$ node -e "const fs=require('node:fs'); const path=require('node:path'); const dir='.cache/fdu'; const file=fs.readdirSync(dir).find((name) => name.endsWith('.fdu')); if (!file || fs.readFileSync(path.join(dir, file), 'utf8') === 'corrupt') process.exit(1); console.log('snapshot replaced')"
+$ node -e "const fs=require('node:fs'); const path=require('node:path'); const dir='.cache/fdu'; const file=fs.readdirSync(dir).find((name) => name.endsWith('.metadata.bin')); if (!file || fs.readFileSync(path.join(dir, file), 'utf8') === 'corrupt') process.exit(1); console.log('snapshot replaced')"
 snapshot replaced
 ? 0
 ```
@@ -566,7 +531,7 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -576,10 +541,12 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -602,6 +569,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -609,19 +577,11 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -631,7 +591,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 ```console
 $ fdu --no-gitignore --cache only --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -641,10 +601,12 @@ $ fdu --no-gitignore --cache only --view tree --format json --size apparent --de
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": false
+      "read_controls": false,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -669,19 +631,11 @@ $ fdu --no-gitignore --cache only --view tree --format json --size apparent --de
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": null,
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }
@@ -692,9 +646,9 @@ A read-only one-shot metadata report scans cold without installing control state
 It leaves the stronger snapshot usable by a subsequent default cache-only request.
 
 ```console
-$ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 --limit 0 project
+$ fdu --no-gitignore --cache read-only --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -704,10 +658,12 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 -
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": false
+      "read_controls": false,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
   },
@@ -741,9 +697,9 @@ $ fdu --no-gitignore --cache read-only --format json --size apparent --depth 0 -
 ```
 
 ```console
-$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache only --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -753,10 +709,12 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
   },
@@ -779,6 +737,7 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -801,7 +760,7 @@ way out.
 ```console
 $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/8",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -811,10 +770,12 @@ $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": false
+      "read_controls": false,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -839,19 +800,11 @@ $ fdu --no-gitignore --view tree --format json --size apparent --depth 0 --limit
   "reports": [
     {
       "view": "tree",
-      "tree": {
-        "name": ".",
-        "path": "",
-        "kind": "dir",
-        "bytes": 294,
-        "allocated": [ALLOCATED],
-        "files": 7,
-        "dirs": 3,
-        "ignored": null,
-        "newest_mtime_ns": [MTIME_NS],
-        "truncated": true,
-        "children": []
-      }
+      "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+      "tree": null,
+      "omissions": [
+        {"reason": "rows", "entries": 1, "bytes": 294, "allocated": [ALLOCATED]}
+      ]
     }
   ]
 }

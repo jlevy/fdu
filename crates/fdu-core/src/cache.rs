@@ -31,10 +31,60 @@ use crate::stored_state::{ContentTierIdentity, SnapshotIdentity};
 const SNAPSHOT_NAME_HEX_DIGITS: usize = 16;
 
 /// The suffix every snapshot name in the cache directory ends with.
-const SNAPSHOT_NAME_SUFFIX: &str = ".fdu";
+const SNAPSHOT_NAME_SUFFIX: &str = ".metadata.bin";
 
-/// What a content sidecar's name adds to its snapshot's, per `content_cache_path`.
-const CONTENT_NAME_SUFFIX: &str = ".content";
+/// Suffix of the derived analysis sibling.
+const CONTENT_NAME_SUFFIX: &str = ".analysis.bin";
+
+/// The two files for one canonical root key in an application cache directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CachePaths {
+    /// Filesystem entries and metadata.
+    pub metadata: PathBuf,
+    /// Derived analyzer results.
+    pub analysis: PathBuf,
+}
+
+impl CachePaths {
+    /// Construct the conventional sibling paths for a canonical root hash.
+    pub fn for_root_hash(directory: &Path, root_hash: u64) -> Self {
+        let key = format!("{root_hash:016x}");
+        Self {
+            metadata: directory.join(snapshot_file_name(root_hash)),
+            analysis: directory.join(format!("{key}{CONTENT_NAME_SUFFIX}")),
+        }
+    }
+
+    /// Derive the sibling of an explicit metadata path.
+    pub fn from_metadata(metadata: &Path) -> Self {
+        let analysis = metadata
+            .file_name()
+            .and_then(OsStr::to_str)
+            .and_then(|name| name.strip_suffix(SNAPSHOT_NAME_SUFFIX))
+            .map_or_else(
+                || {
+                    // An arbitrary explicit name owns its full spelling. Appending the
+                    // role suffix keeps distinct metadata paths from sharing a sidecar.
+                    let mut name = metadata.as_os_str().to_os_string();
+                    // Keep arbitrary explicit paths in a disjoint namespace from
+                    // conventional metadata names, including `foo` versus
+                    // `foo.metadata.bin`.
+                    name.push(".derived.bin");
+                    PathBuf::from(name)
+                },
+                |stem| metadata.with_file_name(format!("{stem}{CONTENT_NAME_SUFFIX}")),
+            );
+        Self { metadata: metadata.to_path_buf(), analysis }
+    }
+
+    /// Derive the metadata sibling of an analysis path.
+    fn from_analysis(analysis: &Path) -> Self {
+        Self {
+            metadata: analysis.with_extension("").with_extension("metadata.bin"),
+            analysis: analysis.to_path_buf(),
+        }
+    }
+}
 
 /// What a staging name inserts between its target's name and the discriminator, per
 /// `snapshot::temp_name`.
@@ -337,7 +387,11 @@ fn is_snapshot_name_bytes(bytes: &[u8]) -> bool {
 
 /// Whether a name is the content sidecar of a snapshot name.
 fn is_sidecar_name_bytes(bytes: &[u8]) -> bool {
-    bytes.strip_suffix(CONTENT_NAME_SUFFIX.as_bytes()).is_some_and(is_snapshot_name_bytes)
+    bytes.len() == SNAPSHOT_NAME_HEX_DIGITS + CONTENT_NAME_SUFFIX.len()
+        && bytes.ends_with(CONTENT_NAME_SUFFIX.as_bytes())
+        && bytes[..SNAPSHOT_NAME_HEX_DIGITS]
+            .iter()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Which of fdu's names a file in the cache directory is shaped like.
@@ -378,13 +432,13 @@ fn name_shape(name: &OsStr) -> NameShape {
 /// What a file name in the cache directory is shaped like.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NameShape {
-    /// `{16 hex}.fdu`: the snapshot of some root.
+    /// `{16 hex}.metadata.bin`: the snapshot of some root.
     Snapshot,
-    /// `{16 hex}.fdu.content`: the content sidecar of that snapshot.
+    /// `{16 hex}.analysis.bin`: the content sidecar of that snapshot.
     Sidecar,
-    /// `.{16 hex}.fdu.tmp.*`: a snapshot being staged.
+    /// `.{16 hex}.metadata.bin.tmp.*`: a snapshot being staged.
     SnapshotTemporary,
-    /// `.{16 hex}.fdu.content.tmp.*`: a sidecar being staged.
+    /// `.{16 hex}.analysis.bin.tmp.*`: a sidecar being staged.
     SidecarTemporary,
     /// A name the cache gives nothing.
     Other,
@@ -483,11 +537,8 @@ fn is_sidecar_image(path: &Path) -> Result<bool> {
 }
 
 /// The snapshot a content sidecar belongs to: the inverse of `content_cache_path`.
-///
-/// `with_extension("")` drops the *final* extension, which is `.content` for every name
-/// this is called with — [`NameShape::Sidecar`] is what proves that.
 fn sidecar_snapshot_path(path: &Path) -> PathBuf {
-    path.with_extension("")
+    CachePaths::from_analysis(path).metadata
 }
 
 fn unrecognized(path: &Path, bytes: u64) -> CacheStatus {
@@ -686,6 +737,15 @@ mod tests {
         snapshot_file_name(seed)
     }
 
+    fn analysis_name(seed: u64) -> String {
+        CachePaths::for_root_hash(Path::new("."), seed)
+            .analysis
+            .file_name()
+            .expect("analysis name")
+            .to_string_lossy()
+            .into_owned()
+    }
+
     fn seed(tree: &Path, snapshot_path: &Path) {
         std::fs::write(tree.join("a.txt"), b"hello").expect("write");
         let config = OpenFixture {
@@ -711,7 +771,7 @@ mod tests {
         // tree it belongs to.
         let tree = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache");
-        let path = cache.path().join("snap.fdu");
+        let path = cache.path().join(layout_name(1));
         seed(tree.path(), &path);
 
         let status = cache_status(&path).expect("status");
@@ -913,7 +973,7 @@ mod tests {
         std::fs::write(&impostor, b"FDUSNAQ and more bytes").expect("write");
         // One of fdu's snapshots under a name the cache never gives one, such as a backup
         // someone made: a listing cannot tell it from a user's own file.
-        let renamed = cache.path().join("backup.fdu");
+        let renamed = cache.path().join("backup.bin");
         std::fs::copy(&path, &renamed).expect("copy");
 
         let listed = list_caches(cache.path()).expect("list");
@@ -1056,23 +1116,21 @@ mod tests {
         std::fs::write(&impostor, b"not a snapshot").expect("write");
         set_modified(&impostor, beyond_the_reaper());
         // A staged sidecar, and a sidecar whose snapshot is gone.
-        let staged_sidecar =
-            cache.path().join(staging_name(&format!("{}.content", layout_name(5))));
+        let staged_sidecar = cache.path().join(staging_name(&analysis_name(5)));
         std::fs::write(&staged_sidecar, b"FDUCTNT\0payload").expect("write");
         set_modified(&staged_sidecar, beyond_the_reaper());
-        let orphan = cache.path().join(format!("{}.content", layout_name(6)));
+        let orphan = cache.path().join(analysis_name(6));
         std::fs::write(&orphan, b"FDUCTNT\0payload").expect("write");
         // A sidecar name over contents that are not fdu's.
-        let foreign_sidecar = cache.path().join(format!("{}.content", layout_name(7)));
+        let foreign_sidecar = cache.path().join(analysis_name(7));
         std::fs::write(&foreign_sidecar, b"not a sidecar").expect("write");
         // A snapshot image under a sidecar's name, and under a staged sidecar's name. The
         // name says which magic to expect and the snapshot's is not it, so both are
         // unrecognized: reading them as snapshots would clear them under a name no
         // snapshot is given, and the staged one without the age rule its name carries.
-        let snapshot_under_sidecar_name = cache.path().join(format!("{}.content", layout_name(8)));
+        let snapshot_under_sidecar_name = cache.path().join(analysis_name(8));
         std::fs::write(&snapshot_under_sidecar_name, &image).expect("write");
-        let snapshot_under_staged_sidecar_name =
-            cache.path().join(staging_name(&format!("{}.content", layout_name(9))));
+        let snapshot_under_staged_sidecar_name = cache.path().join(staging_name(&analysis_name(9)));
         std::fs::write(&snapshot_under_staged_sidecar_name, &image).expect("write");
         set_modified(&snapshot_under_staged_sidecar_name, beyond_the_reaper());
 
@@ -1200,22 +1258,43 @@ mod tests {
     }
 
     #[test]
+    fn explicit_metadata_names_keep_distinct_analysis_siblings() {
+        let first = CachePaths::from_metadata(Path::new("cache/root.a.snap"));
+        let second = CachePaths::from_metadata(Path::new("cache/root.b.snap"));
+        assert_eq!(first.analysis, Path::new("cache/root.a.snap.derived.bin"));
+        assert_eq!(second.analysis, Path::new("cache/root.b.snap.derived.bin"));
+        assert_ne!(first.analysis, second.analysis);
+        let conventional =
+            CachePaths::from_metadata(Path::new("cache/0123456789abcdef.metadata.bin"));
+        assert_eq!(conventional.analysis, Path::new("cache/0123456789abcdef.analysis.bin"));
+        let arbitrary = CachePaths::from_metadata(Path::new("cache/foo"));
+        let conventional = CachePaths::from_metadata(Path::new("cache/foo.metadata.bin"));
+        assert_ne!(arbitrary.analysis, conventional.analysis);
+    }
+
+    #[test]
     fn a_name_is_shaped_like_one_of_fdus_files_or_like_nothing() {
         // The shape is a gate, never evidence: each of these still has to carry the right
         // magic before the state that matches it can be reported.
         for (name, shape) in [
-            ("0123456789abcdef.fdu", NameShape::Snapshot),
-            ("0123456789abcdef.fdu.content", NameShape::Sidecar),
-            (".0123456789abcdef.fdu.tmp.1.0011223344556677.9", NameShape::SnapshotTemporary),
-            (".0123456789abcdef.fdu.content.tmp.1.0011223344556677.9", NameShape::SidecarTemporary),
+            ("0123456789abcdef.metadata.bin", NameShape::Snapshot),
+            ("0123456789abcdef.analysis.bin", NameShape::Sidecar),
+            (
+                ".0123456789abcdef.metadata.bin.tmp.1.0011223344556677.9",
+                NameShape::SnapshotTemporary,
+            ),
+            (
+                ".0123456789abcdef.analysis.bin.tmp.1.0011223344556677.9",
+                NameShape::SidecarTemporary,
+            ),
             // Near misses: uppercase hex, a missing discriminator, a target that is not a
             // name the cache gives, and the sidecar of something that is not a snapshot.
-            ("0123456789ABCDEF.fdu", NameShape::Other),
-            (".0123456789abcdef.fdu.tmp.", NameShape::Other),
+            ("0123456789ABCDEF.metadata.bin", NameShape::Other),
+            (".0123456789abcdef.metadata.bin.tmp.", NameShape::Other),
             (".notes.txt.tmp.1.0011223344556677.9", NameShape::Other),
-            ("notes.txt.content", NameShape::Other),
-            ("0123456789abcdef.fdu.content.content", NameShape::Other),
-            (".fdu.tmp.1", NameShape::Other),
+            ("notes.txt.analysis.bin", NameShape::Other),
+            ("0123456789abcdef.analysis.bin.analysis.bin", NameShape::Other),
+            (".metadata.bin.tmp.1", NameShape::Other),
         ] {
             assert_eq!(name_shape(OsStr::new(name)), shape, "{name}");
         }

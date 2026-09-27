@@ -16,8 +16,9 @@ This is the default report:
 - `list` view in `tree` format
 - allocated filesystem bytes
 - largest entries first
-- two directory levels
-- at most ten children per directory
+- up to five entry levels, including significant file leaves
+- entries contributing at least 1% of the selected root size
+- no breadth or section-row cap
 - metadata only; regular file bodies are not opened
 - hidden and ignored entries included
 
@@ -27,7 +28,7 @@ shares. Reading the rules does not exclude the entries they match.
 These commands cover the most common questions:
 
 ```shell
-fdu . --exclude-ignored
+fdu . --ignored=exclude
 fdu . --view=summary
 fdu . --view=languages
 fdu . --view=families,types,extensions
@@ -53,11 +54,12 @@ repeated filesystem walks.
 | `types` | Detected file types |
 | `extensions` | Raw filename extensions; extensionless names use `(none)` |
 | `languages` | Programming languages, metadata-only unless code analysis is enabled |
+| `code` | Source-line overview, language and population totals, and coverage; requires code analysis |
 | `documents` | Prose metrics; requires an enabled analyzer |
 | `largest` | Twenty largest regular files by default |
 | `recent` | Twenty most recently modified regular files by default |
 | `files` | Every selected entry in name order |
-| `full` | A bounded digest of every view but `list` and `files` |
+| `full` | Every applicable view but `list` and `files` |
 
 `largest` and `recent` are presets over `files`. `--sort` and `--limit` override their
 defaults. Use `--limit=all` where a bounded view should print every row.
@@ -77,12 +79,11 @@ exact `share_metric`, numerator, and denominator.
 
 The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
-Files contribute to their directory’s totals; tree output does not add individual file
-leaves.
+Significant files appear as leaves alongside directory totals.
 
 | Format | List output |
 | --- | --- |
-| `tree` or `--tree` | Directory hierarchy; default depth 2 and ten children per directory |
+| `tree` or `--tree` | Directories and significant files; default depth 5 and 1% of selected root size |
 | `paths` | Every matching path, safely escaped, one per line |
 | `long` or `--long` | Every match with its size (allocated unless `--size` says otherwise), modification age, and path |
 | `json`, `jsonl`, `yaml` | Structured matching entries with exact metrics and bounds |
@@ -91,11 +92,19 @@ leaves.
 Flat lists use size-descending order with deterministic path ties; `--sort name` gives
 an alphabetic inventory.
 `--sort mtime --reverse` puts oldest entries first.
-Flat `--limit N` caps the whole list; in a tree it caps each directory’s children.
-`--limit all` removes row caps, and `--depth all` expands all directory levels.
-Depth has no effect on flat rows or subtree measurements.
-Paths and Long omit the performance footer; bounds, rule coverage, cache-only status,
-and watch invalidations are reported on stderr.
+`--limit N` caps data rows per section, including the root in a tree.
+`--breadth N` caps immediate children per directory.
+Both default to `all`, except the 20-row largest/recent presets.
+`--depth all` expands all levels and `--min-share 0%` admits all sizes.
+Display bounds compose and leave aggregate measurements unchanged.
+
+Shares compare exact values against the selected root total, including threshold
+equality. A child at 1% of its parent but below 1% of the root is hidden by the default.
+Omission rows name share, breadth, depth, or row limits; they do not consume data rows.
+`--limit 0` shows no data rows, while `--depth 0` shows only the root.
+Explicit hierarchy controls require a hierarchical view; `--scan-depth` independently
+limits discovery. Paths and Long omit the performance footer; bounds, rule coverage,
+cache-only status, and watch invalidations are reported on stderr.
 Paths is a lossy line-oriented listing: control characters are escaped so one row stays
 one line, undecodable bytes become U+FFFD, and every other character, the platform
 separator and a literal backslash included, is written verbatim.
@@ -160,7 +169,7 @@ future timestamp). This measures modification activity, not access time or last 
 
 Exclusions apply throughout a matching directory’s subtree before size/age predicates.
 Excluding a directory excludes its contents; a matching parent cannot bring them back.
-`--exclude-ignored` subtracts ignored contents, while `--only-ignored` still traverses
+`--ignored=exclude` subtracts ignored contents, while `--ignored=only` still traverses
 structural unignored ancestors to discover ignored matches.
 Matching a directory covers its eligible contents in summary and grouped views without
 requiring descendant names to match.
@@ -177,27 +186,31 @@ scan that finished with errors, reports a lower-bound size and an `unknown` age 
 `long`, carries `complete: false` in machine output, and matches no modification bound.
 See the [machine-output reference](machine-output.md) for exact size, age, timestamp,
 and completeness fields.
-Changing selection or format reuses a retained index and does not change scan/cache
-identity.
+A retained index can answer narrower selections when its scope contains the needed
+facts. One-shot ignored-population choices determine discovery and cache identity.
 
 ### Select by `.gitignore`
 
 ```shell
-fdu . --exclude-ignored
-fdu . --view=files --only-ignored --format=jsonl
+fdu . --ignored=exclude
+fdu . --view=files --ignored=only --format=jsonl
 ```
 
-These flags select one side of the `.gitignore` classification after the scan.
-They change totals, ordering, and `--min-size`, but do not prune metadata work or
-content analysis. `--exclude-ignored` means “what the observed rules leave,” not “what
-Git would commit”: fdu does not read trackedness, `.git/info/exclude`,
-`core.excludesFile`, or a global ignore file.
-`.git` itself is unignored unless a rule names it.
+`--ignored=include` is the default and reports both populations.
+`exclude` prunes safely ignored subtrees and avoids reading ignored bodies.
+`only` discovers ignored matches through non-ignored ancestors and reads only ignored
+bodies for analysis.
+Unknown classification cannot justify pruning.
+These choices change totals, ordering, and `--min-size` together.
+
+Unignored means what the observed rules leave.
+fdu does not read trackedness, `.git/info/exclude`, `core.excludesFile`, or a global
+ignore file. `.git` itself is unignored unless a rule names it.
 
 For the most recent working files without ignored entries or repository internals:
 
 ```shell
-fdu . --view=recent --limit=10 --exclude-ignored --exclude='.git/**'
+fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'
 ```
 
 `--no-gitignore` disables reading and applying the rules, so ignored shares are unknown.
@@ -223,11 +236,11 @@ Files are analyzed through EOF, not truncated by size.
 Under `code`, a code file in a language without a line-of-code counter is reported as
 `unsupported` coverage and contributes no line metrics to that request.
 
-Naming analysis without a view chooses one that displays it: `code` selects `languages`,
-`words` selects `documents`, and `lines`, `code,words`, or `all` select `families`. An
-explicit `--view` always wins and never enables an analyzer.
-If that view displays no content metric, fdu still performs the requested analysis and
-prints a note explaining the mismatch.
+Naming analysis without a view chooses one that displays it: `code` selects `code`,
+`words` selects `documents`, `lines` selects `families`, and `code,words` or `all`
+select both `code` and `documents`. An explicit `--view` always wins and never enables
+an analyzer. If that view displays no content metric, fdu still performs the requested
+analysis and prints a note explaining the mismatch.
 
 ## Understand the Cache
 
@@ -254,10 +267,18 @@ fdu . --analyze=code
 fdu . --analyze=code
 ```
 
-The performance footer reports metadata source, content bytes read, and fresh versus
-cached analysis counts.
-On an unchanged tree the second run can show zero content bytes read and every analysis
-record cached, while metadata verification still occurs.
+The gray performance footer reports metadata source, content bytes read, fresh and
+cached analysis counts, total ignore files, and accepted rules.
+Rules count each governing location, including repeated rule sources and negations, and
+exclude comments, blank lines, and rejected patterns.
+Refused files are named separately.
+
+Total files/s and decimal GB/s divide walked files and represented size by the same
+elapsed duration shown at the end.
+Represented size uses the selected apparent or allocated measure; it is not disk-read
+bandwidth. Actual content-read throughput uses bytes read and the content-analysis
+duration. On an unchanged tree the second run can show zero content bytes read and every
+analysis record cached, while metadata verification still occurs.
 
 | Policy | Behavior |
 | --- | --- |
@@ -272,6 +293,17 @@ It never silently falls back to scanning.
 Use `fdu --cache-status=all` to inspect cache files and `fdu --cache-clear=all` to
 remove current, stale, and recognized leftover fdu data.
 Unrecognized files are never removed.
+
+The cache defaults to `~/.cache/fdu` on macOS and Linux, and `%LOCALAPPDATA%/fdu` on
+Windows. `--cache-dir DIR` wins over `FDU_CACHE_DIR`; otherwise `XDG_CACHE_HOME/fdu`
+overrides the platform default.
+Overrides name the exact directory.
+Status and clear use this same resolution.
+
+Each canonical root has `<16-hex-key>.metadata.bin`, holding filesystem facts and ignore
+controls, and optional `<16-hex-key>.analysis.bin`, holding derived counts and
+classifications. These disposable binary files do not store source-file bodies.
+Use cache status to inspect their roots, scope, and freshness.
 
 The [cache design](project/guides/cache-design.md) explains snapshot scopes,
 verification costs, atomic writes, and cleanup rules.

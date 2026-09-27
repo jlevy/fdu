@@ -2,7 +2,7 @@
 
 use super::MetricValues;
 
-/// Streaming `code-sloc-v1` counter for a supported language.
+/// Streaming `code-sloc-v1` counter for a supported language (analyzer version 2).
 ///
 /// The counter retains the current logical line, its allocated capacity, and parser
 /// state. A one-line minified or generated source can therefore require file-sized
@@ -16,6 +16,7 @@ pub struct CodeAccumulator {
     state: State,
     line: Vec<u8>,
     previous_cr: bool,
+    regex_allowed: bool,
     metrics: MetricValues,
 }
 
@@ -29,6 +30,7 @@ impl CodeAccumulator {
             state: State::Normal,
             line: Vec::new(),
             previous_cr: false,
+            regex_allowed: true,
             metrics: MetricValues::default(),
         })
     }
@@ -62,7 +64,8 @@ impl CodeAccumulator {
     }
 
     fn finish_line(&mut self) {
-        let class = classify_line(self.syntax, &mut self.state, &self.line);
+        let class =
+            classify_line(self.syntax, &mut self.state, &mut self.regex_allowed, &self.line);
         self.metrics.physical_lines = self.metrics.physical_lines.saturating_add(1);
         match class {
             LineClass::Code => {
@@ -82,6 +85,7 @@ impl CodeAccumulator {
 #[derive(Clone, Copy, Debug)]
 #[allow(clippy::struct_excessive_bools)]
 struct Syntax {
+    language: Language,
     line_comments: &'static [&'static [u8]],
     block: Option<BlockSyntax>,
     nested_blocks: bool,
@@ -92,9 +96,28 @@ struct Syntax {
     ruby_blocks: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Language {
+    Rust,
+    JavaScript,
+    C,
+    Cpp,
+    CSharp,
+    Java,
+    Kotlin,
+    Swift,
+    Go,
+    Php,
+    Python,
+    Ruby,
+    Shell,
+    Sql,
+}
+
 impl Syntax {
     fn for_type(file_type: &str) -> Option<Self> {
         let c_like = Self {
+            language: Language::C,
             line_comments: &[b"//"],
             block: Some(BlockSyntax { open: b"/*", close: b"*/" }),
             nested_blocks: false,
@@ -105,12 +128,37 @@ impl Syntax {
             ruby_blocks: false,
         };
         match file_type {
-            "rust" => Some(Self { nested_blocks: true, rust_raw_strings: true, ..c_like }),
-            "javascript" | "typescript" | "go" => Some(Self { backtick_strings: true, ..c_like }),
-            "c" | "cpp" | "csharp" | "java" => Some(c_like),
-            "kotlin" | "swift" => Some(Self { nested_blocks: true, triple_quotes: true, ..c_like }),
-            "php" => Some(Self { line_comments: &[b"//", b"#"], ..c_like }),
+            "rust" => Some(Self {
+                language: Language::Rust,
+                nested_blocks: true,
+                rust_raw_strings: true,
+                ..c_like
+            }),
+            "javascript" | "typescript" => {
+                Some(Self { language: Language::JavaScript, backtick_strings: true, ..c_like })
+            }
+            "go" => Some(Self { language: Language::Go, backtick_strings: true, ..c_like }),
+            "c" => Some(c_like),
+            "cpp" => Some(Self { language: Language::Cpp, ..c_like }),
+            "csharp" => Some(Self { language: Language::CSharp, ..c_like }),
+            "java" => Some(Self { language: Language::Java, ..c_like }),
+            "kotlin" => Some(Self {
+                language: Language::Kotlin,
+                nested_blocks: true,
+                triple_quotes: true,
+                ..c_like
+            }),
+            "swift" => Some(Self {
+                language: Language::Swift,
+                nested_blocks: true,
+                triple_quotes: true,
+                ..c_like
+            }),
+            "php" => {
+                Some(Self { language: Language::Php, line_comments: &[b"//", b"#"], ..c_like })
+            }
             "python" | "ruby" => Some(Self {
+                language: if file_type == "ruby" { Language::Ruby } else { Language::Python },
                 line_comments: &[b"#"],
                 block: None,
                 nested_blocks: false,
@@ -121,6 +169,7 @@ impl Syntax {
                 ruby_blocks: file_type == "ruby",
             }),
             "shell" => Some(Self {
+                language: Language::Shell,
                 line_comments: &[b"#"],
                 block: None,
                 nested_blocks: false,
@@ -131,6 +180,7 @@ impl Syntax {
                 ruby_blocks: false,
             }),
             "sql" => Some(Self {
+                language: Language::Sql,
                 line_comments: &[b"--"],
                 block: Some(BlockSyntax { open: b"/*", close: b"*/" }),
                 nested_blocks: false,
@@ -151,13 +201,17 @@ struct BlockSyntax {
     close: &'static [u8],
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum State {
     Normal,
     BlockComment { depth: u16 },
-    Quoted { quote: u8, escaped: bool, multiline: bool },
-    TripleQuoted { quote: u8 },
+    Quoted { quote: u8, escaped: bool, multiline: bool, doubled: bool },
+    TripleQuoted { quote: u8, width: usize },
     RustRaw { hashes: u8 },
+    Delimited { close: Vec<u8> },
+    Heredoc { terminator: Vec<u8>, indent: bool, php: bool },
+    RubyPercent { open: u8, close: u8, depth: usize },
+    Regex { escaped: bool, in_class: bool },
     RubyBlock,
 }
 
@@ -168,13 +222,40 @@ enum LineClass {
     Blank,
 }
 
-fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
+fn classify_line(
+    syntax: Syntax,
+    state: &mut State,
+    regex_allowed: &mut bool,
+    line: &[u8],
+) -> LineClass {
     let mut index = usize::from(line.starts_with(&[0xef, 0xbb, 0xbf]));
     index = index.saturating_mul(3);
     let mut whitespace_boundary = matches!(state, State::Normal);
-    let mut code =
-        matches!(state, State::Quoted { .. } | State::TripleQuoted { .. } | State::RustRaw { .. });
+    let mut code = matches!(
+        state,
+        State::Quoted { .. }
+            | State::TripleQuoted { .. }
+            | State::RustRaw { .. }
+            | State::Delimited { .. }
+            | State::Heredoc { .. }
+            | State::RubyPercent { .. }
+            | State::Regex { .. }
+    );
     let mut comment = matches!(state, State::BlockComment { .. });
+
+    if let State::Heredoc { terminator, indent, php } = state {
+        let candidate = if *indent {
+            &line[line.iter().take_while(|b| b.is_ascii_whitespace()).count()..]
+        } else {
+            line
+        };
+        if candidate == terminator
+            || (*php && candidate.strip_suffix(b";") == Some(terminator.as_slice()))
+        {
+            *state = State::Normal;
+        }
+        return LineClass::Code;
+    }
 
     if matches!(state, State::RubyBlock) {
         if line.starts_with(b"=end") {
@@ -188,7 +269,17 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
     }
 
     while index < line.len() {
-        match *state {
+        if let State::Delimited { close } = state {
+            code = true;
+            if line[index..].starts_with(close) {
+                index += close.len();
+                *state = State::Normal;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        match state.clone() {
             State::BlockComment { mut depth } => {
                 comment = true;
                 let block = syntax.block.expect("block state requires block syntax");
@@ -204,7 +295,7 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                     index += 1;
                 }
             }
-            State::Quoted { quote, mut escaped, multiline } => {
+            State::Quoted { quote, mut escaped, multiline, doubled } => {
                 code = true;
                 let byte = line[index];
                 if escaped {
@@ -212,18 +303,30 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                 } else if byte == b'\\' {
                     escaped = true;
                 } else if byte == quote {
+                    if doubled && line.get(index + 1) == Some(&quote) {
+                        index += 2;
+                        continue;
+                    }
                     *state = State::Normal;
+                    if syntax.language == Language::JavaScript {
+                        *regex_allowed = false;
+                    }
                     index += 1;
                     continue;
                 }
-                *state = State::Quoted { quote, escaped, multiline };
+                *state = State::Quoted { quote, escaped, multiline, doubled };
                 index += 1;
             }
-            State::TripleQuoted { quote } => {
+            State::TripleQuoted { quote, width } => {
                 code = true;
-                if line[index..].starts_with(&[quote, quote, quote]) {
+                if line[index..].iter().take(width).all(|b| *b == quote)
+                    && line.len() - index >= width
+                {
                     *state = State::Normal;
-                    index += 3;
+                    if syntax.language == Language::JavaScript {
+                        *regex_allowed = false;
+                    }
+                    index += width;
                 } else {
                     index += 1;
                 }
@@ -237,6 +340,51 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                     index += 1;
                 }
             }
+            State::Delimited { .. } => {
+                unreachable!("delimited strings are handled before matching")
+            }
+            State::RubyPercent { open, close, mut depth } => {
+                code = true;
+                match line[index] {
+                    b'\\' => index += usize::min(2, line.len() - index),
+                    byte if byte == open && open != close => {
+                        depth += 1;
+                        *state = State::RubyPercent { open, close, depth };
+                        index += 1;
+                    }
+                    byte if byte == close => {
+                        depth -= 1;
+                        *state = if depth == 0 {
+                            State::Normal
+                        } else {
+                            State::RubyPercent { open, close, depth }
+                        };
+                        index += 1;
+                    }
+                    _ => index += 1,
+                }
+            }
+            State::Regex { mut escaped, mut in_class } => {
+                code = true;
+                let byte = line[index];
+                if escaped {
+                    escaped = false;
+                } else if byte == b'\\' {
+                    escaped = true;
+                } else if byte == b'[' {
+                    in_class = true;
+                } else if byte == b']' {
+                    in_class = false;
+                } else if byte == b'/' && !in_class {
+                    *state = State::Normal;
+                    index += 1;
+                    *regex_allowed = false;
+                    continue;
+                }
+                *state = State::Regex { escaped, in_class };
+                index += 1;
+            }
+            State::Heredoc { .. } => unreachable!("heredocs return before byte scanning"),
             State::RubyBlock => unreachable!("Ruby blocks return before byte scanning"),
             State::Normal => {
                 let byte = line[index];
@@ -251,6 +399,18 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                         index += width;
                         continue;
                     }
+                }
+                if syntax.language == Language::JavaScript
+                    && byte == b'/'
+                    && *regex_allowed
+                    && !line[index..].starts_with(b"//")
+                    && !line[index..].starts_with(b"/*")
+                {
+                    code = true;
+                    whitespace_boundary = false;
+                    *state = State::Regex { escaped: false, in_class: false };
+                    index += 1;
+                    continue;
                 }
                 if syntax.line_comments.iter().any(|marker| {
                     line[index..].starts_with(marker)
@@ -277,22 +437,148 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                         continue;
                     }
                 }
+                if syntax.language == Language::Cpp {
+                    if let Some((close, consumed)) = cpp_raw_open(&line[index..]) {
+                        code = true;
+                        *state = State::Delimited { close };
+                        index += consumed;
+                        continue;
+                    }
+                }
+                if syntax.language == Language::Sql {
+                    if let Some((close, consumed)) = sql_dollar_open(&line[index..]) {
+                        code = true;
+                        *state = State::Delimited { close };
+                        index += consumed;
+                        continue;
+                    }
+                }
+                if syntax.language == Language::Ruby {
+                    if let Some((open, close, consumed)) = ruby_percent_open(&line[index..]) {
+                        code = true;
+                        *state = State::RubyPercent { open, close, depth: 1 };
+                        index += consumed;
+                        continue;
+                    }
+                }
+                if let Some((terminator, indent, php)) =
+                    heredoc_open(syntax.language, &line[index..])
+                {
+                    code = true;
+                    *state = State::Heredoc { terminator, indent, php };
+                    break;
+                }
+                if syntax.language == Language::CSharp && line[index..].starts_with(b"@\"") {
+                    code = true;
+                    *state = State::Quoted {
+                        quote: b'"',
+                        escaped: false,
+                        multiline: true,
+                        doubled: true,
+                    };
+                    index += 2;
+                    continue;
+                }
+                if matches!(syntax.language, Language::CSharp | Language::Java)
+                    && line[index..].starts_with(b"\"\"\"")
+                {
+                    code = true;
+                    let width = if syntax.language == Language::CSharp {
+                        line[index..].iter().take_while(|b| **b == b'"').count()
+                    } else {
+                        3
+                    };
+                    *state = State::TripleQuoted { quote: b'"', width };
+                    index += width;
+                    continue;
+                }
                 if syntax.triple_quotes
                     && matches!(byte, b'\'' | b'"')
                     && line[index..].starts_with(&[byte, byte, byte])
                 {
                     code = true;
                     whitespace_boundary = false;
-                    *state = State::TripleQuoted { quote: byte };
+                    *state = State::TripleQuoted { quote: byte, width: 3 };
                     index += 3;
                     continue;
                 }
                 if matches!(byte, b'\'' | b'"') || (syntax.backtick_strings && byte == b'`') {
+                    if syntax.language == Language::Rust
+                        && byte == b'\''
+                        && rust_lifetime(&line[index..])
+                    {
+                        code = true;
+                        index += 1;
+                        continue;
+                    }
                     code = true;
                     whitespace_boundary = false;
-                    *state = State::Quoted { quote: byte, escaped: false, multiline: byte == b'`' };
+                    let multiline = byte == b'`'
+                        || (byte == b'"' && syntax.language == Language::Rust)
+                        || matches!(
+                            syntax.language,
+                            Language::Ruby | Language::Shell | Language::Sql
+                        )
+                        || (syntax.language == Language::C
+                            && byte == b'"'
+                            && line.ends_with(b"\\"));
+                    *state = State::Quoted {
+                        quote: byte,
+                        escaped: false,
+                        multiline,
+                        doubled: syntax.language == Language::Sql,
+                    };
                     index += 1;
                     continue;
+                }
+                if syntax.language == Language::JavaScript {
+                    if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') {
+                        let end = line[index..]
+                            .iter()
+                            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$'))
+                            .count()
+                            + index;
+                        let word = &line[index..end];
+                        *regex_allowed = matches!(
+                            word,
+                            b"return"
+                                | b"throw"
+                                | b"case"
+                                | b"delete"
+                                | b"typeof"
+                                | b"void"
+                                | b"yield"
+                                | b"await"
+                                | b"instanceof"
+                                | b"in"
+                                | b"of"
+                        );
+                        code = true;
+                        index = end;
+                        continue;
+                    }
+                    *regex_allowed = matches!(
+                        byte,
+                        b'=' | b'('
+                            | b'['
+                            | b'{'
+                            | b':'
+                            | b','
+                            | b';'
+                            | b'!'
+                            | b'?'
+                            | b'&'
+                            | b'|'
+                            | b'+'
+                            | b'-'
+                            | b'*'
+                            | b'%'
+                            | b'^'
+                            | b'~'
+                            | b'<'
+                            | b'>'
+                            | b'/'
+                    );
                 }
                 code = true;
                 whitespace_boundary = false;
@@ -301,8 +587,16 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
         }
     }
 
-    if let State::Quoted { multiline: false, .. } = state {
-        *state = State::Normal;
+    match state {
+        State::Quoted { multiline: false, escaped: true, .. }
+            if matches!(syntax.language, Language::C | Language::Cpp) =>
+        {
+            *state =
+                State::Quoted { quote: b'"', escaped: false, multiline: false, doubled: false };
+        }
+        State::Quoted { multiline: false, .. } | State::Regex { .. } => *state = State::Normal,
+        State::Quoted { multiline: true, escaped, .. } => *escaped = false,
+        _ => {}
     }
     if code {
         LineClass::Code
@@ -344,9 +638,106 @@ fn rust_raw_close(input: &[u8], hashes: u8) -> bool {
                 .is_some_and(|tail| tail.iter().all(|byte| *byte == b'#')))
 }
 
+fn rust_lifetime(input: &[u8]) -> bool {
+    let Some(first) = input.get(1) else { return false };
+    if !first.is_ascii_alphabetic() && *first != b'_' {
+        return false;
+    }
+    let name_len =
+        input[1..].iter().take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_').count();
+    !(name_len == 1 && input.get(2) == Some(&b'\''))
+}
+
+fn cpp_raw_open(input: &[u8]) -> Option<(Vec<u8>, usize)> {
+    if !input.starts_with(b"R\"") {
+        return None;
+    }
+    let end = input[2..].iter().position(|byte| *byte == b'(')? + 2;
+    let delimiter = &input[2..end];
+    if delimiter.len() > 16
+        || delimiter.iter().any(|b| b.is_ascii_whitespace() || matches!(b, b'\\' | b'(' | b')'))
+    {
+        return None;
+    }
+    let mut close = Vec::with_capacity(delimiter.len() + 2);
+    close.push(b')');
+    close.extend_from_slice(delimiter);
+    close.push(b'"');
+    Some((close, end + 1))
+}
+
+fn sql_dollar_open(input: &[u8]) -> Option<(Vec<u8>, usize)> {
+    if input.first() != Some(&b'$') {
+        return None;
+    }
+    let end = input[1..].iter().position(|byte| *byte == b'$')? + 1;
+    let tag = &input[1..end];
+    if !tag.is_empty()
+        && (!tag[0].is_ascii_alphabetic() && tag[0] != b'_'
+            || tag.iter().any(|b| !b.is_ascii_alphanumeric() && *b != b'_'))
+    {
+        return None;
+    }
+    Some((input[..=end].to_vec(), end + 1))
+}
+
+fn ruby_percent_open(input: &[u8]) -> Option<(u8, u8, usize)> {
+    if input.first() != Some(&b'%') {
+        return None;
+    }
+    let delimiter_index = match input.get(1) {
+        Some(b'q' | b'Q' | b'w' | b'W' | b'i' | b'I' | b'r' | b'x' | b's') => 2,
+        Some(b'{' | b'[' | b'(' | b'<') => 1,
+        _ => return None,
+    };
+    let open = *input.get(delimiter_index)?;
+    let close = match open {
+        b'{' => b'}',
+        b'[' => b']',
+        b'(' => b')',
+        b'<' => b'>',
+        b'/' | b'!' | b'|' => open,
+        _ => return None,
+    };
+    Some((open, close, delimiter_index + 1))
+}
+
+fn heredoc_open(language: Language, input: &[u8]) -> Option<(Vec<u8>, bool, bool)> {
+    let php = language == Language::Php;
+    if !matches!(language, Language::Ruby | Language::Shell | Language::Php) {
+        return None;
+    }
+    let mut tail = if php { input.strip_prefix(b"<<<")? } else { input.strip_prefix(b"<<")? };
+    let indent = if !php && matches!(tail.first(), Some(b'-' | b'~')) {
+        tail = &tail[1..];
+        true
+    } else {
+        false
+    };
+    let quote = if matches!(tail.first(), Some(b'\'' | b'"')) {
+        let quote = tail[0];
+        tail = &tail[1..];
+        Some(quote)
+    } else {
+        None
+    };
+    let width = tail.iter().take_while(|b| b.is_ascii_alphanumeric() || **b == b'_').count();
+    if width == 0 || !tail[0].is_ascii_alphabetic() && tail[0] != b'_' {
+        return None;
+    }
+    if let Some(quote) = quote {
+        if tail.get(width) != Some(&quote) {
+            return None;
+        }
+    }
+    Some((tail[..width].to_vec(), indent, php))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type PartitionCase<'a> = (&'a str, &'a [u8], (u64, u64, u64));
 
     fn count(language: &str, chunks: &[&[u8]]) -> MetricValues {
         let mut counter = CodeAccumulator::for_type(language).expect("supported language");
@@ -434,5 +825,89 @@ mod tests {
     #[test]
     fn unsupported_languages_are_explicit() {
         assert!(CodeAccumulator::for_type("haskell").is_none());
+    }
+
+    #[test]
+    fn rust_multiline_string_and_lifetime_preserve_following_comment_state() {
+        let string = b"const S: &str = \"first\n// text\nlast\";\n";
+        let lifetime = b"fn x<'a>() { /*\ncomment\n*/ }\n";
+        for (source, code, comment) in [(string.as_slice(), 3, 0), (lifetime.as_slice(), 2, 1)] {
+            for split in 0..=source.len() {
+                let metrics = count("rust", &[&source[..split], &source[split..]]);
+                assert_eq!(
+                    (metrics.code_lines, metrics.comment_lines),
+                    (code, comment),
+                    "split {split}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn multiline_literal_families_preserve_comment_markers() {
+        let cases: &[PartitionCase<'_>] = &[
+            ("cpp", b"const char *s = R\"tag(first\n// text\nlast)tag\";\n", (3, 0, 0)),
+            ("c", b"const char *s = \"first\\\n// text\";\n", (2, 0, 0)),
+            ("java", b"class C { String s = \"\"\"\n// text\nlast\n\"\"\"; }\n", (4, 0, 0)),
+            ("csharp", b"class C { string s = @\"first\n// text\nlast\"; }\n", (3, 0, 0)),
+            ("csharp", b"class C { string s = \"\"\"\n// text\nlast\n\"\"\"; }\n", (4, 0, 0)),
+            ("ruby", b"s = %q{first\n# text\nlast}\n", (3, 0, 0)),
+            ("ruby", b"s = <<~TEXT\n# text\nlast\nTEXT\n", (4, 0, 0)),
+            ("ruby", b"s = \"first\n# text\nlast\"\n", (3, 0, 0)),
+            ("shell", b"cat <<'TEXT'\n# text\nlast\nTEXT\n", (4, 0, 0)),
+            ("shell", b"value='first\n# text\nlast'\n", (3, 0, 0)),
+            ("sql", b"SELECT $tag$first\n-- text\nlast$tag$;\n", (3, 0, 0)),
+            ("sql", b"SELECT 'first\n-- text\nlast';\n", (3, 0, 0)),
+            ("php", b"<?php\n$s = <<<TEXT\n// text\nlast\nTEXT;\n", (5, 0, 0)),
+        ];
+        for (language, source, expected) in cases {
+            for split in 0..=source.len() {
+                let metrics = count(language, &[&source[..split], &source[split..]]);
+                assert_eq!(
+                    (metrics.code_lines, metrics.comment_lines, metrics.code_blank_lines),
+                    *expected,
+                    "{language} split {split}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn multiline_delimiters_restore_comment_recognition_after_closing() {
+        let cases: &[(&str, &[u8], (u64, u64))] = &[
+            ("cpp", b"auto s = R\"x(/*\n// body\n)x\";\n// comment\n", (3, 1)),
+            ("csharp", b"var s = @\"first \"\" quote\n// body\nlast\";\n// comment\n", (3, 1)),
+            ("ruby", b"s = %q{outer {inner\n# body\n}}\n# comment\n", (3, 1)),
+            ("ruby", b"s = <<~TEXT\n# body\n  TEXT\n# comment\n", (3, 1)),
+            ("shell", b"cat <<'TEXT'\n# body\nTEXT\n# comment\n", (3, 1)),
+            ("sql", b"SELECT $tag$first\n-- body\nlast$tag$;\n-- comment\n", (3, 1)),
+            ("php", b"$s = <<<TEXT\n// body\nTEXT;\n// comment\n", (3, 1)),
+        ];
+        for (language, source, expected) in cases {
+            let metrics = count(language, &[source]);
+            assert_eq!((metrics.code_lines, metrics.comment_lines), *expected, "{language}");
+        }
+    }
+
+    #[test]
+    fn javascript_regex_and_division_leave_comment_state_correct() {
+        let cases: &[PartitionCase<'_>] = &[
+            ("javascript", b"const re = /[/*]/;\nconst answer = 42;\n", (2, 0, 0)),
+            ("typescript", b"const re = /\\/\\* inside [/] /;\nconst n = 9;\n", (2, 0, 0)),
+            ("javascript", b"const ratio = total / count;\n/* comment */\nconst re = /[//]/;\n", (2, 1, 0)),
+            ("typescript", b"return /[/*]/.test(value);\n// comment\nnext();\n", (2, 1, 0)),
+            ("javascript", b"const quotient = total\n / count; /* real comment */\nconst re = /[/*]/;\nnext();\n", (4, 0, 0)),
+            ("javascript", b"const text = \"plain\" / count;\nconst re = /[/*]/;\nnext();\n", (3, 0, 0)),
+        ];
+        for (language, source, expected) in cases {
+            for split in 0..=source.len() {
+                let metrics = count(language, &[&source[..split], &source[split..]]);
+                assert_eq!(
+                    (metrics.code_lines, metrics.comment_lines, metrics.code_blank_lines),
+                    *expected,
+                    "{language} split {split}"
+                );
+            }
+        }
     }
 }

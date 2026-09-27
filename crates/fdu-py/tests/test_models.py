@@ -62,14 +62,22 @@ def test_public_options_are_typed_immutable_values() -> None:
     assert query.selection.limit == 10
 
 
+def test_report_validates_the_request_before_resolving_a_missing_root(tmp_path: Path) -> None:
+    with pytest.raises(InvalidArgumentError, match="hierarchical"):
+        fdu.report(
+            tmp_path / "missing",
+            Query(views=(View.FILES,), selection=Selection(depth=1), format=fdu.Format.JSON),
+        )
+
+
 def test_public_defaults_match_cli_semantics() -> None:
     assert CachePolicy.AUTO.value == "auto"
     assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False)
     # Every surface observes `.gitignore` by default, as the command line does unless
     # `--no-gitignore`, and selects every entry whatever its classification.
     assert ScanOptions().read_controls is True
-    assert Selection().ignored is IgnoredEntries.INCLUDE
-    assert _query_kwargs(Query())["ignored"] == "include"
+    assert Selection().ignored is None  # Inherit held population; new reports default to include.
+    assert _query_kwargs(Query())["ignored"] is None
     only = Query(selection=Selection(ignored=IgnoredEntries.ONLY))
     assert _query_kwargs(only)["ignored"] == "only"
     assert AnalysisOptions().analyze == Analysis.NONE
@@ -256,6 +264,8 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
                         "bytes": 1,
                         "allocated": 1,
                         "mtime_ns": 0,
+                        "sort_value": None,
+                        "classification": None,
                         "ignored": None,
                     }
                 ],
@@ -273,6 +283,7 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
         def since(self, _clock: int) -> dict[str, object]:
             return {
                 "truncated": False,
+                "omissions": [],
                 "clock": 1,
                 "ops": [
                     {
@@ -284,6 +295,8 @@ def test_wire_paths_prefer_lossless_raw_identity() -> None:
                         "bytes": 1,
                         "allocated": 1,
                         "mtime_ns": 0,
+                        "sort_value": None,
+                        "classification": None,
                         "ignored": False,
                     }
                 ],
@@ -341,16 +354,18 @@ def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
         "ignored": None,
         "newest_mtime_ns": None,
         "truncated": False,
+        "omissions": [],
         "children": [],
     }
     for level in range(depth):
         node = {**node, "name": str(level), "path": str(level), "children": [node]}
 
-    wire = _envelope([{"view": "tree", "tree": node}])
+    wire = _envelope([_tree_section(node)])
     report = report_from_dict(wire)
     section = report.sections[0]
     assert isinstance(section, TreeSection)
     parsed = section.tree
+    assert parsed is not None
     visited = 0
     while parsed.children:
         parsed = parsed.children[0]
@@ -374,6 +389,7 @@ def test_native_json_fallback_parses_a_deep_rendered_report_end_to_end() -> None
         "ignored": None,
         "newest_mtime_ns": None,
         "truncated": False,
+        "omissions": [],
         "children": [],
     }
     node = json.dumps(leaf, separators=(",", ":"))
@@ -383,9 +399,7 @@ def test_native_json_fallback_parses_a_deep_rendered_report_end_to_end() -> None
         fields = json.dumps(parent, separators=(",", ":"))
         node = f'{fields[:-1]},"children":[{node}]}}'
     marker = "__DEEP_TREE__"
-    rendered = json.dumps(_envelope([{"view": "tree", "tree": marker}])).replace(
-        f'"{marker}"', node
-    )
+    rendered = json.dumps(_envelope([_tree_section(marker)])).replace(f'"{marker}"', node)
 
     report = report_from_dict(_loads_object(rendered))
     copied = report.as_dict()
@@ -431,18 +445,29 @@ def test_deep_malformed_map_key_reports_json_error_without_recursing() -> None:
         _loads_json(document)
 
 
+def _tree_section(tree: object) -> dict[str, object]:
+    return {
+        "view": "tree",
+        "tree": tree,
+        "omissions": [],
+        "limits": {"depth": None, "min_share": "0%", "breadth": None, "rows": None},
+    }
+
+
 def _envelope(sections: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema": "fdu.report/7",
+        "schema": "fdu.report/8",
         "generator": "fdu 0.1.0",
         "root": "/root",
         "request": {
+            "sort_metric": None,
             "scope": {
                 "max_depth": None,
                 "follow_symlinks": False,
                 "one_filesystem": False,
                 "exclude_special": False,
                 "read_controls": True,
+                "population": "include",
             },
             "analyze": [],
             "size": "allocated",
@@ -492,6 +517,8 @@ def test_directory_age_extremes_preserve_exact_signed_integers(positive: bool) -
                         "bytes": 0,
                         "allocated": 0,
                         "mtime_ns": modified,
+                        "sort_value": None,
+                        "classification": None,
                         "age_ns": age,
                         "ignored": None,
                     }
@@ -522,6 +549,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
         "ignored": {**share, "dirs": 0},
         "newest_mtime_ns": 1,
         "truncated": False,
+        "omissions": [],
         "children": [],
     }
     root = {**leaf, "name": ".", "path": "", "dirs": 1, "ignored": share, "children": [leaf]}
@@ -530,10 +558,11 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
         _envelope(
             [
                 {"view": "summary", "summary": {**summary, "newest_mtime_ns": 2}},
-                {"view": "tree", "tree": root},
+                _tree_section(root),
                 {
                     "view": "extensions",
                     "bound": None,
+                    "share_omitted": 3,
                     "extensions": [
                         {
                             "extension": ".gz",
@@ -561,6 +590,8 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
                             "bytes": 0,
                             "allocated": 0,
                             "mtime_ns": 0,
+                            "sort_value": None,
+                            "classification": None,
                             "ignored": True,
                         },
                         {
@@ -569,6 +600,8 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
                             "bytes": 0,
                             "allocated": 0,
                             "mtime_ns": 0,
+                            "sort_value": None,
+                            "classification": None,
                             "ignored": None,
                         },
                     ],
@@ -580,9 +613,11 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
     assert isinstance(summary_section, SummarySection)
     assert summary_section.summary.ignored == IgnoredTally(1, 1, 128, 4096)
     assert isinstance(tree_section, TreeSection)
+    assert tree_section.tree is not None
     assert tree_section.tree.ignored == IgnoredTally(1, 1, 128, 4096)
     assert tree_section.tree.children[0].ignored == IgnoredTally(1, 0, 128, 4096)
     assert isinstance(extensions_section, ExtensionsSection)
+    assert extensions_section.share_omitted == 3
     gz, rs = extensions_section.extensions
     assert gz.ignored == ExtensionTally(1, 128, 4096)
     assert rs.ignored == ExtensionTally(0, 0, 0), "a zero share is not null"
@@ -619,6 +654,7 @@ def test_metadata_only_metric_rows_keep_unrequested_units_absent() -> None:
                         "group": "type",
                         "share_metric": "allocated_bytes",
                         "bound": None,
+                        "share_omitted": 2,
                         "total": row,
                         "rows": [],
                     },
@@ -628,6 +664,7 @@ def test_metadata_only_metric_rows_keep_unrequested_units_absent() -> None:
     )
     section = report.sections[0]
     assert isinstance(section, fdu.MetricsSection)
+    assert section.share_omitted == 2
     assert section.total.metrics == fdu.MetricValues()
     assert section.total.lines_coverage is None
     assert section.total.code_coverage is None

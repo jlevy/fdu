@@ -25,6 +25,7 @@ from ._models import (
     ClearSummary,
     EntryKind,
     Format,
+    IgnoredEntries,
     Provenance,
     Query,
     RefreshResult,
@@ -281,10 +282,12 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "kind": [kind.value for kind in selection.kinds],
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),
+        "breadth": _bound(selection.breadth),
+        "min_share": selection.min_share,
         "sort": selection.sort.value if selection.sort is not None else None,
         "reverse": selection.reverse,
         "size": selection.size.value,
-        "ignored": selection.ignored.value,
+        "ignored": selection.ignored.value if selection.ignored is not None else None,
         "words_per_page": query.words_per_page,
         "format": query.format.value,
     }
@@ -478,7 +481,9 @@ def _change(value: dict[str, Any]) -> Change:
 def open(
     root: str | Path,
     *,
+    ignored: IgnoredEntries = IgnoredEntries.INCLUDE,
     cache: CachePolicy = CachePolicy.AUTO,
+    cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
@@ -498,12 +503,14 @@ def open(
         _native.open,
         root,
         cache=cache.value,
+        cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
         control_budget=_bound(scan_options.control_budget),
         control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
+        ignored=str(ignored),
         analysis_workers=analysis_options.workers,
     )
     return Index(native)
@@ -512,6 +519,7 @@ def open(
 def scan(
     root: str | Path,
     *,
+    ignored: IgnoredEntries = IgnoredEntries.INCLUDE,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
@@ -532,6 +540,7 @@ def scan(
         control_budget=_bound(scan_options.control_budget),
         control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
+        ignored=str(ignored),
         analysis_workers=analysis_options.workers,
     )
     return Index(native)
@@ -542,6 +551,7 @@ def report(
     query: Query | None = None,
     *,
     cache: CachePolicy = CachePolicy.AUTO,
+    cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Report:
@@ -571,6 +581,7 @@ def report(
         _native.report_once,
         str(root),
         cache=str(cache),
+        cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
@@ -662,26 +673,34 @@ def render_cache_status(
     return cast(str, _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format)))
 
 
-def cache_path(root: str | Path) -> Path | None:
-    value = _call(_native.cache_path, root)
+def cache_path(root: str | Path, *, cache_dir: str | Path | None = None) -> Path | None:
+    value = _call(_native.cache_path, root, cache_dir=cache_dir)
     return None if value is None else Path(value)
 
 
-def cache_status(root: str | Path) -> CacheStatus | None:
-    value = _call(_native.cache_status, root)
+def cache_directory(*, cache_dir: str | Path | None = None) -> Path | None:
+    """Resolve the cache destination without requiring a scan root."""
+    value = _call(_native.cache_directory, cache_dir=cache_dir)
+    return None if value is None else Path(value)
+
+
+def cache_status(root: str | Path, *, cache_dir: str | Path | None = None) -> CacheStatus | None:
+    value = _call(_native.cache_status, root, cache_dir=cache_dir)
     return None if value is None else cache_status_from_dict(value)
 
 
-def list_caches(root: str | Path = Path()) -> tuple[CacheStatus, ...]:
-    return tuple(cache_status_from_dict(value) for value in _call(_native.list_caches, root))
+def list_caches(*, cache_dir: str | Path | None = None) -> tuple[CacheStatus, ...]:
+    return tuple(
+        cache_status_from_dict(value) for value in _call(_native.list_caches, cache_dir=cache_dir)
+    )
 
 
-def clear_cache(root: str | Path) -> bool:
+def clear_cache(root: str | Path, *, cache_dir: str | Path | None = None) -> bool:
     """Remove a root's snapshot, current or stale; return whether one was removed."""
-    return bool(_call(_native.clear_cache, root))
+    return bool(_call(_native.clear_cache, root, cache_dir=cache_dir))
 
 
-def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
+def clear_all_caches(*, cache_dir: str | Path | None = None) -> ClearSummary:
     """Remove every fdu snapshot, and the files fdu left behind; return what went.
 
     A file that is not one of fdu's stays, and `list_caches` reports it as
@@ -689,7 +708,7 @@ def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
     `LeftoverKind`, so a staging file a running writer may still hold survives and is still
     listed as `CacheState.LEFTOVER`.
     """
-    summary = _call(_native.clear_all_caches, root)
+    summary = _call(_native.clear_all_caches, cache_dir=cache_dir)
     return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
 
 

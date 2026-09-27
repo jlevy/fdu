@@ -57,6 +57,11 @@ impl Gitignore {
         Self { patterns }
     }
 
+    /// Accepted executable rules; comments, blank lines, and rejected patterns do not count.
+    pub(super) fn rule_count(&self) -> u64 {
+        u64::try_from(self.patterns.len()).unwrap_or(u64::MAX)
+    }
+
     /// Last matching line wins. `Some(false)` is an explicit negation; `None` means this
     /// control file expressed no opinion.
     pub(super) fn matches(&self, relative: &Path, is_dir: bool) -> Option<bool> {

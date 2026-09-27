@@ -16,14 +16,15 @@ patterns:
   BYTES: '\d+'
   # Fingerprints change with the engine version and the type rules, not with the tree.
   FINGERPRINT: '\d+'
-  CACHE_FILE: '[^\r\n]+\.fdu'
+  CACHE_FILE: '[^\r\n]+\.metadata\.bin'
+  CACHE_ANALYSIS: '[^\r\n]+\.analysis\.bin'
   # A YAML scalar is quoted only when it would otherwise be ambiguous, which a Windows
   # path with backslashes is and a POSIX path is not. The quoting is the platform's, so
   # it is matched rather than asserted; every other character still has to be exact.
-  CACHE_FILE_SCALAR: '"?[^\r\n]+\.fdu"?'
+  CACHE_FILE_SCALAR: '"?[^\r\n]+\.metadata\.bin"?'
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
-  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
   FILE_RATE: '[\d.]+[kMG]? files/s'
   BYTE_RATE: '[\d.]+ (B|KiB|MiB|GiB)/s'
 ---
@@ -33,6 +34,24 @@ Inspecting and clearing the cache are explicit flags on the same grammar, never 
 effects of a report.
 They run before scan validation, so they need no readable tree, and they suppress the
 report entirely.
+
+## All-Cache Actions Need No Scan Root
+
+An explicit cache directory and `all` scope work even when the supplied report root does
+not exist. This also covers the same operations through the Python CLI shim.
+
+```console
+$ fdu --cache-dir root-free-cache --cache-status=all missing-root
+No cached snapshots.
+? 0
+```
+
+```console
+$ fdu --cache-dir root-free-cache --cache-clear=all missing-root
+Cache directory: [CACHE_DIR]
+Cache already empty.
+? 0
+```
 
 ## Status Before Anything Is Cached
 
@@ -46,11 +65,19 @@ No cached snapshots.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -95,18 +122,26 @@ can then answer from without touching the tree.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
 $ fdu --cache only --view summary --size apparent project
      269 B  7 files, 3 directories (128 B ignored)
-Performance: walked 0 files / 0 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
+Performance: walked 0 files / 0 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -129,7 +164,7 @@ Agents get cache observability without a second schema style.
 ```console
 $ fdu --cache-status --format json project
 {
-  "schema": "fdu.cache/2",
+  "schema": "fdu.cache/3",
   "caches": [
     {
       "path": "[CACHE_FILE]",
@@ -145,6 +180,8 @@ $ fdu --cache-status --format json project
           "one_filesystem": false,
           "hidden_fingerprint": 0,
           "exclude_special": false,
+          "population": "include",
+          "control_fingerprint": 0,
           "type_rules_fingerprint": [FINGERPRINT],
           "reducers_fingerprint": 1
         },
@@ -168,7 +205,7 @@ every machine format.
 
 ```console
 $ fdu --cache-status --format yaml project
-schema: fdu.cache/2
+schema: fdu.cache/3
 caches:
   -
     path: [CACHE_FILE_SCALAR]
@@ -184,6 +221,8 @@ caches:
         one_filesystem: false
         hidden_fingerprint: 0
         exclude_special: false
+        population: include
+        control_fingerprint: 0
         type_rules_fingerprint: [FINGERPRINT]
         reducers_fingerprint: 1
       ignore_rules:
@@ -210,7 +249,7 @@ $ fdu --analyze lines --view families --size apparent project
       71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 2 documentation
       64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank)
        6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
 ? 0
 ```
 
@@ -223,7 +262,7 @@ $ fdu --cache-status project
 ```console
 $ fdu --cache-status --format json project
 {
-  "schema": "fdu.cache/2",
+  "schema": "fdu.cache/3",
   "caches": [
     {
       "path": "[CACHE_FILE]",
@@ -239,6 +278,8 @@ $ fdu --cache-status --format json project
           "one_filesystem": false,
           "hidden_fingerprint": 0,
           "exclude_special": false,
+          "population": "include",
+          "control_fingerprint": 0,
           "type_rules_fingerprint": [FINGERPRINT],
           "reducers_fingerprint": 1
         },
@@ -261,6 +302,8 @@ $ fdu --cache-status --format json project
             "one_filesystem": false,
             "hidden_fingerprint": 0,
             "exclude_special": false,
+            "population": "include",
+            "control_fingerprint": 0,
             "type_rules_fingerprint": [FINGERPRINT],
             "reducers_fingerprint": 1
           },
@@ -285,7 +328,7 @@ $ fdu --cache-status --format json project
 
 ```console
 $ fdu --cache-status --format yaml project
-schema: fdu.cache/2
+schema: fdu.cache/3
 caches:
   -
     path: [CACHE_FILE_SCALAR]
@@ -301,6 +344,8 @@ caches:
         one_filesystem: false
         hidden_fingerprint: 0
         exclude_special: false
+        population: include
+        control_fingerprint: 0
         type_rules_fingerprint: [FINGERPRINT]
         reducers_fingerprint: 1
       ignore_rules:
@@ -319,6 +364,8 @@ caches:
           one_filesystem: false
           hidden_fingerprint: 0
           exclude_special: false
+          population: include
+          control_fingerprint: 0
           type_rules_fingerprint: [FINGERPRINT]
           reducers_fingerprint: 1
         analyze:
@@ -354,11 +401,19 @@ Cache already empty.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -382,11 +437,19 @@ accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -421,7 +484,7 @@ nothing to a figure that is meant to say how much a clear would leave behind.
 ```console
 $ fdu --cache-status=all --format json project
 {
-  "schema": "fdu.cache/2",
+  "schema": "fdu.cache/3",
   "caches": [
     {
       "path": "[CACHE_FILE]",
@@ -467,6 +530,8 @@ $ fdu --cache-status=all --format json project
           "one_filesystem": false,
           "hidden_fingerprint": 0,
           "exclude_special": false,
+          "population": "include",
+          "control_fingerprint": 0,
           "type_rules_fingerprint": [FINGERPRINT],
           "reducers_fingerprint": 1
         },
@@ -515,11 +580,19 @@ $ fdu --cache-status=all project
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -547,11 +620,19 @@ Cache cleared.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -581,11 +662,19 @@ belong to a running writer, and only a sidecar no snapshot still wants.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+Tree scope: at least 1% of selected root through depth 5
+     269 B  ██████████   100%  . 7 files (128 B ignored)
+     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
+     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
+      48 B  ██░░░░░░░░    18%    README.md
+      36 B  █░░░░░░░░░    13%    src 2 files
+      18 B  █░░░░░░░░░     7%      alpha.rs
+      18 B  █░░░░░░░░░     7%      omega.rs
+      28 B  █░░░░░░░░░    10%    Makefile
+      23 B  █░░░░░░░░░     9%    docs 1 file
+      23 B  █░░░░░░░░░     9%      FAQ.MD
+       6 B  ░░░░░░░░░░     2%    .gitignore
+Performance: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -599,7 +688,7 @@ planted: abandoned staging file, in-flight staging file, orphaned sidecar
 $ fdu --cache-status=all project
 [CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
 [CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
-[CACHE_FILE].content  leftover (orphaned content sidecar), 15 bytes
+[CACHE_ANALYSIS]  leftover (orphaned content sidecar), 15 bytes
 [CACHE_FILE]  unrecognized, 0 bytes
 [CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes

@@ -1,11 +1,10 @@
 # Machine Output and Directory Inventories
 
-All reports use `fdu.report/7`, including metadata-only and content-analyzed reports.
-Cache status uses `fdu.cache/2`, and raw watch changes use `fdu.stream/2`. Check the
+All reports use `fdu.report/8`, including metadata-only and content-analyzed reports.
+Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
-`0.1.0` is the first release to emit these versions, so under
-[the schema rule](project/guides/release-process.md) their shape is fixed from it on: a
-field change bumps the version.
+The [schema rule](project/guides/release-process.md) requires a new version when a
+published shape changes.
 Content analysis does not select another schema.
 
 ## List Rows
@@ -18,10 +17,9 @@ The default List in JSON, JSONL, or YAML exposes complete matching rows unless a
 explicit limit bounds them.
 A flat section has `view: list`, a `files` array, and `bound`, which is null when no
 rows were omitted. A bounded section gives shown/total counts.
-Full retains its bounded digest; `--view tree --format json` gives the `tree` hierarchy
-and its per-node `truncated` flags.
-A Python List requested in Tree format also serializes its stored tree projection as a
-`tree` object, so inspect the payload key as well as `view`.
+`--view tree --format json` gives the `tree` hierarchy with explicit limits and
+omissions. A Python List requested in Tree format also serializes its stored tree
+projection as a `tree` object, so inspect the payload key as well as `view`.
 
 | Field | Meaning |
 | --- | --- |
@@ -33,7 +31,12 @@ A Python List requested in Tree format also serializes its stored tree projectio
 | `complete` | Whether a directory’s eligible subtree was listed in full; false makes `bytes`, `allocated`, `files`, `dirs`, and `mtime_ns` lower bounds and `age_ns` null; null for other kinds |
 | `mtime_ns` | Signed epoch nanoseconds; a directory uses the newest eligible root/descendant timestamp |
 | `age_ns` | Signed age at `age_reference_ns`; negative for a future timestamp, null if the reference cannot be represented or the subtree is incomplete |
-| `ignored` | Boolean classification, or null when `.gitignore` was not observed |
+| `ignored` | Boolean classification, or null when rules were unobserved or governing classification is unknown |
+| `sort_value` | Value of the requested content sort metric, or null when absent/unavailable |
+| `classification` | For a regular file: stable file type, family, detection source/confidence, and generated/vendor/documentation flags; null for other kinds |
+
+The request’s nullable `sort_metric` identifies the content metric used to rank rows.
+Unavailable values sort last in either direction, with deterministic path ties.
 
 The envelope’s `age_reference_ns` is the fixed request instant in epoch nanoseconds.
 When representable, `age_ns = age_reference_ns - mtime_ns`. Re-rendering a Report never
@@ -51,6 +54,64 @@ Nested matching roots may overlap; summary/grouped totals count the covered unio
 These are modification times and counted bytes, not last-use or uniquely
 reclaimable-space claims.
 Native entry/lookup APIs retain inode metadata.
+
+Summary, tree, and extension rows report `ignored` as null when their contributing scope
+includes an entry whose governing `.gitignore` rules could not be verified.
+Known sibling tree rows retain their exact ignored subtotals.
+The report notes this condition; null never means zero ignored entries.
+
+## Tree Bounds
+
+Each tree section states `limits`: `depth`, `min_share`, `breadth`, and `rows`. A null
+integer bound means unlimited; `min_share` is an exact percentage string.
+The default is depth 5, share `1%`, and unlimited breadth and rows.
+`tree` is null when no data row is admitted, including `--limit=0`.
+
+Sections and nodes carry `omissions`. Each item names `reason` (`share`, `breadth`,
+`depth`, or `rows`), the number of direct child roots omitted in `entries`, and exact
+`bytes`/`allocated` remainder when known, otherwise null.
+Each omission belongs to its first excluding bound, so these disjoint child subtrees can
+be counted without double counting.
+The root denominator and aggregate totals are unchanged by display bounds.
+
+## Code Overview
+
+`--analyze=code` defaults to a `view: code` section with a `code` object.
+It states `population`, `share_metric: code_lines`, `analyzed_languages`, `selected`
+totals, `non_ignored` and `ignored` population totals when available, an `unknown`
+tally, `unclassified_files`, and the complete `languages` table unless an explicit
+display bound applies.
+`unclassified_files` counts selected regular files whose detected family is unknown;
+known document, data, and other non-code families are excluded from that count.
+Each language row includes its selected and population totals and an exact share
+fraction.
+Code, grouped metric, and extension sections expose `share_omitted`: the number
+of rows removed by an explicit `min_share` before the section row limit.
+Their `bound.total` counts rows eligible after that filter and before the row limit.
+Thus the number of groups before either display bound is `bound.total + share_omitted`
+when `bound` is present, or the displayed row count plus `share_omitted` when it is
+null. Use `--min-share 0%` to restore share-filtered rows and `--limit all` to restore
+rows removed by a row cap.
+Selected aggregate totals stay unchanged by both display bounds.
+
+A code tally has `source_files`, `analyzed_files`, `code_lines`, `comment_lines`,
+`blank_lines`, `missing_records`, and a `coverage` reason map.
+A counted zero is distinct from an unsupported analyzer or a missing record.
+Language shares use measured selected code lines; inspect coverage before treating that
+denominator as complete.
+
+`request.scope.population` states the retained discovery population.
+A one-shot derives it from `--ignored`; a narrowed query over a broad retained index may
+hold more facts.
+The cache entry identity includes population and the control fingerprint
+that governs pruned admission.
+Cache status reports these fields too.
+
+The envelope’s `ignore_rules` is null when controls were not observed.
+Otherwise it states `applied` files, accepted `rules` counted per governing location,
+`refused` files, limits, and bounded refusal details.
+These counts describe retained control state and do not imply every rule file was reread
+on a cache-only run.
 
 ## Coverage and Formats
 

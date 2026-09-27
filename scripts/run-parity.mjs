@@ -17,7 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
-  mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -26,6 +26,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { CLASSES, classify, parseSessions } from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
@@ -82,9 +83,9 @@ const filter = `^(?!(${DECLINED.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$
 // of an artifact a reviewer can read top to bottom. So the parity corpus is the same
 // sessions with that one line dropped from the expectations, generated per run and
 // never committed. Everything else is compared exactly.
-const corpus = join(root, 'tests', 'parity', '.corpus');
-rmSync(corpus, { recursive: true, force: true });
-mkdirSync(corpus, { recursive: true });
+// Disposable corpus follows TMPDIR, including external build storage.
+const corpus = mkdtempSync(join(tmpdir(), 'fdu-parity-corpus-'));
+process.on('exit', () => rmSync(corpus, { recursive: true, force: true }));
 for (const entry of readdirSync(golden)) {
   const from = join(golden, entry);
   if (entry.endsWith('.tryscript.md')) {
@@ -246,11 +247,12 @@ process.exit(1);
 function normalise(text) {
   return text
     .replace(/\u001b\[[0-9;]*m/g, '')
+    .replaceAll(corpus, join(root, 'tests', 'parity', '.corpus'))
     .replace(/\\/g, '/')
     // The checkout path differs on every machine and in CI; the artifact must not.
     .replace(new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[ROOT]')
     .replace(/[^\s'"]*\/(tryscript|fdu)-[A-Za-z0-9._-]+/g, '[SANDBOX]')
-    .replace(/[0-9a-f]{16}\.fdu/g, '[HASH].fdu')
+    .replace(/[0-9a-f]{16}\.(metadata|analysis)\.bin/g, '[HASH].$1.bin')
     // A cache snapshot's encoded size depends on the platform that wrote it (797 bytes
     // on macOS, 745 on Linux for the same tree), so it cannot be a recorded constant.
     // Only the surfaces' agreement is under test here, not the snapshot's size. Matched

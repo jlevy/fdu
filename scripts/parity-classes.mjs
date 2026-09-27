@@ -31,7 +31,7 @@ const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').repla
 // its refusals have always said `invalid cache policy`, which `AxisNames::FIELDS` kept
 // rather than changing the wording when the rule moved into the request model.
 const KNOBS =
-  /--gitignore-budget|--gitignore-line-limit|--exclude-ignored|--only-ignored|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--cache|--watch|cache policy|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
+  /--gitignore-budget|--gitignore-line-limit|--ignored=exclude|--ignored=only|--no-gitignore|--scan-depth|--one-filesystem|--modified-since|--include|--depth|--cache|--watch|cache policy|ignored=exclude|ignored=only|control_budget|control_line_limit|read_controls|max_depth|one_filesystem|modified_since|include|depth|watch/g;
 const withoutKnobs = (line) => sameSeparator(line).replace(KNOBS, '<knob>');
 
 // A class that no longer explains anything is removed, not kept "just in case". Its

@@ -20,15 +20,17 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 
 use fdu_core::content::AnalysisSet;
 use fdu_core::control::ControlCoverage;
+#[cfg(test)]
+use fdu_core::query::IgnoredEntries;
 #[cfg(feature = "watch")]
 use fdu_core::query::parse_when;
 use fdu_core::query::{
-    AxisNames, Delivery, IgnoredEntries, ReadSpec, ReportSource, Request, RequestError,
-    RequestSpec, SizeMetric, ViewSpec, WatchDelivery, parse_cache_policy,
+    AxisNames, Delivery, ReadSpec, ReportSource, Request, RequestError, RequestSpec, SizeMetric,
+    ViewSpec, WatchDelivery, parse_cache_policy,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
-use fdu_core::{CachePolicy, CacheScope, CacheState, Progress, default_cache_path};
+use fdu_core::{CachePolicy, CacheScope, CacheState, Progress, default_cache_path_in};
 use fdu_core::{
     PerformanceSummary, prepare_report, prepare_report_with_progress,
     prepare_report_with_scan_diagnostics,
@@ -70,18 +72,18 @@ const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 /// are the same kind of thing — a name introducing a block — so they share a style and a
 /// case convention rather than each inventing one. `report_format` re-exports this as the
 /// view-header style so there is a single definition to change.
-const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
+const STYLE_HEADING: AnsiStyle = report_format::STYLE_HEADING;
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 pub(crate) const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
 const STYLE_CAUSE: AnsiStyle = AnsiStyle::new().dimmed();
-const STYLE_PERFORMANCE: AnsiStyle = AnsiColor::BrightBlack.on_default();
+const STYLE_PERFORMANCE: AnsiStyle = report_format::STYLE_DETAIL;
 
 /// The rule that separates one watch repaint from the one before it.
 ///
 /// Gray for the same reason the performance footer is: it is a frame around the report,
 /// not part of the answer, and should not compete with the rows for attention.
 #[cfg(feature = "watch")]
-const STYLE_WATCH_RULE: AnsiStyle = AnsiColor::BrightBlack.on_default();
+const STYLE_WATCH_RULE: AnsiStyle = report_format::STYLE_DETAIL;
 const CLI_STYLES: Styles = Styles::styled()
     .header(STYLE_HEADING)
     .usage(STYLE_HEADING)
@@ -102,7 +104,7 @@ const DOCS_POINTER: &str = r"Agent setup:
 
 Examples:
   fdu .                     directory sizes (metadata only)
-  fdu . --exclude-ignored   omit entries covered by .gitignore
+  fdu . --ignored=exclude   omit entries covered by .gitignore
   fdu . --view=summary      one total for the tree
   fdu . --analyze=code      standard lines of code by language
   fdu . --kind dir --include .venv --modified-before 7d --long
@@ -152,7 +154,7 @@ START HERE
   A report requires a PATH. Use `.` for the current directory.
 
     fdu .                                      directory sizes (the default)
-    fdu . --exclude-ignored                    omit entries covered by .gitignore
+    fdu . --ignored=exclude                    omit entries covered by .gitignore
     fdu . --view=summary                       one total for the tree
     fdu . --view=languages                     languages by byte size
     fdu . --view=families,types,extensions     three file-kind breakdowns
@@ -163,8 +165,8 @@ START HERE
     fdu . --analyze=words                      prose volume by document type
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
-  to depth 2, with at most 10 children per directory. Hidden and ignored entries
-  are included; .gitignore is read to label ignored shares, not to exclude them.
+  to depth 5, showing contents with at least 1% of the selected root size. Hidden
+  and ignored entries are included; .gitignore is read to label ignored shares, not to exclude them.
 
 VIEWS AND ANALYSIS
   --view chooses the question the report answers. Several views share one scan
@@ -173,8 +175,8 @@ VIEWS AND ANALYSIS
     contents are not opened. Compatible cached results avoid rereading unchanged
     bodies, so a repeated content analysis can be much cheaper.
 
-  Naming analyzers selects a view that displays them: code selects languages,
-  words selects documents, and lines or a multi-analyzer set selects families.
+  Naming analyzers selects a view that displays them: code selects code, words
+  selects documents, code,words selects both, and lines selects families.
   Name --view for a different projection; it always wins.
 
   A view never turns on an analyzer, because choosing how to look at a result
@@ -188,7 +190,7 @@ MORE COMPOSITIONS
   fdu . --analyze=words --view=documents
   fdu PATH --view=largest --limit=100                        the 100 largest files
   fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
-  fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
+  fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
 ",
             $watch_composition,
             r"
@@ -196,15 +198,17 @@ MORE COMPOSITIONS
     largest = files --sort size --limit 20, regular files only
     recent  = files --sort mtime --limit 20, regular files only
   --sort and --limit still override them. files alone is complete: every
-  matching entry, in name order. full keeps its bounded digest, without list/files.
+  matching entry, in name order. full combines applicable views, without list/files.
 
 LIST FORMATS AND OLD BUILD DIRECTORIES
   The metadata default view is list; its default format is tree. These agree:
     fdu PATH
     fdu PATH --view list --format tree
-  Tree shows directory roll-ups, depth 2, ten children per directory.
-  Files contribute to totals without new leaf rows. --depth all expands levels;
-  --limit all removes row caps. Flat list limits apply to the whole result.
+  Tree shows directories and significant files to depth 5. --min-share 1% compares
+  every row to the selected root total. --min-share 0% shows even zero-size rows.
+  --breadth caps children per directory; --limit caps data rows per section.
+  Both default to all. --depth all expands levels. Omission notes name each bound.
+  Display bounds never change totals or limit the filesystem scan.
 
   --format paths gives matching paths only; --long adds size, age, and path.
   Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -231,11 +235,11 @@ LIST FORMATS AND OLD BUILD DIRECTORIES
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
-             --gitignore-budget, --gitignore-line-limit, --no-gitignore
+             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
-             --exclude-ignored, --only-ignored
-  View       list,summary,tree,families,types,extensions,languages,documents,
+             --breadth, --min-share
+  View       list,summary,tree,families,types,extensions,languages,code,documents,
              largest,recent,files,full
   Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
              --color, --progress
@@ -252,7 +256,8 @@ CONTENT ANALYSIS
 
   A comma-separated set: code,words runs both. none and all name the whole
   axis and cannot be combined. lines comes with any analyzer, free.
-  languages is metadata-only by default; code adds standard LOC.
+  languages is metadata-only by default; --view code requires --analyze code.
+  Code reports show source lines, language shares, population columns, and coverage.
   documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
@@ -275,13 +280,19 @@ CACHE BEHAVIOR
   compatible snapshot and content sidecar for the requested analysis, and labels
   its answer stale. --cache=off neither reads nor writes fdu's cache.
 
+  macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
+  --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
+  Each root has <key>.metadata.bin and optional <key>.analysis.bin. The latter
+  stores derived metrics, not source bodies. Status and clear use the same directory.
+
 IGNORE RULES
   Every report reads each .gitignore in the tree, and summary, tree, and extension
   rows end with how much of their size its rules ignore, as `(128 B ignored)`.
   A directory a rule ignores is ignored with everything below it. Unignored is not
-  tracked: .git is unignored unless a rule names it. --exclude-ignored and
-  --only-ignored select one side after the scan; they do not prune metadata work
-  or content analysis. Sort and --min-size follow the size shown.
+  tracked: .git is unignored unless a rule names it. --ignored=include is default.
+  --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.
+  --ignored=only discovers ignored matches through ordinary ancestors, reading
+  only ignored bodies for analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes
@@ -290,12 +301,15 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
-  Cache status is its own document in every machine format: fdu.cache/2.
+  Every machine report uses fdu.report/8; watch changes use fdu.stream/2.
+  Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
+  It counts ignore files and accepted rules, including repeated governing sources.
+  Total files/s and decimal GB/s use the displayed elapsed duration. GB/s represents
+  walked file size; actual body-read throughput is reported separately.
   JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
   Results go to stdout; warnings and errors go to stderr.
@@ -491,15 +505,11 @@ pub struct Cli {
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
 
-    /// Report only entries no .gitignore rule ignores; sizes and ordering follow.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
-    pub exclude_ignored: bool,
+    /// Ignored population: include, exclude, or only [default: include].
+    #[arg(long, value_name = "MODE", help_heading = "SCOPE")]
+    pub ignored: Option<String>,
 
-    /// Report only entries a .gitignore rule ignores.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
-    pub only_ignored: bool,
-
-    /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 2].
+    /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 5].
     ///
     /// Optional for the same reason `--limit` is: the tree brings its own default from
     /// the library, so the CLI does not declare one and every surface agrees. Said in
@@ -508,15 +518,22 @@ pub struct Cli {
     #[arg(short, long, value_name = "N", help_heading = "SELECTION")]
     pub depth: Option<String>,
 
-    /// Rows to show, per group, or in all for a flat list. Accepts `all`.
+    /// Maximum data rows per section. Accepts `all` [default: all; largest/recent: 20].
     ///
     /// Each view brings its own default, because one number does not suit them all: a
-    /// tree shows ten per directory, `largest` and `recent` show twenty, and `files`
-    /// enumerates everything.
+    /// tree and grouped views are unbounded, while `largest` and `recent` show twenty.
     #[arg(short = 'n', long, value_name = "N", help_heading = "SELECTION")]
     pub limit: Option<String>,
 
-    /// Order results: size, count, mtime, or name.
+    /// Maximum children per directory. Accepts `all` [default: all].
+    #[arg(long, value_name = "N", help_heading = "SELECTION")]
+    pub breadth: Option<String>,
+
+    /// Minimum percentage of the selected root measure [tree default: 1%].
+    #[arg(long, value_name = "PERCENT", help_heading = "SELECTION")]
+    pub min_share: Option<String>,
+
+    /// Order results: size, count, mtime, name, or a requested metric such as `code_lines`.
     #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
 
@@ -596,6 +613,10 @@ pub struct Cli {
     /// Cache policy: auto, refresh, read-only, only (unverified), or off.
     #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
     pub cache: String,
+
+    /// Cache directory; overrides `FDU_CACHE_DIR` and the platform default.
+    #[arg(long, value_name = "DIR", help_heading = "DELIVERY")]
+    pub cache_dir: Option<PathBuf>,
 
     /// Accept operationally partial results, including filesystem or analysis failures.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
@@ -714,7 +735,7 @@ impl Cli {
         let request = self.request(path, SystemTime::now())?;
         let delivery = Delivery {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
-            cache_path: default_cache_path(path),
+            cache_path: default_cache_path_in(path, self.cache_dir.as_deref())?,
             workers: fdu_core::query::Workers {
                 analysis: self.analysis_workers,
                 ..Default::default()
@@ -788,7 +809,7 @@ impl Cli {
         // The write is already running; rendering is the other reader. Whether output
         // finishes first or the save does, both complete -- and the rendered report is
         // flushed to the terminal *before* waiting on the save, or the overlap is only
-        // nominal: the caller's writer is buffered, a default depth-2 tree fits inside
+        // nominal: the caller's writer is buffered, a compact tree can fit inside
         // that buffer, and the user would see nothing until the snapshot's fsync and the
         // index teardown had finished (fdu-n75m). Same bytes in the same order; only
         // when they arrive changes.
@@ -1157,8 +1178,7 @@ impl Cli {
         // current-root meaning so `--cache-status=all` and `--cache-clear=all` remain
         // useful discovery/maintenance actions without weakening report safety.
         let root = self.path.as_deref().unwrap_or_else(|| Path::new("."));
-        let cache_dir = fdu_core::default_cache_path(root)
-            .and_then(|path| path.parent().map(Path::to_path_buf));
+        let cache_dir = fdu_core::default_cache_dir(self.cache_dir.as_deref())?;
 
         if let Some(scope) = &self.cache_clear {
             let scope = parse_cache_scope(scope, "--cache-clear").map_err(|e| usage(&e))?;
@@ -1224,7 +1244,7 @@ impl Cli {
                     }
                 }
                 (CacheScope::Root, _) => {
-                    let path = fdu_core::default_cache_path(root);
+                    let path = default_cache_path_in(root, self.cache_dir.as_deref())?;
                     let removed = match &path {
                         Some(path) => fdu_core::clear_cache(path)?,
                         None => false,
@@ -1254,10 +1274,12 @@ impl Cli {
             let statuses = match (scope, &cache_dir) {
                 (CacheScope::All, Some(dir)) => fdu_core::list_caches(dir)?,
                 (CacheScope::All, None) => Vec::new(),
-                (CacheScope::Root, _) => match fdu_core::default_cache_path(root) {
-                    Some(path) => vec![fdu_core::cache_status(&path)?],
-                    None => Vec::new(),
-                },
+                (CacheScope::Root, _) => {
+                    match default_cache_path_in(root, self.cache_dir.as_deref())? {
+                        Some(path) => vec![fdu_core::cache_status(&path)?],
+                        None => Vec::new(),
+                    }
+                }
             };
             self.write_cache_status(out, &statuses, scope)?;
         }
@@ -1332,9 +1354,11 @@ impl Cli {
                 modified_since: self.modified_since.as_deref(),
                 modified_before: self.modified_before.as_deref(),
                 kinds: self.kind.as_deref(),
-                ignored: self.ignored_selection()?,
+                ignored: self.ignored.as_deref(),
                 depth: self.depth.as_deref(),
                 limit: self.limit.as_deref(),
+                breadth: self.breadth.as_deref(),
+                min_share: self.min_share.as_deref(),
                 sort: self.sort.as_deref(),
                 reverse: self.reverse,
                 size: Some(&self.size),
@@ -1360,21 +1384,6 @@ impl Cli {
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn watch_delivery(&self) -> anyhow::Result<Option<WatchDelivery>> {
         Ok(None)
-    }
-
-    /// The ignored-state axis, which this surface spells as two switches.
-    ///
-    /// Naming both of them is a conflict between flags rather than an invalid value, so it
-    /// is refused here; every other axis is one flag and one value the model reads.
-    fn ignored_selection(&self) -> anyhow::Result<Option<&'static str>> {
-        match (self.exclude_ignored, self.only_ignored) {
-            (false, false) => Ok(None),
-            (true, false) => Ok(Some(IgnoredEntries::Exclude.label())),
-            (false, true) => Ok(Some(IgnoredEntries::Only.label())),
-            (true, true) => Err(usage(&anyhow::anyhow!(
-                "--exclude-ignored and --only-ignored select opposite entries; use one of them"
-            ))),
-        }
     }
 
     /// Translate the cache-policy flag.
@@ -1474,14 +1483,15 @@ fn performance_footer(
                 String::new()
             };
             format!(
-                "ignore rules {} {}{refused}",
-                human_count(observed.applied),
-                plural_u64(observed.applied, "file", "files")
+                "ignore {} {} / {} rules{refused}",
+                human_count(observed.applied.saturating_add(observed.refused)),
+                plural_u64(observed.applied.saturating_add(observed.refused), "file", "files"),
+                human_count(observed.rules)
             )
         }
     };
     format!(
-        "Performance: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {}",
+        "Performance: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {} ({})",
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
         report_format::human_bytes(walked_bytes),
@@ -1489,6 +1499,7 @@ fn performance_footer(
         read_rate,
         performance_source(performance.source),
         human_duration(total),
+        performance.total_throughput(total, size),
     )
 }
 
@@ -1582,7 +1593,20 @@ fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
 /// rather than a property of `ViewSpec`, so adding a view forces a decision here about
 /// whether it displays content metrics.
 const fn view_displays_analysis(view: ViewSpec) -> bool {
-    matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
+    match view {
+        ViewSpec::Types
+        | ViewSpec::Families
+        | ViewSpec::Languages
+        | ViewSpec::Code
+        | ViewSpec::Documents => true,
+        ViewSpec::List
+        | ViewSpec::Tree
+        | ViewSpec::Extensions
+        | ViewSpec::Largest
+        | ViewSpec::Recent
+        | ViewSpec::Files
+        | ViewSpec::Summary => false,
+    }
 }
 
 /// Views to render, plus any `--view full` could not satisfy.
@@ -1985,7 +2009,7 @@ fn style_guide(guide: &str, color: bool) -> String {
 }
 
 pub(crate) fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
-    if color { format!("{style}{text}{style:#}") } else { text.to_string() }
+    report_format::paint(text, style, color)
 }
 
 fn compose_skill() -> String {
@@ -2054,20 +2078,21 @@ mod tests {
         assert_eq!(many, ["warning: 1,234 more errors omitted; details are kept for the first 64"]);
     }
 
-    /// The two flags select opposite partitions, so asking for both is a usage error.
+    /// One population axis parses all modes and rejects misspellings.
     #[test]
-    fn the_ignored_selection_flags_pick_one_side_and_refuse_both() {
+    fn the_ignored_population_axis_accepts_modes_and_rejects_bad_values() {
         assert_eq!(
             cli().resolved_query().expect("parses").selection.ignored,
             IgnoredEntries::Include
         );
-        let exclude = Cli { exclude_ignored: true, ..cli() }.resolved_query().expect("parses");
+        let exclude =
+            Cli { ignored: Some("exclude".into()), ..cli() }.resolved_query().expect("parses");
         assert_eq!(exclude.selection.ignored, IgnoredEntries::Exclude);
-        let only = Cli { only_ignored: true, ..cli() }.resolved_query().expect("parses");
+        let only = Cli { ignored: Some("only".into()), ..cli() }.resolved_query().expect("parses");
         assert_eq!(only.selection.ignored, IgnoredEntries::Only);
         assert_eq!(
-            query_error(&Cli { exclude_ignored: true, only_ignored: true, ..cli() }),
-            "--exclude-ignored and --only-ignored select opposite entries; use one of them"
+            query_error(&Cli { ignored: Some("invalid".into()), ..cli() }),
+            "invalid --ignored \"invalid\": expected one of include, exclude, only"
         );
     }
 
@@ -2080,7 +2105,7 @@ mod tests {
         let args = [
             "fdu",
             "--no-gitignore",
-            "--only-ignored",
+            "--ignored=only",
             "/nonexistent-root-that-must-not-be-scanned",
         ]
         .map(OsString::from);
@@ -2096,7 +2121,7 @@ mod tests {
         assert!(out.is_empty());
         assert_eq!(
             String::from_utf8(err).expect("UTF-8 diagnostics"),
-            "fdu: --only-ignored needs .gitignore classification, and --no-gitignore turned it \
+            "fdu: --ignored=only needs .gitignore classification, and --no-gitignore turned it \
              off; drop one of them\n"
         );
     }
@@ -2116,7 +2141,7 @@ mod tests {
         };
         assert_eq!(
             footer(&ControlCoverage::NotObserved),
-            "Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms"
+            "Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms (2333 files/s, 0.000 GB/s represented)"
         );
         // The walked bytes are the answer's metric, allocated unless `--size apparent`.
         assert!(
@@ -2132,17 +2157,18 @@ mod tests {
             ControlCoverage::Observed(ControlObservation {
                 limits: fdu_core::ControlLimits::default(),
                 applied,
+                rules: 0,
                 refused: u64::try_from(refusals.len()).expect("a handful"),
                 refusals,
             })
         };
-        assert!(footer(&observed(1, Vec::new())).contains("; ignore rules 1 file; "));
+        assert!(footer(&observed(1, Vec::new())).contains("; ignore 1 file / 0 rules; "));
         let refused = RefusedControl {
             path: PathBuf::from(".gitignore"),
             reason: ControlRefusalReason::LineLimit,
         };
         assert!(
-            footer(&observed(0, vec![refused])).contains("; ignore rules 0 files, 1 refused; ")
+            footer(&observed(0, vec![refused])).contains("; ignore 1 file / 0 rules, 1 refused; ")
         );
     }
 
@@ -2303,11 +2329,12 @@ mod tests {
             modified_since: None,
             modified_before: None,
             kind: None,
-            exclude_ignored: false,
-            only_ignored: false,
+            ignored: None,
             // None, as clap now leaves it: the default belongs to the view.
             depth: None,
             limit: None,
+            breadth: None,
+            min_share: None,
             sort: None,
             reverse: false,
             size: SIZE_DEFAULT.to_string(),
@@ -2321,6 +2348,7 @@ mod tests {
             color: ColorWhen::Auto,
             progress: ProgressMode::Auto,
             cache: "off".to_string(),
+            cache_dir: None,
             cache_status: None,
             cache_clear: None,
             #[cfg(feature = "watch")]
@@ -2484,7 +2512,7 @@ mod tests {
     fn an_unnamed_depth_takes_the_view_default_rather_than_unbounded() {
         let parsed = cli().resolved_query().expect("parses");
         assert_eq!(parsed.selection.depth, None, "the CLI must not invent a default");
-        assert_eq!(parsed.depth_for(ViewSpec::Tree), Bound::Limit(2));
+        assert_eq!(parsed.depth_for(ViewSpec::Tree), Bound::Limit(5));
         // Only the tree renders a hierarchy, so the question does not arise elsewhere.
         assert_eq!(parsed.depth_for(ViewSpec::Files), Bound::All);
     }
@@ -2710,9 +2738,9 @@ mod tests {
         let cases = [
             (AnalysisSet::NONE, ViewSpec::List),
             (AnalysisSet::NONE.with_lines(), ViewSpec::Families),
-            (AnalysisSet::NONE.with_code(), ViewSpec::Languages),
+            (AnalysisSet::NONE.with_code(), ViewSpec::Code),
             (AnalysisSet::NONE.with_words(), ViewSpec::Documents),
-            (AnalysisSet::ALL, ViewSpec::Families),
+            (AnalysisSet::ALL, ViewSpec::Code),
         ];
         for (profile, expected) in cases {
             assert_eq!(ViewSpec::default_for(profile), expected, "default view for {profile:?}");
@@ -2736,7 +2764,11 @@ mod tests {
     #[test]
     fn view_full_expands_to_the_summary_views_the_analyzer_set_can_answer() {
         let bare = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
-        assert_eq!(bare.omitted, vec![ViewSpec::Documents], "documents needs content");
+        assert_eq!(
+            bare.omitted,
+            vec![ViewSpec::Code, ViewSpec::Documents],
+            "content views need their analyzers"
+        );
         assert!(!bare.selected.contains(&ViewSpec::Documents));
 
         let analyzed = resolve_views(Some("full"), AnalysisSet::ALL).expect("resolve");
@@ -2748,7 +2780,10 @@ mod tests {
         assert!(!analyzed.selected.contains(&ViewSpec::Files), "{:?}", analyzed.selected);
         assert_eq!(
             analyzed.selected,
-            ViewSpec::ALL.into_iter().filter(|view| view.is_summary_view()).collect::<Vec<_>>(),
+            ViewSpec::ALL
+                .into_iter()
+                .filter(|view| view.is_summary_view() && *view != ViewSpec::Languages)
+                .collect::<Vec<_>>(),
             "every summary view, in table order"
         );
 
@@ -2868,7 +2903,7 @@ mod tests {
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/7\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/8\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -2899,7 +2934,7 @@ mod tests {
             plain.lines().find(|line| line.contains("Performance:")).expect("performance footer");
         assert!(
             footer.starts_with(
-                "Performance: walked 2 files / 8 B; ignore rules 0 files; content read 8 B at "
+                "Performance: walked 2 files / 8 B; ignore 0 files / 0 rules; content read 8 B at "
             ),
             "{plain}"
         );
@@ -2992,7 +3027,7 @@ mod tests {
 
         assert_eq!(
             footer,
-            "Performance: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s"
+            "Performance: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s (4938 files/s, 0.000 GB/s represented)"
         );
     }
 

@@ -4,7 +4,7 @@
 
 **Author:** Codex
 
-**Status:** In Review; implementation not started
+**Status:** In Progress
 
 **Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`.
 
@@ -401,13 +401,13 @@ obsolete alpha schemas, or a second authoritative inventory.
 
 ### Phase 1: Correct Counts and Population Work
 
-- [ ] Repair Rust syntax cases (`fdu-ov8o`), multiline/heredoc forms (`fdu-f1m3`), and
+- [x] Repair Rust syntax cases (`fdu-ov8o`), multiline/heredoc forms (`fdu-f1m3`), and
   JavaScript regex handling (`fdu-lr38`) with independently expected fixtures.
-- [ ] Implement unified population/default/request semantics (`fdu-gdg0`) and traversal
+- [x] Implement unified population/default/request semantics (`fdu-gdg0`) and traversal
   pruning (`fdu-a0kr`) as one complete public capability.
-- [ ] Version affected analyzer/content/snapshot identities and verify rule-change and
+- [x] Version affected analyzer/content/snapshot identities and verify rule-change and
   all-to-selected/selected-to-all histories.
-- [ ] Prove excluded bodies are not analyzed and safely excluded descendants are not
+- [x] Prove excluded bodies are not analyzed and safely excluded descendants are not
   enumerated, separating necessary ancestor/control work.
 
 **Exit:** Correct fixture partitions, honest unavailable states, and equivalent
@@ -416,15 +416,15 @@ Do not ship `exclude` as a report-only filter.
 
 ### Phase 2: Reports, Limits, Telemetry, and Cache Destination
 
-- [ ] Implement code overview (`fdu-zdbq`) and metric sorting/classification
+- [x] Implement code overview (`fdu-zdbq`) and metric sorting/classification
   explanations (`fdu-n4hp`).
-- [ ] Apply shared presentation roles (`fdu-uj14`) across every relevant renderer.
-- [ ] Implement adaptive tree defaults, significant file leaves, uniform section limits,
+- [x] Apply shared presentation roles (`fdu-uj14`) across every relevant renderer.
+- [x] Implement adaptive tree defaults, significant file leaves, uniform section limits,
   and typed omissions (`fdu-3y5z`).
-- [ ] Add rule counts and precisely defined total rates (`fdu-xlw4`).
-- [ ] Implement the shared Unix cache default, explicit destination overrides, and
+- [x] Add rule counts and precisely defined total rates (`fdu-xlw4`).
+- [x] Implement the shared Unix cache default, explicit destination overrides, and
   descriptive cache filenames (`fdu-smhw`).
-- [ ] Update Rust/Python models, schemas, help, embedded docs, usage, machine-output
+- [x] Update Rust/Python models, schemas, help, embedded docs, usage, machine-output
   reference, skill examples, and architecture descriptions with the owning change.
 
 **Exit:** Every requested output obeys the same population/measurement/limit contract;
@@ -436,15 +436,15 @@ cleanup.
 
 - [ ] Run the acceptance matrix and release-quality validation (`fdu-7jtp`), including
   package installation and cross-platform cache tests.
-- [ ] Record paired cold/warm costs and work counters on mixed repositories, long-line
+- [x] Record paired cold/warm costs and work counters on mixed repositories, long-line
   files, generated sources, and trees dominated by ignored content.
-- [ ] Evaluate classification gaps, selected `.gitattributes` overrides, and a reviewed
+- [x] Evaluate classification gaps, selected `.gitattributes` overrides, and a reviewed
   counter library only against an independent compatibility corpus (`fdu-3ou8`).
-- [ ] After lexical correctness, prototype optional per-language branch-point estimates
+- [x] After lexical correctness, prototype optional per-language branch-point estimates
   in the same read pass.
   Record token rules, coverage, counterexamples, and incremental CPU/memory cost; retain
   only with useful ranking evidence and acceptable measured cost.
-- [ ] Record explicit retain/defer verdicts for both evaluations.
+- [x] Record explicit retain/defer verdicts for both evaluations.
   A retained capability requires a spec addendum, public analyzer/classification
   contract, dependency review if needed, and the same parity/golden gates before
   shipping.
@@ -453,6 +453,54 @@ cleanup.
 Conditional investigations have recorded outcomes; an experiment alone cannot be
 reported as shipped functionality.
 AST metrics and exact Linguist compatibility remain outside this increment.
+
+### Phase 4: Testing Architecture Review and Consolidation
+
+Review the complete testing architecture and the implementation delta using
+`tbd guidelines golden-testing-guidelines general-testing-rules` and the installed
+tryscript documentation.
+Optimize meaningful regression coverage per maintained line of test code, with readable
+scenarios and flexible fixtures.
+Test counts and raw coverage percentages are diagnostics, not completion targets.
+
+- [x] Audit test ownership, coverage, duplication, portability, determinism, and runtime
+  (`fdu-tbtm`). Map the acceptance contracts to the tests that prove them, identify
+  untested failure paths, and record keep/consolidate/replace decisions with reasons.
+- [ ] Implement warranted improvements (`fdu-sc1w`). Prefer concise language-neutral
+  tryscript sessions for public behavior when they preserve equivalent evidence.
+  Reuse authoritative fixtures and remove redundant setup or assertions.
+  Keep focused tests for lexer chunk boundaries, exact arithmetic, allocations,
+  concurrency, and failure injection where a golden would lose coverage or precision.
+- [ ] Verify the revised suite (`fdu-cdp6`). Review complete golden diffs and preserve
+  narrow stable-field patterns, exit codes, stderr, side effects, and schema coverage.
+  Demonstrate that representative critical guards reject deliberately broken behavior.
+  Record before/after test-code and fixture size and observed runtime, with the tested
+  platform and selection; explain necessary growth and any remaining gaps.
+
+Do not blindly regenerate goldens, broaden elisions to hide differences, duplicate the
+CLI corpus for Python, or weaken an independent oracle to make a test shorter.
+Preserve Linux authority for parity recordings, cache-serving proofs, bounded native
+watch checks, and the portability, observability, and invocation guards.
+Use the existing tooling; add a harness only when a concrete missing contract requires
+it.
+
+**Exit:** A written review identifies the evidence each test layer owns; actionable
+findings are addressed; the shared corpus and required handoff checks pass.
+The suite has no known loss of coverage from consolidation, and its maintenance cost and
+remaining platform limits are explicit.
+
+### Implementation Evidence
+
+- [Implementation review](../../reviews/review-2026-09-26-code-analysis-implementation.md)
+  records fixed findings and remaining handoff checks.
+- [Testing architecture review](../../reviews/review-2026-09-26-code-analysis-testing.md)
+  maps behavior to test layers and records coverage and maintenance decisions.
+- [Paired cost report](../../reports/report-2026-09-26-code-analysis-paired-costs.md)
+  links the fixed subjects, raw samples, and work counters.
+- [Correctness evidence](../../research/evidence/code-analysis-correctness-2026-09-26.json)
+  records cold/warm/cache-only answers and deliberate cache-failure proofs.
+- [Conditional evaluation](../../research/evidence/codebase-analysis-conditional-2026-09-26.json)
+  records the adjudicated counting corpus and explicit deferrals.
 
 ### Tracking and Dependencies
 
@@ -470,6 +518,10 @@ Conditional evaluation waits for that useful, verified baseline.
 Keep implementation and conditional evaluation beads open until their own acceptance
 evidence exists; publishing this plan closes only `fdu-r55w`. Reuse the existing
 research follow-ups rather than duplicating them.
+The testing-review audit (`fdu-tbtm`) leads to improvements (`fdu-sc1w`), then final
+sensitivity and portability evidence (`fdu-cdp6`), which also depends on integrated
+validation (`fdu-7jtp`). The audit may run alongside implementation; final verification
+uses the completed implementation.
 
 ## Testing Strategy
 

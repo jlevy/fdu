@@ -12,8 +12,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use fdu_core::content::AnalysisSet;
 use fdu_core::query::{
-    AxisNames, Basis, Bound, Query, ReadSpec, Request, RequestSpec, Selection, SizeMetric,
-    ViewSpec, WatchDelivery,
+    AxisNames, Basis, Query, ReadSpec, Request, RequestSpec, Selection, SizeMetric, ViewSpec,
+    WatchDelivery,
 };
 // The module's own `Delivery` is how a change reached this process; the request model's is
 // how an answer is carried out. Two different questions, so the import names the crate.
@@ -367,11 +367,7 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
 fn a_live_report_is_the_same_query_re_evaluated() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
-    let mut session = session(
-        dir.path(),
-        Selection { depth: Some(Bound::All), ..Selection::default() },
-        vec![ViewSpec::Summary],
-    );
+    let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
     if !establish_watch(&mut session, &dir.path().join("a.txt"), b"12345") {
         return;
     }
