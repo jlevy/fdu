@@ -6,11 +6,11 @@ softschema:
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-158
+  id: exp-160
   title: "Linux one-shot index release off the answer path clears 3% on default-tree"
   date: "2026-09-27"
   hypotheses:
-    - H152
+    - H156
   subject:
     tree_label: linux-balanced-1m
     tree_root_id: f63cd4609c1b3460da3705470f726d21ff77564014c0a26b85711a735655836e
@@ -413,7 +413,7 @@ experiment:
 ---
 ## What was predicted
 
-H152: a one-shot report frees its whole index on the caller’s thread after the answer is
+H156: a one-shot report frees its whole index on the caller’s thread after the answer is
 complete, and on the default path the joined snapshot writer frees it before its join
 returns. On a million-entry Linux tree that release is about 95 ms of a 1.39 s
 `--cache off` run (timed in a throwaway build: report 33 µs, drop 95 ms).

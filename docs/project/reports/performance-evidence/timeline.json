@@ -39394,6 +39394,284 @@
   },
   {
    "anchored": false,
+   "candidate": "byte-identical release probe at 1ba06b19",
+   "change_pct": 1.022,
+   "commit": "1ba06b19",
+   "complexity": {
+    "lines_changed": 80,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "the outside-timer differential oracle depends on independent single-view report construction and adds wall work outside the component timer"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "78 insertions and 2 deletions in perf_probe.rs, including a mutation test; no engine behavior, dependency, unsafe code, or public API change"
+   },
+   "control": "release probe at 1ba06b19",
+   "date": "2026-09-27",
+   "decision": "accepted",
+   "entries": 137085,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H152"
+   ],
+   "id": "exp-158",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-query",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 29615735062.5,
+        "control": 29518429854.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.027,
+        "ci95_high_pct": 15.543,
+        "ci95_low_pct": 0.028,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 56371856500,
+        "control": 56169647000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.158,
+        "ci95_high_pct": 3.203,
+        "ci95_low_pct": -5.411,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 1317208064,
+        "control": 1318510592
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.066,
+        "ci95_high_pct": 0.255,
+        "ci95_low_pct": -0.503,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 20036394000,
+        "control": 21123854500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.004,
+        "ci95_high_pct": 9.551,
+        "ci95_low_pct": -14.654,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 35102900000,
+        "control": 34979544000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 0.593,
+        "ci95_high_pct": 1.063,
+        "ci95_low_pct": 0.027,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 38337176562.5,
+        "control": 37903863792
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.022,
+        "ci95_high_pct": 15.625,
+        "ci95_low_pct": 0.049,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 279659.8939526571,
+      "control": 276498.9881606303
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": null,
+   "number": 158,
+   "path": "exp-158-current-content-query-oracle-and-leftover.md",
+   "platform": "macOS",
+   "primary_job": "content-query",
+   "primary_metric": "wall_ns",
+   "reason": "same-binary attachment +1.02% [0.05%, 15.62%] is uncontrolled host noise; exact report oracle landed and current code inspection named four repeated per-file metric resolutions for H153",
+   "reference_tools": [],
+   "subject": "a319238d9c29:137085:0eed491edf9b",
+   "title": "Current content-query oracle and leftover",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "release probe at d0902cfd with one-pass shared metric resolution",
+   "change_pct": -47.005,
+   "commit": "d0902cfd",
+   "complexity": {
+    "lines_changed": 396,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "multi-view metric summaries could be returned out of request order; the combined-versus-independent oracle and tests guard it"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "266 insertions and 130 deletions in query_report.rs, including focused tests; no dependencies, unsafe code, public API, or persistent identity"
+   },
+   "control": "release probe at 1ba06b19 with independent metric resolution",
+   "date": "2026-09-27",
+   "decision": "accepted",
+   "entries": 137085,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H153"
+   ],
+   "id": "exp-159",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "content-query",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 12009100667,
+        "control": 29907984395.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -59.941,
+        "ci95_high_pct": -58.594,
+        "ci95_low_pct": -60.803,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 36263288000,
+        "control": 53785726500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -32.122,
+        "ci95_high_pct": -30.708,
+        "ci95_low_pct": -33.597,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 1318068224,
+        "control": 1320525824
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.169,
+        "ci95_high_pct": 0.183,
+        "ci95_low_pct": -0.536,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 19134280000,
+        "control": 18964767000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.37,
+        "ci95_high_pct": 9.262,
+        "ci95_low_pct": -1.738,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 17199856000,
+        "control": 34902132500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -50.747,
+        "ci95_high_pct": -50.451,
+        "ci95_low_pct": -51.098,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 20636392917,
+        "control": 38629306250
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -47.005,
+        "ci95_high_pct": -45.23,
+        "ci95_low_pct": -47.49,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 150537.20623700623,
+      "control": 281790.90527774737
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 159,
+   "path": "exp-159-share-content-metric-resolution-across-views.md",
+   "platform": "macOS",
+   "primary_job": "content-query",
+   "primary_metric": "wall_ns",
+   "reason": "one-pass shared metric resolution cut the 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the platform-neutral algorithmic cut",
+   "reference_tools": [],
+   "subject": "a319238d9c29:137085:0eed491edf9b",
+   "title": "Share content metric resolution across views",
+   "trials": 12
+  },
+  {
+   "anchored": false,
    "candidate": "same probe with release_index: a large last reference is released on a detached thread",
    "change_pct": -3.194,
    "commit": "71c52591",
@@ -39410,9 +39688,9 @@
    "entries": 1000001,
    "family": "Linux:f63cd4609c1b",
    "hypotheses": [
-    "H152"
+    "H156"
    ],
-   "id": "exp-158",
+   "id": "exp-160",
    "interleaved": true,
    "jobs": [
     {
@@ -39720,8 +39998,8 @@
     }
    ],
    "kept": "candidate",
-   "number": 158,
-   "path": "exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md",
+   "number": 160,
+   "path": "exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md",
    "platform": "Linux",
    "primary_job": "default-tree",
    "primary_metric": "wall_ns",
@@ -39733,7 +40011,7 @@
   },
   {
    "anchored": false,
-   "candidate": "H152 plus direct file fold into the parent roll-up and owned walker names",
+   "candidate": "H156 plus direct file fold into the parent roll-up and owned walker names",
    "change_pct": -2.222,
    "commit": null,
    "complexity": {
@@ -39743,15 +40021,15 @@
     "new_unsafe_blocks": 0,
     "notes": ""
    },
-   "control": "H152 probe",
+   "control": "H156 probe",
    "date": "2026-09-27",
    "decision": "rejected",
    "entries": 1000001,
    "family": "Linux:f63cd4609c1b",
    "hypotheses": [
-    "H153"
+    "H157"
    ],
-   "id": "exp-159",
+   "id": "exp-161",
    "interleaved": true,
    "jobs": [
     {
@@ -39958,8 +40236,8 @@
     }
    ],
    "kept": "control",
-   "number": 159,
-   "path": "exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md",
+   "number": 161,
+   "path": "exp-161-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md",
    "platform": "Linux",
    "primary_job": "cold-scan-index",
    "primary_metric": "wall_ns",
@@ -39981,15 +40259,15 @@
     "new_unsafe_blocks": 0,
     "notes": ""
    },
-   "control": "H152 plus H153 probe",
+   "control": "H156 plus H157 probe",
    "date": "2026-09-27",
    "decision": "rejected",
    "entries": 1000001,
    "family": "Linux:f63cd4609c1b",
    "hypotheses": [
-    "H154"
+    "H158"
    ],
-   "id": "exp-160",
+   "id": "exp-162",
    "interleaved": true,
    "jobs": [
     {
@@ -40196,8 +40474,8 @@
     }
    ],
    "kept": "control",
-   "number": 160,
-   "path": "exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md",
+   "number": 162,
+   "path": "exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md",
    "platform": "Linux",
    "primary_job": "cold-scan-index",
    "primary_metric": "wall_ns",
@@ -40208,7 +40486,7 @@
    "trials": 12
   }
  ],
- "prepared": "2026-09-23",
+ "prepared": "2026-09-27",
  "subjects": [
   {
    "apparent_bytes": 1726062376,
@@ -40691,9 +40969,9 @@
    "directories": 125001,
    "entries": 1000001,
    "experiments": [
-    "exp-158",
-    "exp-159",
-    "exp-160"
+    "exp-160",
+    "exp-161",
+    "exp-162"
    ],
    "files": 875000,
    "filesystem": "ext4",
@@ -40838,6 +41116,25 @@
    ],
    "os_cache": "warm-steady",
    "platform": "Linux",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 1643250814,
+   "directories": 9936,
+   "entries": 137085,
+   "experiments": [
+    "exp-158",
+    "exp-159"
+   ],
+   "files": 127104,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:137085:0eed491edf9b",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
    "synthetic": false
   },
   {
@@ -41130,22 +41427,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 17546,
+  "accepted_lines_changed": 18022,
   "decisions": {
-   "accepted": 91,
+   "accepted": 93,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 3,
    "rejected": 51,
    "superseded": 3
   },
-  "experiments": 160,
+  "experiments": 162,
   "first_date": "2026-08-10",
-  "hypotheses": 113,
+  "hypotheses": 115,
   "last_date": "2026-09-27",
   "platforms": {
    "Linux": 32,
-   "macOS": 128
+   "macOS": 130
   }
  },
  "version": "fdu.performance.timeline/1"

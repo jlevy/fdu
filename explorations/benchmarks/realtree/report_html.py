@@ -40,12 +40,25 @@ ANCHOR_JOBS = (
 DECISION_ORDER = ("accepted", "rejected", "superseded", "in-progress", "baseline")
 
 DECISION_LABEL = {
-    "accepted": "kept",
+    "accepted": "accepted",
     "rejected": "rejected",
     "superseded": "superseded",
     "in-progress": "in progress",
     "baseline": "baseline",
 }
+
+
+def decision_label(record: Mapping[str, Any]) -> str:
+    """Describe the verdict without conflating acceptance with a retained arm."""
+    decision = record["decision"]
+    if decision != "accepted":
+        return DECISION_LABEL.get(decision, decision)
+    kept = record.get("kept")
+    if kept == "candidate":
+        return "candidate kept"
+    if kept == "control":
+        return "control kept"
+    return "accepted evidence"
 
 
 def esc(value: Any) -> str:
@@ -435,7 +448,7 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
         low_text, high_text = paired["ci95_low_pct"], paired["ci95_high_pct"]
         detail = [
             f'{record["id"]} - {record["title"]}',
-            f'{DECISION_LABEL.get(record["decision"], record["decision"]).upper()}'
+            f'{decision_label(record).upper()}'
             f'  |  {record["primary_job"]}  |  {fmt_pct(change)}'
             + (
                 f" [{low_text:+.1f}%, {high_text:+.1f}%]"
@@ -465,11 +478,11 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             f'{esc(record["id"])} {esc(record["title"])}: {fmt_pct(change)} on '
             f'{esc(record["primary_job"])}'
             + (f" [{low:+.1f}%, {high:+.1f}%]" if low is not None and high is not None else "")
-            + f' &mdash; {esc(DECISION_LABEL.get(record["decision"], record["decision"]))}</title></circle>'
+            + f' &mdash; {esc(decision_label(record))}</title></circle>'
         )
     out.append("</svg>")
 
-    kept = sum(1 for record in records if record["decision"] == "accepted")
+    accepted = sum(1 for record in records if record["decision"] == "accepted")
     evidence = [_primary(record)["paired"]["evidence"] for record in records]
     improved = evidence.count("improved")
     unclear = evidence.count("unclear")
@@ -481,7 +494,8 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             ("key-bad", "interval entirely above zero"),
             ("key-flat", "interval crosses zero \u2014 the run could not tell"),
         )
-        + f"<figcaption>{len(records)} experiments, sorted by effect; {kept} were kept. "
+        + f"<figcaption>{len(records)} experiments, sorted by effect; {accepted} verdicts "
+        "were accepted. "
         f"{improved} have an interval entirely below zero, {unclear} cross it, and "
         f"{regressed} are entirely above it. Nothing is clipped: the axis runs to the "
         "widest interval measured. Hover any point for the experiment."
@@ -1058,22 +1072,31 @@ record &mdash; each one is a day the next person does not have to spend.</p>
 
 
 def _section_scale(dataset: Mapping[str, Any]) -> str:
+    subjects = dataset["subjects"]
+    families = {
+        record["family"]
+        for record in dataset["experiments"]
+        if record.get("family") is not None
+    }
+    entry_counts = [subject["entries"] for subject in subjects]
     return f"""
 <h2 id="scale">Scale</h2>
 <h3>Does it hold on a bigger tree, and on another kernel?</h3>
-<p>Eighteen distinct trees were measured, from 307 entries to 1.01 million, on macOS and
-Linux. Their milliseconds are not comparable, but their cost per entry is, because a
-scan's work is very nearly linear in what it has to visit.</p>
+<p>The record contains {len(subjects)} fingerprinted subject states in
+{len(families)} subject families, from {min(entry_counts):,} to
+{max(entry_counts):,} entries, on macOS and Linux. Their milliseconds are not comparable,
+but their cost per entry is, because a scan's work is very nearly linear in what it has
+to visit.</p>
 {figure_per_entry(dataset)}
 """
 
 
 def _mismatch(dataset: Mapping[str, Any]) -> tuple:
-    """Experiments where the accept decision and the measured evidence disagree.
+    """Experiments where acceptance and primary speed evidence differ.
 
     Both directions exist and each says something the other does not. A change can be
-    real and still not worth carrying, and a change can be worth carrying for a reason
-    that is not speed.
+    real and still not be accepted, and an experiment can be accepted for a reason that
+    is not a primary wall-time improvement.
     """
     records = [
         record
@@ -1083,8 +1106,8 @@ def _mismatch(dataset: Mapping[str, Any]) -> tuple:
     improved = {
         record["id"] for record in records if _primary(record)["paired"]["evidence"] == "improved"
     }
-    kept = {record["id"] for record in records if record["decision"] == "accepted"}
-    return sorted(improved - kept), sorted(kept - improved)
+    accepted = {record["id"] for record in records if record["decision"] == "accepted"}
+    return sorted(improved - accepted), sorted(accepted - improved)
 
 
 def _section_mechanisms(dataset: Mapping[str, Any]) -> str:
@@ -1166,12 +1189,13 @@ def _section_reading(dataset: Mapping[str, Any]) -> str:
     dataset can be read into a wrong answer, and the second one flatly contradicts what a
     reader would otherwise assume from seeing both figures on one page.
     """
-    improved_only, kept_only = _mismatch(dataset)
+    improved_only, accepted_only = _mismatch(dataset)
     mismatch = (
         f"{len(improved_only)} experiments measured a real improvement and were still not "
-        f"kept &mdash; below the threshold, superseded, or not yet finished. "
-        f"{len(kept_only)} were kept although their interval crossed zero, because what "
-        f"they bought was not speed."
+        f"accepted &mdash; below the threshold, superseded, or not yet finished. "
+        f"{len(accepted_only)} experiment verdicts were accepted for reasons other than "
+        f"a measured improvement in primary wall time, such as noninferiority, "
+        f"instrumentation, or correctness evidence."
     )
     return f"""
 <h2 id="reading">Reading these numbers</h2>
@@ -1181,27 +1205,25 @@ the relative figure's percentage. That is wrong, and the record is careful about
 absolute values are the median of each arm on its own. The relative value is the median of
 the <em>paired</em> differences &mdash; each candidate trial against the control trial
 interleaved beside it. When the host drifts mid-run the two diverge, and in this record
-they differ by more than two percentage points on 21% of measurements and sometimes differ
-in sign.</p>
+they can differ by several percentage points and sometimes differ in sign.</p>
 <p class="note">exp&#8209;005's <span class="mono">cold-scan-index</span> reads
 <strong>+2.8%</strong> if you divide its medians and <strong>&minus;3.9%</strong> paired.
 The paired figure is the one that controls for drift, so it is the one the verdict used.
 Both are published; neither is derived from the other.</p>
-<h3>Kept and faster are different questions</h3>
-<p>The two sets nearly coincide and it would be easy to assume they are the same set.
-They are not, and both directions of the mismatch are worth knowing about.</p>
+<h3>Accepted and faster are different questions</h3>
+<p>The two sets overlap, but both directions of the mismatch are worth knowing about.</p>
 <p>{mismatch}</p>
 <p class="note">Instrumentation is the clearest case. exp&#8209;052 and exp&#8209;053 were
-kept on intervals of <span class="mono">[&minus;3.3%, +3.8%]</span> and
+accepted on intervals of <span class="mono">[&minus;3.3%, +3.8%]</span> and
 <span class="mono">[&minus;3.0%, +1.4%]</span> &mdash; neither is a speed-up, and neither
 was claimed as one. What they bought was the ability to see inside the engine at a cost
 the measurement could not detect, which is a different thing to want and was recorded as
 one.</p>
 <h3>What is not measured here</h3>
-<p>Every number is one machine: an Apple M1 Pro, and one Linux VM. The page cache was warm
-for all of it, because dropping it needs root, so nothing here describes a genuinely cold
-disk. Tuning constants were fitted on the subjects shown and are inherited, not proven, on
-anything else.</p>
+<p>Every number comes from one Apple M1 Pro or a handful of virtualized Linux hosts. The
+page cache was warm throughout because dropping it needs root, so nothing here describes a
+genuinely cold disk. Tuning constants were fitted on the subjects shown and are inherited,
+not proven, elsewhere.</p>
 """
 
 
@@ -1297,7 +1319,7 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
             f'<td class="n">{esc(after)}</td>'
             f'<td class="n">{esc(change)}</td>'
             f'<td class="n muted">{esc(interval)}</td>'
-            f'<td class="v-{esc(decision)}">{esc(DECISION_LABEL.get(decision, decision))}</td>'
+            f'<td class="v-{esc(decision)}">{esc(decision_label(record))}</td>'
             f"</tr>"
         )
     return f"""
@@ -1378,13 +1400,10 @@ def _header(dataset: Mapping[str, Any]) -> str:
 roll-up engine. It walks a tree once and answers questions about it &mdash; folder sizes,
 file types, languages, prose metrics &mdash; from one reusable index, in text or JSON.
 It is written in Rust, with no C in its build.</p>
-<p>On a 901,963-entry tree it builds that reusable index and renders a ten-row tree in a
-3.32-second median: the fastest of every tree and index tool measured &mdash; pdu, dust,
-gdu, ncdu &mdash; while returning more than any of them. Its cheaper summary path ties
-statistically with <span class="mono">dumac</span>, the fastest scalar tool measured,
-which reports only a total. Peer tools are
-<a href="report-2026-08-13-fdu-live-tool-comparison.md">recorded separately</a>, for
-comparison.</p>
+<p>The current installed-CLI comparison is
+<a href="../report-2026-09-26-fdu-live-tool-comparison.md">recorded separately</a>, with
+its workload, host, and peer-tool qualifications. This page describes the research loop
+and its incremental experiments; it is not a current product leaderboard.</p>
 <p class="lede">This page is about how it got there. That work was done as an iterative
 research loop rather than
 a sequence of hunches. Every experiment &mdash; including the
@@ -1398,11 +1417,11 @@ said.</p>
 <div class="headline">
   {headlines}
   <div><span class="n tnum">{totals['decisions'].get('accepted', 0)}</span>
-    <span class="k">changes kept</span></div>
+    <span class="k">accepted verdicts</span></div>
   <div><span class="n tnum">{totals['decisions'].get('rejected', 0)}</span>
     <span class="k">rejected</span></div>
   <div><span class="n tnum">{totals['accepted_lines_changed']:,}</span>
-    <span class="k">lines the keepers cost</span></div>
+    <span class="k">lines in accepted verdicts</span></div>
 </div>
 <h2 id="loop">The loop</h2>
 <p>One experiment is one question with one answer. It names a hypothesis, builds exactly

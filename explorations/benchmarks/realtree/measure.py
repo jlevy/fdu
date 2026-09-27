@@ -300,7 +300,11 @@ PROBE_JOBS: Dict[str, Job] = {
         id="content-query",
         argv=("{binary}", "content-query", "--root", "{root}", "--queries", "100"),
         start_state="warm",
-        description="Build type, family, language, and document summaries 100 times.",
+        description=(
+            "Construct four unfiltered metric views 100 times after a fresh scan and "
+            "line-analysis setup. Component time covers report construction; process "
+            "wall also includes setup and validation."
+        ),
         parallel_cpu=True,
     ),
     "content-disabled": Job(

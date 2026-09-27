@@ -121,21 +121,21 @@ least 3% better *and* a 95% interval entirely below zero.
 
 | Change | Hypothesis | Probe job, paired | Product CLI indexed tree, paired | Decision |
 | --- | --- | --- | --- | --- |
-| Release a large one-shot index on a detached thread instead of before the answer returns | [H152](../experiments/exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md) | `default-tree` −3.19% [−4.88%, −1.79%] | −4.31% [−5.99%, −3.25%] | **Kept** |
-| Fold each file straight into its parent’s roll-up and move, not copy, each listed name | [H153](../experiments/exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md) | `cold-scan-index` −2.22% [−4.04%, +0.04%] | −3.71% [−4.71%, −1.97%] | Rejected on its pre-registered probe job |
-| Hold leaf-only listings until a batch fills instead of waking the index consumer per chunk | [H154](../experiments/exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md) | `cold-scan-index` +0.88% [−0.17%, +1.94%] | With H153: −4.30% [−5.52%, −1.38%] against H153 alone at −3.71%; no separable effect | Rejected |
+| Release a large one-shot index on a detached thread instead of before the answer returns | [H156](../experiments/exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md) | `default-tree` −3.19% [−4.88%, −1.79%] | −4.31% [−5.99%, −3.25%] | **Kept** |
+| Fold each file straight into its parent’s roll-up and move, not copy, each listed name | [H157](../experiments/exp-161-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md) | `cold-scan-index` −2.22% [−4.04%, +0.04%] | −3.71% [−4.71%, −1.97%] | Rejected on its pre-registered probe job |
+| Hold leaf-only listings until a batch fills instead of waking the index consumer per chunk | [H158](../experiments/exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md) | `cold-scan-index` +0.88% [−0.17%, +1.94%] | With H157: −4.30% [−5.52%, −1.38%] against H157 alone at −3.71%; no separable effect | Rejected |
 
 The kept change removes the 95 ms teardown from every large one-shot report and from the
 join a default `fdu PATH` waits on; `cold-scan-index`, which frees its index inside the
 timed region, was the placebo and did not move.
 
-H153 cut allocations from 7.0 million to 4.3 million and cleared the rule on the product
+H157 cut allocations from 7.0 million to 4.3 million and cleared the rule on the product
 job, but not on the probe job it named beforehand, so it is not kept; a rerun with the
-product job pre-registered is `fdu-o6um`. H154 cut the consumer’s `futex` wakes from
+product job pre-registered is `fdu-o6um`. H158 cut the consumer’s `futex` wakes from
 106k to 18k without moving wall time: on four cores the walkers, not the consumer, set
 the pace.
 
-The allocator result is the open item, H155 (`fdu-578e`).
+The allocator result is the open item, H159 (`fdu-578e`).
 [H74](../guides/performance-loop.md#index-and-allocation) found mimalloc neutral on the
 index tier before the detached builder existed and declined the dependency, and H85
 found that recycling buffers recovered only part of the aggregate tier’s cost.
@@ -192,11 +192,13 @@ whose per-sample scan-policy traces make it 4.5 MB uncompressed.
 ## Interpretation and Limits
 
 Both matrices ran fdu with `--cache off`, as the macOS comparison did.
-The default `fdu .` also writes a metadata snapshot, which added 0.32 s at this size;
-the
+The default `fdu .` also writes a metadata snapshot, which added about 0.26 s at this
+size; the
 [cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
 measures that cost, explains the macOS and Linux rankings from their CPU split, and
-proposes defaults.
+proposes defaults. Summary mode ran with `--no-gitignore` because reading ignore rules
+makes the planner keep the full index; without the flag, a screen of the same tree took
+1.25 s with the cache off.
 
 A virtualized host is the common deployment case for Linux and a valid regime for warm
 measurements; it cannot say anything about device latency, so no cold claim is made

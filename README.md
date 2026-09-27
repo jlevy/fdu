@@ -3,12 +3,13 @@
 **Fast disk usage skill, `du` replacement, and file roll-up engine for Python and
 Rust.**
 
-On our million-entry macOS benchmark, fdu delivers **over 8× the throughput of standard
-`du`**, **about 60% more than dust**, a Rust `du` replacement, and **roughly 10% more
-than [dumac](https://github.com/healeycodes/dumac#readme)**, previously the fastest disk
-usage roll-up tool we knew of for macOS. Unlike dumac’s size total, fdu builds a
-reusable index with counts, sizes, recency, and file-type tallies for every directory.
-See [Speed](#speed) for the paired measurements and limits.
+On our million-entry macOS benchmark, fdu delivered **over 8× the throughput of standard
+`du`**, **about 60% more than dust**, and **roughly 10% more than
+[dumac](https://github.com/healeycodes/dumac#readme)** while building a reusable index
+with counts, sizes, recency, and file-type tallies for every directory.
+These paired results used warm filesystem caches under background load, and the tools
+return different amounts of information.
+See [Speed](#speed) for the measurements and limits.
 
 Use fdu to find what takes up space, locate old build directories, or summarize a tree
 without writing a filesystem walker.
@@ -306,7 +307,7 @@ The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 202
 
 | Tool | Work returned | Median wall-clock time | Wall time vs. fdu summary |
 | --- | --- | ---: | ---: |
-| **fdu `--view summary`** | exact totals, no index | **0.97 s** | baseline |
+| **fdu `--no-gitignore --view summary`** | exact totals, no index | **0.97 s** | baseline |
 | pdu | rendered tree | 1.09 s | +11% |
 | diskus | scalar total only | 1.10 s | +16% |
 | fdu | reusable exact index and ten-row tree | 1.38 s | — |
@@ -321,10 +322,28 @@ builder, not filesystem work; see the
 for the evidence and the work under way.
 Both tables measure fdu with its cache disabled; the default `fdu .` also writes a
 snapshot that a later `fdu .` does not read, which on this Linux tree added about a
-quarter to the run. The
+fifth to the run, and the summary needs `--no-gitignore` because reading ignore rules
+still falls back to the full index.
+The
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
 covers when the cache and the index pay on each platform.
 Windows builds and passes tests but has not been performance-benchmarked.
+
+### Multi-View Reports
+
+Report construction has a separate result.
+On a 137,085-entry macOS tree, a loop that constructed the unfiltered Types, Families,
+Languages, and Documents views 100 times from an already line-analyzed index took 12.0
+seconds, down from 29.9 seconds—about **2.5× faster**, or roughly 120 ms instead of 299
+ms per report.
+
+This is not a scan or end-to-end full-analysis speedup.
+It applies only to unfiltered requests with multiple metric views; the default
+disk-usage command and single-view analysis are unchanged.
+The implementation is platform-neutral Rust, but its Linux magnitude has not yet been
+measured. See
+[the experiment](docs/project/experiments/exp-159-share-content-metric-resolution-across-views.md)
+for the paired interval, host regime, and resource qualification.
 
 ## Why
 

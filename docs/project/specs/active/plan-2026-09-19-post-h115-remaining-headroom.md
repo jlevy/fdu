@@ -4,12 +4,13 @@
 
 **Author:** fdu project
 
-**Status:** Active. Overnight H116–H120 is done.
-This file is the remaining unaddressed-hypothesis queue after that overnight: H107
-(ignore-is-the-walk only).
-H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141); leftover is H143.
-H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-119). H121
-is confirmed (exp-120): apply no longer dominates.
+**Status:** Historical queue through H138. The current actionable queue is H154–H155 in
+[the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
+This file preserves the detailed H107–H138 planning record after the H116–H120
+overnight.
+H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141); leftover
+is H143. H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed
+(exp-119). H121 is confirmed (exp-120): apply no longer dominates.
 H124 is rejected (exp-121). H125 is accepted (exp-124): restore-count completeness.
 H126 is confirmed (exp-125): completeness walk gone; no new userspace cut.
 H127 is confirmed (exp-126): opened-discovery ~8.8× first-pass; no smallest cut.
@@ -25,12 +26,11 @@ H135 is confirmed (exp-134): first-pass leftover after H124 is still file I/O; n
 the walk; snapshot write ~45 ms is ≥3% and not skippable.
 H137 is confirmed (exp-136): content-query leftover is `every_entry` per unfiltered
 metric view (~278 ms / four-view report).
-Sharing one walk is the leftover cut, not compiled here.
 H138 is accepted (exp-137): share one `every_entry` (−18.76% wall).
 Engine kept (`a5c98d59`). H113 is superseded by H125.
 [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
-keeps an abbreviated next-up in that order; this file is the source of truth for the
-full rows. The loop guide registry remains the full hypothesis text.
+keeps the live next-up after the later H152–H153 round.
+The loop guide registry remains the full hypothesis text.
 
 ## Overview
 
@@ -67,7 +67,7 @@ H113 is superseded. Do not retry the file-count shortcut.
   H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
-- Keep one source of truth for that queue (this file)
+- Preserve the detailed historical queue while the runbook owns current pickup
 
 ## Non-Goals
 
@@ -288,7 +288,7 @@ These were considered against the post-H115 path and not registered:
 
 ## Implementation Plan
 
-### Remaining Queue (Source of Truth)
+### Remaining Queue at 2026-09-19
 
 Take these in order.
 Overnight H116–H120 is history, not a retry list.

@@ -15,10 +15,12 @@ Absolute timings, every experiment’s paired effect with its interval, and why 
 must not be divided into each other:
 [the performance evidence report](report-2026-08-20-fdu-performance-evidence.md).
 
-## Where it stands
+## Latest Comparison Against the Original Baseline
 
-Every accepted change together, measured against the pre-work baseline in one
-interleaved run of 12 paired trials (exp-032).
+exp-032 measured the changes present at that checkpoint against the pre-work baseline in
+one interleaved run of 12 paired trials.
+Later experiments below are separate incremental comparisons; this table does not
+measure the current engine.
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
@@ -64,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 71 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 73 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
@@ -237,9 +239,11 @@ dead end.
 | 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
 | 156 | [Progress indicator without a handle against main](#exp156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
 | 157 | [Progress handle attached against no handle](#exp157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
-| 158 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp158--linux-oneshot-index-release-off-the-answer-path-clears-3-on-defaulttree) | H152 | `default-tree` | -3.2% | ✅ accepted |
-| 159 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp159--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H153 | `cold-scan-index` | -2.2% | ❌ rejected |
-| 160 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp160--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H154 | `cold-scan-index` | +0.9% | ❌ rejected |
+| 158 | [Current content-query oracle and leftover](#exp158--current-contentquery-oracle-and-leftover) | H152 | `content-query` | +1.0% | ✅ accepted |
+| 159 | [Share content metric resolution across views](#exp159--share-content-metric-resolution-across-views) | H153 | `content-query` | -47.0% | ✅ accepted |
+| 160 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp160--linux-oneshot-index-release-off-the-answer-path-clears-3-on-defaulttree) | H156 | `default-tree` | -3.2% | ✅ accepted |
+| 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
+| 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
 
 ## The experiments
 
@@ -5287,9 +5291,79 @@ uncontrolled cell at 100% to 72% busy, user CPU -0.63%; needs a quiet re-run.
 Full record:
 [`exp-157-progress-handle-attached-against-no-handle.md`](../experiments/exp-157-progress-handle-attached-against-no-handle.md)
 
-### exp-158 — Linux one-shot index release off the answer path clears 3% on default-tree
+### exp-158 — Current content-query oracle and leftover
 
-✅ accepted · 2026-09-27 · H152 · commit `71c52591`
+✅ accepted · 2026-09-27 · H152 · commit `1ba06b19`
+
+Control: release probe at 1ba06b19
+
+Candidate: byte-identical release probe at 1ba06b19
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 37903.9 | 38337.2 | +1.02% (regression) | [+0.05%, +15.62%] |
+| component (ms) | 29518.4 | 29615.7 | +1.03% (regression) | [+0.03%, +15.54%] |
+| cpu (ms) | 56169.6 | 56371.9 | +1.16% (n.s.) | [-5.41%, +3.20%] |
+| user (ms) | 34979.5 | 35102.9 | +0.59% (regression) | [+0.03%, +1.06%] |
+| system (ms) | 21123.9 | 20036.4 | -3.00% (n.s.) | [-14.65%, +9.55%] |
+| peak rss (MiB) | 1257.4 | 1256.2 | -0.07% (n.s.) | [-0.50%, +0.26%] |
+
+Wall-time tail: control p95 is 1.07x its median and candidate 1.57x. The verdict above
+is on the median; a reader deciding whether this is faster to *use* should read the tail
+beside it.
+
+Cost to carry: 80 lines; no new dependencies; new failure mode: the outside-timer
+differential oracle depends on independent single-view report construction and adds wall
+work outside the component timer.
+
+78 insertions and 2 deletions in perf_probe.rs, including a mutation test; no engine
+behavior, dependency, unsafe code, or public API change
+
+**Accepted:** same-binary attachment +1.02% [0.05%, 15.62%] is uncontrolled host noise;
+exact report oracle landed and current code inspection named four repeated per-file
+metric resolutions for H153.
+
+Full record:
+[`exp-158-current-content-query-oracle-and-leftover.md`](../experiments/exp-158-current-content-query-oracle-and-leftover.md)
+
+### exp-159 — Share content metric resolution across views
+
+✅ accepted · 2026-09-27 · H153 · commit `d0902cfd`
+
+Control: release probe at 1ba06b19 with independent metric resolution
+
+Candidate: release probe at d0902cfd with one-pass shared metric resolution
+
+**`content-query`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 38629.3 | 20636.4 | -47.01% | [-47.49%, -45.23%] |
+| component (ms) | 29908.0 | 12009.1 | -59.94% | [-60.80%, -58.59%] |
+| cpu (ms) | 53785.7 | 36263.3 | -32.12% | [-33.60%, -30.71%] |
+| user (ms) | 34902.1 | 17199.9 | -50.75% | [-51.10%, -50.45%] |
+| system (ms) | 18964.8 | 19134.3 | +2.37% (n.s.) | [-1.74%, +9.26%] |
+| peak rss (MiB) | 1259.4 | 1257.0 | -0.17% (n.s.) | [-0.54%, +0.18%] |
+
+Cost to carry: 396 lines; no new dependencies; new failure mode: multi-view metric
+summaries could be returned out of request order; the combined-versus-independent oracle
+and tests guard it.
+
+266 insertions and 130 deletions in query_report.rs, including focused tests; no
+dependencies, unsafe code, public API, or persistent identity
+
+**Accepted:** one-pass shared metric resolution cut the 100-report probe wall 47.01%
+[45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the
+platform-neutral algorithmic cut.
+
+Full record:
+[`exp-159-share-content-metric-resolution-across-views.md`](../experiments/exp-159-share-content-metric-resolution-across-views.md)
+
+### exp-160 — Linux one-shot index release off the answer path clears 3% on default-tree
+
+✅ accepted · 2026-09-27 · H156 · commit `71c52591`
 
 Control: 4c4917f4 probe: one-shot index released on the caller or joined writer thread
 
@@ -5317,15 +5391,15 @@ placebo +0.00% [-2.24%, +2.15%]; product CLI --cache off indexed tree -4.31%
 [-5.99%, -3.25%] in the paired tool harness.
 
 Full record:
-[`exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md`](../experiments/exp-158-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)
+[`exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md`](../experiments/exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)
 
-### exp-159 — Linux direct file fold and owned names miss 3% on cold-scan-index
+### exp-161 — Linux direct file fold and owned names miss 3% on cold-scan-index
 
-❌ rejected · 2026-09-27 · H153
+❌ rejected · 2026-09-27 · H157
 
-Control: H152 probe
+Control: H156 probe
 
-Candidate: H152 plus direct file fold into the parent roll-up and owned walker names
+Candidate: H156 plus direct file fold into the parent roll-up and owned walker names
 
 **`cold-scan-index`** (cold start) — the comparison the verdict rests on
 
@@ -5347,13 +5421,13 @@ Cost to carry: 95 lines; no new dependencies.
 [-4.71%, -1.97%] is a lead for fdu-o6um, not a keep.
 
 Full record:
-[`exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md`](../experiments/exp-159-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md)
+[`exp-161-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md`](../experiments/exp-161-linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-i.md)
 
-### exp-160 — Linux detached leaf-listing hold cuts futex wakes but not wall
+### exp-162 — Linux detached leaf-listing hold cuts futex wakes but not wall
 
-❌ rejected · 2026-09-27 · H154
+❌ rejected · 2026-09-27 · H158
 
-Control: H152 plus H153 probe
+Control: H156 plus H157 probe
 
 Candidate: same probe holding leaf-only chunks until a batch fills
 
@@ -5376,7 +5450,7 @@ Cost to carry: 60 lines; no new dependencies.
 105,732 to 17,938.
 
 Full record:
-[`exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md`](../experiments/exp-160-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md)
+[`exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md`](../experiments/exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md)
 
 ## Absolute timings
 
@@ -5566,9 +5640,9 @@ Baselines show one value because they measure a state rather than a change.
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| 158 | Linux one-shot index release off the answer path clears 3% on default-tree | `default-tree` | 1,611.5 | 1,541.7 | -3.2% | ✅ accepted |
-| 159 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
-| 160 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
+| 160 | Linux one-shot index release off the answer path clears 3% on default-tree | `default-tree` | 1,611.5 | 1,541.7 | -3.2% | ✅ accepted |
+| 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
+| 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -5637,6 +5711,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
+
+### metabrowser-clone (137,085 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
+| 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ✅ accepted |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

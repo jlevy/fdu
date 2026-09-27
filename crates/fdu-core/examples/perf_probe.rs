@@ -739,8 +739,9 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         black_box(fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("report"));
     }
     let component = started.elapsed();
-    // The historical benchmark digest hashes retained index/content facts after the
-    // reports are discarded. Zero invalid samples do not prove report construction.
+    let oracle_report =
+        fdu_core::query::report(&index, &read, std::time::UNIX_EPOCH).expect("oracle report");
+    verify_content_query_report(&index, &read, &oracle_report)?;
     let mut summary = summarize_index(arguments, &index)?;
     attach_content_summary(&mut summary, &index);
     summary.content_candidates = analysis.candidates;
@@ -748,6 +749,48 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.query_iterations = u64::try_from(arguments.queries).unwrap_or(u64::MAX);
     summary.complete = analysis.is_complete();
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// Compare the measured multi-view answer with each view's independent report path.
+///
+/// The timed loop discards its reports, while the historical probe oracle covers only
+/// retained index and content facts. This outside-timer differential makes row values,
+/// totals, ordering, and projection part of the timing evidence without charging the
+/// measured component for validation.
+fn verify_content_query_report(
+    index: &Index,
+    request: &Request,
+    combined: &fdu_core::query::Report,
+) -> ProbeResult<()> {
+    if combined.requested_views != request.query.views
+        || combined.sections.len() != request.query.views.len()
+    {
+        return Err(ProbeError(
+            "content-query report omitted or reordered a requested view".into(),
+        ));
+    }
+    for (position, view) in request.query.views.iter().copied().enumerate() {
+        let actual = &combined.sections[position];
+        if actual.view() != view {
+            return Err(ProbeError(format!(
+                "content-query section {position} answered {:?} instead of {view:?}",
+                actual.view()
+            )));
+        }
+        let mut independent = request.clone();
+        independent.query.views = vec![view];
+        independent.query.omitted_views.clear();
+        let expected = fdu_core::query::report(index, &independent, std::time::UNIX_EPOCH)?;
+        let Some(expected) = expected.sections.first() else {
+            return Err(ProbeError(format!("content-query independent {view:?} report was empty")));
+        };
+        if format!("{actual:?}") != format!("{expected:?}") {
+            return Err(ProbeError(format!(
+                "content-query combined {view:?} section disagreed with its independent report"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
@@ -3041,6 +3084,39 @@ mod tests {
         assert_eq!(output.summary.files, 1);
         assert!(output.summary.complete);
         assert_eq!(output.source, "index-retained");
+    }
+
+    #[test]
+    fn content_query_oracle_compares_every_requested_section() {
+        let root = tempfile::tempdir().expect("root tempdir");
+        std::fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("rust file");
+        std::fs::write(root.path().join("guide.md"), b"# Guide\n\nWords.\n")
+            .expect("markdown file");
+        let (mut index, scan) =
+            fdu_core::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        assert!(scan.is_complete());
+        let analysis = fdu_core::content::analyze_index(&mut index, basic_request());
+        assert!(analysis.is_complete());
+        let views =
+            vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents];
+        let request = Request::new(
+            Basis {
+                root: index.root_path().to_path_buf(),
+                scope: ScanConfig::default().into(),
+                content: index.content_set(),
+            },
+            Query { views, ..Query::default() },
+            std::time::SystemTime::now(),
+        );
+        let mut report =
+            fdu_core::query::report(&index, &request, std::time::UNIX_EPOCH).expect("report");
+
+        verify_content_query_report(&index, &request, &report).expect("exact sections");
+        report.sections.swap(0, 1);
+        assert!(
+            verify_content_query_report(&index, &request, &report).is_err(),
+            "section order is part of the report answer"
+        );
     }
 
     #[test]

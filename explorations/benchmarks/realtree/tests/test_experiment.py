@@ -547,7 +547,9 @@ class SummaryRenderTests(unittest.TestCase):
             id="exp-054", title="Validate the campaign's cumulative effect on macOS"
         )
 
-        headline = summary.render([anchored, validation]).split("## Where it stands", 1)[1]
+        headline = summary.render([anchored, validation]).split(
+            "## Latest Comparison Against the Original Baseline", 1
+        )[1]
         headline = headline.split("\n## ", 1)[0]
 
         self.assertIn("exp-032", headline)
@@ -563,7 +565,9 @@ class SummaryRenderTests(unittest.TestCase):
         baseline["verdict"] = dict(baseline["verdict"], decision="baseline")
         later = self._anchored(id="exp-032", title="Cumulative effect of accepted changes")
 
-        headline = summary.render([baseline, later]).split("## Where it stands", 1)[1]
+        headline = summary.render([baseline, later]).split(
+            "## Latest Comparison Against the Original Baseline", 1
+        )[1]
         headline = headline.split("\n## ", 1)[0]
 
         self.assertIn("exp-032", headline)
@@ -571,7 +575,7 @@ class SummaryRenderTests(unittest.TestCase):
 
     def test_a_record_with_no_baseline_anchored_run_states_nothing(self) -> None:
         text = summary.render([self._experiment(title="Cumulative effect, but unanchored")])
-        self.assertNotIn("## Where it stands", text)
+        self.assertNotIn("## Latest Comparison Against the Original Baseline", text)
 
     def _with_wall(self, **wall_overrides):
         experiment = self._experiment()

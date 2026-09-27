@@ -9,7 +9,7 @@
 ## Overview
 
 fdu’s published speed numbers measure `fdu --cache off`, but the command people type is
-`fdu .`, and on the million-entry Linux benchmark tree the two differ by a quarter.
+`fdu .`, and on the million-entry Linux benchmark tree the two differ by a fifth.
 The default writes a metadata snapshot that no later `fdu .` reads, and the default
 `--view summary` builds a full per-entry index to report six numbers.
 Neither cost shows in the headline, and both are paid on every run.
@@ -49,6 +49,13 @@ macOS figures are not re-measured here: they come from the
 [the platform tuning guide](../guides/platform-tuning.md#snapshot-participation-is-a-cost-decision-and-apfs-reverses-its-conclusion),
 and the recorded experiments cited inline.
 
+The use-case table and the figures derived from it were measured on this branch after
+merging the code-analysis work ([#133](https://github.com/jlevy/fdu/pull/133), whose
+default tree is five levels deep with a 1% share floor) and shared metric resolution
+([#137](https://github.com/jlevy/fdu/pull/137)). The snapshot anatomy, the cache
+readers, and the CPU split were measured before that merge; neither change touches those
+paths.
+
 Excluded: cold-cache regimes (this host is virtualized, so cold reads say nothing about
 the device), Windows, and content-analysis internals beyond what the cache decision
 needs.
@@ -59,22 +66,23 @@ needs.
 
 | Use case | Command | What the answer needs | What fdu does today | Linux, fdu | Linux, fastest peer |
 | --- | --- | --- | --- | ---: | ---: |
-| Which directories are large? | `fdu .` | Roll-ups of directories to depth 2, ten children each | Full index, snapshot write, tree | 1.58 s | pdu 0.96 s |
-| Same, cache disabled | `fdu . --cache off` | Same | Full index, tree | 1.26 s | pdu 0.96 s |
-| Totals | `fdu . --view summary` | Six tallies, including the ignored share | Full index, snapshot write | 1.52 s | diskus 1.01 s |
-| Totals, no ignore share | `--view summary --no-gitignore` | Five tallies | Streaming reducer, nothing retained | **0.92 s** | diskus 1.01 s |
+| Which directories are large? | `fdu .` | Roll-ups through depth 5, rows of at least 1% of the root | Full index, snapshot write, tree | 1.51 s | pdu 1.09 s |
+| Same, cache disabled | `fdu . --cache off` | Same | Full index, tree | 1.25 s | pdu 1.09 s |
+| Totals | `fdu . --view summary` | Six tallies, including the ignored share | Full index, snapshot write | 1.45 s | diskus 1.02 s |
+| Totals, no ignore share | `--view summary --no-gitignore` | Five tallies | Streaming reducer, nothing retained | **0.93 s** | diskus 1.02 s |
 | Stale build directories | `--kind dir --include node_modules …` | Matching directories with their roll-ups | Full index, snapshot write | not measured | no peer |
 | Content metrics, repeated | `--analyze=lines` | Per-file records for unchanged files | Load snapshot, revalidate, restore sidecar | 8.8 s | no peer |
 | Live tree | `--watch`, Python `open` | A retained index | Load snapshot, revalidate, keep index | 1.00 s to first answer (probe) | no peer |
 
 All rows are screens except the peer columns, which agree with the harness matrices.
-The peer for each row does the same user-visible job: `pdu --max-depth 2` renders the
-same two-level size tree, and diskus returns the total.
+The peer for each row does the same user-visible job: pdu at its defaults renders a size
+tree that likewise hides entries under 1% of the total (0.98 s when also limited to
+depth 5), and diskus returns the total.
 
 Two rows stand out.
-The default tree pays 0.32 s over `--cache off` for the snapshot, and
-0.30 s more than pdu for the index.
-The default summary pays 0.31 s for a snapshot and 0.29 s for an index that the
+The default tree pays 0.26 s over `--cache off` for the snapshot, and
+0.16 s more than pdu for the index.
+The default summary pays 0.21 s for a snapshot and 0.32 s for an index that the
 `--no-gitignore` path shows it does not need.
 
 ### Anatomy of the snapshot write
@@ -101,7 +109,7 @@ A repeated run over an unchanged tree skips the write but not the cost.
 [exp-067](../experiments/exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md)
 (`fdu-2um8`) removed the identical rewrite, but proving the image identical still means
 encoding all of it, reading the existing 79 MB back, comparing it byte by byte, and
-checksumming it: `fdu .` measured 1.58 s repeated against 1.26 s with the cache off
+checksumming it: `fdu .` measured 1.51 s repeated against 1.25 s with the cache off
 (**screen**).
 
 All of it runs on one thread after the walk, and the command line joins that thread
@@ -109,7 +117,7 @@ before it exits, so every millisecond is on the user’s path.
 The recorded Linux leftover analysis
 ([exp-147](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md)) timed
 the isolated save at 23.6 ms on a 92,474-entry tree, about 5% of a first run; at a
-million entries the same stages cost a quarter of the run because the walk itself is so
+million entries the same stages cost a fifth of the run because the walk itself is so
 cheap on ext4.
 
 On macOS the write measured 90 ms over 175,128 entries (0.51 µs per entry, platform
@@ -164,7 +172,7 @@ Today every view except the `--no-gitignore` summary builds the full index, for 
 reason each: the tree renderer reads a retained index, and the summary reducer keeps no
 control table, so a request that observes `.gitignore` “falls closed” to the index
 ([the planner](../../../crates/fdu-core/src/execution.rs), `fdu-elnn`). Measured, that
-fallback costs 0.29 s (1.21 vs 0.92 s, screen) and 309 MiB before any snapshot, on a
+fallback costs 0.32 s (1.25 vs 0.93 s, screen) and 309 MiB before any snapshot, on a
 tree whose `.gitignore` count is zero.
 
 ### Why the ranking differs between macOS and Linux
@@ -200,9 +208,9 @@ Both come from building the index:
 - glibc’s allocator serializes the index builder and the walkers on each other’s arena
   locks; the unchanged binary under `LD_PRELOAD` mimalloc, jemalloc, or tcmalloc ran the
   indexed tree in 1.11 s, level with pdu, and forcing one glibc arena made it 3.3 s
-  (H155, `fdu-578e`);
+  (H159, `fdu-578e`);
 - freeing the million-entry index before exit cost 95 ms on the main thread, now moved
-  off the answer’s path (H152, exp-158, in this pass).
+  off the answer’s path (H156, exp-160, in this pass).
 
 Core count is not the cause: restricted to two cores the indexed tree trailed pdu by
 15%, and on four by 21% (**screen**).
@@ -268,7 +276,7 @@ the answer when there is only one.
 one.
 
 **Pros:**
-- Removes 0.32 s from `fdu .` and 0.29 s from the default summary on Linux at a million
+- Removes 0.26 s from `fdu .` and 0.21 s from the default summary on Linux at a million
   entries, and an estimated 0.3–0.5 s from the macOS default; stops writing 79 MB per
   run.
 - No default reader loses anything; analysis keeps its reuse through the sidecar.
@@ -310,8 +318,8 @@ cannot prove:
    records.
 
 **Pros:**
-- Targets the usual commands directly: default summary 1.52 s → about 0.92 s, and the
-  default tree toward pdu’s 0.96 s, with memory from 319 MiB to tens of MiB.
+- Targets the usual commands directly: default summary 1.45 s → about 0.93 s, and the
+  default tree toward pdu’s 1.09 s, with memory from 319 MiB to tens of MiB.
 - No snapshot is written because there is no index to write, so Option A follows for
   these views by construction.
 
@@ -324,7 +332,7 @@ cannot prove:
 ### Option D: Reduce the index’s user-space cost on Linux
 
 **Description:** Remove the glibc cross-thread frees and arena contention in the
-detached builder (H155, `fdu-578e`), and rerun the rejected direct file fold with the
+detached builder (H159, `fdu-578e`), and rerun the rejected direct file fold with the
 product job pre-registered (`fdu-o6um`).
 
 **Pros:**
@@ -364,8 +372,8 @@ product job pre-registered (`fdu-o6um`).
    already has `fdu-default-tree` and `fdu-index-summary` contracts, and the macOS table
    needs the same rerun.
 
-Expected Linux outcome at a million entries, before D: `fdu .` 1.58 s → about 1.26 s (A)
-→ toward 0.96 s (C.2); default summary 1.52 s → about 0.92 s (C.1). Each needs its own
+Expected Linux outcome at a million entries, before D: `fdu .` 1.51 s → about 1.25 s (A)
+→ toward 1.09 s (C.2); default summary 1.45 s → about 0.93 s (C.1). Each needs its own
 measurement under the accept rule.
 
 ## Next Steps
@@ -373,13 +381,13 @@ measurement under the accept rule.
 - [ ] Decide Option A, including whether it applies to Python `open` defaults
   (`fdu-0t1v`)
 - [ ] Measure the ignore-aware summary reducer (C.1, `fdu-1ovb`) under the accept rule
-- [ ] Re-prioritize H66 (`fdu-sk7v`) and H155 (`fdu-578e`)
+- [ ] Re-prioritize H66 (`fdu-sk7v`) and H159 (`fdu-578e`)
 - [ ] Measure default-invocation contracts on Linux and macOS through the harness
 - [ ] Decide the snapshot durability policy (`fdu-n75m` part 3) and hardware CRC-32C
 
 ## Methodology
 
-Linux measurements used the release build of this branch with H152 applied, on the
+Linux measurements used the release build of this branch with H156 applied, on the
 generated `balanced` tree at seed `fdu-balanced-v1`, warm-steady, quiet host.
 Harness rows are from the
 [Linux comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md) and its
@@ -405,9 +413,9 @@ Linux hardware.
 - [Cache layers and defaults plan](../specs/done/plan-2026-08-15-fdu-cache-layers-and-defaults.md)
 - [First Linux measurements](research-2026-08-13-linux-first-measurements.md)
 - [Hypothesis registry](../guides/performance-loop.md#hypotheses): H9, H66, H74, H85,
-  H108, H152–H155
+  H108, H156–H159
 - [Experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md):
-  exp-066, exp-067, exp-135, exp-147, exp-158
+  exp-066, exp-067, exp-135, exp-147, exp-160
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -1,16 +1,16 @@
 ---
-title: "Linux direct file fold and owned names miss 3% on cold-scan-index"
+title: Linux detached leaf-listing hold cuts futex wakes but not wall
 softschema:
   contract: fdu.performance:Experiment/v1
   schema: experiment.schema.yaml
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-159
-  title: "Linux direct file fold and owned names miss 3% on cold-scan-index"
+  id: exp-162
+  title: Linux detached leaf-listing hold cuts futex wakes but not wall
   date: "2026-09-27"
   hypotheses:
-    - H153
+    - H158
   subject:
     tree_label: linux-balanced-1m
     tree_root_id: f63cd4609c1b3460da3705470f726d21ff77564014c0a26b85711a735655836e
@@ -39,37 +39,37 @@ experiment:
     trials: 12
     warmups: 3
     interleaved: true
-    control: H152 probe
-    candidate: H152 plus direct file fold into the parent roll-up and owned walker names
+    control: H156 plus H157 probe
+    candidate: same probe holding leaf-only chunks until a batch fills
     control_binary:
       name: control
-      sha256: a0dc81d6dcf01f93f1cf7bad8c1b8130535580c448882d83e61a50af5d8413a6
-      size_bytes: 3388672
+      sha256: 2dcb573e10c9d809d972aa0a688996a7b456fa3831e84e3b30d3349e51abf919
+      size_bytes: 3385792
       args: []
     candidate_binary:
       name: candidate
-      sha256: 2dcb573e10c9d809d972aa0a688996a7b456fa3831e84e3b30d3349e51abf919
-      size_bytes: 3385792
+      sha256: 16f3ad216d361cd2e3590635d866e21152b2cc77d149062004e98d7c2a2f9051
+      size_bytes: 3386336
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /opt/fdu-bench/results/perf/run-linux-detached-alloc.json
+    run_artifact: /opt/fdu-bench/results/perf/run-linux-detached-hold.json
   results:
     - job: cold-scan-index
       start_state: cold
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 3195268063.5
-          candidate_median: 3119321913.0
-          control_p95_over_median: 1.026
-          candidate_p95_over_median: 1.044
-          change_pct: -2.222
-          ci95_low_pct: -4.045
-          ci95_high_pct: 0.041
+          control_median: 3135336371.0
+          candidate_median: 3163571738.0
+          control_p95_over_median: 1.021
+          candidate_p95_over_median: 1.019
+          change_pct: 0.879
+          ci95_low_pct: -0.17
+          ci95_high_pct: 1.943
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -77,13 +77,13 @@ experiment:
           noninferiority: noninferior
           pairs: 12
         component_ns:
-          control_median: 1284121085.0
-          candidate_median: 1243014864.0
-          control_p95_over_median: 1.045
-          candidate_p95_over_median: 1.039
-          change_pct: -4.124
-          ci95_low_pct: -7.404
-          ci95_high_pct: 1.249
+          control_median: 1237255685.0
+          candidate_median: 1233600224.0
+          control_p95_over_median: 1.019
+          candidate_p95_over_median: 1.028
+          change_pct: 0.236
+          ci95_low_pct: -1.641
+          ci95_high_pct: 2.545
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -91,13 +91,13 @@ experiment:
           noninferiority: noninferior
           pairs: 12
         cpu_ns:
-          control_median: 6326949000.0
-          candidate_median: 6237974500.0
-          control_p95_over_median: 1.016
-          candidate_p95_over_median: 1.042
-          change_pct: -1.539
-          ci95_low_pct: -3.366
-          ci95_high_pct: 0.665
+          control_median: 6218543500.0
+          candidate_median: 6276116500.0
+          control_p95_over_median: 1.017
+          candidate_p95_over_median: 1.012
+          change_pct: -0.145
+          ci95_low_pct: -0.64
+          ci95_high_pct: 2.453
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -105,13 +105,13 @@ experiment:
           noninferiority: noninferior
           pairs: 12
         user_cpu_ns:
-          control_median: 3040098500.0
-          candidate_median: 2987089000.0
-          control_p95_over_median: 1.034
-          candidate_p95_over_median: 1.03
-          change_pct: -4.555
-          ci95_low_pct: -5.393
-          ci95_high_pct: 1.46
+          control_median: 2966887500.0
+          candidate_median: 2946499500.0
+          control_p95_over_median: 1.02
+          candidate_p95_over_median: 1.019
+          change_pct: 0.023
+          ci95_low_pct: -3.597
+          ci95_high_pct: 2.018
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -119,13 +119,13 @@ experiment:
           noninferiority: noninferior
           pairs: 12
         system_cpu_ns:
-          control_median: 3254373500.0
-          candidate_median: 3272590500.0
-          control_p95_over_median: 1.039
-          candidate_p95_over_median: 1.062
-          change_pct: 0.214
-          ci95_low_pct: -1.911
-          ci95_high_pct: 4.096
+          control_median: 3275555500.0
+          candidate_median: 3322643000.0
+          control_p95_over_median: 1.024
+          candidate_p95_over_median: 1.021
+          change_pct: 3.078
+          ci95_low_pct: -1.356
+          ci95_high_pct: 4.081
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -133,18 +133,18 @@ experiment:
           noninferiority: inconclusive
           pairs: 12
         peak_rss_bytes:
-          control_median: 331933696.0
-          candidate_median: 323434496.0
-          control_p95_over_median: 1.057
-          candidate_p95_over_median: 1.055
-          change_pct: -1.709
-          ci95_low_pct: -5.293
-          ci95_high_pct: 1.493
+          control_median: 330289152.0
+          candidate_median: 331800576.0
+          control_p95_over_median: 1.036
+          candidate_p95_over_median: 1.06
+          change_pct: 0.643
+          ci95_low_pct: -1.802
+          ci95_high_pct: 4.462
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
-          noninferiority: noninferior
+          noninferiority: inconclusive
           pairs: 12
       qualification:
         campaign_stage: exploratory
@@ -175,13 +175,13 @@ experiment:
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 1857329355.5
-          candidate_median: 1832389269.5
-          control_p95_over_median: 1.046
-          candidate_p95_over_median: 1.035
-          change_pct: -3.104
-          ci95_low_pct: -7.33
-          ci95_high_pct: 5.197
+          control_median: 1878841485.5
+          candidate_median: 1909796592.5
+          control_p95_over_median: 1.055
+          candidate_p95_over_median: 1.039
+          change_pct: 1.051
+          ci95_low_pct: -5.921
+          ci95_high_pct: 12.679
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -189,13 +189,13 @@ experiment:
           noninferiority: inconclusive
           pairs: 12
         component_ns:
-          control_median: 1831507078.0
-          candidate_median: 1810713590.0
-          control_p95_over_median: 1.049
-          candidate_p95_over_median: 1.035
-          change_pct: -3.161
-          ci95_low_pct: -7.413
-          ci95_high_pct: 5.487
+          control_median: 1860068207.5
+          candidate_median: 1888769832.5
+          control_p95_over_median: 1.041
+          candidate_p95_over_median: 1.04
+          change_pct: 1.484
+          ci95_low_pct: -5.988
+          ci95_high_pct: 12.884
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -203,41 +203,41 @@ experiment:
           noninferiority: inconclusive
           pairs: 12
         cpu_ns:
-          control_median: 4880242000.0
-          candidate_median: 4838063500.0
-          control_p95_over_median: 1.039
-          candidate_p95_over_median: 1.022
-          change_pct: -1.965
-          ci95_low_pct: -3.618
-          ci95_high_pct: 0.727
+          control_median: 4946707000.0
+          candidate_median: 4963402000.0
+          control_p95_over_median: 1.032
+          candidate_p95_over_median: 1.035
+          change_pct: 0.799
+          ci95_low_pct: -3.332
+          ci95_high_pct: 3.19
+          significant: false
+          passes_acceptance: false
+          ci_excludes_zero: false
+          direction: unclear
+          noninferiority: inconclusive
+          pairs: 12
+        user_cpu_ns:
+          control_median: 1264584500.0
+          candidate_median: 1222093000.0
+          control_p95_over_median: 1.045
+          candidate_p95_over_median: 1.048
+          change_pct: -5.299
+          ci95_low_pct: -6.5
+          ci95_high_pct: 0.532
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           noninferiority: noninferior
           pairs: 12
-        user_cpu_ns:
-          control_median: 1332570500.0
-          candidate_median: 1221470000.0
-          control_p95_over_median: 1.046
-          candidate_p95_over_median: 1.08
-          change_pct: -9.199
-          ci95_low_pct: -15.026
-          ci95_high_pct: -2.272
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
-          noninferiority: superior
-          pairs: 12
         system_cpu_ns:
-          control_median: 3527192500.0
-          candidate_median: 3636620500.0
-          control_p95_over_median: 1.05
-          candidate_p95_over_median: 1.021
-          change_pct: 0.671
-          ci95_low_pct: -1.185
-          ci95_high_pct: 4.996
+          control_median: 3658402500.0
+          candidate_median: 3701889000.0
+          control_p95_over_median: 1.069
+          candidate_p95_over_median: 1.073
+          change_pct: 0.093
+          ci95_low_pct: -2.144
+          ci95_high_pct: 5.101
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -245,13 +245,13 @@ experiment:
           noninferiority: inconclusive
           pairs: 12
         peak_rss_bytes:
-          control_median: 443267072.0
-          candidate_median: 434495488.0
-          control_p95_over_median: 1.038
-          candidate_p95_over_median: 1.031
-          change_pct: -2.813
-          ci95_low_pct: -5.639
-          ci95_high_pct: 0.8
+          control_median: 436625408.0
+          candidate_median: 441278464.0
+          control_p95_over_median: 1.022
+          candidate_p95_over_median: 1.027
+          change_pct: 0.704
+          ci95_low_pct: -1.441
+          ci95_high_pct: 2.426
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -284,7 +284,7 @@ experiment:
         policy_rule: null
   reference_tools: []
   complexity:
-    lines_changed: 95
+    lines_changed: 60
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
@@ -293,41 +293,36 @@ experiment:
     decision: rejected
     primary_job: cold-scan-index
     primary_metric: wall_ns
-    change_pct: -2.222
-    reason: "quiet balanced-1m cold-scan-index -2.22% [-4.04%, +0.04%], component -4.12% [-7.40%, +1.25%]; allocations 7.03M to 4.28M; product CLI job -3.71% [-4.71%, -1.97%] is a lead for fdu-o6um, not a keep"
+    change_pct: 0.879
+    reason: "quiet balanced-1m cold-scan-index +0.88% [-0.17%, +1.94%]; futex calls 105,732 to 17,938"
     commit: null
     kept: control
 ---
 ## What was predicted
 
-H153: after H152, the detached index consumer still pays for allocations it does not
-need. For every file, `Index::contribution` built two roll-ups with a one-element
-extension map each — two 320-byte `BTreeMap` leaves allocated, merged into the parent,
-and freed on the single consumer thread — and every entry’s name was allocated twice on
-the walker (`DirEntry::file_name`, then `to_os_string`). Folding a file straight into
-its parent’s roll-up, with `contribution` defined through the same fold, and moving the
-owned name into the retained child removes about 2.7 million of 7.0 million allocations
-on the million-entry tree.
+H158: the detached walker publishes its directory listings after every claimed chunk,
+even a chunk of leaves that makes nothing new claimable.
+On Linux the index consumer drains faster than walkers publish, so nearly every send
+wakes a parked consumer: 105,732 `futex` calls on the million-entry tree.
+Holding leaf-only chunks until a batch’s worth of entries has accumulated — the rule the
+streaming emission already follows — keeps parent-first causality and removes most of
+those wakes.
 
 Named before recording: `cold-scan-index` wall down at least 3% with the interval below
 zero.
 
 ## What was measured
 
-Allocations fell from 7,032,800 to 4,282,804 and bytes allocated from 1.12 GB to 0.54 GB
-(counters). Quiet 12-pair probe run against the H152 build:
+`futex` calls fell from 105,732 to 17,938 (`strace -c`). Quiet 12-pair probe run against
+the H156 + H157 build:
 
-- `cold-scan-index`: −2.22% [−4.04%, +0.04%].
-- `default-tree-first`: −3.10% [−7.33%, +5.20%].
+- `cold-scan-index`: +0.88% [−0.17%, +1.94%].
+- `default-tree-first`: +1.05% [−5.92%, +12.68%].
 
 ## Decision
 
-Rejected: neither interval lies below zero.
-Allocation volume was not the constraint.
-A context-switch profile of the same build puts the consumer’s blocking on freeing
-walker-allocated child lists and path keys into walker-owned glibc arenas — an
-allocation *pattern* cost, which removing unrelated allocations does not touch (compare
-H74 and H85).
+Rejected. The handoff wakes were real but not on the critical path; the walkers, not the
+consumer, bound wall time on this host.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
