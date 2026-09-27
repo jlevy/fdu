@@ -371,10 +371,16 @@ That is what makes near-real-time visibility possible at that scale.
 It composes with the rule above: the journal narrows what must be checked, the walk
 remains the thing that checks it, and provenance records which of the two answered.
 
-A journal can omit history without saying so.
-macOS FSEvents reports `HistoryDone` after silently dropping events, so journal-derived
-values are labelled `Source::JournalScoped`, never verified, and age bounds and periodic
-sweeps are risk controls rather than correctness gates.
+A successful history replay does not prove that every change was retained and delivered.
+The August FSEvents spike observed missing expected history, but its unrecorded flags
+and lack of a known pre-mutation fence do not establish silent history purge as the
+cause; see the
+[replay findings](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md#phase-0-spike-findings-2026-08-10-run-on-this-host).
+Journal-derived values are labelled `Source::JournalScoped`, never verified, and age
+bounds and periodic sweeps are risk controls rather than correctness gates.
+The proposed opt-in contract is in the
+[replay design](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md#verification-policy-and-user-visible-trust);
+it does not change the default cold-answer invariant above.
 
 ## The Command-Line and Query Surface
 

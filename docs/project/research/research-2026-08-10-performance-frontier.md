@@ -8,6 +8,11 @@
 
 ## Overview
 
+The [cross-process refresh proposal](#proposed-cross-process-refresh-2026-09-26)
+summarizes the current FSEvents design, its evidence, and the remaining validation.
+The older timing observations below describe their recorded regimes, not a shipped
+history-replay implementation.
+
 The [original engine research](research-2026-08-06-file-rollup-engine.md) chose the
 architecture and catalogued proven techniques from twelve tools.
 The [evidence research](research-2026-08-09-end-to-end-performance-evidence.md) defined
@@ -815,12 +820,14 @@ settles how the journal-resume module should be built:
   accompanying path is not meaningful), with a bounded wait.
   Match the plan: global dropped-event flags and `EventIdsWrapped` require a full sweep;
   a scoped `MustScanSubDirs` requires subtree reconciliation.
-  The new resume token — the max of the per-event IDs captured *inside* the callback,
-  not a cross-thread `GetLatestEventId` read — is persisted only after the corresponding
-  deltas are applied. `FullHistory` (macOS 10.15+) is load-bearing, not optional: Apple’s
-  header documents that without it, events near the sinceWhen boundary can be **silently
-  skipped** because history is stored in coalesced chunks; with it, replay is
-  overlapping, which fdu’s idempotent observations must absorb.
+  Persist a completed boundary in the same per-device ID domain only after the
+  corresponding observations are applied.
+  The maximum root-local event ID cannot advance a quiet root safely; the committed
+  probe must establish the stream-wide completion rule.
+  `FullHistory` (macOS 10.15+) is load-bearing, not optional: Apple’s header documents
+  that without it, events near the sinceWhen boundary can be **silently skipped**
+  because history is stored in coalesced chunks; with it, replay is overlapping, which
+  fdu’s idempotent observations must absorb.
   Journal availability belongs in the gate and the probe: UUID lookup can fail, logging
   can be disabled, and retention is finite.
   UUID equality and successful replay-through-`HistoryDone` do **not** prove complete
@@ -1425,6 +1432,126 @@ checkpoint store, and report physical free-space change alongside entry sums.
 Per-path sums count every hard link in full unless files are counted once per
 `(dev, inode)`, and APFS clones and snapshots share blocks that no per-entry sum sees,
 so those sums are not a promise of reclaimable space.
+
+### Proposed Cross-Process Refresh (2026-09-26)
+
+The target is a second visit to a large local macOS tree: retain the first inventory,
+exit fdu, and later update the scopes changed during its absence.
+The system `fseventsd` maintains the history; an fdu daemon or resident watcher is
+unnecessary. Apple’s
+[persistent event guide](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/FSEvents_ProgGuide/UsingtheFSEventsFramework/UsingtheFSEventsFramework.html)
+describes replay while an application was stopped, including across reboots, and
+recommends per-device streams for persistence.
+Its advisory-history caveat still applies.
+Spotlight’s selective search index supplies neither the required before-state nor
+evidence that every changed or deleted path was covered.
+
+The evidence and implementation are at different stages:
+
+| Item | Established | Remaining |
+| --- | --- | --- |
+| Spotlight coverage check | The two September queries returned very different coverage, including zero under one populated cache | No controlled completeness or storage-delta benchmark; unsuitable as accounting authority |
+| August FSEvents scratch spike | Deep append produced an event despite unchanged directory mtimes; creates/clones and dispatch delivery worked in observed runs | Source and flags were not retained; no reproducible acceptance result |
+| September reproducible probe | Separate-process quiet, mixed, and deep-append candidates matched an independent metadata oracle; omitted-scope controls detected mutations | `FullHistory` overlap widened work to the root; elapsed-gap, reboot, loss, and engine parity remain untested |
+| Historical replay cost | Empty replay ranged from roughly 9–33 ms to 193–487 ms; synthetic older cursors reached about 2 s | Actual elapsed-gap trials and whole-command costs |
+| Missing expected history | An ancient synthetic cursor returned little history without a warning | Unknown pre-mutation fence and flags prevent attributing the cause to retention loss |
+| Shipped engine | Inventory, exact commits, bulk reconciliation, live observation, and `JournalScoped` trust vocabulary | No saved replay cursor, replay producer, or cross-process replay acceptance tests |
+
+The current snapshot format is flat and rebuilds its index on load.
+Existing live-watch tests establish resident behavior; they do not establish delivery
+during process absence.
+The
+[probe and implementation plan](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+owns the current validation status and detailed gates.
+
+The proposed transaction is:
+
+```text
+first run: capture pre-scan fence -> scan -> publish inventory and fence -> exit
+between runs: macOS records available history; fdu is stopped
+later run: load compatible inventory -> gate -> replay -> normalize dirty scopes
+          -> observe filesystem -> exact commits -> publish inventory and applied fence
+gate failure: full scan/reconciliation -> publish a new conservative fence
+```
+
+The initial support scope is one local volume, with the engine’s normal root and scope
+checks. File events nominate parent relists; directory events may require subtree
+reconciliation. Ambiguous or lost history widens to a sweep.
+Repeated events observe current facts again, so an append from 100 to 160 bytes
+contributes 60 once even if three events name it.
+Control-file edits use the existing classification invalidation rules.
+Hard-link aliases and root replacement need dedicated oracle cases.
+
+The proposal keeps full verification as the default.
+A caller explicitly accepting journal-scoped results may use replay with stronger sweep
+fallback. Cache policy and tree size cannot silently select that weaker guarantee.
+The shared request and answer models must carry this distinction, including visible text
+output and persisted trust; an untouched retained fact must not acquire a new
+observation timestamp or become verified merely because replay completed.
+Interactive provisional output followed by a background sweep is a later extension
+requiring a proof that subtree trust composes.
+
+The snapshot carries the inventory, applied per-device cursor, journal database UUID,
+last full-verification time, and replay count in one atomic publication.
+A known pre-scan fence protects against skipping mutations racing the walk; it does not
+freeze the filesystem.
+Advancing a cursor requires a proven completed boundary even when the root had no
+events. Failed saves, cancellation, and competing writers must never publish progress
+ahead of facts. Typed inaccessible gaps are needed before a denied subtree can count as
+applied work. Until then, limit successful persisted replay to complete roots and
+preserve the previous baseline on partial failure.
+
+The existing `watch` build feature can contain both native replay and live observation,
+with separate runtime requests and lifetimes.
+This keeps the dependency optional without introducing another optional-capability build
+feature. The exploratory probe does not need to change shipped dependencies.
+Exclude managed inventory and checkpoint stores through an explicit scan-scope policy
+shared by every route, since writing them under a home root otherwise creates
+self-generated changes.
+
+Filesystem work can shrink to dirty scopes, but total cost remains:
+
+```text
+load + replay(history) + observe(dirty-scope entries) + update(ancestors)
+     + persist + render(requested output)
+```
+
+The flat image keeps load/save proportional to the whole tree.
+Persisted aggregates, lazy blocks, and bounded changed-state publication (`fdu-yr23`,
+`fdu-pdra`, `fdu-3dtq`) are needed before claiming cost independent of unchanged
+entries. A single edit among 100,000 siblings may still cause a large relist, and
+unrelated volume traffic can increase replay cost.
+Measure all of these terms against the current full scan.
+
+The [reproducible probe](../../../explorations/fsevents-replay/README.md) supplies exact
+flags and fences, separate capture/replay processes, a full-scan oracle, and negative
+controls that detect omitted scopes.
+Its immediate tests support the mechanism, but `FullHistory` replayed old creation
+events and widened even quiet refreshes to the fixture root under conservative subtree
+normalization.
+Keep those events; measure whether immediate relists can avoid unnecessary
+recursive work without losing correctness.
+`fdu-uwhl` remains open for the rest of its acceptance matrix.
+Record 1-hour, 24-hour, 48-hour, 7-day, reboot, and moved-volume cases separately; a
+same-session success cannot close them.
+Then implement cursor/gate (`fdu-2cdv`), native replay (`fdu-3tun`), route selection
+(`fdu-6ld9`), scoped reconciliation (`fdu-rvje`), and whole-command evidence
+(`fdu-hs10`). The provisional 24-hour and 20-open limits remain unvalidated risk
+controls, not retention guarantees or evidence for next-day speed.
+
+Durable before/after comparisons are independently useful and belong to the
+[checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md).
+They can initially use full scans.
+Replay accelerates obtaining the next inventory; checkpoint storage preserves a
+historical baseline that the replaceable cache cannot.
+The motivating application is the checkpoint plan’s
+[disk-pressure workflow](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#disk-pressure-workflow-where-did-the-space-go):
+attribute GB-scale agent-development growth across selected home, application, and
+temporary roots in seconds, comparing actual retained hour/day boundaries.
+This is additional to ordinary directory roll-ups and cache-assisted content analysis,
+not a replacement for them.
+Events cannot reconstruct old byte counts without a saved baseline, and path growth
+cannot by itself prove which process caused it.
 
 ## Key Insights
 
