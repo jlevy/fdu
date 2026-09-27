@@ -332,6 +332,67 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertIn("8,192", note)
         self.assertIn("not an assertion", note)
 
+    def test_render_reports_absolute_file_and_allocated_byte_rates(self) -> None:
+        wall = {"median": 2_000_000_000}
+        rss = {"median": 8 * 1024 * 1024}
+        comparison = {
+            "median_change_pct": 50.0,
+            "ci95_change_pct": [40.0, 60.0],
+        }
+        document = {
+            "anchor": "fdu",
+            "baseline_drift": [],
+            "competitor_order": ["du"],
+            "conditions": {"storage": "internal APFS SSD"},
+            "host": {"cpu_model": "Fixture CPU"},
+            "invalid_samples": 0,
+            "overall": {"fdu": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
+            "semantic_mismatches": [],
+            "statistics": {
+                "du": {
+                    "competitor_vs_fdu": {"wall_ns": comparison},
+                    "fdu_vs_competitor": {
+                        "policy_stability": {"stable": False},
+                        "qualification": {
+                            "classification": "inconclusive",
+                            "confirmable": False,
+                            "reasons": [],
+                        },
+                    },
+                    "tools": {"du": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
+                }
+            },
+            "summary_oracle_mismatches": [],
+            "tools": {
+                "fdu": {"work_class": "indexed-tree"},
+                "du": {"work_class": "total-only"},
+            },
+            "tree": {
+                "counts": {"files": 500_000, "total": 600_001},
+                "hardlinks": {"duplicate_allocated_bytes": 0, "duplicate_file_entries": 0},
+                "sizes": {"allocated_bytes": 3_000_000_000},
+            },
+            "tree_mutated_during_run": [],
+        }
+
+        rendered = compare_tools.render(document)
+
+        self.assertIn(
+            "| Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |",
+            rendered,
+        )
+        self.assertIn("| fdu | indexed-tree | 2.0 s | baseline | 250k | 1.5 |", rendered)
+        self.assertIn("| du | total-only | 2.0 s | +50% | 250k | 1.5 |", rendered)
+        self.assertIn("Rates divide the subject's 500,000 regular files", rendered)
+        self.assertIn("3,000,000,000 allocated bytes", rendered)
+
+    def test_compact_rates_preserve_small_measurements(self) -> None:
+        wall = {"median": 36_000_000}
+        tree = {"counts": {"files": 9}, "sizes": {"allocated_bytes": 4096}}
+
+        self.assertEqual(compare_tools._seconds(wall), "0.036 s")
+        self.assertEqual(compare_tools._throughput(tree, wall), ("250", "0.00011"))
+
     def test_dumac_is_explicitly_total_only(self) -> None:
         contract = compare_tools.CONTRACTS["dumac"]
 

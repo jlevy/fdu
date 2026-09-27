@@ -1,26 +1,23 @@
 # fdu
 
-**Fast, incremental file roll-up engine:** `fd` and `du`, read as “fast du”.
+**Fast disk usage skill, `du` replacement, and file roll-up engine for Python and
+Rust.**
 
-One walk over a directory tree answers, for every directory at once, how big it is, how
-many files it holds, what changed most recently, and what kinds of files it contains.
-The index is cached between runs and can be kept live as the tree changes.
+On our million-entry macOS benchmark, fdu delivers **over 8× the throughput of standard
+`du`**, **about 60% more than dust**, a Rust `du` replacement, and **roughly 10% more
+than [dumac](https://github.com/healeycodes/dumac#readme)**, previously the fastest disk
+usage roll-up tool we knew of for macOS. Unlike dumac’s size total, fdu builds a
+reusable index with counts, sizes, recency, and file-type tallies for every directory.
+See [Speed](#speed) for the paired measurements and limits.
 
-The same engine ships three ways:
+Use fdu to find what takes up space, locate old build directories, or summarize a tree
+without writing a filesystem walker.
+The same engine serves coding agents through a self-contained skill and ships as:
 
 - **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
 - **Python package:** typed, immutable values plus the native `fdu` command
 - **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
   long-lived opened root)
-
-On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
-over 1,000,001 generated entries in a **5.206-second median**. The same paired run:
-dumac **+11.3%**, diskus **+34.7%**, dust **+60.6%**, dua **+63.1%**, BSD `du`
-**+898%**. The host was loaded; pairing is what makes those comparisons fair.
-See [Speed](#speed).
-
-**0.x:** A minor release may change the command line or either API;
-[the release process](docs/project/guides/release-process.md) states the rules.
 
 ## Set Up with Any Coding Agent
 
@@ -277,68 +274,35 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
-On an older MacBook, it can tally file sizes at roughly 200K files/sec and analyze lines
-of code at roughly 4M lines/sec after caching.
-[The 2026-09-18 installed-CLI QA](docs/project/reports/report-2026-09-18-cli-installed-qa.md)
-has the log.
+On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.0
+seconds**, covering **146k files/s** and **0.50 GB/s**. Measured on an M1 Pro’s internal
+APFS SSD with warm filesystem caches and fdu’s cache disabled, 2026-09-26. These are
+approximate local results under background load.
 
-**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
-with its cache disabled built a reusable exact index and ten-row tree over a generated
-1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
-tool on an M1 Pro with a local APFS SSD, warm filesystem cache, one independent
-full-tree fingerprint.
-The host was busy (load 7.7–9.9 on ten cores).
-The absolute seconds are a loaded-host number; the paired percentages are the
-comparison.
+| Tool | Work returned | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **fdu** | reusable exact index and ten-row tree | **6.0 s** | baseline | **146k** | **0.50** |
+| dumac | allocated-byte total only | 6.3 s | **+8%** | 138k | 0.47 |
+| diskus | scalar total only | 8.7 s | +45% | 101k | 0.35 |
+| pdu | rendered tree | 9.2 s | +53% | 95k | 0.32 |
+| dust | allocated-byte total only | 9.6 s | +59% | 91k | 0.31 |
+| dua | scalar total only | 9.7 s | +63% | 90k | 0.31 |
+| gdu | rendered tree | 10.4 s | +64% | 84k | 0.29 |
+| BSD `du` | one total, serial | 49.3 s | +717% | 18k | 0.061 |
+| ncdu | reusable index | 60.6 s | +910% | 14k | 0.049 |
+| GNU `du` | one total, serial | 62.1 s | +955% | 14k | 0.048 |
 
-| Tool | Work returned | Median | Versus paired fdu |
-| --- | --- | ---: | ---: |
-| **fdu** | reusable exact index and ten-row tree | **5.206 s** | baseline |
-| dumac | allocated-byte total only | 5.637 s | **+11.3%** |
-| diskus | scalar total only | 6.972 s | +34.7% |
-| dust | allocated-byte total only | 8.292 s | +60.6% |
-| dua | scalar total only | 8.744 s | +63.1% |
-| BSD `du` | one total, serial | 51.226 s | +898% |
-| GNU `du` | one total, serial | 65.775 s | +1177% |
+Positive percentages mean extra elapsed time: +60% means 1.6× as long as the adjacent
+fdu run. Rates count regular files and their disk space, not file-content reads; `k`
+means thousands and GB is decimal.
+See the
+[full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+for methodology, memory use, confidence intervals, and exact results.
 
-Each competitor was reduced to one number.
-fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
-per-extension roll-ups, and kept the index that answers the next question without
-another walk. dumac’s 95% interval was +5.8% to +13.5%.
-
-The answers agree, too.
-On quiet trees, fdu’s allocated totals equal GNU du `--count-links` to the byte; on
-`~/Library`, which changes while it is measured, every tool lands within that movement,
-or short by what the folders it reported giving up on hold, except one dua reading that
-cannot be checked because dua does not name the folders it skips.
-The other differences have measured causes: fdu counts a hard-linked file once per path,
-and counts neither a symbolic link’s own size nor a directory’s.
-[The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
-has the tables.
-
-fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
-million-entry index and dumac retained one integer.
-`fdu --no-gitignore --view summary` keeps the aggregate-only tier, which returns the
-same tallies without retaining that index: **15.0 MiB** against 285.4 MiB for the tree
-view in a separate fdu-only round-robin.
-That tier buys memory, not time.
-
-Linux evidence is real and improving, from virtualized hosts.
-The most recent campaign on a 450k-entry tree, measured against its own starting point:
-warm snapshot load **−31.4%**, warm revalidate **−25.3%**, cold indexed scan **−9.1%**.
-A warm open now runs about 23% faster than a cold scan, where that campaign began with
-it 69% *slower*. Windows builds and passes tests; no performance claim is made there.
-
-A second run on an unchanged tree is a different job.
-Metadata-only one-shots still revalidate; `--analyze` reuses unchanged file-body results
-from a content sidecar.
-The trustworthy floor for a warm metadata run is still one stat per entry: directory
-mtimes do not record in-place edits.
-
-[The full comparison](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
-has the method and the limits.
-[The performance campaign status](docs/project/reports/report-2026-08-14-performance-campaign-status.md)
-is the place to start on the evidence as a whole.
+Linux offers the same reports, live updates, and Python and Rust APIs.
+A [fresh Linux comparison](explorations/benchmarks/README.md#linux-comparison-rerun) is
+queued after recent optimizations; older results do not establish the current ranking.
+Windows builds and passes tests but has not been performance-benchmarked.
 
 ## Why
 
@@ -367,6 +331,9 @@ The survey is in
 - [Changelog](CHANGELOG.md)
 
 ## Development
+
+During 0.x, a minor release may change the command line or either API. See the
+[release process](docs/project/guides/release-process.md).
 
 ```shell
 make check    # handoff gate: fmt, clippy, tests, docs, lib-only build
