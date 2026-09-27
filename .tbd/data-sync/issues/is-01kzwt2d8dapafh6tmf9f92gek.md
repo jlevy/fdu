@@ -5,7 +5,7 @@ title: Extend comparative evidence to Linux
 kind: task
 status: open
 priority: 2
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -13,9 +13,9 @@ labels:
 dependencies: []
 parent_id: is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-13T05:38:39.500Z
-updated_at: 2026-08-13T18:11:52.731Z
+updated_at: 2026-09-27T06:38:46.006Z
 ---
-Repeat the claim-grade paired comparison on a controlled Linux local-SSD host using the portable backend, then add Linux numbers to the comparison report and white paper. Include exact binary/host/corpus provenance, the full oracle, pre/post fingerprint, a controlled or explicitly classified OS-cache state, and profile-backed follow-up hypotheses such as statx/getdents/io_uring only when measurements justify them.
+Repeat the claim-grade paired comparison on a controlled Linux local-SSD host using the portable backend, then add Linux numbers to the comparison report and white paper. Include exact binary/host/corpus provenance, the full oracle, pre/post fingerprint, a controlled or explicitly classified OS-cache state, and profile-backed follow-up hypotheses such as statx/getdents/io_uring only when measurements justify them. The Linux Comparison Rerun section in explorations/benchmarks/README.md provides the current warm-steady setup, seven supported peers, separate indexed and summary runs, and storage/evidence rules. Refresh current peer rankings before asserting whether the latest Linux build is faster or slower; earlier VM comparisons predate subsequent optimization.
 
 ## Notes
 
