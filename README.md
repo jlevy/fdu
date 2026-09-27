@@ -332,10 +332,12 @@ Windows builds and passes tests but has not been performance-benchmarked.
 ### Multi-View Reports
 
 Report construction has a separate result.
-On a 137,085-entry macOS tree, a loop that constructed the unfiltered Types, Families,
-Languages, and Documents views 100 times from an already line-analyzed index took 12.0
-seconds, down from 29.9 seconds—about **2.5× faster**, or roughly 120 ms instead of 299
-ms per report.
+In an exploratory, uncontrolled macOS benchmark on a 137,085-entry tree, a loop that
+constructed the unfiltered Types, Families, Languages, and Documents views 100 times
+from an already line-analyzed index took 12.0 seconds, down from 29.9 seconds—about
+**2.5× faster**, or roughly 120 ms instead of 299 ms per report.
+The code is retained provisionally; a quiet run must still resolve the inconclusive
+major-fault gate before the experiment is accepted.
 
 This is not a scan or end-to-end full-analysis speedup.
 It applies only to unfiltered requests with multiple metric views; the default

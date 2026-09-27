@@ -67,15 +67,16 @@ It is the range the *unchanged* binary itself covered across those five runs, an
 the scale any movement between checkpoints has to be read against.
 On the producer job it is 35%, which is wider than several of the steps.
 
-**Current multi-view report construction.** H153 is a later incremental comparison on a
-137,085-entry macOS tree.
+**Current multi-view report construction.** H153 is a later exploratory, uncontrolled
+incremental comparison on a 137,085-entry macOS tree.
 Its 100-report loop for the unfiltered Types, Families, Languages, and Documents views
 moved from 29.9 seconds to 12.0 seconds: a paired −59.94%, or about 2.5× faster.
 The whole probe moved from 38.6 seconds to 20.6 seconds, a paired −47.01%, after one
 fresh scan and line-analysis setup was amortized across all 100 reports.
 These are report-projection results, not current scan speed or a one-shot full-analysis
-measurement. See
-[exp-159](../experiments/exp-159-share-content-metric-resolution-across-views.md).
+measurement. The candidate remains provisional because the major-fault non-regression
+gate was inconclusive; a quiet confirming run is still needed.
+See [exp-159](../experiments/exp-159-share-content-metric-resolution-across-views.md).
 
 **Relative.** Every experiment’s paired effect on its primary job with its 95% interval,
 sorted by effect, against the -3% accept threshold.

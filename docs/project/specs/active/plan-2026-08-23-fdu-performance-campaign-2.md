@@ -268,15 +268,16 @@ exp-106 (H107 rejected on metabrowser), exp-107 (H108 confirmed: second `fdu PAT
 `cold scan`), then H112 timers kept, H115 accepted (−9.69% cache-hit wall), H120
 accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, H116/H118/H119 rejected or
 screened, and H124 rejected (exp-121). H152 then added the exact multi-view report
-oracle, and H153 accepted a platform-neutral one-pass metric aggregation, measured on
-Darwin, on the current 137,085-entry metabrowser tree: `content-query` wall −47.01%
-[−47.49%, −45.23%], component −59.94%, with RSS and minor faults non-inferior.
-Linux magnitude remains unmeasured.
-The live next-up list, host-regime note, and subject sizes are in
+oracle, and H153 provisionally retained a platform-neutral one-pass metric aggregation,
+measured in an uncontrolled Darwin cell on the current 137,085-entry metabrowser tree:
+`content-query` wall −47.01% [−47.49%, −45.23%], component −59.94%, with RSS and minor
+faults non-inferior.
+Major-fault non-regression remains inconclusive; quiet confirmation and Linux magnitude
+remain unmeasured. The current next-up work is quiet H153 confirmation, H154 Linux
+replication, and H155 post-H153 profiling, with host regime and subject details in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
-The remaining unaddressed queue after that overnight is
-[the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
-this file’s 2026-08-23 Tier 1–3 list.
+Earlier H116–H120 planning is in
+[the historical post-H115 queue](plan-2026-09-19-post-h115-remaining-headroom.md).
 H86’s remaining gap is still the Linux floor after H111 failed on
 [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
 That is not a rewrite, and not this Darwin host.

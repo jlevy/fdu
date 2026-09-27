@@ -240,7 +240,7 @@ dead end.
 | 156 | [Progress indicator without a handle against main](#exp156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
 | 157 | [Progress handle attached against no handle](#exp157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
 | 158 | [Current content-query oracle and leftover](#exp158--current-contentquery-oracle-and-leftover) | H152 | `content-query` | +1.0% | ✅ accepted |
-| 159 | [Share content metric resolution across views](#exp159--share-content-metric-resolution-across-views) | H153 | `content-query` | -47.0% | ✅ accepted |
+| 159 | [Share content metric resolution across views](#exp159--share-content-metric-resolution-across-views) | H153 | `content-query` | -47.0% | ⏳ in progress |
 | 160 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp160--linux-oneshot-index-release-off-the-answer-path-clears-3-on-defaulttree) | H156 | `default-tree` | -3.2% | ✅ accepted |
 | 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
 | 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
@@ -5330,7 +5330,7 @@ Full record:
 
 ### exp-159 — Share content metric resolution across views
 
-✅ accepted · 2026-09-27 · H153 · commit `d0902cfd`
+⏳ in progress · 2026-09-27 · H153 · commit `d0902cfd`
 
 Control: release probe at 1ba06b19 with independent metric resolution
 
@@ -5354,9 +5354,10 @@ and tests guard it.
 266 insertions and 130 deletions in query_report.rs, including focused tests; no
 dependencies, unsafe code, public API, or persistent identity
 
-**Accepted:** one-pass shared metric resolution cut the 100-report probe wall 47.01%
-[45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the
-platform-neutral algorithmic cut.
+**In-progress:** one-pass shared metric resolution cut the exploratory 100-report probe
+wall 47.01% [45.23%, 47.49%] with exact report identity; candidate retained
+provisionally because the predeclared major-fault non-regression gate and quiet-host
+confirmation remain open.
 
 Full record:
 [`exp-159-share-content-metric-resolution-across-views.md`](../experiments/exp-159-share-content-metric-resolution-across-views.md)
@@ -5717,7 +5718,7 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
-| 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ✅ accepted |
+| 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ⏳ in progress |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
