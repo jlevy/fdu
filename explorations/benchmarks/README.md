@@ -210,7 +210,83 @@ the subject creates.
 It never means an fdu snapshot was used, and it never implies that all dentries, inodes,
 vnodes, or APFS metadata blocks remained resident.
 
-### Future Linux warm and cold comparison
+### Linux Comparison Rerun
+
+Use the current release build on a quiet Linux host with the corpus on a local SSD. The
+older Linux studies tested earlier builds and different jobs; rerun before making a
+current ranking claim.
+Track the refresh as `fdu-nffc`.
+
+Before setup, choose existing writable directories: `FDU_BUILD_DIR` for disposable
+builds and caches, and `FDU_BENCH_DIR` on the SSD being measured.
+Give this checkout its own build directory.
+Install and verify dust, gdu, pdu, ncdu, diskus, dua, and GNU du before measurement; the
+harness records their versions and executable hashes.
+
+```shell
+set -eu
+: "${FDU_BUILD_DIR:?Set an existing build-scratch directory}"
+: "${FDU_BENCH_DIR:?Set an existing directory on the measured local SSD}"
+test -d "$FDU_BUILD_DIR"
+test -w "$FDU_BUILD_DIR"
+test -d "$FDU_BENCH_DIR"
+test -w "$FDU_BENCH_DIR"
+findmnt --target "$FDU_BENCH_DIR"
+df -h "$FDU_BENCH_DIR"
+df -i "$FDU_BENCH_DIR"
+export TMPDIR="$FDU_BUILD_DIR/tmp"
+export CARGO_TARGET_DIR="$FDU_BUILD_DIR/target"
+export UV_CACHE_DIR="$FDU_BUILD_DIR/uv-cache"
+export UV_PROJECT_ENVIRONMENT="$FDU_BUILD_DIR/venv"
+mkdir -p "$TMPDIR" "$FDU_BUILD_DIR/artifacts"
+test -z "$(git status --porcelain)"
+make check
+cargo build --locked --release -p fdu
+export FDU_BIN="$FDU_BUILD_DIR/artifacts/fdu-$(git rev-parse --short HEAD)"
+test ! -e "$FDU_BIN"
+cp "$CARGO_TARGET_DIR/release/fdu" "$FDU_BIN"
+
+export TMPDIR="$FDU_BENCH_DIR/tmp"
+mkdir -p "$TMPDIR" "$FDU_BENCH_DIR/results"
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate create \
+  --recipe balanced --entries 1000000 --work-dir "$FDU_BENCH_DIR/subjects"
+```
+
+Set `FDU_RUN_ROOT` to the returned `run_root`. Measure only its `corpus` subdirectory;
+keep binaries, caches, and results outside it.
+Stop builds and other disk-heavy work.
+
+```shell
+: "${FDU_RUN_ROOT:?Set run_root from the generator output}"
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate verify \
+  --run-root "$FDU_RUN_ROOT"
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
+  uv run --project explorations/benchmarks --frozen \
+  python -m benchmarks.realtree.compare_tools \
+  --root "$FDU_RUN_ROOT/corpus" --label linux-balanced-1m \
+  --anchor "fdu=$FDU_BIN" \
+  --tool "dust=$(command -v dust)" --tool "gdu=$(command -v gdu)" \
+  --tool "pdu=$(command -v pdu)" --tool "ncdu=$(command -v ncdu)" \
+  --tool "diskus=$(command -v diskus)" --tool "dua=$(command -v dua)" \
+  --tool "gnu-du=$(command -v du)" --trials 12 --warmups 3 \
+  --host-regime quiet --storage 'Linux local SSD' \
+  --baseline-output "$FDU_BENCH_DIR/results/linux-balanced-1m.json" \
+  --output-dir "$FDU_BENCH_DIR/results" --name linux-balanced-1m-indexed
+```
+
+Repeat with `--anchor "fdu:fdu-transient-summary=$FDU_BIN"` and distinct `--name` and
+`--baseline-output` values to measure summary mode separately.
+Also run on a frozen representative real tree before generalizing beyond the generated
+corpus. The current adapters cover the seven peers above; dut needs its own verified
+adapter before joining the matrix.
+
+Publish both modes, host/cache conditions, memory use, validity checks, and raw samples.
+Do not weaken the quiet gate or infer a ranking from earlier fdu-versus-fdu
+improvements. The existing runner establishes `warm-steady`, not controlled-cold.
+Keep the evidence outside disposable scratch; clean up only the recorded generator
+`run_root` with `benchmarks.generate cleanup` after results are preserved.
+
+### Future Linux Cold Comparison
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)

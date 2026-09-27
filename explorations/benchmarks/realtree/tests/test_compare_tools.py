@@ -377,10 +377,21 @@ class ToolComparisonTests(unittest.TestCase):
 
         rendered = compare_tools.render(document)
 
-        self.assertIn("| Files/s | Allocated GB/s |", rendered)
-        self.assertIn("| fdu | indexed-tree | 2.000 s | 250,000 | 1.500 |", rendered)
+        self.assertIn(
+            "| Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |",
+            rendered,
+        )
+        self.assertIn("| fdu | indexed-tree | 2.0 s | baseline | 250k | 1.5 |", rendered)
+        self.assertIn("| du | total-only | 2.0 s | +50% | 250k | 1.5 |", rendered)
         self.assertIn("Rates divide the subject's 500,000 regular files", rendered)
         self.assertIn("3,000,000,000 allocated bytes", rendered)
+
+    def test_compact_rates_preserve_small_measurements(self) -> None:
+        wall = {"median": 36_000_000}
+        tree = {"counts": {"files": 9}, "sizes": {"allocated_bytes": 4096}}
+
+        self.assertEqual(compare_tools._seconds(wall), "0.036 s")
+        self.assertEqual(compare_tools._throughput(tree, wall), ("250", "0.00011"))
 
     def test_dumac_is_explicitly_total_only(self) -> None:
         contract = compare_tools.CONTRACTS["dumac"]

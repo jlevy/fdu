@@ -274,80 +274,35 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
-On an older MacBook, it can tally file sizes at roughly 200K files/sec and analyze lines
-of code at roughly 4M lines/sec after caching.
-[The 2026-09-18 installed-CLI QA](docs/project/reports/report-2026-09-18-cli-installed-qa.md)
-has the log.
+On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.0
+seconds**, covering **146k files/s** and **0.50 GB/s**. Measured on an M1 Pro’s internal
+APFS SSD with warm filesystem caches and fdu’s cache disabled, 2026-09-26. These are
+approximate local results under background load.
 
-**Exploratory macOS calibration, 2026-09-26.** A fresh process with its cache disabled
-built a reusable exact index and ten-row tree over a generated 1,000,001-entry corpus in
-a **5.991-second median**: **146,050 files/s** and **0.499 allocated GB/s**. The matrix
-used twelve adjacent paired trials per tool on an M1 Pro with an internal APFS SSD, warm
-filesystem cache, and one independent full-tree fingerprint.
-The host regime was uncontrolled, so the absolute seconds describe that loaded host; the
-paired percentages are the stronger comparison.
-
-| Tool | Work returned | Median | Files/s | Allocated GB/s | Versus paired fdu |
+| Tool | Work returned | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |
 | --- | --- | ---: | ---: | ---: | ---: |
-| **fdu** | reusable exact index and ten-row tree | **5.991 s** | **146,050** | **0.499** | baseline |
-| dumac | allocated-byte total only | 6.333 s | 138,169 | 0.472 | **+8.2%** |
-| diskus | scalar total only | 8.653 s | 101,124 | 0.345 | +45.1% |
-| pdu | rendered tree | 9.246 s | 94,640 | 0.323 | +53.1% |
-| dust | allocated-byte total only | 9.604 s | 91,112 | 0.311 | +59.5% |
-| dua | scalar total only | 9.746 s | 89,783 | 0.306 | +63.5% |
-| gdu | rendered tree | 10.390 s | 84,217 | 0.287 | +64.1% |
-| BSD `du` | one total, serial | 49.341 s | 17,734 | 0.061 | +716.9% |
-| ncdu | reusable index | 60.560 s | 14,448 | 0.049 | +909.7% |
-| GNU `du` | one total, serial | 62.118 s | 14,086 | 0.048 | +954.6% |
+| **fdu** | reusable exact index and ten-row tree | **6.0 s** | baseline | **146k** | **0.50** |
+| dumac | allocated-byte total only | 6.3 s | **+8%** | 138k | 0.47 |
+| diskus | scalar total only | 8.7 s | +45% | 101k | 0.35 |
+| pdu | rendered tree | 9.2 s | +53% | 95k | 0.32 |
+| dust | allocated-byte total only | 9.6 s | +59% | 91k | 0.31 |
+| dua | scalar total only | 9.7 s | +63% | 90k | 0.31 |
+| gdu | rendered tree | 10.4 s | +64% | 84k | 0.29 |
+| BSD `du` | one total, serial | 49.3 s | +717% | 18k | 0.061 |
+| ncdu | reusable index | 60.6 s | +910% | 14k | 0.049 |
+| GNU `du` | one total, serial | 62.1 s | +955% | 14k | 0.048 |
 
-The tools return different amounts of information, as the work column shows.
-fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
-per-extension roll-ups, and kept the index that answers the next question without
-another walk. dumac’s 95% interval was +5.4% to +16.3%.
+Positive percentages mean extra elapsed time: +60% means 1.6× as long as the adjacent
+fdu run. Rates count regular files and their disk space, not file-content reads; `k`
+means thousands and GB is decimal.
+See the
+[full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+for methodology, memory use, confidence intervals, and exact results.
 
-The answers agree, too.
-On quiet trees, fdu’s allocated totals equal GNU du `--count-links` to the byte; on
-`~/Library`, which changes while it is measured, every tool lands within that movement,
-or short by what the folders it reported giving up on hold, except one dua reading that
-cannot be checked because dua does not name the folders it skips.
-The other differences have measured causes: fdu counts a hard-linked file once per path,
-and counts neither a symbolic link’s own size nor a directory’s.
-[The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
-has the tables.
-
-Files/s divides 875,000 regular files by median wall time.
-Allocated GB/s divides the tree’s 2,986,741,760 allocated bytes by median wall time
-using decimal GB; it describes metadata coverage, not file-content read bandwidth.
-Positive relative percentages mean the competitor took longer than its immediately
-adjacent fdu run.
-
-fdu’s peak RSS here was 285.9 MiB against dumac’s 29.6 MiB, because fdu retained a
-million-entry index and dumac retained one integer.
-`fdu --no-gitignore --view summary` keeps the aggregate-only tier, which returns the
-same tallies without retaining that index; the separate 2026-09-16 fdu-only round-robin
-measured **15.0 MiB** against 285.4 MiB for the tree view.
-That tier buys memory, not time.
-
-[The full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
-records the work-class caveats, 95% intervals, host state, exact binaries, storage
-placement, and raw samples.
-
-Linux evidence is real and improving, from virtualized hosts.
-The most recent campaign on a 450k-entry tree, measured against its own starting point:
-warm snapshot load **−31.4%**, warm revalidate **−25.3%**, cold indexed scan **−9.1%**.
-A warm open now runs about 23% faster than a cold scan, where that campaign began with
-it 69% *slower*. Windows builds and passes tests; no performance claim is made there.
-
-A second run on an unchanged tree is a different job.
-Metadata-only one-shots still revalidate; `--analyze` reuses unchanged file-body results
-from a content sidecar.
-The trustworthy floor for a warm metadata run is still one stat per entry: directory
-mtimes do not record in-place edits.
-
-[The full comparison](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
-has the method and the limits.
-[The performance campaign status](docs/project/reports/report-2026-08-14-performance-campaign-status.md)
-is the place to start on the evidence as a whole.
+Linux offers the same reports, live updates, and Python and Rust APIs.
+A [fresh Linux comparison](explorations/benchmarks/README.md#linux-comparison-rerun) is
+queued after recent optimizations; older results do not establish the current ranking.
+Windows builds and passes tests but has not been performance-benchmarked.
 
 ## Why
 

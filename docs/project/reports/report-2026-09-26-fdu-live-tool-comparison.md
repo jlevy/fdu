@@ -8,29 +8,30 @@
 
 On a reproducible generated tree of 1,000,001 entries, a fresh fdu process with its
 persisted cache disabled built a reusable exact index and rendered a depth-one, ten-row
-tree in a **5.991-second median**. That is **146,050 files/s** and **0.499 allocated
-GB/s** on this subject.
+tree in a **6.0-second median**. That is **146k files/s** and **0.50 GB/s** on this
+subject.
 
 The same matrix measured every available baseline requested by the comparison harness.
 Each competitor ran immediately beside fdu with alternating order, so the relative
 figures are paired even though the host was not quiet.
 
-| Tool | Work class | Median wall | Files/s | Allocated GB/s | Versus paired fdu | 95% interval | Peak RSS |
+| Tool | Work class | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **fdu** | indexed tree | **5.991 s** | **146,050** | **0.499** | baseline | — | 285.9 MiB |
-| dumac | total only | 6.333 s | 138,169 | 0.472 | +8.2% | +5.4% to +16.3% | 29.6 MiB |
-| diskus | total only | 8.653 s | 101,124 | 0.345 | +45.1% | +31.7% to +48.8% | 10.8 MiB |
-| pdu | rendered tree | 9.246 s | 94,640 | 0.323 | +53.1% | +48.9% to +60.4% | 12.0 MiB |
-| dust | allocated total | 9.604 s | 91,112 | 0.311 | +59.5% | +55.2% to +67.5% | 545.9 MiB |
-| dua | total only | 9.746 s | 89,783 | 0.306 | +63.5% | +50.7% to +70.8% | 21.2 MiB |
-| gdu | rendered tree | 10.390 s | 84,217 | 0.287 | +64.1% | +55.3% to +82.6% | 510.4 MiB |
-| BSD `du` | total only | 49.341 s | 17,734 | 0.061 | +716.9% | +611.2% to +742.1% | 1.2 MiB |
-| ncdu | indexed tree | 60.560 s | 14,448 | 0.049 | +909.7% | +873.4% to +951.4% | 2.0 MiB |
-| GNU `du` | total only | 62.118 s | 14,086 | 0.048 | +954.6% | +891.3% to +1003.5% | 5.8 MiB |
+| **fdu** | indexed tree | **6.0 s** | baseline | **146k** | **0.50** | — | 285.9 MiB |
+| dumac | total only | 6.3 s | +8% | 138k | 0.47 | +5% to +16% | 29.6 MiB |
+| diskus | total only | 8.7 s | +45% | 101k | 0.35 | +32% to +49% | 10.8 MiB |
+| pdu | rendered tree | 9.2 s | +53% | 95k | 0.32 | +49% to +60% | 12.0 MiB |
+| dust | allocated total | 9.6 s | +59% | 91k | 0.31 | +55% to +67% | 545.9 MiB |
+| dua | total only | 9.7 s | +63% | 90k | 0.31 | +51% to +71% | 21.2 MiB |
+| gdu | rendered tree | 10.4 s | +64% | 84k | 0.29 | +55% to +83% | 510.4 MiB |
+| BSD `du` | total only | 49.3 s | +717% | 18k | 0.061 | +611% to +742% | 1.2 MiB |
+| ncdu | indexed tree | 60.6 s | +910% | 14k | 0.049 | +873% to +951% | 2.0 MiB |
+| GNU `du` | total only | 62.1 s | +955% | 14k | 0.048 | +891% to +1004% | 5.8 MiB |
 
 Positive percentages mean that the competitor took more wall time than its immediately
-adjacent fdu run. Files/s divides the subject’s 875,000 regular files by median wall
-time.
+adjacent fdu run. Displayed values are rounded; raw samples retain full precision.
+`k` means thousands.
+Files/s divides the subject’s 875,000 regular files by median wall time.
 Allocated GB/s divides its 2,986,741,760 allocated bytes by median wall time, using
 decimal GB. This is a metadata-coverage rate, not file-content read bandwidth.
 
@@ -42,6 +43,18 @@ file time, per-directory roll-ups for the whole tree, and per-extension tallies,
 retains the index for the next query.
 The work-class column keeps that distinction visible; total-only rows are useful lower
 bounds, not claims of semantic equivalence.
+
+The retained index also costs memory: fdu peaked at about 286 MiB, versus dumac’s 30
+MiB. For totals without an index, use `fdu --no-gitignore --view summary`; the
+[separate summary-mode measurement](report-2026-09-16-fdu-live-tool-comparison.md) used
+about 15 MiB. That mode trades retained state for memory, not necessarily speed.
+
+Totals have defined semantics: fdu counts a hard-linked file once per path and excludes
+symbolic links’ own sizes and directory blocks.
+The [peer-agreement report](report-2026-09-25-peer-agreement.md) checks those
+differences against other tools.
+Metadata-only reruns still revalidate the tree; content analysis can reuse unchanged
+file-body results.
 
 ## Measurement Protocol
 
