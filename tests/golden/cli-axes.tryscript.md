@@ -14,7 +14,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
-  AGE_DAYS: '\s*\d+'
+  AGE_DAYS: '\s*[0-9]{1,3}(?:,[0-9]{3})*'
   AGE_NS: '-?\d+'
   ALLOCATED: '\d+'
   # Paths are reported with the platform's own separator, so the separator is matched
@@ -26,8 +26,9 @@ patterns:
   SCAN_PATH: '[^\r\n]+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   SOURCE: 'cold_scan|warm_revalidate'
-  HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
-  PERF_TIME: '[\d.]+ (ns|µs|ms|s) \(\d+ files/s, \d+\.\d{3} GB/s represented\)'
+  HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
 ---
 # The Five Axes Compose
 
@@ -41,8 +42,9 @@ rather than elided — the field stays visible in a diff, which is the point of 
 
 ```console
 $ fdu --cache off --view summary --size apparent project
-     269 B  7 files, 3 directories (128 B ignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+     269 B  7 files, 3 directories (128 B gitignored)
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -59,7 +61,7 @@ $ fdu --cache off --view types --size apparent project
       36 B   13.4%  rust               2 files
       28 B   10.4%  make               1 file
        6 B    2.2%  unknown            1 file
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -80,14 +82,15 @@ so the two can never collide.
 ```console
 $ fdu --cache off --view extensions,summary --size apparent project
 EXTENSIONS
-     128 B  .tar.gz      1 file (128 B ignored)
+     128 B  .tar.gz      1 file (128 B gitignored)
       71 B  .md          2 files
       36 B  .rs          2 files
       34 B  (none)       2 files
 
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+     269 B  7 files, 3 directories (128 B gitignored)
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -106,7 +109,7 @@ $ fdu --cache off --view extensions --size apparent extension-levels
       32 B  .zip         1 file
       25 B  .c++         1 file
       10 B  .md~         1 file
-! perf: walked 4 files / 107 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 4 files (107 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -124,7 +127,7 @@ dist[SEP]acorn-0.1.0.tar.gz
 docs[SEP]FAQ.MD
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -132,18 +135,19 @@ src[SEP]omega.rs
 
 ```console
 $ fdu --cache off --view tree --size apparent --depth all project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
-      48 B  ██░░░░░░░░    18%    README.md
-      36 B  █░░░░░░░░░    13%    src 2 files
-      18 B  █░░░░░░░░░     7%      alpha.rs
-      18 B  █░░░░░░░░░     7%      omega.rs
-      28 B  █░░░░░░░░░    10%    Makefile
-      23 B  █░░░░░░░░░     9%    docs 1 file
-      23 B  █░░░░░░░░░     9%      FAQ.MD
-       6 B  ░░░░░░░░░░     2%    .gitignore
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -157,12 +161,13 @@ remember; a single-view report has nothing to disambiguate and stays bare.
 ```console
 $ fdu --cache off --view summary,types --size apparent --limit 1 project
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 
 TYPES  (1 of 5)
      128 B   47.6%  archive            1 file
+! note: gitignored sizes are included in row totals
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -174,7 +179,7 @@ TYPES  (1 of 5)
 $ fdu --cache off --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -187,7 +192,7 @@ $ fdu --cache off --view files --include "*.{md,rs}" project
 README.md
 src[SEP]alpha.rs
 src[SEP]omega.rs
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -196,7 +201,7 @@ src[SEP]omega.rs
 ```console
 $ fdu --cache off --view files --include "*.{md,rs}" --exclude "src/**" project
 README.md
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -207,7 +212,7 @@ $ fdu --cache off --view files --kind dir project
 dist
 docs
 src
-! perf: walked 7 files / [HUMAN_SIZE]; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files ([HUMAN_SIZE]) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -223,15 +228,17 @@ what is underneath it.
 
 ```console
 $ fdu --cache off --view summary --kind file --size apparent project
-     269 B  7 files, 0 directories (128 B ignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+     269 B  7 files, 0 directories (128 B gitignored)
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
 ```console
 $ fdu --cache off --view summary --kind dir --size apparent project
-     187 B  4 files, 3 directories (128 B ignored)
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+     187 B  4 files, 3 directories (128 B gitignored)
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -240,7 +247,7 @@ $ fdu --cache off --view summary --kind dir --size apparent project
 ```console
 $ fdu --cache off --view files --kind file --min-size 100 --size apparent project
 dist[SEP]acorn-0.1.0.tar.gz
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -252,7 +259,7 @@ $ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent
 dist[SEP]acorn-0.1.0.tar.gz
 README.md
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -264,7 +271,7 @@ $ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --siz
 .gitignore
 src[SEP]omega.rs
 ! tip: show more rows: --limit=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -274,12 +281,13 @@ src[SEP]omega.rs
 
 ```console
 $ fdu --cache off --view tree --depth 0 --size apparent project
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-                                 … and 269 B (7 files) more
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+██████████   100%       269 B  . 7 files (128 B gitignored)
+██████████   100%       269 B    … and 7 more files
+! note: gitignored sizes are included in row totals
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: depth 0
 ! tip: expand deeper: --depth=all
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -294,27 +302,28 @@ read no rules.
 ```console
 $ fdu --cache off --view summary,tree,extensions --size apparent project
 SUMMARY
-     269 B  7 files, 3 directories (128 B ignored)
+     269 B  7 files, 3 directories (128 B gitignored)
 
 TREE
-     269 B  ██████████   100%  . 7 files (128 B ignored)
-     128 B  █████░░░░░    48%    dist 1 file (128 B ignored)
-     128 B  █████░░░░░    48%      acorn-0.1.0.tar.gz (128 B ignored)
-      48 B  ██░░░░░░░░    18%    README.md
-      36 B  █░░░░░░░░░    13%    src 2 files
-      18 B  █░░░░░░░░░     7%      alpha.rs
-      18 B  █░░░░░░░░░     7%      omega.rs
-      28 B  █░░░░░░░░░    10%    Makefile
-      23 B  █░░░░░░░░░     9%    docs 1 file
-      23 B  █░░░░░░░░░     9%      FAQ.MD
-       6 B  ░░░░░░░░░░     2%    .gitignore
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
 
 EXTENSIONS
-     128 B  .tar.gz      1 file (128 B ignored)
+     128 B  .tar.gz      1 file (128 B gitignored)
       71 B  .md          2 files
       36 B  .rs          2 files
       34 B  (none)       2 files
-! perf: walked 7 files / 269 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -331,16 +340,16 @@ SUMMARY
      141 B  6 files, 2 directories
 
 TREE
-     141 B  ██████████   100%  . 6 files
-      48 B  ███░░░░░░░    34%    README.md
-      36 B  ███░░░░░░░    26%    src 2 files
-      18 B  █░░░░░░░░░    13%      alpha.rs
-      18 B  █░░░░░░░░░    13%      omega.rs
-      28 B  ██░░░░░░░░    20%    Makefile
-      23 B  ██░░░░░░░░    16%    docs 1 file
-      23 B  ██░░░░░░░░    16%      FAQ.MD
-       6 B  ░░░░░░░░░░     4%    .gitignore
-! perf: walked 6 files / 141 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       141 B  . 6 files
+███░░░░░░░    34%        48 B    README.md
+███░░░░░░░    26%        36 B    src/ 2 files
+█░░░░░░░░░    13%        18 B      alpha.rs
+█░░░░░░░░░    13%        18 B      omega.rs
+██░░░░░░░░    20%        28 B    Makefile
+██░░░░░░░░    16%        23 B    docs/ 1 file
+██░░░░░░░░    16%        23 B      FAQ.MD
+░░░░░░░░░░     4%         6 B    .gitignore
+! perf: took [PERF_TIME] to walk 6 files (141 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -350,10 +359,10 @@ SUMMARY
      128 B  1 file, 1 directory
 
 TREE
-     128 B  ██████████   100%  . 1 file
-     128 B  ██████████   100%    dist 1 file
-     128 B  ██████████   100%      acorn-0.1.0.tar.gz
-! perf: walked 2 files / 134 B; ignore 1 file / 1 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       128 B  . 1 file
+██████████   100%       128 B    dist/ 1 file
+██████████   100%       128 B      acorn-0.1.0.tar.gz
+! perf: took [PERF_TIME] to walk 2 files (134 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -365,7 +374,7 @@ Under `--no-gitignore` no rule is read, and every share is `null` rather than a 
 
 ```console
 $ fdu --cache off --view files --ignored only --kind file --format jsonl --size apparent project
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "only"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["files"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "only"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["files"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "files", "bound": null, "files": [{"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "files": null, "dirs": null, "complete": null, "age_ns": [AGE_NS], "ignored": true, "sort_value": null, "classification": {"file_type": "archive", "family": "binary", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
 ? 0
 ```
@@ -373,7 +382,7 @@ $ fdu --cache off --view files --ignored only --kind file --format jsonl --size 
 ```console
 $ fdu --cache off --view summary --no-gitignore --format json --size apparent project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -453,7 +462,7 @@ $ fdu --cache off --view summary --size apparent long-rule
 ! note: ignore classification incomplete: 1 ignore file not applied (1 with a line over the 16 KiB line limit); affected: .
 ! note: ignored subtotals are unavailable where governing rules could not be verified
 ! tip: apply refused ignore files: raise --gitignore-line-limit above 16 KiB, or set it to all
-! perf: walked 2 files / 16 KiB; ignore 1 file / 0 rules, 1 refused; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 2 files (16 KiB) at [PERF_RATE]; 0 gitignore rules (1 file), 1 refused; content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -464,7 +473,7 @@ $ fdu --cache off --view summary --size apparent long-rule
 ```console
 $ fdu --cache off --view summary --format json --size apparent project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -521,6 +530,7 @@ $ fdu --cache off --view summary --format json --size apparent project
     }
   ]
 }
+! note: gitignored sizes are included in row totals
 ? 0
 ```
 
@@ -528,7 +538,7 @@ $ fdu --cache off --view summary --format json --size apparent project
 
 ```console
 $ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
 ! tip: show more rows: --limit=all
 ? 0
@@ -538,7 +548,7 @@ $ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
 
 ```console
 $ fdu --cache off --view summary --format yaml --size apparent project
-schema: fdu.report/9
+schema: fdu.report/10
 generator: "fdu 0.1.0"
 root: [SCAN_PATH]
 age_reference_ns: [AGE_NS]
@@ -585,6 +595,7 @@ reports:
       allocated: [ALLOCATED]
       ignored: {files: 1, dirs: 1, bytes: 128, allocated: [ALLOCATED]}
       newest_mtime_ns: [MTIME_NS]
+! note: gitignored sizes are included in row totals
 ? 0
 ```
 
@@ -690,8 +701,9 @@ Every report says which tier answered it, so no policy can quietly serve old dat
 
 ```console
 $ fdu --view tree --format jsonl --size apparent project
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
+! note: gitignored sizes are included in row totals
 ? 0
 ```
 
@@ -705,8 +717,9 @@ this is the one-shot contract only.
 
 ```console
 $ fdu --view tree --format jsonl --size apparent project
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
+! note: gitignored sizes are included in row totals
 ? 0
 ```
 
@@ -714,8 +727,9 @@ $ fdu --view tree --format jsonl --size apparent project
 
 ```console
 $ fdu --cache only --view tree --format jsonl --size apparent project
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
+! note: gitignored sizes are included in row totals
 ? 0
 ```
 
@@ -723,8 +737,9 @@ $ fdu --cache only --view tree --format jsonl --size apparent project
 
 ```console
 $ fdu --cache refresh --view tree --format jsonl --size apparent project
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
+! note: gitignored sizes are included in row totals
 ? 0
 ```
 
@@ -784,14 +799,14 @@ the tree, where `--kind file` counts only the one file modified recently.
 ```console
 $ fdu --cache off --size apparent --modified-since 30d --view summary builds
      240 B  4 files, 10 directories
-! perf: walked 4 files / 240 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
 ```console
 $ fdu --cache off --size apparent --modified-since 30d --kind file --view summary builds
       90 B  1 file, 0 directories
-! perf: walked 4 files / 240 B; ignore 0 files / 0 rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 4 files (240 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -819,7 +834,7 @@ $ fdu --cache off --size apparent --scan-depth 2 --kind dir --include .venv --mo
 
 ```console
 $ fdu --cache off --size apparent --scan-depth 2 --kind dir --include .venv --sort name --format jsonl builds
-{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": 2, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["list"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": null}
+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": 2, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["list"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": null}
 {"view": "list", "bound": null, "files": [{"path": "a[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false, "sort_value": null, "classification": null}, {"path": "d[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false, "sort_value": null, "classification": null}, {"path": "empty[JSON_SEP].venv", "kind": "dir", "bytes": 0, "allocated": 0, "mtime_ns": [MTIME_NS], "files": 0, "dirs": 0, "complete": false, "age_ns": null, "ignored": false, "sort_value": null, "classification": null}]}
 ? 0
 ```

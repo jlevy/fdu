@@ -500,13 +500,29 @@ def check_reports_carry_the_ignored_share() -> None:
     assert isinstance(files, fdu.FilesSection), files
     flags = {row.path.as_posix(): row.ignored for row in files.files}
     assert (flags["dist"], flags["dist/bundle.js"], flags["src/main.rs"]) == (True, True, False)
-    assert "(100 B ignored)" in report.render(fdu.Format.TEXT)
+    assert "(100 B gitignored)" in report.render(fdu.Format.TEXT)
+    assert "█" * 20 in report.render(bar_size=20)
+    without_bars = report.render(bar_size=0)
+    assert "█" not in without_bars and "░" not in without_bars
+    assert report.render(bar_size=-1) == without_bars
+    assert report.render(fdu.Format.JSON, bar_size=0) == report.render(fdu.Format.JSON)
+    assert report.render(fdu.Format.JSON, bar_size=4097) == report.render(fdu.Format.JSON)
+    try:
+        report.render(bar_size=4097)
+        raise SystemExit("oversized human tree bars must be rejected")
+    except fdu.InvalidArgumentError as error:
+        assert "4096" in str(error), error
+    assert report.notes.count("note: gitignored sizes are included in row totals") == 1, (
+        report.notes
+    )
 
     kept_query = fdu.Query(
         views=(fdu.View.SUMMARY,),
         selection=fdu.Selection(size=apparent, ignored=fdu.IgnoredEntries.EXCLUDE),
     )
-    (kept,) = fdu.report(root, kept_query, cache=fdu.CachePolicy.OFF).sections
+    kept_report = fdu.report(root, kept_query, cache=fdu.CachePolicy.OFF)
+    assert "note: gitignored sizes are included in row totals" not in kept_report.notes
+    (kept,) = kept_report.sections
     assert isinstance(kept, fdu.SummarySection), kept
     assert (kept.summary.files, kept.summary.bytes) == (2, 18), kept
     assert kept.summary.ignored == fdu.IgnoredTally(0, 0, 0, 0), kept
@@ -514,9 +530,11 @@ def check_reports_carry_the_ignored_share() -> None:
     assert from_index == kept, (from_index, kept)
 
     blind = fdu.ScanOptions(read_controls=False)
-    (unread,) = fdu.report(
+    blind_report = fdu.report(
         root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.OFF, scan=blind
-    ).sections
+    )
+    assert "note: gitignored sizes are included in row totals" not in blind_report.notes
+    (unread,) = blind_report.sections
     assert isinstance(unread, fdu.SummarySection) and unread.summary.ignored is None, unread
     only_query = fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.ONLY))
     for attempt in (
@@ -737,7 +755,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/9"
+    assert wire["schema"] == "fdu.report/10"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 

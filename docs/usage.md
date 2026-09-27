@@ -86,6 +86,15 @@ exact `share_metric`, numerator, and denominator.
 The default output is the directory tree: `fdu .`, `fdu . --view list`, and
 `fdu . --format tree` print the same bounded directory roll-ups.
 Significant files appear as leaves alongside directory totals.
+Each tree row shows a share bar, percentage of the selected root, size, then its
+indented name. The single remainder row, when present, uses those same columns for
+unlisted root branches and ends `… and N more files`. A listed directory already
+represents its entire subtree, even when descendants are not expanded.
+Listed root branches plus the remainder account for the root total.
+Unknown quantities are labeled unknown rather than estimated.
+`--bar-size=20` widens the bar; `--bar-size=0` or a negative value hides it.
+The default is 10 characters.
+This affects human trees only.
 
 | Format | List output |
 | --- | --- |
@@ -224,6 +233,8 @@ For the most recent working files without ignored entries or repository internal
 fdu . --view=recent --limit=10 --ignored=exclude --exclude='.git/**'
 ```
 
+Human rows label this subset as `(73 MiB gitignored)`: the amount is already included in
+the row total, not additional usage.
 `--no-gitignore` disables reading and applying the rules, so ignored shares are unknown.
 It cannot be combined with either ignored-state selection.
 
@@ -285,7 +296,7 @@ exclude comments, blank lines, and rejected patterns.
 Refused files are named separately.
 
 Total files/s and decimal GB/s divide walked files and represented size by the same
-elapsed duration shown at the end.
+elapsed wall-clock duration shown first in the `perf:` line.
 Represented size uses the selected apparent or allocated measure; it is not disk-read
 bandwidth. Actual content-read throughput uses bytes read and the content-analysis
 duration. On an unchanged tree the second run can show zero content bytes read and every
@@ -407,6 +418,18 @@ The zero-install fallback follows uv’s `exclude-newer` policy; see the
 is filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and
 later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
 The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
+
+## Quiet Diagnostics
+
+Use `--quiet` (or `-q`) to suppress notes, tips, performance lines, and progress while
+keeping the same result output.
+Warnings and errors remain visible on stderr, and exit status still reports incomplete
+or failed results. Structured output retains its facts.
+
+```shell
+fdu . --quiet
+fdu . --view tree --full --format json --quiet
+```
 
 ## Find Files and Export Complete Inventories
 

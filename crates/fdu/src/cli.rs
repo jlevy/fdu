@@ -66,12 +66,13 @@ const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 // Colour applies only when the destination is a live terminal, and never to a machine
 // format or under NO_COLOR; `ColorContext` owns that decision and `paint` applies it.
 
-/// Independent terminal/color decisions for result and diagnostic streams.
+/// Presentation choices shared by the initial watch report and every repaint.
 #[cfg(feature = "watch")]
 #[derive(Clone, Copy)]
-struct StreamColors {
-    output: bool,
-    diagnostic: bool,
+struct WatchPresentation {
+    render: report_format::RenderOptions,
+    diagnostic_color: bool,
+    quiet: bool,
 }
 
 /// The one header style every human surface uses.
@@ -315,7 +316,7 @@ IGNORE RULES
   ignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
-  Every machine report uses fdu.report/9; watch changes use fdu.stream/2.
+  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
   Cache status is its own document in every machine format: fdu.cache/3.
   Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
   Text language rows use canonical names; machine formats retain lowercase IDs.
@@ -631,6 +632,20 @@ pub struct Cli {
     )]
     pub progress: ProgressMode,
 
+    /// Width of tree bars in cells (at most 4096); zero or a negative value hides the bar.
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 10,
+        allow_hyphen_values = true,
+        help_heading = "OUTPUT"
+    )]
+    pub bar_size: i64,
+
+    /// Suppress notes, tips, performance summaries, and progress; keep warnings and errors.
+    #[arg(short = 'q', long, action = ArgAction::SetTrue, help_heading = "OUTPUT")]
+    pub quiet: bool,
+
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only (unverified), or off.
     #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
@@ -755,6 +770,19 @@ impl Cli {
         // It used to parse each axis itself, which is how a default could differ between
         // the doors into the same engine.
         let request = self.request(path, SystemTime::now())?;
+        let has_tree = request.query.views.iter().any(|view| {
+            matches!(view, fdu_core::query::ViewSpec::List | fdu_core::query::ViewSpec::Tree)
+        });
+        if has_tree
+            && matches!(format, report_format::Format::Text | report_format::Format::Tree)
+            && self.bar_size() > report_format::MAX_BAR_SIZE
+        {
+            return Err(usage(&anyhow::anyhow!(
+                "invalid --bar-size \"{}\": expected at most {} cells",
+                self.bar_size,
+                report_format::MAX_BAR_SIZE
+            )));
+        }
         let delivery = Delivery {
             cache: self.parse_cache_policy().map_err(|error| usage(&error))?,
             cache_path: default_cache_path_in(path, self.cache_dir.as_deref())?,
@@ -801,8 +829,12 @@ impl Cli {
                 format,
                 &request,
                 &delivery,
-                StreamColors { output: color, diagnostic: diagnostic_color },
                 indicator,
+                WatchPresentation {
+                    render: report_format::RenderOptions { color, bar_size: self.bar_size() },
+                    diagnostic_color,
+                    quiet: self.quiet,
+                },
             );
         }
 
@@ -850,9 +882,10 @@ impl Cli {
         // that buffer, and the user would see nothing until the snapshot's fsync and the
         // index teardown had finished (fdu-n75m). Same bytes in the same order; only
         // when they arrive changes.
+        let render_options = report_format::RenderOptions { color, bar_size: self.bar_size() };
         let rendered_text =
             matches!(format, report_format::Format::Text | report_format::Format::Tree)
-                .then(|| report_format::render(&report, format, color));
+                .then(|| report_format::render_with_options(&report, format, render_options));
         let (rendered_text, render_result): (Option<String>, anyhow::Result<()>) =
             match rendered_text {
                 Some(Ok(rendered)) => {
@@ -863,7 +896,7 @@ impl Cli {
                 Some(Err(error)) => (None, Err(error.into())),
                 None => (
                     None,
-                    report_format::write(&report, format, color, out)
+                    report_format::write_with_options(&report, format, render_options, out)
                         .and_then(|()| out.flush())
                         .map_err(Into::into),
                 ),
@@ -899,8 +932,11 @@ impl Cli {
             format,
             diagnostic_color,
             save_warning.as_deref(),
+            self.quiet,
         )?;
-        if matches!(format, report_format::Format::Text | report_format::Format::Tree) {
+        if !self.quiet
+            && matches!(format, report_format::Format::Text | report_format::Format::Tree)
+        {
             writeln!(
                 diagnostic,
                 "{}",
@@ -910,6 +946,7 @@ impl Cli {
                         &report.ignore_rules,
                         report_started.elapsed(),
                         request.query.selection.size,
+                        diagnostic_color,
                     ),
                     STYLE_PERFORMANCE,
                     diagnostic_color,
@@ -930,6 +967,11 @@ impl Cli {
         self.parse_format().is_ok_and(report_format::Format::is_machine)
     }
 
+    /// Nonpositive widths hide the bar; checked conversion prevents wrap on 32-bit hosts.
+    fn bar_size(&self) -> usize {
+        usize::try_from(self.bar_size.max(0)).unwrap_or(usize::MAX)
+    }
+
     /// What the progress ticker needs before its first frame: whether to draw at all,
     /// the root as the frame shows it, and whether the frame is colored.
     ///
@@ -948,7 +990,7 @@ impl Cli {
             || self.cache_clear.is_some());
         let root = self.path.as_deref().unwrap_or(Path::new("."));
         ProgressPlan {
-            draw: should_draw(self.progress, terminal, self.machine_format(), walks),
+            draw: !self.quiet && should_draw(self.progress, terminal, self.machine_format(), walks),
             root: display_root(root, home_directory().as_deref()),
             color: ColorContext::from_environment(
                 self.color,
@@ -978,13 +1020,13 @@ impl Cli {
         format: report_format::Format,
         request: &Request,
         delivery: &Delivery,
-        colors: StreamColors,
         indicator: Option<(ProgressPlan, ProgressIo)>,
+        presentation: WatchPresentation,
     ) -> anyhow::Result<RunOutcome> {
         use fdu_core::query::ViewSpec;
         use fdu_core::watch_session::Session;
 
-        let StreamColors { output: color, diagnostic: diagnostic_color } = colors;
+        let WatchPresentation { render, diagnostic_color, quiet } = presentation;
 
         // The repaint interval the delivery already carries, rather than a second reading
         // of `--interval`: `run` refused an unparseable one before it opened anything, and
@@ -1028,9 +1070,9 @@ impl Cli {
             write!(out, "{}", report_format::document_start(format))?;
         }
         let initial = session.report(SystemTime::now())?;
-        report_format::write(&initial, format, color, out)?;
+        report_format::write_with_options(&initial, format, render, out)?;
         out.flush()?;
-        write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, None)?;
+        write_report_diagnostics(diagnostic, &initial, format, diagnostic_color, None, quiet)?;
 
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
@@ -1039,7 +1081,15 @@ impl Cli {
                 // Nothing arrived in the window. Repaint only if something is pending,
                 // so a quiet tree produces no output and no work at all.
                 if has_aggregates && dirty_since_render {
-                    Self::render_live(out, diagnostic, &session, format, color, diagnostic_color)?;
+                    Self::render_live(
+                        out,
+                        diagnostic,
+                        &session,
+                        format,
+                        render,
+                        diagnostic_color,
+                        quiet,
+                    )?;
                     dirty_since_render = false;
                     last_render = SystemTime::now();
                 }
@@ -1057,7 +1107,15 @@ impl Cli {
             dirty_since_render |= batch.dirty;
             let elapsed = last_render.elapsed().unwrap_or_default();
             if has_aggregates && dirty_since_render && elapsed >= interval {
-                Self::render_live(out, diagnostic, &session, format, color, diagnostic_color)?;
+                Self::render_live(
+                    out,
+                    diagnostic,
+                    &session,
+                    format,
+                    render,
+                    diagnostic_color,
+                    quiet,
+                )?;
                 dirty_since_render = false;
                 last_render = SystemTime::now();
             }
@@ -1120,8 +1178,9 @@ impl Cli {
         diagnostic: &mut dyn Write,
         session: &fdu_core::watch_session::Session,
         format: report_format::Format,
-        color: bool,
+        render: report_format::RenderOptions,
         diagnostic_color: bool,
+        quiet: bool,
     ) -> anyhow::Result<()> {
         let generated_at = SystemTime::now();
         let report = session.report(generated_at)?;
@@ -1133,14 +1192,14 @@ impl Cli {
             writeln!(
                 out,
                 "\n{}",
-                paint(&report_format::watch_rule(generated_at), STYLE_WATCH_RULE, color)
+                paint(&report_format::watch_rule(generated_at), STYLE_WATCH_RULE, render.color)
             )?;
         } else if format == report_format::Format::Yaml {
             write!(out, "{}", report_format::document_start(format))?;
         }
-        report_format::write(&report, format, color, out)?;
+        report_format::write_with_options(&report, format, render, out)?;
         out.flush()?;
-        write_report_diagnostics(diagnostic, &report, format, diagnostic_color, None)?;
+        write_report_diagnostics(diagnostic, &report, format, diagnostic_color, None, quiet)?;
         Ok(())
     }
 
@@ -1219,7 +1278,7 @@ impl Cli {
                         writeln!(
                             out,
                             "Cache cleared: {} {}.",
-                            removed.snapshots,
+                            report_format::human_count_u128(removed.snapshots as u128),
                             plural(removed.snapshots, "snapshot", "snapshots")
                         )?;
                     }
@@ -1229,7 +1288,7 @@ impl Cli {
                         writeln!(
                             out,
                             "Also reclaimed: {} {} fdu left behind.",
-                            removed.leftovers,
+                            report_format::human_count_u128(removed.leftovers as u128),
                             plural(removed.leftovers, "file", "files")
                         )?;
                     }
@@ -1243,7 +1302,8 @@ impl Cli {
                     if left > 0 {
                         writeln!(
                             out,
-                            "Left in place: {left} {}; fdu --cache-status=all lists {}.",
+                            "Left in place: {} {}; fdu --cache-status=all lists {}.",
+                            report_format::human_count_u128(left as u128),
                             plural(
                                 left,
                                 "file that is not an fdu snapshot",
@@ -1261,8 +1321,9 @@ impl Cli {
                     if staging > 0 {
                         writeln!(
                             out,
-                            "Left in place: {staging} staging {} another fdu may still be \
+                            "Left in place: {} staging {} another fdu may still be \
                              writing.",
+                            report_format::human_count_u128(staging as u128),
                             plural(staging, "file", "files")
                         )?;
                     }
@@ -1465,6 +1526,7 @@ fn performance_footer(
     ignore_rules: &ControlCoverage,
     total: Duration,
     size: SizeMetric,
+    color: bool,
 ) -> String {
     // The walked bytes in the answer's own metric: a sparse disk image is terabytes
     // apparent and megabytes allocated, and the line sits right under the answer.
@@ -1482,9 +1544,9 @@ fn performance_footer(
         "0 cached".to_string()
     } else {
         format!(
-            "{} cached / {}",
+            "{} cached ({})",
             human_count(performance.cached_files),
-            report_format::human_bytes(performance.cached_bytes)
+            performance_bytes(performance.cached_bytes, color)
         )
     };
     let read_rate = if performance.bytes_read == 0 || performance.analysis_ns == 0 {
@@ -1492,14 +1554,14 @@ fn performance_footer(
     } else {
         format!(
             " at {}/s",
-            report_format::human_bytes(rate_per_second(
-                performance.bytes_read,
-                performance.analysis_ns,
-            ))
+            performance_bytes(
+                rate_per_second(performance.bytes_read, performance.analysis_ns,),
+                color
+            )
         )
     };
     let rules = match ignore_rules {
-        ControlCoverage::NotObserved => "no ignore rules".to_string(),
+        ControlCoverage::NotObserved => "gitignore not read".to_string(),
         ControlCoverage::Observed(observed) => {
             let refused = if observed.refused > 0 {
                 format!(", {} refused", human_count(observed.refused))
@@ -1507,24 +1569,32 @@ fn performance_footer(
                 String::new()
             };
             format!(
-                "ignore {} {} / {} rules{refused}",
+                "{} gitignore {} ({} {}){refused}",
+                human_count(observed.rules),
+                plural_u64(observed.rules, "rule", "rules"),
                 human_count(observed.applied.saturating_add(observed.refused)),
-                plural_u64(observed.applied.saturating_add(observed.refused), "file", "files"),
-                human_count(observed.rules)
+                plural_u64(observed.applied.saturating_add(observed.refused), "file", "files")
             )
         }
     };
+    let rates = performance.total_throughput(total, size);
     format!(
-        "perf: walked {} {} / {}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}; total {} ({})",
+        "perf: took {} to walk {} {} ({}) at {rates}; {rules}; content read {}{}; analysis {fresh}, {cached}; {}",
+        human_duration(total),
         human_count(performance.walked_files),
         plural_u64(performance.walked_files, "file", "files"),
-        report_format::human_bytes(walked_bytes),
-        report_format::human_bytes(performance.bytes_read),
+        performance_bytes(walked_bytes, color),
+        performance_bytes(performance.bytes_read, color),
         read_rate,
         performance_source(performance.source),
-        human_duration(total),
-        performance.total_throughput(total, size),
     )
+}
+
+/// Keep the diagnostic frame gray after a styled size resets its local ANSI style.
+/// This also makes a GiB-scale size bold gray while leaving smaller sizes gray.
+fn performance_bytes(bytes: u64, color: bool) -> String {
+    let styled = report_format::styled_bytes(bytes, 0, color, true);
+    if color { format!("{styled}{STYLE_PERFORMANCE}") } else { styled }
 }
 
 fn performance_source(source: ReportSource) -> &'static str {
@@ -1544,15 +1614,10 @@ fn rate_per_second(units: u64, elapsed_ns: u64) -> u64 {
 }
 
 fn human_rate(units: u64, elapsed_ns: u64) -> String {
-    let rate = rate_per_second(units, elapsed_ns);
-    match rate {
-        0..=999 => human_count(rate),
-        1_000..=999_999 => format!("{}k", scaled_decimal(u128::from(rate), 1_000, 1)),
-        1_000_000..=999_999_999 => {
-            format!("{}M", scaled_decimal(u128::from(rate), 1_000_000, 1))
-        }
-        _ => format!("{}G", scaled_decimal(u128::from(rate), 1_000_000_000, 1)),
+    if elapsed_ns == 0 {
+        return "0".to_string();
     }
+    report_format::human_count_u128(u128::from(units) * 1_000_000_000 / u128::from(elapsed_ns))
 }
 
 fn human_duration(duration: Duration) -> String {
@@ -1647,14 +1712,17 @@ fn write_report_diagnostics(
     format: report_format::Format,
     color: bool,
     save_warning: Option<&str>,
+    quiet: bool,
 ) -> io::Result<()> {
     let lines = if matches!(format, report_format::Format::Paths | report_format::Format::Long) {
         report_format::flat_diagnostic_lines(report)
     } else {
         report_format::diagnostic_lines(report)
     };
-    for line in lines.notes {
-        writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
+    if !quiet {
+        for line in lines.notes {
+            writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
+        }
     }
     if let Some(warning) = save_warning {
         writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, color))?;
@@ -1664,8 +1732,10 @@ fn write_report_diagnostics(
             writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color))?;
         }
     }
-    for line in lines.tips {
-        writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
+    if !quiet {
+        for line in lines.tips {
+            writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
+        }
     }
     diagnostic.flush()
 }
@@ -1692,7 +1762,7 @@ fn status_warnings(status: &fdu_core::query::TreeStatus) -> Vec<String> {
             "warn: {} more {} omitted; details are kept for the first {}",
             human_count(status.errors_omitted),
             if status.errors_omitted == 1 { "error" } else { "errors" },
-            fdu_core::MAX_RETAINED_ISSUES,
+            human_count(fdu_core::MAX_RETAINED_ISSUES as u64),
         ));
     }
     warnings
@@ -2149,11 +2219,17 @@ mod tests {
             ..PerformanceSummary::default()
         };
         let footer = |rules: &ControlCoverage| {
-            performance_footer(performance, rules, Duration::from_millis(3), SizeMetric::Apparent)
+            performance_footer(
+                performance,
+                rules,
+                Duration::from_millis(3),
+                SizeMetric::Apparent,
+                false,
+            )
         };
         assert_eq!(
             footer(&ControlCoverage::NotObserved),
-            "perf: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total 3.0 ms (2333 files/s, 0.000 GB/s represented)"
+            "perf: took 3.0 ms to walk 7 files (269 B) at 2,333 files/s (0.000 GB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan"
         );
         // The walked bytes are the answer's metric, allocated unless `--size apparent`.
         assert!(
@@ -2162,8 +2238,9 @@ mod tests {
                 &ControlCoverage::NotObserved,
                 Duration::from_millis(3),
                 SizeMetric::Allocated,
+                false,
             )
-            .starts_with("perf: walked 7 files / 28 KiB; ")
+            .starts_with("perf: took 3.0 ms to walk 7 files (28 KiB) at ")
         );
         let observed = |applied, refusals: Vec<RefusedControl>| {
             ControlCoverage::Observed(ControlObservation {
@@ -2174,13 +2251,14 @@ mod tests {
                 refusals,
             })
         };
-        assert!(footer(&observed(1, Vec::new())).contains("; ignore 1 file / 0 rules; "));
+        assert!(footer(&observed(1, Vec::new())).contains("; 0 gitignore rules (1 file); "));
         let refused = RefusedControl {
             path: PathBuf::from(".gitignore"),
             reason: ControlRefusalReason::LineLimit,
         };
         assert!(
-            footer(&observed(0, vec![refused])).contains("; ignore 1 file / 0 rules, 1 refused; ")
+            footer(&observed(0, vec![refused]))
+                .contains("; 0 gitignore rules (1 file), 1 refused; ")
         );
     }
 
@@ -2360,6 +2438,8 @@ mod tests {
             long: false,
             color: ColorWhen::Auto,
             progress: ProgressMode::Auto,
+            bar_size: 10,
+            quiet: false,
             cache: "off".to_string(),
             cache_dir: None,
             cache_status: None,
@@ -2916,7 +2996,7 @@ mod tests {
             .expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/9\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/10\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -2957,15 +3037,10 @@ mod tests {
             lines.iter().position(|line| line.starts_with("tip:")).expect("display suggestion");
         assert!(note < tip && tip < lines.len() - 1, "diagnostic category order: {diagnostics}");
         let footer = diagnostics.lines().last().expect("performance footer");
-        assert!(
-            footer.starts_with(
-                "perf: walked 2 files / 8 B; ignore 0 files / 0 rules; content read 8 B at "
-            ),
-            "{plain}"
-        );
+        assert!(footer.starts_with("perf: took "), "{plain}");
         assert!(footer.contains("2 fresh at "), "{footer}");
         assert!(footer.contains("0 cached"), "{footer}");
-        assert!(footer.contains("cold scan; total "), "{footer}");
+        assert!(footer.ends_with("cold scan"), "{footer}");
         assert!(!footer.contains('\u{1b}'), "color-disabled output must not contain ANSI");
 
         let (mut colored, mut colored_diagnostics) = (Vec::new(), Vec::new());
@@ -2991,6 +3066,85 @@ mod tests {
         assert!(
             footer.starts_with("\u{1b}[90mperf:"),
             "the footer must use terminal gray when color is active: {colored:?}"
+        );
+    }
+
+    #[test]
+    fn quiet_preserves_the_answer_and_suppresses_notes_tips_and_perf() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
+        let command = |quiet| Cli {
+            path: Some(root.path().to_path_buf()),
+            analyze: "lines".to_string(),
+            view: Some("summary".to_string()),
+            size: "apparent".to_string(),
+            quiet,
+            ..cli()
+        };
+        let run = |quiet| {
+            let (mut out, mut diagnostic) = (Vec::new(), Vec::new());
+            command(quiet)
+                .run(
+                    &mut out,
+                    &mut diagnostic,
+                    false,
+                    &TerminalFacts::default(),
+                    ProgressIo::inert(),
+                )
+                .expect("report");
+            (out, diagnostic)
+        };
+        let (normal_out, normal_diagnostic) = run(false);
+        let (quiet_out, quiet_diagnostic) = run(true);
+        assert_eq!(normal_out, quiet_out, "quiet leaves result stdout intact");
+        assert!(String::from_utf8_lossy(&normal_diagnostic).contains("note:"));
+        assert!(String::from_utf8_lossy(&normal_diagnostic).contains("tip:"));
+        assert!(String::from_utf8_lossy(&normal_diagnostic).contains("perf:"));
+        assert!(quiet_diagnostic.is_empty(), "quiet diagnostic: {quiet_diagnostic:?}");
+
+        let (mut json_out, mut json_diagnostic) = (Vec::new(), Vec::new());
+        Cli {
+            format: "json".to_string(),
+            bar_size: 5_000, // Machine output ignores visual bar bounds.
+            ..command(true)
+        }
+        .run(
+            &mut json_out,
+            &mut json_diagnostic,
+            false,
+            &TerminalFacts::default(),
+            ProgressIo::inert(),
+        )
+        .expect("quiet JSON report");
+        assert!(json_diagnostic.is_empty());
+        let json = String::from_utf8(json_out).expect("UTF-8 JSON");
+        assert!(json.trim().starts_with('{') && json.trim().ends_with('}'));
+        assert!(json.contains("\"schema\": \"fdu.report/10\""));
+        assert!(json.contains("\"view\": \"summary\""));
+    }
+
+    #[test]
+    fn quiet_keeps_warnings_on_the_diagnostic_stream() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
+        let command = Cli { path: Some(root.path().to_path_buf()), quiet: true, ..cli() };
+        let request = command.request(root.path(), SystemTime::now()).expect("request");
+        let (report, pending_save, _) =
+            prepare_report(&request, &Delivery::new(CachePolicy::Off, None)).expect("report");
+        pending_save.join().expect("no cache save");
+        let mut diagnostic = Vec::new();
+        write_report_diagnostics(
+            &mut diagnostic,
+            &report,
+            report_format::Format::Tree,
+            false,
+            Some("warn: snapshot could not be saved"),
+            true,
+        )
+        .expect("diagnostics");
+        assert_eq!(
+            String::from_utf8(diagnostic).expect("UTF-8"),
+            "warn: snapshot could not be saved\n"
         );
     }
 
@@ -3025,7 +3179,7 @@ mod tests {
             let answer = row.split("  ").next().expect("the row's size");
             let footer = diagnostic.lines().last().expect("the footer");
             assert!(
-                footer.starts_with(&format!("perf: walked 2 files / {answer}; ")),
+                footer.contains(&format!("to walk 2 files ({answer}) at ")),
                 "--size {size}: {out}"
             );
         }
@@ -3048,11 +3202,55 @@ mod tests {
             &ControlCoverage::NotObserved,
             Duration::from_millis(2_500),
             SizeMetric::Apparent,
+            false,
         );
 
         assert_eq!(
             footer,
-            "perf: walked 12,345 files / 2.0 KiB; no ignore rules; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s (4938 files/s, 0.000 GB/s represented)"
+            "perf: took 2.50 s to walk 12,345 files (2.0 KiB) at 4,938 files/s (0.000 GB/s); gitignore not read; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1,500 files/s, 2 cached (4.0 KiB); warm revalidation"
+        );
+    }
+
+    #[test]
+    fn large_performance_sizes_are_bold_gray_and_restore_gray_afterward() {
+        let performance = PerformanceSummary {
+            walked_files: 1,
+            walked_bytes: 1 << 30,
+            fresh_files: 1,
+            bytes_read: 1 << 30,
+            analysis_ns: 1_000_000_000,
+            cached_files: 1,
+            cached_bytes: 1 << 30,
+            ..PerformanceSummary::default()
+        };
+        let plain = performance_footer(
+            performance,
+            &ControlCoverage::NotObserved,
+            Duration::from_secs(1),
+            SizeMetric::Apparent,
+            false,
+        );
+        assert!(!plain.contains('\u{1b}'));
+        assert!(plain.contains("to walk 1 file (1.0 GiB)"), "{plain}");
+        assert!(plain.contains("1 cached (1.0 GiB)"), "{plain}");
+
+        let colored = paint(
+            &performance_footer(
+                performance,
+                &ControlCoverage::NotObserved,
+                Duration::from_secs(1),
+                SizeMetric::Apparent,
+                true,
+            ),
+            STYLE_PERFORMANCE,
+            true,
+        );
+        let bold_gray_size = report_format::styled_bytes(1 << 30, 0, true, true);
+        assert!(bold_gray_size.contains('\u{1b}'), "{bold_gray_size:?}");
+        assert_eq!(
+            colored.matches(&format!("{bold_gray_size}{STYLE_PERFORMANCE}")).count(),
+            4,
+            "walked, read, read-rate, and cached sizes each restore gray: {colored:?}"
         );
     }
 
@@ -3489,6 +3687,17 @@ mod tests {
     }
 
     #[test]
+    fn quiet_and_tree_bar_size_flags_parse_with_their_defaults() {
+        assert!(!parse(&["fdu", "."]).quiet);
+        assert!(parse(&["fdu", "--quiet", "."]).quiet);
+        assert!(parse(&["fdu", "-q", "."]).quiet);
+        assert_eq!(parse(&["fdu", "."]).bar_size(), 10);
+        assert_eq!(parse(&["fdu", "--bar-size", "20", "."]).bar_size(), 20);
+        assert_eq!(parse(&["fdu", "--bar-size=0", "."]).bar_size(), 0);
+        assert_eq!(parse(&["fdu", "--bar-size", "-1", "."]).bar_size(), 0);
+    }
+
+    #[test]
     fn the_progress_flag_parses_like_color_and_defaults_to_auto() {
         assert_eq!(parse(&["fdu", "."]).progress, ProgressMode::Auto);
         assert_eq!(parse(&["fdu", "--progress", "always", "."]).progress, ProgressMode::Always);
@@ -3543,6 +3752,8 @@ mod tests {
         let progress = progress.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(progress.contains("unlike --color, never draws into a pipe or file"), "{progress}");
         assert!(progress.contains("[default: auto]"), "{progress}");
+        assert!(output.contains("--bar-size <N>"), "{output}");
+        assert!(output.contains("-q, --quiet"), "{output}");
     }
 
     /// The gating decision, resolved from the flag, the terminal, the format, and the
@@ -3561,6 +3772,8 @@ mod tests {
         assert!(!plan(&["fdu", "--format", "yaml", "."], &interactive).draw);
         assert!(plan(&["fdu", "--progress", "always", "--format", "json", "."], &interactive).draw);
         assert!(!plan(&["fdu", "--progress", "never", "."], &interactive).draw);
+        assert!(!plan(&["fdu", "--quiet", "."], &interactive).draw);
+        assert!(!plan(&["fdu", "-q", "--progress", "always", "."], &interactive).draw);
 
         for command in [
             &["fdu", "--docs"][..],

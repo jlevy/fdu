@@ -47,6 +47,10 @@ const DECLINED = [
   'The Skill Installs Where Agents Look, and a Rerun Changes Nothing',
   'A Skill fdu Did Not Generate Is Refused, Not Overwritten',
   'Unknown Options Are Usage Errors on Stderr',
+  // The CLI validates a human-only bar width before touching the root. Python's
+  // Report.render validates it after report creation; parity cannot replay the CLI's
+  // pre-scan timing through the public Report API. public_smoke pins the API guard.
+  'Oversized Human Tree Bars Fail Before Scanning',
 ];
 
 // The surface must be the built wheel, never python/fdu/ in the working tree: a shim

@@ -7666,6 +7666,76 @@ mod tests {
     }
 
     #[test]
+    fn rollups_conserve_hand_counted_populations_through_updates_and_subtree_replacement() {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let attrs =
+            |size, allocated, inode| Attrs { size, allocated, inode, dev: 1, ..Attrs::default() };
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, attrs(6, 512, 1)),
+            upsert("a", EntryKind::Dir, Attrs::default()),
+            upsert("a/keep.rs", EntryKind::File, attrs(7, 512, 99)),
+            upsert("a/drop.log", EntryKind::File, attrs(11, 1_024, 3)),
+            upsert("z.rs", EntryKind::File, attrs(5, 4_096, 99)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+        ]));
+
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!(
+            (total.all.files, total.all.dirs, total.all.bytes, total.all.allocated),
+            (4, 1, 29, 6_144)
+        );
+        assert_eq!(
+            (total.unignored.files, total.unignored.bytes, total.unignored.allocated),
+            (3, 18, 5_120)
+        );
+        assert_eq!(index.rollup(Path::new("a")).expect("directory").bytes, 18);
+        assert_eq!(
+            total.all.by_ext[".rs"].files, 2,
+            "two paths with one inode each contribute a file"
+        );
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "a/drop.log",
+            EntryKind::File,
+            attrs(13, 1_536, 3),
+        )]));
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!((total.all.files, total.all.bytes, total.all.allocated), (4, 31, 6_656));
+        assert_eq!(
+            (total.unignored.files, total.unignored.bytes, total.unignored.allocated),
+            (3, 18, 5_120)
+        );
+
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("a") }]));
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!(
+            (total.all.files, total.all.dirs, total.all.bytes, total.all.allocated),
+            (2, 0, 11, 4_608)
+        );
+        assert_eq!(total.all, total.unignored);
+
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::Dir, Attrs::default()),
+            upsert("a/final.log", EntryKind::File, attrs(17, 4_096, 4)),
+        ]));
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!(
+            (total.all.files, total.all.dirs, total.all.bytes, total.all.allocated),
+            (3, 1, 28, 8_704)
+        );
+        assert_eq!(
+            (
+                total.unignored.files,
+                total.unignored.dirs,
+                total.unignored.bytes,
+                total.unignored.allocated
+            ),
+            (2, 1, 11, 4_608)
+        );
+        assert_eq!(index.rollup(Path::new("a")).expect("directory").bytes, 17);
+    }
+
+    #[test]
     fn symlinks_and_special_nodes_do_not_contribute_regular_file_tallies() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![

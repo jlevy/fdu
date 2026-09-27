@@ -25,7 +25,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --limit 10 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -267,7 +267,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
 ```console
 $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -349,15 +349,16 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
       },
       "omissions": [],
       "remainder": {
-        "files": 7,
-        "bytes": 269,
+        "files": 6,
+        "bytes": 141,
         "allocated": [ALLOCATED],
-        "reasons": ["depth", "rows"]
+        "reasons": ["rows"]
       }
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: gitignored sizes are included in row totals
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: depth 1, row limit 2
 ! tip: expand deeper: --depth=all
 ! tip: show more rows: --limit=all
@@ -376,7 +377,7 @@ age.
 ```console
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -541,7 +542,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],

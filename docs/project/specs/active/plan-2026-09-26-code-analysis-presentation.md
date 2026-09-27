@@ -4,7 +4,8 @@
 
 **Author:** Codex
 
-**Status:** Complete
+**Status:** Complete; tally corrections validated locally, CI pending (`fdu-z0og`,
+`fdu-idn5`)
 
 **Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`;
 [senior review follow-up](https://github.com/jlevy/fdu/pull/133#issuecomment-5853335891)
@@ -214,19 +215,31 @@ for parentheses or ANSI sequences.
 
 | Role | Human Presentation |
 | --- | --- |
-| Primary numbers and file totals | Normal readable foreground, outside parentheses |
-| Names and paths | Cyan, scoped to the name span |
-| Category labels | Existing green role |
+| Primary numbers and file totals | Normal foreground; sizes at least 1 GiB bold |
+| Names and paths | Existing cyan names become bright bold cyan; directory slash gray except `.`/`..` |
+| Category labels | Ordinary cyan |
 | Supplementary details | Entire parenthetical span gray, including delimiters |
 | Headings | Existing bold cyan role |
 | Telemetry and omission notes | Gray |
 | Warnings/errors | Explicit existing warning/error styles |
 
-For example, `attic 3,508 files (43 MiB ignored)` has a cyan name, a normal file count,
-and a gray ignored annotation.
+For example, `attic/ 3,508 files (43 MiB gitignored)` has a bright bold cyan name, a
+gray directory marker, a normal file count, and a gray gitignored annotation.
+The gitignored amount is included in the total.
 Likewise, `477,298 lines (439,949 nonblank, 37,349 blank)` keeps its total primary and
 its breakdown gray. Dedicated ignored columns/rows remain primary data; a filename
 containing parentheses remains one name span.
+
+The [output design system](../../architecture/fdu-output-design.md) owns the current
+rendering contract, including bar-first columns, population-colored bars, one aggregate
+`… and N more files` remainder, gray zero sizes and shares below 1%, and explanatory
+notes. Filled bars stay green, using `█` for non-gitignored, `▓` for gitignored, and `▒`
+for unclassified usage; unused width is faint `░`. `--bar-size` defaults to 10;
+nonpositive values hide the bar column.
+`--quiet` hides informational diagnostics and progress while retaining warnings and
+errors. The Rust and Python renderers expose the same bar-width capability.
+Shared goldens and a compact population/style matrix enforce these rules without a flag
+Cartesian product.
 
 Use shared integer grouping and B/KiB/MiB/GiB size conventions.
 Keep machine numbers numeric.
@@ -302,13 +315,17 @@ Attribute each omitted subtree to its first exclusion boundary, with exact disjo
 remainder measures where known.
 Do not add ancestor and descendant totals.
 Mark a depth boundary even if no child rows were retained.
-The shared `TreeRemainder` aggregates hidden recursive files and both byte measures
-across disjoint boundaries.
-Text prints one gray root-level `… and SIZE (N files) more` line; report schema 9
-exposes the same nullable totals and ordered reasons.
+The shared `TreeRemainder` aggregates only unrepresented root branches.
+Listed direct children represent their entire subtrees, including unexpanded
+descendants. Their totals plus the remainder equal the root total for complete
+representable measurements.
+Text prints one root-level row with bar, share, size, and gray `… and N more files`;
+report schema 10 exposes the same nullable totals and ordered reasons.
 Per-boundary `entries` still means direct hidden roots; `files` means recursive regular
 files. Unknown values propagate.
-Nothing hidden means a null remainder and no notes.
+All root branches represented means a null remainder.
+Nested collapsed content still produces applicable limit notes and tips.
+Full expansion has no omission diagnostics.
 Applicable bounds are explained once in end notes, with each remedy once as a `tip:` on
 stderr. Full expansion is tested across text, JSON, JSONL, YAML, and Python.
 The [output design](../../architecture/fdu-output-design.md) owns diagnostic prefixes,
@@ -337,8 +354,11 @@ Add these rates to the existing gray footer using one total elapsed sample:
 
 - Successfully observed regular files divided by total report seconds.
 - Represented walked bytes in the selected size basis divided by total seconds and
-  1,000,000,000, labelled `GB/s apparent walked` or `GB/s allocated walked`.
+  1,000,000,000, shown as `GB/s` beside the file rate.
 
+Start the footer with elapsed wall-clock time (`perf: took ... to walk ...`). Use
+parentheses for associated counts and sizes, and the shared integer formatter for all
+human counts and file rates.
 Represented-size throughput is not storage bandwidth.
 Preserve actual content-read and fresh-analysis rates with their analysis-phase
 denominator. Retain the existing total boundary: after validation, before preparation,

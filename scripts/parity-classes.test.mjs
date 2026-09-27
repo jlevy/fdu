@@ -18,7 +18,7 @@ test("portable golden paths require the exact fixture root and unchanged other f
   const cache = "[ROOT]/tests/parity/.corpus/cli-cache.tryscript.md";
   const content = "[ROOT]/tests/parity/.corpus/cli-content.tryscript.md";
   const json = (root, files) =>
-    `{"schema": "fdu.report/9", "root": "${root}", "files": ${files}}`;
+    `{"schema": "fdu.report/10", "root": "${root}", "files": ${files}}`;
   assert.equal(
     classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/project", 7)], "Cache", cache))?.id,
     "portable-golden-pattern",
@@ -27,10 +27,10 @@ test("portable golden paths require the exact fixture root and unchanged other f
     classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/content-project", 7)], "Content", content))?.id,
     "portable-golden-pattern",
   );
-  const envelope = (root, age, observed, allocated, files = 7, schema = "fdu.report/9") =>
+  const envelope = (root, age, observed, allocated, files = 7, schema = "fdu.report/10") =>
     `{"schema": "${schema}", "root": "${root}", "age_reference_ns": ${age}, "observed_at_ns": ${observed}, "allocated": ${allocated}, "files": ${files}}`;
   const golden = envelope("[SCAN_PATH]", "[AGE_NS]", "[MTIME_NS]", "[ALLOCATED]");
-  const concrete = (age, allocated, files = 7, schema = "fdu.report/9", observed = "456") =>
+  const concrete = (age, allocated, files = 7, schema = "fdu.report/10", observed = "456") =>
     envelope("[SANDBOX]/project", age, observed, allocated, files, schema);
   assert.equal(
     classify(session([golden], [concrete("-123", "4096")], "JSONL", cache))?.id,
@@ -40,7 +40,7 @@ test("portable golden paths require the exact fixture root and unchanged other f
   for (const actual of [
     concrete("NaN", "4096"),
     concrete("-123", "unknown"),
-    concrete("-123", "4096", 7, "fdu.report/9", "unknown"),
+    concrete("-123", "4096", 7, "fdu.report/10", "unknown"),
     concrete("-123", "4096", 8),
     concrete("-123", "4096", 7, "fdu.report/8"),
   ]) {
