@@ -540,6 +540,9 @@ fn prepare_report_internal(
             }
             let answer = report(&index, request, SystemTime::now())?;
             debug_assert_eq!(answer.scope, scan_config.scope());
+            // The answer is complete and owns no part of the index, so freeing it is no
+            // longer the caller's wait.
+            crate::release_index(index);
             Ok((answer, pending_save, performance, scan_diagnostics))
         }
     }

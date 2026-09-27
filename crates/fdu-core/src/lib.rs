@@ -280,6 +280,40 @@ pub enum OpenPath {
     CacheOnly,
 }
 
+/// Live entries past which a one-shot index is released off the caller's thread.
+///
+/// Releasing an index frees every entry's name and every directory's child list, one
+/// allocation at a time, and nothing reads the result: on a million-entry Linux tree it
+/// was 95 ms of a 1.39 s `--cache off` report, all of it after the answer was complete
+/// (exp-158). At that rate this threshold is about 6 ms of release, well above the tens
+/// of microseconds a thread spawn costs; smaller indexes release inline, so a small
+/// report never starts a thread to save almost nothing.
+const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 64 * 1024;
+
+/// Drop one reference to a one-shot index, moving the final release off this thread.
+///
+/// Only the last reference does any work; every other one is an ordinary decrement.
+/// `Arc::into_inner` makes that decision race-free when the caller and a snapshot
+/// writer let go concurrently: exactly one of them receives the index. A large index
+/// then goes to a detached, named thread. That thread holds no engine state and reports
+/// nothing — its only effect is returning memory — so there is nothing to join: a
+/// process that exits first lets the operating system reclaim the pages instead, and a
+/// long-lived caller gets the memory back moments later rather than before its answer.
+/// A host that cannot spawn the thread releases the index inline, as before.
+pub(crate) fn release_index(index: std::sync::Arc<Index>) {
+    let Some(index) = std::sync::Arc::into_inner(index) else {
+        return;
+    };
+    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES {
+        return;
+    }
+    let spawned = std::thread::Builder::new()
+        .name("fdu-index-release".to_string())
+        .spawn(move || drop(index));
+    // On failure the builder drops the closure, and with it the index, on this thread.
+    drop(spawned);
+}
+
 /// A snapshot write running alongside rendering.
 ///
 /// The index is read-only by the time this starts, so the writer and the renderer are
@@ -934,7 +968,11 @@ fn spawn_save(
         if let Ok(worker) =
             std::thread::Builder::new().name("fdu-snapshot".to_string()).spawn(move || {
                 let _counter_guard = counters::thread_flush_guard();
-                snapshot::save(&metadata_source, &metadata_path)
+                let saved = snapshot::save(&metadata_source, &metadata_path);
+                // The caller joins this thread; a writer holding the last reference would
+                // otherwise make that join wait for the whole index to be freed.
+                release_index(metadata_source);
+                saved
             })
         {
             workers.push(("metadata", worker));
@@ -945,7 +983,9 @@ fn spawn_save(
         if let Ok(worker) =
             std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
                 let _counter_guard = counters::thread_flush_guard();
-                content::save_content_cache(&snapshot_source, &content_path)
+                let saved = content::save_content_cache(&snapshot_source, &content_path);
+                release_index(snapshot_source);
+                saved
             })
         {
             workers.push(("content", worker));
@@ -1046,6 +1086,24 @@ mod tests {
             !index.controls().expect("control state observed").is_empty(),
             "the fixture must retain a control source"
         );
+    }
+
+    /// Releasing one reference never frees an index another holder can still read: a
+    /// caller and a snapshot writer let go in either order, and only the last does any
+    /// work.
+    #[test]
+    fn releasing_a_shared_index_leaves_the_other_holder_reading_it() {
+        let root = tempfile::tempdir().expect("tempdir");
+        write_file(&root.path().join("kept.txt"), b"kept");
+        let (index, _) = open_fixture(root.path(), &OpenFixture::default()).expect("open");
+        let shared = std::sync::Arc::new(index);
+        let writer = std::sync::Arc::clone(&shared);
+
+        release_index(shared);
+
+        assert_eq!(std::sync::Arc::strong_count(&writer), 1);
+        assert_eq!(writer.total().files, 1);
+        release_index(writer);
     }
 
     /// A default `open` observes control state, so its index answers ignore questions
