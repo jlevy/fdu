@@ -17,6 +17,25 @@
 // label, a note -- reads as unexplained for a reason that has nothing to do with it.
 const sameSeparator = (line) => line.replace(/\[SEP\]/g, '/');
 
+// The golden stores a portable scan-root pattern, while the Python replay prints its
+// concrete sandbox root. Match only the fixture root for that session: accepting any
+// [SANDBOX] path would conceal a Python request that scanned a different directory.
+const fixtureRoot = (file = '') => {
+  if (file.endsWith('/cli-content.tryscript.md')) return 'content-project';
+  if (/\/(?:cli-axes|cli-cache|cli-json)\.tryscript\.md$/.test(file)) return 'project';
+  return null;
+};
+const samePortablePattern = (line, file) => {
+  let value = sameSeparator(line);
+  const fixture = fixtureRoot(file);
+  if (fixture) {
+    value = value
+      .replaceAll('"root": "[SCAN_PATH]"', `"root": "[SANDBOX]/${fixture}"`)
+      .replace(/^root: \[SCAN_PATH\]$/, `root: [SANDBOX]/${fixture}`);
+  }
+  return value;
+};
+
 /** Flags and parameters name the same thing: --modified-since is modified_since. */
 const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
 
@@ -56,6 +75,20 @@ const usesBoundTip = (line) =>
 // covered eight sessions until fdu.report exposed the one-shot contract, and its matcher
 // keyed on "source" and cache-emptiness -- exactly what a cache regression would look like.
 export const CLASSES = [
+  {
+    id: 'portable-golden-pattern',
+    title: 'Portable golden spelling of the same fixture path',
+    why: [
+      'The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a',
+      'platform separator. The Python replay prints the sandbox root and a literal',
+      'separator. Only the exact fixture root and otherwise identical lines match.',
+    ],
+    matches: ({ file, removed, added }) =>
+      removed.length > 0 &&
+      removed.length === added.length &&
+      removed.every((line, i) => samePortablePattern(line, file) === sameSeparator(added[i])) &&
+      removed.some((line, i) => line !== added[i]),
+  },
   {
     id: 'bound-tip-vocabulary',
     title: 'Bound suggestions name the same setter on each surface',

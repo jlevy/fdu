@@ -10,9 +10,51 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CORPUS = path.join(ROOT, "tests", "parity", "deviations-python.diff");
 
 //: One session shaped the way `parseSessions` produces them.
-function session(removed, added, name = "Some Session") {
-  return { name, removed, added };
+function session(removed, added, name = "Some Session", file = "") {
+  return { name, file, removed, added };
 }
+
+test("portable golden paths require the exact fixture root and unchanged other fields", () => {
+  const cache = "[ROOT]/tests/parity/.corpus/cli-cache.tryscript.md";
+  const content = "[ROOT]/tests/parity/.corpus/cli-content.tryscript.md";
+  const json = (root, files) =>
+    `{"schema": "fdu.report/9", "root": "${root}", "files": ${files}}`;
+  assert.equal(
+    classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/project", 7)], "Cache", cache))?.id,
+    "portable-golden-pattern",
+  );
+  assert.equal(
+    classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/content-project", 7)], "Content", content))?.id,
+    "portable-golden-pattern",
+  );
+  assert.equal(
+    classify(session(["80 B  assets[SEP]logo.png"], ["80 B  assets/logo.png"]))?.id,
+    "portable-golden-pattern",
+  );
+  for (const [actual, fixture] of [
+    ["[SANDBOX]/other", cache],
+    ["[SANDBOX]/content-project", cache],
+    ["[SANDBOX]/project/child", cache],
+    ["/unrelated/project", cache],
+  ]) {
+    assert.equal(classify(session([json("[SCAN_PATH]", 7)], [json(actual, 7)], "Cache", fixture)), null);
+  }
+  assert.equal(
+    classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/project", 8)], "Cache", cache)),
+    null,
+    "a changed file count cannot ride along with a portable root",
+  );
+  assert.equal(
+    classify(session(['"other": "[SCAN_PATH]"'], ['"other": "[SANDBOX]/project"'], "Cache", cache)),
+    null,
+    "only the report root field has this portable pattern",
+  );
+  assert.equal(
+    classify(session(["otherroot: [SCAN_PATH]"], ["otherroot: [SANDBOX]/project"], "Cache", cache)),
+    null,
+    "a YAML field whose name only ends in root must not match",
+  );
+});
 
 test("every class carries the fields the report prints", () => {
   for (const cls of CLASSES) {
@@ -62,6 +104,12 @@ test("bound tips accept only exact CLI-to-Python setter names and values", () =>
 // for a reason unrelated to the property, which is the defect this file exists to catch.
 test("no class absorbs an extra changed line", () => {
   const polluted = {
+    "portable-golden-pattern": session(
+      ['"root": "[SCAN_PATH]"', "total 100"],
+      ['"root": "[SANDBOX]/project"', "total 999"],
+      "Cache",
+      "[ROOT]/tests/parity/.corpus/cli-cache.tryscript.md",
+    ),
     // Same shape these two explain (equal-length hunks, one knob renamed), plus one line
     // whose two sides genuinely disagree.
     "surface-label": session(
