@@ -11,9 +11,9 @@ everything needed to pick the loop up mid-stream lives in the registry (what to 
 next), the record (what has been tried), and here (how to run one round).
 Every command below was run once while writing it.
 
-Start at [Current Standing](#current-standing-2026-09-18). That section is the pickup:
-standing best, host regime, Darwin subjects, and the next-up list with enough context to
-start each item. Do not reconstruct the queue from chat, from `macos-agenda` priority
+Start at [Current Pickup](#current-pickup-2026-09-27) for the action order, then use
+[Current Standing](#current-standing-2026-09-18) for standing best, host regime, and
+Darwin subjects. Do not reconstruct the queue from chat, from `macos-agenda` priority
 order, or from the 2026-08-23 Tier 1 list alone.
 
 ## Current Standing (2026-09-18)
@@ -527,11 +527,12 @@ nominated-subject document.
 The CLI QA medium tree was skipped: deciding-scale but mutating.
 `system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
-### Next Up
+### Historical Darwin Queue (2026-09-19)
 
-Take these in order.
-Source of truth:
-[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+This section records the completed 2026-09-19 Darwin sequence, not the current action
+order. Start new work from [Current Pickup](#current-pickup-2026-09-27).
+[The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+preserves the earlier queue and rejected attempts.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
 H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
@@ -540,11 +541,10 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-The next free hypothesis and experiment ids have one home: the end of
-[the Linux standing](#linux-standing-2026-09-20), because both numberings are shared
-with Darwin and the Linux stack mints them.
-Do not mint an id from this section; do not take exp-138–155 or H144–H149 here.
-exp-113 remains reserved unused (H113 superseded).
+The next free hypothesis and experiment ids are in
+[Current Pickup](#current-pickup-2026-09-27), because both numberings are shared with
+Darwin and Linux. Do not mint an id from this section; do not take exp-138–155 or
+H144–H149 here. exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -751,8 +751,9 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 
 | Document | Role |
 | --- | --- |
-| This standing section | Standing best, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
+| [Current Pickup](#current-pickup-2026-09-27) | Current action order and next free ids |
+| This standing section | Standing best and host regime |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Historical Darwin H107–H138 queue and rejected attempts; not the current pickup |
 | [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
@@ -941,6 +942,8 @@ walker-allocated child lists and path keys.
 Start there; an allocator dependency comes only after a structural fix is measured (H74,
 H85).
 
+## Current Pickup (2026-09-27)
+
 Next free experiment id is **exp-163** and next free unused hypothesis id is **H160**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
@@ -979,22 +982,19 @@ Each one has caught a real mistake.
      ../fdu-perf-$(date +%Y%m%d) origin/main
    ```
 
-   If the next increment is stacked on an open performance PR, create that stacked
-   branch from the current #91 head and keep one PR whose base is
-   `perf/campaign-quiet-2026-09-18`, not `main`. Do not push further commits onto #91.
-   One stacked pull request, updated after every experiment, never merged unattended.
+   If the next increment is intentionally stacked on an open performance PR, branch from
+   that PR’s current head and set its base to that PR rather than `main`. Keep a
+   separate branch and PR for the increment; never merge unattended or force-push
+   committed evidence.
 
-2. **Find the queue.** Start from [Current Standing](#current-standing-2026-09-18), not
-   from the `macos-agenda` label in isolation.
-   Remaining order after the overnight is
-   [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
-   That label still holds older campaign-2 items; several have landed, and H86’s
-   remaining gap is still the Linux floor after H111 failed on #94 (not this host).
+2. **Find the queue.** Start from [Current Pickup](#current-pickup-2026-09-27), not from
+   the historical post-H115 plan or the `macos-agenda` label in isolation.
+   H86’s remaining gap is still the Linux floor after H111 failed on #94, not work for
+   this Darwin host.
 
    ```shell
-   tbd show fdu-8ya1 fdu-rfr6 fdu-ytg5 fdu-jcfn fdu-rum0 fdu-vf4b fdu-i39y fdu-jekg
-   tbd list --spec plan-2026-09-19-post-h115-remaining-headroom.md
-   tbd list --label macos-agenda
+   tbd show fdu-9e9d fdu-wbhe fdu-83wn
+   tbd ready
    ```
 
    Read the bead before starting: its notes hold the recorded attempts and the blocker
@@ -1211,9 +1211,10 @@ Update the registry row’s status, close or update the bead with the verdict an
 experiment id, and check whether the change moved the next item’s headroom: two
 hypotheses aimed at the same cost divide one budget, and this record has seen it three
 times. If it did, say so in that bead before starting it.
-Rewrite [Current Standing](#current-standing-2026-09-18) so the next-up table and
-standing-best numbers match the ledger; a stale standing is how the next agent repeats a
-finished experiment.
+Rewrite [Current Pickup](#current-pickup-2026-09-27) and
+[Current Standing](#current-standing-2026-09-18) so the action order and standing-best
+numbers match the ledger; stale pointers make the next agent repeat a finished
+experiment.
 
 ```shell
 tbd close fdu-XXXX --reason "exp-067: accepted, default-tree -18.2% [-21.0%, -15.1%]"
@@ -1276,8 +1277,9 @@ After every experiment it carries a table — experiment id, hypothesis, subject
 job, change with interval, verdict — and a line for anything skipped and why.
 A reader should learn the night’s result from the ledger diff and the PR body without
 opening the transcript.
-[Current Standing](#current-standing-2026-09-18) is the in-repo pickup for the next
-agent; the PR body is not a substitute for updating it.
+[Current Pickup](#current-pickup-2026-09-27) is the in-repo action order for the next
+agent; update [Current Standing](#current-standing-2026-09-18) for regime and subject
+context. The PR body is not a substitute for either.
 
 Before stopping:
 

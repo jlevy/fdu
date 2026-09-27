@@ -1,12 +1,11 @@
 # fdu
 
-**Fast disk usage skill, `du` replacement, and file roll-up engine for Python and
-Rust.**
+**Fastest native du replacement and detailed file analytics for Python and Rust**
 
 On our million-entry macOS benchmark, fdu delivered **over 8× the throughput of standard
-`du`**, **about 60% more than dust**, and **roughly 10% more than
-[dumac](https://github.com/healeycodes/dumac#readme)** while building a reusable index
-with counts, sizes, recency, and file-type tallies for every directory.
+`du`**, **about 60% more than [dust](https://github.com/bootandy/dust)**, and **roughly
+10% more than [dumac](https://github.com/healeycodes/dumac#readme)** while building a
+reusable index with counts, sizes, recency, and file-type tallies for every directory.
 These paired results used warm filesystem caches under background load, and the tools
 return different amounts of information.
 See [Speed](#speed) for the measurements and limits.

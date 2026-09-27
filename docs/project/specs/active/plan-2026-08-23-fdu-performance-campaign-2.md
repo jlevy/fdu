@@ -531,7 +531,9 @@ strategy and the record is visible in review.
 - [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
-  remaining Darwin queue after the H116–H120 overnight
+  historical Darwin H107–H138 queue after the H116–H120 overnight; current priorities
+  are in
+  [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
 - [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
   recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
   virtualized host; base `main`, merges onto `main` then #97

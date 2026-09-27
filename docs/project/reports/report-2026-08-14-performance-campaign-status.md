@@ -4,8 +4,8 @@
 
 **Author:** fdu project, with Claude Code assistance
 
-**Status:** Orientation through 2026-08-23. Live pickup is
-[the runbook standing](../guides/performance-loop-runbook.md#current-standing-2026-09-18).
+**Status:** Orientation through 2026-08-23. Current work starts at
+[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
 
 ## Who this is for
 
@@ -295,10 +295,10 @@ untested on macOS.
 
 ## 6. What remains
 
-Live next-up after the 2026-09-18 Darwin revisit is
-[the runbook standing](../guides/performance-loop-runbook.md#current-standing-2026-09-18)
-and
-[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+The current action order is in
+[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+preserves the earlier Darwin queue, not the live next-up.
 H86’s remaining gap is still the Linux floor after H111 failed on
 [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
 That is not a restart of the Darwin composite.
@@ -421,7 +421,7 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 | Document | What it is |
 | --- | --- |
 | This report | Orientation through 2026-08-23: method, history, what remained then |
-| [Performance-loop runbook](../guides/performance-loop-runbook.md) | One iteration, plus the 2026-09-18 standing and next-up list |
+| [Performance-loop runbook](../guides/performance-loop-runbook.md) | One iteration, current pickup, and standing host context |
 | [Performance evidence](report-2026-08-20-fdu-performance-evidence.md) | Absolute timings and paired effects across every experiment, charted |
 | [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | The reusable method, domain-neutral |
 | [Performance loop](../guides/performance-loop.md) | Protocol and live hypothesis registry |
