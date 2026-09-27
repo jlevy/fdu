@@ -17,6 +17,7 @@ await merge; research is in #130.
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
 | Current PR stack | `fdu-0gqc` | Ordered merge and post-merge verification of #130, #133, #135 and the tracking follow-up; [release process](docs/project/guides/release-process.md). No next release is implied. |
+| Output-design manual acceptance | `fdu-kwjc` | [Recorded candidate checks](docs/project/reports/report-2026-09-27-manual-acceptance.md): 30 of 33 passed or corrected; light/dark visual judgment, fresh-session skill discovery, and upgrade after this increment publishes remain open. |
 | Published 0.1.0 verification | `fdu-gjc2`, `fdu-yfej`, `fdu-vxvm` | Record the remaining [published-channel first-user checks](docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md). |
 | Release automation | `fdu-zr73` | [Packaging follow-ups](docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md), including registry propagation retry (`fdu-zx9y`). |
 | Stabilization review residue | `fdu-82h4`, `fdu-6wvb`, `fdu-fhde` | Operational review/handoff parents retain their open findings; their bead descriptions own that scope. A merged PR alone does not close a finding. |
