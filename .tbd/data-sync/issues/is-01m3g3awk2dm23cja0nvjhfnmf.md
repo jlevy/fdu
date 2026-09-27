@@ -3,9 +3,9 @@ type: is
 id: is-01m3g3awk2dm23cja0nvjhfnmf
 title: Expose ignore rule counts and clearly defined total report throughput
 kind: feature
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
 delegate: codex-integration
 labels: []
@@ -16,7 +16,11 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-27T00:13:14.209Z
-updated_at: 2026-09-27T01:28:14.256Z
+updated_at: 2026-09-27T03:12:09.151Z
 started_at: 2026-09-27T01:28:14.244Z
+closed_at: 2026-09-27T03:12:09.151Z
+close_reason: Implemented across engine, CLI, Python, schemas and docs in PR133.183 shared CLI goldens,886 core tests,68 cross-format cases, full16,787-case path matrix, cache fault proofs, and Apple/Windows cross-lint pass. Final packaging/CI handoff remains tracked by fdu-7jtp.
+resolution: null
+duplicate_of: null
 ---
 Add engine-owned accepted ignore-pattern counts per governing control-file location, including negations and duplicates without fresh rereads. Distinguish applied/refused, disabled, partial and cached coverage across surfaces. Extend the gray performance footer with walked files/sec and decimal GB/sec over the same total report elapsed time; label represented-byte basis and preserve actual content-read stage rates. Test zero duration/work, cached answers, mutations, shared controls, size bases and fixed arithmetic.

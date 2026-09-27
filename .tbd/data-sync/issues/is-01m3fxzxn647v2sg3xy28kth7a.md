@@ -3,9 +3,9 @@ type: is
 id: is-01m3fxzxn647v2sg3xy28kth7a
 title: Prune excluded ignored subtrees under the unified population policy
 kind: feature
-status: in_progress
+status: closed
 priority: 2
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
 delegate: sol-cache-layout
 labels: []
@@ -22,7 +22,11 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-26T22:39:51.973Z
-updated_at: 2026-09-27T01:27:23.795Z
+updated_at: 2026-09-27T03:12:08.849Z
 started_at: 2026-09-27T01:27:23.782Z
+closed_at: 2026-09-27T03:12:08.849Z
+close_reason: Unified population and real traversal/read pruning across Rust, CLI, and Python in PR133. Full16,787-case path-independence matrix passes, including population and cache histories; unknown controls remain explicit. Correctness and work counters are linked from the plan.
+resolution: null
+duplicate_of: null
 ---
 Implement and verify traversal pruning for --ignored=exclude as part of the unified ignored-population design in fdu-gdg0. No separate scan-ignored flag. Follow effective ancestor and negation rules, do not prune unknown classifications, distinguish control reads from content reads, and mark pruned totals unavailable. Exercise rule changes and all-to-excluded/excluded-to-all cache transitions with enumeration counters. The unified exclusion option must not ship as a report-only filter.

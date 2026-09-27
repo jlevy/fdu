@@ -3,9 +3,9 @@ type: is
 id: is-01m3g3atcmtntbefj5cmysvg00
 title: Design adaptive tree display with composable depth share breadth and row limits
 kind: feature
-status: in_progress
+status: closed
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
 delegate: sol-presentation
 labels: []
@@ -16,7 +16,11 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-27T00:13:11.955Z
-updated_at: 2026-09-27T01:27:24.073Z
+updated_at: 2026-09-27T03:12:09.146Z
 started_at: 2026-09-27T01:27:24.072Z
+closed_at: 2026-09-27T03:12:09.146Z
+close_reason: Implemented across engine, CLI, Python, schemas and docs in PR133.183 shared CLI goldens,886 core tests,68 cross-format cases, full16,787-case path matrix, cache fault proofs, and Apple/Windows cross-lint pass. Final packaging/CI handoff remains tracked by fdu-7jtp.
+resolution: null
+duplicate_of: null
 ---
 Implement engine-owned display bounds. Proposed tree defaults: depth 5, minimum 1% of fixed selected root size, unlimited breadth and total rows, with all controls overridable. Use breadth for per-directory caps and limit for per-section data rows across views. Include significant regular-file leaves, preserve aggregate totals and scan scope, and expose typed omission reasons. Validate eleven 2% siblings, depth boundaries, exact threshold equality, zero/unknown measures, root-versus-parent denominators, and cross-surface parity. Owner waives alpha compatibility.

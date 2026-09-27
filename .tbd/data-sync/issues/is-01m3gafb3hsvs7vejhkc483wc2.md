@@ -3,9 +3,9 @@ type: is
 id: is-01m3gafb3hsvs7vejhkc483wc2
 title: Consolidate tests and close meaningful coverage gaps from the audit
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-26-code-analysis-presentation.md
 delegate: sol-code-metrics
 labels: []
@@ -16,7 +16,11 @@ parent_id: is-01m3g53g8b7wg3qk2m70j8h0bp
 hold: null
 hold_until: null
 created_at: 2026-09-27T02:18:00.172Z
-updated_at: 2026-09-27T02:29:33.934Z
+updated_at: 2026-09-27T03:12:09.421Z
 started_at: 2026-09-27T02:29:33.933Z
+closed_at: 2026-09-27T03:12:09.420Z
+close_reason: "Testing review findings implemented in existing harnesses: meaningful cold-oracle cases, shared public goldens, correct Python population routes, watcher cleanup, and current wheel/tree expectations. Kept independent allocation/concurrency/cache proofs and removed a redundant mocked forwarding test. Final sensitivity and CI verification remains fdu-cdp6."
+resolution: null
+duplicate_of: null
 ---
 Implement evidence-backed testing-review findings. Consolidate redundant setup/assertions and move public CLI contracts into concise readable tryscript sessions when coverage remains equivalent. Keep fast focused lexer/chunk, arithmetic, allocation, concurrency and failure-injection invariants where goldens cannot replace them. Close concrete coverage gaps with minimal reusable fixtures. No blanket conversions, weakened assertions, catch-all elisions, machine-specific recordings, or test-count/coverage-percentage targets.
