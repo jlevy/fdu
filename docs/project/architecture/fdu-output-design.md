@@ -92,9 +92,8 @@ Machine data never contains ANSI escapes.
 ## Omitted Rows
 
 Colored tree bars use green solid blocks (`█`) for non-gitignored usage, green
-dark-shade blocks (`▓`) for gitignored usage, and faint gray light-shade blocks (`░`)
-for the unused width.
-Bars default to ten cells; `--bar-size` sets the width.
+dark-shade blocks (`▓`) for gitignored usage, and dim green light-shade blocks (`░`) for
+the unused width. Bars default to ten cells; `--bar-size` sets the width.
 Zero or negative values hide the bar and its following gutter.
 The filled width is rounded against the selected root, then its cells are divided by the
 row’s gitignored proportion.
@@ -111,9 +110,10 @@ claiming either population.
 Uncolored bars retain their plain block glyphs.
 
 Each tree has at most one remainder line below its selected root.
-Its annotation and values are gray, with the shared size emphasis and bar population
-colors. It uses the same bar, percentage, and size columns as tree rows; its name column
-reads `… and N more files`. The bar and percentage show the combined hidden share of the
+Its annotation is gray; percentages and sizes use the same styling as ordinary rows,
+including gray shares below 1%, gray zero sizes, and bold sizes of at least 1 GiB. It
+uses the same bar, percentage, and size columns as tree rows; its name column reads
+`… and N more files`. The bar and percentage show the combined hidden share of the
 selected root.
 
 ```text

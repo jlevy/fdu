@@ -42,7 +42,7 @@ It shows directory subtrees and file leaves contributing at least 1% of the sele
 root. Breadth and total rows are unbounded unless requested; `--depth`, `--min-share`,
 `--breadth`, and `--limit` compose independently.
 Colored bars use green `█` for non-gitignored usage, green `▓` for gitignored usage, and
-green `▒` when classification is unknown; faint `░` fills unused width.
+green `▒` when classification is unknown; dim green `░` fills unused width.
 Zero sizes and percentages below 1% are gray; sizes at least 1 GiB are bold.
 Cyan names are bright and bold.
 Directories get a gray `/` suffix, except `.` and `..`; file names and structured paths

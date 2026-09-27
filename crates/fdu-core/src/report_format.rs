@@ -15,15 +15,16 @@
 //! such as nonblank/blank counts use the same gray parenthetical role. Human directory
 //! names have a gray slash except `.` and `..`. Sizes >= 1 GiB are bold even in gray
 //! details; zero sizes and exact shares below 1% are gray. Pad cells before applying ANSI styles.
-//! Colored bars use green solid non-gitignored and shaded gitignored usage, with faint
+//! Colored bars use green solid non-gitignored and shaded gitignored usage, with dim green
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
 //! policy through [`human_count`] and [`human_count_u128`].
 //!
-//! Tree columns are bar, root percentage, size, then indented name. One gray remainder
-//! row per tree uses those same columns for its combined hidden usage and names the
-//! recursive hidden file count. That usage is already included in directory totals.
+//! Tree columns are bar, root percentage, size, then indented name. One remainder
+//! row per tree uses those same columns and quantity styles for unlisted root branches.
+//! Its gray annotation names the recursive hidden file count. That usage is already
+//! included in directory totals.
 //! Unknown coverage must show unknown size and no fabricated bar or percentage.
 //! Keep rerun flags out of rows: collect applicable remedies once per report in
 //! `report_epilogue`.
@@ -1871,7 +1872,7 @@ fn render_tree_remainder(
     };
     let measure = bytes.map_or_else(
         || detail(&format!("{:>10}", "unknown"), color),
-        |bytes| styled_bytes(bytes, 10, color, true),
+        |bytes| styled_bytes(bytes, 10, color, false),
     );
     // With no visible root, a known remainder represents the whole selected root.
     // A missing measurement cannot honestly produce either a bar or a percentage.
@@ -1884,7 +1885,7 @@ fn render_tree_remainder(
                 color,
                 bar_size,
             ),
-            detail(&format!("{:>5}", human_percentage(bytes, grand, 0)), color),
+            percentage_cell(bytes, grand, 0, 5, color),
         ),
         None => (" ".repeat(bar_size), detail(&format!("{:>5}", "—"), color)),
     };
@@ -2207,7 +2208,7 @@ fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: u
         return format!(
             "{}{}",
             paint(&"▒".repeat(filled), STYLE_BAR, true),
-            paint(&"░".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
+            paint(&"░".repeat(width - filled), STYLE_BAR.dimmed(), true)
         );
     }
     let ignored = bar_cells(ignored.unwrap_or(0), bytes, filled);
@@ -2215,7 +2216,7 @@ fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: u
         "{}{}{}",
         paint(&"█".repeat(filled - ignored), STYLE_BAR, true),
         paint(&"▓".repeat(ignored), STYLE_BAR, true),
-        paint(&"░".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
+        paint(&"░".repeat(width - filled), STYLE_BAR.dimmed(), true)
     )
 }
 
@@ -4641,7 +4642,7 @@ mod tests {
                 "{}{}{}",
                 paint("████", STYLE_BAR, true),
                 paint("▓▓", STYLE_BAR, true),
-                paint("░░░░", STYLE_DETAIL.dimmed(), true)
+                paint("░░░░", STYLE_BAR.dimmed(), true)
             )
         );
         assert_eq!(strip_ansi(&split).chars().count(), 10);
@@ -4653,7 +4654,7 @@ mod tests {
                 "{}{}{}",
                 paint("", STYLE_BAR, true),
                 paint("▓▓▓▓▓▓▓▓▓▓", STYLE_BAR, true),
-                paint("", STYLE_DETAIL.dimmed(), true)
+                paint("", STYLE_BAR.dimmed(), true)
             )
         );
         assert_eq!(strip_ansi(&usage_bar(0, 0, None, true, 10)), "░░░░░░░░░░");
