@@ -1802,6 +1802,7 @@ fn entry_rows<'a>(
 }
 
 /// Build one view's section, using the pre-computed tier when the selection allows.
+#[allow(clippy::too_many_arguments)] // Each shared input is computed once per request.
 fn build_section(
     view: ViewSpec,
     index: &Index,

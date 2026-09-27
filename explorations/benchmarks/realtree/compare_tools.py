@@ -148,7 +148,7 @@ CONTRACTS: Dict[str, ToolContract] = {
         work_class="default-tree",
         description=(
             "the bare default invocation: complete scan, reusable exact metadata "
-            "index, rendered depth-2 tree, and a persisted snapshot written on every "
+            "index, rendered default tree, and a persisted snapshot written on every "
             "run"
         ),
         argv=("{binary}", "--color", "never", "{root}"),
