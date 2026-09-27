@@ -9,9 +9,9 @@ The index is cached between runs and can be kept live as the tree changes.
 The same engine ships three ways:
 
 - **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
+- **Python package:** typed, immutable values plus the native `fdu` command
 - **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
   long-lived opened root)
-- **Python package:** typed, immutable values plus the native `fdu` command
 
 On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
 over 1,000,001 generated entries in a **5.206-second median**. The same paired run:
@@ -22,34 +22,55 @@ See [Speed](#speed).
 **0.x:** A minor release may change the command line or either API;
 [the release process](docs/project/guides/release-process.md) states the rules.
 
-## Install
+## Set Up with Any Coding Agent
 
-Once `0.1.0` is on the registries:
+Hand any coding agent this one instruction:
+
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
+
+The command writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under
+the project root. The skill needs no prior session context and uses `fdu` on `PATH` or a
+wheel-only `uvx` fallback; no installed command or Rust toolchain is required.
+
+Use `--agent-base DIR` to write `DIR/skills/fdu/SKILL.md` for one agent’s user scope,
+such as `~/.claude`. Re-run the installer after upgrading to refresh the skill;
+`fdu --skill` prints it, and deleting the generated skill directories removes it.
+See the [skill usage guide](docs/usage.md#agent-skill).
+
+## Install the Command Line
+
+With [uv](https://docs.astral.sh/uv/), use the published wheel without a Rust toolchain:
 
 ```shell
-uvx fdu@latest --help               # run the latest release without installing
-uv tool install fdu                 # command line, prebuilt wheel; uv tool upgrade fdu
-cargo install --locked fdu          # command line from source; Rust 1.85 or newer
-uv add fdu                          # Python library in a uv project
-pip install fdu                     # Python library in the current environment
-cargo add fdu                       # Rust library (re-exports the engine)
-cargo add fdu-core --features watch # engine only, with the watch layer
+uvx --no-build fdu@latest .
+uv tool install --no-build fdu
+fdu .
+uv tool upgrade --no-build fdu
+```
+
+The first command runs fdu without keeping an installed command; the second keeps it on
+`PATH`. `--no-build` requires a compatible wheel instead of compiling from source.
+The wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64 and arm64),
+macOS (x86-64 and arm64), and Windows x86-64. A Python version is not needed in normal
+use: fdu declares Python 3.12 or newer and uv selects a matching interpreter.
+If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
+does not publish free-threaded wheels yet.
+For a repeatable run, replace `latest` with a release number, such as `fdu@0.1.0`. If uv
+is configured with an `exclude-newer` cool-off, a new fdu release may be filtered.
+Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
+to expire.
+`--no-config` is a one-off override that skips all uv configuration, including
+that policy.
+
+To install the command from source, use Rust 1.85 or newer:
+
+```shell
+cargo install --locked fdu
 ```
 
 `--locked` keeps the reviewed dependency set; see
 [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
-
-For coding agents, `fdu --install-skill` writes the agent skill to
-`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root,
-or to `DIR/skills/fdu/SKILL.md` with `--agent-base DIR` for one agent’s user scope, such
-as `~/.claude`. Re-run it after upgrading; it replaces only files it generated and
-reports each as installed, updated, or unchanged.
-`fdu --skill` prints the same document, and deleting those two directories uninstalls
-it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`.
-
-Wheels are `abi3` for GIL-enabled CPython 3.12 and newer.
-Free-threaded CPython cannot load them; pass a standard interpreter (`--python 3.12` or
-`--python 3.14`).
 
 From a source checkout:
 
@@ -96,7 +117,7 @@ error.
 
 `fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --install-skill`
 writes a portable skill for coding agents where they look for it (`fdu --skill` prints
-it); see [Install](#install).
+it); see [Set Up with Any Coding Agent](#set-up-with-any-coding-agent).
 The full grammar is in the [usage guide](docs/usage.md).
 
 ## Find Stale Build Directories
@@ -143,6 +164,62 @@ Library callers get the same feed without parsing the command: Rust `Session` (b
 the `watch` build feature) and Python `Index.watch()`. Long-lived interactive clients
 use `OpenedIndex` / `fdu.opened` for progressive discovery, paged reads, and a resumable
 journal.
+
+## As a Python Module
+
+Add the package to a uv project, or install it in the current Python environment:
+
+```shell
+uv add fdu
+pip install fdu
+```
+
+The same wheel installs the native `fdu` command; there is no Python reimplementation of
+the CLI.
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+print(index.status.complete)
+print(index.total().files)
+print(index.children("src"))
+
+report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
+print(report.provenance.freshness)
+print(report.as_dict())  # same JSON the command line emits
+
+mark = index.clock
+index.refresh()
+print(index.since(mark).changes)
+```
+
+The watch feed is a live iterator; it does not return:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+with index.watch() as stream:
+    for batch in stream:
+        for change in batch:
+            print(change.kind, change.path)
+```
+
+Values are frozen dataclasses and enums.
+Every method is bulk: it returns a whole structured result in one call.
+Open, scan, and the native reconciliation phase of refresh run with the GIL released;
+building the Python dicts and lists holds it.
+Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
+directory can hold cached descendants.
+Whether a whole answer is complete and current comes from `index.status.complete` and
+`report.provenance.freshness`, which the example prints.
+`fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
+continuations, and a resumable change journal.
 
 ## As a Rust Library
 
@@ -197,55 +274,6 @@ println!("{} files analyzed for line metrics", analyzed);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
 ```
-
-## As a Python Module
-
-```python
-from pathlib import Path
-
-import fdu
-
-index = fdu.open(Path("/path/to/tree"))
-print(index.status.complete)
-print(index.total().files)
-print(index.children("src"))
-
-report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
-print(report.provenance.freshness)
-print(report.as_dict())  # same JSON the command line emits
-
-mark = index.clock
-index.refresh()
-print(index.since(mark).changes)
-```
-
-The watch feed is a live iterator; it does not return:
-
-```python
-from pathlib import Path
-
-import fdu
-
-index = fdu.open(Path("/path/to/tree"))
-with index.watch() as stream:
-    for batch in stream:
-        for change in batch:
-            print(change.kind, change.path)
-```
-
-Values are frozen dataclasses and enums.
-Every method is bulk: it returns a whole structured result in one call.
-Open, scan, and the native reconciliation phase of refresh run with the GIL released;
-building the Python dicts and lists holds it.
-Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
-directory can hold cached descendants.
-Whether a whole answer is complete and current comes from `index.status.complete` and
-`report.provenance.freshness`, which the example prints.
-`fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
-continuations, and a resumable change journal.
-
-The wheel also installs the native `fdu` command.
-There is no Python reimplementation of the CLI.
 
 ## Speed
 

@@ -97,7 +97,10 @@ const CLI_STYLES: Styles = Styles::styled()
 /// be split across `before_help` and `after_help`, which put a page of prose *above* the
 /// tool's own description — the reader met the examples before learning what the command
 /// was.
-const DOCS_POINTER: &str = r"Examples:
+const DOCS_POINTER: &str = r"Agent setup:
+  uvx --no-build fdu@latest --install-skill
+
+Examples:
   fdu .                     directory sizes (metadata only)
   fdu . --exclude-ignored   omit entries covered by .gitignore
   fdu . --view=summary      one total for the tree
@@ -106,7 +109,7 @@ const DOCS_POINTER: &str = r"Examples:
   fdu . --kind dir --include node_modules --modified-before 30d --long
   fdu . --kind dir --include target --modified-before 30d --format paths
 
-Run `fdu --docs` for more commands, cache behavior, and the full usage guide.";
+Run `fdu --docs` for setup, libraries, more commands, cache behavior, and the full usage guide.";
 
 /// The guide `--docs` prints: common questions, the two axes, cache behavior, and the
 /// contracts worth knowing before automating against the output.
@@ -121,6 +124,29 @@ macro_rules! docs_guide {
     ($watch_composition:literal, $mode_flags:literal) => {
         concat!(
             r"fdu — a fast, incremental file roll-up engine.
+
+SET UP WITH ANY CODING AGENT
+  Install fdu's self-contained skill for current and future agent sessions:
+
+    uvx --no-build fdu@latest --install-skill
+
+  Run it from the project root. The generated SKILL.md needs no prior session
+  context. If fdu is on PATH, `fdu --install-skill` is equivalent.
+
+INSTALL THE COMMAND LINE
+  Run the latest release once, or keep it on PATH:
+
+    uvx --no-build fdu@latest PATH
+    uv tool install --no-build fdu
+    fdu PATH
+
+  The wheel requires GIL-enabled Python 3.12 or newer. uv normally selects a
+  matching interpreter; if it selects a free-threaded build such as 3.14t,
+  add `--python 3.14` to the uvx or uv tool command.
+
+USE AS A LIBRARY
+  Python: `uv add fdu` (or `pip install fdu`)
+  Rust:   `cargo add fdu` (or `cargo add fdu-core` for the engine alone)
 
 START HERE
   A report requires a PATH. Use `.` for the current directory.
@@ -603,7 +629,7 @@ pub struct Cli {
     #[arg(short = 'V', long = "version", action = ArgAction::Version, help_heading = "OTHER")]
     pub version: Option<bool>,
 
-    /// Print common commands, cache behavior, and the complete usage guide.
+    /// Print setup, common commands, cache behavior, and the complete usage guide.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub docs: bool,
 
@@ -2520,7 +2546,7 @@ mod tests {
         assert!(parsed.selection.reverse);
     }
 
-    /// Every flag the guide names must exist.
+    /// Every fdu flag the guide names must exist.
     ///
     /// tbd states this rule for its own docs surface as "the menu must only name
     /// selectors that exist", and it is worth a test rather than an intention: prose that
@@ -2529,6 +2555,10 @@ mod tests {
     #[test]
     fn the_guide_only_names_flags_that_exist() {
         let command = Cli::command();
+        // The setup section also documents the two uv flags that make wheel-only
+        // installation explicit. Keep that external vocabulary narrow and visible
+        // here so a misspelled fdu flag still fails this test.
+        let external_install_flags = ["--no-build", "--python"];
         let known: Vec<String> = command
             .get_arguments()
             .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
@@ -2541,6 +2571,9 @@ mod tests {
         }
         assert!(!named.is_empty(), "the guide should name some flags");
         for flag in &named {
+            if external_install_flags.contains(&flag.as_str()) {
+                continue;
+            }
             assert!(known.contains(flag), "--docs names {flag}, which is not a flag");
         }
         // And the pointer must name the flag that prints the guide.
@@ -3115,7 +3148,7 @@ mod tests {
     }
 
     /// The runner rule is the user's decision of 2026-09-24: an installed `fdu` first,
-    /// else `uvx fdu@latest`, and the stamp is the build version so "re-run when
+    /// else `uvx --no-build fdu@latest`, and the stamp is the build version so "re-run when
     /// `--version` differs" compares like with like. It replaced an exact pin, which
     /// a dev build could never satisfy.
     #[test]
@@ -3124,11 +3157,16 @@ mod tests {
 
         assert!(skill.starts_with("---\nname: fdu\n"));
         assert!(!skill.contains('\r'), "the public skill must use portable LF endings");
+        assert!(skill.contains("complete fdu usage contract"));
+        assert!(skill.contains("needs no setup chat or prior session"));
         assert!(skill.contains("command -v fdu"), "the installed command comes first");
-        assert!(skill.contains("uvx fdu@latest "), "the fallback is the latest release");
+        assert!(
+            skill.contains("uvx --no-build fdu@latest "),
+            "the fallback is the latest release and requires a wheel"
+        );
         assert!(!skill.contains("--from fdu=="), "no exact pin is left in the skill");
-        assert!(skill.contains("uv tool install fdu"));
-        assert!(skill.contains("uv tool upgrade fdu"));
+        assert!(skill.contains("uv tool install --no-build fdu"));
+        assert!(skill.contains("uv tool upgrade --no-build fdu"));
         assert!(skill.contains("cargo install --locked fdu"));
         assert!(skill.contains(&format!("Generated by fdu `{}`", env!("FDU_BUILD_VERSION"))));
         assert!(!skill.contains("__FDU_VERSION__"));
