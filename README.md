@@ -1,26 +1,23 @@
 # fdu
 
-**Fast, incremental file roll-up engine:** `fd` and `du`, read as “fast du”.
+**Fast disk usage skill, `du` replacement, and file roll-up engine for Python and
+Rust.**
 
-One walk over a directory tree answers, for every directory at once, how big it is, how
-many files it holds, what changed most recently, and what kinds of files it contains.
-The index is cached between runs and can be kept live as the tree changes.
+On our million-entry macOS benchmark, fdu delivers **over 8× the throughput of standard
+`du`**, **about 60% more than dust**, a Rust `du` replacement, and **roughly 10% more
+than [dumac](https://github.com/healeycodes/dumac#readme)**, previously the fastest disk
+usage roll-up tool we knew of for macOS. Unlike dumac’s size total, fdu builds a
+reusable index with counts, sizes, recency, and file-type tallies for every directory.
+See [Speed](#speed) for the paired measurements and limits.
 
-The same engine ships three ways:
+Use fdu to find what takes up space, locate old build directories, or summarize a tree
+without writing a filesystem walker.
+The same engine serves coding agents through a self-contained skill and ships as:
 
 - **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
 - **Python package:** typed, immutable values plus the native `fdu` command
 - **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
   long-lived opened root)
-
-On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
-over 1,000,001 generated entries in a **5.206-second median**. The same paired run:
-dumac **+11.3%**, diskus **+34.7%**, dust **+60.6%**, dua **+63.1%**, BSD `du`
-**+898%**. The host was loaded; pairing is what makes those comparisons fair.
-See [Speed](#speed).
-
-**0.x:** A minor release may change the command line or either API;
-[the release process](docs/project/guides/release-process.md) states the rules.
 
 ## Set Up with Any Coding Agent
 
@@ -303,10 +300,10 @@ paired percentages are the stronger comparison.
 | ncdu | reusable index | 60.560 s | 14,448 | 0.049 | +909.7% |
 | GNU `du` | one total, serial | 62.118 s | 14,086 | 0.048 | +954.6% |
 
-Each competitor was reduced to one number.
+The tools return different amounts of information, as the work column shows.
 fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
 per-extension roll-ups, and kept the index that answers the next question without
-another walk. dumac’s 95% interval was +5.8% to +13.5%.
+another walk. dumac’s 95% interval was +5.4% to +16.3%.
 
 The answers agree, too.
 On quiet trees, fdu’s allocated totals equal GNU du `--count-links` to the byte; on
@@ -379,6 +376,9 @@ The survey is in
 - [Changelog](CHANGELOG.md)
 
 ## Development
+
+During 0.x, a minor release may change the command line or either API. See the
+[release process](docs/project/guides/release-process.md).
 
 ```shell
 make check    # handoff gate: fmt, clippy, tests, docs, lib-only build
