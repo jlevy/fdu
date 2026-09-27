@@ -39547,7 +39547,7 @@
    },
    "control": "release probe at 1ba06b19 with independent metric resolution",
    "date": "2026-09-27",
-   "decision": "accepted",
+   "decision": "in-progress",
    "entries": 137085,
    "family": "macOS:a319238d9c29",
    "hypotheses": [
@@ -39664,7 +39664,7 @@
    "platform": "macOS",
    "primary_job": "content-query",
    "primary_metric": "wall_ns",
-   "reason": "one-pass shared metric resolution cut the 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the platform-neutral algorithmic cut",
+   "reason": "one-pass shared metric resolution cut the exploratory 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity; candidate retained provisionally because the predeclared major-fault non-regression gate and quiet-host confirmation remain open",
    "reference_tools": [],
    "subject": "a319238d9c29:137085:0eed491edf9b",
    "title": "Share content metric resolution across views",
@@ -40592,12 +40592,12 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 17962,
+  "accepted_lines_changed": 17566,
   "decisions": {
-   "accepted": 92,
+   "accepted": 91,
    "baseline": 10,
    "blocked": 2,
-   "in-progress": 3,
+   "in-progress": 4,
    "rejected": 49,
    "superseded": 3
   },

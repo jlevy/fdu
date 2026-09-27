@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /Volumes/spud-ext1/agent-scratch/fdu-perf-6h-20260927/runs/run-exp-158-h152-current-content-query.json
+    run_artifact: docs/project/experiments/evidence/exp-158/run.json
   results:
     - job: content-query
       start_state: warm
@@ -245,8 +245,9 @@ One repeat with an 8 s sample completed and produced 55,342 stacks.
 Whole-process sampling began during untimed content-analysis setup, so `read` (62.97%)
 and `open` (17.22%) dominated.
 The recorded component was 31.125 s for 100 reports.
-This profile cannot honestly assign a current percentage to report functions; it is
-retained as evidence of that instrumentation boundary.
+This [profile](evidence/exp-158/profile.json) cannot honestly assign a current
+percentage to report functions; it is retained as evidence of that instrumentation
+boundary.
 
 Direct inspection after H138 supplied the actionable fact: the shared `FileRow` walk is
 already one pass, but `metric_summary` still performed `ContentIndex::file` and

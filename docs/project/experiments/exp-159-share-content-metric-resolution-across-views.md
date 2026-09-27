@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /Volumes/spud-ext1/agent-scratch/fdu-perf-6h-20260927/runs/run-exp-159-h153-shared-metric-resolution-one-pass.json
+    run_artifact: docs/project/experiments/evidence/exp-159/run.json
   results:
     - job: content-query
       start_state: warm
@@ -180,11 +180,11 @@ experiment:
       - multi-view metric summaries could be returned out of request order; the combined-versus-independent oracle and tests guard it
     notes: "266 insertions and 130 deletions in query_report.rs, including focused tests; no dependencies, unsafe code, public API, or persistent identity"
   verdict:
-    decision: accepted
+    decision: in-progress
     primary_job: content-query
     primary_metric: wall_ns
     change_pct: -47.005
-    reason: "one-pass shared metric resolution cut the 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity and non-inferior RSS/minor faults; keep the platform-neutral algorithmic cut"
+    reason: "one-pass shared metric resolution cut the exploratory 100-report probe wall 47.01% [45.23%, 47.49%] with exact report identity; candidate retained provisionally because the predeclared major-fault non-regression gate and quiet-host confirmation remain open"
     commit: d0902cfd
     kept: candidate
 ---
@@ -225,8 +225,10 @@ repeatedly crossed the 25% CPU boundary, but it showed wall −44.69% [−45.55%
 and component −57.78%. It also increased minor faults by 29.58% [29.18%, 29.86%], beyond
 the +10% resource gate.
 That shape was rejected and never committed.
+Its [raw paired run](evidence/exp-159/rejected-retained-vector-run.json) is preserved
+alongside the provisional one-pass run.
 
-The kept candidate performs one streaming pass instead.
+The provisionally retained candidate performs one streaming pass instead.
 For each regular file it resolves the current classification and admitted content
 record, immediately applies them to the requested metric accumulators, and drops the
 classification before advancing.
@@ -273,14 +275,21 @@ System CPU was inconclusive at +2.37% [−1.74%, +9.26%], inside its +75% resour
 The adaptive qualification is inconclusive only on major faults.
 Several runs recorded zero and several recorded about 100 in both arms, so the paired
 bootstrap cannot establish the zero-delta non-regression rule.
-No ordinary memory, CPU, answer, or subject-integrity gate regressed.
+The 100-fault observations tracked run order rather than a particular arm: five
+control-first pairs recorded 0 then 105, five candidate-first pairs recorded 0 then 103,
+and two pairs recorded 0 in both arms.
+This suggests a host or order effect, but does not satisfy the predeclared rule.
+No other measured resource limit, answer oracle, or subject-integrity check regressed.
 
 ## What the determination said
 
-**Accepted.** H153 clears the 3% wall gate by a wide margin and removes duplicated
-algorithmic work rather than tuning a macOS constant.
-The code is platform-neutral Rust and should transfer to Linux because it reduces the
-same four content-map lookups and classifications per file there.
+**In progress; candidate retained provisionally.** H153 clears the 3% paired wall gate
+by a wide margin and removes duplicated algorithmic work rather than tuning a macOS
+constant. The run was exploratory on an uncontrolled host, and its major-fault
+non-regression gate remains inconclusive.
+A quiet confirming run must resolve that gate before this experiment can be called
+accepted. The code is platform-neutral Rust and should transfer to Linux because it
+reduces the same four content-map lookups and classifications per file there.
 That transfer is a prediction, not evidence; a Linux replication remains useful, just as
 H141 replicated H138’s shared-row win.
 

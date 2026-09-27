@@ -30,8 +30,8 @@ The historical Darwin stack was measured on `perf/campaign-next-2026-09-19`, sta
 Both merged to `main` on 2026-09-20 (`6e3d2937` / `a290aedc`) and both branches were
 deleted, so a new Darwin round starts from `main`, not from either of them.
 Never force-push: the committed evidence cites SHAs.
-The 2026-09-27 H152–H153 round started from `origin/main` at `4c4917f4`; its kept engine
-increment is `d0902cfd`.
+The 2026-09-27 H152–H153 round started from `origin/main` at `4c4917f4`; its
+provisionally retained engine increment is `d0902cfd`.
 
 ### Standing Best and Regime
 
@@ -49,7 +49,9 @@ classification for every requested unfiltered metric view.
 On the current 137,085-entry `metabrowser-clone`, wall fell 47.01% [45.23%, 47.49%] and
 component fell 59.94% over 12 uncontrolled pairs.
 Peak RSS and minor faults were non-inferior.
-The kept code is platform-neutral; Linux transfer is expected but unmeasured.
+Major-fault non-regression was inconclusive, so H153 remains in progress pending a quiet
+confirming run. The provisionally retained code is platform-neutral; Linux transfer is
+expected but unmeasured.
 H152 / exp-158 is the exact report oracle and current-path determination that preceded
 it. The probe performs one fresh scan and line-analysis setup, then constructs four
 unfiltered metric views 100 times.
@@ -932,17 +934,20 @@ keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150�
 [#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
 exp-113 remains reserved unused.
 
-Next cross-platform pickup:
+Next performance pickup:
 
-1. **H154** (`fdu-wbhe`) — replicate H153 on a reconstructible Linux deciding subject
+1. **H153 confirmation** (`fdu-9e9d`) — repeat the `content-query` pair under the
+   predeclared quiet-host gate, preserve the raw run, and resolve major-fault
+   non-regression before accepting or rejecting the provisional candidate.
+2. **H154** (`fdu-wbhe`) — replicate H153 on a reconstructible Linux deciding subject
    before claiming Linux magnitude.
    The same pure-Rust mechanism should transfer, but that is not evidence.
-   Proposed exp-160.
-2. **H155** (`fdu-83wn`) — on the current engine, profile after setup before proposing
+   Assign the next unused experiment ID when this cell runs.
+3. **H155** (`fdu-83wn`) — on the current engine, profile after setup before proposing
    another `content-query` cut.
    Direct metric reduction without materializing shared `FileRow`s is the next bounded
    algorithmic candidate only if the post-H153 profile names at least 3% wall.
-3. Re-run H151 only when the quiet start gate holds.
+4. Re-run H151 only when the quiet start gate holds.
    Do not spend an uncontrolled cell on the progress handle again.
 
 ## Before the First Round
