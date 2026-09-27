@@ -156,7 +156,7 @@ The header carries the answer.
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [HUMAN_BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 ? 0
 ```
 
@@ -258,7 +258,7 @@ $ fdu --analyze lines --view families --size apparent project
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, [BYTES] content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [HUMAN_BYTES] metadata bytes, [HUMAN_BYTES] content bytes  [SCAN_PATH]
 ? 0
 ```
 
@@ -471,10 +471,10 @@ planted: a directory under a snapshot's name
 ```console
 $ fdu --cache-status=all project
 [CACHE_FILE]  stale (older snapshot format 1), 12 metadata bytes, 0 content bytes
-[CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
-[CACHE_FILE]  stale (unreadable by this build), [BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  stale (written by another fdu version), [HUMAN_BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  stale (unreadable by this build), [HUMAN_BYTES] metadata bytes, 0 content bytes
 [CACHE_FILE]  unrecognized, 0 bytes
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [HUMAN_BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
 3 stale snapshots ([HUMAN_BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
 2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
@@ -607,7 +607,7 @@ planted: another engine
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
+[CACHE_FILE]  stale (written by another fdu version), [HUMAN_BYTES] metadata bytes, 0 content bytes
 1 stale snapshot ([HUMAN_BYTES] bytes) cannot be served by this build; fdu --cache-clear PATH removes it.
 ? 0
 ```
@@ -689,11 +689,11 @@ planted: abandoned staging file, in-flight staging file, orphaned sidecar
 
 ```console
 $ fdu --cache-status=all project
-[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
-[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
+[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [HUMAN_BYTES] bytes
+[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [HUMAN_BYTES] bytes
 [CACHE_ANALYSIS]  leftover (orphaned content sidecar), 15 bytes
 [CACHE_FILE]  unrecognized, 0 bytes
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [HUMAN_BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 [CACHE_DIR]notes.txt  unrecognized, 15 bytes
 3 leftover files ([HUMAN_BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them, though a staging file waits until it is too old to be a running writer's.
 2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.

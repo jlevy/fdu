@@ -26,7 +26,7 @@ patterns:
   SCAN_PATH: '[^\r\n]+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   SOURCE: 'cold_scan|warm_revalidate'
-  HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
+  HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
 ---
