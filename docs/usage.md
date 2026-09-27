@@ -209,6 +209,33 @@ and completeness fields.
 A retained index can answer narrower selections when its scope contains the needed
 facts. One-shot ignored-population choices determine discovery and cache identity.
 
+### Allocation and Shared Files
+
+Allocated size is a sum over eligible regular-file paths.
+On Unix it uses each file’s reported allocated blocks; Windows currently falls back to
+apparent bytes. A hard-linked file contributes its reported allocation at every selected
+path. For example, two paths to one 16 KiB allocated file produce a 32 KiB total.
+Summary avoids counting overlapping selected directories twice, but does not merge
+separate paths that refer to the same file.
+
+Copy-on-write clones have different file identities while potentially sharing physical
+blocks. Neither a sum of per-path allocations nor a future hard-link-aware total is a
+promise of space freed by deletion.
+Links outside the scan and shared extents can keep storage in use.
+
+This matters for environments installed by uv: its current default link mode is clone on
+macOS and Linux, and hardlink on Windows; the mode is configurable.
+Cache and environment placement can also force copying across filesystems.
+See [uv’s link-mode setting](https://docs.astral.sh/uv/reference/settings/#link-mode)
+and [cache placement](https://docs.astral.sh/uv/concepts/cache/#cache-directory).
+
+A unique-file allocation measure is planned separately in the
+[checkpoint design](project/specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md).
+It is not an available size mode today.
+The
+[directory inventory assessment](project/specs/active/plan-2026-09-26-directory-inventory-accounting.md)
+records current evidence and the remaining design work.
+
 ### Select by `.gitignore`
 
 ```shell
