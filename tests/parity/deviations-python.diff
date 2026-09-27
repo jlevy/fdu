@@ -499,10 +499,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  stores derived metrics, not source bodies. Status and clear use the same directory.
 -
 -IGNORE RULES
--  Every report reads each .gitignore in the tree, and summary, tree, and extension
--  rows end with how much of their size its rules ignore, as `(128 B ignored)`.
--  A directory a rule ignores is ignored with everything below it. Unignored is not
--  tracked: .git is unignored unless a rule names it. --ignored=include is default.
+-  Fresh scans read applicable .gitignore files by default; cache-only uses retained
+-  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
+-  Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
+-  .git is unignored unless a rule names it. --ignored=include is default.
 -  --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.
 -  --ignored=only discovers ignored matches through ordinary ancestors, reading
 -  only ignored bodies for analysis. Sort and --min-size follow the size shown.
