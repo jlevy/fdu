@@ -49,8 +49,8 @@ If the release commit changes, start again with a new directory.
    [Prepare the Release Commit](#prepare-the-release-commit) lists.
    Its merge commit is `COMMIT`; later merges to `main` do not change it.
 
-2. **Stability pass.** On `COMMIT`, run `make check`, `make cross-lint`, and
-   `make release-rehearse`; install the candidate and run the
+2. **Stability pass.** On `COMMIT`, run `make check`, `make cross-lint`,
+   `make semver-check`, and `make release-rehearse`; install the candidate and run the
    [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md), peer
    agreement included, and the [correctness runbook](correctness-runbook.md); record
    both results beside those procedures.
@@ -199,6 +199,18 @@ The GitHub release attaches those and three evidence files, `release-manifest.js
 fdu is pre-1.0, so compatibility follows the `0.x` minor rule: a minor release (`0.1` to
 `0.2`) may change the Rust or Python API incompatibly, and its CHANGELOG entry names
 each such change; a patch release (`0.2.0` to `0.2.1`) never does.
+For the Rust API that rule is checked, not only reviewed: the release workflow’s
+`semver` job runs `cargo-semver-checks` on `fdu-core` and `fdu` against the highest
+unyanked release on crates.io at or below the new version in the same series, with no
+build features and with all of them, and the publish job needs it.
+A version that starts a new series, such as `0.3.0`, has nothing to stay compatible with
+and passes with a note.
+`make semver-check` runs the same comparison locally; before the version is bumped it
+compares the tree with the release it carries, which asks whether it could still ship as
+a patch. The tool version is inventoried in
+[supply-chain-policy.json](../../../supply-chain-policy.json) and held to the cool-off
+like any executable dependency.
+The Python API has no such check, so review still holds it.
 A machine-output field change requires a version bump of the schema that carries it: the
 report (`fdu.report/10`), the watch stream (`fdu.stream/2`), and cache status
 (`fdu.cache/3`) each version independently, as
@@ -323,7 +335,9 @@ One pull request prepares the release, and its merge commit is the release commi
 
 The gates run on the release commit itself, in a clean worktree with its own Cargo
 target directory, as [AGENTS.md](../../../AGENTS.md#build-and-test) requires:
-`make check`, `make cross-lint`, and `make release-rehearse`.
+`make check`, `make cross-lint`, `make semver-check`, and `make release-rehearse`.
+`make semver-check` reads crates.io and needs the reviewed `cargo-semver-checks`; when
+that is missing or another version, it prints the one install command to use.
 
 Then install the candidate as a user would, and run the two manual procedures on it:
 
@@ -949,7 +963,7 @@ The earlier workflow-level comparison, which shaped `release.yml`, is in the
 | Registries | Separate crate and PyPI workflows | One job, one approval, audited before the first write | A conflict on either registry stops both before anything is written. |
 | GitHub release | Created by a job with `contents: write`, generated notes | Maintainer command; body derived from checked-in notes | No job can write the repository, and the notes describe the release delta rather than a commit list. |
 | Post-publish verification | Version-specific registry checks and `uvx` smoke | The same, plus asset digests, docs.rs, and `--require-identical` | Borrowed and extended. |
-| Semver checks (`rust-release-rules`) | Run in CI | Not yet run | A patch release relies on review until `cargo-semver-checks` is adopted (`fdu-bxra`). |
+| Semver checks (`rust-release-rules`) | Run in CI | The release workflow’s `semver` job, which the publish job needs, and `make semver-check` | Checked where publishing happens, on the version being released; a new `0.x` series is not checked, since it may break. |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

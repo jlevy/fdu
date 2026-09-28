@@ -118,6 +118,29 @@ jobs:
             target/package/fdu-${{ needs.plan.outputs.version }}.crate
           if-no-files-found: error
 
+  # A patch release promises the Rust API unchanged: under the 0.x rule, 0.2.0 to 0.2.1
+  # may add but never break. Each library crate is compared with the release it must
+  # stay compatible with; a version starting a new series, such as 0.3.0, has none and
+  # passes with a note. The tool is an executable dependency like any other:
+  # supply-chain-policy.json inventories this exact version, the supply-chain check holds
+  # it to the cool-off and crates.io's checksum, and `--locked` builds it from its own
+  # lockfile. The job holds no credentials and publishes nothing.
+  semver:
+    name: Check the Rust API against the last compatible release
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - name: Install the reviewed cargo-semver-checks
+        run: cargo install --locked cargo-semver-checks --version 0.50.0
+      - name: Compare fdu-core and fdu with the release they must stay compatible with
+        run: python3 scripts/release/semver_check.py --root .
+
   sdist:
     name: Build and install source distribution
     needs: plan
@@ -298,7 +321,7 @@ jobs:
   # dependency build script or proc macro ever runs beside the publication credentials.
   publish:
     name: Publish to crates.io and PyPI
-    needs: [plan, crate, sdist, wheels, evidence, release-environment]
+    needs: [plan, crate, semver, sdist, wheels, evidence, release-environment]
     if: >-
       inputs.publish
       && startsWith(github.ref, 'refs/tags/v')

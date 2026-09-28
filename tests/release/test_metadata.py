@@ -90,7 +90,8 @@ class MetadataTests(unittest.TestCase):
             "    permissions:\n      contents: read\n      id-token: write\n    env:\n", publish
         )
         self.assertIn(
-            "    needs: [plan, crate, sdist, wheels, evidence, release-environment]\n", publish
+            "    needs: [plan, crate, semver, sdist, wheels, evidence, release-environment]\n",
+            publish,
         )
         # The whole condition, exactly: a presence check on each clause would pass
         # `a || b`, `!startsWith(...)`, or `inputs.publish != true` while letting the job
@@ -255,7 +256,24 @@ class MetadataTests(unittest.TestCase):
         rehearsal = makefile.split("\nrelease-rehearse:", 1)[1].split("\n\n", 1)[0]
         for text in (workflow, rehearsal):
             self.assertIn("scripts/release/smoke_crate.py", text)
-        self.assertNotIn("cargo install", workflow)
+        # The one `cargo install` is the reviewed semver tool; nothing installs `fdu` so.
+        self.assertEqual(
+            re.findall(r"cargo install[^\n]*", workflow),
+            [f"cargo install --locked cargo-semver-checks --version {semver_tool_version()}"],
+        )
+
+    def test_a_patch_release_cannot_publish_past_the_semver_check(self) -> None:
+        # The job compares both library crates with the pinned tool, and the publish job
+        # needs it directly, so a patch that breaks the Rust API stops before any upload.
+        # The local target runs the same script, so a maintainer sees the same verdict.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        jobs = workflow_jobs(workflow)
+        reviewed = REVIEWED_SEMVER_JOB.replace("<version>", semver_tool_version())
+        self.assertEqual(flat(jobs["semver"]), flat(reviewed))
+        self.assertRegex(jobs[PUBLISH_JOB], r"(?m)^    needs: \[[^\]]*\bsemver\b")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        target = makefile.split("\nsemver-check:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("python scripts/release/semver_check.py", target)
 
 
 PUBLISH_JOB = "publish"
@@ -452,6 +470,33 @@ REVIEWED_ENVIRONMENT_JOB = """
         env:
           GITHUB_TOKEN: ${{ github.token }}
 """
+
+
+# The job whose failure stops a patch release that breaks the Rust API; `<version>` is the
+# cargo-semver-checks version supply-chain-policy.json inventories.
+REVIEWED_SEMVER_JOB = """
+    name: Check the Rust API against the last compatible release
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<pinned>
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@<pinned>
+        with:
+          toolchain: 1.97.1
+      - name: Install the reviewed cargo-semver-checks
+        run: cargo install --locked cargo-semver-checks --version <version>
+      - name: Compare fdu-core and fdu with the release they must stay compatible with
+        run: python3 scripts/release/semver_check.py --root .
+"""
+
+
+def semver_tool_version() -> str:
+    """The cargo-semver-checks version the supply-chain policy inventories."""
+    policy = json.loads((ROOT / "supply-chain-policy.json").read_text(encoding="utf-8"))
+    (tool,) = [t for t in policy["bootstrap"]["cargoTools"] if t["name"] == "cargo-semver-checks"]
+    return tool["version"]
 
 
 def workflow_jobs(workflow: str, *, comments: bool = False) -> dict[str, str]:

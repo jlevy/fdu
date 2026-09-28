@@ -119,6 +119,16 @@
         ]
       }
     ],
+    "cargoTools": [
+      {
+        "name": "cargo-semver-checks",
+        "version": "0.50.0",
+        "checksum": "19851f36d06d163d810113105ad062d6e086f065ca2612d157fbfeabfb3e67fd",
+        "files": [
+          ".github/workflows/release.yml"
+        ]
+      }
+    ],
     "identicalFileGroups": [
       [
         ".claude/scripts/tbd-session.sh",

@@ -7,11 +7,14 @@ commits, and treats missing provenance as a hard failure.
 Run `make supply-chain` before installing or updating dependencies.
 The zero-dependency validator checks Cargo checksums and crate publication dates, npm
 tarballs and integrities, PyPI artifact hashes and upload times, action commit
-signatures and dates, toolchain manifests, runtime checksum manifests, and explicit
-bootstrap assets against their authoritative services.
-It also checks that pull-request jobs use read-only permissions, do not persist checkout
-credentials, do not write reusable caches, and do not execute project dependencies
-before the provenance job succeeds.
+signatures and dates, toolchain manifests, runtime checksum manifests, explicit
+bootstrap assets, and each tool a workflow builds with `cargo install` against their
+authoritative services.
+A workflow may `cargo install` only a tool the policy inventories, locked, at its
+reviewed version.
+It also checks that pull-request jobs use read-only permissions, do not
+persist checkout credentials, do not write reusable caches, and do not execute project
+dependencies before the provenance job succeeds.
 GitHub API checks use `GITHUB_TOKEN` or `GH_TOKEN` when explicitly provided and
 otherwise reuse the local GitHub CLI credential without invoking a shell or printing it.
 CI passes only its read-only workflow token to the provenance step, avoiding the shared
