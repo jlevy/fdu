@@ -433,8 +433,8 @@ Metadata-only one-shot reports include current sizes or timestamps, so they must
 every entry; under `auto` they neither load a snapshot, which cannot make that
 verification cheaper, nor write one, which no later report reads.
 Content analysis, `--watch`, and an opened index read, revalidate, and write it.
-`--cache on` also writes after a one-shot report, which is how to leave a snapshot for
-a later `--stale-ok` answer.
+`--cache on` also writes after a one-shot report, which is how to leave a snapshot for a
+later `--stale-ok` answer.
 
 Content analysis is where ordinary repeated runs benefit most.
 The first compatible run reads eligible bodies; a later run restores unchanged records
