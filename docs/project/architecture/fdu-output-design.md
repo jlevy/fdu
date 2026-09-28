@@ -46,6 +46,25 @@ Secondary breakdowns follow the same convention, such as
 `477,298 lines (439,949 nonblank, 37,349 blank)` with the parenthetical detail gray.
 Apply these roles consistently across human report views.
 
+## Content Reports and Names
+
+Analyzer names describe measurements (`lines`, `code`, `words`); canonical view names
+identify the population or grouping (`families`, `code`, `documents`). Multi-view
+headers use the uppercase canonical view name.
+Metric labels belong in table columns or explicit percentage labels, so document-word
+percentages cannot be mistaken for byte percentages.
+See the [analysis mapping](../../usage.md#measurements-views-and-headers).
+
+The code overview is one table with aligned code-line, share, comment, blank,
+analyzed-file, and language columns.
+Primary cells in the TOTAL row are bold; parenthetical population details keep the
+shared gray secondary role.
+TOTAL uses the complete selected population, including rows hidden by display limits.
+Unmeasured SLOC displays a dash, distinct from a measured zero.
+File coverage states how much was analyzed.
+Compact coverage context follows the table, and totals are not repeated as a second
+report. Machine output preserves the existing code overview model.
+
 ## Number Formatting
 
 Human integer counts use comma grouping consistently: `13,580 files`, `1,234 rules`, and

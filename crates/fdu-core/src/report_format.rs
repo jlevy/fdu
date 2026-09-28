@@ -1650,42 +1650,164 @@ fn render_share_omission(out: &mut String, omitted: usize, noun: &str, color: bo
     }
 }
 
+/// Keep measured zero distinct from missing measurements in every numeric column.
+/// Language display bounds trim rows, never the TOTAL row or its global denominator.
 fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
     let selected = &overview.selected;
-    let _ = writeln!(
-        out,
-        "{} code lines {}",
-        human_count(selected.metrics.code_lines),
-        detail(
-            &format!(
-                "({} comment, {} blank)",
-                human_count(selected.metrics.comment_lines),
-                human_count(selected.metrics.code_blank_lines)
-            ),
-            color
-        )
+    let code_width = human_count(selected.metrics.code_lines).len().max("Code lines".len());
+    let comment_width = human_count(selected.metrics.comment_lines).len().max("Comments".len());
+    let blank_width = human_count(selected.metrics.code_blank_lines).len().max("Blank".len());
+    let analyzed_width =
+        format!("{}/{}", human_count(selected.analyzed_files), human_count(selected.source_files))
+            .len()
+            .max("Analyzed files".len());
+    let language_width = label_width(
+        overview.languages.iter().map(|row| human_language_name(&row.language)),
+        "Language".len(),
     );
     let _ = writeln!(
         out,
-        "{} of {} source files analyzed across {} languages {}",
-        human_count(selected.analyzed_files),
-        human_count(selected.source_files),
-        human_count(overview.analyzed_languages),
-        detail(&format!("({} population)", overview.population.label()), color)
+        "{}  {}  {}  {}  {}  {}",
+        paint(&format!("{:>code_width$}", "Code lines"), STYLE_CATEGORY, color),
+        paint(&format!("{:>6}", "Share"), STYLE_CATEGORY, color),
+        paint(&format!("{:>comment_width$}", "Comments"), STYLE_CATEGORY, color),
+        paint(&format!("{:>blank_width$}", "Blank"), STYLE_CATEGORY, color),
+        paint(&format!("{:>analyzed_width$}", "Analyzed files"), STYLE_CATEGORY, color),
+        paint("Language", STYLE_CATEGORY, color),
     );
-    if let (Some(non_ignored), Some(ignored)) = (&overview.non_ignored, &overview.ignored) {
+    for row in &overview.languages {
+        let measured = row.selected.analyzed_files > 0;
+        let mut annotation = String::new();
+        if let (true, Some(non_ignored), Some(ignored)) = (measured, &row.non_ignored, &row.ignored)
+        {
+            let _ = write!(
+                annotation,
+                "{} non-gitignored, {} gitignored",
+                human_count(non_ignored.metrics.code_lines),
+                human_count(ignored.metrics.code_lines)
+            );
+        }
+        if measured && row.unknown.source_files > 0 {
+            let _ = write!(
+                annotation,
+                "{}{} unknown",
+                if annotation.is_empty() { "" } else { ", " },
+                human_count(row.unknown.metrics.code_lines)
+            );
+        }
+        let annotation = if annotation.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", detail(&format!("({annotation})"), color))
+        };
+        let analyzed = format!(
+            "{}/{}",
+            human_count(row.selected.analyzed_files),
+            human_count(row.selected.source_files)
+        );
         let _ = writeln!(
             out,
-            "{} non-gitignored code lines {}",
-            human_count(non_ignored.metrics.code_lines),
-            detail(&format!("({} gitignored)", human_count(ignored.metrics.code_lines)), color)
+            "{}  {}  {}  {}  {:>analyzed_width$}  {}{}",
+            code_cell(row.selected.metrics.code_lines, measured, code_width, color),
+            if measured {
+                percentage_cell(row.share.numerator, row.share.denominator, 1, 6, color)
+            } else {
+                detail(&format!("{:>6}", "—"), color)
+            },
+            code_cell(row.selected.metrics.comment_lines, measured, comment_width, color),
+            code_cell(row.selected.metrics.code_blank_lines, measured, blank_width, color),
+            analyzed,
+            label_cell(
+                human_language_name(&row.language),
+                if annotation.is_empty() { 0 } else { language_width },
+                STYLE_NAME,
+                color
+            ),
+            annotation
         );
     }
+    render_share_omission(out, overview.share_omitted, "languages", color);
+    let mut total_detail = String::new();
+    if let (true, Some(non_ignored), Some(ignored)) =
+        (selected.analyzed_files > 0, &overview.non_ignored, &overview.ignored)
+    {
+        let _ = write!(
+            total_detail,
+            "{} non-gitignored, {} gitignored",
+            human_count(non_ignored.metrics.code_lines),
+            human_count(ignored.metrics.code_lines)
+        );
+    }
+    if selected.analyzed_files > 0 && overview.unknown.source_files > 0 {
+        let _ = write!(
+            total_detail,
+            "{}{} unknown",
+            if total_detail.is_empty() { "" } else { ", " },
+            human_count(overview.unknown.metrics.code_lines)
+        );
+    }
+    let total_detail = if total_detail.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", detail(&format!("({total_detail})"), color))
+    };
+    let bold = AnsiStyle::new().bold();
+    let total_share = if selected.analyzed_files > 0 {
+        percentage_cell(selected.metrics.code_lines, selected.metrics.code_lines, 1, 6, false)
+    } else {
+        format!("{:>6}", "—")
+    };
+    let total_analyzed = format!(
+        "{:>analyzed_width$}",
+        format!("{}/{}", human_count(selected.analyzed_files), human_count(selected.source_files))
+    );
+    let _ = writeln!(
+        out,
+        "{}  {}  {}  {}  {}  {}{}",
+        code_total_cell(
+            selected.metrics.code_lines,
+            selected.analyzed_files > 0,
+            code_width,
+            color
+        ),
+        paint(&total_share, bold, color),
+        code_total_cell(
+            selected.metrics.comment_lines,
+            selected.analyzed_files > 0,
+            comment_width,
+            color
+        ),
+        code_total_cell(
+            selected.metrics.code_blank_lines,
+            selected.analyzed_files > 0,
+            blank_width,
+            color
+        ),
+        paint(&total_analyzed, bold, color),
+        paint(
+            &format!(
+                "{:<width$}",
+                "TOTAL",
+                width = if total_detail.is_empty() { 0 } else { language_width }
+            ),
+            bold,
+            color
+        ),
+        total_detail
+    );
+    let _ = writeln!(
+        out,
+        "{} analyzed {} {}",
+        human_count(overview.analyzed_languages),
+        plural(overview.analyzed_languages, "language", "languages"),
+        detail(&format!("({} population)", overview.population.label()), color)
+    );
     if overview.unknown.source_files > 0 {
         let _ = writeln!(
             out,
-            "{} source files with unknown ignore classification",
-            human_count(overview.unknown.source_files)
+            "{} {} with unknown ignore classification",
+            human_count(overview.unknown.source_files),
+            plural(overview.unknown.source_files, "source file", "source files")
         );
     }
     if overview.unclassified_files > 0 {
@@ -1720,35 +1842,19 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
             )
         );
     }
-    let _ = writeln!(out, "{}", detail("Language shares of measured code lines", color));
-    render_share_omission(out, overview.share_omitted, "languages", color);
-    for row in &overview.languages {
-        let mut annotation = format!(
-            "({}/{} analyzed",
-            human_count(row.selected.analyzed_files),
-            human_count(row.selected.source_files)
-        );
-        if let (Some(non_ignored), Some(ignored)) = (&row.non_ignored, &row.ignored) {
-            let _ = write!(
-                annotation,
-                "; {} non-gitignored, {} gitignored",
-                human_count(non_ignored.metrics.code_lines),
-                human_count(ignored.metrics.code_lines)
-            );
-        }
-        if row.unknown.source_files > 0 {
-            let _ = write!(annotation, ", {} unknown", human_count(row.unknown.metrics.code_lines));
-        }
-        annotation.push(')');
-        let _ = writeln!(
-            out,
-            "{:>10}  {}  {} {}",
-            human_count(row.selected.metrics.code_lines),
-            percentage_cell(row.share.numerator, row.share.denominator, 1, 6, color),
-            paint(human_language_name(&row.language), STYLE_NAME, color),
-            detail(&annotation, color)
-        );
+}
+
+fn code_cell(value: u64, measured: bool, width: usize, color: bool) -> String {
+    if measured {
+        format!("{:>width$}", human_count(value))
+    } else {
+        detail(&format!("{:>width$}", "—"), color)
     }
+}
+
+fn code_total_cell(value: u64, measured: bool, width: usize, color: bool) -> String {
+    let text = if measured { human_count(value) } else { "—".to_owned() };
+    paint(&format!("{text:>width$}"), AnsiStyle::new().bold(), color)
 }
 
 /// Explain a percentage column whose denominator is not the byte column beside it.
@@ -4588,15 +4694,27 @@ mod tests {
         let mut report = fixture(&[ViewSpec::Summary]);
         report.sections = vec![Section::Code(Box::new(overview.clone()))];
         let colored = render(&report, Format::Text, true);
+        assert!(colored.contains(&paint("TOTAL   ", AnsiStyle::new().bold(), true)), "{colored:?}");
+        let colored_total = colored.lines().find(|line| line.contains("TOTAL")).expect("total row");
+        assert_eq!(colored_total.matches("\x1b[1m").count(), 6, "all primary TOTAL cells are bold");
         assert!(
-            colored.contains("80 non-gitignored code lines \x1b[90m(20 gitignored)\x1b[0m"),
+            colored.contains(&detail("(80 non-gitignored, 20 gitignored, 10 unknown)", true)),
             "{colored:?}"
         );
+        let plain = strip_ansi(&colored);
         assert!(
-            colored.contains(
-                "\x1b[90m(3/3 analyzed; 80 non-gitignored, 20 gitignored, 10 unknown)\x1b[0m"
-            ),
-            "{colored:?}"
+            plain.lines().next().expect("header").contains("Analyzed files  Language"),
+            "{plain}"
+        );
+        let total = plain.lines().find(|line| line.contains("TOTAL")).expect("total row");
+        assert_eq!(
+            total.split_whitespace().take(6).collect::<Vec<_>>(),
+            ["110", "100.0%", "0", "0", "3/3", "TOTAL"]
+        );
+        assert_eq!(
+            plain.matches("       110").count(),
+            2,
+            "row and TOTAL retain the same measured total"
         );
         assert_eq!(strip_ansi(&colored), render(&report, Format::Text, false));
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
@@ -4612,6 +4730,68 @@ mod tests {
         report.sections = vec![Section::Code(Box::new(overview))];
         let text = render(&report, Format::Text, false);
         assert!(!text.contains("non-gitignored") && !text.contains(" unknown"), "{text}");
+    }
+
+    #[test]
+    fn code_table_keeps_global_total_when_rows_are_bounded_and_marks_unmeasured_values() {
+        use crate::query::{CodeLanguageRow, MetricShare};
+        let mut overview = CodeOverview {
+            population: IgnoredEntries::Include,
+            selected: CodeTally {
+                source_files: 2,
+                analyzed_files: 2,
+                metrics: crate::content::CodeMetrics { code_lines: 12, ..Default::default() },
+                ..Default::default()
+            },
+            non_ignored: None,
+            ignored: None,
+            unknown: CodeTally::default(),
+            unclassified_files: 0,
+            analyzed_languages: 1,
+            total_languages: 1,
+            share_omitted: 0,
+            languages: Vec::new(),
+            share_metric: ShareMetric::CodeLines,
+        };
+        let mut report = fixture(&[ViewSpec::Summary]);
+        report.sections = vec![Section::Code(Box::new(overview.clone()))];
+        let bounded = render(&report, Format::Text, false);
+        let total = bounded.lines().find(|line| line.contains("TOTAL")).expect("total row");
+        assert_eq!(
+            total.split_whitespace().take(6).collect::<Vec<_>>(),
+            ["12", "100.0%", "0", "0", "2/2", "TOTAL"]
+        );
+        assert!(!bounded.contains("Rust"), "{bounded}");
+
+        overview.selected.analyzed_files = 0;
+        overview.selected.metrics = crate::content::CodeMetrics::default();
+        overview.selected.coverage.insert(CoverageReason::Unsupported, 2);
+        overview.analyzed_languages = 0;
+        overview.non_ignored = Some(CodeTally::default());
+        overview.ignored = Some(CodeTally::default());
+        overview.languages = vec![CodeLanguageRow {
+            language: "rust".into(),
+            selected: CodeTally { source_files: 2, ..Default::default() },
+            non_ignored: Some(CodeTally::default()),
+            ignored: Some(CodeTally::default()),
+            unknown: CodeTally::default(),
+            share: MetricShare { numerator: 0, denominator: 0 },
+        }];
+        report.sections = vec![Section::Code(Box::new(overview))];
+        let unmeasured = render(&report, Format::Text, false);
+        let language = unmeasured.lines().find(|line| line.contains("Rust")).expect("language row");
+        let total = unmeasured.lines().find(|line| line.contains("TOTAL")).expect("total row");
+        assert_eq!(
+            language.split_whitespace().take(6).collect::<Vec<_>>(),
+            ["—", "—", "—", "—", "0/2", "Rust"]
+        );
+        assert_eq!(
+            total.split_whitespace().take(6).collect::<Vec<_>>(),
+            ["—", "—", "—", "—", "0/2", "TOTAL"]
+        );
+        assert!(!unmeasured.contains("0 non-gitignored") && !unmeasured.contains("0 gitignored"));
+        assert!(unmeasured.contains("2 unsupported"), "{unmeasured}");
+        assert!(unmeasured.lines().all(|line| line.trim_end() == line), "{unmeasured:?}");
     }
 
     #[test]

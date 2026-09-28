@@ -252,17 +252,46 @@ bodies. Content analysis is explicit:
 | `all` | Every shipped analyzer |
 
 `code,words` runs both deeper analyzers in one streaming pass.
-`none` and `all` name the whole axis and cannot be combined with another value.
-Files are analyzed through EOF, not truncated by size.
-`--analysis-workers` bounds concurrent reads.
+Both already include `lines`, so `code,words,lines` is equivalent and adds no work.
+Use `lines` alone for physical text volume without language-specific code counting or
+word normalization. `none` and `all` name the whole axis and cannot be combined with
+another value. Files are analyzed through EOF, not truncated by size.
+`--workers` bounds concurrent content-analysis reads.
 Under `code`, a code file in a language without a line-of-code counter is reported as
-`unsupported` coverage and contributes no line metrics to that request.
+`unsupported` code coverage.
+Its physical-line metrics remain available; code, comment, and code-blank counts are
+unavailable.
 
 Naming analysis without a view chooses one that displays it: `code` selects `code`,
 `words` selects `documents`, `lines` selects `families`, and `code,words` or `all`
 select both `code` and `documents`. An explicit `--view` always wins and never enables
 an analyzer. If that view displays no content metric, fdu still performs the requested
 analysis and prints a note explaining the mismatch.
+
+### Measurements, Views, and Headers
+
+Analyzer names describe measurements; view names describe populations or groupings.
+Section headers use the canonical view name, uppercased, whenever multiple views are
+shown. Table column labels name the measurements.
+A standalone report omits the redundant section header.
+
+| Analysis | Default view and header | Population |
+| --- | --- | --- |
+| `lines` | `families` / `FAMILIES` | All selected files, grouped by detected family; readable text contributes lines |
+| `code` | `code` / `CODE` | Selected code files, grouped by language; unsupported counters remain explicit |
+| `words` | `documents` / `DOCUMENTS` | Selected prose and markup, grouped by type |
+| `code,words` or `all` | `code,documents` / `CODE`, `DOCUMENTS` | Both populations, from one scan and analysis pass |
+
+The words analyzer also measures accepted text outside prose and markup.
+Select `--analyze=words --view=types` to see those metrics across all detected types.
+`--analyze=lines --view=languages` compares physical lines across code languages,
+including languages without a code counter.
+Code lines exclude comments and blanks, so they are a different metric from physical
+lines.
+
+For a word report, use `fdu . --analyze=words`; its explicit equivalent is
+`fdu . --analyze=words --view=documents`. Naming a view alone never authorizes content
+reads. `documents` is the population, not another name for the words analyzer.
 
 ## Understand the Cache
 

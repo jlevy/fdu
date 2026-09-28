@@ -770,8 +770,22 @@ fn build_query(
     now: SystemTime,
     axes: &'static AxisNames,
 ) -> Result<Query, RequestError> {
-    let (views, omitted_views) = ViewSpec::resolve_rejecting(spec.views, content)
-        .map_err(|rejection| rejection.on(axes.view))?;
+    let (views, omitted_views) =
+        ViewSpec::resolve_rejecting(spec.views, content).map_err(|rejection| {
+            let suggestion = match rejection.value().to_ascii_lowercase().as_str() {
+                "lines" => Some(("lines", "families")),
+                "words" => Some(("words", "documents")),
+                _ => None,
+            };
+            match suggestion {
+                Some((analyzer, suggested_view)) => RequestError::AnalyzerNamedAsView {
+                    value: rejection.value().to_string(),
+                    analyzer,
+                    suggested_view,
+                },
+                None => rejection.on(axes.view),
+            }
+        })?;
 
     let mut selection = Selection {
         depth: spec.depth.map(|value| parse_bound(value, axes.depth)).transpose()?,
@@ -893,6 +907,15 @@ pub enum RequestError {
         /// What the grammar accepts instead.
         expected: String,
     },
+    /// An analyzer name was supplied where a report view was expected.
+    AnalyzerNamedAsView {
+        /// The rejected token in the caller's spelling.
+        value: String,
+        /// The analysis unit to request.
+        analyzer: &'static str,
+        /// A canonical view of that analysis.
+        suggested_view: &'static str,
+    },
     /// A view has no metadata-only projection, and the request enables no analyzer.
     ViewNeedsContent(ViewSpec),
     /// A view or ordering key requires an analyzer the request did not enable.
@@ -962,6 +985,10 @@ impl RequestError {
     pub fn message(&self, axes: &AxisNames) -> String {
         match self {
             Self::InvalidValue { axis, value, expected } => invalid_message(axis, value, expected),
+            Self::AnalyzerNamedAsView { value, analyzer, suggested_view } => format!(
+                "invalid {} {value:?}: {analyzer} is an analyzer; use {}={analyzer} with {}={suggested_view}",
+                axes.view, axes.analyze, axes.view
+            ),
             Self::ViewNeedsContent(view) => format!(
                 "{} {} requires content analysis: add {} lines, code, words, or all; views never \
                  enable content analysis implicitly",
@@ -1134,6 +1161,10 @@ pub(crate) struct Rejection {
 impl Rejection {
     pub(crate) fn new(value: impl Into<String>, expected: impl Into<String>) -> Self {
         Self { value: value.into(), expected: expected.into() }
+    }
+
+    pub(crate) fn value(&self) -> &str {
+        &self.value
     }
 
     /// The refusal, on the axis a surface named.
@@ -1873,6 +1904,32 @@ mod tests {
             assert_eq!(refusal(&spec, &AxisNames::FLAGS), flags);
             assert_eq!(refusal(&spec, &AxisNames::FIELDS), fields);
         }
+    }
+
+    #[test]
+    fn analyzer_names_in_view_axis_point_to_both_correct_axes() {
+        for (token, analyzer, view) in
+            [("LiNeS", "lines", "families"), ("words", "words", "documents")]
+        {
+            let spec = reading(ReadSpec { views: Some(token), ..ReadSpec::new() });
+            for axes in [&AxisNames::FLAGS, &AxisNames::FIELDS] {
+                let error = Request::build(&spec, instant(), axes).expect_err("not a view");
+                assert!(matches!(error, RequestError::AnalyzerNamedAsView { .. }));
+                assert_eq!(
+                    error.message(axes),
+                    format!(
+                        "invalid {} {token:?}: {analyzer} is an analyzer; use {}={analyzer} with {}={view}",
+                        axes.view, axes.analyze, axes.view
+                    )
+                );
+            }
+        }
+        let combination = reading(ReadSpec { views: Some("full,words"), ..ReadSpec::new() });
+        assert_eq!(
+            refusal(&combination, &AxisNames::FLAGS),
+            ViewSpec::resolve(Some("full,words"), AnalysisSet::NONE, "--view")
+                .expect_err("full is exclusive")
+        );
     }
 
     /// The order `build` names axes in, when more than one of them is wrong.
