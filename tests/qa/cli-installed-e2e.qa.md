@@ -339,8 +339,11 @@ fdu "$FDU_QA_SMALL" --cache-status
 
 ### 3.3 Extra Analyzers and Formats
 
-After the cache-on arm, the harness reuses that warm sidecar for `--analyze=words`,
-`--analyze=all`, JSON languages+code, YAML summary+lines, and text summary+code.
+After the cache-on arm, the harness runs `--analyze=words`, `--analyze=all`, JSON
+languages+code, YAML summary+lines, and text summary+code.
+The sidecar answers only the analyzer set that wrote it, so a run with a different set
+reads the files again ([usage guide](../../docs/usage.md#understand-the-cache)): the
+0.2.0 pass saw `analyze-words` report `fresh=11280, cached=0`.
 
 **Verify**:
 
