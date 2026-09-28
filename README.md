@@ -91,8 +91,7 @@ cargo install --locked --path crates/fdu
 
 ## Command Line
 
-fdu requires a path.
-Use `.` for the current directory:
+For example, on the current directory:
 
 ```console
 $ fdu .
