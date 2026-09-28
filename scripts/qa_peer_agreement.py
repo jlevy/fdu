@@ -183,10 +183,15 @@ def gnu_du() -> str | None:
 
 
 def fdu_reading(fdu: str, root: Path, timeout: int) -> list[Reading]:
-    """fdu's allocated and apparent readings of `root`; totals are None if it failed."""
+    """fdu's allocated and apparent readings of `root`; totals are None if it failed.
+
+    Children are the top-level directories only, all of them, to line up with GNU du's
+    `--max-depth=1`: the tree's default 1% share floor would hide small ones, and the
+    tree also lists files, which du does not."""
     command = [
         *(fdu, "--cache", "off", "--progress", "never", "--view", "tree"),
-        *("--depth", "1", "--limit", "all", "--format", "json", str(root)),
+        *("--depth", "1", "--limit", "all", "--min-share", "0%"),
+        *("--format", "json", str(root)),
     ]
     out, _, code, seconds = run(command, timeout)
     try:
@@ -220,7 +225,7 @@ def fdu_reading(fdu: str, root: Path, timeout: int) -> list[Reading]:
             tree[key],
             seconds,
             " ".join(command),
-            {child["name"]: child[key] for child in tree["children"]},
+            {child["name"]: child[key] for child in tree["children"] if child["kind"] == "dir"},
             dict(errors),
             failed,
             exit=code,

@@ -49,7 +49,7 @@ overlapped. Each timing is a single run.
 | Phase 4: Medium tree | ✅ Passed | 730,288 files, about 14 s per metadata run; analysis on `docs/` only, reused on the second run. Warm matches cold because a one-shot metadata report neither writes nor reads a snapshot, as documented |
 | Phase 5: Bounded Library | ✅ Passed | Depth 1 exit 0; depth 2 exit 2 (TCC); no SIGKILL; peak 25 MiB |
 | Phase 6: Terminal Progress | ⏳ Pending | `make test-terminal` passed against the installed command; a pty probe passed each item it can observe (resize, `NO_COLOR`, `CI`, `TERM=dumb`, Ctrl-C). A person has not watched a window, and Windows has not run |
-| Phase 7: Peer agreement | ✅ Passed | Self-test 13 of 13 exact. With `--min-share 0%` and directory-only children added to the script’s fdu reading, 51 of 52 readings across four trees are explained; dua’s allocated `~/Library` reading is not verifiable, as in 0.1.0. The script as committed fails its top-level check, because the 0.2.0 tree hides rows under 1% |
+| Phase 7: Peer agreement | ✅ Passed | Self-test 13 of 13 exact. With `--min-share 0%` and directory-only children added to the script’s fdu reading, 51 of 52 readings across four trees are explained; dua’s allocated `~/Library` reading is not verifiable, as in 0.1.0. The script as then committed failed its top-level check, because the 0.2.0 tree hides rows under 1%; it now reads fdu that way itself |
 | Phase 8: Results | ✅ Passed | 51 harness checks: 50 ok, and 1 expected warning for `documents` exit 2. Same verdicts and exits as the 0.1.0 table. Full tables are in the verification pull request; the correctness record is in the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
@@ -540,8 +540,9 @@ directory again, and a second failure would be reported.
 - [ ] The tables are recorded in a dated report under `docs/project/reports/`
 
 An `UNEXPLAINED` row is a finding: identify the files responsible (compare the top-level
-directories, then descend with `fdu --view tree --depth 1` and `du -d 1`), and either
-extend the model and the self-test with the new case or file a bead.
+directories, then descend with `fdu --view tree --depth 1 --min-share 0%` and `du -d 1`,
+since the tree’s default 1% floor hides small directories), and either extend the model
+and the self-test with the new case or file a bead.
 
 * * *
 
