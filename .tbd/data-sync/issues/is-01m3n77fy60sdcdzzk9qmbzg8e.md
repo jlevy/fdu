@@ -5,14 +5,14 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: open
 priority: 1
-version: 2
+version: 3
 labels:
   - docs
   - parity
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-28T23:57:45.488Z
+updated_at: 2026-09-28T23:59:02.328Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 
@@ -39,3 +39,5 @@ Requirements:
 ## Notes
 
 2026-09-28 maintainer: cells are a checkmark, an x, or concise text, whichever is clearer for that cell (e.g. '✅', '❌', 'total only', 'optional flag', 'Rust, Python').
+
+2026-09-28 maintainer: add an eleventh row, Platform support, listing platforms per tool (fdu: macOS, Linux, Windows; dumac: macOS only; others to be verified from each project's releases and docs, e.g. prebuilt binaries vs builds from source).
