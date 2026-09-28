@@ -71,7 +71,10 @@ Use Watchman’s clocks and fresh-instance handling as API precedent: an invalid
 must cause explicit recrawl/invalidation, not an empty successful diff.
 [Jujutsu’s optional Watchman integration](https://docs.jj-vcs.dev/latest/config/#filesystem-monitor)
 shows a modern Rust tool using a resident service to avoid repeated working-copy scans.
-That is a different deployment model from one-shot native replay.
+That is a different deployment model from one-shot native replay: by default jj walks
+the working copy on every command, and a Watchman restart forces a full crawl.
+The [change-source review](research-2026-09-27-disk-growth-change-sources.md#prior-art)
+summarizes a source review of jj and its monitor-trust issues.
 
 Watchman documents a critical
 [macOS synchronization limitation](https://facebook.github.io/watchman/docs/cookies#limitation-macos-fsevents):
@@ -163,10 +166,13 @@ instrument and never advances the preserved cursor.
 Shallow relisting passed a controlled end-to-end growth workload: 712 observations in a
 20,206-entry tree, exact metadata and roll-up agreement, including root-level writes,
 directory lifecycle changes, and hard links.
-But a live 454,775-entry agent root failed two comparisons with one and two stable
-misses, respectively, despite `HistoryDone` and no reported degradation.
-The first missed file remained stale on repeat and was open read/write during a targeted
-descriptor check.
+But a live 454,775-entry agent root failed both comparisons, despite `HistoryDone` and
+no reported degradation.
+The harness reported one and two stable misses.
+A later audit of the saved traces found 13 and 14 files that changed before the replay
+with no event of their own, all session logs or SQLite write-ahead logs, nearly all held
+open read/write by agent processes (see the
+[change-source review](research-2026-09-27-disk-growth-change-sources.md#the-live-root-misses-were-open-writers)).
 
 An aged controlled file reproduced a missing notification while its descriptor stayed
 open after append and `fsync`: completed replay, zero change events, zero overlap, and
@@ -176,6 +182,8 @@ exact agreement. A new-file control was overlap-masked; retaining that negative 
 prevents confusing old creation events with a fresh write notification.
 
 This makes long-lived open writers an explicit coverage contract.
+A live-stream matrix later showed the same omission without replay, so resident FSEvents
+consumers share it; libproc can list same-user open writers in about 15 ms.
 Apple’s published
 [XNU `vn_close` implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_vnops.c)
 emits `FSE_CONTENT_MODIFIED` when the descriptor was written.

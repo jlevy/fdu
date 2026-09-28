@@ -97,6 +97,23 @@ results from the event callback latency alone.
 These findings do not change immutable checkpoint comparisons or authorize background
 monitoring. They gate the accelerated refresh route used to produce a new checkpoint.
 
+The
+[change-source review](../../research/research-2026-09-27-disk-growth-change-sources.md)
+adds measurements that bear on sequencing:
+
+- **Loading the flat snapshot costs about as much as a walk.** On a 452k-entry root it
+  took 3.15 s, against a 5.7 s walk; at 1.5 M entries, 10.0 s against 18.6 s.
+- **A delta-only roll-up log is enough to diff.** Across 14 minutes of agent activity it
+  touched 4,618 of 95,500 directories, and the diff took 0.077 s.
+- **The interim JSON workflow is heavy at this scale.** It costs 498 MB and 14–27 s per
+  checkpoint at 452k entries.
+- **Spotlight cannot nominate paths on this host.** Indexing is off on the Data volume.
+
+The review recommends building the checkpoint store (slices 2 and 4) before replay
+(slice 3), and choosing a whole-home accelerator by experiment.
+The candidates are a resident monitor with an open-writer list, and APFS directory
+statistics.
+
 ## User Workflow
 
 The operations below define behavior, not committed command syntax.

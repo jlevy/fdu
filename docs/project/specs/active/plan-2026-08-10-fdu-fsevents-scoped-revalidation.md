@@ -959,8 +959,9 @@ initially completed at roughly 32–40 seconds with exact oracle agreement, whil
 repeats exceeded sixty seconds.
 A two-minute diagnostic run completed at 92.5 seconds.
 Early matching callbacks arrived in milliseconds.
-An initial asynchronous flush did not solve the ten-second deadline; an initial
-synchronous flush required parent termination at twenty seconds.
+An initial asynchronous flush returned at once and did not bring `HistoryDone` inside
+the ten-second deadline; an initial synchronous flush blocks until `HistoryDone`, so its
+twenty-second parent termination measured the same historical cost.
 A missing final summary cannot localize a hang to replay versus teardown.
 The normal probe still has its ten-second wait and twenty-second parent bound;
 diagnostic deadlines are not new product defaults.
@@ -976,6 +977,31 @@ G11 must budget the whole replay attempt, including flush and teardown, against 
 measured scan alternative.
 Flat-image loading, indexing, roll-ups, and saving remain O(tree), so smaller
 event-nominated work alone does not meet the daily workflow target.
+
+### Change-source review (2026-09-27)
+
+The
+[change-source review](../../research/research-2026-09-27-disk-growth-change-sources.md)
+tested the mechanisms behind these findings and their alternatives.
+The results that bear on this plan:
+
+- **The open-writer omission happens at event generation.** The kernel emits a content
+  event only at the last close of the open file description, or at the last unmap of a
+  writable mapping. A live stream misses the same writes as replay, so a resident watcher
+  is not a fix.
+- **The live-root misses were open writers.** Re-classified against the baseline, 13 and
+  14 files per trial changed with no event, and the harness dropped no nomination.
+- **Replay cost is a property of the volume.** It costs about 0.12 s per compressed MB
+  of the volume’s journal behind the cursor, plus about 10 µs per matching record.
+  The path filter does not reduce it.
+  The G11 budget should use this model, not cursor age.
+- **The day-old tail had a different cause.** The observed 32–92 s tail came from a
+  churning scratch volume and from contention with other `fseventsd` clients on a loaded
+  host. Abandoned replays leave no backlog: `fseventsd` stops within about a second.
+  A quiet folder on the internal volume replayed a day in 1.8 s.
+- **The device-relative filter must be the firmlink-free path minus the mount point.** A
+  root spelled through `/System/Volumes/Data` matched nothing.
+- **G12 sweeps should be time-based**, because exposure grows with hours of history.
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 

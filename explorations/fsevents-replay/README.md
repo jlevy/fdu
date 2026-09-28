@@ -321,6 +321,10 @@ The controlled workload became 20,206 entries and gained 66,516 apparent bytes a
 61,440 allocated bytes.
 It exercised root and nested edits, deletion, a directory rename, creation of a new
 subtree, and an edit through a hard link.
+The hard-link alias’s own parent received an event, so this workload did not exercise
+the alias-expansion path; only the unit test does.
+Every changed file also shared a directory with an evented entry, so the exact match
+does not test per-file coverage.
 Shallow root relisting did not traverse its unchanged descendants.
 The native helper also passed sixteen fresh quiet/mixed regression trials across all
 four flag modes and both orders.
@@ -333,6 +337,23 @@ nominated scopes. The same file remained missed on repeat.
 A targeted `lsof` query of that one file found a read/write descriptor.
 No real folder was mutated to investigate this, and no private path appears in the
 shared record.
+
+The reported stable-miss counts understate the gap.
+The oracle comparison labels any path whose two oracles differ “concurrent”, which mixes
+changes made after the replay with changes made before it that were never nominated.
+The sibling relist also refreshes unevented files that share a directory with an evented
+one, so they count as stable-equal.
+Re-classified against the baseline, **13 files (first refresh) and 14 (repeat) changed
+before the replay with no event of their own**: the 1 and 2 reported stable misses, 4
+and 4 stale baselines inside the concurrent set, and 8 and 8 files refreshed only
+because a sibling had an event.
+Every one was a session log or SQLite write-ahead log, and 12 of 13 and 13 of 14 were
+held open read/write by long-running agent processes when checked.
+Re-running the normalization on the saved traces reproduces the saved scope plans
+exactly, so no nomination was dropped.
+See the
+[change-source review](../../docs/project/research/research-2026-09-27-disk-growth-change-sources.md#the-live-root-misses-were-open-writers)
+for the audit.
 
 The first live refresh spent 54 ms in replay and 1.77 s in scoped observation, including
 1.47 s building the parent index.
@@ -383,8 +404,10 @@ completed at 92.5 seconds with exact oracle agreement.
 In that last run, the first callback arrived in 8.84 ms.
 Completion latency is therefore not explained by the number of dirty entries alone.
 
-Initial asynchronous flushing did not complete within ten seconds.
-Synchronous flushing at startup required parent termination at twenty seconds.
+With an initial asynchronous flush, which itself returned in under a millisecond,
+`HistoryDone` still did not arrive within ten seconds.
+Synchronous flushing at startup required parent termination at twenty seconds; that
+flush waits for the same historical processing, so it measures the same cost.
 A no-`FullHistory` control also failed its parent bound, so removing overlap is neither
 a validated fix nor a safe optimization.
 A killed run without a final summary cannot localize delay to history, flush, or
@@ -417,7 +440,7 @@ Invalid experiment stages exit nonzero.
 
 ```shell
 # Use only an existing tree created by fixture_workload.py, with its ownership marker.
-# Let natural history progress; overlapping creation events make the result inconclusive.
+# Overlapping creation events make the result inconclusive; check the leaf's own record.
 uv run --no-project python explorations/fsevents-replay/open_writer.py \
   "$FDU_PROBE_SCRATCH/new-open-writer-trial" \
   --helper "$FDU_PROBE_SCRATCH/example/probe" \
@@ -427,8 +450,17 @@ uv run --no-project python explorations/fsevents-replay/open_writer.py \
 Apple’s published
 [XNU close path](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_vnops.c)
 contains a content-modified notification for written descriptors, consistent with this
-test. The installed system’s entire notification behavior is not inferred from that
-source alone.
+test. It fires on the last close of the open file description, so a `dup`ed descriptor
+delays it. Writes through a shared mapping are notified at the last unmap instead;
+`fsync` never notifies.
+A later live-stream matrix reproduced the same omission without replay, so a resident
+watcher shares it; see the
+[change-source review](../../docs/project/research/research-2026-09-27-disk-growth-change-sources.md#fsevents-cannot-see-open-writers-replayed-or-live).
+
+Creation-history overlap depends on journal segmentation, not wall-clock age: on the
+churning external volume, replay re-delivered creation records from ten minutes before
+the fence. The overlap-independent criterion is a new record, or a new `Modified` bit,
+for the leaf itself.
 
 **Disposition:** keep the spike and its negative controls; do not enable production
 history-only refresh.
