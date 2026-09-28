@@ -1,0 +1,13 @@
+[timing-lock] waited 59.6s
+label=ext-15min-validate vol=<external-volume> attr=ctime lower=1790569279 upper=1790570239 window_s=960 matches=65706 files=48243 dirs=17463 others=0 sum_datalen=3485644997 sum_alloc=3625844736 calls=326 ebusy_restarts=0 final_err=0 parse_errors=0 name_errors=0 ctime_min=1790569279 ctime_max=1790570239 wall_ms=327594.1 search_ms=327564.8 user_ms=25.4 sys_ms=51489.6 maxrss_kb=4912 distinct_parents=0 resolved=0 resolve_fail=0 resolve_ms=0.0 subtree_parents=0
+# 21:45:31 start int-zero-1 load=12.58 10.70 12.49
+[timing-lock] waited 12.7s
+label=int-zero-1 vol=/System/Volumes/Data attr=ctime lower=1790670731 upper=1790770731 window_s=100000 matches=0 files=0 dirs=0 others=0 sum_datalen=0 sum_alloc=0 calls=163 ebusy_restarts=0 final_err=0 parse_errors=0 name_errors=0 ctime_min=0 ctime_max=0 wall_ms=162593.7 search_ms=162593.7 user_ms=0.3 sys_ms=35476.5 maxrss_kb=1360 distinct_parents=0 resolved=0 resolve_fail=0 resolve_ms=0.0 subtree_parents=0
+# 21:48:27 start int-1h-1 load=12.94 10.59 12.01
+[timing-lock] waited 139.8s
+label=int-1h-1 vol=/System/Volumes/Data attr=ctime lower=1790567131 upper=1790570791 window_s=3660 matches=86692 files=77957 dirs=8735 others=0 sum_datalen=9764791967 sum_alloc=9992765440 calls=115 ebusy_restarts=0 final_err=0 parse_errors=0 name_errors=0 ctime_min=1790567140 ctime_max=1790570790 wall_ms=114519.3 search_ms=114518.8 user_ms=0.7 sys_ms=18489.5 maxrss_kb=7424 distinct_parents=0 resolved=0 resolve_fail=0 resolve_ms=0.0 subtree_parents=0
+# 21:52:41 start int-1d-1 load=7.13 9.50 11.26
+[timing-lock] waited 101.6s
+label=int-1d-1 vol=/System/Volumes/Data attr=ctime lower=1790484331 upper=1790570791 window_s=86460 matches=315822 files=272476 dirs=43346 others=0 sum_datalen=48270791092 sum_alloc=32885137408 calls=152 ebusy_restarts=0 final_err=0 parse_errors=0 name_errors=0 ctime_min=1790484377 ctime_max=1790570790 wall_ms=151066.5 search_ms=151064.9 user_ms=1.8 sys_ms=22280.3 maxrss_kb=7408 distinct_parents=0 resolved=0 resolve_fail=0 resolve_ms=0.0 subtree_parents=0
+# 21:56:54 start int-zero-2 load=9.70 10.80 11.46
+# 2026-09-27 22:01:00 lead stopped remaining searchfs series (internal repeats, bench_real, external series): verdict already no-go on cost; kept nested_wa.py

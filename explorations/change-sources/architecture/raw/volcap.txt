@@ -1,0 +1,2 @@
+/System/Volumes/Data name=Macintosh HD uuid=<data-volume-uuid> total=494384795648 available=11033739264 forImportantUsage=11138764800 forOpportunisticUsage=0 purgeable_estimate(important-available)=105025536
+<external-volume> name=<external-volume-name> uuid=<external-volume-uuid> total=499898105856 available=28485623808 forImportantUsage=28544174252 forOpportunisticUsage=27202166784 purgeable_estimate(important-available)=58550444

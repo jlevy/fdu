@@ -1,0 +1,3 @@
+~/Desktop: objtype=2 fileid=1437914 gen_count=19 returned_fork=0x1708 privatesize=0 cloneid=1437914 ext_flags=0x4 recursive_gencount=211000 clone_refcnt=0
+~/Documents: objtype=2 fileid=380484 gen_count=124 returned_fork=0x1708 privatesize=0 cloneid=380484 ext_flags=0x4 recursive_gencount=272039 clone_refcnt=0
+~/Mobile Documents: objtype=2 fileid=765212 gen_count=1027 returned_fork=0x1708 privatesize=0 cloneid=765212 ext_flags=0x4 recursive_gencount=207871 clone_refcnt=0

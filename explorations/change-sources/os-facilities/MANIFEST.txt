@@ -1,0 +1,7 @@
+./results/host_facts.txt	60f85025df98b0c00023fb54f45a6f66ffa5c6a1d298c504f961f3f33bca62bb	sanitized: user, volume, disk ids, UUIDs replaced by placeholders
+./results/rusage_run1.txt	aea9c6363dd39d838a086e5c7cfad04dbd72d50e44071374d5a120de261c6310	sanitized: user, volume, disk ids, UUIDs replaced by placeholders
+./results/rusage_run2.txt	5c82a348289bc1dad7f04a4fa32b41ec1288862be4b6a4a8782d130a57184db3	sanitized: user, volume, disk ids, UUIDs replaced by placeholders
+./results/spotlight_hidden_test.txt	85a833debd909e6f920575ce5f00c0700bc75d5ba389535833a35fcc82882c1a	sanitized: user, volume, disk ids, UUIDs replaced by placeholders
+./results/system_binaries_evidence.txt	6effb20f8653e316bcce502e8dada4e31c0eaa35c1bc521f7da4699433700bd0	sanitized: user, volume, disk ids, UUIDs replaced by placeholders
+./src/rusage_sampler.c	9bb456334ab3df5af1d5e865adbfd17386fb38065054e03a35dc85fc6bbdc8d4	unchanged
+./survey.md	1eb69d58f0e5283cb092d0b4b3d28f18effb2ca91e62f5c5d16b44120fb874c6	renamed from os-facilities-survey.md; footer added

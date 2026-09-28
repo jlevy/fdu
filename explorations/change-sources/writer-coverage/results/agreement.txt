@@ -1,0 +1,403 @@
+| op | rep | live events while open (after FlushSync) | events at/after close | replay while open | replay after close | stat while open (vs before) | notes |
+| --- | ---: | --- | --- | --- | --- | --- | --- |
+| append_fsync | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemModified|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| append_fsync | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| append_fsync | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| pwrite_inplace | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| pwrite_inplace | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| pwrite_inplace | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| ftruncate_grow | 1 | target:ItemInodeMetaMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,mtime_ns,ctime_ns |  |
+| ftruncate_grow | 2 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,mtime_ns,ctime_ns |  |
+| ftruncate_grow | 3 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,mtime_ns,ctime_ns |  |
+| ftruncate_shrink | 1 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| ftruncate_shrink | 2 | target:ItemInodeMetaMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| ftruncate_shrink | 3 | target:ItemInodeMetaMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| mmap_fd_open | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| mmap_fd_open | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| mmap_fd_open | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| mmap_fd_closed | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| mmap_fd_closed | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| mmap_fd_closed | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| sqlite_wal | 1 | target.db:ItemCreated|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile; target.db:ItemInodeMetaMod|ItemIsFile | target.db-shm:ItemRemoved|ItemModified|ItemIsFile; target.db-wal:ItemRemoved|ItemModified|ItemIsFile; target.db:ItemInodeMetaMod|ItemModified|ItemIsFile | target.db:ItemCreated|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemXattrMod|ItemIsFile | target.db:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemRemoved|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | n/a | synchronous=2; checkpoint=[0, 259, 259] |
+| sqlite_wal | 2 | target.db:ItemCreated|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile; target.db:ItemInodeMetaMod|ItemIsFile | target.db-shm:ItemRemoved|ItemModified|ItemIsFile; target.db-wal:ItemRemoved|ItemModified|ItemIsFile; target.db:ItemInodeMetaMod|ItemModified|ItemIsFile | target.db:ItemCreated|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemXattrMod|ItemIsFile | target.db:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemRemoved|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | n/a | synchronous=2; checkpoint=[0, 259, 259] |
+| sqlite_wal | 3 | target.db:ItemCreated|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile; target.db:ItemInodeMetaMod|ItemIsFile | target.db-shm:ItemRemoved|ItemModified|ItemIsFile; target.db-wal:ItemRemoved|ItemModified|ItemIsFile; target.db:ItemInodeMetaMod|ItemModified|ItemIsFile | target.db:ItemCreated|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemXattrMod|ItemIsFile | target.db:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile; target.db-journal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile; target.db-shm:ItemCreated|ItemRemoved|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile; target.db-wal:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | n/a | synchronous=2; checkpoint=[0, 259, 259] |
+| rename_over_open | 1 | target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns,nlink | avail_delta_after_orphan_growth=-987136; avail_delta_after_close=-1175552 |
+| rename_over_open | 2 | target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns,nlink | avail_delta_after_orphan_growth=-987136; avail_delta_after_close=135168 |
+| rename_over_open | 3 | target.new:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemRenamed|ItemIsFile; target:ItemRenamed|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemRenamed|ItemIsFile; target:ItemRenamed|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile | target:ItemRenamed|ItemIsFile; target:ItemRenamed|ItemIsFile; target.new:ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile; target:ItemModified|ItemIsFile | size,blocks,mtime_ns,ctime_ns,nlink | avail_delta_after_orphan_growth=-1073152; avail_delta_after_close=-52060160 |
+| unlink_open | 1 | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns,nlink | avail_delta_after_orphan_growth=-987136; avail_delta_after_close=81920 |
+| unlink_open | 2 | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns,nlink | avail_delta_after_orphan_growth=-991232; avail_delta_after_close=126976 |
+| unlink_open | 3 | target:ItemRemoved|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns,nlink | avail_delta_after_orphan_growth=-991232; avail_delta_after_close=-1003520 |
+| prealloc | 1 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | blocks,mtime_ns,ctime_ns | prealloc_bytesalloc=1048576 |
+| prealloc | 2 | target:ItemInodeMetaMod|ItemIsFile | none | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | blocks,mtime_ns,ctime_ns | prealloc_bytesalloc=1048576 |
+| prealloc | 3 | target:ItemInodeMetaMod|ItemIsFile | none | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | blocks,mtime_ns,ctime_ns | prealloc_bytesalloc=1048576 |
+| second_writer_append | 1 | target:ItemModified|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| second_writer_append | 2 | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile; target:ItemModified|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| second_writer_append | 3 | target:ItemModified|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| fsync_only | 1 | none | none | none | none | unchanged |  |
+| fsync_only | 2 | none | none | none | none | unchanged |  |
+| fsync_only | 3 | none | none | none | none | unchanged |  |
+| fullfsync_append | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| fullfsync_append | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| fullfsync_append | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| dup_close | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| dup_close | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| dup_close | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| open_trunc | 1 | target:ItemInodeMetaMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| open_trunc | 2 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| open_trunc | 3 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemModified|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| futimes | 1 | target:ItemInodeMetaMod|ItemIsFile | none | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| futimes | 2 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| futimes | 3 | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile | mtime_ns,ctime_ns |  |
+| fchmod | 1 | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | ctime_ns |  |
+| fchmod | 2 | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | ctime_ns |  |
+| fchmod | 3 | target:ItemChangeOwner|ItemIsFile | none | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile | ctime_ns |  |
+| fsetxattr | 1 | target:ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | ctime_ns |  |
+| fsetxattr | 2 | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | ctime_ns |  |
+| fsetxattr | 3 | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | ctime_ns |  |
+| clonefile_src | 1 | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; clone:ItemCreated|ItemIsFile|ItemCloned | target:ItemModified|ItemIsFile | clone:ItemCreated|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned | clone:ItemCreated|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned | size,blocks,mtime_ns,ctime_ns |  |
+| clonefile_src | 2 | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; clone:ItemCreated|ItemIsFile|ItemCloned | target:ItemModified|ItemIsFile | clone:ItemCreated|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned | clone:ItemCreated|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned | size,blocks,mtime_ns,ctime_ns |  |
+| clonefile_src | 3 | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; clone:ItemCreated|ItemIsFile|ItemCloned | target:ItemModified|ItemIsFile | clone:ItemCreated|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned | clone:ItemCreated|ItemIsFile|ItemCloned; clone:ItemIsFile|ItemCloned; target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile|ItemCloned | size,blocks,mtime_ns,ctime_ns |  |
+
+Stat samples (size/blocks/mtime/ctime relative to 'before'):
+  append_fsync r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  append_fsync r1 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.317 dctime=5.317
+  append_fsync r1 open+1s                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.317 dctime=5.317
+  append_fsync r1 open+10s                     dsize=   16384 dblocks=   128 nlink=1 dmtime=5.317 dctime=5.317
+  append_fsync r1 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.317 dctime=5.317
+  append_fsync r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  append_fsync r2 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  append_fsync r2 open+1s                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  append_fsync r2 open+10s                     dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  append_fsync r2 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  append_fsync r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  append_fsync r3 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.02 dctime=5.02
+  append_fsync r3 open+1s                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.02 dctime=5.02
+  append_fsync r3 open+10s                     dsize=   16384 dblocks=   128 nlink=1 dmtime=5.02 dctime=5.02
+  append_fsync r3 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.02 dctime=5.02
+  pwrite_inplace r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  pwrite_inplace r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.015 dctime=5.015
+  pwrite_inplace r1 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.015 dctime=5.015
+  pwrite_inplace r1 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=5.015 dctime=5.015
+  pwrite_inplace r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.015 dctime=5.015
+  pwrite_inplace r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  pwrite_inplace r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.02 dctime=5.02
+  pwrite_inplace r2 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.02 dctime=5.02
+  pwrite_inplace r2 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=5.02 dctime=5.02
+  pwrite_inplace r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.02 dctime=5.02
+  pwrite_inplace r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  pwrite_inplace r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.009 dctime=5.009
+  pwrite_inplace r3 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.009 dctime=5.009
+  pwrite_inplace r3 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=5.009 dctime=5.009
+  pwrite_inplace r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.009 dctime=5.009
+  ftruncate_grow r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  ftruncate_grow r1 op-done                      dsize=   65536 dblocks=     0 nlink=1 dmtime=5.012 dctime=5.012
+  ftruncate_grow r1 open+1s                      dsize=   65536 dblocks=     0 nlink=1 dmtime=5.012 dctime=5.012
+  ftruncate_grow r1 open+10s                     dsize=   65536 dblocks=     0 nlink=1 dmtime=5.012 dctime=5.012
+  ftruncate_grow r1 post-close                   dsize=   65536 dblocks=     0 nlink=1 dmtime=5.012 dctime=5.012
+  ftruncate_grow r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  ftruncate_grow r2 op-done                      dsize=   65536 dblocks=     0 nlink=1 dmtime=5.329 dctime=5.329
+  ftruncate_grow r2 open+1s                      dsize=   65536 dblocks=     0 nlink=1 dmtime=5.329 dctime=5.329
+  ftruncate_grow r2 open+10s                     dsize=   65536 dblocks=     0 nlink=1 dmtime=5.329 dctime=5.329
+  ftruncate_grow r2 post-close                   dsize=   65536 dblocks=     0 nlink=1 dmtime=5.329 dctime=5.329
+  ftruncate_grow r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  ftruncate_grow r3 op-done                      dsize=   65536 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_grow r3 open+1s                      dsize=   65536 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_grow r3 open+10s                     dsize=   65536 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_grow r3 post-close                   dsize=   65536 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_shrink r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  ftruncate_shrink r1 op-done                      dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_shrink r1 open+1s                      dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_shrink r1 open+10s                     dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_shrink r1 post-close                   dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.014 dctime=5.014
+  ftruncate_shrink r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  ftruncate_shrink r2 op-done                      dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.146 dctime=5.146
+  ftruncate_shrink r2 open+1s                      dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.146 dctime=5.146
+  ftruncate_shrink r2 open+10s                     dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.146 dctime=5.146
+  ftruncate_shrink r2 post-close                   dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.146 dctime=5.146
+  ftruncate_shrink r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  ftruncate_shrink r3 op-done                      dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.01 dctime=5.01
+  ftruncate_shrink r3 open+1s                      dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.01 dctime=5.01
+  ftruncate_shrink r3 open+10s                     dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.01 dctime=5.01
+  ftruncate_shrink r3 post-close                   dsize=  -49152 dblocks=   -96 nlink=1 dmtime=5.01 dctime=5.01
+  mmap_fd_open r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_open r1 after-memory-write           dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_open r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.054 dctime=5.054
+  mmap_fd_open r1 mapped+1s                    dsize=       0 dblocks=     0 nlink=1 dmtime=5.054 dctime=5.054
+  mmap_fd_open r1 mapped+10s                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.054 dctime=5.054
+  mmap_fd_open r1 fd-closed+2s                 dsize=       0 dblocks=     0 nlink=1 dmtime=5.054 dctime=5.054
+  mmap_fd_open r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.054 dctime=17.092
+  mmap_fd_open r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_open r2 after-memory-write           dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_open r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.011 dctime=5.011
+  mmap_fd_open r2 mapped+1s                    dsize=       0 dblocks=     0 nlink=1 dmtime=5.011 dctime=5.011
+  mmap_fd_open r2 mapped+10s                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.011 dctime=5.011
+  mmap_fd_open r2 fd-closed+2s                 dsize=       0 dblocks=     0 nlink=1 dmtime=5.011 dctime=5.011
+  mmap_fd_open r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.011 dctime=17.056
+  mmap_fd_open r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_open r3 after-memory-write           dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_open r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_open r3 mapped+1s                    dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_open r3 mapped+10s                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_open r3 fd-closed+2s                 dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_open r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=17.046
+  mmap_fd_closed r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_closed r1 after-memory-write           dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_closed r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.013 dctime=5.013
+  mmap_fd_closed r1 mapped+1s                    dsize=       0 dblocks=     0 nlink=1 dmtime=5.013 dctime=5.013
+  mmap_fd_closed r1 mapped+10s                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.013 dctime=5.013
+  mmap_fd_closed r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.013 dctime=15.043
+  mmap_fd_closed r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_closed r2 after-memory-write           dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_closed r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.03 dctime=5.03
+  mmap_fd_closed r2 mapped+1s                    dsize=       0 dblocks=     0 nlink=1 dmtime=5.03 dctime=5.03
+  mmap_fd_closed r2 mapped+10s                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.03 dctime=5.03
+  mmap_fd_closed r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.03 dctime=15.072
+  mmap_fd_closed r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_closed r3 after-memory-write           dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  mmap_fd_closed r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_closed r3 mapped+1s                    dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_closed r3 mapped+10s                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=5.014
+  mmap_fd_closed r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=5.014 dctime=15.169
+  rename_over_open r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  rename_over_open r1 op-done                      dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  rename_over_open r1 orphaned+1s                  dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  rename_over_open r1 orphaned+10s                 dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  rename_over_open r1 post-close                   dsize=  -64512 dblocks=  -120 nlink=1 dmtime=5.013 dctime=5.014
+  rename_over_open r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  rename_over_open r2 op-done                      dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.019 dctime=5.019
+  rename_over_open r2 orphaned+1s                  dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.019 dctime=5.019
+  rename_over_open r2 orphaned+10s                 dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.019 dctime=5.019
+  rename_over_open r2 post-close                   dsize=  -64512 dblocks=  -120 nlink=1 dmtime=5.018 dctime=5.018
+  rename_over_open r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  rename_over_open r3 op-done                      dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  rename_over_open r3 orphaned+1s                  dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  rename_over_open r3 orphaned+10s                 dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  rename_over_open r3 post-close                   dsize=  -64512 dblocks=  -120 nlink=1 dmtime=5.014 dctime=5.014
+  unlink_open r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  unlink_open r1 unlinked                     dsize=    4096 dblocks=   128 nlink=0 dmtime=5.013 dctime=5.013
+  unlink_open r1 op-done                      dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  unlink_open r1 orphaned+1s                  dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  unlink_open r1 orphaned+10s                 dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.015 dctime=5.015
+  unlink_open r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  unlink_open r2 unlinked                     dsize=    4096 dblocks=   128 nlink=0 dmtime=5.026 dctime=5.027
+  unlink_open r2 op-done                      dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.029 dctime=5.029
+  unlink_open r2 orphaned+1s                  dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.029 dctime=5.029
+  unlink_open r2 orphaned+10s                 dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.029 dctime=5.029
+  unlink_open r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  unlink_open r3 unlinked                     dsize=    4096 dblocks=   128 nlink=0 dmtime=5.023 dctime=5.024
+  unlink_open r3 op-done                      dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.024 dctime=5.024
+  unlink_open r3 orphaned+1s                  dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.024 dctime=5.024
+  unlink_open r3 orphaned+10s                 dsize= 1052672 dblocks=  2056 nlink=0 dmtime=5.024 dctime=5.024
+  prealloc r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  prealloc r1 op-done                      dsize=       0 dblocks=  2048 nlink=1 dmtime=5.026 dctime=5.026
+  prealloc r1 open+1s                      dsize=       0 dblocks=  2048 nlink=1 dmtime=5.026 dctime=5.026
+  prealloc r1 open+10s                     dsize=       0 dblocks=  2048 nlink=1 dmtime=5.026 dctime=5.026
+  prealloc r1 post-close                   dsize=       0 dblocks=  2048 nlink=1 dmtime=5.026 dctime=5.026
+  prealloc r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  prealloc r2 op-done                      dsize=       0 dblocks=  2048 nlink=1 dmtime=5.03 dctime=5.03
+  prealloc r2 open+1s                      dsize=       0 dblocks=  2048 nlink=1 dmtime=5.03 dctime=5.03
+  prealloc r2 open+10s                     dsize=       0 dblocks=  2048 nlink=1 dmtime=5.03 dctime=5.03
+  prealloc r2 post-close                   dsize=       0 dblocks=  2048 nlink=1 dmtime=5.03 dctime=5.03
+  prealloc r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  prealloc r3 op-done                      dsize=       0 dblocks=  2048 nlink=1 dmtime=5.022 dctime=5.022
+  prealloc r3 open+1s                      dsize=       0 dblocks=  2048 nlink=1 dmtime=5.022 dctime=5.022
+  prealloc r3 open+10s                     dsize=       0 dblocks=  2048 nlink=1 dmtime=5.022 dctime=5.022
+  prealloc r3 post-close                   dsize=       0 dblocks=  2048 nlink=1 dmtime=5.022 dctime=5.022
+  second_writer_append r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  second_writer_append r1 op-done                      dsize=   12288 dblocks=   128 nlink=1 dmtime=5.181 dctime=5.181
+  second_writer_append r1 second-closed-first-open+1s  dsize=   12288 dblocks=   128 nlink=1 dmtime=5.181 dctime=5.181
+  second_writer_append r1 second-closed-first-open+10s dsize=   12288 dblocks=   128 nlink=1 dmtime=5.181 dctime=5.181
+  second_writer_append r1 post-close                   dsize=   12288 dblocks=   128 nlink=1 dmtime=5.181 dctime=5.181
+  second_writer_append r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  second_writer_append r2 op-done                      dsize=   12288 dblocks=   128 nlink=1 dmtime=5.071 dctime=5.071
+  second_writer_append r2 second-closed-first-open+1s  dsize=   12288 dblocks=   128 nlink=1 dmtime=5.071 dctime=5.071
+  second_writer_append r2 second-closed-first-open+10s dsize=   12288 dblocks=   128 nlink=1 dmtime=5.071 dctime=5.071
+  second_writer_append r2 post-close                   dsize=   12288 dblocks=   128 nlink=1 dmtime=5.071 dctime=5.071
+  second_writer_append r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  second_writer_append r3 op-done                      dsize=   12288 dblocks=   128 nlink=1 dmtime=5.05 dctime=5.05
+  second_writer_append r3 second-closed-first-open+1s  dsize=   12288 dblocks=   128 nlink=1 dmtime=5.05 dctime=5.05
+  second_writer_append r3 second-closed-first-open+10s dsize=   12288 dblocks=   128 nlink=1 dmtime=5.05 dctime=5.05
+  second_writer_append r3 post-close                   dsize=   12288 dblocks=   128 nlink=1 dmtime=5.05 dctime=5.05
+  fsync_only r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r1 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r1 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r2 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r2 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r3 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r3 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsync_only r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fullfsync_append r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fullfsync_append r1 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  fullfsync_append r1 open+1s                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  fullfsync_append r1 open+10s                     dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  fullfsync_append r1 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.013 dctime=5.013
+  fullfsync_append r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fullfsync_append r2 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.023 dctime=5.023
+  fullfsync_append r2 open+1s                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.023 dctime=5.023
+  fullfsync_append r2 open+10s                     dsize=   16384 dblocks=   128 nlink=1 dmtime=5.023 dctime=5.023
+  fullfsync_append r2 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.023 dctime=5.023
+  fullfsync_append r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fullfsync_append r3 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.015 dctime=5.015
+  fullfsync_append r3 open+1s                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.015 dctime=5.015
+  fullfsync_append r3 open+10s                     dsize=   16384 dblocks=   128 nlink=1 dmtime=5.015 dctime=5.015
+  fullfsync_append r3 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.015 dctime=5.015
+  dup_close r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  dup_close r1 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.265 dctime=5.265
+  dup_close r1 dup-alive+1s                 dsize=   16384 dblocks=   128 nlink=1 dmtime=5.265 dctime=5.265
+  dup_close r1 dup-alive+10s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.265 dctime=5.265
+  dup_close r1 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.265 dctime=5.265
+  dup_close r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  dup_close r2 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=6.862 dctime=6.862
+  dup_close r2 dup-alive+1s                 dsize=   16384 dblocks=   128 nlink=1 dmtime=6.862 dctime=6.862
+  dup_close r2 dup-alive+10s                dsize=   16384 dblocks=   128 nlink=1 dmtime=6.862 dctime=6.862
+  dup_close r2 post-close                   dsize=   16384 dblocks=    32 nlink=1 dmtime=6.862 dctime=6.862
+  dup_close r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  dup_close r3 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.035 dctime=5.035
+  dup_close r3 dup-alive+1s                 dsize=   16384 dblocks=   128 nlink=1 dmtime=5.035 dctime=5.035
+  dup_close r3 dup-alive+10s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.035 dctime=5.035
+  dup_close r3 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.035 dctime=5.035
+  open_trunc r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  open_trunc r1 op-done                      dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.015 dctime=5.015
+  open_trunc r1 open+1s                      dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.015 dctime=5.015
+  open_trunc r1 open+10s                     dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.015 dctime=5.015
+  open_trunc r1 post-close                   dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.015 dctime=5.015
+  open_trunc r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  open_trunc r2 op-done                      dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.021 dctime=5.021
+  open_trunc r2 open+1s                      dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.021 dctime=5.021
+  open_trunc r2 open+10s                     dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.021 dctime=5.021
+  open_trunc r2 post-close                   dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.021 dctime=5.021
+  open_trunc r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  open_trunc r3 op-done                      dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.014 dctime=5.014
+  open_trunc r3 open+1s                      dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.014 dctime=5.014
+  open_trunc r3 open+10s                     dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.014 dctime=5.014
+  open_trunc r3 post-close                   dsize=  -61440 dblocks=  -120 nlink=1 dmtime=5.014 dctime=5.014
+  futimes r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  futimes r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=-190570609.812 dctime=5.009
+  futimes r1 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=-190570609.812 dctime=5.009
+  futimes r1 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=-190570609.812 dctime=5.009
+  futimes r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=-190570609.812 dctime=5.009
+  futimes r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  futimes r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=-190570968.297 dctime=5.02
+  futimes r2 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=-190570968.297 dctime=5.02
+  futimes r2 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=-190570968.297 dctime=5.02
+  futimes r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=-190570968.297 dctime=5.02
+  futimes r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  futimes r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=-190571320.749 dctime=5.01
+  futimes r3 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=-190571320.749 dctime=5.01
+  futimes r3 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=-190571320.749 dctime=5.01
+  futimes r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=-190571320.749 dctime=5.01
+  fchmod r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fchmod r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.22
+  fchmod r1 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.22
+  fchmod r1 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.22
+  fchmod r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.22
+  fchmod r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fchmod r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.01
+  fchmod r2 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.01
+  fchmod r2 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.01
+  fchmod r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.01
+  fchmod r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fchmod r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.011
+  fchmod r3 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.011
+  fchmod r3 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.011
+  fchmod r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.011
+  fsetxattr r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsetxattr r1 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.366
+  fsetxattr r1 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.366
+  fsetxattr r1 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.366
+  fsetxattr r1 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.366
+  fsetxattr r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsetxattr r2 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.019
+  fsetxattr r2 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.019
+  fsetxattr r2 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.019
+  fsetxattr r2 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.019
+  fsetxattr r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  fsetxattr r3 op-done                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.013
+  fsetxattr r3 open+1s                      dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.013
+  fsetxattr r3 open+10s                     dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.013
+  fsetxattr r3 post-close                   dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=5.013
+  clonefile_src r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  clonefile_src r1 op-done                      dsize=    4096 dblocks=     8 nlink=1 dmtime=5.864 dctime=5.864
+  clonefile_src r1 open+1s                      dsize=    4096 dblocks=     8 nlink=1 dmtime=5.864 dctime=5.864
+  clonefile_src r1 open+10s                     dsize=    4096 dblocks=     8 nlink=1 dmtime=5.864 dctime=5.864
+  clonefile_src r1 post-close                   dsize=    4096 dblocks=     8 nlink=1 dmtime=5.864 dctime=5.864
+  clonefile_src r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  clonefile_src r2 op-done                      dsize=    4096 dblocks=     8 nlink=1 dmtime=5.014 dctime=5.014
+  clonefile_src r2 open+1s                      dsize=    4096 dblocks=     8 nlink=1 dmtime=5.014 dctime=5.014
+  clonefile_src r2 open+10s                     dsize=    4096 dblocks=     8 nlink=1 dmtime=5.014 dctime=5.014
+  clonefile_src r2 post-close                   dsize=    4096 dblocks=     8 nlink=1 dmtime=5.014 dctime=5.014
+  clonefile_src r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  clonefile_src r3 op-done                      dsize=    4096 dblocks=     8 nlink=1 dmtime=5.012 dctime=5.012
+  clonefile_src r3 open+1s                      dsize=    4096 dblocks=     8 nlink=1 dmtime=5.012 dctime=5.012
+  clonefile_src r3 open+10s                     dsize=    4096 dblocks=     8 nlink=1 dmtime=5.012 dctime=5.012
+  clonefile_src r3 post-close                   dsize=    4096 dblocks=     8 nlink=1 dmtime=5.012 dctime=5.012
+
+Live vs replay agreement (per path: replay id == latest live id, replay flags include all live flags; cursor = global counter at live-stream start; while-open comparison bounded by the replay's HistoryDone id):
+| op | rep | paths live before close | replay while open agrees | paths live total | replay after close agrees | replay wall s (open/close) |
+| --- | ---: | ---: | --- | ---: | --- | --- |
+| append_fsync | 1 | 0 | yes | 1 | yes | 0.2221/0.1463 |
+| pwrite_inplace | 1 | 0 | yes | 1 | yes | 0.0168/0.0239 |
+| ftruncate_grow | 1 | 1 | yes | 1 | yes | 0.0171/0.023 |
+| ftruncate_shrink | 1 | 1 | yes | 1 | yes | 0.0629/0.0184 |
+| mmap_fd_open | 1 | 0 | yes | 1 | yes | 0.0204/0.0691 |
+| mmap_fd_closed | 1 | 0 | yes | 1 | yes | 0.02/0.0243 |
+| sqlite_wal | 1 | 4 | yes | 4 | yes | 0.0187/0.0217 |
+| rename_over_open | 1 | 2 | yes | 2 | yes | 0.0183/0.0178 |
+| unlink_open | 1 | 1 | yes | 1 | yes | 0.0195/0.0184 |
+| prealloc | 1 | 1 | yes | 1 | yes | 0.0434/0.022 |
+| second_writer_append | 1 | 1 | yes | 1 | yes | 0.0196/0.045 |
+| fsync_only | 1 | 0 | yes | 0 | yes | 0.0447/0.0184 |
+| fullfsync_append | 1 | 0 | yes | 1 | yes | 0.0208/0.0944 |
+| dup_close | 1 | 0 | yes | 1 | yes | 0.0217/0.0138 |
+| open_trunc | 1 | 1 | yes | 1 | yes | 0.0138/0.0164 |
+| futimes | 1 | 1 | yes | 1 | yes | 0.0172/0.0997 |
+| fchmod | 1 | 1 | yes | 1 | yes | 0.059/0.1611 |
+| fsetxattr | 1 | 1 | yes | 1 | yes | 0.2352/0.5413 |
+| clonefile_src | 1 | 2 | yes | 2 | yes | 0.168/0.0328 |
+| append_fsync | 2 | 0 | yes | 1 | yes | 0.1006/0.0462 |
+| pwrite_inplace | 2 | 0 | yes | 1 | yes | 0.0166/0.023 |
+| ftruncate_grow | 2 | 1 | yes | 1 | yes | 0.0755/0.0204 |
+| ftruncate_shrink | 2 | 1 | yes | 1 | yes | 0.0176/0.0246 |
+| mmap_fd_open | 2 | 0 | yes | 1 | yes | 0.0199/0.0207 |
+| mmap_fd_closed | 2 | 0 | yes | 1 | yes | 0.0258/0.0513 |
+| sqlite_wal | 2 | 4 | yes | 4 | yes | 0.0261/0.0315 |
+| rename_over_open | 2 | 2 | yes | 2 | yes | 0.0341/0.1638 |
+| unlink_open | 2 | 1 | yes | 1 | yes | 0.0676/0.0528 |
+| prealloc | 2 | 1 | yes | 1 | yes | 0.0352/0.0711 |
+| second_writer_append | 2 | 1 | yes | 1 | yes | 0.0507/0.058 |
+| fsync_only | 2 | 0 | yes | 0 | yes | 0.0293/0.0288 |
+| fullfsync_append | 2 | 0 | yes | 1 | yes | 0.103/0.9736 |
+| dup_close | 2 | 0 | yes | 1 | yes | 0.0437/0.025 |
+| open_trunc | 2 | 1 | yes | 1 | yes | 0.0251/0.9487 |
+| futimes | 2 | 1 | yes | 1 | yes | 0.0135/0.1777 |
+| fchmod | 2 | 1 | yes | 1 | yes | 0.0215/0.1409 |
+| fsetxattr | 2 | 1 | yes | 1 | yes | 0.1881/0.0187 |
+| clonefile_src | 2 | 2 | yes | 2 | yes | 0.1581/0.1488 |
+| append_fsync | 3 | 0 | yes | 1 | yes | 0.0218/0.0172 |
+| pwrite_inplace | 3 | 0 | yes | 1 | yes | 0.1503/0.0173 |
+| ftruncate_grow | 3 | 1 | yes | 1 | yes | 0.0217/0.0203 |
+| ftruncate_shrink | 3 | 1 | yes | 1 | yes | 0.1558/0.0242 |
+| mmap_fd_open | 3 | 0 | yes | 1 | yes | 0.0161/0.1754 |
+| mmap_fd_closed | 3 | 0 | yes | 1 | yes | 0.1445/0.034 |
+| sqlite_wal | 3 | 4 | yes | 4 | yes | 0.0335/0.033 |
+| rename_over_open | 3 | 2 | yes | 2 | yes | 0.0377/0.192 |
+| unlink_open | 3 | 1 | yes | 1 | yes | 0.1472/0.1888 |
+| prealloc | 3 | 1 | yes | 1 | yes | 0.2414/0.0225 |
+| second_writer_append | 3 | 1 | yes | 1 | yes | 0.0129/0.0418 |
+| fsync_only | 3 | 0 | yes | 0 | yes | 0.0271/0.0124 |
+| fullfsync_append | 3 | 0 | yes | 1 | yes | 0.0126/0.0126 |
+| dup_close | 3 | 0 | yes | 1 | yes | 0.0157/0.211 |
+| open_trunc | 3 | 1 | yes | 1 | yes | 0.1481/0.0207 |
+| futimes | 3 | 1 | yes | 1 | yes | 0.1397/0.0121 |
+| fchmod | 3 | 1 | yes | 1 | yes | 0.013/0.0129 |
+| fsetxattr | 3 | 1 | yes | 1 | yes | 0.0131/0.0137 |
+| clonefile_src | 3 | 2 | yes | 2 | yes | 0.0156/0.0209 |
+
+agreement: while-open 57/57, after-close 57/57

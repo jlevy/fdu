@@ -1,0 +1,351 @@
+==> bench-claude-r0-auto.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 260.0 ms to walk 8,992 files (4.0 GiB) at 34,578 files/s (15.676 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.33 real         0.08 user         0.34 sys
+            32669696  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2350  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                8921  voluntary context switches
+                3090  involuntary context switches
+          2065581459  instructions retired
+          1136591237  cycles elapsed
+            20873648  peak memory footprint
+
+==> bench-claude-r1-auto.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 95.0 ms to walk 8,992 files (4.0 GiB) at 94,607 files/s (42.890 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.16 real         0.08 user         0.45 sys
+            32997376  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2383  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   4  voluntary context switches
+                2227  involuntary context switches
+          1697375114  instructions retired
+          1416033871  cycles elapsed
+            21217736  peak memory footprint
+
+==> bench-claude-r1-off-nogitignore.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 48.0 ms to walk 8,992 files (4.0 GiB) at 187,233 files/s (84.882 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.11 real         0.06 user         0.25 sys
+            27181056  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2012  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1585  involuntary context switches
+          1229179575  instructions retired
+           850380658  cycles elapsed
+            15974856  peak memory footprint
+
+==> bench-claude-r1-off.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 82.9 ms to walk 8,992 files (4.0 GiB) at 108,405 files/s (49.146 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.14 real         0.08 user         0.46 sys
+            31965184  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2304  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                2519  involuntary context switches
+          1689061603  instructions retired
+          1444631781  cycles elapsed
+            20201928  peak memory footprint
+
+==> bench-claude-r1-only.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 15.0 ms to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        0.08 real         0.07 user         0.00 sys
+            35078144  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2478  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  53  involuntary context switches
+           639536379  instructions retired
+           210468370  cycles elapsed
+            23314888  peak memory footprint
+
+==> bench-claude-r1-refresh.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 102.0 ms to walk 8,992 files (4.0 GiB) at 88,160 files/s (39.968 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.17 real         0.08 user         0.45 sys
+            33865728  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2434  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   4  voluntary context switches
+                2224  involuntary context switches
+          1699415561  instructions retired
+          1427610092  cycles elapsed
+            22069704  peak memory footprint
+
+==> bench-claude-r2-auto.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 85.0 ms to walk 8,992 files (4.0 GiB) at 105,769 files/s (47.951 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.15 real         0.08 user         0.42 sys
+            33079296  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2381  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1946  involuntary context switches
+          1693655205  instructions retired
+          1342373550  cycles elapsed
+            21316040  peak memory footprint
+
+==> bench-claude-r2-off-nogitignore.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 85.8 ms to walk 8,992 files (4.0 GiB) at 104,817 files/s (47.519 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.15 real         0.07 user         0.43 sys
+            27181056  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2014  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   1  voluntary context switches
+                1472  involuntary context switches
+          1572109898  instructions retired
+          1307926732  cycles elapsed
+            15909344  peak memory footprint
+
+==> bench-claude-r2-off.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 80.9 ms to walk 8,992 files (4.0 GiB) at 111,162 files/s (50.396 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.14 real         0.08 user         0.42 sys
+            31539200  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2285  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1698  involuntary context switches
+          1680182251  instructions retired
+          1321129212  cycles elapsed
+            19775944  peak memory footprint
+
+==> bench-claude-r2-only.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 14.7 ms to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        0.08 real         0.07 user         0.01 sys
+            35536896  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2504  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  71  involuntary context switches
+           646329563  instructions retired
+           219333525  cycles elapsed
+            23773640  peak memory footprint
+
+==> bench-claude-r2-refresh.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 84.4 ms to walk 8,992 files (4.0 GiB) at 106,583 files/s (48.320 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.15 real         0.08 user         0.45 sys
+            33996800  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2440  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                2055  involuntary context switches
+          1693107162  instructions retired
+          1432309690  cycles elapsed
+            22233544  peak memory footprint
+
+==> bench-claude-r3-auto.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 49.5 ms to walk 8,992 files (4.0 GiB) at 181,781 files/s (82.411 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.11 real         0.08 user         0.24 sys
+            33619968  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2422  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1753  involuntary context switches
+          1348924718  instructions retired
+           872427635  cycles elapsed
+            21856712  peak memory footprint
+
+==> bench-claude-r3-off-nogitignore.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 45.9 ms to walk 8,992 files (4.0 GiB) at 195,778 files/s (88.756 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.11 real         0.06 user         0.24 sys
+            27213824  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2014  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1525  involuntary context switches
+          1230766465  instructions retired
+           839924833  cycles elapsed
+            15958496  peak memory footprint
+
+==> bench-claude-r3-off.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 82.2 ms to walk 8,992 files (4.0 GiB) at 109,390 files/s (49.592 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.15 real         0.08 user         0.46 sys
+            31883264  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2310  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                2090  involuntary context switches
+          1687458981  instructions retired
+          1456538591  cycles elapsed
+            20120008  peak memory footprint
+
+==> bench-claude-r3-only.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 14.7 ms to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        0.08 real         0.07 user         0.00 sys
+            35258368  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2487  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  37  involuntary context switches
+           638676310  instructions retired
+           209201523  cycles elapsed
+            23478704  peak memory footprint
+
+==> bench-claude-r3-refresh.txt <==
+   4.0 GiB  8,992 files, 2,907 directories
+perf: took 70.1 ms to walk 8,992 files (4.0 GiB) at 128,215 files/s (58.127 GiB/s); 21 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.13 real         0.08 user         0.25 sys
+            33832960  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2441  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   5  voluntary context switches
+                2056  involuntary context switches
+          1352705408  instructions retired
+           888501582  cycles elapsed
+            22053320  peak memory footprint

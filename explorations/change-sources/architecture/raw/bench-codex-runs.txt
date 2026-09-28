@@ -1,0 +1,365 @@
+==> bench-codex-r0-auto.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.89 s to walk 356,227 files (36 GiB) at 60,473 files/s (6.239 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.99 real         3.25 user        20.96 sys
+           277495808  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17693  page reclaims
+                 116  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               54288  voluntary context switches
+              137831  involuntary context switches
+         79770732780  instructions retired
+         62819951805  cycles elapsed
+           244941424  peak memory footprint
+
+==> bench-codex-r1-auto.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.20 s to walk 356,227 files (36 GiB) at 68,486 files/s (7.066 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.27 real         3.16 user        21.14 sys
+           269123584  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17680  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               51668  voluntary context switches
+              128003  involuntary context switches
+         76408340396  instructions retired
+         63724073932  cycles elapsed
+           236552816  peak memory footprint
+
+==> bench-codex-r1-off-nogitignore.txt <==
+    36 GiB  356,227 files, 95,484 directories
+perf: took 3.53 s to walk 356,227 files (36 GiB) at 101,031 files/s (10.424 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        3.63 real         0.63 user        25.78 sys
+            41107456  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2885  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               51834  voluntary context switches
+              135364  involuntary context switches
+         41503670721  instructions retired
+         69012807773  cycles elapsed
+            28721656  peak memory footprint
+
+==> bench-codex-r1-off.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 4.95 s to walk 356,227 files (36 GiB) at 71,905 files/s (7.419 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.03 real         3.18 user        23.44 sys
+           217956352  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               14433  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               51083  voluntary context switches
+              126972  involuntary context switches
+         76743295997  instructions retired
+         69723887057  cycles elapsed
+           186188376  peak memory footprint
+
+==> bench-codex-r1-only.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 3.04 s to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        3.11 real         2.95 user         0.08 sys
+           315506688  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               19609  page reclaims
+                   8  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  22  voluntary context switches
+                2586  involuntary context switches
+         41536258561  instructions retired
+          8103154290  cycles elapsed
+           286343792  peak memory footprint
+
+==> bench-codex-r1-refresh.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.71 s to walk 356,227 files (36 GiB) at 62,381 files/s (6.436 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.79 real         3.29 user        21.76 sys
+           268484608  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17594  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               53936  voluntary context switches
+              119113  involuntary context switches
+         77896604722  instructions retired
+         65603101738  cycles elapsed
+           237535856  peak memory footprint
+
+==> bench-codex-r2-auto.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.70 s to walk 356,227 files (36 GiB) at 62,514 files/s (6.450 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.78 real         3.25 user        17.09 sys
+           266256384  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17452  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               53124  voluntary context switches
+              105679  involuntary context switches
+         77359798839  instructions retired
+         52894967947  cycles elapsed
+           233849456  peak memory footprint
+
+==> bench-codex-r2-off-nogitignore.txt <==
+    36 GiB  356,227 files, 95,484 directories
+perf: took 3.07 s to walk 356,227 files (36 GiB) at 115,993 files/s (11.968 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        3.14 real         0.61 user        22.20 sys
+            39223296  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2762  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               51309  voluntary context switches
+              130112  involuntary context switches
+         40398429911  instructions retired
+         59508170249  cycles elapsed
+            26345952  peak memory footprint
+
+==> bench-codex-r2-off.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.64 s to walk 356,227 files (36 GiB) at 63,183 files/s (6.519 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.72 real         3.20 user        18.34 sys
+           220135424  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               14604  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               47421  voluntary context switches
+              113296  involuntary context switches
+         76142512322  instructions retired
+         56290407194  cycles elapsed
+           188924504  peak memory footprint
+
+==> bench-codex-r2-only.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 3.12 s to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        3.23 real         3.00 user         0.10 sys
+           315375616  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               19603  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  24  voluntary context switches
+                3068  involuntary context switches
+         41726381284  instructions retired
+          8269030182  cycles elapsed
+           286311048  peak memory footprint
+
+==> bench-codex-r2-refresh.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.72 s to walk 356,227 files (36 GiB) at 62,294 files/s (6.427 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.79 real         3.19 user        15.37 sys
+           268779520  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17519  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               54684  voluntary context switches
+              110426  involuntary context switches
+         77135346833  instructions retired
+         48618353102  cycles elapsed
+           237109872  peak memory footprint
+
+==> bench-codex-r3-auto.txt <==
+[timing-lock] waited 8.7s
+    36 GiB  356,228 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 6.04 s to walk 356,228 files (36 GiB) at 59,014 files/s (6.089 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        6.11 real         3.25 user        14.21 sys
+           269926400  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17702  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               55877  voluntary context switches
+              116964  involuntary context switches
+         78005511059  instructions retired
+         45882755122  cycles elapsed
+           236470896  peak memory footprint
+
+==> bench-codex-r3-off-nogitignore.txt <==
+    36 GiB  356,227 files, 95,484 directories
+perf: took 2.97 s to walk 356,227 files (36 GiB) at 119,754 files/s (12.356 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        3.04 real         0.59 user        18.25 sys
+            41861120  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                2937  page reclaims
+                   6  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               54780  voluntary context switches
+              123995  involuntary context switches
+         41470165230  instructions retired
+         49147754211  cycles elapsed
+            29868536  peak memory footprint
+
+==> bench-codex-r3-off.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.87 s to walk 356,227 files (36 GiB) at 60,680 files/s (6.261 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.95 real         3.28 user        13.04 sys
+           220987392  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               14609  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               52108  voluntary context switches
+               95020  involuntary context switches
+         76695914491  instructions retired
+         42375998103  cycles elapsed
+           186925656  peak memory footprint
+
+==> bench-codex-r3-only.txt <==
+    36 GiB  356,228 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 3.08 s to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        3.15 real         3.01 user         0.07 sys
+           315310080  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               19605  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  20  voluntary context switches
+                2402  involuntary context switches
+         41539681977  instructions retired
+          8252455665  cycles elapsed
+           286196360  peak memory footprint
+
+==> bench-codex-r3-refresh.txt <==
+    36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 5.05 s to walk 356,227 files (36 GiB) at 70,553 files/s (7.279 GiB/s); 5,815 gitignore rules (659 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        5.12 real         3.12 user        17.21 sys
+           267845632  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               17574  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               55206  voluntary context switches
+              132962  involuntary context switches
+         77672918707  instructions retired
+         53580310590  cycles elapsed
+           234848880  peak memory footprint

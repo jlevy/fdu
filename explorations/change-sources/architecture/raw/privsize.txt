@@ -1,0 +1,42 @@
+=== fresh clone pair (orig3/clone3) ===
+path=orig3.bin returned(file=0x205 cmnext=0x1308)
+  nlink=1 datalength=67108864 allocsize=67108864 privatesize=0 cloneid=42724416 clonerefcnt=2 extflags=0x41 EF_MAY_SHARE_BLOCKS=1
+path=clone3.bin returned(file=0x205 cmnext=0x1308)
+  nlink=1 datalength=67108864 allocsize=67108864 privatesize=0 cloneid=42724416 clonerefcnt=2 extflags=0x41 EF_MAY_SHARE_BLOCKS=1
+=== after 8 MiB write into clone3 ===
+path=orig3.bin returned(file=0x205 cmnext=0x1308)
+  nlink=1 datalength=67108864 allocsize=67108864 privatesize=8388608 cloneid=42724416 clonerefcnt=1 extflags=0x1 EF_MAY_SHARE_BLOCKS=1
+path=clone3.bin returned(file=0x205 cmnext=0x1308)
+  nlink=1 datalength=67108864 allocsize=67108864 privatesize=8388608 cloneid=42724418 clonerefcnt=1 extflags=0x1 EF_MAY_SHARE_BLOCKS=1
+=== hard-linked file (orig.bin has 2 links) ===
+path=orig.bin returned(file=0x205 cmnext=0x1308)
+  nlink=2 datalength=67108864 allocsize=67108864 privatesize=8388608 cloneid=42686619 clonerefcnt=1 extflags=0x1 EF_MAY_SHARE_BLOCKS=1
+=== path identity (firmlink) ===
+path=/Users/<u>/.claude returned(common=0x82000006 cmnext=0xe0)
+  devid=<dev-internal> fsid=<dev-internal>,26 fileid=41735666
+  nofirmlinkpath=/System/Volumes/Data/Users/<u>/.claude realdevid=<dev-internal> realfsid=<dev-internal>,26
+path=/System/Volumes/Data/Users/<u>/.claude returned(common=0x82000006 cmnext=0xe0)
+  devid=<dev-internal> fsid=<dev-internal>,26 fileid=41735666
+  nofirmlinkpath=/System/Volumes/Data/Users/<u>/.claude realdevid=<dev-internal> realfsid=<dev-internal>,26
+path=/private/tmp returned(common=0x82000006 cmnext=0xe0)
+  devid=<dev-internal> fsid=<dev-internal>,26 fileid=726422492
+  nofirmlinkpath=/System/Volumes/Data/private/tmp realdevid=<dev-internal> realfsid=<dev-internal>,26
+path=$REVIEW/architecture returned(common=0x82000006 cmnext=0xe0)
+  devid=<dev-external> fsid=<dev-external>,26 fileid=42623473
+  nofirmlinkpath=/System/Volumes/Data$REVIEW/architecture realdevid=<dev-external> realfsid=<dev-external>,26
+=== bulk timing 5000 files ===
+bulk base(alloc,datalen)    regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=129.596 ms (25.92 us/entry)
+bulk base(alloc,datalen)    regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=17.130 ms (3.43 us/entry)
+bulk base(alloc,datalen)    regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=16.870 ms (3.37 us/entry)
+bulk base(alloc,datalen)    regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=18.418 ms (3.68 us/entry)
+bulk base(alloc,datalen)    regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=18.381 ms (3.68 us/entry)
+bulk +linkcount             regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=17.547 ms (3.51 us/entry)
+bulk +linkcount             regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=16.020 ms (3.20 us/entry)
+bulk +linkcount             regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=17.528 ms (3.51 us/entry)
+bulk +linkcount             regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=17.537 ms (3.51 us/entry)
+bulk +linkcount             regular=5000 alloc_sum=20471808 priv_sum=0 multilink=0 time=16.807 ms (3.36 us/entry)
+bulk +linkcount+cmnext      regular=5000 alloc_sum=20471808 priv_sum=20471808 multilink=0 time=61.399 ms (12.28 us/entry)
+bulk +linkcount+cmnext      regular=5000 alloc_sum=20471808 priv_sum=20471808 multilink=0 time=43.988 ms (8.80 us/entry)
+bulk +linkcount+cmnext      regular=5000 alloc_sum=20471808 priv_sum=20471808 multilink=0 time=43.351 ms (8.67 us/entry)
+bulk +linkcount+cmnext      regular=5000 alloc_sum=20471808 priv_sum=20471808 multilink=0 time=44.879 ms (8.98 us/entry)
+bulk +linkcount+cmnext      regular=5000 alloc_sum=20471808 priv_sum=20471808 multilink=0 time=42.779 ms (8.56 us/entry)

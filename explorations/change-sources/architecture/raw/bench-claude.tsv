@@ -1,0 +1,17 @@
+label	round	policy	rc	real_s	user_s	sys_s	max_rss_bytes	wall_ms_incl_lockwait	load1	files_walked	files_per_s	tier	summary
+claude	0	auto	0	0.33	0.08	0.34	32669696	398	20.32	8992	34578	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	1	off-nogitignore	0	0.11	0.06	0.25	27181056	168	20.32	8992	187233	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	1	off	0	0.14	0.08	0.46	31965184	203	20.32	8992	108405	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	1	auto	0	0.16	0.08	0.45	32997376	218	20.32	8992	94607	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	1	only	0	0.08	0.07	0.00	35078144	136	20.32	0	0	cache only	4.0 GiB  8,992 files, 2,907 directories
+claude	1	refresh	0	0.17	0.08	0.45	33865728	227	19.01	8992	88160	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	2	off-nogitignore	0	0.15	0.07	0.43	27181056	212	19.01	8992	104817	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	2	off	0	0.14	0.08	0.42	31539200	205	19.01	8992	111162	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	2	auto	0	0.15	0.08	0.42	33079296	210	19.01	8992	105769	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	2	only	0	0.08	0.07	0.01	35536896	142	19.01	0	0	cache only	4.0 GiB  8,992 files, 2,907 directories
+claude	2	refresh	0	0.15	0.08	0.45	33996800	207	19.01	8992	106583	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	3	off-nogitignore	0	0.11	0.06	0.24	27213824	167	19.01	8992	195778	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	3	off	0	0.15	0.08	0.46	31883264	206	19.01	8992	109390	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	3	auto	0	0.11	0.08	0.24	33619968	170	19.01	8992	181781	cold scan	4.0 GiB  8,992 files, 2,907 directories
+claude	3	only	0	0.08	0.07	0.00	35258368	135	19.01	0	0	cache only	4.0 GiB  8,992 files, 2,907 directories
+claude	3	refresh	0	0.13	0.08	0.25	33832960	193	19.01	8992	128215	cold scan	4.0 GiB  8,992 files, 2,907 directories

@@ -1,0 +1,62 @@
+== external quiet, age 120, flags 16
+{"label":"smoke-ext","fs":"apfs","dev":"<dev-external>","nfilters":1,"filter0_len":60,"age_s":120,"wall_now":1790570037,"flags":16,"latency":0.010,"cursor":4808049714,"now_id":4808412767,"cursor_lookup_ms":2.26,"create_ms":0.08,"start_ms":0.40,"started":true,"first_cb_ms":37.86,"last_cb_ms":37.89,"history_ms":37.89,"wait_ms":37.51,"timeout":false,"abandoned":false,"abandon":"clean","history_done":true,"history_id":4808412760,"latest_id":4808412760,"min_id":4808412760,"max_id":4808412760,"callbacks":2,"events":2,"history_done_events":1,"events_after_done":0,"degraded":0,"path_bytes":120,"flush_start_sync":false,"flush_start_async":false,"async_id":0,"flush_start_ms":0.00,"done_before_start_flush":false,"done_after_start_flush":false,"flush_done_sync_ms":-1.00,"stop_ms":0.00,"teardown_ms":0.06,"total_ms":74.98,"fseventsd_cpu_before":30739.29,"fseventsd_cpu_after":30739.32,"fseventsd_cpu_delta":0.03,"print":false,"sleep_cb_ms":0}
+== internal nonexistent filter, age 120, flags 16
+{"label":"smoke-int","fs":"apfs","dev":"<dev-internal>","nfilters":1,"filter0_len":44,"age_s":120,"wall_now":1790570037,"flags":16,"latency":0.010,"cursor":4808347921,"now_id":4808412776,"cursor_lookup_ms":2.68,"create_ms":0.18,"start_ms":0.34,"started":true,"first_cb_ms":12.47,"last_cb_ms":12.47,"history_ms":12.47,"wait_ms":12.15,"timeout":false,"abandoned":false,"abandon":"clean","history_done":true,"history_id":4808347921,"latest_id":4808347921,"min_id":4808347921,"max_id":4808347921,"callbacks":1,"events":1,"history_done_events":1,"events_after_done":0,"degraded":0,"path_bytes":44,"flush_start_sync":false,"flush_start_async":false,"async_id":0,"flush_start_ms":0.00,"done_before_start_flush":false,"done_after_start_flush":false,"flush_done_sync_ms":-1.00,"stop_ms":0.00,"teardown_ms":0.07,"total_ms":48.78,"fseventsd_cpu_before":30739.32,"fseventsd_cpu_after":30739.33,"fseventsd_cpu_delta":0.01,"print":false,"sleep_cb_ms":0}
+== internal existing quiet dir (repo exploration dir), age 120
+{"label":"smoke-int-exist","fs":"apfs","dev":"<dev-internal>","nfilters":1,"filter0_len":54,"age_s":120,"wall_now":1790570037,"flags":16,"latency":0.010,"cursor":4808347921,"now_id":4808412776,"cursor_lookup_ms":1.36,"create_ms":0.08,"start_ms":0.34,"started":true,"first_cb_ms":17.55,"last_cb_ms":17.55,"history_ms":17.55,"wait_ms":17.22,"timeout":false,"abandoned":false,"abandon":"clean","history_done":true,"history_id":4808347921,"latest_id":4808347921,"min_id":4808347921,"max_id":4808347921,"callbacks":1,"events":1,"history_done_events":1,"events_after_done":0,"degraded":0,"path_bytes":54,"flush_start_sync":false,"flush_start_async":false,"async_id":0,"flush_start_ms":0.00,"done_before_start_flush":false,"done_after_start_flush":false,"flush_done_sync_ms":-1.00,"stop_ms":0.00,"teardown_ms":0.09,"total_ms":52.09,"fseventsd_cpu_before":30739.33,"fseventsd_cpu_after":30739.35,"fseventsd_cpu_delta":0.02,"print":false,"sleep_cb_ms":0}
+== cursorcost external
+{"dev":"<dev-external>","age_s":60,"rep":0,"wall_now":1790570037,"id":4808369120,"ms":1.514,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":60,"rep":1,"wall_now":1790570037,"id":4808369120,"ms":1.300,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":60,"rep":2,"wall_now":1790570037,"id":4808369120,"ms":1.287,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":300,"rep":0,"wall_now":1790570037,"id":4807200478,"ms":2.012,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":300,"rep":1,"wall_now":1790570037,"id":4807200478,"ms":1.274,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":300,"rep":2,"wall_now":1790570037,"id":4807200478,"ms":1.237,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":900,"rep":0,"wall_now":1790570037,"id":4806513671,"ms":1.987,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":900,"rep":1,"wall_now":1790570037,"id":4806513671,"ms":1.219,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":900,"rep":2,"wall_now":1790570037,"id":4806513671,"ms":1.197,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":3600,"rep":0,"wall_now":1790570037,"id":4800382826,"ms":3.259,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":3600,"rep":1,"wall_now":1790570037,"id":4800382826,"ms":1.763,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":3600,"rep":2,"wall_now":1790570037,"id":4800382826,"ms":1.711,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":7200,"rep":0,"wall_now":1790570037,"id":4780970212,"ms":4.562,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":7200,"rep":1,"wall_now":1790570037,"id":4780970212,"ms":3.549,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":7200,"rep":2,"wall_now":1790570037,"id":4780970212,"ms":3.070,"now_id":4808412824}
+{"dev":"<dev-external>","age_s":14400,"rep":0,"wall_now":1790570037,"id":4745128069,"ms":7.511,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":14400,"rep":1,"wall_now":1790570037,"id":4745128069,"ms":6.172,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":14400,"rep":2,"wall_now":1790570037,"id":4745128069,"ms":6.447,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":28800,"rep":0,"wall_now":1790570037,"id":4692541068,"ms":13.018,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":28800,"rep":1,"wall_now":1790570037,"id":4692541068,"ms":12.295,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":28800,"rep":2,"wall_now":1790570037,"id":4692541068,"ms":12.031,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":86400,"rep":0,"wall_now":1790570037,"id":4551198977,"ms":25.156,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":86400,"rep":1,"wall_now":1790570037,"id":4551198977,"ms":24.431,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":86400,"rep":2,"wall_now":1790570037,"id":4551198977,"ms":23.909,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":172800,"rep":0,"wall_now":1790570037,"id":4425936484,"ms":30.203,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":172800,"rep":1,"wall_now":1790570037,"id":4425936484,"ms":29.136,"now_id":4808412836}
+{"dev":"<dev-external>","age_s":172800,"rep":2,"wall_now":1790570037,"id":4425936484,"ms":28.713,"now_id":4808412836}
+== cursorcost internal
+{"dev":"<dev-internal>","age_s":60,"rep":0,"wall_now":1790570037,"id":4808347921,"ms":1.399,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":60,"rep":1,"wall_now":1790570037,"id":4808347921,"ms":1.131,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":60,"rep":2,"wall_now":1790570037,"id":4808347921,"ms":1.101,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":300,"rep":0,"wall_now":1790570037,"id":4806961892,"ms":2.762,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":300,"rep":1,"wall_now":1790570037,"id":4806961892,"ms":1.249,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":300,"rep":2,"wall_now":1790570037,"id":4806961892,"ms":1.192,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":900,"rep":0,"wall_now":1790570037,"id":4806503222,"ms":1.621,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":900,"rep":1,"wall_now":1790570037,"id":4806503222,"ms":1.259,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":900,"rep":2,"wall_now":1790570037,"id":4806503222,"ms":1.223,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":3600,"rep":0,"wall_now":1790570037,"id":4798733057,"ms":1.946,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":3600,"rep":1,"wall_now":1790570037,"id":4798733057,"ms":1.342,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":3600,"rep":2,"wall_now":1790570037,"id":4798733057,"ms":1.343,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":7200,"rep":0,"wall_now":1790570037,"id":4780648795,"ms":2.055,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":7200,"rep":1,"wall_now":1790570037,"id":4780648795,"ms":1.459,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":7200,"rep":2,"wall_now":1790570037,"id":4780648795,"ms":1.369,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":14400,"rep":0,"wall_now":1790570037,"id":4745233016,"ms":1.888,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":14400,"rep":1,"wall_now":1790570037,"id":4745233016,"ms":1.425,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":14400,"rep":2,"wall_now":1790570037,"id":4745233016,"ms":1.378,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":28800,"rep":0,"wall_now":1790570037,"id":4692268118,"ms":1.983,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":28800,"rep":1,"wall_now":1790570037,"id":4692268118,"ms":1.389,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":28800,"rep":2,"wall_now":1790570037,"id":4692268118,"ms":1.376,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":86400,"rep":0,"wall_now":1790570037,"id":4551374110,"ms":2.697,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":86400,"rep":1,"wall_now":1790570037,"id":4551374110,"ms":1.949,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":86400,"rep":2,"wall_now":1790570037,"id":4551374110,"ms":1.814,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":172800,"rep":0,"wall_now":1790570037,"id":4426335675,"ms":10.329,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":172800,"rep":1,"wall_now":1790570037,"id":4426335675,"ms":9.259,"now_id":4808412836}
+{"dev":"<dev-internal>","age_s":172800,"rep":2,"wall_now":1790570037,"id":4426335675,"ms":10.297,"now_id":4808412848}

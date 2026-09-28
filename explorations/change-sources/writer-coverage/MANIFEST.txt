@@ -1,0 +1,24 @@
+# MANIFEST: explorations/change-sources/writer-coverage/
+# Ported 2026-09-27 from the review's scratch directory; source paths are relative to it.
+# Tab-separated columns: ported_path, source_path, modified, sha256_ported, sha256_source.
+# modified = 'no' means byte-identical to the source (the two hashes are equal).
+# sha256_source is '-' for a generated file or one built from several sources.
+results/agreement-child.txt	writer-coverage/results/agreement-child.txt	no	945f8188812807666749455b083800499ad14f01adae2e7ad0f62a3453fa3618	945f8188812807666749455b083800499ad14f01adae2e7ad0f62a3453fa3618
+results/agreement.txt	writer-coverage/results/agreement.txt	no	63908e7c60488349707c79c38797c71da095c9661aaad843ba7f459a562a6525	63908e7c60488349707c79c38797c71da095c9661aaad843ba7f459a562a6525
+results/live-child.jsonl	writer-coverage/results/live-child.jsonl	sanitized: device number (st_dev) -> <dev-external>	fff8213e2f0a7a23b31119380cf4123ec233faa25907a72e980b492844fcaae6	a8ec4992daa887e002323a635d1ac34b2579a893fd443fda298ce8eebe681ed0
+results/live-child.log	writer-coverage/results/live-child.log	no	3257f2549e34f9608254e4dcca436056183135800536ec4d49c49f2ba108084d	3257f2549e34f9608254e4dcca436056183135800536ec4d49c49f2ba108084d
+results/live-ops.jsonl	writer-coverage/results/live-ops.jsonl	sanitized: device number (st_dev) -> <dev-external>	26149c745c4b3d5b640bb5fe34b6124615201dfde125b03293751d2d25a23b1f	83d1865c7d19de23e48e9bef3de68d20832638f35b0d6390affa63de13a0e69c
+results/live-ops.log	writer-coverage/results/live-ops.log	no	2573cfe3b78549c2518809b79b9ac55a89bdf47bc6b5ea72321159ad9be105e8	2573cfe3b78549c2518809b79b9ac55a89bdf47bc6b5ea72321159ad9be105e8
+results/smoke.jsonl	writer-coverage/results/smoke.jsonl	sanitized: device number (st_dev) -> <dev-external>	73f6f452571c220d89d284dbab884d7a10123ef515d1d79b8ca95c9e09c42a38	4f537eb7efb24f3cb6ac9df1bedaa83b4d0e764bb0717807a4598ec12c38ebde
+results/table-child.txt	writer-coverage/results/table-child.md	renamed .md -> .txt so the repository's Markdown format check (flowmark) leaves this generated summarize.py output alone; content byte-identical	476034c19dc2df8bfe6565d900fd3733cb675f1565fdbb4ceb3e0e71e9ddab24	476034c19dc2df8bfe6565d900fd3733cb675f1565fdbb4ceb3e0e71e9ddab24
+results/table.txt	writer-coverage/results/table.md	renamed .md -> .txt so the repository's Markdown format check (flowmark) leaves this generated summarize.py output alone; content byte-identical	a88816709dbb4409279cb250db545aecb325a165556076b4b7f293e05c76b28f	a88816709dbb4409279cb250db545aecb325a165556076b4b7f293e05c76b28f
+results/writers-timed-fd.jsonl	writer-coverage/results/writers-timed-fd.jsonl	sanitized: external mount point -> <external-volume>, uid -> <uid>	2e195672f6ba3fbc5ea3e53eab2fe60f0849165688ee00452ccb3d5316a8942d	9c90b964db5f608d0014331dc10165f971ff72a084e62265a5f0f409292a9db7
+results/writers-timed-hybrid.jsonl	writer-coverage/results/writers-timed-hybrid.jsonl	sanitized: external mount point -> <external-volume>, uid -> <uid>	ab530be9cb3817a1ae69fde52fc2d482e7e6ba028b450b75ef88ffb877435497	516d8801b1901ebcec2a15a156413621bcd11ed5d369c7085c2b0572d9f1ffa2
+results/writers-timed-regions.jsonl	writer-coverage/results/writers-timed-regions.jsonl	sanitized: external mount point -> <external-volume>, uid -> <uid>	364ac658d56a1c359670481770b3541f5df5d5c55d4e0228875e1150816288eb	b79337329759789451acb462889f4947dc3486a5f2bcd49478c4c9844007f119
+results/writers-timed-regions2.jsonl	writer-coverage/results/writers-timed-regions2.jsonl	sanitized: external mount point -> <external-volume>, uid -> <uid>	53cb5934443357cfa72db626a057123876b18c67122d5e7cc1334cf299b44987	379ea59884fd6f841c71c56c2a63e4b2265b7eebf79b6901c2f4df703bb582a0
+results/xnu-clone.log	writer-coverage/results/xnu-clone.log	no	8fca32fcb66f1b211bcdd76feb737a3ad37d70e27b784bdd11add46d8512a250	8fca32fcb66f1b211bcdd76feb737a3ad37d70e27b784bdd11add46d8512a250
+src/livewatch.c	writer-coverage/src/livewatch.c	no	fc01013a9403ee45f27924653f337c3b122f60f9cc45c070a531ebb91b45539c	fc01013a9403ee45f27924653f337c3b122f60f9cc45c070a531ebb91b45539c
+src/ops.py	writer-coverage/src/ops.py	no	51ab20cc6f48cfdc952ab1a499d8ed06fa3b8a9e0bd724f1597e1ecbf1d8a8a9	51ab20cc6f48cfdc952ab1a499d8ed06fa3b8a9e0bd724f1597e1ecbf1d8a8a9
+src/summarize.py	writer-coverage/src/summarize.py	no	35afc39ca04ba8e93888f36641bb436d362068d628a2fc152ab0d03af1ba4a06	35afc39ca04ba8e93888f36641bb436d362068d628a2fc152ab0d03af1ba4a06
+src/timeline.py	writer-coverage/src/timeline.py	no	470e4870b84b9f41f0ad3766f601953013b551d90d04266acd8a49532bd8e1a4	470e4870b84b9f41f0ad3766f601953013b551d90d04266acd8a49532bd8e1a4
+src/writers.c	writer-coverage/src/writers.c	no	6647ba55ba5916b59bb44a6cd5164e5d23683bafbb927bec515e384cc6f0c5c6	6647ba55ba5916b59bb44a6cd5164e5d23683bafbb927bec515e384cc6f0c5c6

@@ -1,0 +1,195 @@
+{
+ "leaf_age_s": 635.1851451396942,
+ "steps": [
+  {
+   "step": "replay-while-a1-open(+5s, sibling b created after the write)",
+   "summary": {
+    "history_done": true,
+    "timeout": false,
+    "history_ms": 10.851,
+    "flush_ms": 0.035,
+    "events": 7,
+    "latest_id": 4809973923,
+    "history_id": 4809973923
+   },
+   "events": [
+    {
+     "id": 4809007930,
+     "flags": "0x28100",
+     "path": "",
+     "ahd": false
+    },
+    {
+     "id": 4809007939,
+     "flags": "0x19100",
+     "path": "a1",
+     "ahd": false
+    },
+    {
+     "id": 4809007948,
+     "flags": "0x19100",
+     "path": "a2",
+     "ahd": false
+    },
+    {
+     "id": 4809007957,
+     "flags": "0x19100",
+     "path": "a3",
+     "ahd": false
+    },
+    {
+     "id": 4809007966,
+     "flags": "0x19100",
+     "path": "created_at",
+     "ahd": false
+    },
+    {
+     "id": 4809973923,
+     "flags": "0x19100",
+     "path": "b-after-write",
+     "ahd": false
+    }
+   ]
+  },
+  {
+   "step": "replay-after-a1-close",
+   "summary": {
+    "history_done": true,
+    "timeout": false,
+    "history_ms": 11.948,
+    "flush_ms": 0.032,
+    "events": 8,
+    "latest_id": 4809974561,
+    "history_id": 4809973923
+   },
+   "events": [
+    {
+     "id": 4809007930,
+     "flags": "0x28100",
+     "path": "",
+     "ahd": false
+    },
+    {
+     "id": 4809007939,
+     "flags": "0x19100",
+     "path": "a1",
+     "ahd": false
+    },
+    {
+     "id": 4809007948,
+     "flags": "0x19100",
+     "path": "a2",
+     "ahd": false
+    },
+    {
+     "id": 4809007957,
+     "flags": "0x19100",
+     "path": "a3",
+     "ahd": false
+    },
+    {
+     "id": 4809007966,
+     "flags": "0x19100",
+     "path": "created_at",
+     "ahd": false
+    },
+    {
+     "id": 4809974561,
+     "flags": "0x11000",
+     "path": "a1",
+     "ahd": false
+    },
+    {
+     "id": 4809973923,
+     "flags": "0x19100",
+     "path": "b-after-write",
+     "ahd": false
+    }
+   ],
+   "a1_event_ids": [
+    4809007939,
+    4809974561
+   ],
+   "b_event_id": 4809973923,
+   "a1_id_greater_than_b": false,
+   "write_to_close_s": 7.0282042026519775
+  },
+  {
+   "step": "a2: independent writer fd closed while another fd stays open",
+   "summary": {
+    "history_done": true,
+    "timeout": false,
+    "history_ms": 11.148,
+    "flush_ms": 0.038,
+    "events": 9,
+    "latest_id": 4809974570,
+    "history_id": 4809973923
+   },
+   "a2_events": [
+    {
+     "id": 4809007948,
+     "flags": "0x19100",
+     "path": "a2",
+     "ahd": false
+    },
+    {
+     "id": 4809974570,
+     "flags": "0x11000",
+     "path": "a2",
+     "ahd": false
+    }
+   ]
+  },
+  {
+   "step": "a3: original fd closed, dup still open (same open file description)",
+   "summary": {
+    "history_done": true,
+    "timeout": false,
+    "history_ms": 9.075,
+    "flush_ms": 0.031,
+    "events": 9,
+    "latest_id": 4809974570,
+    "history_id": 4809973923
+   },
+   "a3_events": [
+    {
+     "id": 4809007957,
+     "flags": "0x19100",
+     "path": "a3",
+     "ahd": false
+    }
+   ]
+  },
+  {
+   "step": "a3: last dup closed",
+   "summary": {
+    "history_done": true,
+    "timeout": false,
+    "history_ms": 140.828,
+    "flush_ms": 0.033,
+    "events": 10,
+    "latest_id": 4809975049,
+    "history_id": 4809973923
+   },
+   "a3_events": [
+    {
+     "id": 4809007957,
+     "flags": "0x19100",
+     "path": "a3",
+     "ahd": false
+    },
+    {
+     "id": 4809975049,
+     "flags": "0x11000",
+     "path": "a3",
+     "ahd": false
+    }
+   ]
+  }
+ ],
+ "fence": {
+  "device_fence": 4809637919,
+  "global_now": 4809972442,
+  "at": 1790571094.563045
+ }
+}

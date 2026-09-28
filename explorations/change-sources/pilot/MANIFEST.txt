@@ -1,0 +1,7 @@
+# MANIFEST: explorations/change-sources/pilot/
+# Ported 2026-09-27 from the review's scratch directory; source paths are relative to it.
+# Tab-separated columns: ported_path, source_path, modified, sha256_ported, sha256_source.
+# modified = 'no' means byte-identical to the source (the two hashes are equal).
+# sha256_source is '-' for a generated file or one built from several sources.
+agesweep.c	pilot/agesweep.c	no	b8ded9f91c60a20276bb178924589732cdf3eb06a9fc962b11b7b0970cd0d56a	b8ded9f91c60a20276bb178924589732cdf3eb06a9fc962b11b7b0970cd0d56a
+results.txt	CONTEXT.md	excerpt: the 4-line pilot table from the shared context file, with a provenance header; no private data in the excerpt	b8d830d479838b44872e61168b29a01ff5bee1c519a08cfc980ac11bb98547fc	c30f22f9ed42360448504091233e55b5557239ca3f66e208c814710ac2c6d7c7

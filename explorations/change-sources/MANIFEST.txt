@@ -1,0 +1,6 @@
+# MANIFEST: explorations/change-sources/
+# Ported 2026-09-27 from the review's scratch directory; source paths are relative to it.
+# Tab-separated columns: ported_path, source_path, modified, sha256_ported, sha256_source.
+# modified = 'no' means byte-identical to the source (the two hashes are equal).
+# sha256_source is '-' for a generated file or one built from several sources.
+timing-lock	bin/timing-lock	edited: lock path -> $REVIEW/timing.lock; one-line comment added	f758c1e46fb183fc57378e91e9e1e359154a164039855a379a8c0a0743149dcc	1144dd2e8bbb116424f3b438ba6b5c3d77dfc35c8885b97c77d54bfc478f5dc8

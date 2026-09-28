@@ -1,0 +1,22 @@
+{
+  "source": "explorations/fsevents-replay/observations-2026-09-27.json and observations-2026-09-27-continuation.json at commit fe0174d0; times reconstructed from started_at where present, else from cursor_age_seconds relative to the fixtures' captured_at (fixture A cursor 4488649707, fixture B cursor 4488647563, captured ~17:16 on 2026-09-26, B 1.39 s before A)",
+  "host_local_date": "2026-09-27",
+  "log_since_fixture_cursor_now": "~396 MB compressed at the time of the prior runs (lead's estimate); 404 MB total log on the volume at 21:33 today",
+  "runs": [
+    {"t": "~19:15-19:18", "what": "16 sequential replays (run.py next-day protocol; 2 fixtures x flags {0,128,16,144} x 2 orders), each 10 s deadline, each timed out (no HistoryDone) and cleanly stopped; 16 abandoned ~26 h replays back to back", "source": "observations-2026-09-27.json records.mixed_gap/deep_gap failures[0..7]"},
+  {"t": "19:55:10", "what": "preliminary_native_completion[0]: fixture A, flags 144, wait, 60 s deadline: HistoryDone at 32.39 s, 20 events, first cb 7.8 ms", "cursor": 4488649707},
+  {"t": "19:55:43", "what": "preliminary_native_completion[1]: fixture B, flags 144: HistoryDone at 33.30 s, 24 events, first cb 6.4 ms (started right after [0] finished)", "cursor": 4488647563},
+  {"t": "20:00:47-20:01:49", "what": "real_tree.py baseline of agent state B (441k entries) on the internal volume: 52 s scan + 10 s rollup + 8 s save"},
+  {"t": "20:01:15-20:01:21", "what": "controlled-growth baseline + refresh (external, small)"},
+  {"t": "20:02:18-20:03:50", "what": "agent state B refresh #1: oracle scans 41 s + 18 s, full control 24 s (internal volume, Python)"},
+  {"t": "20:05:41-20:07:00", "what": "agent state B refresh #2: oracle scans 19.5 s + 19.2 s, full control 39 s, save 17 s (internal volume, Python) -- overlaps historical_completion[0]"},
+  {"t": "20:06:29", "what": "historical_completion[0]: fixture A, flags 144, wait, 60 s: TIMEOUT (no HistoryDone in 60.0 s), 19 events, first cb 15.9 ms; clean Stop/Invalidate at 60 s", "cursor": 4488649707},
+  {"t": "20:07:31", "what": "historical_completion[1]: fixture B, flags 144, wait, 60 s: TIMEOUT, 23 events, first cb 12.1 ms; clean stop at 60 s", "cursor": 4488647563},
+  {"t": "20:08:34", "what": "historical_completion[2]: fixture A, flags 144, initial FlushAsync, 10 s: TIMEOUT, async_id 0, 19 events; clean stop at 10 s", "cursor": 4488649707},
+  {"t": "20:08:46", "what": "historical_completion[3]: fixture A, flags 144, initial FlushSync, 10 s deadline: parent SIGKILL at 20.0 s (FlushSync had not returned); no summary", "cursor": 4488649707},
+  {"t": "~20:09:06-20:09:35", "what": "(README) a no-FullHistory control 'also failed its parent bound' -- not in the JSON; presumably another killed run in this gap"},
+  {"t": "20:09:35", "what": "historical_completion[4]: fixture A, flags 144, wait, 120 s: HistoryDone at 92.50 s, 20 events, first cb 8.8 ms; accepted", "cursor": 4488649707}
+  ],
+  "abandoned_replays_before_the_92s_run": {"since_20:06": 4, "of_which_killed": 1, "plus_unrecorded_control": "1 (README)", "each_replay_log_volume_MB": "~396"},
+  "note": "Between 19:18 and 19:55 (37 min) no replay is recorded and the two ~32 s completions followed. Between 20:06 and 20:09 five ~26 h replays were started and abandoned within ~3.5 minutes, then the 92.5 s completion started at 20:09:35."
+}

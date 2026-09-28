@@ -1,0 +1,65 @@
+LINUX "WHAT CHANGED SINCE T" SURVEY (research sub-agent report, 2026-09-27; V = verified from primary source, I = inferred)
+
+1. btrfs
+find-new. V: `btrfs subvolume find-new` calls BTRFS_IOC_SYNC (btrfs_start_delalloc_roots + btrfs_sync_fs) then btrfs_list_find_updated_files: one BTRFS_IOC_TREE_SEARCH over the subvolume tree with min_transid=last_gen, max_type=EXTENT_DATA_KEY, printing only EXTENT_DATA items whose file-extent generation >= last_gen; ends with "transid marker was N" (ROOT_ITEM generation) [1][2][3].
+Cost. V: search_ioctl uses btrfs_search_forward(root,&key,path,sk->min_transid); ctree.c: "Any nodes or leaves older than min_trans are skipped over (without reading them)" [2][4]. Cost ∝ tree blocks COW'd since the generation, not subvolume size (I: superset of leaves scanned, filtered by extent generation).
+Completeness. I: only new/rewritten data extents. Misses deletes, renames, hardlinks, chmod/chown/utimes, xattrs, truncate/truncate-to-zero, empty-file creation. V: nodatacow in-place writes insert no file-extent item [5] so (I) chattr +C overwrites are invisible. Append-while-open: I, visible after the forced IOC_SYNC writeback.
+Privilege. V: btrfs_ioctl_tree_search and _v2 require CAP_SYS_ADMIN [2]; find-new is root-only. btrfs_ioctl_get_subvol_info has no capable() check [2][6][7] so the generation number is readable unprivileged, but using it requires the root-only search.
+send --no-data -p. V: btrfs_ioctl_send requires CAP_SYS_ADMIN and read-only send/parent roots [8][9]; stream includes MKFILE/MKDIR/RENAME/LINK/UNLINK/RMDIR/SET_XATTR/TRUNCATE/CHMOD/CHOWN/UTIMES/... and UPDATE_EXTENT under NO_FILE_DATA [10]: complete for deletes/renames/hardlinks/chmod/xattr. Needs two RO snapshots: not history-free.
+
+2. ZFS `zfs diff`
+V: reports "-" removed, "+" created, "M" modified, "R" renamed, link-count delta, -F type, -t ctime [11]. dmu_diff sets fromtxg = fromsnap creation txg and traverses tosnap pruning blocks with birth time <= fromtxg [12][13]; diff_cb reports every in-use dnode in each level-0 dnode block born after fromtxg [12]. Userspace stats each object in both snapshots, drops identical ctime, prints M/R/-/+ [14]. Cost ∝ dnode blocks rewritten since the snapshot, not dataset size; any ctime change shows as M.
+Privilege. V: zfs_secpolicy_diff = root or delegated ZFS_DELEG_PERM_DIFF; diff against the live fs makes a temp snapshot (delegated diff suffices) [15][16]. Parent dataset must be mounted [14]. Needs a pre-existing snapshot: not history-free.
+
+3. fanotify
+V: FAN_MARK_MOUNT / FAN_MARK_FILESYSTEM require CAP_SYS_ADMIN; FAN_CREATE/DELETE/ATTRIB/MOVED_* require fid mode and cannot be used on a mount mark [17]. Since 5.13 unprivileged groups: FAN_CLASS_NOTIF only, fid flags required, inode marks only, no mount/filesystem marks [18][19]. Directory marks are not recursive; queue overflow loses events; mmap writes not reported [20]. Not daemonless (resident listener); no history.
+
+4. ext4 / XFS / VFS
+V: ext4 ioctl switch has no change-query ioctl [21]. XFS bulkstat/fsbulkstat/inumbers require CAP_SYS_ADMIN [22]; xfs_bulkstat carries bs_ctime [23]; the iterator walks all inodes in order from inobt records [24]: full inode-table scan with client-side ctime filter, no deletions (I). statx STATX_CHANGE_COOKIE is kernel-only and masked out for userland [26][27]; per-inode anyway. bcachefs: no change catalog in its ioctl header [29].
+
+5. Windows (brief)
+V: NTFS USN change journal is the reference daemonless persistent journal, offered as the alternative to full scans and ReadDirectoryChangesW [30]; bounded and trimmed; may not exist; deletion resets USNs [31]; reason flags cover create/delete/rename/data overwrite-extend-truncate/basic-info/hard-link/EA/security; one record per open finalised on close [32]. FSCTL_READ_USN_JOURNAL needs a volume handle, which requires administrative privileges [33][34]. FSCTL_READ_UNPRIVILEGED_USN_JOURNAL exists in winioctl.h but is undocumented (I) [35].
+
+TABLE (Y/N/P=partial)
+- btrfs find-new: daemonless Y; history-free Y; create P(needs data); in-place write Y (N nodatacow); append-open Y after sync; truncate N; rename N; delete N; hardlink N; chmod N; xattr N; cost ∝ COW'd tree blocks; CAP_SYS_ADMIN.
+- btrfs send --no-data: daemonless Y; history-free N (prior RO snapshot); all ops Y; cost tree compare (I); CAP_SYS_ADMIN + RO snapshots.
+- zfs diff: daemonless Y; history-free N (prior snapshot); create/write/truncate/rename/delete/hardlink/chmod Y; xattr Y(I); append-open Y (I); cost ∝ changed dnode blocks; root or `zfs allow diff`, dataset mounted.
+- fanotify: daemonless N; live only; create/modify/close_write/attrib/move/delete Y; cost ∝ events, lossy on overflow; CAP_SYS_ADMIN for mount/fs marks.
+- XFS bulkstat: daemonless Y; history-free Y; ctime-bumping ops Y; delete N; append-open P; cost ∝ all inodes; CAP_SYS_ADMIN.
+- ext4/generic statx walk: daemonless Y; history-free Y; delete N (absence only); cost ∝ tree; unprivileged.
+- NTFS USN: daemonless Y; history-free N (bounded log); all ops Y; cost ∝ records; admin volume handle.
+
+Sources
+[1] https://raw.githubusercontent.com/kdave/btrfs-progs/master/cmds/subvolume.c
+[2] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/btrfs/ioctl.c
+[3] https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html
+[4] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/btrfs/ctree.c
+[5] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/btrfs/inode.c
+[6] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/include/uapi/linux/btrfs.h
+[7] https://raw.githubusercontent.com/kdave/btrfs-progs/master/libbtrfsutil/subvolume.c
+[8] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/btrfs/send.c
+[9] https://btrfs.readthedocs.io/en/latest/btrfs-send.html
+[10] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/btrfs/send.h
+[11] https://openzfs.github.io/openzfs-docs/man/master/8/zfs-diff.8.html
+[12] https://raw.githubusercontent.com/openzfs/zfs/master/module/zfs/dmu_diff.c
+[13] https://raw.githubusercontent.com/openzfs/zfs/master/module/zfs/dmu_traverse.c
+[14] https://raw.githubusercontent.com/openzfs/zfs/master/lib/libzfs/libzfs_diff.c
+[15] https://raw.githubusercontent.com/openzfs/zfs/master/module/zfs/zfs_ioctl.c
+[16] https://openzfs.github.io/openzfs-docs/man/master/8/zfs-allow.8.html
+[17] https://man7.org/linux/man-pages/man2/fanotify_mark.2.html
+[18] https://man7.org/linux/man-pages/man2/fanotify_init.2.html
+[19] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/notify/fanotify/fanotify_user.c
+[20] https://man7.org/linux/man-pages/man7/fanotify.7.html
+[21] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/ext4/ioctl.c
+[22] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/xfs/xfs_ioctl.c
+[23] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/xfs/libxfs/xfs_fs.h
+[24] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/xfs/xfs_iwalk.c
+[26] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/fs/stat.c
+[27] https://man7.org/linux/man-pages/man2/statx.2.html
+[29] https://raw.githubusercontent.com/koverstreet/bcachefs/master/fs/bcachefs/bcachefs_ioctl.h
+[30] https://learn.microsoft.com/en-us/windows/win32/fileio/change-journals
+[31] https://learn.microsoft.com/en-us/windows/win32/fileio/creating-modifying-and-deleting-a-change-journal
+[32] https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-usn_record_v2
+[33] https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_read_usn_journal
+[34] https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+[35] https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/winioctl.h

@@ -1,0 +1,541 @@
+# Sanitized copy of the harness audit's analyze_real_root.py output for the two live-root
+# trials (later-01, later-02) of agent state B. Substitutions: redacted path labels re-keyed
+# to sequential ids (d<depth>:<suffix>:pNNN, consistent within this file), inode numbers to
+# per-inode tokens (iNN), lsof process ids to per-process tokens (PN), process names to
+# categories (agent-cli, desktop-app); descriptor numbers dropped (access modes kept).
+# Sizes, timestamps, event ids, flags and counts are unchanged.
+{
+ "alias": "agent-state-B",
+ "entries": 454775,
+ "device_fence": 4788365539,
+ "global_now_at_capture": 4788371990,
+ "fence_minus_now": -6451,
+ "capture_started_at": 1790564447.503762,
+ "capture_completed_at": 1790564509.1745589,
+ "capture_started_iso": "2026-09-27T20:00:47"
+}
+
+==== trial later-01
+{
+ "refresh_started_at": 1790564538.2331939,
+ "refresh_started_iso": "2026-09-27T20:02:18",
+ "gap_s": 29.058634996414185,
+ "native": {
+  "cursor": 4788365539,
+  "history_done": true,
+  "timeout": false,
+  "truncated": false,
+  "latest_id": 4788582874,
+  "history_id": 4788368562,
+  "history_ms": 31.504,
+  "flush_ms": 0.04,
+  "callbacks": 12,
+  "events": 347,
+  "first_callback_ms": 26.88,
+  "last_callback_ms": 31.489
+ },
+ "event_count": 347,
+ "min_id": 4788367017,
+ "max_id": 4788582874,
+ "min_id_minus_fence": 1478,
+ "history_done_records": [
+  [
+   4788368562,
+   "HistoryDone",
+   true,
+   false
+  ]
+ ],
+ "after_history_done_events": 0,
+ "overlap_events": 0,
+ "outside_events": 0,
+ "ancestor_events": 0,
+ "plan_relist": [
+  ".",
+  "d4:(none):p001",
+  "d1:(none):p002",
+  "d6:(none):p003",
+  "d7:(none):p004",
+  "d7:(none):p005",
+  "d6:(none):p006",
+  "d5:(none):p007"
+ ],
+ "plan_relist_depths": [
+  0,
+  1,
+  4,
+  5,
+  6,
+  6,
+  7,
+  7
+ ],
+ "plan_recursive": [],
+ "fallback": [],
+ "effective_scopes_n": 8,
+ "relisted_n": 8,
+ "recursive_n": 0,
+ "errors": []
+}
+flag histogram:
+    172  ItemRenamed|ItemIsFile
+    133  ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile
+     14  ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile
+      6  ItemModified|ItemIsFile
+      4  ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile
+      4  ItemRemoved|ItemIsFile
+      4  ItemCreated|ItemXattrMod|ItemIsFile
+      3  ItemInodeMetaMod|ItemModified|ItemIsFile
+      2  ItemInodeMetaMod|ItemIsFile
+      1  ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile
+      1  ItemCreated|ItemRenamed|ItemXattrMod|ItemIsFile
+      1  ItemRenamed|ItemModified|ItemChangeOwner|ItemIsFile
+      1  ItemInodeMetaMod|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile
+distinct event paths: 203; distinct nominated dirs (file->parent, dir->self): 8
+normalize_events reproduces saved plan: True
+
+-- stable mismatches: 1
+{
+ "path": "d5:.jsonl:p008",
+ "depth": 5,
+ "baseline": {
+  "mode": "0o100644",
+  "size": 294735439,
+  "blocks": 575656,
+  "mtime": 1790564442.3096497,
+  "ctime": 1790564442.3096497,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "before": {
+  "mode": "0o100644",
+  "size": 294759387,
+  "blocks": 575704,
+  "mtime": 1790564504.1651828,
+  "ctime": 1790564504.1651828,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "after": {
+  "mode": "0o100644",
+  "size": 294759387,
+  "blocks": 575704,
+  "mtime": 1790564504.1651828,
+  "ctime": 1790564504.1651828,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "candidate": {
+  "mode": "0o100644",
+  "size": 294735439,
+  "blocks": 575656,
+  "mtime": 1790564442.3096497,
+  "ctime": 1790564442.3096497,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "candidate_equals": "baseline",
+ "nomination": {
+  "parent_in_plan_relist": false,
+  "in_plan_recursive": false,
+  "parent_relisted_effective": false,
+  "recursive_effective": false,
+  "own_events": [],
+  "parent_dir_events": [],
+  "ancestor_events": [],
+  "descendant_events": 0
+ },
+ "now": {
+  "size": 306275358,
+  "mtime": 1790570413.9523776,
+  "ctime": 1790570413.9523776,
+  "birthtime": 1790324899.4307644,
+  "ino": "i01",
+  "nlink": 1,
+  "mode": "0o100644",
+  "mtime_minus_fence_time": 5966.448615550995,
+  "birth_minus_fence_time": -239548.07299757004
+ },
+ "lsof": {
+  "returncode": 0,
+  "procs": [
+   {
+    "pid": "P1",
+    "cmd": "agent-cli",
+    "fds": [
+     {
+      "access": "u"
+     }
+    ]
+   }
+  ],
+  "stderr": ""
+ }
+}
+
+-- concurrent paths: 19
+    1  dir/modified/MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)
+    1  dir/modified/nominated-via-sibling, changed after replay
+    1  file/created/nominated-by-own-event
+    4  file/modified/HIDDEN-GAP(changed before replay, never nominated)
+    6  file/modified/MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)
+    6  file/modified/nominated-by-own-event
+  rows (mechanism, kind, life, redacted, candidate_equals, own_events[:2]):
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'dir', 'modified', 'd0:(none):p009', 'none', [])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.json:p010', 'none', [(5141, 'ItemRenamed|ItemIsFile', False), (1480, 'ItemRenamed|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.bak:p011', 'none', [(5162, 'ItemRenamed|ItemIsFile', False), (48608, 'ItemRenamed|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite:p012', 'after', [(187684, 'ItemInodeMetaMod|ItemModified|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite-wal:p013', 'none', [(102587, 'ItemModified|ItemIsFile', False)])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p014', 'baseline', [])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p015', 'baseline', [])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p016', 'baseline', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p017', 'after', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p018', 'none', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p019', 'after', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p020', 'after', [])
+    ('nominated-by-own-event', 'file', 'modified', 'd5:.jsonl:p021', 'after', [(102537, 'ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile', False)])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd2:.db-wal:p022', 'baseline', [])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite:p023', 'after', [(208708, 'ItemInodeMetaMod|ItemIsFile', False)])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd1:.sqlite-wal:p024', 'none', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd1:.sqlite-wal:p025', 'none', [])
+    ('nominated-via-sibling, changed after replay', 'dir', 'modified', 'd6:(none):p003', 'after', [])
+    ('nominated-by-own-event', 'file', 'created', 'd7:.md:p026', 'after', [(189537, 'ItemRenamed|ItemModified|ItemChangeOwner|ItemIsFile', False), (189526, 'ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile', False)])
+  gap rows (mechanism, redacted, {stage:(size, mtime-fence_s)}, lsof procs, now mtime-fence_s):
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d0:(none):p009", {"baseline": [2368, -7.1], "before": [2368, 66.9], "after": [2368, 154.5], "candidate": [2368, 148.6]}, null, 6079.841807842255]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p014", {"baseline": [92134830, 1.1], "before": [92189164, 77.4], "after": [92238848, 144.9], "candidate": [92134830, 1.1]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 1754.247267961502]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p015", {"baseline": [16159647, 0.3], "before": [16244561, 91.9], "after": [16291383, 156.9], "candidate": [16159647, 0.3]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 4316.967782735825]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p016", {"baseline": [5436043, -30.4], "before": [5648209, 83.8], "after": [5663858, 114.7], "candidate": [5436043, -30.4]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 928.2049622535706]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p017", {"baseline": [8613022, -2.4], "before": [8648760, 93.7], "after": [8673952, 143.7], "candidate": [8673952, 143.7]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 4850.4081654548645]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p018", {"baseline": [9455149, -8.8], "before": [9768157, 75.4], "after": [9877708, 153.5], "candidate": [9871800, 149.6]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 5002.644176244736]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p019", {"baseline": [707822, -1.0], "before": [790986, 90.4], "after": [823353, 114.4], "candidate": [823353, 114.4]}, [], 1019.5936424732208]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p020", {"baseline": [914719, -4.9], "before": [1027223, 69.0], "after": [1116161, 142.2], "candidate": [1116161, 142.2]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 1719.2135043144226]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d2:.db-wal:p022", {"baseline": [4173592, -4.9], "before": [4173592, 58.9], "after": [4173592, 116.6], "candidate": [4173592, -4.9]}, [{"pid": "P2", "cmd": "desktop-app", "fds": [{"access": "u"}]}], 6075.080218076706]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d1:.sqlite-wal:p024", {"baseline": [4680352, 51.6], "before": [4680352, 132.1], "after": [4680352, 174.4], "candidate": [4680352, 149.6]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}, {"access": "u"}, {"access": "u"}, {"access": "u"}]}, {"pid": "P3", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}], 6081.955454587936]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d1:.sqlite-wal:p025", {"baseline": [4424912, -0.4], "before": [4424912, 92.0], "after": [4424912, 156.9], "candidate": [4424912, 149.6]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}], 6081.232758760452]
+
+-- unresolved concurrent mismatches: 11
+
+-- candidate changed entries: 67; with no own event and no event on the path itself as dir: 13 (refreshed via sibling relist or ancestor refresh)
+   masked kinds: {'dir': 5, 'file': 8}
+   masked regular files (sibling-relist refreshed without own event); redacted, depth, baseline->candidate size, in_before_already, lsof:
+     d5:.jsonl:p020 5 914719 -> 1116161 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p017 5 8613022 -> 8673952 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p019 5 707822 -> 823353 changed_before_replay= True lsof= []
+     d1:.sqlite-wal:p024 1 4680352 -> 4680352 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}, {"access": "u"}, {"access": "u"}, {"access": "u"}]}, {"pid": "P3", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}]
+     d5:.jsonl:p027 5 323915 -> 434043 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d1:.sqlite-wal:p028 1 4124152 -> 4124152 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}, {"access": "u"}]}, {"pid": "P4", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P3", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P5", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P6", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P7", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p018 5 9455149 -> 9871800 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d1:.sqlite-wal:p025 1 4424912 -> 4424912 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}]
+
+==== trial later-02
+{
+ "refresh_started_at": 1790564741.223767,
+ "refresh_started_iso": "2026-09-27T20:05:41",
+ "gap_s": 232.0492081642151,
+ "native": {
+  "cursor": 4788365539,
+  "history_done": true,
+  "timeout": false,
+  "truncated": false,
+  "latest_id": 4788944624,
+  "history_id": 4788368562,
+  "history_ms": 38.237,
+  "flush_ms": 0.032,
+  "callbacks": 18,
+  "events": 527,
+  "first_callback_ms": 29.607,
+  "last_callback_ms": 38.222
+ },
+ "event_count": 527,
+ "min_id": 4788367017,
+ "max_id": 4788944624,
+ "min_id_minus_fence": 1478,
+ "history_done_records": [
+  [
+   4788368562,
+   "HistoryDone",
+   true,
+   false
+  ]
+ ],
+ "after_history_done_events": 0,
+ "overlap_events": 0,
+ "outside_events": 0,
+ "ancestor_events": 0,
+ "plan_relist": [
+  ".",
+  "d4:(none):p001",
+  "d1:(none):p002",
+  "d6:(none):p003",
+  "d8:(none):p029",
+  "d6:(none):p030",
+  "d7:(none):p004",
+  "d7:(none):p005",
+  "d6:(none):p006",
+  "d5:(none):p007"
+ ],
+ "plan_relist_depths": [
+  0,
+  1,
+  4,
+  5,
+  6,
+  6,
+  6,
+  7,
+  7,
+  8
+ ],
+ "plan_recursive": [],
+ "fallback": [],
+ "effective_scopes_n": 10,
+ "relisted_n": 10,
+ "recursive_n": 0,
+ "errors": []
+}
+flag histogram:
+    240  ItemRenamed|ItemIsFile
+    201  ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile
+     42  ItemInodeMetaMod|ItemModified|ItemIsFile
+     14  ItemCreated|ItemRemoved|ItemModified|ItemXattrMod|ItemIsFile
+      8  ItemModified|ItemIsFile
+      5  ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile
+      5  ItemRemoved|ItemIsFile
+      5  ItemCreated|ItemXattrMod|ItemIsFile
+      2  ItemInodeMetaMod|ItemIsFile
+      1  ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile
+      1  ItemCreated|ItemRenamed|ItemXattrMod|ItemIsFile
+      1  ItemInodeMetaMod|ItemRenamed|ItemModified|ItemChangeOwner|ItemIsFile
+      1  ItemInodeMetaMod|ItemModified|ItemChangeOwner|ItemXattrMod|ItemIsFile
+distinct event paths: 315; distinct nominated dirs (file->parent, dir->self): 10
+normalize_events reproduces saved plan: True
+
+-- stable mismatches: 2
+{
+ "path": "d5:.jsonl:p008",
+ "depth": 5,
+ "baseline": {
+  "mode": "0o100644",
+  "size": 294735439,
+  "blocks": 575656,
+  "mtime": 1790564442.3096497,
+  "ctime": 1790564442.3096497,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "before": {
+  "mode": "0o100644",
+  "size": 294792696,
+  "blocks": 575768,
+  "mtime": 1790564629.153746,
+  "ctime": 1790564629.153746,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "after": {
+  "mode": "0o100644",
+  "size": 294792696,
+  "blocks": 575768,
+  "mtime": 1790564629.153746,
+  "ctime": 1790564629.153746,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "candidate": {
+  "mode": "0o100644",
+  "size": 294735439,
+  "blocks": 575656,
+  "mtime": 1790564442.3096497,
+  "ctime": 1790564442.3096497,
+  "ino": "i01",
+  "nlink": 1
+ },
+ "candidate_equals": "baseline",
+ "nomination": {
+  "parent_in_plan_relist": false,
+  "in_plan_recursive": false,
+  "parent_relisted_effective": false,
+  "recursive_effective": false,
+  "own_events": [],
+  "parent_dir_events": [],
+  "ancestor_events": [],
+  "descendant_events": 0
+ },
+ "now": {
+  "size": 306275358,
+  "mtime": 1790570413.9523776,
+  "ctime": 1790570413.9523776,
+  "birthtime": 1790324899.4307644,
+  "ino": "i01",
+  "nlink": 1,
+  "mode": "0o100644",
+  "mtime_minus_fence_time": 5966.448615550995,
+  "birth_minus_fence_time": -239548.07299757004
+ },
+ "lsof": {
+  "returncode": 0,
+  "procs": [
+   {
+    "pid": "P1",
+    "cmd": "agent-cli",
+    "fds": [
+     {
+      "access": "u"
+     }
+    ]
+   }
+  ],
+  "stderr": ""
+ }
+}
+{
+ "path": "d2:.db-wal:p022",
+ "depth": 2,
+ "baseline": {
+  "mode": "0o100644",
+  "size": 4173592,
+  "blocks": 10120,
+  "mtime": 1790564442.5753644,
+  "ctime": 1790564442.5753644,
+  "ino": "i02",
+  "nlink": 1
+ },
+ "before": {
+  "mode": "0o100644",
+  "size": 4173592,
+  "blocks": 10120,
+  "mtime": 1790564564.085932,
+  "ctime": 1790564564.085932,
+  "ino": "i02",
+  "nlink": 1
+ },
+ "after": {
+  "mode": "0o100644",
+  "size": 4173592,
+  "blocks": 10120,
+  "mtime": 1790564564.085932,
+  "ctime": 1790564564.085932,
+  "ino": "i02",
+  "nlink": 1
+ },
+ "candidate": {
+  "mode": "0o100644",
+  "size": 4173592,
+  "blocks": 10120,
+  "mtime": 1790564442.5753644,
+  "ctime": 1790564442.5753644,
+  "ino": "i02",
+  "nlink": 1
+ },
+ "candidate_equals": "baseline",
+ "nomination": {
+  "parent_in_plan_relist": false,
+  "in_plan_recursive": false,
+  "parent_relisted_effective": false,
+  "recursive_effective": false,
+  "own_events": [],
+  "parent_dir_events": [],
+  "ancestor_events": [],
+  "descendant_events": 0
+ },
+ "now": {
+  "size": 4173592,
+  "mtime": 1790570538.6382117,
+  "ctime": 1790570538.6382117,
+  "birthtime": 1789332300.8001177,
+  "ino": "i02",
+  "nlink": 1,
+  "mode": "0o100644",
+  "mtime_minus_fence_time": 6091.134449720383,
+  "birth_minus_fence_time": -1232146.7036442757
+ },
+ "lsof": {
+  "returncode": 0,
+  "procs": [
+   {
+    "pid": "P2",
+    "cmd": "desktop-app",
+    "fds": [
+     {
+      "access": "u"
+     }
+    ]
+   }
+  ],
+  "stderr": ""
+ }
+}
+
+-- concurrent paths: 34
+    1  dir/created/pure-concurrency(changed after replay, not nominated)
+    1  dir/deleted/pure-concurrency(changed after replay, not nominated)
+    1  dir/modified/MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)
+    1  dir/modified/pure-concurrency(changed after replay, not nominated)
+    4  file/created/pure-concurrency(changed after replay, not nominated)
+    4  file/deleted/pure-concurrency(changed after replay, not nominated)
+    4  file/modified/HIDDEN-GAP(changed before replay, never nominated)
+    6  file/modified/MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)
+   11  file/modified/nominated-by-own-event
+    1  file/modified/nominated-via-sibling, changed after replay
+  rows (mechanism, kind, life, redacted, candidate_equals, own_events[:2]):
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'dir', 'modified', 'd0:(none):p009', 'after', [])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.json:p010', 'none', [(2832, 'ItemRenamed|ItemIsFile', False), (82855, 'ItemRenamed|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.bak:p011', 'after', [(287187, 'ItemRenamed|ItemIsFile', False), (1494, 'ItemRenamed|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite:p012', 'before', [(292205, 'ItemInodeMetaMod|ItemModified|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite-wal:p013', 'none', [(102587, 'ItemModified|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.json:p031', 'before', [(287677, 'ItemInodeMetaMod|ItemModified|ItemXattrMod|ItemIsFile', False)])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p014', 'baseline', [])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p015', 'baseline', [])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p016', 'baseline', [])
+    ('HIDDEN-GAP(changed before replay, never nominated)', 'file', 'modified', 'd5:.jsonl:p032', 'baseline', [])
+    ('nominated-via-sibling, changed after replay', 'file', 'modified', 'd5:.jsonl:p033', 'none', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p017', 'after', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p018', 'none', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p034', 'before', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p020', 'before', [])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd5:.jsonl:p027', 'after', [])
+    ('nominated-by-own-event', 'file', 'modified', 'd5:.jsonl:p035', 'before', [(2476, 'ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd5:.jsonl:p036', 'before', [(285214, 'ItemCreated|ItemInodeMetaMod|ItemXattrMod|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite:p023', 'before', [(578943, 'ItemInodeMetaMod|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite-wal:p024', 'none', [(237871, 'ItemModified|ItemIsFile', False)])
+    ('nominated-by-own-event', 'file', 'modified', 'd1:.sqlite:p037', 'before', [(298770, 'ItemInodeMetaMod|ItemIsFile', False)])
+    ('MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)', 'file', 'modified', 'd1:.sqlite-wal:p025', 'none', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'dir', 'modified', 'd2:(none):p038', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'dir', 'created', 'd3:(none):p039', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'created', 'd4:(none):p040', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'created', 'd4:(none):p041', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'created', 'd4:(none):p042', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'created', 'd4:(none):p043', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'dir', 'deleted', 'd3:(none):p044', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'deleted', 'd4:(none):p045', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'deleted', 'd4:(none):p046', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'deleted', 'd4:(none):p047', 'baseline', [])
+    ('pure-concurrency(changed after replay, not nominated)', 'file', 'deleted', 'd4:(none):p048', 'baseline', [])
+    ('nominated-by-own-event', 'file', 'modified', 'd7:.md:p026', 'after', [(579037, 'ItemInodeMetaMod|ItemRenamed|ItemModified|ItemChangeOwner|ItemIsFile', False), (189526, 'ItemCreated|ItemRenamed|ItemModified|ItemXattrMod|ItemIsFile', False)])
+  gap rows (mechanism, redacted, {stage:(size, mtime-fence_s)}, lsof procs, now mtime-fence_s):
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d0:(none):p009", {"baseline": [2368, -7.1], "before": [2368, 281.7], "after": [2368, 315.9], "candidate": [2368, 315.9]}, null, 6092.6483426094055]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p014", {"baseline": [92134830, 1.1], "before": [92338600, 295.2], "after": [92381735, 329.6], "candidate": [92134830, 1.1]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 1754.247267961502]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p015", {"baseline": [16159647, 0.3], "before": [16428149, 294.8], "after": [16467810, 316.8], "candidate": [16159647, 0.3]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 4316.967782735825]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p016", {"baseline": [5436043, -30.4], "before": [5835075, 209.3], "after": [5916399, 329.3], "candidate": [5436043, -30.4]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 928.2049622535706]
+    ["HIDDEN-GAP(changed before replay, never nominated)", "d5:.jsonl:p032", {"baseline": [9462620, -19.8], "before": [10480902, 281.2], "after": [10757625, 330.9], "candidate": [9462620, -19.8]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 5962.471935749054]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p017", {"baseline": [8613022, -2.4], "before": [8694427, 277.8], "after": [8699516, 311.5], "candidate": [8699516, 311.5]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 4850.4081654548645]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p018", {"baseline": [9455149, -8.8], "before": [10025949, 289.1], "after": [10073523, 329.9], "candidate": [10069578, 322.8]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 5002.644176244736]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p034", {"baseline": [7793580, -419.3], "before": [8312378, 254.0], "after": [8480307, 329.1], "candidate": [8312378, 254.0]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 5959.176193237305]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p020", {"baseline": [914719, -4.9], "before": [1223847, 283.4], "after": [1259969, 329.5], "candidate": [1223847, 283.4]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 1719.2135043144226]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d5:.jsonl:p027", {"baseline": [323915, -61.2], "before": [514764, 196.9], "after": [590328, 319.1], "candidate": [590328, 319.1]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}], 908.1307346820831]
+    ["MASKED-GAP(changed before replay, no own event, parent relisted for a sibling)", "d1:.sqlite-wal:p025", {"baseline": [4424912, -0.4], "before": [4424912, 290.6], "after": [4424912, 330.8], "candidate": [4424912, 322.8]}, [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}], 6081.232758760452]
+
+-- unresolved concurrent mismatches: 10
+
+-- candidate changed entries: 111; with no own event and no event on the path itself as dir: 14 (refreshed via sibling relist or ancestor refresh)
+   masked kinds: {'dir': 5, 'file': 9}
+   masked regular files (sibling-relist refreshed without own event); redacted, depth, baseline->candidate size, in_before_already, lsof:
+     d5:.jsonl:p020 5 914719 -> 1223847 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p017 5 8613022 -> 8699516 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p019 5 707822 -> 956206 changed_before_replay= True lsof= []
+     d5:.jsonl:p027 5 323915 -> 590328 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p033 5 2020579 -> 2054236 changed_before_replay= False lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d1:.sqlite-wal:p028 1 4124152 -> 4124152 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}, {"pid": "P4", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P3", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P5", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P6", "cmd": "agent-cli", "fds": [{"access": "u"}]}, {"pid": "P7", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d5:.jsonl:p018 5 9455149 -> 10069578 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
+     d1:.sqlite-wal:p025 1 4424912 -> 4424912 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}, {"access": "u"}]}]
+     d5:.jsonl:p034 5 7793580 -> 8312378 changed_before_replay= True lsof= [{"pid": "P1", "cmd": "agent-cli", "fds": [{"access": "u"}]}]
