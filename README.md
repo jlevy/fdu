@@ -138,31 +138,33 @@ See
 fdu . --analyze=code --ignored=exclude --limit=5
 ```
 
-For example, the output-design implementation applied to repository revision `ab0c4e36`
-produced this stdout:
+For example, the implementation at repository revision `7a499493` produced this stdout:
 
 ```text
 (5 of 16)
-119,938 code lines (14,767 comment, 11,762 blank)
-242 of 244 source files analyzed across 15 languages (exclude population)
+Code lines   Share  Comments   Blank  Analyzed files  Language
+    79,330   65.1%    12,681   6,700         101/101  Rust
+    37,861   31.1%     1,513   4,696           95/95  Python
+     3,988    3.3%       526     358           25/25  JavaScript
+       403    0.3%        65      33             3/3  C
+       249    0.2%        57      45             7/7  Shell
+   121,858  100.0%    14,881  11,840         242/244  TOTAL
+15 analyzed languages (exclude population)
 22 selected files with unclassified type
 2 unsupported
-Language shares of measured code lines
-    77,694   64.8%  Rust (101/101 analyzed)
-    37,757   31.5%  Python (95/95 analyzed)
-     3,808    3.2%  JavaScript (25/25 analyzed)
-       403    0.3%  C (3/3 analyzed)
-       249    0.2%  Shell (7/7 analyzed)
 ```
 
-The suggestion appears once on stderr, followed by the run’s `perf:` summary:
+The note and suggestion appear once on stderr, followed by the run’s `perf:` summary:
 
 ```text
+note: code totals include languages hidden by display limits
 tip: show more rows: --limit=all
 ```
 
-The percentages share one denominator: all measured code lines, including languages
+The percentages and bold TOTAL row cover all measured code lines, including languages
 outside the five displayed rows.
+Analyzed-file counts show measured files over selected source files; unavailable SLOC
+uses a dash, distinct from a measured zero.
 Counts include tests and fixtures in the selected repository, and change as the checkout
 changes. Coverage makes unsupported and unclassified files visible instead of treating
 them as zero lines.
