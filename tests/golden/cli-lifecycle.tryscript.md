@@ -14,18 +14,21 @@ env:
   XDG_CACHE_HOME: .cache
 patterns:
   BYTES: '\d+'
+  HUMAN_SIZE: '[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9])? (?:B|KiB|MiB|GiB|TiB|PiB)'
   # Fingerprints change with the engine version and the type rules, not with the tree.
   FINGERPRINT: '\d+'
-  CACHE_FILE: '[^\r\n]+\.fdu'
+  CACHE_FILE: '[^\r\n]+\.metadata\.bin'
+  CACHE_ANALYSIS: '[^\r\n]+\.analysis\.bin'
   # A YAML scalar is quoted only when it would otherwise be ambiguous, which a Windows
   # path with backslashes is and a POSIX path is not. The quoting is the platform's, so
   # it is matched rather than asserted; every other character still has to be exact.
-  CACHE_FILE_SCALAR: '"?[^\r\n]+\.fdu"?'
+  CACHE_FILE_SCALAR: '"?[^\r\n]+\.metadata\.bin"?'
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
-  FILE_RATE: '[\d.]+[kMG]? files/s'
-  BYTE_RATE: '[\d.]+ (B|KiB|MiB|GiB)/s'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
+  FILE_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s'
+  BYTE_RATE: '[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB)/s'
 ---
 # Cache Lifecycle Flags
 
@@ -33,6 +36,24 @@ Inspecting and clearing the cache are explicit flags on the same grammar, never 
 effects of a report.
 They run before scan validation, so they need no readable tree, and they suppress the
 report entirely.
+
+## All-Cache Actions Need No Scan Root
+
+An explicit cache directory and `all` scope work even when the supplied report root does
+not exist. This also covers the same operations through the Python CLI shim.
+
+```console
+$ fdu --cache-dir root-free-cache --cache-status=all missing-root
+No cached snapshots.
+? 0
+```
+
+```console
+$ fdu --cache-dir root-free-cache --cache-clear=all missing-root
+Cache directory: [CACHE_DIR]
+Cache already empty.
+? 0
+```
 
 ## Status Before Anything Is Cached
 
@@ -46,11 +67,19 @@ No cached snapshots.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -74,7 +103,7 @@ Cache cleared.
 ```console
 $ fdu --no-gitignore --view summary --size apparent project
      269 B  7 files, 3 directories
-Performance: walked 7 files / 269 B; no ignore rules; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -95,18 +124,27 @@ can then answer from without touching the tree.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
 ```console
 $ fdu --cache only --view summary --size apparent project
-     269 B  7 files, 3 directories (128 B ignored)
-Performance: walked 0 files / 0 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
+     269 B  7 files, 3 directories (128 B gitignored)
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cache only
 ? 0
 ```
 
@@ -118,7 +156,7 @@ The header carries the answer.
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [HUMAN_SIZE] metadata, 0 B content  [SCAN_PATH]
 ? 0
 ```
 
@@ -129,7 +167,7 @@ Agents get cache observability without a second schema style.
 ```console
 $ fdu --cache-status --format json project
 {
-  "schema": "fdu.cache/2",
+  "schema": "fdu.cache/3",
   "caches": [
     {
       "path": "[CACHE_FILE]",
@@ -145,6 +183,8 @@ $ fdu --cache-status --format json project
           "one_filesystem": false,
           "hidden_fingerprint": 0,
           "exclude_special": false,
+          "population": "include",
+          "control_fingerprint": 0,
           "type_rules_fingerprint": [FINGERPRINT],
           "reducers_fingerprint": 1
         },
@@ -168,7 +208,7 @@ every machine format.
 
 ```console
 $ fdu --cache-status --format yaml project
-schema: fdu.cache/2
+schema: fdu.cache/3
 caches:
   -
     path: [CACHE_FILE_SCALAR]
@@ -184,6 +224,8 @@ caches:
         one_filesystem: false
         hidden_fingerprint: 0
         exclude_special: false
+        population: include
+        control_fingerprint: 0
         type_rules_fingerprint: [FINGERPRINT]
         reducers_fingerprint: 1
       ignore_rules:
@@ -210,20 +252,20 @@ $ fdu --analyze lines --view families --size apparent project
       71 B   26.4%  prose              2 files, 6 lines (4 nonblank, 2 blank), 2 documentation
       64 B   23.8%  code               3 files, 4 lines (4 nonblank, 0 blank)
        6 B    2.2%  unknown            1 file, 1 lines (1 nonblank, 0 blank)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation; total [PERF_TIME]
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 141 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; warm revalidation
 ? 0
 ```
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, [BYTES] content bytes  [SCAN_PATH]
+[CACHE_FILE]  11 entries, [HUMAN_SIZE] metadata, [HUMAN_SIZE] content  [SCAN_PATH]
 ? 0
 ```
 
 ```console
 $ fdu --cache-status --format json project
 {
-  "schema": "fdu.cache/2",
+  "schema": "fdu.cache/3",
   "caches": [
     {
       "path": "[CACHE_FILE]",
@@ -239,6 +281,8 @@ $ fdu --cache-status --format json project
           "one_filesystem": false,
           "hidden_fingerprint": 0,
           "exclude_special": false,
+          "population": "include",
+          "control_fingerprint": 0,
           "type_rules_fingerprint": [FINGERPRINT],
           "reducers_fingerprint": 1
         },
@@ -261,6 +305,8 @@ $ fdu --cache-status --format json project
             "one_filesystem": false,
             "hidden_fingerprint": 0,
             "exclude_special": false,
+            "population": "include",
+            "control_fingerprint": 0,
             "type_rules_fingerprint": [FINGERPRINT],
             "reducers_fingerprint": 1
           },
@@ -285,7 +331,7 @@ $ fdu --cache-status --format json project
 
 ```console
 $ fdu --cache-status --format yaml project
-schema: fdu.cache/2
+schema: fdu.cache/3
 caches:
   -
     path: [CACHE_FILE_SCALAR]
@@ -301,6 +347,8 @@ caches:
         one_filesystem: false
         hidden_fingerprint: 0
         exclude_special: false
+        population: include
+        control_fingerprint: 0
         type_rules_fingerprint: [FINGERPRINT]
         reducers_fingerprint: 1
       ignore_rules:
@@ -319,6 +367,8 @@ caches:
           one_filesystem: false
           hidden_fingerprint: 0
           exclude_special: false
+          population: include
+          control_fingerprint: 0
           type_rules_fingerprint: [FINGERPRINT]
           reducers_fingerprint: 1
         analyze:
@@ -354,11 +404,19 @@ Cache already empty.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -382,11 +440,19 @@ accounting, it differs per platform, and it is not bytes a clear could reclaim.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -404,14 +470,14 @@ planted: a directory under a snapshot's name
 
 ```console
 $ fdu --cache-status=all project
-[CACHE_FILE]  stale (older snapshot format 1), 12 metadata bytes, 0 content bytes
-[CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
-[CACHE_FILE]  stale (unreadable by this build), [BYTES] metadata bytes, 0 content bytes
-[CACHE_FILE]  unrecognized, 0 bytes
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
-[CACHE_DIR]notes.txt  unrecognized, 15 bytes
-3 stale snapshots ([BYTES] bytes) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
-2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
+[CACHE_FILE]  stale (older snapshot format 1), 12 B metadata, 0 B content
+[CACHE_FILE]  stale (written by another fdu version), [HUMAN_SIZE] metadata, 0 B content
+[CACHE_FILE]  stale (unreadable by this build), [HUMAN_SIZE] metadata, 0 B content
+[CACHE_FILE]  unrecognized, 0 B
+[CACHE_FILE]  11 entries, [HUMAN_SIZE] metadata, 0 B content  [SCAN_PATH]
+[CACHE_DIR]notes.txt  unrecognized, 15 B
+3 stale snapshots ([HUMAN_SIZE]) cannot be served by this build; fdu --cache-clear=all removes them, along with every current snapshot.
+2 unrecognized files (15 B) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
 
@@ -421,7 +487,7 @@ nothing to a figure that is meant to say how much a clear would leave behind.
 ```console
 $ fdu --cache-status=all --format json project
 {
-  "schema": "fdu.cache/2",
+  "schema": "fdu.cache/3",
   "caches": [
     {
       "path": "[CACHE_FILE]",
@@ -467,6 +533,8 @@ $ fdu --cache-status=all --format json project
           "one_filesystem": false,
           "hidden_fingerprint": 0,
           "exclude_special": false,
+          "population": "include",
+          "control_fingerprint": 0,
           "type_rules_fingerprint": [FINGERPRINT],
           "reducers_fingerprint": 1
         },
@@ -505,9 +573,9 @@ What is left is still reported, rather than hidden behind “No cached snapshots
 
 ```console
 $ fdu --cache-status=all project
-[CACHE_FILE]  unrecognized, 0 bytes
-[CACHE_DIR]notes.txt  unrecognized, 15 bytes
-2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
+[CACHE_FILE]  unrecognized, 0 B
+[CACHE_DIR]notes.txt  unrecognized, 15 B
+2 unrecognized files (15 B) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
 
@@ -515,11 +583,19 @@ $ fdu --cache-status=all project
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -531,8 +607,8 @@ planted: another engine
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  stale (written by another fdu version), [BYTES] metadata bytes, 0 content bytes
-1 stale snapshot ([BYTES] bytes) cannot be served by this build; fdu --cache-clear PATH removes it.
+[CACHE_FILE]  stale (written by another fdu version), [HUMAN_SIZE] metadata, 0 B content
+1 stale snapshot ([HUMAN_SIZE]) cannot be served by this build; fdu --cache-clear PATH removes it.
 ? 0
 ```
 
@@ -547,11 +623,19 @@ Cache cleared.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -566,8 +650,8 @@ $ fdu --cache-clear --cache-status project
 Cache file: [CACHE_FILE]
 Cache already empty.
 Left in place: the file is not an fdu snapshot.
-[CACHE_FILE]  unrecognized, 14 bytes
-1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place.
+[CACHE_FILE]  unrecognized, 14 B
+1 unrecognized file (14 B) is not an fdu snapshot, so fdu leaves it in place.
 ? 0
 ```
 
@@ -581,11 +665,19 @@ belong to a running writer, and only a sidecar no snapshot still wants.
 
 ```console
 $ fdu --size apparent project
-     269 B  ██████████   100%  . (7 files) (128 B ignored)
-     128 B  █████░░░░░    48%    dist (1 file) (128 B ignored)
-      36 B  █░░░░░░░░░    13%    src (2 files)
-      23 B  █░░░░░░░░░     9%    docs (1 file)
-Performance: walked 7 files / 269 B; ignore rules 1 file; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+██████████   100%       269 B  . 7 files (128 B gitignored)
+█████░░░░░    48%       128 B    dist/ 1 file (128 B gitignored)
+█████░░░░░    48%       128 B      acorn-0.1.0.tar.gz (128 B gitignored)
+██░░░░░░░░    18%        48 B    README.md
+█░░░░░░░░░    13%        36 B    src/ 2 files
+█░░░░░░░░░     7%        18 B      alpha.rs
+█░░░░░░░░░     7%        18 B      omega.rs
+█░░░░░░░░░    10%        28 B    Makefile
+█░░░░░░░░░     9%        23 B    docs/ 1 file
+█░░░░░░░░░     9%        23 B      FAQ.MD
+░░░░░░░░░░     2%         6 B    .gitignore
+! note: gitignored sizes are included in row totals
+! perf: took [PERF_TIME] to walk 7 files (269 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
 ```
 
@@ -597,14 +689,14 @@ planted: abandoned staging file, in-flight staging file, orphaned sidecar
 
 ```console
 $ fdu --cache-status=all project
-[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
-[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [BYTES] bytes
-[CACHE_FILE].content  leftover (orphaned content sidecar), 15 bytes
-[CACHE_FILE]  unrecognized, 0 bytes
-[CACHE_FILE]  11 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
-[CACHE_DIR]notes.txt  unrecognized, 15 bytes
-3 leftover files ([BYTES] bytes) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them, though a staging file waits until it is too old to be a running writer's.
-2 unrecognized files (15 bytes) are not fdu snapshots, so fdu leaves them in place.
+[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [HUMAN_SIZE]
+[CACHE_FILE].tmp.1.0011223344556677.0  leftover (staging temporary), [HUMAN_SIZE]
+[CACHE_ANALYSIS]  leftover (orphaned content sidecar), 15 B
+[CACHE_FILE]  unrecognized, 0 B
+[CACHE_FILE]  11 entries, [HUMAN_SIZE] metadata, 0 B content  [SCAN_PATH]
+[CACHE_DIR]notes.txt  unrecognized, 15 B
+3 leftover files ([HUMAN_SIZE]) are fdu's own, left by an interrupted write; fdu --cache-clear=all reclaims them, though a staging file waits until it is too old to be a running writer's.
+2 unrecognized files (15 B) are not fdu snapshots, so fdu leaves them in place.
 ? 0
 ```
 

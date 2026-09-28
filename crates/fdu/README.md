@@ -66,7 +66,7 @@ fdu .                                     # directory tree: allocated sizes, lar
 fdu . --view=summary                      # one total for the tree
 fdu . --view=languages                    # which languages occupy space
 fdu . --view=recent --limit=10            # the ten most recently modified files
-fdu . --exclude-ignored                   # leave out entries .gitignore rules match
+fdu . --ignored=exclude                   # leave out entries .gitignore rules match
 fdu . --analyze=code                      # standard lines of code; reads file contents
 fdu . --view=summary,types --format=json  # versioned machine output
 fdu --docs                                # the offline usage guide

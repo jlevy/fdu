@@ -3,6 +3,41 @@
 //! Formats are serializations, not features: every view renders in every format, so a
 //! caller picks the shape of the answer and the shape of the bytes independently.
 //!
+//! # Output design system
+//!
+//! Keep measured results and explanatory diagnostics separate. Renderers return only
+//! result data; frontends route the categorized messages from [`diagnostic_lines`] to
+//! their diagnostic stream. Machine formats must remain parseable and ANSI-free.
+//!
+//! Human rows use bright bold cyan names, ordinary foreground file counts, and gray
+//! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
+//! file counts belong directly after the name, outside parentheses. Secondary breakdowns
+//! such as nonblank/blank counts use the same gray parenthetical role. Human directory
+//! names have a gray slash except `.` and `..`. Directly or ancestrally gitignored
+//! directories use regular, nonbold cyan; merely containing ignored files does not
+//! change a directory name, and file-name styling is unchanged. Sizes >= 1 GiB are bold even in gray
+//! details; zero sizes and exact shares below 1% are gray. Pad cells before applying ANSI styles.
+//! Colored bars use green solid non-gitignored and shaded gitignored usage, with dim green
+//! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
+//! is caller-selectable, including zero to remove the bar and its gutter; machine
+//! formats and non-tree views ignore it. Human integer quantities share one grouping
+//! policy through [`human_count`] and [`human_count_u128`]. Every human byte quantity,
+//! including cache rows and lifecycle totals, uses [`styled_bytes`] for its units and
+//! zero/large-value emphasis. Machine fields retain exact integer bytes.
+//!
+//! Tree columns are bar, root percentage, size, then indented name. One remainder
+//! row per tree uses those same columns and quantity styles for unlisted root branches.
+//! Its `… and` prefix is gray; the recursive hidden file count uses normal foreground.
+//! That usage is already included in directory totals.
+//! Unknown coverage must show unknown size and no fabricated bar or percentage.
+//! Keep rerun flags out of rows: collect applicable remedies once per report in
+//! `report_epilogue`.
+//!
+//! The category, ordering, and debugging contract lives beside that collector; CLI
+//! stream/color handling lives in `write_report_diagnostics`. The contributor guide is
+//! `docs/project/architecture/fdu-output-design.md`. Changes must keep the shared golden
+//! corpus, Python parity, and terminal stream/color assertions consistent.
+//!
 //! # Why these are hand-written
 //!
 //! `serde` plus a JSON crate plus a YAML crate would be three dependency additions —
@@ -11,6 +46,12 @@
 //! crate already hand-writes its JSON, and hand-writing keeps the machine formats
 //! provably free of a serializer's own opinions about key order and number formatting.
 //! Key order is fixed by the code, which is what makes the goldens byte-stable.
+
+mod report_epilogue;
+
+pub use report_epilogue::{
+    DiagnosticLines, diagnostic_lines, diagnostics, report_notes, report_tips,
+};
 
 use std::fmt::Write as _;
 use std::io;
@@ -24,9 +65,9 @@ use crate::control::ControlCoverage;
 use crate::emit::{Event, IoFmt, JsonSink, Scalar, Shape, Sink, YamlSink};
 use crate::engine_contract::{Coverage, EntryKind, Freshness, IssueKind, Source};
 use crate::query::{
-    FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow, MetricSummary, Report,
-    ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TierState, TreeNode, TypeRow,
-    ViewSpec, format_rfc3339, format_rfc3339_nanos, pages,
+    CodeOverview, CodeTally, FileRow, IgnoredEntries, IgnoredTally, MetricGroup, MetricRow,
+    MetricSummary, Report, ReportSource, Section, ShareMetric, SizeMetric, SummaryRow, TierState,
+    TreeNode, TypeRow, ViewSpec, format_rfc3339, format_rfc3339_nanos, pages,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -34,22 +75,22 @@ use crate::query::{
 /// Bold cyan is what `cli.rs` already gives a section heading in `--help`, so a report
 /// and the help that describes it use one visual language for the same idea.
 /// View headers share the CLI's one header style; see `cli::STYLE_HEADING`.
-const STYLE_VIEW_HEADER: AnsiStyle = AnsiColor::Cyan.on_default().bold();
+pub const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 
 /// Directory names in a tree, so structure reads at a glance.
-const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
+pub const STYLE_NAME: AnsiStyle = AnsiColor::BrightCyan.on_default().bold();
 
-/// Relative-size bars in a tree.
+/// A directory whose own path is gitignored, directly or by an ignored ancestor.
+const STYLE_IGNORED_NAME: AnsiStyle = AnsiColor::Cyan.on_default();
+
 const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 
-/// Extensions in a type breakdown.
-const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
+/// Category labels keep ordinary cyan; bold bright cyan identifies names.
+pub const STYLE_CATEGORY: AnsiStyle = AnsiColor::Cyan.on_default();
 
-/// Telemetry: what the tool did, as against what it found.
-///
-/// The same role the CLI's performance footer and display notes use, so a bound stated in
-/// a header reads as reporting rather than as data — see the styling system in `cli.rs`.
-const STYLE_TELEMETRY: AnsiStyle = AnsiColor::BrightBlack.on_default();
+/// Secondary information: parenthetical detail, omissions, notes, tips, and telemetry.
+/// Keep this gray and non-bold except for the shared >= 1 GiB size emphasis.
+pub const STYLE_DETAIL: AnsiStyle = AnsiColor::BrightBlack.on_default();
 
 /// Established label width for non-language metric summaries.
 const TEXT_METRIC_LABEL_WIDTH: usize = 18;
@@ -60,7 +101,7 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/7";
+pub const REPORT_SCHEMA: &str = "fdu.report/10";
 /// All reports now use one shape-versioned schema regardless of requested analyzers.
 pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// Machine-output schema identity for cache status.
@@ -70,10 +111,10 @@ pub const CONTENT_REPORT_SCHEMA: &str = REPORT_SCHEMA;
 /// carries the same promise as [`REPORT_SCHEMA`] and versions independently, so a change
 /// to the report shape never invalidates a cache-status consumer, or the reverse.
 ///
-/// `fdu.cache/2` adds the identity of every tier a store holds: a current snapshot's
+/// `fdu.cache/3` adds the identity of every tier a store holds: a current snapshot's
 /// `identity`, and a `content` object for the sidecar beside any snapshot, in place of
 /// `content_bytes`.
-pub const CACHE_SCHEMA: &str = "fdu.cache/2";
+pub const CACHE_SCHEMA: &str = "fdu.cache/3";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -93,6 +134,25 @@ pub enum Format {
     Jsonl,
     /// YAML.
     Yaml,
+}
+
+/// Maximum tree bar width accepted by the human renderer.
+/// Bounds decoration allocation without changing measured report data.
+pub const MAX_BAR_SIZE: usize = 4096;
+
+/// Presentation choices for a human report; machine formats ignore both fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderOptions {
+    /// Whether to emit terminal color and emphasis.
+    pub color: bool,
+    /// Width of tree usage bars in cells; zero removes the bar and its gutter.
+    pub bar_size: usize,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self { color: false, bar_size: 10 }
+    }
 }
 
 /// Start one document in a multi-document stream for `format`.
@@ -157,9 +217,26 @@ impl Format {
 /// projection. Request the desired format on the query before reading: a detached,
 /// folded tree does not retain the complete flat inventory.
 pub fn render(report: &Report, format: Format, color: bool) -> crate::Result<String> {
+    render_with_options(report, format, RenderOptions { color, ..RenderOptions::default() })
+}
+
+/// Render with explicit human presentation choices.
+///
+/// Machine and flat formats retain their existing bytes regardless of `bar_size`.
+///
+/// # Errors
+///
+/// Returns an invalid-request error for an incompatible format or a human tree bar wider
+/// than [`MAX_BAR_SIZE`].
+pub fn render_with_options(
+    report: &Report,
+    format: Format,
+    options: RenderOptions,
+) -> crate::Result<String> {
     let format = checked_format(report, format)?;
+    checked_bar_size(report, format, options)?;
     Ok(match format {
-        Format::Text | Format::Tree => render_text(report, color),
+        Format::Text | Format::Tree => render_text(report, options),
         Format::Paths | Format::Long => render_flat(report, format),
         Format::Json => render_report_machine(report, true, JsonSink::pretty()),
         Format::Jsonl => render_report_jsonl(report),
@@ -196,33 +273,43 @@ fn human_age(age: Option<i128>) -> String {
     } else {
         (seconds, "s")
     };
-    format!("{}{amount}{unit}", if age < 0 { "-" } else { "" })
+    format!("{}{}{unit}", if age < 0 { "-" } else { "" }, human_count_u128(amount))
 }
 
 /// Notes excluded from flat stdout, for a frontend's diagnostic stream.
 pub fn flat_diagnostics(report: &Report) -> Vec<String> {
-    let mut notes = report.notes.clone();
+    flat_diagnostic_lines(report).into_lines()
+}
+
+/// Categorized flat-output diagnostics; paths and long rows stay alone on stdout.
+pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
+    let DiagnosticLines { mut notes, tips } = diagnostic_lines(report);
     if report.provenance.source == ReportSource::CacheOnly {
-        notes.push("cache-only result: retained contents have not been revalidated".into());
+        notes.push("note: cache-only result: retained contents have not been revalidated".into());
     }
     if !report.status.complete || report.provenance.freshness != Freshness::Fresh {
         notes.push(format!(
-            "result freshness: {}; complete: {}",
+            "note: result freshness: {}; complete: {}",
             freshness_label(report.provenance.freshness),
             report.status.complete
         ));
     }
     if let Some(depth) = report.scope.max_depth {
-        notes
-            .push(format!("scan scope limited to depth {depth}; subtree metrics cover this scope"));
+        notes.push(format!(
+            "note: scan scope limited to depth {}; subtree metrics cover this scope",
+            human_count_u128(depth as u128)
+        ));
     }
     for section in &report.sections {
-        let bound = bound_note(section);
-        if !bound.is_empty() {
-            notes.push(bound.trim().to_string());
+        if let Some((shown, total)) = bounded_rows(section) {
+            notes.push(format!(
+                "note: {} of {} rows shown",
+                human_count(shown as u64),
+                human_count(total as u64),
+            ));
         }
     }
-    notes
+    DiagnosticLines { notes, tips }
 }
 
 fn render_flat(report: &Report, format: Format) -> String {
@@ -265,6 +352,22 @@ fn checked_format(report: &Report, format: Format) -> crate::Result<Format> {
     Ok(format)
 }
 
+fn checked_bar_size(report: &Report, format: Format, options: RenderOptions) -> crate::Result<()> {
+    if matches!(format, Format::Text | Format::Tree)
+        && report.sections.iter().any(|section| matches!(section, Section::Tree { .. }))
+        && options.bar_size > MAX_BAR_SIZE
+    {
+        return Err(crate::Error::InvalidRequest(
+            crate::query::Rejection::new(
+                options.bar_size.to_string(),
+                format!("at most {MAX_BAR_SIZE} cells"),
+            )
+            .on("bar_size"),
+        ));
+    }
+    Ok(())
+}
+
 /// Write a report directly to an output stream.
 ///
 /// Machine formats retain only serializer depth while walking the report. Text remains a
@@ -275,10 +378,29 @@ pub fn write(
     color: bool,
     out: &mut dyn io::Write,
 ) -> io::Result<()> {
+    write_with_options(report, format, RenderOptions { color, ..RenderOptions::default() }, out)
+}
+
+/// Write with explicit human presentation choices.
+///
+/// Machine and flat formats retain their existing bytes regardless of `bar_size`.
+///
+/// # Errors
+///
+/// Returns an I/O error when writing fails, the format is incompatible with the report,
+/// or a human tree bar exceeds [`MAX_BAR_SIZE`].
+pub fn write_with_options(
+    report: &Report,
+    format: Format,
+    options: RenderOptions,
+    out: &mut dyn io::Write,
+) -> io::Result<()> {
     let format = checked_format(report, format)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+    checked_bar_size(report, format, options)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
     match format {
-        Format::Text | Format::Tree => out.write_all(render_text(report, color).as_bytes()),
+        Format::Text | Format::Tree => out.write_all(render_text(report, options).as_bytes()),
         Format::Paths | Format::Long => out.write_all(render_flat(report, format).as_bytes()),
         Format::Json => write_report_machine(report, true, JsonSink::pretty_to(out)),
         Format::Jsonl => write_report_jsonl(report, out),
@@ -413,6 +535,7 @@ fn emit_request(sink: &mut impl Sink, report: &Report) {
         emit_bool_field(sink, "one_filesystem", report.scope.one_filesystem);
         emit_bool_field(sink, "exclude_special", report.scope.exclude_special);
         emit_bool_field(sink, "read_controls", report.scope.observes_controls());
+        emit_str_field(sink, "population", report.scope.population.label());
         sink.event(Event::EndMap);
     });
     emit_field(sink, Field::always("analyze"), true, |sink| {
@@ -423,6 +546,10 @@ fn emit_request(sink: &mut impl Sink, report: &Report) {
         sink.event(Event::EndSeq);
     });
     emit_str_field(sink, "size", report.size.label());
+    emit_field(sink, Field::nullable("sort_metric"), true, |sink| match report.sort_metric {
+        Some(name) => emit_scalar(sink, Scalar::Str(name)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
     emit_field(sink, Field::always("views"), true, |sink| {
         sink.event(Event::BeginSeq(Shape::Inline));
         for view in &report.requested_views {
@@ -538,6 +665,7 @@ fn emit_ignore_rules(sink: &mut impl Sink, rules: &ControlCoverage) {
         sink.event(Event::EndMap);
     });
     emit_u64_field(sink, "applied", observed.applied);
+    emit_u64_field(sink, "rules", observed.rules);
     emit_u64_field(sink, "refused", observed.refused);
     emit_field(sink, Field::always("refusals"), true, |sink| {
         sink.event(Event::BeginSeq(Shape::Block));
@@ -632,11 +760,50 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
     sink.event(Event::BeginMap(Shape::Block));
     emit_str_field(sink, "view", section.view().label());
     match section {
-        Section::Tree { root, .. } => {
-            emit_field(sink, Field::always("tree"), true, |sink| emit_tree(sink, root));
+        Section::Code(overview) => {
+            emit_field(sink, Field::always("code"), true, |sink| {
+                emit_code_overview(sink, overview);
+            });
         }
-        Section::Extensions { rows, total } => {
+        Section::Tree { root, omissions, limits, .. } => {
+            sink.event(Event::Key("limits"));
+            sink.event(Event::BeginMap(Shape::Inline));
+            emit_bound_value(sink, "depth", limits.depth);
+            emit_str_field(sink, "min_share", &limits.min_share.label());
+            emit_bound_value(sink, "breadth", limits.breadth);
+            emit_bound_value(sink, "rows", limits.rows);
+            sink.event(Event::EndMap);
+            emit_field(sink, Field::always("tree"), true, |sink| match root {
+                Some(root) => emit_tree(sink, root),
+                None => emit_scalar(sink, Scalar::Null),
+            });
+            emit_tree_omissions(sink, omissions);
+            sink.event(Event::Key("remainder"));
+            match crate::query::TreeRemainder::from_tree(root.as_deref(), omissions) {
+                Some(remainder) => {
+                    sink.event(Event::BeginMap(Shape::Block));
+                    for (key, value) in [
+                        ("files", remainder.files),
+                        ("bytes", remainder.bytes),
+                        ("allocated", remainder.allocated),
+                    ] {
+                        sink.event(Event::Key(key));
+                        emit_scalar(sink, value.map_or(Scalar::Null, Scalar::U64));
+                    }
+                    sink.event(Event::Key("reasons"));
+                    sink.event(Event::BeginSeq(Shape::Inline));
+                    for reason in remainder.reasons {
+                        emit_scalar(sink, Scalar::Str(reason.label()));
+                    }
+                    sink.event(Event::EndSeq);
+                    sink.event(Event::EndMap);
+                }
+                None => emit_scalar(sink, Scalar::Null),
+            }
+        }
+        Section::Extensions { rows, total, share_omitted } => {
             emit_bound_field(sink, rows.len(), *total);
+            emit_u64_field(sink, "share_omitted", *share_omitted as u64);
             emit_field(sink, Field::always("extensions"), true, |sink| {
                 sink.event(Event::BeginSeq(Shape::Block));
                 for row in rows {
@@ -675,6 +842,14 @@ fn emit_section(sink: &mut impl Sink, section: &Section) {
         }
     }
     sink.event(Event::EndMap);
+}
+
+fn emit_bound_value(sink: &mut impl Sink, field: &'static str, bound: crate::query::Bound) {
+    sink.event(Event::Key(field));
+    match bound {
+        crate::query::Bound::All => emit_scalar(sink, Scalar::Null),
+        crate::query::Bound::Limit(value) => emit_scalar(sink, Scalar::U64(value as u64)),
+    }
 }
 
 fn emit_bound_field(sink: &mut impl Sink, shown: usize, total: usize) {
@@ -716,6 +891,28 @@ fn emit_file_row(sink: &mut impl Sink, row: &FileRow) {
         Some(value) => emit_scalar(sink, Scalar::Bool(value)),
         None => emit_scalar(sink, Scalar::Null),
     });
+    emit_field(sink, Field::nullable("sort_value"), true, |sink| match row.sort_value {
+        Some(value) => emit_scalar(sink, Scalar::U64(value)),
+        None => emit_scalar(sink, Scalar::Null),
+    });
+    emit_field(sink, Field::nullable("classification"), true, |sink| match &row.classification {
+        Some(classification) => {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_str_field(sink, "file_type", classification.file_type.as_str());
+            emit_str_field(sink, "family", classification.family.as_str());
+            emit_str_field(sink, "source", classification.source.as_str());
+            emit_str_field(sink, "confidence", classification.confidence.as_str());
+            emit_field(sink, Field::always("flags"), true, |sink| {
+                sink.event(Event::BeginMap(Shape::Inline));
+                emit_bool_field(sink, "generated", classification.flags.generated);
+                emit_bool_field(sink, "vendored", classification.flags.vendored);
+                emit_bool_field(sink, "documentation", classification.flags.documentation);
+                sink.event(Event::EndMap);
+            });
+            sink.event(Event::EndMap);
+        }
+        None => emit_scalar(sink, Scalar::Null),
+    });
     sink.event(Event::EndMap);
 }
 
@@ -755,6 +952,7 @@ fn emit_metric_summary(sink: &mut impl Sink, summary: &MetricSummary) {
     emit_str_field(sink, "group", metric_group_label(summary.group));
     emit_str_field(sink, "share_metric", summary.share_metric.as_str());
     emit_bound_field(sink, summary.rows.len(), summary.total_rows);
+    emit_u64_field(sink, "share_omitted", summary.share_omitted as u64);
     emit_field(sink, Field::always("total"), true, |sink| {
         emit_metric_row(sink, &summary.total, summary.words_per_page);
     });
@@ -762,6 +960,77 @@ fn emit_metric_summary(sink: &mut impl Sink, summary: &MetricSummary) {
         sink.event(Event::BeginSeq(Shape::Block));
         for row in &summary.rows {
             emit_metric_row(sink, row, summary.words_per_page);
+        }
+        sink.event(Event::EndSeq);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_code_tally(sink: &mut impl Sink, tally: &CodeTally) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_u64_field(sink, "source_files", tally.source_files);
+    emit_u64_field(sink, "analyzed_files", tally.analyzed_files);
+    emit_u64_field(sink, "code_lines", tally.metrics.code_lines);
+    emit_u64_field(sink, "comment_lines", tally.metrics.comment_lines);
+    emit_u64_field(sink, "blank_lines", tally.metrics.code_blank_lines);
+    emit_u64_field(sink, "missing_records", tally.missing_records);
+    emit_field(sink, Field::always("coverage"), true, |sink| {
+        emit_coverage_map(sink, &tally.coverage);
+    });
+    sink.event(Event::EndMap);
+}
+
+fn emit_optional_code_tally(sink: &mut impl Sink, tally: Option<&CodeTally>) {
+    match tally {
+        Some(tally) => emit_code_tally(sink, tally),
+        None => emit_scalar(sink, Scalar::Null),
+    }
+}
+
+fn emit_code_overview(sink: &mut impl Sink, overview: &CodeOverview) {
+    sink.event(Event::BeginMap(Shape::Block));
+    emit_str_field(sink, "population", overview.population.label());
+    emit_str_field(sink, "share_metric", overview.share_metric.as_str());
+    emit_bound_field(sink, overview.languages.len(), overview.total_languages);
+    emit_u64_field(sink, "share_omitted", overview.share_omitted as u64);
+    emit_u64_field(sink, "analyzed_languages", overview.analyzed_languages);
+    emit_u64_field(sink, "unclassified_files", overview.unclassified_files);
+    emit_field(sink, Field::always("selected"), true, |sink| {
+        emit_code_tally(sink, &overview.selected);
+    });
+    emit_field(sink, Field::nullable("non_ignored"), true, |sink| {
+        emit_optional_code_tally(sink, overview.non_ignored.as_ref());
+    });
+    emit_field(sink, Field::nullable("ignored"), true, |sink| {
+        emit_optional_code_tally(sink, overview.ignored.as_ref());
+    });
+    emit_field(sink, Field::always("unknown"), true, |sink| {
+        emit_code_tally(sink, &overview.unknown);
+    });
+    emit_field(sink, Field::always("languages"), true, |sink| {
+        sink.event(Event::BeginSeq(Shape::Block));
+        for row in &overview.languages {
+            sink.event(Event::BeginMap(Shape::Block));
+            emit_str_field(sink, "language", &row.language);
+            emit_field(sink, Field::always("share"), true, |sink| {
+                sink.event(Event::BeginMap(Shape::Inline));
+                emit_u64_field(sink, "numerator", row.share.numerator);
+                emit_u64_field(sink, "denominator", row.share.denominator);
+                sink.event(Event::EndMap);
+            });
+            emit_field(sink, Field::always("selected"), true, |sink| {
+                emit_code_tally(sink, &row.selected);
+            });
+            emit_field(sink, Field::nullable("non_ignored"), true, |sink| {
+                emit_optional_code_tally(sink, row.non_ignored.as_ref());
+            });
+            emit_field(sink, Field::nullable("ignored"), true, |sink| {
+                emit_optional_code_tally(sink, row.ignored.as_ref());
+            });
+            emit_field(sink, Field::always("unknown"), true, |sink| {
+                emit_code_tally(sink, &row.unknown);
+            });
+            sink.event(Event::EndMap);
         }
         sink.event(Event::EndSeq);
     });
@@ -894,6 +1163,9 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 emit_str_field(sink, "name", &node.name);
                 emit_path_fields(sink, &node.path);
                 emit_str_field(sink, "kind", kind_label(node.kind));
+                emit_field(sink, Field::nullable("entry_ignored"), true, |sink| {
+                    emit_scalar(sink, node.entry_ignored.map_or(Scalar::Null, Scalar::Bool));
+                });
                 emit_u64_field(sink, "bytes", node.bytes);
                 emit_u64_field(sink, "allocated", node.allocated);
                 emit_u64_field(sink, "files", node.files);
@@ -910,6 +1182,7 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 emit_field(sink, Field::always("truncated"), true, |sink| {
                     emit_scalar(sink, Scalar::Bool(node.truncated));
                 });
+                emit_tree_omissions(sink, &node.omissions);
                 sink.event(Event::Key("children"));
                 sink.event(Event::BeginSeq(Shape::Block));
                 stack.push(Step::EndMap);
@@ -926,6 +1199,30 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
             Step::EndSeq => sink.event(Event::EndSeq),
         }
     }
+}
+
+fn emit_tree_omissions(sink: &mut impl Sink, omissions: &[crate::query::TreeOmission]) {
+    sink.event(Event::Key("omissions"));
+    sink.event(Event::BeginSeq(Shape::Block));
+    for omission in omissions {
+        sink.event(Event::BeginMap(Shape::Inline));
+        emit_str_field(sink, "reason", omission.reason.label());
+        emit_u64_field(sink, "entries", omission.entries as u64);
+        sink.event(Event::Key("files"));
+        emit_scalar(sink, omission.files.map_or(Scalar::Null, Scalar::U64));
+        sink.event(Event::Key("bytes"));
+        match omission.bytes {
+            Some(value) => emit_scalar(sink, Scalar::U64(value)),
+            None => emit_scalar(sink, Scalar::Null),
+        }
+        sink.event(Event::Key("allocated"));
+        match omission.allocated {
+            Some(value) => emit_scalar(sink, Scalar::U64(value)),
+            None => emit_scalar(sink, Scalar::Null),
+        }
+        sink.event(Event::EndMap);
+    }
+    sink.event(Event::EndSeq);
 }
 
 /// The report envelope's ordered field and presence contract.
@@ -997,8 +1294,61 @@ impl Field {
 }
 
 /// Wrap text in a style when colour is on.
-fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
+pub fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
     if color { format!("{style}{text}{style:#}") } else { text.to_string() }
+}
+
+/// Escape controls before styling so an entry cannot move a cursor or add a row.
+pub fn escaped_human(text: &str) -> String {
+    text.chars()
+        .flat_map(|c| if c.is_control() { c.escape_default().collect::<Vec<_>>() } else { vec![c] })
+        .collect()
+}
+
+/// The shared human byte color role: zero is gray; large values are bold, including gray details.
+/// The threshold uses exact bytes, not the rounded display unit.
+pub fn byte_style(bytes: u64, secondary: bool) -> AnsiStyle {
+    let style = if secondary || bytes == 0 { STYLE_DETAIL } else { AnsiStyle::new() };
+    if bytes >= 1 << 30 { style.bold() } else { style }
+}
+
+/// Render a human byte quantity after padding with the shared size and emphasis rules.
+/// Plain and structured numbers never depend on styling.
+pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> String {
+    let style = byte_style(bytes, secondary);
+    let text = format!("{:>width$}", human_bytes(bytes));
+    if bytes > 0 && bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
+}
+
+/// Style a root share using its exact ratio, before display rounding.
+fn percentage_cell(part: u64, whole: u64, decimals: usize, width: usize, color: bool) -> String {
+    let text = format!("{:>width$}", human_percentage(part, whole, decimals));
+    if whole > 0 && u128::from(part) * 100 < u128::from(whole) {
+        detail(&text, color)
+    } else {
+        text
+    }
+}
+
+/// Human directory markers are presentation only, never part of structured paths.
+fn human_name(name: &str, kind: EntryKind, ignored: Option<bool>, color: bool) -> String {
+    // Own classification matters: a directory merely containing ignored files keeps
+    // the primary style, even if every selected descendant happens to be ignored.
+    let style = if kind == EntryKind::Dir && ignored == Some(true) {
+        STYLE_IGNORED_NAME
+    } else {
+        STYLE_NAME
+    };
+    let slash = kind == EntryKind::Dir && !matches!(name, "." | "..") && !name.ends_with('/');
+    format!(
+        "{}{}",
+        paint(&escaped_human(name), style, color),
+        if slash { detail("/", color) } else { String::new() }
+    )
+}
+
+fn detail(text: &str, color: bool) -> String {
+    paint(text, STYLE_DETAIL, color)
 }
 
 // ---- text ----
@@ -1011,11 +1361,13 @@ fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
 /// similar-looking rows arrived concatenated, and the reader had to work out which view
 /// each block came from by remembering the order they were requested in.
 ///
-/// A single-view report is left bare, which is what keeps `fdu --view files` a listing
-/// of paths and nothing else — the property behind `fdu --view files | xargs` — and
-/// keeps the default one-view report exactly as it was. One block needs no label to be
+/// A single-view report is left bare, which keeps `fdu --view files` a listing of
+/// paths and nothing else. Paths escape control characters for display; use a structured
+/// format when arbitrary native filenames must be consumed without loss.
+/// One block needs no label to be
 /// unambiguous, so the header appears precisely when it disambiguates something.
-fn render_text(report: &Report, color: bool) -> String {
+fn render_text(report: &Report, options: RenderOptions) -> String {
+    let color = options.color;
     let mut out = String::new();
     let headed = report.sections.len() > 1;
     for (index, section) in report.sections.iter().enumerate() {
@@ -1027,20 +1379,30 @@ fn render_text(report: &Report, color: bool) -> String {
             let _ = writeln!(
                 out,
                 "{}{}",
-                paint(view_header(section.view()), STYLE_VIEW_HEADER, color),
-                paint(&bound, STYLE_TELEMETRY, color),
+                paint(view_header(section.view()), STYLE_HEADING, color),
+                paint(&bound, STYLE_DETAIL, color),
             );
         } else if !bound.is_empty() {
             // A single-view report has no header, and that is precisely the shape
             // `fdu --view largest` produces — so the bound gets its own line rather than
             // riding on a header that is not there.
-            let _ = writeln!(out, "{}", paint(bound.trim_start(), STYLE_TELEMETRY, color));
+            let _ = writeln!(out, "{}", detail(bound.trim_start(), color));
         }
         match section {
-            Section::Tree { root, .. } => {
-                render_text_tree(&mut out, root, report.size, report.ignored_entries, color);
+            Section::Code(overview) => render_text_code(&mut out, overview, color),
+            Section::Tree { root, omissions, limits, .. } => {
+                render_text_tree(
+                    &mut out,
+                    root.as_deref(),
+                    omissions,
+                    limits,
+                    report.size,
+                    report.ignored_entries,
+                    options,
+                );
             }
-            Section::Extensions { rows, .. } => {
+            Section::Extensions { rows, share_omitted, .. } => {
+                render_share_omission(&mut out, *share_omitted, "extensions", color);
                 render_text_types(&mut out, rows, report.size, report.ignored_entries, color);
             }
             Section::Metrics { view, summary } => {
@@ -1051,30 +1413,30 @@ fn render_text(report: &Report, color: bool) -> String {
             // that ranks by something must show that something — "the twenty largest"
             // with no sizes does not answer the question it is named for, and leaves the
             // ranking unverifiable.
+            Section::Files { rows, .. } if report.sort_metric.is_some() => {
+                let metric = report.sort_metric.expect("guarded above");
+                let _ = writeln!(out, "{}", detail(&format!("Ranked by {metric}"), color));
+                render_text_metric_files(&mut out, rows, color);
+            }
             Section::Files { view, rows, .. } => match view {
-                ViewSpec::Largest => render_text_ranked_files(&mut out, rows, report.size, |row| {
-                    human_bytes(pick(report.size, row.bytes, row.allocated))
-                }),
-                ViewSpec::Recent => render_text_ranked_files(&mut out, rows, report.size, |row| {
+                ViewSpec::Largest => {
+                    render_text_ranked_files(&mut out, rows, color, Some(report.size), |row| {
+                        human_bytes(pick(report.size, row.bytes, row.allocated))
+                    });
+                }
+                ViewSpec::Recent => render_text_ranked_files(&mut out, rows, color, None, |row| {
                     format_rfc3339_nanos(row.mtime_ns)
                 }),
                 _ => {
                     for row in rows {
-                        let _ = writeln!(out, "{}", row.path.display());
+                        let _ = writeln!(out, "{}", escaped_human(&row.path.to_string_lossy()));
                     }
                 }
             },
             Section::Summary(row) => {
-                render_text_summary(&mut out, row, report.size, report.ignored_entries);
+                render_text_summary(&mut out, row, report.size, report.ignored_entries, color);
             }
         }
-    }
-    // Remarks about the report, after the report and before the caller's own epilogue.
-    // These used to print after the CLI's performance footer, which read as though
-    // something followed the terminator; and living in the CLI meant only the CLI could
-    // tell anyone a view had been dropped (fdu-x8u6).
-    for note in &report.notes {
-        let _ = writeln!(out, "{}", paint(note, STYLE_TELEMETRY, color));
     }
     out
 }
@@ -1103,13 +1465,68 @@ const TEXT_SHARE_WIDTH: usize = 6;
 
 /// A styled label padded to `width`, measured on the visible text.
 fn label_cell(label: &str, width: usize, style: AnsiStyle, color: bool) -> String {
-    let padding = " ".repeat(width.saturating_sub(label.chars().count()));
+    let padding = " ".repeat(width.saturating_sub(display_width(label)));
     format!("{}{padding}", paint(label, style, color))
 }
 
 /// The widest visible label in a set of rows, floored at `minimum`.
 fn label_width<'a>(labels: impl Iterator<Item = &'a str>, minimum: usize) -> usize {
-    minimum.max(labels.map(|label| label.chars().count()).max().unwrap_or_default())
+    minimum.max(labels.map(|label| display_width(&escaped_human(label))).max().unwrap_or_default())
+}
+
+/// Terminal columns occupied by an already escaped, unstyled label.
+///
+/// Common zero-width combining marks and East Asian wide characters need different
+/// treatment from Unicode scalar counts when columns are padded for a terminal.
+fn display_width(text: &str) -> usize {
+    text.chars()
+        .map(|c| {
+            let point = c as u32;
+            if (0x0300..=0x036f).contains(&point)
+                || (0x1ab0..=0x1aff).contains(&point)
+                || (0x1dc0..=0x1dff).contains(&point)
+                || (0x20d0..=0x20ff).contains(&point)
+                || (0xfe20..=0xfe2f).contains(&point)
+            {
+                0
+            } else if (0x1100..=0x115f).contains(&point)
+                || (0x2e80..=0xa4cf).contains(&point)
+                || (0xac00..=0xd7a3).contains(&point)
+                || (0xf900..=0xfaff).contains(&point)
+                || (0xfe10..=0xfe19).contains(&point)
+                || (0xfe30..=0xfe6f).contains(&point)
+                || (0xff01..=0xff60).contains(&point)
+                || (0xffe0..=0xffe6).contains(&point)
+                || (0x1f300..=0x1faff).contains(&point)
+                || (0x20000..=0x3fffd).contains(&point)
+            {
+                2
+            } else {
+                1
+            }
+        })
+        .sum()
+}
+
+fn human_percentage(part: u64, whole: u64, decimals: usize) -> String {
+    if whole == 0 {
+        return "—".to_string();
+    }
+    let scale = match decimals {
+        0 => 100_u128,
+        1 => 1_000_u128,
+        _ => panic!("human percentage supports whole and tenths only"),
+    };
+    // Test the less-than label exactly; float conversion can round a value just
+    // below 1% (or 0.1%) onto the boundary when the byte totals exceed 2^53.
+    if part > 0 && u128::from(part) * scale < u128::from(whole) {
+        return if decimals == 0 {
+            "<1%".to_string()
+        } else {
+            format!("<0.{}1%", "0".repeat(decimals - 1))
+        };
+    }
+    format!("{:.*}%", decimals, ratio(part, whole) * 100.0)
 }
 
 fn render_text_metrics(
@@ -1120,8 +1537,9 @@ fn render_text_metrics(
     color: bool,
 ) {
     if let Some(note) = share_metric_note(summary.share_metric) {
-        let _ = writeln!(out, "{}", paint(note, STYLE_TELEMETRY, color));
+        let _ = writeln!(out, "{}", detail(note, color));
     }
+    render_share_omission(out, summary.share_omitted, "groups", color);
     // Languages pad one past the longest name; the other groupings share a floor so
     // separate sections still line up with one another.
     let width = if view == ViewSpec::Languages {
@@ -1135,12 +1553,10 @@ fn render_text_metrics(
     };
     for row in &summary.rows {
         let selected = pick(size, row.bytes, row.allocated);
-        let percentage = if row.share.denominator == 0 {
-            "—".to_string()
-        } else {
-            format!("{:.1}%", ratio(row.share.numerator, row.share.denominator) * 100.0)
-        };
-        let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
+        let percentage =
+            percentage_cell(row.share.numerator, row.share.denominator, 1, TEXT_SHARE_WIDTH, color);
+        let mut suffix =
+            format!("{} {}", human_count(row.files), plural(row.files, "file", "files"));
         if let Some(physical_lines) = row.metrics.physical_lines.filter(|lines| *lines > 0) {
             let code_fully_analyzed = row.code_coverage.as_ref().is_some_and(|coverage| {
                 coverage.len() == 1 && coverage.get(&CoverageReason::Analyzed) == Some(&row.files)
@@ -1151,18 +1567,31 @@ fn render_text_metrics(
                 row.metrics.comment_lines,
                 row.metrics.code_blank_lines,
             ) {
+                let breakdown = format!(
+                    "({} code, {} comment, {} blank)",
+                    human_count(code_lines),
+                    human_count(comment_lines),
+                    human_count(code_blank_lines)
+                );
                 let _ = write!(
                     suffix,
-                    ", {physical_lines} lines ({code_lines} code, {comment_lines} comment, \
-                     {code_blank_lines} blank)"
+                    ", {} lines {}",
+                    human_count(physical_lines),
+                    detail(&breakdown, color)
                 );
             } else {
                 let _ = write!(
                     suffix,
-                    ", {} lines ({} nonblank, {} blank)",
-                    physical_lines,
-                    row.metrics.nonblank_lines.expect("lines requested"),
-                    row.metrics.blank_lines.expect("lines requested")
+                    ", {} lines {}",
+                    human_count(physical_lines),
+                    detail(
+                        &format!(
+                            "({} nonblank, {} blank)",
+                            human_count(row.metrics.nonblank_lines.expect("lines requested")),
+                            human_count(row.metrics.blank_lines.expect("lines requested"))
+                        ),
+                        color
+                    )
                 );
             }
         }
@@ -1170,20 +1599,22 @@ fn render_text_metrics(
             let page_tenths = page.words.saturating_mul(10) / page.words_per_page;
             let _ = write!(
                 suffix,
-                ", {} words ({}.{:01} pages)",
-                page.words,
-                page_tenths / 10,
-                page_tenths % 10
+                ", {} words {}",
+                human_count(page.words),
+                detail(
+                    &format!("({}.{:01} pages)", human_count(page_tenths / 10), page_tenths % 10),
+                    color,
+                )
             );
         }
         if row.generated_files > 0 {
-            let _ = write!(suffix, ", {} generated", row.generated_files);
+            let _ = write!(suffix, ", {} generated", human_count(row.generated_files));
         }
         if row.vendored_files > 0 {
-            let _ = write!(suffix, ", {} vendored", row.vendored_files);
+            let _ = write!(suffix, ", {} vendored", human_count(row.vendored_files));
         }
         if row.documentation_files > 0 {
-            let _ = write!(suffix, ", {} documentation", row.documentation_files);
+            let _ = write!(suffix, ", {} documentation", human_count(row.documentation_files));
         }
         let coverage = match view {
             ViewSpec::Languages => row.code_coverage.as_ref().unwrap_or(&row.lines_coverage),
@@ -1192,15 +1623,130 @@ fn render_text_metrics(
         };
         for (reason, count) in coverage {
             if *reason != CoverageReason::Analyzed {
-                let _ = write!(suffix, ", {count} {}", human_coverage_label(*reason));
+                let _ =
+                    write!(suffix, ", {} {}", human_count(*count), human_coverage_label(*reason));
             }
         }
         let _ = writeln!(
             out,
-            "{:>TEXT_SIZE_WIDTH$}  {:>TEXT_SHARE_WIDTH$}  {} {suffix}",
-            human_bytes(selected),
+            "{}  {}  {} {suffix}",
+            styled_bytes(selected, TEXT_SIZE_WIDTH, color, false),
             percentage,
-            label_cell(human_metric_label(view, &row.id), width, STYLE_TYPE, color),
+            label_cell(
+                &escaped_human(human_metric_label(view, &row.id)),
+                width,
+                STYLE_CATEGORY,
+                color
+            ),
+        );
+    }
+}
+
+fn render_share_omission(out: &mut String, omitted: usize, noun: &str, color: bool) {
+    if omitted > 0 {
+        let note =
+            format!("… {} {noun} omitted (below share threshold)", human_count(omitted as u64));
+        let _ = writeln!(out, "{}", detail(&note, color));
+    }
+}
+
+fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
+    let selected = &overview.selected;
+    let _ = writeln!(
+        out,
+        "{} code lines {}",
+        human_count(selected.metrics.code_lines),
+        detail(
+            &format!(
+                "({} comment, {} blank)",
+                human_count(selected.metrics.comment_lines),
+                human_count(selected.metrics.code_blank_lines)
+            ),
+            color
+        )
+    );
+    let _ = writeln!(
+        out,
+        "{} of {} source files analyzed across {} languages {}",
+        human_count(selected.analyzed_files),
+        human_count(selected.source_files),
+        human_count(overview.analyzed_languages),
+        detail(&format!("({} population)", overview.population.label()), color)
+    );
+    if let (Some(non_ignored), Some(ignored)) = (&overview.non_ignored, &overview.ignored) {
+        let _ = writeln!(
+            out,
+            "{} non-gitignored code lines {}",
+            human_count(non_ignored.metrics.code_lines),
+            detail(&format!("({} gitignored)", human_count(ignored.metrics.code_lines)), color)
+        );
+    }
+    if overview.unknown.source_files > 0 {
+        let _ = writeln!(
+            out,
+            "{} source files with unknown ignore classification",
+            human_count(overview.unknown.source_files)
+        );
+    }
+    if overview.unclassified_files > 0 {
+        let _ = writeln!(
+            out,
+            "{} selected files with unclassified type",
+            human_count(overview.unclassified_files)
+        );
+    }
+    for (reason, files) in &selected.coverage {
+        if *reason != CoverageReason::Analyzed {
+            let _ = writeln!(
+                out,
+                "{}",
+                detail(
+                    &format!("{} {}", human_count(*files), human_coverage_label(*reason)),
+                    color
+                )
+            );
+        }
+    }
+    if selected.missing_records > 0 {
+        let _ = writeln!(
+            out,
+            "{}",
+            detail(
+                &format!(
+                    "{} source files without analyzer records",
+                    human_count(selected.missing_records)
+                ),
+                color
+            )
+        );
+    }
+    let _ = writeln!(out, "{}", detail("Language shares of measured code lines", color));
+    render_share_omission(out, overview.share_omitted, "languages", color);
+    for row in &overview.languages {
+        let mut annotation = format!(
+            "({}/{} analyzed",
+            human_count(row.selected.analyzed_files),
+            human_count(row.selected.source_files)
+        );
+        if let (Some(non_ignored), Some(ignored)) = (&row.non_ignored, &row.ignored) {
+            let _ = write!(
+                annotation,
+                "; {} non-gitignored, {} gitignored",
+                human_count(non_ignored.metrics.code_lines),
+                human_count(ignored.metrics.code_lines)
+            );
+        }
+        if row.unknown.source_files > 0 {
+            let _ = write!(annotation, ", {} unknown", human_count(row.unknown.metrics.code_lines));
+        }
+        annotation.push(')');
+        let _ = writeln!(
+            out,
+            "{:>10}  {}  {} {}",
+            human_count(row.selected.metrics.code_lines),
+            percentage_cell(row.share.numerator, row.share.denominator, 1, 6, color),
+            paint(human_language_name(&row.language), STYLE_NAME, color),
+            detail(&annotation, color)
         );
     }
 }
@@ -1236,13 +1782,14 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
-/// The ignored share a text row ends with, as ` (128 B ignored)`, or nothing.
+/// The gitignored subset a text row ends with, as ` (128 B gitignored)`, or nothing.
+/// This amount is already included in the row total, not additional usage.
 ///
 /// One placement for every row that carries a share: after the row's own detail, so the
 /// fixed size, bar, and percentage columns keep their alignment. Nothing is appended when
 /// no file is ignored, when the index observed no control state, or when the selection
 /// admitted only ignored entries, where the share would repeat the row's size. A share of
-/// ignored directories alone holds no bytes, and `(0 B ignored)` would say nothing a
+/// ignored directories alone holds no bytes, and `(0 B gitignored)` would say nothing a
 /// reader can act on; the machine formats still count them. Text cannot tell "nothing
 /// ignored" from "no rules read"; the performance line says whether any rule was read,
 /// and machine formats carry a zero share and `null` respectively.
@@ -1250,6 +1797,7 @@ fn ignored_suffix(
     ignored: Option<IgnoredTally>,
     size: SizeMetric,
     selected: IgnoredEntries,
+    color: bool,
 ) -> String {
     let shown = match selected {
         IgnoredEntries::Include | IgnoredEntries::Exclude => {
@@ -1258,63 +1806,120 @@ fn ignored_suffix(
         IgnoredEntries::Only => None,
     };
     shown.map_or_else(String::new, |share| {
-        format!(" ({} ignored)", human_bytes(pick(size, share.bytes, share.allocated)))
+        let bytes = pick(size, share.bytes, share.allocated);
+        if bytes < 1 << 30 || !color {
+            format!(" {}", detail(&format!("({} gitignored)", human_bytes(bytes)), color))
+        } else {
+            format!(
+                " {}{}{}",
+                detail("(", color),
+                styled_bytes(bytes, 0, color, true),
+                detail(" gitignored)", color)
+            )
+        }
     })
 }
 
-/// Render a tree section with fixed size, bar, and percentage columns.
+/// Render a tree section with fixed bar, percentage, and size columns.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
 fn render_text_tree(
     out: &mut String,
-    root: &TreeNode,
+    root: Option<&TreeNode>,
+    omissions: &[crate::query::TreeOmission],
+    _limits: &crate::query::TreeDisplayLimits,
     size: SizeMetric,
     selected: IgnoredEntries,
-    color: bool,
+    options: RenderOptions,
 ) {
-    enum Row<'a> {
-        Node(&'a TreeNode, usize),
-        Truncation(usize),
-    }
-
-    let grand = pick(size, root.bytes, root.allocated);
-    // Children are pushed in reverse so they pop back in their sorted order. A
-    // truncation row is pushed first so it appears after the retained children.
-    let mut stack = vec![Row::Node(root, 0)];
-    while let Some(row) = stack.pop() {
-        match row {
-            Row::Node(node, depth) => {
-                let bytes = pick(size, node.bytes, node.allocated);
-                let share = ratio(bytes, grand);
-                let indent = "  ".repeat(depth);
-                let _ = writeln!(
-                    out,
-                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {}){}",
-                    human_bytes(bytes),
-                    bar(share, color),
-                    share * 100.0,
-                    paint(&node.name, STYLE_DIRECTORY, color),
-                    node.files,
-                    plural(node.files, "file", "files"),
-                    ignored_suffix(node.ignored, size, selected),
-                );
-                // Reaching the requested depth is visible from the outline itself and
-                // marking every boundary directory overwhelms a real tree with dots.
-                // Retained children plus truncation means the sibling list hit its
-                // limit; that omission gets one marker after the rows that were kept.
-                if node.truncated && !node.children.is_empty() {
-                    stack.push(Row::Truncation(depth + 1));
-                }
-                for child in node.children.iter().rev() {
-                    stack.push(Row::Node(child, depth + 1));
-                }
-            }
-            Row::Truncation(depth) => {
-                let indent = "  ".repeat(depth);
-                let _ = writeln!(out, "{:>10}  {:10}  {:>5}  {indent}…", "", "", "");
-            }
+    let RenderOptions { color, bar_size } = options;
+    let hidden = crate::query::TreeRemainder::from_tree(root, omissions);
+    if let Some(root) = root {
+        let grand = pick(size, root.bytes, root.allocated);
+        let mut stack = vec![(root, 0)];
+        while let Some((node, depth)) = stack.pop() {
+            let bytes = pick(size, node.bytes, node.allocated);
+            let indent = "  ".repeat(depth);
+            let count = if node.kind == EntryKind::File {
+                String::new()
+            } else {
+                format!(" {} {}", human_count(node.files), plural(node.files, "file", "files"))
+            };
+            let bar_prefix = if bar_size == 0 {
+                String::new()
+            } else {
+                format!(
+                    "{}  ",
+                    usage_bar(
+                        bytes,
+                        grand,
+                        node.ignored.map(|value| pick(size, value.bytes, value.allocated)),
+                        color,
+                        bar_size,
+                    )
+                )
+            };
+            let _ = writeln!(
+                out,
+                "{bar_prefix}{}  {}  {indent}{}{}{}",
+                percentage_cell(bytes, grand, 0, 5, color),
+                styled_bytes(bytes, 10, color, false),
+                human_name(&node.name, node.kind, node.entry_ignored, color),
+                count,
+                ignored_suffix(node.ignored, size, selected, color),
+            );
+            stack.extend(node.children.iter().rev().map(|child| (child, depth + 1)));
         }
     }
+    // One annotation at the highest displayed level, even when several independent
+    // bounds hide descendants at different depths. Reasons belong in the epilogue.
+    if let Some(hidden) = hidden {
+        let grand = root.map(|node| pick(size, node.bytes, node.allocated));
+        render_tree_remainder(out, &hidden, grand, usize::from(root.is_some()), size, options);
+    }
+}
+
+/// Human projection of the same remainder serialized in machine formats.
+fn render_tree_remainder(
+    out: &mut String,
+    remainder: &crate::query::TreeRemainder,
+    grand: Option<u64>,
+    depth: usize,
+    size: SizeMetric,
+    options: RenderOptions,
+) {
+    let RenderOptions { color, bar_size } = options;
+    let bytes = match size {
+        SizeMetric::Apparent => remainder.bytes,
+        SizeMetric::Allocated => remainder.allocated,
+    };
+    let measure = bytes.map_or_else(
+        || detail(&format!("{:>10}", "unknown"), color),
+        |bytes| styled_bytes(bytes, 10, color, false),
+    );
+    // With no visible root, a known remainder represents the whole selected root.
+    // A missing measurement cannot honestly produce either a bar or a percentage.
+    let (usage_bar, percentage) = match bytes.zip(grand.or(bytes)) {
+        Some((bytes, grand)) => (
+            usage_bar(
+                bytes,
+                grand,
+                remainder.ignored.map(|value| pick(size, value.bytes, value.allocated)),
+                color,
+                bar_size,
+            ),
+            percentage_cell(bytes, grand, 0, 5, color),
+        ),
+        None => (" ".repeat(bar_size), detail(&format!("{:>5}", "—"), color)),
+    };
+    let files = remainder.files.map_or_else(
+        || format!("more files {}", detail("(count unknown)", color)),
+        |files| format!("{} more {}", human_count(files), plural(files, "file", "files")),
+    );
+    let indent = "  ".repeat(depth);
+    let note = format!("{} {files}", detail(&format!("{indent}… and"), color));
+    let bar_prefix = if bar_size == 0 { String::new() } else { format!("{usage_bar}  ") };
+    let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {note}");
 }
 
 /// Render a types section as aligned rows.
@@ -1329,42 +1934,37 @@ fn render_text_types(
     for row in rows {
         let _ = writeln!(
             out,
-            "{:>TEXT_SIZE_WIDTH$}  {} {} {}{}",
-            human_bytes(pick(size, row.bytes, row.allocated)),
-            label_cell(&row.extension, width, STYLE_TYPE, color),
-            row.files,
+            "{}  {} {} {}{}",
+            styled_bytes(pick(size, row.bytes, row.allocated), TEXT_SIZE_WIDTH, color, false),
+            label_cell(&escaped_human(&row.extension), width, STYLE_CATEGORY, color),
+            human_count(row.files),
             plural(row.files, "file", "files"),
-            ignored_suffix(row.ignored, size, selected),
+            ignored_suffix(row.ignored, size, selected, color),
         );
     }
 }
 
-/// What a section dropped, or nothing when it dropped nothing.
-///
-/// Lives in the header rather than after the rows because a footer is lost to `head`,
-/// which is exactly where a reader most needs telling — `fdu --view largest | head -5`
-/// would otherwise cut off the only notice that 192,851 rows are missing. In a `full`
-/// report a header also keeps each bound attached to the section it describes.
-///
-/// The flag that lifts the bound is named here too: a truncation the caller cannot remove
-/// is a limitation wearing a default's clothes.
-fn bound_note(section: &Section) -> String {
+/// Counts row omissions after share filtering, so a share threshold alone never
+/// produces a row-limit remedy.
+fn bounded_rows(section: &Section) -> Option<(usize, usize)> {
     let (shown, total) = match section {
+        Section::Code(overview) => (overview.languages.len(), overview.total_languages),
         Section::Files { rows, total, .. } => (rows.len(), *total),
-        Section::Extensions { rows, total } => (rows.len(), *total),
+        Section::Extensions { rows, total, .. } => (rows.len(), *total),
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
-        // A tree marks its dropped children in place, at the depth they were dropped; a
-        // summary is one row and cannot be bounded.
-        Section::Tree { .. } | Section::Summary(_) => (0, 0),
+        // Trees carry their own omission records; summary cannot be bounded.
+        Section::Tree { .. } | Section::Summary(_) => return None,
     };
-    if shown >= total {
+    (shown < total).then_some((shown, total))
+}
+
+/// Factual row count near a bounded section. Actionable guidance is emitted once at
+/// the end of the report by the shared diagnostic collector.
+fn bound_note(section: &Section) -> String {
+    let Some((shown, total)) = bounded_rows(section) else {
         return String::new();
-    }
-    format!(
-        "  ({} of {}; --limit all for every one)",
-        human_count(shown as u64),
-        human_count(total as u64)
-    )
+    };
+    format!("  ({} of {})", human_count(shown as u64), human_count(total as u64))
 }
 
 /// A bounded flat listing, showing the measure it was ranked by.
@@ -1374,12 +1974,55 @@ fn bound_note(section: &Section) -> String {
 fn render_text_ranked_files(
     out: &mut String,
     rows: &[FileRow],
-    _size: SizeMetric,
+    color: bool,
+    size: Option<SizeMetric>,
     measure: impl Fn(&FileRow) -> String,
 ) {
-    let width = rows.iter().map(|row| measure(row).chars().count()).max().unwrap_or_default();
+    let width = rows.iter().map(|row| display_width(&measure(row))).max().unwrap_or_default();
     for row in rows {
-        let _ = writeln!(out, "{:>width$}  {}", measure(row), row.path.display());
+        let value = size.map_or_else(
+            || format!("{:>width$}", measure(row)),
+            |size| styled_bytes(pick(size, row.bytes, row.allocated), width, color, false),
+        );
+        let _ = writeln!(
+            out,
+            "{}  {}",
+            value,
+            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color)
+        );
+    }
+}
+
+fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
+    let width = rows
+        .iter()
+        .map(|row| row.sort_value.map_or(1, |value| human_count(value).len()))
+        .max()
+        .unwrap_or_default();
+    for row in rows {
+        let value = row.sort_value.map_or_else(|| "—".to_string(), human_count);
+        let classification =
+            row.classification.as_ref().map_or_else(String::new, |classification| {
+                let mut parts =
+                    vec![classification.file_type.as_str(), classification.source.as_str()];
+                if classification.flags.generated {
+                    parts.push("generated");
+                }
+                if classification.flags.vendored {
+                    parts.push("vendored");
+                }
+                if classification.flags.documentation {
+                    parts.push("documentation");
+                }
+                format!(" {}", detail(&format!("({})", parts.join(", ")), color))
+            });
+        let _ = writeln!(
+            out,
+            "{:>width$}  {}{}",
+            value,
+            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color),
+            classification
+        );
     }
 }
 
@@ -1388,16 +2031,17 @@ fn render_text_summary(
     row: &SummaryRow,
     size: SizeMetric,
     selected: IgnoredEntries,
+    color: bool,
 ) {
     let _ = writeln!(
         out,
-        "{:>10}  {} {}, {} {}{}",
-        human_bytes(pick(size, row.bytes, row.allocated)),
-        row.files,
+        "{}  {} {}, {} {}{}",
+        styled_bytes(pick(size, row.bytes, row.allocated), 10, color, false),
+        human_count(row.files),
         plural(row.files, "file", "files"),
-        row.dirs,
+        human_count(row.dirs),
         plural(row.dirs, "directory", "directories"),
-        ignored_suffix(row.ignored, size, selected),
+        ignored_suffix(row.ignored, size, selected, color),
     );
 }
 
@@ -1440,6 +2084,7 @@ fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Extensions => "EXTENSIONS",
         ViewSpec::Families => "FAMILIES",
         ViewSpec::Languages => "LANGUAGES",
+        ViewSpec::Code => "CODE",
         ViewSpec::Documents => "DOCUMENTS",
         ViewSpec::Files => "FILES",
         ViewSpec::Largest => "LARGEST",
@@ -1557,15 +2202,45 @@ fn ratio(part: u64, whole: u64) -> f64 {
     share.clamp(0.0, 1.0)
 }
 
-// Rounding a fraction to one of eleven bar widths is exactly the case where float-cast
-// lints have nothing to protect: the value is clamped to [0, 1] before the cast and the
-// result is clamped to WIDTH after it.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-fn bar(share: f64, color: bool) -> String {
-    const WIDTH: usize = 10;
-    let filled = ((share.clamp(0.0, 1.0) * WIDTH as f64).round() as usize).min(WIDTH);
-    let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(WIDTH - filled));
-    paint(&rendered, STYLE_BAR, color)
+// Rounding a bounded share to a requested bar width is presentation arithmetic:
+// clamp the ratio and the resulting cell count before constructing the glyphs.
+/// Nearest whole-cell share, with half cells rounded up and no floating-point loss.
+fn bar_cells(part: u64, whole: u64, width: usize) -> usize {
+    if whole == 0 {
+        return 0;
+    }
+    let numerator = u128::from(part.min(whole)) * width as u128;
+    usize::try_from((numerator + u128::from(whole) / 2) / u128::from(whole))
+        .expect("a bounded share fits the supplied width")
+}
+
+/// Split a colored bar into measured populations; plain bars retain their glyphs.
+/// Round the total against the root, then apportion its visible cells by the row's
+/// population ratio. Independent root-relative rounding can erase a majority ignored
+/// population in a one-cell bar. Shading distinguishes populations within green;
+/// unknown classification uses medium shading. Numeric columns remain authoritative.
+fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let filled = bar_cells(bytes, total, width);
+    if !color {
+        return format!("{}{}", "█".repeat(filled), "░".repeat(width - filled));
+    }
+    if ignored.is_none() {
+        return format!(
+            "{}{}",
+            paint(&"▒".repeat(filled), STYLE_BAR, true),
+            paint(&"░".repeat(width - filled), STYLE_BAR.dimmed(), true)
+        );
+    }
+    let ignored = bar_cells(ignored.unwrap_or(0), bytes, filled);
+    format!(
+        "{}{}{}",
+        paint(&"█".repeat(filled - ignored), STYLE_BAR, true),
+        paint(&"▓".repeat(ignored), STYLE_BAR, true),
+        paint(&"░".repeat(width - filled), STYLE_BAR.dimmed(), true)
+    )
 }
 
 /// Render a count with thousands separators, the way every fdu report does.
@@ -1574,6 +2249,14 @@ fn bar(share: f64, color: bool) -> String {
 /// depended on its own front end, which is the inverse of the rule that the CLI invents
 /// nothing. A crate boundary rejects that outright, which is how it was found.
 pub fn human_count(value: u64) -> String {
+    human_count_u128(u128::from(value))
+}
+
+/// Group a full-width count using the same human policy as [`human_count`].
+///
+/// Keep the grouping rule here so a future locale or no-grouping choice changes both
+/// widths together without losing precision in rates wider than u64.
+pub fn human_count_u128(value: u128) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, byte) in digits.bytes().enumerate() {
@@ -1604,12 +2287,12 @@ pub fn human_bytes(bytes: u64) -> String {
         unit += 1;
     }
     if unit == 0 {
-        format!("{bytes} B")
+        format!("{} B", human_count(bytes))
     } else if whole < 10 {
         let tenths = (remainder * 10) / 1024;
-        format!("{whole}.{tenths} {}", UNITS[unit])
+        format!("{}.{tenths} {}", human_count(whole), UNITS[unit])
     } else {
-        format!("{whole} {}", UNITS[unit])
+        format!("{} {}", human_count(whole), UNITS[unit])
     }
 }
 
@@ -1770,6 +2453,17 @@ pub fn render_cache_status(
     scope: crate::CacheScope,
     format: Format,
 ) -> String {
+    render_cache_status_with_options(statuses, scope, format, RenderOptions::default())
+}
+
+/// Render cache status with the same human color roles as report rows.
+/// Machine formats ignore the presentation options; cache text has no usage bar.
+pub fn render_cache_status_with_options(
+    statuses: &[crate::CacheStatus],
+    scope: crate::CacheScope,
+    format: Format,
+    options: RenderOptions,
+) -> String {
     match format {
         Format::Jsonl => {
             let mut sink = JsonSink::line();
@@ -1792,7 +2486,7 @@ pub fn render_cache_status(
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
         Format::Text | Format::Tree | Format::Paths | Format::Long => {
-            render_cache_status_text(statuses, scope)
+            render_cache_status_text(statuses, scope, options.color)
         }
         Format::Json => render_cache_machine(statuses, JsonSink::pretty()),
     }
@@ -1968,6 +2662,8 @@ fn entry_identity_field(identity: crate::EntryTierIdentity) -> CacheField {
         ("one_filesystem", CacheField::Bool(scope.one_filesystem)),
         ("hidden_fingerprint", CacheField::Count(scope.hidden_fingerprint)),
         ("exclude_special", CacheField::Bool(scope.exclude_special)),
+        ("population", CacheField::Text(scope.population.label().to_string())),
+        ("control_fingerprint", CacheField::Count(scope.control_fingerprint)),
         ("type_rules_fingerprint", CacheField::Count(identity.type_rules_fingerprint)),
         ("reducers_fingerprint", CacheField::Count(identity.reducers_fingerprint)),
     ])
@@ -2002,7 +2698,11 @@ fn content_identity_field(identity: &crate::ContentTierIdentity) -> CacheField {
 
 /// The human cache-status layout: one line per file, then what can be done about the
 /// files this build cannot use.
-fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::CacheScope) -> String {
+fn render_cache_status_text(
+    statuses: &[crate::CacheStatus],
+    scope: crate::CacheScope,
+    color: bool,
+) -> String {
     use crate::{CacheScope, CacheState, LeftoverKind, StaleReason};
 
     let mut lines = Vec::new();
@@ -2022,10 +2722,11 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     .as_ref()
                     .is_some_and(|content| matches!(content.state, crate::ContentState::Stale(_)));
                 lines.push(format!(
-                    "{}  {} entries, {} metadata bytes, {content_bytes} {}content bytes  {}",
+                    "{}  {} entries, {} metadata, {} {}content  {}",
                     status.path.display(),
-                    info.entries,
-                    status.bytes,
+                    human_count(info.entries),
+                    styled_bytes(status.bytes, 0, color, false),
+                    styled_bytes(content_bytes, 0, color, false),
                     if stale_content { "stale " } else { "" },
                     info.root.display()
                 ));
@@ -2045,9 +2746,11 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     StaleReason::Unreadable => "unreadable by this build".to_string(),
                 };
                 lines.push(format!(
-                    "{}  stale ({why}), {} metadata bytes, {content_bytes} content bytes",
+                    "{}  stale {}, {} metadata, {} content",
                     status.path.display(),
-                    status.bytes
+                    detail(&format!("({why})"), color),
+                    styled_bytes(status.bytes, 0, color, false),
+                    styled_bytes(content_bytes, 0, color, false)
                 ));
             }
             CacheState::Leftover(kind) => {
@@ -2061,18 +2764,19 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     LeftoverKind::OrphanedContent => "orphaned content sidecar",
                 };
                 lines.push(format!(
-                    "{}  leftover ({what}), {} bytes",
+                    "{}  leftover {}, {}",
                     status.path.display(),
-                    status.bytes
+                    detail(&format!("({what})"), color),
+                    styled_bytes(status.bytes, 0, color, false)
                 ));
             }
             CacheState::Unrecognized => {
                 unrecognized += 1;
                 unrecognized_bytes = unrecognized_bytes.saturating_add(status.bytes);
                 lines.push(format!(
-                    "{}  unrecognized, {} bytes",
+                    "{}  unrecognized, {}",
                     status.path.display(),
-                    status.bytes
+                    styled_bytes(status.bytes, 0, color, false)
                 ));
             }
             // Root scope synthesises a status for the path a snapshot *would* occupy, so a
@@ -2089,7 +2793,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
         let (subject, object) = if stale == 1 {
             ("1 stale snapshot".to_string(), "it")
         } else {
-            (format!("{stale} stale snapshots"), "them")
+            (format!("{} stale snapshots", human_count_u128(stale as u128)), "them")
         };
         let remedy = match scope {
             CacheScope::Root => format!("fdu --cache-clear PATH removes {object}"),
@@ -2099,7 +2803,8 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             }
         };
         lines.push(format!(
-            "{subject} ({stale_bytes} bytes) cannot be served by this build; {remedy}."
+            "{subject} {} cannot be served by this build; {remedy}.",
+            cache_size_detail(stale_bytes, color)
         ));
     }
     if leftover > 0 {
@@ -2109,7 +2814,7 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
         let (subject, predicate, object) = if leftover == 1 {
             ("1 leftover file".to_string(), "is", "it")
         } else {
-            (format!("{leftover} leftover files"), "are", "them")
+            (format!("{} leftover files", human_count_u128(leftover as u128)), "are", "them")
         };
         // A staging file is reclaimed only once it is too old to belong to a running
         // writer, and a status knows no file's age, so the promise names the exception
@@ -2120,21 +2825,31 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             ""
         };
         lines.push(format!(
-            "{subject} ({leftover_bytes} bytes) {predicate} fdu's own, left by an interrupted \
-             write; fdu --cache-clear=all reclaims {object}{caveat}."
+            "{subject} {} {predicate} fdu's own, left by an interrupted \
+             write; fdu --cache-clear=all reclaims {object}{caveat}.",
+            cache_size_detail(leftover_bytes, color)
         ));
     }
     if unrecognized > 0 {
         let (subject, predicate, object) = if unrecognized == 1 {
             ("1 unrecognized file".to_string(), "is not an fdu snapshot", "it")
         } else {
-            (format!("{unrecognized} unrecognized files"), "are not fdu snapshots", "them")
+            (
+                format!("{} unrecognized files", human_count_u128(unrecognized as u128)),
+                "are not fdu snapshots",
+                "them",
+            )
         };
         lines.push(format!(
-            "{subject} ({unrecognized_bytes} bytes) {predicate}, so fdu leaves {object} in place."
+            "{subject} {} {predicate}, so fdu leaves {object} in place.",
+            cache_size_detail(unrecognized_bytes, color)
         ));
     }
     lines.join("\n")
+}
+
+fn cache_size_detail(bytes: u64, color: bool) -> String {
+    format!("{}{}{}", detail("(", color), styled_bytes(bytes, 0, color, true), detail(")", color))
 }
 
 #[cfg(test)]
@@ -2146,7 +2861,7 @@ mod tests {
     use super::*;
     use crate::Index;
     use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
-    use crate::query::{Bound, Query, Request, Selection};
+    use crate::query::{Bound, Query, Request, Selection, ShareThreshold};
     use std::ffi::OsStr;
     use std::path::PathBuf;
     use std::process::Command;
@@ -2206,6 +2921,8 @@ mod tests {
                     one_filesystem: true,
                     hidden_fingerprint: 2,
                     exclude_special: false,
+                    population: IgnoredEntries::Include,
+                    control_fingerprint: 0,
                 },
                 type_rules_fingerprint: 3,
                 reducers_fingerprint: 4,
@@ -2235,14 +2952,29 @@ mod tests {
         ];
         assert_eq!(
             render_cache_status(&stale, CacheScope::All, Format::Text),
-            "a.fdu  stale (older snapshot format 2), 10 metadata bytes, 5 content bytes\n\
-             b.fdu  stale (newer snapshot format 99), 20 metadata bytes, 5 content bytes\n\
-             c.fdu  stale (written by another fdu version), 30 metadata bytes, 5 content bytes\n\
-             d.fdu  stale (unreadable by this build), 40 metadata bytes, 5 content bytes\n\
-             notes.txt  unrecognized, 14 bytes\n\
-             4 stale snapshots (120 bytes) cannot be served by this build; \
+            "a.fdu  stale (older snapshot format 2), 10 B metadata, 5 B content\n\
+             b.fdu  stale (newer snapshot format 99), 20 B metadata, 5 B content\n\
+             c.fdu  stale (written by another fdu version), 30 B metadata, 5 B content\n\
+             d.fdu  stale (unreadable by this build), 40 B metadata, 5 B content\n\
+             notes.txt  unrecognized, 14 B\n\
+             4 stale snapshots (120 B) cannot be served by this build; \
              fdu --cache-clear=all removes them.\n\
-             1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place."
+             1 unrecognized file (14 B) is not an fdu snapshot, so fdu leaves it in place."
+        );
+        let colored = render_cache_status_with_options(
+            &stale,
+            CacheScope::All,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert!(colored.contains(&detail("(older snapshot format 2)", true)), "{colored:?}");
+        assert!(
+            colored.contains(&format!("4 stale snapshots {} cannot", cache_size_detail(120, true))),
+            "{colored:?}"
+        );
+        assert_eq!(
+            strip_ansi(&colored),
+            render_cache_status(&stale, CacheScope::All, Format::Text)
         );
 
         // fdu's own debris is named as fdu's, so a reader is not told to leave it alone.
@@ -2252,31 +2984,31 @@ mod tests {
                 60,
                 CacheState::Leftover(LeftoverKind::StagingTemporary),
             ),
-            cache_file("h.fdu.content", 70, CacheState::Leftover(LeftoverKind::OrphanedContent)),
+            cache_file("h.analysis.bin", 70, CacheState::Leftover(LeftoverKind::OrphanedContent)),
         ];
         assert_eq!(
             render_cache_status(&leftovers, CacheScope::All, Format::Text),
-            ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 bytes\n\
-             h.fdu.content  leftover (orphaned content sidecar), 70 bytes\n\
-             2 leftover files (130 bytes) are fdu's own, left by an interrupted write; \
+            ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 B\n\
+             h.analysis.bin  leftover (orphaned content sidecar), 70 B\n\
+             2 leftover files (130 B) are fdu's own, left by an interrupted write; \
              fdu --cache-clear=all reclaims them, though a staging file waits until it is \
              too old to be a running writer's."
         );
         assert!(render_cache_status(&leftovers[..1], CacheScope::Root, Format::Text).ends_with(
-            "1 leftover file (60 bytes) is fdu's own, left by an interrupted write; \
+            "1 leftover file (60 B) is fdu's own, left by an interrupted write; \
                  fdu --cache-clear=all reclaims it, though a staging file waits until it \
                  is too old to be a running writer's."
         ));
         // With no staging file listed, nothing is held back and the promise is plain: a
         // status that named an exception with no file it could apply to would be noise.
         assert!(render_cache_status(&leftovers[1..], CacheScope::All, Format::Text).ends_with(
-            "1 leftover file (70 bytes) is fdu's own, left by an interrupted write; \
+            "1 leftover file (70 B) is fdu's own, left by an interrupted write; \
                  fdu --cache-clear=all reclaims it."
         ));
 
         let root = [cache_file("a.fdu", 10, CacheState::Stale(StaleReason::OtherEngine))];
         assert!(render_cache_status(&root, CacheScope::Root, Format::Text).ends_with(
-            "1 stale snapshot (15 bytes) cannot be served by this build; \
+            "1 stale snapshot (15 B) cannot be served by this build; \
                  fdu --cache-clear PATH removes it."
         ));
 
@@ -2291,12 +3023,12 @@ mod tests {
         );
         let mixed = [stale[0].clone(), current, stale[4].clone(), stale[4].clone()];
         assert!(render_cache_status(&mixed, CacheScope::All, Format::Text).ends_with(
-            "e.fdu  3 entries, 50 metadata bytes, 0 content bytes  /tree\n\
-             notes.txt  unrecognized, 14 bytes\n\
-             notes.txt  unrecognized, 14 bytes\n\
-             1 stale snapshot (15 bytes) cannot be served by this build; \
+            "e.fdu  3 entries, 50 B metadata, 0 B content  /tree\n\
+             notes.txt  unrecognized, 14 B\n\
+             notes.txt  unrecognized, 14 B\n\
+             1 stale snapshot (15 B) cannot be served by this build; \
              fdu --cache-clear=all removes it, along with every current snapshot.\n\
-             2 unrecognized files (28 bytes) are not fdu snapshots, so fdu leaves them in place."
+             2 unrecognized files (28 B) are not fdu snapshots, so fdu leaves them in place."
         ));
 
         let absent = [cache_file("f.fdu", 0, CacheState::Absent)];
@@ -2312,7 +3044,7 @@ mod tests {
                 CacheScope::All,
                 Format::Jsonl
             ),
-            "{\"schema\": \"fdu.cache/2\"}\n\
+            "{\"schema\": \"fdu.cache/3\"}\n\
              {\"path\": \"a.fdu\", \"bytes\": 10, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 2, \"content\": {\"bytes\": 5, \"state\": \"stale\", \"stale_reason\": \"older_format\", \"format_version\": 4}}\n\
              {\"path\": \"f.fdu\", \"bytes\": 0, \"state\": \"absent\", \"content\": null}\n\
              {\"path\": \"notes.txt\", \"bytes\": 14, \"state\": \"unrecognized\", \"content\": null}\n\
@@ -2320,25 +3052,25 @@ mod tests {
         );
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Jsonl),
-            "{\"schema\": \"fdu.cache/2\"}"
+            "{\"schema\": \"fdu.cache/3\"}"
         );
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Json),
-            "{\n  \"schema\": \"fdu.cache/2\",\n  \"caches\": []\n}\n"
+            "{\n  \"schema\": \"fdu.cache/3\",\n  \"caches\": []\n}\n"
         );
         // An empty sequence in both formats: a bare `caches:` is YAML null, and a reader
         // of one schema should not have to tell null from a list it can iterate.
         assert_eq!(
             render_cache_status(&[], CacheScope::All, Format::Yaml),
-            "schema: fdu.cache/2\ncaches: []\n"
+            "schema: fdu.cache/3\ncaches: []\n"
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Json)
-                .starts_with("{\n  \"schema\": \"fdu.cache/2\",\n  \"caches\": [\n    {")
+                .starts_with("{\n  \"schema\": \"fdu.cache/3\",\n  \"caches\": [\n    {")
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml)
-                .starts_with("schema: fdu.cache/2\ncaches:\n  -\n    path: c.fdu")
+                .starts_with("schema: fdu.cache/3\ncaches:\n  -\n    path: c.fdu")
         );
         assert!(
             render_cache_status(&stale[2..3], CacheScope::All, Format::Yaml).ends_with(
@@ -2388,11 +3120,12 @@ mod tests {
         };
         let entries = "{\"engine\": 1, \"max_depth\": null, \"follow_symlinks\": false, \
                        \"one_filesystem\": true, \"hidden_fingerprint\": 2, \"exclude_special\": false, \
+                       \"population\": \"include\", \"control_fingerprint\": 0, \
                        \"type_rules_fingerprint\": 3, \"reducers_fingerprint\": 4}";
         assert_eq!(
             render_cache_status(std::slice::from_ref(&status), CacheScope::Root, Format::Jsonl),
             format!(
-                "{{\"schema\": \"fdu.cache/2\"}}\n\
+                "{{\"schema\": \"fdu.cache/3\"}}\n\
                  {{\"path\": \"e.fdu\", \"bytes\": 50, \"state\": \"current\", \"root\": \"/tree\", \
                  \"entries\": 3, \"identity\": {{\"entries\": {entries}, \"ignore_rules\": \
                  {{\"limits\": {{\"budget\": 10, \"line_limit\": null}}}}}}, \"content\": {{\"bytes\": 9, \
@@ -2404,11 +3137,12 @@ mod tests {
         let entries = "\n          engine: 1\n          max_depth: null\n          \
                        follow_symlinks: false\n          one_filesystem: true\n          \
                        hidden_fingerprint: 2\n          exclude_special: false\n          \
+                       population: include\n          control_fingerprint: 0\n          \
                        type_rules_fingerprint: 3\n          reducers_fingerprint: 4";
         assert_eq!(
             render_cache_status(std::slice::from_ref(&status), CacheScope::Root, Format::Yaml),
             format!(
-                "schema: fdu.cache/2\ncaches:\n  -\n    path: e.fdu\n    bytes: 50\n    state: current\n    \
+                "schema: fdu.cache/3\ncaches:\n  -\n    path: e.fdu\n    bytes: 50\n    state: current\n    \
                  root: /tree\n    entries: 3\n    identity:\n      entries:{}\n      \
                  ignore_rules:\n        limits:\n          budget: 10\n          line_limit: null\n    \
                  content:\n      bytes: 9\n      state: current\n      records: 2\n      identity:\n        \
@@ -2418,6 +3152,53 @@ mod tests {
                 entries.replace("\n  ", "\n")
             )
         );
+        let mut large = status.clone();
+        large.bytes = 60_696_111;
+        large.content.as_mut().expect("fixture has a content sidecar").bytes = 120_783_062;
+        assert_eq!(
+            render_cache_status(std::slice::from_ref(&large), CacheScope::Root, Format::Text),
+            "e.fdu  3 entries, 57 MiB metadata, 115 MiB content  /tree"
+        );
+        let colored = render_cache_status_with_options(
+            std::slice::from_ref(&large),
+            CacheScope::Root,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert_eq!(
+            strip_ansi(&colored),
+            render_cache_status(&[large], CacheScope::Root, Format::Text)
+        );
+        let zero = render_cache_status_with_options(
+            std::slice::from_ref(&status),
+            CacheScope::Root,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert!(!zero.contains("\x1b["), "positive sub-GiB sizes stay unstyled: {zero:?}");
+        let mut zero_and_gib = status.clone();
+        zero_and_gib.bytes = 0;
+        zero_and_gib.content.as_mut().expect("fixture has a content sidecar").bytes = 1 << 30;
+        let colored = render_cache_status_with_options(
+            std::slice::from_ref(&zero_and_gib),
+            CacheScope::Root,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert!(colored.contains(&paint("0 B", STYLE_DETAIL, true)), "{colored:?}");
+        assert!(colored.contains(&paint("1.0 GiB", AnsiStyle::new().bold(), true)), "{colored:?}");
+        assert_eq!(strip_ansi(&colored), "e.fdu  3 entries, 0 B metadata, 1.0 GiB content  /tree");
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            assert_eq!(
+                render_cache_status_with_options(
+                    std::slice::from_ref(&status),
+                    CacheScope::Root,
+                    format,
+                    RenderOptions { color: true, ..RenderOptions::default() },
+                ),
+                render_cache_status(std::slice::from_ref(&status), CacheScope::Root, format)
+            );
+        }
         // A sidecar this build cannot serve is named in text too.
         let stale_content = crate::CacheStatus {
             content: Some(ContentStatus {
@@ -2428,7 +3209,7 @@ mod tests {
         };
         assert_eq!(
             render_cache_status(&[stale_content], CacheScope::Root, Format::Text),
-            "e.fdu  3 entries, 50 metadata bytes, 9 stale content bytes  /tree"
+            "e.fdu  3 entries, 50 B metadata, 9 B stale content  /tree"
         );
     }
 
@@ -2438,7 +3219,7 @@ mod tests {
     /// for — `recognized` to `state` — cannot happen again without a version to key on.
     #[test]
     fn the_cache_schema_constant_is_the_versioning_promise() {
-        assert_eq!(CACHE_SCHEMA, "fdu.cache/2");
+        assert_eq!(CACHE_SCHEMA, "fdu.cache/3");
         for format in [Format::Json, Format::Jsonl, Format::Yaml] {
             let rendered = render_cache_status(&[], crate::CacheScope::All, format);
             assert!(rendered.contains(CACHE_SCHEMA), "{format:?} carries no schema: {rendered}");
@@ -2510,7 +3291,12 @@ mod tests {
 
         let text = render(&bounded, Format::Text, false);
         assert!(text.contains(&format!("(1 of {full}")), "the header states the bound: {text}");
-        assert!(text.contains("--limit all"), "and names the flag that lifts it: {text}");
+        assert!(!text.contains("--limit"), "actionable guidance stays out of the body: {text}");
+        assert_eq!(
+            report_tips(&bounded),
+            vec!["tip: show more rows: limit=all"],
+            "the shared epilogue names the row remedy once"
+        );
         let json = render(&bounded, Format::Json, false);
         assert!(json.contains(&format!("\"shown\": 1, \"total\": {full}")), "{json:.200}");
         let yaml = render(&bounded, Format::Yaml, false);
@@ -2523,25 +3309,25 @@ mod tests {
     /// only ever sees the uncoloured form, which is exactly how the extensions view
     /// shipped misaligned — `{:<12}` counted the escape sequences toward the field width,
     /// so the padding collapsed the moment colour was on and every golden still passed.
+    fn strip_ansi(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut chars = text.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for escape in chars.by_ref() {
+                    if escape.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
     #[test]
     fn colour_never_changes_the_layout_of_any_view() {
-        fn strip_ansi(text: &str) -> String {
-            let mut out = String::with_capacity(text.len());
-            let mut chars = text.chars();
-            while let Some(c) = chars.next() {
-                if c == '\u{1b}' {
-                    for escape in chars.by_ref() {
-                        if escape.is_ascii_alphabetic() {
-                            break;
-                        }
-                    }
-                } else {
-                    out.push(c);
-                }
-            }
-            out
-        }
-
         for view in [
             ViewSpec::Tree,
             ViewSpec::Extensions,
@@ -2554,9 +3340,8 @@ mod tests {
             let report = fixture(&[view]);
             let plain = render(&report, Format::Text, false);
             let coloured = render(&report, Format::Text, true);
-            // Two views carry no label to style: `files` is a bare listing of paths meant
-            // for piping, and `summary` is one aggregate line. Everything that draws a
-            // label draws it styled, and this catches a view that quietly stops.
+            // Files is a bare listing meant for piping; this summary has no ignored
+            // contribution to annotate. The other fixtures have a styled label.
             let styles_a_label = !matches!(view, ViewSpec::Files | ViewSpec::Summary);
             assert_eq!(
                 plain != coloured,
@@ -2564,7 +3349,7 @@ mod tests {
                 "{view:?} disagrees with whether it styles a label"
             );
             assert_eq!(
-                strip_ansi(&coloured),
+                strip_ansi(&coloured).replace('·', "░").replace('▒', "█"),
                 plain,
                 "{view:?} lays out differently once colour is on"
             );
@@ -2574,13 +3359,13 @@ mod tests {
     /// The rule the helper exists to enforce, stated directly.
     #[test]
     fn a_label_cell_is_measured_on_visible_text() {
-        let plain = label_cell("md", 6, STYLE_TYPE, false);
-        let coloured = label_cell("md", 6, STYLE_TYPE, true);
+        let plain = label_cell("md", 6, STYLE_CATEGORY, false);
+        let coloured = label_cell("md", 6, STYLE_CATEGORY, true);
         assert_eq!(plain, "md    ", "four spaces of padding");
         assert!(coloured.starts_with('\u{1b}'), "the label is styled");
         assert!(coloured.ends_with("    "), "and padded by the same four: {coloured:?}");
         // A label at or past the width gets no padding rather than a negative one.
-        assert_eq!(label_cell("verylonglabel", 4, STYLE_TYPE, false), "verylonglabel");
+        assert_eq!(label_cell("verylonglabel", 4, STYLE_CATEGORY, false), "verylonglabel");
     }
 
     /// Every view, so a matrix test cannot silently skip one that was added later.
@@ -2932,8 +3717,10 @@ mod tests {
         assert_eq!(
             text,
             concat!(
-                "     120 B  ██████████   100%  . (2 files)\n",
-                "     100 B  ████████░░    83%    src (1 file)\n",
+                "██████████   100%       120 B  . 2 files\n",
+                "████████░░    83%       100 B    src/ 1 file\n",
+                "████████░░    83%       100 B      main.rs\n",
+                "██░░░░░░░░    17%        20 B    notes.md\n",
             )
         );
 
@@ -3101,7 +3888,7 @@ mod tests {
         }
 
         let mut report = fixture(&[ViewSpec::Tree]);
-        let Section::Tree { root, .. } = &mut report.sections[0] else {
+        let Section::Tree { root: Some(root), .. } = &mut report.sections[0] else {
             panic!("tree fixture must contain a tree");
         };
         let template = root.children[0].clone();
@@ -3159,7 +3946,11 @@ mod tests {
             &crate::test_support::read_of(
                 &index,
                 Query {
-                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
+                    selection: Selection {
+                        depth: Some(Bound::All),
+                        min_share: Some(crate::query::ShareThreshold::parse("0%").expect("share")),
+                        ..Selection::default()
+                    },
                     views: vec![ViewSpec::Tree],
                     ..Query::default()
                 },
@@ -3200,7 +3991,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/7\""));
+        assert!(json.contains("\"schema\": \"fdu.report/10\""));
         assert!(json.contains("\"request\": {"));
         assert!(json.contains("\"status\": {"));
         assert!(json.contains("\"provenance\": {"));
@@ -3215,7 +4006,7 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/7");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/10");
         assert_eq!(CONTENT_REPORT_SCHEMA, REPORT_SCHEMA);
     }
 
@@ -3280,7 +4071,7 @@ mod tests {
         );
         let expected = format!(
             "\"ignore_rules\": {{\"limits\": {{\"budget\": 4194304, \"line_limit\": 16384}}, \
-             \"applied\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
+             \"applied\": 1, \"rules\": 1, \"refused\": 1, \"refusals\": [{{\"path\": {}, \"reason\": \
              \"line_limit\"}}]}}",
             quote(&refused)
         );
@@ -3297,31 +4088,32 @@ mod tests {
             false,
         );
         let expected = format!(
-            "ignore_rules:\n  limits: {{budget: 4194304, line_limit: 16384}}\n  applied: 1\n  \
+            "ignore_rules:\n  limits: {{budget: 4194304, line_limit: 16384}}\n  applied: 1\n  rules: 1\n  \
              refused: 1\n  refusals:\n    -\n      path: {}\n      reason: line_limit\n",
             yaml_scalar(&refused)
         );
         assert!(yaml.contains(&expected), "{yaml}");
 
         let flags = Query { axes: &crate::query::AxisNames::FLAGS, ..query.clone() };
-        let note = "note: 1 .gitignore file not applied (1 with a line over the 16 KiB line \
-                    limit), so ignored shares under vendor are not exact; sizes are. To apply \
-                    them, raise --gitignore-line-limit above 16 KiB, or set it to all";
-        let text = render(
-            &report(
-                &observed,
-                &crate::test_support::read_of(&observed, flags.clone()),
-                &provenance,
-            )
-            .expect("report"),
-            Format::Text,
-            false,
-        );
-        assert!(text.ends_with(&format!("{note}\n")), "{text}");
-        let fields =
-            report(&observed, &crate::test_support::read_of(&observed, query.clone()), &provenance)
+        let candidate =
+            report(&observed, &crate::test_support::read_of(&observed, flags), &provenance)
                 .expect("report");
-        assert_eq!(fields.notes, [note.replace("--gitignore-line-limit", "control_line_limit")]);
+        let text = render(&candidate, Format::Text, false);
+        assert!(
+            !text.contains("note:") && !text.contains("tip:"),
+            "stdout holds only formatted data"
+        );
+        let lines = diagnostics(&candidate);
+        assert!(
+            lines.iter().any(|line| line.starts_with("note: ignore classification incomplete:")
+                && line.contains("vendor"))
+        );
+        assert!(lines.last().expect("remedy").contains("--gitignore-line-limit"));
+        let fields =
+            report(&observed, &crate::test_support::read_of(&observed, query), &provenance)
+                .expect("report");
+        assert!(report_tips(&fields).iter().any(|tip| tip.contains("control_line_limit")));
+        assert!(!diagnostics(&fields).iter().any(|line| line.contains("--gitignore-line-limit")));
     }
 
     /// Every row that carries an ignored share says so in every format: text appends it
@@ -3399,15 +4191,17 @@ mod tests {
             text,
             concat!(
                 "SUMMARY\n",
-                "     164 B  2 files, 2 directories (128 B ignored)\n",
+                "     164 B  2 files, 2 directories (128 B gitignored)\n",
                 "\n",
                 "TREE\n",
-                "     164 B  ██████████   100%  . (2 files) (128 B ignored)\n",
-                "     128 B  ████████░░    78%    dist (1 file) (128 B ignored)\n",
-                "      36 B  ██░░░░░░░░    22%    src (1 file)\n",
+                "██████████   100%       164 B  . 2 files (128 B gitignored)\n",
+                "████████░░    78%       128 B    dist/ 1 file (128 B gitignored)\n",
+                "████████░░    78%       128 B      a.gz (128 B gitignored)\n",
+                "██░░░░░░░░    22%        36 B    src/ 1 file\n",
+                "██░░░░░░░░    22%        36 B      b.rs\n",
                 "\n",
                 "EXTENSIONS\n",
-                "     128 B  .gz          1 file (128 B ignored)\n",
+                "     128 B  .gz          1 file (128 B gitignored)\n",
                 "      36 B  .rs          1 file\n",
                 "\n",
                 "FILES\n",
@@ -3416,14 +4210,24 @@ mod tests {
                 "src\n",
                 "src/b.rs\n",
             )
-            .replace('/', std::path::MAIN_SEPARATOR_STR)
+            .replace("dist/a.gz", &format!("dist{}a.gz", std::path::MAIN_SEPARATOR))
+            .replace("src/b.rs", &format!("src{}b.rs", std::path::MAIN_SEPARATOR))
         );
         // A share of ignored directories alone holds no bytes, so text says nothing of it.
         let dirs_only = IgnoredTally { files: 0, dirs: 1, bytes: 0, allocated: 0 };
         assert_eq!(
-            ignored_suffix(Some(dirs_only), SizeMetric::Apparent, IgnoredEntries::Include),
+            ignored_suffix(Some(dirs_only), SizeMetric::Apparent, IgnoredEntries::Include, false),
             ""
         );
+        let large_ignored = IgnoredTally { files: 1, dirs: 0, bytes: 1 << 30, allocated: 1 << 30 };
+        let suffix = ignored_suffix(
+            Some(large_ignored),
+            SizeMetric::Apparent,
+            IgnoredEntries::Include,
+            true,
+        );
+        assert!(suffix.contains(&paint("1.0 GiB", STYLE_DETAIL.bold(), true)), "{suffix:?}");
+        assert_eq!(strip_ansi(&suffix), " (1.0 GiB gitignored)");
         let only = render(
             &report(
                 &observed,
@@ -3452,12 +4256,12 @@ mod tests {
         for expected in [
             "\"summary\": {\"files\": 2, \"dirs\": 2, \"bytes\": 164, \"allocated\": 1024, \
              \"ignored\": {\"files\": 1, \"dirs\": 1, \"bytes\": 128, \"allocated\": 512}, ",
-            "\"name\": \"src\", \"path\": \"src\", \"kind\": \"dir\", \"bytes\": 36, \
+            "\"name\": \"src\", \"path\": \"src\", \"kind\": \"dir\", \"entry_ignored\": false, \"bytes\": 36, \
              \"allocated\": 512, \"files\": 1, \"dirs\": 0, \"ignored\": {\"files\": 0, \
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
              \"ignored\": {\"files\": 1, \"bytes\": 128, \"allocated\": 512}}",
-            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \"ignored\": true}",
+            "\"kind\": \"dir\", \"bytes\": 128, \"allocated\": 512, \"mtime_ns\": 10, \"files\": 1, \"dirs\": 0, \"complete\": true, \"age_ns\": -10, \"ignored\": true, \"sort_value\": null, \"classification\": null}",
         ] {
             assert!(compact.contains(&compact_json(expected)), "missing {expected}\nin {json}");
         }
@@ -3497,11 +4301,11 @@ mod tests {
     #[test]
     fn every_report_uses_one_schema_and_states_nullable_analysis() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/7\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/10\""));
         assert!(metadata.contains("\"analysis\": null"));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/7\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/10\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
@@ -3669,8 +4473,155 @@ mod tests {
         assert!(!plain.contains('\u{1b}'), "uncolored text carries no escapes: {plain:?}");
 
         let colored = render(&fixture(&views), Format::Text, true);
-        assert!(colored.contains(&paint("TREE", STYLE_VIEW_HEADER, true)), "{colored:?}");
-        assert!(colored.contains(&paint("SUMMARY", STYLE_VIEW_HEADER, true)), "{colored:?}");
+        assert!(colored.contains(&paint("TREE", STYLE_HEADING, true)), "{colored:?}");
+        assert!(colored.contains(&paint("SUMMARY", STYLE_HEADING, true)), "{colored:?}");
+    }
+
+    #[test]
+    fn human_rows_style_only_their_semantic_spans() {
+        let ignored = IgnoredTally { files: 1, dirs: 0, bytes: 43, allocated: 43 };
+        let mut tree = fixture(&[ViewSpec::Tree]);
+        let Section::Tree { root: Some(root), .. } = &mut tree.sections[0] else { panic!("tree") };
+        root.name = "a(b)\n界".into();
+        root.files = 3_508;
+        root.ignored = Some(ignored);
+        let plain = render(&tree, Format::Text, false);
+        let colored = render(&tree, Format::Text, true);
+        assert!(
+            colored.contains(&format!(
+                "{} 3,508 files {}",
+                human_name("a(b)\n界", EntryKind::Dir, None, true),
+                detail("(43 B gitignored)", true)
+            )),
+            "{colored:?}"
+        );
+        assert_eq!(strip_ansi(&colored).replace('·', "░").replace('▒', "█"), plain);
+        assert!(!colored.contains("a(b)\n界"));
+
+        let mut summary = fixture(&[ViewSpec::Summary]);
+        let Section::Summary(row) = &mut summary.sections[0] else { panic!("summary") };
+        row.files = 3_508;
+        row.ignored = Some(ignored);
+        let colored = render(&summary, Format::Text, true);
+        assert!(
+            colored.contains(&format!(
+                "3,508 files, 1 directory {}",
+                detail("(43 B gitignored)", true)
+            )),
+            "{colored:?}"
+        );
+        assert_eq!(strip_ansi(&colored), render(&summary, Format::Text, false));
+
+        let mut types = fixture(&[ViewSpec::Extensions]);
+        let Section::Extensions { rows, .. } = &mut types.sections[0] else { panic!("extensions") };
+        rows[0].extension = ".(txt)".into();
+        rows[0].files = 3_508;
+        rows[0].ignored = Some(ignored);
+        let colored = render(&types, Format::Text, true);
+        assert!(colored.contains(&paint(".(txt)", STYLE_CATEGORY, true)), "{colored:?}");
+        assert!(
+            colored.contains(&format!("3,508 files {}", detail("(43 B gitignored)", true))),
+            "{colored:?}"
+        );
+        assert_eq!(strip_ansi(&colored), render(&types, Format::Text, false));
+    }
+
+    #[test]
+    fn metric_breakdowns_and_ranked_paths_keep_span_boundaries() {
+        let mut metrics = fixture(&[ViewSpec::Types]);
+        let Section::Metrics { summary, .. } = &mut metrics.sections[0] else { panic!("metrics") };
+        let row = &mut summary.rows[0];
+        row.files = 1_234;
+        row.metrics.physical_lines = Some(477_298);
+        row.metrics.nonblank_lines = Some(439_949);
+        row.metrics.blank_lines = Some(37_349);
+        let colored = render(&metrics, Format::Text, true);
+        assert!(
+            colored.contains(&format!(
+                "1,234 files, 477,298 lines {}",
+                detail("(439,949 nonblank, 37,349 blank)", true)
+            )),
+            "{colored:?}"
+        );
+        assert_eq!(strip_ansi(&colored), render(&metrics, Format::Text, false));
+
+        let mut largest = fixture(&[ViewSpec::Largest]);
+        let Section::Files { rows, .. } = &mut largest.sections[0] else { panic!("files") };
+        rows[0].path = PathBuf::from("a(b)\n界.rs");
+        let colored = render(&largest, Format::Text, true);
+        assert!(colored.contains(&paint("a(b)\\n界.rs", STYLE_NAME, true)), "{colored:?}");
+        assert_eq!(strip_ansi(&colored), render(&largest, Format::Text, false));
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            assert!(!render(&largest, format, true).contains('\u{1b}'));
+        }
+    }
+
+    #[test]
+    fn code_population_details_keep_known_and_unknown_contributions_visible() {
+        use crate::query::{CodeLanguageRow, MetricShare};
+        let tally = |lines| CodeTally {
+            source_files: 1,
+            analyzed_files: 1,
+            metrics: crate::content::CodeMetrics { code_lines: lines, ..Default::default() },
+            ..Default::default()
+        };
+        let mut overview = CodeOverview {
+            population: IgnoredEntries::Include,
+            selected: CodeTally { source_files: 3, analyzed_files: 3, ..tally(110) },
+            non_ignored: Some(tally(80)),
+            ignored: Some(tally(20)),
+            unknown: tally(10),
+            unclassified_files: 0,
+            analyzed_languages: 1,
+            total_languages: 1,
+            share_omitted: 0,
+            languages: vec![CodeLanguageRow {
+                language: "rust".into(),
+                selected: CodeTally { source_files: 3, analyzed_files: 3, ..tally(110) },
+                non_ignored: Some(tally(80)),
+                ignored: Some(tally(20)),
+                unknown: tally(10),
+                share: MetricShare { numerator: 110, denominator: 110 },
+            }],
+            share_metric: ShareMetric::CodeLines,
+        };
+        let mut report = fixture(&[ViewSpec::Summary]);
+        report.sections = vec![Section::Code(Box::new(overview.clone()))];
+        let colored = render(&report, Format::Text, true);
+        assert!(
+            colored.contains("80 non-gitignored code lines \x1b[90m(20 gitignored)\x1b[0m"),
+            "{colored:?}"
+        );
+        assert!(
+            colored.contains(
+                "\x1b[90m(3/3 analyzed; 80 non-gitignored, 20 gitignored, 10 unknown)\x1b[0m"
+            ),
+            "{colored:?}"
+        );
+        assert_eq!(strip_ansi(&colored), render(&report, Format::Text, false));
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            assert!(!render(&report, format, true).contains('\u{1b}'));
+        }
+        overview.population = IgnoredEntries::Only;
+        overview.non_ignored = None;
+        overview.ignored = None;
+        overview.unknown = CodeTally::default();
+        overview.languages[0].non_ignored = None;
+        overview.languages[0].ignored = None;
+        overview.languages[0].unknown = CodeTally::default();
+        report.sections = vec![Section::Code(Box::new(overview))];
+        let text = render(&report, Format::Text, false);
+        assert!(!text.contains("non-gitignored") && !text.contains(" unknown"), "{text}");
+    }
+
+    #[test]
+    fn percentage_and_unicode_width_keep_small_values_visible() {
+        assert_eq!(human_percentage(1, 10_000, 1), "<0.1%");
+        assert_eq!(human_percentage(1, 10_000, 0), "<1%");
+        assert_eq!(human_percentage(0, 10_000, 1), "0.0%");
+        assert_eq!(human_percentage(0, 0, 1), "—");
+        assert_eq!(label_cell("界", 4, STYLE_CATEGORY, false), "界  ");
+        assert_eq!(label_cell("e\u{301}", 4, STYLE_CATEGORY, false), "e\u{301}   ");
     }
 
     #[test]
@@ -3743,20 +4694,169 @@ mod tests {
     fn human_bytes_reads_at_scale() {
         assert_eq!(human_bytes(0), "0 B");
         assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(999), "999 B");
+        assert_eq!(human_bytes(1000), "1,000 B");
         assert_eq!(human_bytes(1024), "1.0 KiB");
         assert_eq!(human_bytes(1024 * 1024 * 20), "20 MiB");
     }
 
     #[test]
+    fn human_counts_share_one_full_width_grouping_policy() {
+        assert_eq!(human_count(999), "999");
+        assert_eq!(human_count(1000), "1,000");
+        assert_eq!(
+            human_count_u128(u128::MAX),
+            "340,282,366,920,938,463,463,374,607,431,768,211,455"
+        );
+        assert_eq!(human_age(Some(1000 * 86400 * 1_000_000_000)), "1,000d");
+    }
+
+    #[test]
     fn bars_are_fixed_at_ten_cells_and_saturate() {
-        assert_eq!(bar(0.0, false), "░░░░░░░░░░");
-        assert_eq!(bar(0.5, false), "█████░░░░░");
-        assert_eq!(bar(2.0, false), "██████████");
+        assert_eq!(usage_bar(0, 100, Some(0), false, 10), "░░░░░░░░░░");
+        assert_eq!(usage_bar(50, 100, Some(0), false, 10), "█████░░░░░");
+        assert_eq!(usage_bar(200, 100, Some(0), false, 10), "██████████");
         assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
+        assert_eq!(bar_cells(u64::MAX / 2, u64::MAX, 1), 0);
+        assert_eq!(bar_cells(u64::MAX / 2 + 1, u64::MAX, 1), 1);
+    }
+
+    #[test]
+    fn human_styles_respect_exact_thresholds_and_directory_identity() {
+        assert_eq!(styled_bytes(0, 0, true, false), "\x1b[90m0 B\x1b[0m");
+        assert_eq!(styled_bytes(0, 0, false, false), "0 B");
+        let gib = 1 << 30;
+        assert_eq!(styled_bytes(gib - 1, 10, true, false), format!("{:>10}", human_bytes(gib - 1)));
+        assert_eq!(
+            styled_bytes(gib, 10, true, false),
+            paint("   1.0 GiB", AnsiStyle::new().bold(), true)
+        );
+        assert_eq!(styled_bytes(gib, 0, true, true), paint("1.0 GiB", STYLE_DETAIL.bold(), true));
+        assert_eq!(styled_bytes(gib, 0, false, true), "1.0 GiB");
+        assert_eq!(percentage_cell(99, 10_000, 0, 5, true), detail("  <1%", true));
+        assert_eq!(percentage_cell(100, 10_000, 0, 5, true), "   1%");
+        assert_eq!(human_percentage(u64::MAX / 100, u64::MAX, 0), "<1%");
+        assert_eq!(human_percentage(u64::MAX / 100 + 1, u64::MAX, 0), "1%");
+        assert_eq!(human_percentage(u64::MAX / 1_000, u64::MAX, 1), "<0.1%");
+        for name in [".", ".."] {
+            assert_eq!(human_name(name, EntryKind::Dir, None, false), name);
+        }
+        assert_eq!(
+            human_name("build", EntryKind::Dir, None, true),
+            format!("{}{}", paint("build", STYLE_NAME, true), detail("/", true))
+        );
+        assert_eq!(human_name("build", EntryKind::File, None, false), "build");
+        assert_eq!(human_name("build", EntryKind::Dir, None, false), "build/");
+    }
+
+    #[test]
+    fn only_own_ignored_directories_lose_bold_name_styling() {
+        for ignored in [None, Some(false), Some(true)] {
+            let style = if ignored == Some(true) { STYLE_IGNORED_NAME } else { STYLE_NAME };
+            assert_eq!(
+                human_name("node_modules", EntryKind::Dir, ignored, true),
+                format!("{}{}", paint("node_modules", style, true), detail("/", true))
+            );
+            assert_eq!(
+                human_name("file.rs", EntryKind::File, ignored, true),
+                paint("file.rs", STYLE_NAME, true)
+            );
+            assert_eq!(human_name("node_modules", EntryKind::Dir, ignored, false), "node_modules/");
+        }
+    }
+
+    #[test]
+    fn colored_bars_partition_selected_usage_and_keep_ten_cells() {
+        let split = usage_bar(60, 100, Some(20), true, 10);
+        assert_eq!(
+            split,
+            format!(
+                "{}{}{}",
+                paint("████", STYLE_BAR, true),
+                paint("▓▓", STYLE_BAR, true),
+                paint("░░░░", STYLE_BAR.dimmed(), true)
+            )
+        );
+        assert_eq!(strip_ansi(&split).chars().count(), 10);
+        assert_eq!(usage_bar(60, 100, Some(20), false, 10), "██████░░░░");
+        assert_eq!(strip_ansi(&usage_bar(60, 60, Some(60), true, 10)), "▓▓▓▓▓▓▓▓▓▓");
+        assert_eq!(
+            usage_bar(60, 60, Some(60), true, 10),
+            format!(
+                "{}{}{}",
+                paint("", STYLE_BAR, true),
+                paint("▓▓▓▓▓▓▓▓▓▓", STYLE_BAR, true),
+                paint("", STYLE_BAR.dimmed(), true)
+            )
+        );
+        assert_eq!(strip_ansi(&usage_bar(0, 0, None, true, 10)), "░░░░░░░░░░");
+        let mostly_ignored = usage_bar(130, 2_120, Some(96), true, 10);
+        assert_eq!(strip_ansi(&mostly_ignored), "▓░░░░░░░░░");
+        assert!(mostly_ignored.contains("\x1b[32m▓\x1b[0m"));
+        assert_eq!(strip_ansi(&usage_bar(130, 2_120, Some(96), true, 20)), "▓░░░░░░░░░░░░░░░░░░░");
+        assert_eq!(strip_ansi(&usage_bar(130, 2_120, Some(96), true, 100)).matches('▓').count(), 4);
+    }
+
+    #[test]
+    fn render_options_resize_or_remove_tree_bars_without_changing_data() {
+        let report = fixture_for(&Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection {
+                size: SizeMetric::Apparent,
+                depth: Some(Bound::Limit(0)),
+                ..Selection::default()
+            },
+            ..Query::default()
+        });
+        for width in [0, 10, 20] {
+            let options = RenderOptions { color: false, bar_size: width };
+            let text = render_with_options(&report, Format::Text, options).expect("tree");
+            let lines = text.lines().collect::<Vec<_>>();
+            assert_eq!(lines.len(), 2, "{width}: {text:?}");
+            for line in &lines {
+                if width == 0 {
+                    assert!(line.starts_with(" 100%"), "{line:?}");
+                } else {
+                    assert!(line.starts_with(&"█".repeat(width)), "{line:?}");
+                    assert!(line["█".repeat(width).len()..].starts_with("   100%"));
+                }
+            }
+            assert!(lines[0].ends_with("120 B  . 2 files"), "{text:?}");
+            assert!(lines[1].ends_with("120 B    … and 2 more files"), "{text:?}");
+            let mut streamed = Vec::new();
+            write_with_options(&report, Format::Text, options, &mut streamed).expect("stream");
+            assert_eq!(streamed, text.as_bytes());
+        }
+        assert_eq!(
+            render_with_options(&report, Format::Json, RenderOptions { color: true, bar_size: 20 })
+                .expect("machine"),
+            render(&report, Format::Json, false)
+        );
+        let excessive = RenderOptions { color: false, bar_size: MAX_BAR_SIZE + 1 };
+        assert!(
+            render_with_options(&report, Format::Text, excessive)
+                .expect_err("tree width must be bounded")
+                .to_string()
+                .contains("bar_size")
+        );
+        let mut output = Vec::new();
+        assert_eq!(
+            write_with_options(&report, Format::Text, excessive, &mut output)
+                .expect_err("streaming tree width must be bounded")
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert!(output.is_empty());
+        let summary = fixture(&[ViewSpec::Summary]);
+        assert_eq!(
+            render_with_options(&summary, Format::Text, excessive).expect("no tree bar"),
+            render(&summary, Format::Text, false)
+        );
     }
 
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
     const DEEP_RENDER_DEPTH: usize = 1_024;
+    const DEEP_REPORT_STACK_BYTES: usize = 128 * 1_024;
     const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
 
     // ---- renderer tests that lived in the command line -------------------------------
@@ -3801,8 +4901,11 @@ mod tests {
     const DEEP_RENDER_TEST_PATH: &str = "report_format::tests::deep_rendering_is_stack_safe";
 
     fn run_deep_render_child() {
-        // A deep tree must render, not abort: expansion and all three renderers use
-        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
+        // A deep tree must build and render without depth-recursive stack growth.
+        // Windows reserves 20 KiB of a spawned thread's stack for overflow handling;
+        // a 64 KiB reservation leaves too little dependable room for report setup in
+        // debug builds. Keep construction bounded at 128 KiB, then test rendering and
+        // release separately on the original 64 KiB stack.
         let mut index = crate::Index::new("/fixture");
         let mut path = PathBuf::new();
         for depth in 0..DEEP_RENDER_DEPTH {
@@ -3818,12 +4921,18 @@ mod tests {
         }
         index.set_initial_freshness(false);
 
-        std::thread::Builder::new()
-            .name("deep-render".to_string())
-            .stack_size(DEEP_RENDER_STACK_BYTES)
+        let report = std::thread::Builder::new()
+            .name("deep-report".to_string())
+            .stack_size(DEEP_REPORT_STACK_BYTES)
             .spawn(move || {
                 let query = Query {
-                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
+                    selection: Selection {
+                        depth: Some(Bound::All),
+                        breadth: Some(Bound::All),
+                        limit: Some(Bound::All),
+                        min_share: Some(ShareThreshold::parse("0%").expect("zero share is valid")),
+                        ..Selection::default()
+                    },
                     views: vec![ViewSpec::Tree],
                     ..Query::default()
                 };
@@ -3834,21 +4943,47 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
-                let report = report(
-                    &index,
-                    &crate::test_support::read_of(&index, query.clone()),
-                    &provenance,
-                )
-                .expect("report");
+                eprintln!("deep-render phase: request");
+                let request = crate::test_support::read_of(&index, query);
+                eprintln!("deep-render phase: report");
+                let report = report(&index, &request, &provenance).expect("report");
+                eprintln!("deep-render phase: verify tree");
+                let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
+                    panic!("expected a tree section with a root")
+                };
+                assert!(omissions.is_empty(), "the root must not be omitted");
+                let mut nodes = 0;
+                let mut pending = vec![root.as_ref()];
+                while let Some(node) = pending.pop() {
+                    nodes += 1;
+                    assert!(node.omissions.is_empty(), "no branch may be omitted: {:?}", node.path);
+                    pending.extend(node.children.iter());
+                }
+                assert_eq!(nodes, DEEP_RENDER_DEPTH + 1, "the test must reach every directory");
+                report
+            })
+            .expect("spawn deep-report thread")
+            .join()
+            .expect("deep-report thread");
+
+        std::thread::Builder::new()
+            .name("deep-render".to_string())
+            .stack_size(DEEP_RENDER_STACK_BYTES)
+            .spawn(move || {
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
+                    eprintln!("deep-render phase: render {format:?}");
                     let rendered = render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
                     if format != Format::Text {
+                        eprintln!("deep-render phase: stream {format:?}");
                         let mut streamed = Vec::new();
                         write(&report, format, false, &mut streamed).expect("stream deep report");
                         assert_eq!(streamed, rendered.as_bytes(), "{format:?} bytes differ");
                     }
                 }
+                eprintln!("deep-render phase: drop");
+                drop(report);
+                eprintln!("deep-render phase: complete");
             })
             .expect("spawn deep-render thread")
             .join()
@@ -3896,11 +5031,7 @@ mod tests {
         // routing that through argument parsing tied a renderer test to a front end.
         let query = crate::query::Query {
             views: vec![ViewSpec::Files],
-            selection: Selection {
-                depth: Some(crate::query::Bound::All),
-                limit: Some(crate::query::Bound::All),
-                ..Selection::default()
-            },
+            selection: Selection { limit: Some(crate::query::Bound::All), ..Selection::default() },
             ..crate::query::Query::default()
         };
         let provenance = Provenance {
@@ -3940,7 +5071,9 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \"ignored\": false}}"
+                 \"files\": null, \"dirs\": null, \"complete\": null, \"age_ns\": 0, \"ignored\": false, \"sort_value\": null, \
+                 \"classification\": {{\"file_type\": \"unknown\", \"family\": \"unknown\", \"source\": \"unknown\", \"confidence\": \"heuristic\", \
+                 \"flags\": {{\"generated\": false, \"vendored\": false, \"documentation\": false}}}}}}"
             );
             assert!(
                 compact_json(&rendered).contains(&compact_json(&row)),

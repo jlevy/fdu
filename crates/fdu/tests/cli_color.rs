@@ -32,19 +32,18 @@ fn explicit_color_controls_human_output_but_never_json() {
     let root = tempfile::tempdir().expect("tempdir");
     let root = root.path().to_str().expect("temporary path is Unicode");
 
-    let always = run(&["--cache", "off", "--color", "always", "--depth", "0", root]);
+    let always = run(&["--cache", "off", "--color", "always", root]);
     assert!(always.status.success());
     assert!(has_ansi(&always.stdout));
 
-    let never = run(&["--cache", "off", "--color", "never", "--depth", "0", root]);
+    let never = run(&["--cache", "off", "--color", "never", root]);
     assert!(never.status.success());
     assert!(!has_ansi(&never.stdout));
 
     // Every machine format stays plain even when colour is forced: a consumer parsing
     // the output should never have to strip escape sequences first.
     for format in ["json", "jsonl", "yaml"] {
-        let machine =
-            run(&["--cache", "off", "--color", "always", "--format", format, "--depth", "0", root]);
+        let machine = run(&["--cache", "off", "--color", "always", "--format", format, root]);
         assert!(machine.status.success(), "{format} run failed");
         assert!(!has_ansi(&machine.stdout), "{format} output was colourized");
         assert!(machine.stderr.is_empty(), "{format} wrote to stderr");
@@ -67,17 +66,7 @@ fn view_headers_appear_only_for_several_views_and_follow_the_color_axis() {
     std::fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("write");
     let root = root.path().to_str().expect("temporary path is Unicode");
 
-    let several = run(&[
-        "--cache",
-        "off",
-        "--color",
-        "never",
-        "--view",
-        "types,summary",
-        "--depth",
-        "0",
-        root,
-    ]);
+    let several = run(&["--cache", "off", "--color", "never", "--view", "types,summary", root]);
     assert!(several.status.success());
     let text = String::from_utf8(several.stdout).expect("utf-8");
     assert!(text.contains("TYPES\n"), "{text}");
@@ -85,8 +74,7 @@ fn view_headers_appear_only_for_several_views_and_follow_the_color_axis() {
 
     // One view is unambiguous on its own, so the layout is left exactly as it was.
     for view in ["types", "summary", "files", "tree"] {
-        let lone =
-            run(&["--cache", "off", "--color", "never", "--view", view, "--depth", "0", root]);
+        let lone = run(&["--cache", "off", "--color", "never", "--view", view, root]);
         assert!(lone.status.success());
         let text = String::from_utf8(lone.stdout).expect("utf-8");
         assert!(
@@ -97,17 +85,7 @@ fn view_headers_appear_only_for_several_views_and_follow_the_color_axis() {
 
     // Colour applies to the label like any other human decoration: the word is still
     // there uncoloured, so the layout never depends on a terminal supporting escapes.
-    let colored = run(&[
-        "--cache",
-        "off",
-        "--color",
-        "always",
-        "--view",
-        "types,summary",
-        "--depth",
-        "0",
-        root,
-    ]);
+    let colored = run(&["--cache", "off", "--color", "always", "--view", "types,summary", root]);
     assert!(colored.status.success());
     let colored = String::from_utf8(colored.stdout).expect("utf-8");
     assert!(colored.contains("TYPES"), "{colored:?}");
@@ -125,8 +103,6 @@ fn view_headers_appear_only_for_several_views_and_follow_the_color_axis() {
             format,
             "--view",
             "types,summary",
-            "--depth",
-            "0",
             root,
         ]);
         assert!(machine.status.success(), "{format} run failed");
@@ -153,7 +129,7 @@ fn explicit_color_also_controls_self_documenting_help() {
 fn automatic_color_honors_environment_with_documented_precedence() {
     let root = tempfile::tempdir().expect("tempdir");
     let root = root.path().to_str().expect("temporary path is Unicode");
-    let base = ["--cache", "off", "--depth", "0", root];
+    let base = ["--cache", "off", root];
 
     let forced = run_with_color_env(&base, None, Some("1"));
     assert!(forced.status.success());
@@ -171,19 +147,13 @@ fn automatic_color_honors_environment_with_documented_precedence() {
     assert!(empty_no_color_is_ignored.status.success());
     assert!(has_ansi(&empty_no_color_is_ignored.stdout));
 
-    let explicit_always = run_with_color_env(
-        &["--color", "always", "--cache", "off", "--depth", "0", root],
-        Some("1"),
-        None,
-    );
+    let explicit_always =
+        run_with_color_env(&["--color", "always", "--cache", "off", root], Some("1"), None);
     assert!(explicit_always.status.success());
     assert!(has_ansi(&explicit_always.stdout));
 
-    let explicit_never = run_with_color_env(
-        &["--color", "never", "--cache", "off", "--depth", "0", root],
-        None,
-        Some("1"),
-    );
+    let explicit_never =
+        run_with_color_env(&["--color", "never", "--cache", "off", root], None, Some("1"));
     assert!(explicit_never.status.success());
     assert!(!has_ansi(&explicit_never.stdout));
 }

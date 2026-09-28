@@ -80,8 +80,8 @@ H113 is superseded. Do not retry the file-count shortcut.
 - Retrying H113 on an uncontrolled cell, H114 alloc trims, H109 Path rewrites, parse
   speed, or H103-shaped instruction cuts
 - Linux H111 and #92 replication on this Darwin host (recorded on
-  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md) /
-  [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
+  [the Linux parallel-validation block](../done/plan-2026-09-19-linux-parallel-validation.md)
+  / [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
 - A capability that exists only on the command line
 - Replacing the overnight macOS-agenda epic (`fdu-d4kg`) or rewriting campaign-2’s
   2026-08-23 Tier 1–3 list
@@ -265,8 +265,8 @@ These were considered against the post-H115 path and not registered:
 - Hardware CRC32C (`fdu-6kyn`) or PGO (`fdu-pdne`) as this increment’s wall hunt
 - `searchfs` (H77): person-gated
 - Linux H111 and #92 replication on this Darwin host (recorded on
-  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md) /
-  [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
+  [the Linux parallel-validation block](../done/plan-2026-09-19-linux-parallel-validation.md)
+  / [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
 - Bounding the observation channel (H91) without a current-engine occupancy trace
 - Directory-only transient tree (H66) as a cache-hit leftover
 
@@ -520,8 +520,8 @@ Engine changes land only as the experiment that tests the next row.
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
   H107–H143
-- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
-  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed
+- [Linux parallel validation](../done/plan-2026-09-19-linux-parallel-validation.md) —
+  H139–H143 recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed
 - [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)

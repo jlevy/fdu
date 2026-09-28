@@ -25,6 +25,10 @@ resembled what other tools do.
 The first two are the deepest: model every key concept explicitly, in one place, and as
 a consequence, let caching improve performance without ever changing semantics.
 
+Human output follows the [output design](fdu-output-design.md): data and diagnostics use
+separate streams, categories have stable prefixes, and omissions explain their
+accounting without repeating advice.
+
 For what is built and what comes next, see the dated plans under
 [`docs/project/specs`](../specs/). For where the design comes from and which prior art
 each piece draws on, see
@@ -200,8 +204,9 @@ Every default claims that most callers want this answer.
 If you cannot name the question it answers in one sentence, it is not a default; it is
 an accident that shipped.
 
-`fdu PATH` answers “which directories are big”: depth two, ten per directory, size
-descending, and every part of that follows from the question.
+`fdu PATH` answers “which contents account for at least 1% of this root, down to depth
+5?” It shows significant directories and files, largest first, without a breadth or
+section-row cap. Each display bound is independently adjustable.
 The `files` default could not finish the sentence, which is the test it should have
 failed at review.
 
@@ -408,7 +413,7 @@ Every option belongs to exactly one axis:
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read, and which metrics are measured? | `--analyze` |
-| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
+| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,largest,recent,files,summary` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
 | Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--analysis-workers`, `--allow-partial` |

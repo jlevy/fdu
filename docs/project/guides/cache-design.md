@@ -36,8 +36,22 @@ recursive answer lives between runs.
 
 ## Layer One: The Core Snapshot
 
-One file per root, under the user cache directory, named by a hash of the canonical root
-path so two trees never collide.
+The destination resolves in this order: explicit `--cache-dir` (Python `cache_dir`, Rust
+`default_cache_path_in`), `FDU_CACHE_DIR`, `XDG_CACHE_HOME/fdu`, then the native
+default. Both macOS and Linux default to `~/.cache/fdu`; Windows uses
+`%LOCALAPPDATA%/fdu`. An override names the exact cache directory, with no appended
+`fdu` component except for `XDG_CACHE_HOME`. Status and clearing use this same resolver.
+
+Each canonical root maps to a 16-digit hexadecimal key.
+Its filesystem snapshot is `<key>.metadata.bin`; derived analysis records are
+`<key>.analysis.bin`. The metadata file retains filesystem facts and ignore controls,
+while the analysis file retains counts and classification evidence, not source-file
+bodies. Both are binary, disposable cache data.
+`CachePaths` owns the pair so reading, writing, status, and clearing agree.
+An explicit metadata path outside the conventional name shape gets its sidecar by
+appending `.derived.bin` to the whole path.
+This keeps arbitrary names distinct from each other and from conventional
+`.analysis.bin` sidecars.
 
 It holds entry records from which loading rebuilds per-directory roll-ups, and it is
 invalidated wholesale by an engine fingerprint of the crate version, the format version,
@@ -51,15 +65,23 @@ The file’s header also records the scan scope it was built under, as the ident
 each tier the snapshot holds, and the start of the pass that last wrote the image.
 A snapshot whose scope cannot serve the request is a miss as well, and under a
 write-permitting policy the next complete indexed scan replaces it.
-The scope is the entry tier’s depth, symlink, filesystem-boundary, hidden-entry, and
-special-object settings, type-rules fingerprint, and a reducer-set fingerprint that is a
-constant today, and the control tier’s record of whether `.gitignore` was observed and,
-if it was, the budget and line limit.
-Snapshots taken with observation on and off hold equal entry tiers and differ only in
-the control tier. Exact identity serves directly.
-A controls-on snapshot may also serve a controls-off request with the same entry
-identity: the loader validates and discards the stored control section while it builds
-the index in the requested blind scope.
+The entry tier records depth, symlink, filesystem-boundary, hidden-entry, and
+special-object settings, its ignored population, the type-rules fingerprint, and a
+reducer-set fingerprint that is a constant today.
+`include` retains all entries; `exclude` and `only` admit entries according to
+`.gitignore` classification.
+For a narrowed population, the entry identity also records a fingerprint of the
+governing control limits, since changing those limits can change which entries are
+retained. The control tier records whether `.gitignore` was observed and, if it was, the
+budget and line limit.
+Exact identity serves directly.
+
+An `include` snapshot taken with observation on or off has the same entry identity.
+A controls-on `include` snapshot may serve a controls-off `include` request: the loader
+validates and discards the stored control section while it builds the index in the
+requested blind scope.
+A narrowed population requires control observation; it cannot use this projection or a
+snapshot of another population.
 The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, under a write-permitting policy, replaces the root’s one
@@ -109,16 +131,17 @@ Every format fdu has written starts with the same magic, followed by the format 
 and the engine fingerprint at fixed offsets, so a snapshot from any release is
 recognized as stale, and one from an older format reports its version.
 A name alone proves nothing: a listing counts a file as a snapshot only when it has both
-the snapshot’s name pattern (sixteen hex digits and `.fdu`) and the magic.
+the snapshot’s name pattern (sixteen hex digits and `.metadata.bin`) and the magic.
 The converse closes the rule.
 A name fdu gives one of its own files has already said which magic to expect, so
 contents that are not it leave the file unrecognized rather than sending it on to be
 identified some other way — otherwise a snapshot image stored under a sidecar’s name
 would be read as a snapshot and cleared under a name no snapshot is ever given.
 
-Clearing a snapshot also removes its `.content` sidecar if the sidecar starts with the
-sidecar magic. Symbolic links and directories in the cache directory are reported as
-unrecognized, never followed or descended into, and never removed.
+Clearing a snapshot also removes its matching `.analysis.bin` sidecar if the sidecar
+starts with the sidecar magic.
+Symbolic links and directories in the cache directory are reported as unrecognized,
+never followed or descended into, and never removed.
 They are also reported without a byte count: what a filesystem calls a directory’s size
 is its own accounting, it differs per platform, and it is not space a clear could
 reclaim, so counting it would inflate the figure a status gives for what it leaves
@@ -129,9 +152,9 @@ listing by something that is not fdu’s survives.
 ### Leftovers, and the Two Rules That Let a Clear Take Them
 
 Two files here are fdu’s without being a snapshot in place.
-A writer killed between staging and rename leaves `.{16 hex}.fdu.tmp.{…}`, which begins
-with the snapshot magic; removing a snapshot whose sidecar removal is interrupted leaves
-a `{16 hex}.fdu.content` with no snapshot.
+A writer killed between staging and rename leaves `.{16 hex}.metadata.bin.tmp.{…}`,
+which begins with the snapshot magic; removing a snapshot whose sidecar removal is
+interrupted leaves a `{16 hex}.analysis.bin` with no snapshot.
 Both used to be reported as “not an fdu snapshot”, which told the user to leave fdu’s
 own debris alone, and nothing collected either one — the temporary only when the same
 root is written again, the sidecar never.
@@ -163,7 +186,7 @@ names and magic, not clocks — so when it lists a staging file it says that one
 until it is too old to be a running writer’s, rather than promising a count the clear
 will then decline and explain.
 
-Machine formats carry the `fdu.cache/2` schema — its own document identity, not a report
+Machine formats carry the `fdu.cache/3` schema — its own document identity, not a report
 schema, because cache status is a fact about the cache directory rather than about a
 tree. Every row carries `path`, `bytes`, `state`, and `content`; a `current` row adds
 `root`, `entries`, and the `identity` of every tier the snapshot holds, a `stale` row a
@@ -172,6 +195,8 @@ its `leftover_kind`. A snapshot’s `identity` names its entry tier (the engine
 fingerprint, the scope fields, and the type-rules and reducer-set fingerprints) and its
 control tier as `ignore_rules`: `null` when no `.gitignore` was read, otherwise the
 `limits` it was read under.
+The entry `scope` exposes `population` and `control_fingerprint`; the latter is zero for
+`include` and binds a narrowed entry tier to its governing control limits.
 `content` is `null` when no sidecar with the sidecar magic sits beside the file, and
 otherwise its `bytes` and its own `state`: `current`, with its `records` and an
 `identity` that adds to the entry tier, which alone carries the type-rules fingerprint,
@@ -202,18 +227,18 @@ regardless, so loading the snapshot is purely additive cost.
 
 Content-derived metrics — line counts, word counts, hashes, and future plugin analyzers
 — do **not** belong in the core snapshot.
-They live in a separately checksummed sidecar beside the snapshot, `<snapshot>.content`,
-recording the engine fingerprint, the entry tier identity the records were analyzed over
-(the snapshot’s scope, type-rule fingerprint, and reducer set, without `.gitignore`
-observation, which no metric depends on), the stored analyzer set, an options
-fingerprint, ordered analyzer IDs and versions, and the root.
+They live in a separately checksummed analysis file beside the snapshot,
+`<key>.analysis.bin`, recording the engine fingerprint, the entry tier identity the
+records were analyzed over (the snapshot’s scope, type-rule fingerprint, and reducer
+set), the stored analyzer set, an options fingerprint, ordered analyzer IDs and
+versions, and the root.
 The type-rule fingerprint is recorded once, in the entry tier.
 It holds one analyzer set per root.
 Each sparse file record carries its classification and a fingerprint of size, mtime,
 ctime, inode, and device, so a reconciled metadata change rejects only the stale record.
 In memory the content tier holds records of exactly one content tier identity: preparing
 it for another identity clears it, and a record produced under another is refused.
-The current sidecar format is version 5; an absent, corrupt, oversized, foreign, or
+The current analysis format is version 8; an absent, corrupt, oversized, foreign, or
 version-mismatched sidecar is a clean analyzer-cache miss and never invalidates the core
 snapshot.
 

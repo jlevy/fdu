@@ -321,6 +321,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
                 | crate::query::ViewSpec::Extensions
                 | crate::query::ViewSpec::Families
                 | crate::query::ViewSpec::Languages
+                | crate::query::ViewSpec::Code
                 | crate::query::ViewSpec::Documents
                 | crate::query::ViewSpec::Files
                 | crate::query::ViewSpec::Largest
@@ -357,6 +358,7 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
             | crate::query::ViewSpec::Types
             | crate::query::ViewSpec::Families
             | crate::query::ViewSpec::Languages
+            | crate::query::ViewSpec::Code
             | crate::query::ViewSpec::Documents
             | crate::query::ViewSpec::Files
             | crate::query::ViewSpec::Largest
@@ -371,9 +373,10 @@ fn report_work(index: &crate::Index, query: &crate::query::Query) -> ReportWork 
 fn report_rows(report: &crate::query::Report) -> u64 {
     report.sections.iter().fold(0_u64, |total, section| {
         let rows = match section {
-            crate::query::Section::Tree { root, .. } => tree_rows(root),
+            crate::query::Section::Tree { root, .. } => root.as_deref().map_or(0, tree_rows),
             crate::query::Section::Extensions { rows, .. } => rows.len() as u64,
             crate::query::Section::Metrics { summary, .. } => summary.rows.len() as u64,
+            crate::query::Section::Code(overview) => overview.languages.len() as u64,
             crate::query::Section::Files { rows, .. } => rows.len() as u64,
             crate::query::Section::Summary(_) => 1,
         };

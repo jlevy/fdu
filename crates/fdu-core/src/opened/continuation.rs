@@ -232,6 +232,8 @@ mod tests {
                 one_filesystem: false,
                 hidden_fingerprint: 0,
                 exclude_special: false,
+                population: crate::query::IgnoredEntries::Include,
+                control_fingerprint: 0,
             },
             semantics: crate::SemanticIdentity {
                 ignore_rules_fingerprint: 0,

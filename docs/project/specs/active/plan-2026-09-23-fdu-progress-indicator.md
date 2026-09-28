@@ -207,7 +207,7 @@ and a later Python binding can poll the same way across the FFI boundary.
   and writes no bytes to stderr.
   The wait is a timed receive on the stop channel, not a sleep, so stopping returns at
   once and a fast run never pays the delay on exit.
-  After that the ticker redraws every 80 ms, one spinner frame per redraw.
+  After that the ticker redraws every 100 ms, one spinner frame per redraw.
   A snapshot still in `Starting` draws nothing: the ticker keeps waiting until the
   engine names a phase, rather than show one it invented.
 - **Frame.** One line on stderr, written as `\r\x1b[2K` plus the frame, exactly as
@@ -258,29 +258,30 @@ and a later Python binding can poll the same way across the FFI boundary.
 ### Appearance
 
 One line, redrawn in place on stderr.
-Each frame starts with a braille “dots” spinner that advances one cell per 80 ms redraw:
+Each frame starts with a braille “dots” spinner that advances one cell per 100 ms
+redraw:
 
 ```text
 ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
 ```
 
 Every phase uses the same slots in the same order: spinner, root, phase word, the
-phase’s facts, elapsed time.
+phase’s facts, elapsed time, and optional cumulative throughput.
 The root comes first because it is what the run is about and it stays put for the whole
 run; the phase word is padded to the width of the longest one (`Revalidating`), so the
 facts do not jump when the phase changes.
 There is no bar: a walk has no known total, and the one phase that has one shows it as a
 percentage in the facts slot.
-The frame for each phase, shown here in plain text:
+The frame for each phase, shown here in plain text without optional throughput:
 
 ```text
 ⠹ ~/wrk/github  Loading       0.6 s
-⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s
-⠼ ~/wrk/github  Revalidating    412,309 files ·    12,041 dirs ·   38 GiB  1.4 s
-⠸ ~/wrk/github  Indexing        412,309 files ·    12,041 dirs ·   38 GiB  3.8 s
-⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s
+⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB · 3.1 s
+⠼ ~/wrk/github  Revalidating    412,309 files ·    12,041 dirs ·   38 GiB · 1.4 s
+⠸ ~/wrk/github  Indexing        412,309 files ·    12,041 dirs ·   38 GiB · 3.8 s
+⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files · 7.9 s
 ⠏ ~/wrk/github  Saving        8.1 s
-⠴ ~/wrk/github  Summarizing     412,309 files ·    12,041 dirs ·   38 GiB  8.6 s
+⠴ ~/wrk/github  Summarizing     412,309 files ·    12,041 dirs ·   38 GiB · 8.6 s
 ⠴ ~/wrk/github  Summarizing   1.2 s
 ```
 
@@ -310,8 +311,15 @@ A larger number widens its column rather than being cut.
 The bytes are measured as the answer’s are, allocated unless `--size apparent`, from the
 snapshot’s `bytes` or `allocated`: a sparse disk image can be terabytes apparent and
 megabytes allocated, so apparent bytes beside an allocated answer can read as more than
-the disk holds. Elapsed time has one decimal below a minute (`3.1 s`), then `1 m 04 s`,
-then `1 h 02 m`.
+the disk holds. Elapsed time always uses seconds to one decimal place, from `0.5 s` to
+`3725.0 s`, with the same integer rounding rules as the performance footer.
+
+After more than five seconds, frames with walk facts can append gray cumulative rates,
+such as `151.3 s (40,858 files/s, 1.400 GiB/s)`. These use actual elapsed time and
+already available counters; GiB/s measures represented size, not physical I/O. Optional
+rates are dropped first when the terminal is too narrow.
+The current shared presentation contract is the
+[output design system](../../architecture/fdu-output-design.md#progress-timer).
 
 **Percentage.** A whole percentage, right-aligned in four columns (` 7%`, ` 24%`,
 `100%`), shown only during content analysis, the one phase with an exact denominator.
@@ -343,12 +351,10 @@ When it is wider than that, it shrinks in this order until it fits:
 5. The bytes are dropped.
 6. Below 20 columns, only the spinner and the phase word are drawn, without the root.
 
-At 80 columns, with counts under ten million, `Scanning` keeps its counts aligned
-whatever the root: it shows up to 14 columns of the root in full for its first minute
-(15 for the first ten seconds, 12 after the first minute) and elides a longer one.
-`Revalidating` has no padding to give up, so a warm run over a root of 12 columns or
-more drops the alignment instead and keeps every fact; `Summarizing` does the same after
-ten seconds.
+At 80 columns, optional throughput is normally omitted before the root or walk facts are
+shortened. Remaining space depends on the phase, root length, count widths, and timer
+width. Exact width-boundary assertions live beside the renderer, including wide Unicode
+roots; they enforce the shrink order without allowing line wrapping.
 
 **End of run.** The line is erased before the report or any message is written.
 No summary replaces it, because the report’s own performance line states the totals.
@@ -436,7 +442,7 @@ pieces can proceed in parallel; the ticker joins them.
 
 - Whether a later version shows the directory being read, which helps diagnose a stalled
   network mount but needs a sampled path shared with the walker.
-- Whether the 500 ms delay and the 80 ms redraw need tuning after use on real trees.
+- Whether the 500 ms delay and the 100 ms redraw need tuning after use on real trees.
 - Whether an ASCII spinner is needed for terminals without braille glyphs.
   The report already draws its bars with `█`, so this plan assumes the same Unicode
   support.

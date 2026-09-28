@@ -10,13 +10,23 @@
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 /// Generous: a cold scan, an event round trip, and a save all have to fit.
 const DEADLINE: Duration = Duration::from_secs(30);
+
+/// Reap a watcher even when an assertion fails before the test's explicit kill.
+struct WatchChild(Child);
+
+impl Drop for WatchChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
 
 /// Identify the snapshot on disk by size and modification time.
 ///
@@ -27,10 +37,16 @@ fn snapshot_fingerprint(cache_dir: &Path) -> Option<(u64, std::time::SystemTime)
     let entries = fs::read_dir(cache_dir.join("fdu")).ok()?;
     entries
         .flatten()
-        // An atomic save writes a non-`.fdu` sibling temporary before renaming it over
-        // the snapshot. Observing that temporary is not proof that the replacement has
-        // committed, and killing the child at that point can preserve the old snapshot.
-        .filter(|entry| entry.path().extension().is_some_and(|extension| extension == "fdu"))
+        // An atomic save writes a staging sibling before renaming it over the
+        // conventional metadata file. Only the final 16-hex-key name proves a
+        // replacement committed.
+        .filter(|entry| {
+            entry.file_name().to_str().is_some_and(|name| {
+                name.strip_suffix(".metadata.bin").is_some_and(|key| {
+                    key.len() == 16 && key.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+            })
+        })
         .filter_map(|entry| entry.metadata().ok())
         .filter(|meta| meta.len() > 0)
         .find_map(|meta| Some((meta.len(), meta.modified().ok()?)))
@@ -119,14 +135,16 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
         "expected the priming run to leave a usable snapshot, got: {usable}",
     );
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--watch", "--view", "files", "--interval", "1s"])
-        .arg(&tree)
-        .env("XDG_CACHE_HOME", cache.path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn watching fdu");
+    let mut child = WatchChild(
+        Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--watch", "--view", "files", "--interval", "1s"])
+            .arg(&tree)
+            .env("XDG_CACHE_HOME", cache.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn watching fdu"),
+    );
 
     // Baseline *after* the watcher is provably registered, so a later rewrite is
     // provably the incremental one rather than that same startup file seen again.
@@ -135,8 +153,8 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
     fs::write(tree.join("second.txt"), b"second").expect("write second file");
     let rewritten = wait_for_rewrite(cache.path(), initial);
 
-    let _ = child.kill();
-    let _ = child.wait();
+    let _ = child.0.kill();
+    let _ = child.0.wait();
 
     assert!(rewritten, "a warm-started watch never rewrote the snapshot after a change");
     let listed =
@@ -160,24 +178,26 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
     report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
     let stronger = snapshot_fingerprint(cache.path()).expect("controls-on snapshot");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args([
-            "--watch",
-            "--no-gitignore",
-            "--view",
-            "files",
-            "--format",
-            "jsonl",
-            "--interval",
-            "1s",
-        ])
-        .arg(&tree)
-        .env("XDG_CACHE_HOME", cache.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn projected watcher");
-    let stdout = child.stdout.take().expect("watch stdout");
+    let mut child = WatchChild(
+        Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args([
+                "--watch",
+                "--no-gitignore",
+                "--view",
+                "files",
+                "--format",
+                "jsonl",
+                "--interval",
+                "1s",
+            ])
+            .arg(&tree)
+            .env("XDG_CACHE_HOME", cache.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn projected watcher"),
+    );
+    let stdout = child.0.stdout.take().expect("watch stdout");
     let (sent, received) = mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines() {
@@ -226,8 +246,8 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
     sleep(Duration::from_millis(1_500));
     let after = snapshot_fingerprint(cache.path()).expect("snapshot remains");
 
-    let _ = child.kill();
-    let _ = child.wait();
+    let _ = child.0.kill();
+    let _ = child.0.wait();
 
     assert!(
         observed,
@@ -244,14 +264,16 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
     fs::create_dir(&tree).expect("create tree");
     fs::write(tree.join("first.txt"), b"first").expect("write first file");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--watch", "--view", "files", "--interval", "1s"])
-        .arg(&tree)
-        .env("XDG_CACHE_HOME", cache.path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn watching fdu");
+    let mut child = WatchChild(
+        Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--watch", "--view", "files", "--interval", "1s"])
+            .arg(&tree)
+            .env("XDG_CACHE_HOME", cache.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn watching fdu"),
+    );
 
     // Let the initial open's snapshot land and record it, so a later write is provably a
     // second one rather than that same file seen again.
@@ -262,8 +284,8 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
 
     // SIGKILL: the exit no signal handler can intercept. Whatever is on disk now is
     // exactly what a real interrupted session would have left.
-    let _ = child.kill();
-    let _ = child.wait();
+    let _ = child.0.kill();
+    let _ = child.0.wait();
 
     assert!(
         rewritten,

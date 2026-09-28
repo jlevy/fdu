@@ -57,6 +57,8 @@ pub enum SortKey {
     Mtime,
     /// Path or name, lexicographically.
     Name,
+    /// One numeric content metric named by the shared metric registry.
+    Metric(&'static str),
 }
 
 /// An inclusive-start, exclusive-end window over modification times, in nanoseconds.
@@ -92,7 +94,7 @@ impl ModifiedWindow {
 /// and the index keeps both partitions, so choosing one never costs a rescan. An ignored
 /// directory's descendants are all ignored, so rejecting entries one at a time prunes
 /// exactly the subtrees `git` would.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 pub enum IgnoredEntries {
     /// Every entry, ignored or not. Rows carry their ignored share.
     #[default]
@@ -167,6 +169,79 @@ impl Bound {
     }
 }
 
+/// An exact decimal percentage used only to select displayed rows.
+///
+/// Digits are kept as entered so comparisons never round a 1% boundary through a
+/// floating-point conversion, including on very large byte counts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShareThreshold {
+    whole: u8,
+    fractional: Vec<u8>,
+}
+
+impl ShareThreshold {
+    /// The ordinary tree threshold.
+    pub fn one_percent() -> Self {
+        Self { whole: 1, fractional: Vec::new() }
+    }
+    /// Parse a finite percentage from 0% through 100%.
+    pub fn parse(value: &str) -> Option<Self> {
+        let digits = value.trim().strip_suffix('%')?;
+        let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+        if whole.is_empty()
+            || !whole.bytes().all(|byte| byte.is_ascii_digit())
+            || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+            || (digits.contains('.') && fraction.is_empty())
+        {
+            return None;
+        }
+        let whole: u8 = whole.parse().ok()?;
+        if whole > 100 || (whole == 100 && fraction.bytes().any(|digit| digit != b'0')) {
+            return None;
+        }
+        Some(Self { whole, fractional: fraction.bytes().map(|digit| digit - b'0').collect() })
+    }
+
+    /// Whether `part` contributes at least this share of `whole`.
+    pub fn admits(&self, part: u64, whole: u64) -> bool {
+        if self.whole == 0 && self.fractional.iter().all(|digit| *digit == 0) {
+            return true;
+        }
+        if whole == 0 {
+            return false;
+        }
+        let numerator = u128::from(part) * 100;
+        let denominator = u128::from(whole);
+        let integral = numerator / denominator;
+        if integral != u128::from(self.whole) {
+            return integral > u128::from(self.whole);
+        }
+        let mut remainder = numerator % denominator;
+        for digit in &self.fractional {
+            remainder *= 10;
+            let actual = remainder / denominator;
+            if actual != u128::from(*digit) {
+                return actual > u128::from(*digit);
+            }
+            remainder %= denominator;
+        }
+        true
+    }
+
+    /// Stable spelling for request serialization.
+    pub fn label(&self) -> String {
+        let mut out = self.whole.to_string();
+        if !self.fractional.is_empty() {
+            out.push('.');
+            for digit in &self.fractional {
+                out.push(char::from(b'0' + *digit));
+            }
+        }
+        out.push('%');
+        out
+    }
+}
+
 /// Which retained entries a query considers, and how its results are shaped.
 #[derive(Clone, Debug, Default)]
 pub struct Selection {
@@ -193,6 +268,10 @@ pub struct Selection {
     /// declared `default_value = "2"` itself and every other caller silently got a
     /// different report for the same request.
     pub depth: Option<Bound>,
+    /// Minimum displayed share of the selected root, as an exact percentage.
+    pub min_share: Option<ShareThreshold>,
+    /// Maximum immediate child rows displayed per directory.
+    pub breadth: Option<Bound>,
     /// How many entries a view reports.
     /// Rows to keep, or `None` to let each view apply its own bound.
     ///
@@ -595,6 +674,24 @@ fn terminal_suffix(name: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn decimal_shares_compare_exactly_at_and_below_a_boundary() {
+        use super::ShareThreshold;
+        let share = ShareThreshold::parse("1%").expect("percentage");
+        assert!(share.admits(1, 100));
+        assert!(!share.admits(1, 101));
+        assert!(share.admits(u64::MAX / 100, u64::MAX / 100));
+        assert!(!share.admits(0, 0));
+        assert!(ShareThreshold::parse("0%").expect("zero").admits(0, 0));
+        assert!(
+            ShareThreshold::parse("0.0000000000000000001%")
+                .expect("fine precision")
+                .admits(1, u64::MAX)
+        );
+        for invalid in ["-1%", "101%", "100.1%", "NaN%", "1", "1.%", "1e1%"] {
+            assert!(ShareThreshold::parse(invalid).is_none(), "{invalid}");
+        }
+    }
     use super::*;
     use std::path::PathBuf;
 

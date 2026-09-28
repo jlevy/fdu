@@ -112,6 +112,44 @@ The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
 
+## Population, Code Overview, and Cache Destination
+
+`fdu.report()` derives discovery and content analysis from `Selection.ignored`:
+
+```python
+import fdu
+
+report = fdu.report(
+    ".",
+    fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.EXCLUDE)),
+    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.CODE),
+    cache_dir="/path/to/cache",
+)
+```
+
+`include` is the default.
+`exclude` prunes safely ignored subtrees; `only` discovers ignored matches through
+ordinary ancestors and analyzes only ignored bodies.
+For retained work, `fdu.open(..., ignored=...)` and `fdu.scan(..., ignored=...)` choose
+the initial population.
+A default read inherits it.
+An Include index can answer a narrower selection; an index that never retained a
+population cannot widen its answer.
+
+Code analysis defaults to `CodeSection`, whose overview includes selected source lines,
+language shares, ignored/non-ignored contributions, and coverage.
+`SortKey.CODE_LINES` ranks files or directories when code analysis was requested.
+File rows carry nullable `sort_value` and `classification` evidence; unavailable counts
+remain distinct from zero.
+
+`cache_dir` on open/report and cache lifecycle calls names the exact destination and
+wins over `FDU_CACHE_DIR`. Otherwise `XDG_CACHE_HOME/fdu` wins over the platform
+default: `~/.cache/fdu` on macOS and Linux, `%LOCALAPPDATA%/fdu` on Windows.
+`list_caches` and `clear_all_caches` take a keyword cache directory, independently of a
+scan root. `cache_directory(cache_dir=...)` resolves that destination without a root.
+`cache_path(root, cache_dir=...)` identifies the root’s `.metadata.bin` file; a matching
+`.analysis.bin` stores derived metrics without source bodies.
+
 ## Directory Inventories and Formats
 
 A default `Query()` keeps the existing directory tree.
@@ -167,9 +205,25 @@ Re-render it to another serialization or between Paths and Long without querying
 request another report to change between a bounded tree and complete flat inventory.
 An incompatible conversion raises `InvalidArgumentError` rather than silently listing
 only visible tree rows.
-Tree limits remain per-directory, flat limits apply to the whole list, and machine List
-output is complete unless explicitly limited.
-Details and exact fields are in the
+`Selection(depth=5, min_share="1%", breadth=Bound.ALL, limit=Bound.ALL)` describes the
+ordinary tree defaults.
+Breadth bounds children per directory; limit bounds data rows per section.
+`TreeSection.limits` records the effective controls.
+Each `TreeOmission.entries` counts directly hidden children: an omitted directory is one
+entry, while its nullable `files` count covers regular files throughout that hidden
+subtree. The optional `TreeSection.remainder` combines hidden contents across one tree,
+with nullable `files`, `bytes`, and `allocated` totals and bound reasons in stable
+order. It is `None` when nothing is hidden.
+A displayed root-level directory represents all its descendants, including children
+hidden by display bounds.
+The remainder counts only usage outside those displayed root-level rows.
+Parent totals already include the remainder, so do not add it to them.
+The terminal gives that remainder one root-level line, such as
+`… and 12,345 more files`, with its combined size and root share in the usual columns.
+Use `report.render(bar_size=20)` for wider bars, or `bar_size=0` (also negative values)
+to hide them; the default is 10. Machine formats are unchanged.
+Machine reports use `fdu.report/10`. Machine List output is complete unless explicitly
+limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).
 

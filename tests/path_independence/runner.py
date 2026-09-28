@@ -382,32 +382,45 @@ def run_cli_watch_initial(
     stderr_reader = threading.Thread(
         target=lambda: stderr_chunks.append(process.stderr.read()), daemon=True
     )
-    reader.start()
-    stderr_reader.start()
-    timed_out = False
     try:
-        answer, parse_error = parsed.get(timeout=30)
-    except queue.Empty:
-        answer, parse_error = None, "timed out waiting for watch initial report"
-        timed_out = True
-    if process.poll() is None:
-        process.terminate()
+        reader.start()
+        stderr_reader.start()
+        timed_out = False
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
+            answer, parse_error = parsed.get(timeout=30)
+        except queue.Empty:
+            answer, parse_error = None, "timed out waiting for watch initial report"
+            timed_out = True
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            exit_code = 0 if answer is not None else process.returncode
+        else:
+            exit_code = process.returncode
+        stderr_reader.join(timeout=5)
+        stderr = "".join(stderr_chunks).strip()
+        if parse_error and (timed_out or exit_code == 0 or not stderr):
+            stderr = f"{stderr}\n{parse_error}".strip()
+        if timed_out:
+            exit_code = PY_UNEXPECTED
+        command = " ".join([*argv[:1], "<root>", *argv[2:]])
+        return Invocation(matrix.CLI_WATCH_ROUTE, command, exit_code, stderr, answer)
+    finally:
+        # A watch has no natural EOF. Reap it before joining readers, then close both
+        # pipes even when parsing or an assertion leaves this route early.
+        if process.poll() is None:
             process.kill()
-            process.wait()
-        exit_code = 0 if answer is not None else process.returncode
-    else:
-        exit_code = process.returncode
-    stderr_reader.join(timeout=5)
-    stderr = "".join(stderr_chunks).strip()
-    if parse_error and (timed_out or exit_code == 0 or not stderr):
-        stderr = f"{stderr}\n{parse_error}".strip()
-    if timed_out:
-        exit_code = PY_UNEXPECTED
-    command = " ".join([*argv[:1], "<root>", *argv[2:]])
-    return Invocation(matrix.CLI_WATCH_ROUTE, command, exit_code, stderr, answer)
+        process.wait()
+        if reader.is_alive():
+            reader.join(timeout=5)
+        if stderr_reader.is_alive():
+            stderr_reader.join(timeout=5)
+        process.stdout.close()
+        process.stderr.close()
 
 
 def _read_jsonl_report(stream: Iterable[str]) -> dict[str, Any]:
@@ -568,7 +581,14 @@ class MatrixRun:
                 self.surfaces, self.facts.root, matrix.REQUESTS[request_id], "auto", xdg
             )
             self.ws.discard(xdg)
-            verdict = compare(oracle, measured, policy="auto")
+            # These display-axis requests are meant to return reports. If both routes
+            # reject one after a grammar change, equality alone would pass vacuously.
+            must_answer = request_id in {"depth1", "depthall", "a_code_metric_rev", "v_tree_bounds"}
+            verdict = (
+                Verdict("outcome_class", ("<cold-oracle:no-report>",), (oracle.stderr,))
+                if must_answer and oracle.outcome == "failure"
+                else compare(oracle, measured, policy="auto")
+            )
             key = case_key("cold", matrix.CLI_ROUTE, "auto", "-", "-", request_id)
             return [CaseResult(key, verdict, oracle, measured)]
 

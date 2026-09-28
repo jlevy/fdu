@@ -4,15 +4,102 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CLASSES, classify, parseSessions } from "./parity-classes.mjs";
+import { CLASSES, classify, normalisePortableValues, parseSessions } from "./parity-classes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CORPUS = path.join(ROOT, "tests", "parity", "deviations-python.diff");
 
 //: One session shaped the way `parseSessions` produces them.
-function session(removed, added, name = "Some Session") {
-  return { name, removed, added };
+function session(removed, added, name = "Some Session", file = "") {
+  return { name, file, removed, added };
 }
+
+test("portable golden paths require the exact fixture root and unchanged other fields", () => {
+  const cache = "[ROOT]/tests/parity/.corpus/cli-cache.tryscript.md";
+  const content = "[ROOT]/tests/parity/.corpus/cli-content.tryscript.md";
+  const json = (root, files) =>
+    `{"schema": "fdu.report/10", "root": "${root}", "files": ${files}}`;
+  assert.equal(
+    classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/project", 7)], "Cache", cache))?.id,
+    "portable-golden-pattern",
+  );
+  assert.equal(
+    classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/content-project", 7)], "Content", content))?.id,
+    "portable-golden-pattern",
+  );
+  const envelope = (root, age, observed, allocated, files = 7, schema = "fdu.report/10") =>
+    `{"schema": "${schema}", "root": "${root}", "age_reference_ns": ${age}, "observed_at_ns": ${observed}, "allocated": ${allocated}, "files": ${files}}`;
+  const golden = envelope("[SCAN_PATH]", "[AGE_NS]", "[MTIME_NS]", "[ALLOCATED]");
+  const concrete = (age, allocated, files = 7, schema = "fdu.report/10", observed = "456") =>
+    envelope("[SANDBOX]/project", age, observed, allocated, files, schema);
+  assert.equal(
+    classify(session([golden], [concrete("-123", "4096")], "JSONL", cache))?.id,
+    "portable-golden-pattern",
+    "whole JSONL lines retain the golden's typed numeric patterns",
+  );
+  for (const actual of [
+    concrete("NaN", "4096"),
+    concrete("-123", "unknown"),
+    concrete("-123", "4096", 7, "fdu.report/10", "unknown"),
+    concrete("-123", "4096", 8),
+    concrete("-123", "4096", 7, "fdu.report/8"),
+  ]) {
+    assert.equal(classify(session([golden], [actual], "JSONL", cache)), null, actual);
+  }
+  assert.equal(
+    classify(session(["80 B  assets[SEP]logo.png"], ["80 B  assets/logo.png"]))?.id,
+    "portable-golden-pattern",
+  );
+  for (const [actual, fixture] of [
+    ["[SANDBOX]/other", cache],
+    ["[SANDBOX]/content-project", cache],
+    ["[SANDBOX]/project/child", cache],
+    ["/unrelated/project", cache],
+  ]) {
+    assert.equal(classify(session([json("[SCAN_PATH]", 7)], [json(actual, 7)], "Cache", fixture)), null);
+  }
+  assert.equal(
+    classify(session([json("[SCAN_PATH]", 7)], [json("[SANDBOX]/project", 8)], "Cache", cache)),
+    null,
+    "a changed file count cannot ride along with a portable root",
+  );
+  assert.equal(
+    classify(session(['"other": "[SCAN_PATH]"'], ['"other": "[SANDBOX]/project"'], "Cache", cache)),
+    null,
+    "only the report root field has this portable pattern",
+  );
+  assert.equal(
+    classify(session(["otherroot: [SCAN_PATH]"], ["otherroot: [SANDBOX]/project"], "Cache", cache)),
+    null,
+    "a YAML field whose name only ends in root must not match",
+  );
+});
+
+test("portable numeric masking touches observed values only and rejects literal drift", () => {
+  const observed = normalisePortableValues(
+    '-"allocated": 123\n-"age_reference_ns": [AGE_NS]\n-"observed_at_ns": [MTIME_NS]\n-"allocated": [ALLOCATED]\n+"allocated": 999\n+"age_reference_ns": -456\n+"observed_at_ns": 789\n+"allocated": NaN\n',
+  );
+  assert.equal(
+    observed,
+    '-"allocated": 123\n-"age_reference_ns": [AGE_NS]\n-"observed_at_ns": [MTIME_NS]\n-"allocated": [ALLOCATED]\n+"allocated": 999\n+"age_reference_ns": [AGE_NS_VALUE]\n+"observed_at_ns": [MTIME_NS_VALUE]\n+"allocated": NaN\n',
+  );
+  const golden = '-"age_reference_ns": [AGE_NS], "observed_at_ns": [MTIME_NS], "allocated": [ALLOCATED]\n';
+  assert.equal(
+    normalisePortableValues(golden + '+"age_reference_ns": 1, "observed_at_ns": 2, "allocated": 4096\n'),
+    normalisePortableValues(golden + '+"age_reference_ns": 9, "observed_at_ns": 8, "allocated": 8192\n'),
+    'two observations of the same typed fields serialize to one stable artifact line',
+  );
+  assert.equal(
+    classify(session(['"allocated": 123'], ['"allocated": [ALLOCATED_VALUE]'])),
+    null,
+    'a literal golden allocated value is never a portable wildcard',
+  );
+  assert.equal(
+    classify(session(['"allocated": [ALLOCATED]'], ['"allocated": NaN'])),
+    null,
+    'malformed numeric output remains visible',
+  );
+});
 
 test("every class carries the fields the report prints", () => {
   for (const cls of CLASSES) {
@@ -28,44 +115,28 @@ test("class ids are unique", () => {
   assert.deepEqual(ids, [...new Set(ids)]);
 });
 
-// This gate is what backs the claim that every surface gives the same answer, so the
-// interesting question about a class is never "does it match what it was written for"
-// but "what else does it now excuse". `run-telemetry` matched on the *count* of the
-// non-telemetry remainder, so one removed line was explained by one added line whatever
-// the two said: a session that lost a `note:` line could also report a different tally
-// and still classify. The remainder has to be equal, not merely equinumerous.
-test("run-telemetry explains only the telemetry lines themselves", () => {
-  const matches = (item) => classify(item)?.id === "run-telemetry";
-
-  // Genuine: the command line prints telemetry the report envelope cannot carry.
-  assert.ok(matches(session(["note: analysis read 5 bytes"], [])));
-  assert.ok(matches(session(["Performance: 3ms"], [])));
-  // Genuine: telemetry removed, everything else identical.
-  assert.ok(matches(session(["note: x", "256 B  7 files"], ["256 B  7 files"])));
-
-  // A changed tally riding along with a removed note is a different answer, not telemetry.
-  assert.ok(
-    !matches(session(["note: x", "256 B  7 files, 4 directories"], ["512 B  9 files, 4 directories"])),
-  );
-  assert.ok(!matches(session(["Performance: x", "total 100"], ["total 999"])));
-  // Order matters too: a remainder that matches as a set but not in sequence is a diff.
-  assert.ok(!matches(session(["note: x", "a", "b"], ["b", "a"])));
-
-  // Without a telemetry line there is nothing for this class to explain.
-  assert.ok(!matches(session(["total 100"], ["total 999"])));
+test("facts and suggestions cannot be dismissed as run telemetry", () => {
+  for (const line of ["note: an observed fact", "tip: --view families", "warn: a partial result"]) {
+    assert.equal(classify(session([line], [])), null, line);
+  }
 });
 
-// A golden writes the separator as the named pattern and the package prints the literal,
-// so comparing raw text would make any hunk containing a path read as a changed answer.
-// That is why `sameSeparator` exists; leaving it out of this class made a legitimate
-// telemetry-only session unexplained, and the predictable response to that would have
-// been to loosen the equality rule again.
-test("run-telemetry compares paths through the separator pattern", () => {
-  const matches = (item) => classify(item)?.id === "run-telemetry";
-  assert.ok(matches(session(["80 B  assets[SEP]logo.png", "note: x"], ["80 B  assets/logo.png"])));
-  // The separator is the only thing it may fold: a different file is still a diff.
-  assert.ok(!matches(session(["80 B  assets[SEP]logo.png", "note: x"], ["80 B  assets/other.png"])));
-  assert.ok(!matches(session(["80 B  assets[SEP]logo.png", "note: x"], ["99 B  assets/logo.png"])));
+test("bound tips accept only exact CLI-to-Python setter names and values", () => {
+  const matches = (removed, added) =>
+    classify(session([removed, "note: same fact"], [added, "note: same fact"]))?.id ===
+    "bound-tip-vocabulary";
+  for (const [cli, api] of [
+    ["tip: show smaller entries: --min-share=0%", "tip: show smaller entries: min_share=0%"],
+    ["tip: expand deeper: --depth=all", "tip: expand deeper: depth=all"],
+    ["tip: show more children: --breadth=all", "tip: show more children: breadth=all"],
+    ["tip: show more rows: --limit=all", "tip: show more rows: limit=all"],
+  ]) {
+    assert.ok(matches(cli, api), `${cli} / ${api}`);
+    assert.ok(matches(`! ${cli}`, `! ${api}`), `stderr: ${cli}`);
+    assert.ok(!matches(cli, `${api} now`), "extra text is a real difference");
+    assert.ok(!matches(cli, api.replace("=all", "=3").replace("=0%", "=1%")), "value changed");
+  }
+  assert.ok(!matches("tip: show smaller entries: --min-share=0%", "tip: expand deeper: depth=all"));
 });
 
 // A class that cannot fail is worse than no class: the summary then reports a clean
@@ -78,6 +149,12 @@ test("run-telemetry compares paths through the separator pattern", () => {
 // for a reason unrelated to the property, which is the defect this file exists to catch.
 test("no class absorbs an extra changed line", () => {
   const polluted = {
+    "portable-golden-pattern": session(
+      ['"root": "[SCAN_PATH]"', "total 100"],
+      ['"root": "[SANDBOX]/project"', "total 999"],
+      "Cache",
+      "[ROOT]/tests/parity/.corpus/cli-cache.tryscript.md",
+    ),
     // Same shape these two explain (equal-length hunks, one knob renamed), plus one line
     // whose two sides genuinely disagree.
     "surface-label": session(
@@ -88,7 +165,10 @@ test("no class absorbs an extra changed line", () => {
       ["error: invalid --modified-since", "total 100"],
       ["error: invalid modified_since", "total 999"],
     ),
-    "run-telemetry": session(["note: x", "total 100"], ["total 999"]),
+    "bound-tip-vocabulary": session(
+      ["tip: expand deeper: --depth=all", "total 100"],
+      ["tip: expand deeper: depth=all", "total 999"],
+    ),
   };
   for (const cls of CLASSES) {
     const fixture = polluted[cls.id];

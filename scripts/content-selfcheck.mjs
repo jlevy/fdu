@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(import.meta.dirname, "..");
+const fdu = resolve(process.env.CARGO_TARGET_DIR ?? join(root, "target"), "debug/fdu");
 const scratch = mkdtempSync(join(tmpdir(), "fdu-content-selfcheck-"));
 const archive = join(scratch, "tracked.tar");
 const tree = join(scratch, "tree");
@@ -38,7 +39,7 @@ try {
   run("mkdir", [tree]);
   run("tar", ["-xf", archive, "-C", tree]);
 
-  const output = run(resolve(root, "target/debug/fdu"), [
+  const output = run(fdu, [
     "--cache",
     "off",
     "--analyze",
@@ -58,7 +59,7 @@ try {
     tree,
   ]);
   const report = JSON.parse(output);
-  assert.equal(report.schema, "fdu.report/7");
+  assert.equal(report.schema, "fdu.report/10");
   assert.equal(report.status.complete, true);
   assert.deepEqual(report.analysis.analyze, ["lines", "words"]);
   assert.deepEqual(report.analysis.analyzers, [
@@ -128,7 +129,7 @@ try {
     });
   }
 
-  const codeOutput = run(resolve(root, "target/debug/fdu"), [
+  const codeOutput = run(fdu, [
     "--cache",
     "off",
     "--allow-partial",
@@ -143,11 +144,11 @@ try {
     tree,
   ]);
   const codeReport = JSON.parse(codeOutput);
-  assert.equal(codeReport.schema, "fdu.report/7");
+  assert.equal(codeReport.schema, "fdu.report/10");
   assert.deepEqual(codeReport.analysis.analyze, ["lines", "code"]);
   assert.deepEqual(codeReport.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
-    { id: "code-sloc-v1", version: 1 },
+    { id: "code-sloc-v1", version: 3 },
   ]);
   const code = codeReport.reports[0].metrics;
   assert.equal(code.share_metric, "code_lines");

@@ -424,6 +424,7 @@ impl Session {
     /// the selection be streamed as the upsert a consumer needs to draw the row.
     fn batch_facts(&self, commits: &[Commit]) -> Result<BatchFacts> {
         let mut touched: Vec<&PathBuf> = Vec::new();
+        let mut removed: Vec<(&PathBuf, crate::EntryKind)> = Vec::new();
         let mut reclassified: Vec<&PathBuf> = Vec::new();
         for effective in commits.iter().flat_map(|commit| &commit.changes) {
             match effective {
@@ -433,8 +434,8 @@ impl Session {
                 EffectiveChange::Reclassified { path, .. } => {
                     reclassified.push(path);
                 }
-                EffectiveChange::Removed { .. }
-                | EffectiveChange::Invalidated { .. }
+                EffectiveChange::Removed { path, kind, .. } => removed.push((path, *kind)),
+                EffectiveChange::Invalidated { .. }
                 | EffectiveChange::ControlUpdated { .. }
                 | EffectiveChange::ControlRefusalUpdated { .. } => {}
             }
@@ -460,7 +461,7 @@ impl Session {
                 .collect();
             BatchFacts {
                 ignored: observed.then(|| {
-                    touched
+                    let mut ignored = touched
                         .into_iter()
                         .filter_map(|path| match index.is_ignored(path) {
                             Ok(Some(ignored)) => Some((path.clone(), ignored)),
@@ -468,7 +469,16 @@ impl Session {
                             // way there is nothing to say about it.
                             Ok(None) | Err(_) => None,
                         })
-                        .collect()
+                        .collect::<BTreeMap<_, _>>();
+                    for (path, kind) in removed {
+                        if index.control_classification_known(path) {
+                            ignored.insert(
+                                path.clone(),
+                                index.control_table().is_ignored(path, kind.is_dir()),
+                            );
+                        }
+                    }
+                    ignored
                 }),
                 reclassified: entries,
             }
@@ -546,7 +556,8 @@ impl Session {
             // A removal carries no attributes to filter on, so only the path-shaped parts
             // of a selection can apply. Filtering it out entirely on a size, time, or
             // ignored-state bound would hide the disappearance of something the caller was
-            // watching, and a removed entry has no classification left to read.
+            // watching. Its last known kind lets current control state classify it
+            // when the governing rules are known.
             EffectiveChange::Removed { path, .. } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 self.admits_by_path(path, &name).then(|| Change {
@@ -556,7 +567,7 @@ impl Session {
                     bytes: None,
                     allocated: None,
                     mtime_ns: None,
-                    ignored: None,
+                    ignored: facts.is_ignored(path),
                     clock,
                 })
             }
