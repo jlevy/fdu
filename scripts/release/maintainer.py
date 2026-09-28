@@ -45,6 +45,9 @@ from scripts.release.registry_state import CRATE_PACKAGES, RegistryError, Regist
 
 REPOSITORY = "jlevy/fdu"
 WORKFLOW = "release.yml"
+# The workflow's `name:`, and its `publish` job's `name:`, as `gh run view` reports them;
+# tests/release/test_maintainer.py reads release.yml to keep them in step.
+WORKFLOW_NAME = "Release"
 ENVIRONMENT = "release"
 PUBLISH_JOB = "Publish to crates.io and PyPI"
 VERSION_PATTERN = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -206,7 +209,10 @@ def resolve(
     if path.is_relative_to(root.resolve()):
         raise StepError(f"RELEASE must be outside the checkout, not {path}")
     path.mkdir(parents=True, exist_ok=True)
-    return Release(version, full, path, root, repository)
+    release = Release(version, full, path, root, repository)
+    # Every step binds the directory to this version and commit, or refuses it.
+    save_state(release)
+    return release
 
 
 def load_state(release: Release) -> dict[str, Any]:
@@ -347,8 +353,11 @@ def notes_problems(notes: str, version: str, previous: str | None, repository: s
     slug = re.escape(repository)
     problems = []
     semver = r"v[0-9]+\.[0-9]+\.[0-9]+"
-    pinned = set(re.findall(rf"github\.com/{slug}/(?:blob|tree|releases/tag)/({semver})", notes))
-    problems.extend(f"a link pins {other}, not {tag}" for other in sorted(pinned - {tag}))
+    # A link into the repository names the tag, never a branch such as `main` whose
+    # content moves after the release.
+    refs = set(re.findall(rf"github\.com/{slug}/(?:blob|tree)/([^/\s)#?]+)/", notes))
+    refs |= set(re.findall(rf"github\.com/{slug}/releases/tag/([^/\s)#?]+)", notes))
+    problems.extend(f"a link pins {other}, not {tag}" for other in sorted(refs - {tag}))
     compares = re.findall(rf"github\.com/{slug}/compare/({semver})\.\.\.({semver})", notes)
     expected = (f"v{previous}", tag) if previous is not None else None
     for pair in compares:
@@ -362,14 +371,30 @@ def notes_problems(notes: str, version: str, previous: str | None, repository: s
     return problems
 
 
-def notes_check(host: Host, release: Release) -> Check:
+def compare_base(host: Host, release: Release, previous: str | None) -> str | None:
+    """
+    The version the notes' compare link starts from: the highest earlier tag, or
+    `--previous`, for a release after a version that was tagged but never shipped.
+    """
+    if previous is None:
+        return previous_version(host, release)
+    base = previous.removeprefix("v")
+    key, current = version_key(base), version_key(release.version)
+    if key is None or current is None or key >= current:
+        raise StepError(f"--previous must be a version below {release.version}, got {previous}")
+    ref = f"refs/tags/v{base}"
+    if ref not in remote_refs(host, release, ref):
+        raise StepError(f"--previous names v{base}, which origin has no tag for")
+    return base
+
+
+def notes_check(host: Host, release: Release, previous: str | None = None) -> Check:
     """The release notes exist at the commit and name this version's links."""
     notes = show(host, release, release.notes_path)
     if notes is None:
         return Check("release notes", False, f"{release.notes_path} is not at COMMIT")
-    problems = notes_problems(
-        notes, release.version, previous_version(host, release), release.repository
-    )
+    base = compare_base(host, release, previous)
+    problems = notes_problems(notes, release.version, base, release.repository)
     return Check("release notes", not problems, "; ".join(problems) or release.notes_path)
 
 
@@ -452,7 +477,9 @@ def token_check(host: Host, release: Release) -> Check:
         f"repos/{release.repository}/environments/{ENVIRONMENT}/secrets",
         f"repos/{release.repository}/actions/secrets",
     ):
-        listing = gh_json(host, path) or {}
+        listing = gh_json(host, path)
+        if not isinstance(listing, dict):
+            return Check("registry secrets", False, f"could not list the secrets at {path}")
         names += [str(item.get("name")) for item in listing.get("secrets", [])]
     tokens = sorted(name for name in names if "CARGO" in name.upper() or "PYPI" in name.upper())
     if tokens:
@@ -502,12 +529,14 @@ def reporting_check(host: Host, release: Release) -> Check:
     return Check("private vulnerability reporting", enabled == "true", f"enabled: {enabled}")
 
 
-def preflight(host: Host, release: Release, signing_key: Path | None) -> list[Check]:
+def preflight(
+    host: Host, release: Release, signing_key: Path | None, *, previous: str | None = None
+) -> list[Check]:
     """Read-only readiness checks before anything is dispatched, tagged, or published."""
     probes: list[tuple[str, Callable[[], Check | list[Check]]]] = [
         ("COMMIT on origin/main", lambda: on_main_check(host, release)),
         ("Cargo versions at COMMIT", lambda: cargo_versions(host, release)),
-        ("release notes", lambda: notes_check(host, release)),
+        ("release notes", lambda: notes_check(host, release, previous)),
         ("CHANGELOG", lambda: changelog_check(host, release)),
         (f"tag {release.tag}", lambda: tag_absent_check(host, release)),
         ("registries", lambda: unpublished_checks(host, release)),
@@ -603,11 +632,13 @@ def verify_run(
     tag and, unless `succeeded` is false for a recovery audit, its publish job must have
     succeeded.
     """
-    fields = "event,headBranch,headSha,status,conclusion,displayTitle,jobs"
+    fields = "workflowName,event,headBranch,headSha,status,conclusion,displayTitle,jobs"
     view: dict[str, Any] = json.loads(
         host.run(gh(release, "run", "view", str(run_id), "--json", fields))
     )
     problems = []
+    if view.get("workflowName") != WORKFLOW_NAME:
+        problems.append(f"it is a {view.get('workflowName')} run, not {WORKFLOW_NAME}")
     if view.get("event") != "workflow_dispatch":
         problems.append(f"event is {view.get('event')}")
     if view.get("headSha") != release.commit:
@@ -616,6 +647,11 @@ def verify_run(
         problems.append(f"it is still {view.get('status')}")
     elif succeeded and view.get("conclusion") != "success":
         problems.append(f"it concluded {view.get('conclusion')}")
+    title = str(view.get("displayTitle"))
+    if publishing and title != f"Publish {release.tag}":
+        problems.append(f"its title is {title!r}, not a publishing run's")
+    if not publishing and not title.startswith("Release rehearsal on "):
+        problems.append(f"its title is {title!r}, not a rehearsal's")
     publish = next((job for job in view.get("jobs", []) if job.get("name") == PUBLISH_JOB), None)
     publish_result = None if publish is None else publish.get("conclusion")
     if publishing:
@@ -682,6 +718,12 @@ def fetch_run(host: Host, release: Release, run_id: int, name: str, evidence_art
         host.run(gh(release, "run", "download", str(run_id), "--dir", str(download)))
         flatten(download, target / "files", target / "evidence", evidence_artifact)
         marker.write_text(f"{run_id}\n", encoding="utf-8")
+    verify_kept(release, target)
+    return target
+
+
+def verify_kept(release: Release, target: Path) -> None:
+    """Verify kept files against the manifest and checksums kept beside them."""
     try:
         verified = publish_gate.verify_files(
             target / "files",
@@ -695,7 +737,6 @@ def fetch_run(host: Host, release: Release, run_id: int, name: str, evidence_art
         raise StepError(f"{target} holds {len(verified)} release files, not {RELEASE_FILE_COUNT}")
     for artifact in verified:
         print(f"verified {artifact.sha256}  {artifact.filename}")
-    return target
 
 
 def candidate(host: Host, release: Release, *, run_id: int | None, redispatch: bool) -> Path:
@@ -713,6 +754,9 @@ def candidate(host: Host, release: Release, *, run_id: int | None, redispatch: b
         run_id = int(state["rehearsal_run"])
         print(f"resuming rehearsal run {run_id} from {release.directory / 'state.json'}")
     if run_id is None:
+        on_main = on_main_check(host, release)
+        if not on_main.ok:
+            raise StepError(f"{on_main.name}: {on_main.detail}; rehearse only reviewed history")
         pin_branch(host, release)
         run_id = dispatch_rehearsal(host, release)
     save_state(release, rehearsal_run=run_id)
@@ -735,7 +779,11 @@ def candidate(host: Host, release: Release, *, run_id: int | None, redispatch: b
 
 
 def body(
-    host: Host, release: Release, *, unwrap: Callable[[str], str] | None = None
+    host: Host,
+    release: Release,
+    *,
+    unwrap: Callable[[str], str] | None = None,
+    previous: str | None = None,
 ) -> tuple[Path, Path]:
     """
     Derive the GitHub release body from the commit's notes and check GitHub's render.
@@ -747,9 +795,8 @@ def body(
     notes = show(host, release, release.notes_path)
     if notes is None:
         raise StepError(f"{release.notes_path} is not at COMMIT")
-    problems = notes_problems(
-        notes, release.version, previous_version(host, release), release.repository
-    )
+    base = compare_base(host, release, previous)
+    problems = notes_problems(notes, release.version, base, release.repository)
     if problems:
         raise StepError(f"{release.notes_path}: " + "; ".join(problems))
 
@@ -833,6 +880,7 @@ def verify_tag(host: Host, release: Release, key: Path | None) -> list[Check]:
     checks = [
         Check("annotated tag", kind == "tag", f"{release.tag} is a {kind} object"),
         Check("tag names COMMIT", target == release.commit, str(target)),
+        cargo_versions(host, release),
         Check("tag message", subject == f"fdu {release.version}", subject),
         signature_check(host, release, key),
     ]
@@ -890,11 +938,16 @@ def announce_command(release: Release) -> list[str]:
     return [*gh(release, *create), *(str(path) for path in expected_assets(release).values())]
 
 
-def publishing_run(host: Host, release: Release, run_id: int | None) -> int:
-    """The publishing run on the pushed tag: given, recorded, or the only one found."""
+def require_pushed_tag(host: Host, release: Release) -> None:
+    """Origin holds the release tag, on the release commit."""
     tag = remote_tag(host, release)
     if tag is None or tag[1] != release.commit:
         raise StepError(f"origin has no {release.tag} on COMMIT; tag and push it first")
+
+
+def publishing_run(host: Host, release: Release, run_id: int | None) -> int:
+    """The publishing run on the pushed tag: given, recorded, or the only one found."""
+    require_pushed_tag(host, release)
     if run_id is None:
         recorded = load_state(release).get("publish_run")
         run_id = int(recorded) if recorded else find_publishing_run(host, release)
@@ -913,18 +966,31 @@ def registry_states(host: Host, release: Release, manifest: Path) -> list[Regist
     return states
 
 
-def published(host: Host, release: Release, *, run_id: int | None) -> list[str]:
+def published(
+    host: Host, release: Release, *, run_id: int | None, by_hand: bool = False
+) -> list[str]:
     """
     Verify the publishing run and every registry, and prepare the announcement.
 
     Writes `$RELEASE/registry-state.json` only when every registry holds exactly the
     published manifest's files, and returns the `gh release create` command to run.
+    `by_hand` audits the files a hand publication uploaded, already in
+    `$RELEASE/published`, instead of a publishing run's.
     """
     if not (release.directory / "notes.md").exists():
         raise StepError("run the body step first: the announcement uses its notes.md")
-    run_id = publishing_run(host, release, run_id)
-    verify_run(host, release, run_id, publishing=True)
-    target = fetch_run(host, release, run_id, "published", f"release-evidence-{release.tag}")
+    if by_hand:
+        require_pushed_tag(host, release)
+        target = release.directory / "published"
+        if not (target / "files").is_dir() or not (target / "evidence").is_dir():
+            raise StepError(
+                f"{target} does not hold the uploaded files; Publishing by Hand puts them there"
+            )
+        verify_kept(release, target)
+    else:
+        run_id = publishing_run(host, release, run_id)
+        verify_run(host, release, run_id, publishing=True)
+        target = fetch_run(host, release, run_id, "published", f"release-evidence-{release.tag}")
     states = registry_states(host, release, target / "evidence" / "release-manifest.json")
     if registry_state.exit_status(states, require_identical=True) != 0:
         raise StepError(
@@ -1029,6 +1095,16 @@ def docs_rs_check(host: Host, release: Release, package: str) -> Check:
 
 def announced(host: Host, release: Release, *, cargo: bool) -> list[Check]:
     """What users see after the announcement: release, docs.rs, and installs."""
+    needed = [
+        release.directory / "notes.md",
+        release.directory / "registry-state.json",
+        release.directory / "published" / "files",
+        release.directory / "published" / "evidence",
+    ]
+    missing = [str(path.relative_to(release.directory)) for path in needed if not path.exists()]
+    if missing:
+        detail = f"run the body and published steps first; missing {', '.join(missing)}"
+        return [Check("release directory", False, detail)]
     record = gh_json(host, f"repos/{release.repository}/releases/tags/{release.tag}")
     if record is None:
         return [Check("GitHub release", False, f"no release on {release.tag} yet")]
@@ -1069,32 +1145,37 @@ def announced(host: Host, release: Release, *, cargo: bool) -> list[Check]:
     return checks
 
 
-def cleanup(host: Host, release: Release, *, abandon: bool) -> None:
+def cleanup(host: Host, release: Release, *, abandon: str | None) -> None:
     """
     Delete the rehearsal's `release/vX.Y.Z` branch once the tag has replaced it.
 
-    The tag must name the commit the branch names; `--abandon` deletes the branch of a
-    release that will not be tagged. The lease makes the push delete exactly the commit
-    checked here and nothing a later push moved it to.
+    The tag must name the commit the branch names. For a release that will not be tagged,
+    `--abandon` must name the commit the branch holds, so the deletion is of a commit the
+    maintainer has seen. The lease makes the push delete exactly that commit and nothing a
+    later push moved the branch to.
     """
     ref = f"refs/heads/{release.branch}"
     branch = remote_refs(host, release, ref).get(ref)
     if branch is None:
         print(f"origin has no {release.branch}; nothing to delete")
         return
+    print(f"origin's {release.branch} names {branch}")
     tag = remote_tag(host, release)
-    if tag is None and not abandon:
-        raise StepError(
-            f"origin has no {release.tag}, so {release.branch} is still the only name for the "
-            "rehearsed commit; pass --abandon to delete it for a release that will not be tagged"
-        )
-    if tag is not None and tag[1] != branch:
+    if tag is None:
+        if abandon is None:
+            raise StepError(
+                f"origin has no {release.tag}, so {release.branch} is still the only name for "
+                f"the rehearsed commit; to delete it anyway, pass --abandon {branch}"
+            )
+        if len(abandon) < 7 or not branch.startswith(abandon.lower()):
+            raise StepError(f"--abandon names {abandon}, but {release.branch} names {branch}")
+    elif tag[1] != branch:
         raise StepError(f"{release.tag} names {tag[1]} but {release.branch} names {branch}")
     host.run(
         ["git", "push", f"--force-with-lease={ref}:{branch}", "origin", "--delete", release.branch],
         cwd=release.root,
     )
-    print(f"deleted {release.branch} from origin")
+    print(f"deleted {release.branch} ({branch}) from origin")
 
 
 # --- Command line ---------------------------------------------------------------------
@@ -1110,20 +1191,28 @@ def parser() -> argparse.ArgumentParser:
     key = os.environ.get("SIGNING_KEY")
     result.add_argument("--signing-key", type=Path, default=Path(key) if key else None)
     steps = result.add_subparsers(dest="step", required=True)
-    steps.add_parser("preflight", help="read-only readiness checks")
+    previous_help = "the version the notes compare from, after a version that never shipped"
+    check = steps.add_parser("preflight", help="read-only readiness checks")
+    check.add_argument("--previous", help=previous_help)
     rehearse = steps.add_parser("candidate", help="rehearse COMMIT on GitHub, keep its files")
     rehearse.add_argument("--run", type=int, help="use this rehearsal run instead of dispatching")
     rehearse.add_argument(
         "--redispatch", action="store_true", help="dispatch a new rehearsal of the same commit"
     )
-    steps.add_parser("body", help="derive and render-check the GitHub release body")
+    derive = steps.add_parser("body", help="derive and render-check the GitHub release body")
+    derive.add_argument("--previous", help=previous_help)
     steps.add_parser("verify-tag", help="check the signed tag here, on origin, and on GitHub")
     publish = steps.add_parser("published", help="verify the publishing run and every registry")
     publish.add_argument("--run", type=int, help="the publishing run, when several exist")
+    publish.add_argument(
+        "--by-hand", action="store_true", help="audit the hand-uploaded files in $RELEASE/published"
+    )
     announce = steps.add_parser("announced", help="check the GitHub release, docs.rs, installs")
     announce.add_argument("--cargo", action="store_true", help="also build it with cargo install")
     clean = steps.add_parser("cleanup", help="delete the pinned rehearsal branch")
-    clean.add_argument("--abandon", action="store_true", help="delete it with no tag")
+    clean.add_argument(
+        "--abandon", metavar="COMMIT", help="delete it with no tag; name the commit it holds"
+    )
     recover = steps.add_parser("audit", help="keep a publishing run's files, audit registries")
     recover.add_argument("--run", type=int, help="the publishing run, when several exist")
     return result
@@ -1146,15 +1235,15 @@ def main(
         )
         print(f"fdu {release.version} at {release.commit}, in {release.directory}")
         if args.step == "preflight":
-            return report(preflight(host, release, args.signing_key))
+            return report(preflight(host, release, args.signing_key, previous=args.previous))
         if args.step == "candidate":
             candidate(host, release, run_id=args.run, redispatch=args.redispatch)
         elif args.step == "body":
-            body(host, release)
+            body(host, release, previous=args.previous)
         elif args.step == "verify-tag":
             return report(verify_tag(host, release, args.signing_key))
         elif args.step == "published":
-            published(host, release, run_id=args.run)
+            published(host, release, run_id=args.run, by_hand=args.by_hand)
         elif args.step == "announced":
             return report(announced(host, release, cargo=args.cargo))
         elif args.step == "cleanup":

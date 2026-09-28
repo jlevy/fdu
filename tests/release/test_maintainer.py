@@ -29,8 +29,10 @@ from scripts.release.maintainer import (
     StepError,
 )
 from scripts.release.registry_state import RegistryError
+from tests.release.test_metadata import workflow_jobs
 from tests.release.test_publish_gate import VERSION, record_evidence, write_crate, write_release_set
 
+ROOT = Path(__file__).resolve().parents[2]
 PREVIOUS = "0.1.0"
 COMMIT = "6ec77163a8a1b5a33276bfb6dcaed7dff833d618"
 OTHER = "0dec1d851a51cbd0e9b4f07cc53a4b6c6a38f6f8"
@@ -99,6 +101,9 @@ class FakeHost(Host):
         raise AssertionError(f"unexpected command: {command}")
 
     def attach(self, argv: Sequence[str], *, cwd: Path | None = None) -> int:
+        reason = forbidden(list(argv))
+        if reason is not None:
+            raise AssertionError(f"{reason} is the maintainer's step: {list(argv)}")
         self.attached.append(list(argv))
         return self.attach_status
 
@@ -202,6 +207,13 @@ class NotesTests(unittest.TestCase):
         self.assertEqual(
             maintainer.notes_problems(draft, VERSION, PREVIOUS, REPO),
             ["2 HTML comments, where only the guideline footer belongs"],
+        )
+
+    def test_a_link_to_a_moving_branch_is_named(self) -> None:
+        moving = NOTES.replace(f"blob/{TAG}/SECURITY.md", "blob/main/SECURITY.md")
+        self.assertEqual(
+            maintainer.notes_problems(moving, VERSION, PREVIOUS, REPO),
+            [f"a link pins main, not {TAG}"],
         )
 
     def test_the_previous_version_is_the_highest_tag_below_this_one(self) -> None:
@@ -323,6 +335,32 @@ class PreflightTests(ReleaseCase):
         self.assertIn("SSH public key", detail)
         self.assertNotIn("secret", detail)
 
+    def test_an_unreadable_secret_listing_fails_rather_than_passing(self) -> None:
+        self.host.on(
+            ["gh", "api", f"repos/{REPO}/actions/secrets"], failure("gh: Not Found (HTTP 404)")
+        )
+        checks = self.preflight()
+        self.assertEqual(self.failed(checks), ["registry secrets"])
+        self.assertIn("could not list", checks["registry secrets"].detail)
+
+    def test_the_compare_base_can_skip_a_version_that_never_shipped(self) -> None:
+        burned = f"{OTHER}\trefs/tags/v{PREVIOUS}\n{OTHER}\trefs/tags/v0.1.5\n"
+        self.host.on(["git", "ls-remote", "--tags", "--refs", "origin", "v*"], burned)
+        self.remote[f"refs/tags/v{PREVIOUS}"] = OTHER
+        checks = self.preflight()
+        self.assertEqual(self.failed(checks), ["release notes"])
+        self.assertIn(f"no compare link v0.1.5...{TAG}", checks["release notes"].detail)
+        with_base = maintainer.preflight(self.host, self.release, self.key, previous=PREVIOUS)
+        self.assertEqual([check.name for check in with_base if not check.ok], [])
+        for previous, message in (("0.0.9", "origin has no tag"), ("0.3.0", "below")):
+            checks = {
+                check.name: check
+                for check in maintainer.preflight(
+                    self.host, self.release, self.key, previous=previous
+                )
+            }
+            self.assertIn(message, checks["release notes"].detail)
+
     def test_a_leftover_registry_token_fails(self) -> None:
         self.secrets["environment"] = [{"name": "CARGO_REGISTRY_TOKEN"}]
         self.secrets["repository"] = [{"name": "PYPI_API_TOKEN"}, {"name": "UNRELATED"}]
@@ -388,9 +426,12 @@ class CandidateTests(ReleaseCase):
             "status": "completed",
             "conclusion": "success",
             "displayTitle": f"Release rehearsal on {BRANCH}",
+            "workflowName": "Release",
         }
         self.evidence = f"release-evidence-rehearsal-{COMMIT[:9]}"
         self.host.on(["git", "push"], "")
+        self.host.on(["git", "fetch"], "")
+        self.host.on(["git", "merge-base", "--is-ancestor"], "")
         self.host.on(["gh", "run", "list"], lambda _argv: json.dumps(self.runs.pop(0)))
         self.host.on(["gh", "workflow", "run"], "Created workflow_dispatch event for release.yml\n")
         self.host.on(
@@ -461,6 +502,18 @@ class CandidateTests(ReleaseCase):
             [{"databaseId": 42, "headSha": COMMIT}, {"databaseId": 43, "headSha": COMMIT}],
         ]
         with self.assertRaisesRegex(StepError, r"several new rehearsals appeared \(42, 43\)"):
+            self.candidate()
+
+    def test_a_commit_off_main_is_not_pinned_or_dispatched(self) -> None:
+        self.host.on(["git", "merge-base", "--is-ancestor"], failure(""))
+        with self.assertRaisesRegex(StepError, "not on origin/main"):
+            self.candidate()
+        self.assertEqual(self.host.commands("git", "push"), [])
+        self.assertEqual(self.host.commands("gh", "workflow"), [])
+
+    def test_a_run_of_another_workflow_is_refused(self) -> None:
+        self.view["workflowName"] = "CI"
+        with self.assertRaisesRegex(StepError, "it is a CI run, not Release"):
             self.candidate()
 
     def test_a_branch_pinned_at_another_commit_stops_before_dispatch(self) -> None:
@@ -618,6 +671,17 @@ class VerifyTagTests(ReleaseCase):
         failed = [name for name, check in self.verify().items() if not check.ok]
         self.assertEqual(failed, ["on origin", "GitHub verified"])
 
+    def test_a_tag_on_a_commit_of_another_version_fails_before_the_push(self) -> None:
+        self.files.update(
+            {
+                path: text
+                for path, text in workspace_files(PREVIOUS).items()
+                if path.endswith("Cargo.toml")
+            }
+        )
+        failed = [name for name, check in self.verify().items() if not check.ok]
+        self.assertEqual(failed, ["Cargo versions at COMMIT"])
+
     def test_a_lightweight_or_misplaced_tag_fails(self) -> None:
         self.kind = "commit"
         self.target = OTHER
@@ -670,8 +734,23 @@ class SigningRecipeTests(unittest.TestCase):
             git = ["git", "-c", "user.name=Maintainer", "-c", "user.email=maintainer@example.com"]
             subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
             subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+            for path, text in workspace_files().items():
+                (checkout / path).parent.mkdir(parents=True, exist_ok=True)
+                (checkout / path).write_text(text, encoding="utf-8")
+            subprocess.run(["git", "-C", str(checkout), "add", "-A"], check=True)
             subprocess.run(
-                [*git, "-C", str(checkout), "commit", "-q", "--allow-empty", "-m", "c"], check=True
+                [
+                    *git,
+                    "-C",
+                    str(checkout),
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-q",
+                    "-m",
+                    "c",
+                ],
+                check=True,
             )
             subprocess.run(
                 ["git", "-C", str(checkout), "remote", "add", "origin", str(origin)], check=True
@@ -724,6 +803,7 @@ class PublishedTests(ReleaseCase):
             "status": "completed",
             "conclusion": "success",
             "displayTitle": f"Publish {TAG}",
+            "workflowName": "Release",
             "jobs": [{"name": maintainer.PUBLISH_JOB, "conclusion": "success"}],
         }
         self.host.on(["gh", "run", "view"], lambda _: json.dumps(self.view))
@@ -732,11 +812,12 @@ class PublishedTests(ReleaseCase):
     def download(self, argv: list[str]) -> str:
         directory = Path(argv[argv.index("--dir") + 1])
         write_download(directory, f"release-evidence-{TAG}")
-        manifest = json.loads(
-            (directory / f"release-evidence-{TAG}" / "release-manifest.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        self.serve(directory / f"release-evidence-{TAG}" / "release-manifest.json")
+        return ""
+
+    def serve(self, path: Path) -> None:
+        """Have both registries hold exactly the files `path` names."""
+        manifest = json.loads(path.read_text(encoding="utf-8"))
         digests = {item["filename"]: item["sha256"] for item in manifest["artifacts"]}
         for package in ("fdu-core", "fdu"):
             record = {"version": {"checksum": digests[f"{package}-{VERSION}.crate"]}}
@@ -751,7 +832,6 @@ class PublishedTests(ReleaseCase):
         self.host.urls[f"https://pypi.org/pypi/fdu/{VERSION}/json"] = json.dumps(
             {"urls": python}
         ).encode()
-        return ""
 
     def published(self, run_id: int | None = None) -> list[str]:
         return self.quietly(lambda: maintainer.published(self.host, self.release, run_id=run_id))
@@ -782,6 +862,24 @@ class PublishedTests(ReleaseCase):
         with self.assertRaisesRegex(StepError, "Recover From a Partial Publication"):
             self.published()
         self.assertFalse((self.release.directory / "registry-state.json").exists())
+
+    def test_a_hand_publication_is_audited_from_its_kept_files(self) -> None:
+        with self.assertRaisesRegex(StepError, "Publishing by Hand puts them there"):
+            self.quietly(
+                lambda: maintainer.published(self.host, self.release, run_id=None, by_hand=True)
+            )
+        published = self.release.directory / "published"
+        (published / "files").mkdir(parents=True)
+        (published / "evidence").mkdir()
+        write_release_set(published / "files")
+        record_evidence(published / "files", published / "evidence")
+        self.serve(published / "evidence" / "release-manifest.json")
+        command = self.quietly(
+            lambda: maintainer.published(self.host, self.release, run_id=None, by_hand=True)
+        )
+        self.assertEqual(command[:4], ["gh", "release", "create", TAG])
+        self.assertTrue((self.release.directory / "registry-state.json").exists())
+        self.assertEqual(self.host.commands("gh", "run"), [])
 
     def test_several_publishing_runs_need_an_explicit_choice(self) -> None:
         self.runs.append({"databaseId": 89, "displayTitle": f"Publish {TAG}", "headSha": COMMIT})
@@ -919,6 +1017,13 @@ class AnnouncedTests(ReleaseCase):
         self.record.update(draft=True, body="Edited on GitHub.")
         self.assertEqual(self.failed(), ["GitHub release", "release body"])
 
+    def test_announcing_before_publishing_is_a_failed_line(self) -> None:
+        (self.release.directory / "registry-state.json").unlink()
+        checks = maintainer.announced(self.host, self.release, cargo=False)
+        self.assertEqual([check.name for check in checks], ["release directory"])
+        self.assertIn("registry-state.json", checks[0].detail)
+        self.assertEqual(self.host.calls, [])
+
     def test_no_release_yet_fails_once(self) -> None:
         self.host.on(["gh", "api", f"repos/{REPO}/releases/tags/{TAG}"], failure("HTTP 404"))
         self.assertEqual(self.failed(), ["GitHub release"])
@@ -931,7 +1036,7 @@ class CleanupTests(ReleaseCase):
         super().setUp()
         self.host.on(["git", "push"], "")
 
-    def cleanup(self, *, abandon: bool = False) -> None:
+    def cleanup(self, *, abandon: str | None = None) -> None:
         self.quietly(lambda: maintainer.cleanup(self.host, self.release, abandon=abandon))
 
     def test_the_branch_is_deleted_under_a_lease_once_the_tag_replaces_it(self) -> None:
@@ -954,17 +1059,22 @@ class CleanupTests(ReleaseCase):
 
     def test_without_a_tag_the_branch_stays_unless_abandoned(self) -> None:
         self.remote[f"refs/heads/{BRANCH}"] = COMMIT
-        with self.assertRaisesRegex(StepError, "--abandon"):
+        with self.assertRaisesRegex(StepError, f"pass --abandon {COMMIT}"):
             self.cleanup()
+        with self.assertRaisesRegex(StepError, f"--abandon names {OTHER[:9]}"):
+            self.cleanup(abandon=OTHER[:9])
+        with self.assertRaisesRegex(StepError, "--abandon names 6ec"):
+            self.cleanup(abandon="6ec")
         self.assertEqual(self.host.commands("git", "push"), [])
-        self.cleanup(abandon=True)
+        self.cleanup(abandon=COMMIT[:9])
         self.assertEqual(len(self.host.commands("git", "push")), 1)
+        self.assertIn(f"deleted {BRANCH} ({COMMIT})", self.output.getvalue())
 
     def test_a_branch_the_tag_does_not_name_stays(self) -> None:
         self.remote[f"refs/heads/{BRANCH}"] = OTHER
         self.push_tag()
         with self.assertRaisesRegex(StepError, "names"):
-            self.cleanup(abandon=True)
+            self.cleanup(abandon=OTHER)
         self.assertEqual(self.host.commands("git", "push"), [])
 
     def test_no_branch_is_nothing_to_do(self) -> None:
@@ -1018,6 +1128,23 @@ class ResolveTests(unittest.TestCase):
             with self.subTest(overrides=overrides), self.assertRaisesRegex(StepError, message):
                 self.resolve(**overrides)
 
+    def test_every_step_binds_the_directory_to_its_first_commit(self) -> None:
+        release = self.resolve()
+        state = json.loads((release.directory / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state, {"commit": COMMIT, "version": VERSION})
+        self.host.on(["git", "rev-parse", "--verify"], f"{OTHER}\n")
+        with self.assertRaisesRegex(StepError, "new RELEASE directory"):
+            self.resolve(commit=OTHER[:9])
+        stderr = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+            status = maintainer.main(
+                ["--version", VERSION, "--commit", OTHER, "--dir", str(release.directory), "body"],
+                host=self.host,
+                cwd=self.base,
+            )
+        self.assertEqual(status, 1)
+        self.assertIn("new RELEASE directory", stderr.getvalue())
+
     def test_an_unknown_commit_says_to_fetch(self) -> None:
         self.host.on(["git", "rev-parse", "--verify"], failure(""))
         with self.assertRaisesRegex(StepError, "git fetch origin"):
@@ -1033,6 +1160,35 @@ class ResolveTests(unittest.TestCase):
             )
         self.assertEqual(status, 1)
         self.assertIn("set COMMIT", stderr.getvalue())
+
+
+class WorkflowContractTests(unittest.TestCase):
+    """The names the steps match on are the ones release.yml gives its runs and job."""
+
+    def test_the_workflow_run_and_job_names_match_the_helper(self) -> None:
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.splitlines()[0], f"name: {maintainer.WORKFLOW_NAME}")
+        run_name = " ".join(workflow.split("run-name: >-\n", 1)[1].split("\n\n", 1)[0].split())
+        self.assertEqual(
+            run_name,
+            "${{ inputs.publish && format('Publish {0}', github.ref_name)"
+            " || format('Release rehearsal on {0}', github.ref_name) }}",
+        )
+        publish = workflow_jobs(workflow)["publish"]
+        self.assertEqual(publish.splitlines()[0], f"    name: {maintainer.PUBLISH_JOB}")
+
+    def test_the_test_host_refuses_maintainer_writes_on_every_path(self) -> None:
+        host = FakeHost()
+        for argv in (
+            ["gh", "release", "create", TAG],
+            ["gh", "workflow", "run", "release.yml", "-f", "publish=true"],
+            ["git", "push", "origin", f"refs/tags/{TAG}"],
+        ):
+            with self.subTest(argv=argv):
+                with self.assertRaisesRegex(AssertionError, "maintainer's step"):
+                    host.attach(argv)
+                with self.assertRaisesRegex(AssertionError, "maintainer's step"):
+                    host.run(argv)
 
 
 class MakefileTests(unittest.TestCase):

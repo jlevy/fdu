@@ -343,8 +343,7 @@ Then install the candidate as a user would, and run the two manual procedures on
 
 Record the results beside the procedures that produced them, in one pull request: the
 [QA playbook](../../../tests/qa/cli-installed-e2e.qa.md)’s Current Status table, and the
-[correctness runbook](correctness-runbook.md)’s Last Recorded Run section, which the
-0.2.0 records (pull request #152) added.
+[correctness runbook](correctness-runbook.md)’s Last Recorded Run section.
 Name the commit and the artifact installed, the host regime (platform, bare metal or
 virtualized, filesystem), each correctness pass with its verdict, and every bead filed.
 A longer narrative can also go in a dated report under `docs/project/reports/`, as
@@ -368,21 +367,25 @@ answer is marked stale clearly enough in plain text is an open decision (`fdu-md
 | --- | --- |
 | `COMMIT on origin/main` | The commit is an ancestor of origin’s `main`. |
 | `Cargo versions at COMMIT` | All three package manifests and both workspace pins name `VERSION`. |
-| `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository links name `v$VERSION`, its compare link starts from the previous release’s tag, and it holds one HTML comment. |
+| `release notes` | `docs/project/release-notes/$VERSION.md` exists at the commit, its repository links name `v$VERSION` (never a branch such as `main`), its compare link starts from the previous release’s tag, and it holds one HTML comment. |
 | `CHANGELOG` | The commit’s CHANGELOG has a `## [$VERSION] - YYYY-MM-DD` heading. |
 | `tag v$VERSION` | Origin has no such tag. |
 | `crates.io fdu-core`, `crates.io fdu`, `PyPI fdu` | Each registry answers 404 for this version. The names exist since `0.1.0`, so only the version proves anything. |
-| `private vulnerability reporting` | GitHub’s private reporting form, which SECURITY.md and the notes point to, is enabled. |
+| `private vulnerability reporting` | GitHub’s private reporting form, which SECURITY.md and the notes point to, is enabled. If not, a maintainer enables it with `gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting`. |
 | `release environment` | The environment requires a reviewer, admits only `v*` tag deployments, and denies administrators a bypass. |
 | `registry secrets` | Neither the environment nor the repository holds a Cargo or PyPI token. |
 | `signing key` | `SIGNING_KEY` is a public key that GitHub lists among your signing keys. |
 
 A registry that cannot be read fails its own line with the URL, rather than passing as
-absent. Preflight cannot see crates.io’s trusted-publisher records, which only a crate
-owner’s login can read.
-If one is missing, the publish job fails at its OIDC exchange, before its first upload;
-register it as [Trusted Publishers](#trusted-publishers) describes and rerun the failed
-job.
+absent, and so does a secret listing that cannot be read.
+The previous release’s tag is the highest `v*` tag below `VERSION`; after a version that
+was tagged but never shipped, name the real base with `ARGS="--previous X.Y.Z"`, which
+`make release-body` accepts too.
+Preflight cannot see crates.io’s trusted-publisher records, which only a crate owner’s
+login can read.
+If one is missing, the publish job fails at its OIDC exchange, before its
+first upload; register it as [Trusted Publishers](#trusted-publishers) describes and
+rerun the failed job.
 
 ### Rehearse the Release Commit
 
@@ -391,9 +394,10 @@ A dispatch takes a branch or tag, not a commit, and `main` may have moved on by 
 the release is cut, so the step pins a branch at the commit first: `release/v$VERSION`,
 pushed with an empty lease so that it is created or the push fails, never moved.
 If the branch already exists at another commit, the step stops.
-It then dispatches `release.yml` on that branch with no inputs, so `publish` keeps its
-default of false; finds the new run; watches it; and checks that the run built `COMMIT`,
-succeeded, and skipped its publish job.
+Before pinning, it requires the commit to be on origin’s `main`. It then dispatches
+`release.yml` on that branch with no inputs, so `publish` keeps its default of false;
+finds the new run; watches it; and checks that the run is a `Release` rehearsal that
+built `COMMIT`, succeeded, and skipped its publish job.
 
 It downloads the run’s artifacts into `$RELEASE/rehearsal/files` and
 `$RELEASE/rehearsal/evidence` and verifies them with the publish job’s own check:
@@ -416,7 +420,8 @@ Keep `$RELEASE` until the release is announced: its files are what
 The step is equivalent to these commands, for a host that cannot run it:
 
 ```shell
-git push origin "$COMMIT:refs/heads/release/v$VERSION"
+git push --force-with-lease="refs/heads/release/v$VERSION:" origin \
+  "$COMMIT:refs/heads/release/v$VERSION"
 gh workflow run release.yml --repo jlevy/fdu --ref "release/v$VERSION"
 gh run list --repo jlevy/fdu --workflow release.yml --branch "release/v$VERSION" --limit 1
 gh run watch <run-id> --repo jlevy/fdu --exit-status
@@ -480,9 +485,9 @@ verified:
    GitHub account.
 
 `make release-verify-tag` checks that the tag is annotated, names `COMMIT`, and carries
-the expected message, and verifies its signature against `SIGNING_KEY` alone through a
-temporary allowed-signers file.
-It requires both a zero exit from `git tag -v` and git’s own
+the expected message, that `COMMIT` carries `VERSION` in every Cargo manifest, and
+verifies the signature against `SIGNING_KEY` alone through a temporary allowed-signers
+file. It requires both a zero exit from `git tag -v` and git’s own
 `Good "git" signature for <email>` line.
 By hand, the same check is:
 
@@ -492,9 +497,9 @@ printf '%s namespaces="git" %s\n' "$(git config user.email)" "$(cat "$SIGNING_KE
 git -c gpg.ssh.allowedSignersFile="$RELEASE/allowed_signers" tag -v "v$VERSION"
 ```
 
-Read its whole output and its exit status; piping `tag -v` through `tail` once hid the
-verification line. Before the push it reports the tag as not yet pushed; a failure there
-is still local, so delete the tag with `git tag -d "v$VERSION"` and create it again.
+Read its whole output and its exit status.
+Before the push it reports the tag as not yet pushed; a failure there is still local, so
+delete the tag with `git tag -d "v$VERSION"` and create it again.
 After the push it also requires origin to hold the same tag object and GitHub to report
 it verified. A pushed tag never moves: if it is wrong, the next patch version replaces
 it, as step 5 of
@@ -597,7 +602,8 @@ Three checks remain by eye:
 the commit the branch names; the tag replaces it.
 The push carries a lease on the commit it checked, so it cannot delete a branch someone
 moved in the meantime.
-For a release abandoned before its tag, `ARGS=--abandon` deletes the branch anyway.
+For a release abandoned before its tag, `ARGS="--abandon <commit>"` deletes the branch
+anyway; the step refuses unless that is the commit the branch names, which it prints.
 
 Then move `$RELEASE` and the stability worktree to the trash, close the release bead,
 and run `tbd sync`.
@@ -674,6 +680,9 @@ Nothing this process writes can conflict before `fdu-core` is on crates.io.
    Both crates are published at the new version, `fdu-core` included, even if its source
    did not change. `make release-preflight` already requires the new version, not the
    name, to be absent from every registry.
+   The new notes compare from the last version that shipped, so pass
+   `ARGS="--previous <that version>"` to `make release-preflight` and
+   `make release-body`: the version that never shipped still has a tag.
 
 Whatever the outcome, unset and revoke every token as the steps above describe.
 
@@ -703,10 +712,17 @@ pinned Rust, after confirming it names the rehearsed commit and the Cargo versio
 git clone --branch "v$VERSION" https://github.com/jlevy/fdu "$RELEASE/fdu"
 cd "$RELEASE/fdu"
 uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \
-  --mode release --ref "refs/tags/v$VERSION" --commit "$COMMIT" --validate-checkout
+  --mode release --ref "refs/tags/v$VERSION" --commit "$(git rev-parse "$COMMIT")" \
+  --validate-checkout
 ```
 
-Afterwards, continue with [Announce the Release](#announce-the-release).
+Afterwards, back in your own clone, audit the registries against the files you uploaded,
+which writes `$RELEASE/registry-state.json` and prints the announcement, then continue
+with [Announce the Release](#announce-the-release):
+
+```shell
+make release-published ARGS=--by-hand
+```
 
 ### Publish the Crates
 
