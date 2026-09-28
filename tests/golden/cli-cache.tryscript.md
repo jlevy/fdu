@@ -505,6 +505,7 @@ $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 p
 }
 ! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! tip: show more rows: --limit=all
 ? 0
 ```
@@ -819,6 +820,7 @@ $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --dept
 }
 ! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! tip: show more rows: --limit=all
 ? 0
 ```
@@ -932,6 +934,7 @@ $ fdu --stale-ok --format json --size apparent --limit 0 project
     }
   ]
 }
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! tip: show more rows: --limit=all
 ? 0
 ```

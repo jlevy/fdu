@@ -92,15 +92,15 @@ Durations, percentages, and scaled byte units keep their own precision rules.
 Formatted results belong on stdout.
 Human diagnostics belong on stderr, including when stdout is redirected or contains
 JSON, JSONL, YAML, paths, or long rows.
-A library renderer returns only the formatted result; notes and tips are exposed
-separately for the caller to route.
+A library renderer returns only the formatted result; notes, the report’s own warnings,
+and tips are exposed separately for the caller to route.
 
 Use short lines with these prefixes, without category headings or empty categories:
 
 | Category | Meaning | Terminal style |
 | --- | --- | --- |
 | `note:` | Coverage, interpretation, and limitations of the result | Gray, not bold |
-| `warn:` | An operation failed or could not complete; useful results may remain | Yellow, not bold |
+| `warn:` | An operation failed or could not complete, or nothing verified the answer; useful results may remain | Yellow, not bold |
 | `tip:` | A specific action or option that changes the result or reveals more detail | Gray, not bold |
 | `perf:` | Observed execution work and elapsed time | Gray, not bold |
 | Error | A fatal or usage error, using the command’s established error rendering | Red and bold |
@@ -117,8 +117,23 @@ gitignored values are included in totals, and hidden file tallies are recursive 
 already included in directory totals.
 Emit each clarification once per report.
 `--quiet` (`-q`) suppresses notes, tips, performance lines, and transient progress.
-It preserves result stdout, warnings, errors, completeness facts, and exit status.
-Machine reports keep their structured facts; quiet controls diagnostic presentation.
+It preserves result stdout, warnings, errors, completeness and freshness facts, and exit
+status. Machine reports keep their structured facts; quiet controls diagnostic
+presentation.
+
+A fact the reader must not miss is therefore a warning, not a note.
+The one the engine owns marks an answer the snapshot gave without filesystem
+verification, which only `--stale-ok` (Python `stale_ok`) requests.
+It appears on every format, between notes and tips, and names the surface’s own option
+for a fresh answer:
+
+```text
+warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
+```
+
+A verified answer, cold or warm, carries none.
+The performance footer’s `cache only` restates the same fact as execution cost, and
+quiet removes it, so it cannot be the marker.
 
 Apply color using stderr’s terminal state for diagnostics and stdout’s terminal state
 for results.
@@ -276,11 +291,12 @@ A display limit hides rows but does not reduce totals or filesystem work.
 
 ## Ownership and Enforcement
 
-The engine owns facts, display omissions, and actionable suggestions.
-Diagnostic categories are explicit values; frontends do not recover them by parsing
-rendered text. Surface vocabulary supplies option names, so Python suggestions name
-Python arguments. The CLI adds run telemetry and operational warnings, then routes each
-category to stderr.
+The engine owns facts, display omissions, actionable suggestions, and the warnings that
+describe the answer itself (`report_warnings`, Python `Report.warnings`). Diagnostic
+categories are explicit values; frontends do not recover them by parsing rendered text.
+Surface vocabulary supplies option names, so Python suggestions name Python arguments.
+The CLI adds run telemetry and operational warnings, then routes each category to
+stderr.
 
 Use one shared golden corpus for CLI and installed Python results.
 Expected stdout and stderr are recorded separately.

@@ -574,8 +574,9 @@ $ node -e "const fs=require('node:fs'); fs.mkdirSync('cached-partial-project'); 
 ```
 
 Invalid UTF-8 is explicit coverage, not an operational failure.
-Cold and cache-only runs both preserve that evidence without a warning, an error, or a
-partial exit status.
+Cold and cache-only runs both preserve that evidence without an error or a partial exit
+status, and neither warns about it; the cache-only run’s one warning says only that its
+answer is stale.
 
 ```console
 $ fdu --analyze lines --view types --size apparent cached-partial-project
@@ -587,6 +588,7 @@ $ fdu --analyze lines --view types --size apparent cached-partial-project
 ```console
 $ fdu --stale-ok --analyze lines --view types --size apparent cached-partial-project
        6 B  100.0%  text               1 file, 1 invalid UTF-8
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 1 cached (6 B); cache only
 ? 0
 ```
@@ -616,15 +618,18 @@ $ fdu --analyze lines --view summary --size apparent content-project
 $ fdu --stale-ok --analyze lines --view documents --format jsonl --size apparent content-project
 {"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 {"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ? 0
 ```
 
-A cache-only report states that it did no filesystem walk.
+A cache-only report states that it did no filesystem walk, and warns that its answer is
+stale.
 
 ```console
 $ fdu --stale-ok --analyze lines --view summary --size apparent content-project
      256 B  7 files, 4 directories
 ! note: requested analysis is not displayed by the selected views
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! tip: show analysis: --view families, languages, or full
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 0 B; analysis 0 fresh, 7 cached (256 B); cache only
 ? 0

@@ -1030,6 +1030,7 @@ fn projection_result_dict<'py>(
             let renderer = super::PyOneShot { report: value.clone() };
             report.set_item("notes", renderer.notes())?;
             report.set_item("tips", renderer.tips())?;
+            report.set_item("warnings", renderer.warnings())?;
             report.set_item("renderer", Py::new(py, renderer)?)?;
             out.set_item("value", report)?;
         }

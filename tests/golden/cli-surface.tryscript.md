@@ -566,7 +566,8 @@ Check the process exit status and these fields:
 
 `provenance.source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only
 `--stale-ok` can return `provenance.freshness: stale`, and it says so rather than
-implying currency; it fails outright when no usable snapshot exists rather than silently
+implying currency: every format also prints a `warn: stale answer` line on stderr, which
+`--quiet` keeps. It fails outright when no usable snapshot exists rather than silently
 scanning.
 
 Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or
@@ -812,7 +813,8 @@ CACHE BEHAVIOR
 
   --stale-ok answers from the snapshot alone: it does no filesystem verification,
   requires a compatible snapshot and content sidecar for the requested analysis,
-  and labels its answer stale. --cache=off neither reads nor writes fdu's cache.
+  and labels its answer stale with a warn: line on stderr that --quiet keeps.
+  --cache=off neither reads nor writes fdu's cache.
 
   macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
   --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.

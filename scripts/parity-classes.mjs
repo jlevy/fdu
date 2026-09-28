@@ -15,7 +15,12 @@
 // the literal are the same text. Without this, any session whose block diff contains a
 // path cannot be matched line by line, and a real difference elsewhere in that block -- a
 // label, a note -- reads as unexplained for a reason that has nothing to do with it.
-const sameSeparator = (line) => line.replace(/\[SEP\]/g, '/');
+//
+// [JSON_SEP] is the same separator inside a JSON string, and the artifact is recorded on
+// Linux, where that separator is `/` as well. It reached a failing block for the first
+// time when the stale-answer warning (fdu-mdop) made the one JSONL tree session with
+// nested paths differ on stderr, which puts its whole stdout block in the diff.
+const sameSeparator = (line) => line.replace(/\[(?:JSON_)?SEP\]/g, '/');
 
 // tryscript expands named patterns into concrete values on the Python side of a diff.
 // After classification checks those values, keep the artifact stable across runs.
@@ -128,6 +133,14 @@ const sameBoundTip = (removed, added) => {
 const sameAnalysisTip = (removed, added) =>
   removed === 'tip: include omitted views: add --analyze code' &&
   added === 'tip: include omitted views: add analyze code';
+// The engine's stale-answer warning names each surface's own option for a fresh answer
+// (fdu-mdop). Pinned whole, like the tips above, so no other warning can borrow it.
+const staleWarning = (option) =>
+  `warn: stale answer: served from the snapshot without filesystem verification; drop ${option} for a fresh answer`;
+const sameStaleWarning = (removed, added) => {
+  const marker = removed.startsWith('! ') ? '! ' : '';
+  return removed === marker + staleWarning('--stale-ok') && added === marker + staleWarning('stale_ok');
+};
 const usesBoundTip = (line) =>
   /^(! )?tip: /.test(line) &&
   /(?:--min-share|min_share|--depth|depth|--breadth|breadth|--limit|limit)=/.test(line);
@@ -144,7 +157,8 @@ export const CLASSES = [
       'The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a',
       'platform separator. The Python replay prints the sandbox root and a literal',
       'separator. Only the exact fixture root and otherwise identical lines match;',
-      'exact bound and omitted-view tip translations can accompany those lines.',
+      'exact bound and omitted-view tip translations, and the stale-answer warning',
+      'naming each surface\'s option, can accompany those lines.',
     ],
     matches: ({ file, removed, added }) =>
       removed.length > 0 &&
@@ -152,7 +166,8 @@ export const CLASSES = [
       removed.every((line, i) =>
         portablePatternMatches(line, added[i], file) ||
         sameBoundTip(line, added[i]) ||
-        sameAnalysisTip(line, added[i]),
+        sameAnalysisTip(line, added[i]) ||
+        sameStaleWarning(line, added[i]),
       ) &&
       removed.some((line, i) =>
         line !== added[i] && portablePatternMatches(line, added[i], file),

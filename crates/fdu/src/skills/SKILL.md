@@ -418,7 +418,8 @@ Check the process exit status and these fields:
 
 `provenance.source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only
 `--stale-ok` can return `provenance.freshness: stale`, and it says so rather than
-implying currency; it fails outright when no usable snapshot exists rather than silently
+implying currency: every format also prints a `warn: stale answer` line on stderr, which
+`--quiet` keeps. It fails outright when no usable snapshot exists rather than silently
 scanning.
 
 Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or

@@ -2,9 +2,15 @@
 //!
 //! A completed report ends with short, self-contained lines in category order:
 //! `note:` explains coverage or interpretation; `warn:` identifies an operational
-//! failure; `tip:` gives an actionable existing option; `perf:` summarizes run cost.
-//! No section headings or empty categories. The engine supplies notes and tips as
-//! distinct values; frontends insert operational warnings and human-report telemetry.
+//! failure or an answer nothing verified; `tip:` gives an actionable existing option;
+//! `perf:` summarizes run cost. No section headings or empty categories. The engine
+//! supplies notes, tips, and the warnings that describe the answer itself as distinct
+//! values; frontends insert operational warnings and human-report telemetry.
+//!
+//! A stale-ok answer is the engine's one warning: the snapshot answered without the
+//! filesystem being consulted, and a reader who misses that takes old numbers for current
+//! ones. It is a warning rather than a note so that quiet output keeps it, and it names the
+//! surface's own option for a fresh answer (`--stale-ok` or `stale_ok`).
 //!
 //! Collect remedies from actual omissions across all directories and views, then emit
 //! each once in stable order. A display omission changes neither totals nor scan work.
@@ -18,11 +24,12 @@
 //! Frontends route these lines to stderr after result stdout, including for structured
 //! output. Notes, tips, and performance are gray; warnings yellow without bold; fatal
 //! errors red and bold. Color follows the receiving stream's terminal/color settings.
-//! Quiet frontends suppress notes, tips, and performance, while retaining warnings and
-//! fatal errors. The collector remains a pure description of report facts.
+//! Quiet frontends suppress notes, tips, and performance, while retaining warnings --
+//! the engine's [`report_warnings`] among them -- and fatal errors. The collector remains a
+//! pure description of report facts.
 //! See `docs/project/architecture/fdu-output-design.md` for examples and test coverage.
 
-use crate::query::{IgnoredEntries, Report, Section, SizeMetric, TreeOmissionReason};
+use crate::query::{IgnoredEntries, Report, ReportSource, Section, SizeMetric, TreeOmissionReason};
 
 /// Human diagnostics retain categories rather than parsing rendered text.
 #[derive(Clone, Debug, Default)]
@@ -35,6 +42,9 @@ pub struct DiagnosticLines {
 
 impl DiagnosticLines {
     /// Facts followed by suggestions when no operational warnings intervene.
+    ///
+    /// Carries no warnings, the report's own included: [`diagnostics`] adds
+    /// [`report_warnings`] between the two.
     pub fn into_lines(mut self) -> Vec<String> {
         self.notes.extend(self.tips);
         self.notes
@@ -47,9 +57,40 @@ pub fn diagnostic_lines(report: &Report) -> DiagnosticLines {
     DiagnosticLines { notes, tips }
 }
 
-/// Factual notes followed by actionable tips, for a frontend's diagnostic stream.
+/// Factual notes, the report's own warnings, then actionable tips, for a frontend's
+/// diagnostic stream.
 pub fn diagnostics(report: &Report) -> Vec<String> {
-    diagnostic_lines(report).into_lines()
+    with_warnings(report, diagnostic_lines(report))
+}
+
+/// Conditions of the answer itself that a reader must not miss, which quiet output keeps.
+///
+/// Distinct from notes because `--quiet` suppresses notes, and distinct from a frontend's
+/// operational warnings (a failed save, an unreadable path) because the engine owns this
+/// fact: every surface prints the same line, naming its own option for a fresh answer.
+/// Today that is one line, for an answer the snapshot gave without the filesystem being
+/// consulted ([`ReportSource::CacheOnly`], which only a
+/// [`Delivery::stale_ok`](crate::query::Delivery::stale_ok) request produces). A verified
+/// answer, cold or warm, carries none.
+pub fn report_warnings(report: &Report) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if report.provenance.source == ReportSource::CacheOnly {
+        warnings.push(format!(
+            "warn: stale answer: served from the snapshot without filesystem verification; \
+             drop {} for a fresh answer",
+            report.axes.stale_ok
+        ));
+    }
+    warnings
+}
+
+/// Notes, then the report's warnings, then tips: the category order with no frontend
+/// warnings between them.
+pub(super) fn with_warnings(report: &Report, lines: DiagnosticLines) -> Vec<String> {
+    let DiagnosticLines { mut notes, tips } = lines;
+    notes.extend(report_warnings(report));
+    notes.extend(tips);
+    notes
 }
 
 /// Facts about coverage and presentation, without suggestions or run telemetry.
