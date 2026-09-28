@@ -37,6 +37,13 @@ archive, CLI/Python parity, and the 2,267-case path-independence subset.
 Deterministic editable-build freshness is tracked as `fdu-35b1` rather than worked
 around in the public API.
 
+The first pushed integration exposed an older macOS test race (`fdu-93gd`): two
+independent native watchers can retain different legitimate setup-gap diagnostics.
+Exact progress-observed versus unobserved report equality now uses the existing scripted
+handoff seam with identical empty event streams and a nonempty Summary report.
+The native test retains public-start, progress, and completeness assertions.
+No production behavior changed, and no observation errors are masked.
+
 ## Cache Correctness Runbook
 
 The [correctness runbook](../guides/correctness-runbook.md) was run on the combined

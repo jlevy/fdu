@@ -1109,7 +1109,8 @@ mod tests {
 
     /// The handoff pass restarts the walk counters and enters `Revalidating`, whatever
     /// the first pass left in the handle: with a scripted watcher that reports nothing,
-    /// the counts afterwards are exactly one walk of the tree.
+    /// the counts afterwards are exactly one walk of the tree. Identical event streams
+    /// also make the observed and unobserved reports exactly comparable.
     #[test]
     fn the_handoff_pass_restarts_the_counts() {
         let root = tempfile::tempdir().expect("root");
@@ -1132,7 +1133,7 @@ mod tests {
                 scope: scan.clone().into(),
                 content: crate::content::AnalysisSet::NONE,
             },
-            Query::default(),
+            Query { views: vec![crate::query::ViewSpec::Summary], ..Query::default() },
             std::time::SystemTime::now(),
         );
         let delivery = Delivery {
@@ -1151,12 +1152,12 @@ mod tests {
         progress.add_walked(100, 100, 100, 100);
         progress.enter(crate::ProgressPhase::Saving);
 
-        Session::finish_initial_handoff(
-            IndexHandle::new(index),
-            request,
+        let session = Session::finish_initial_handoff(
+            IndexHandle::new(index.clone()),
+            request.clone(),
             &delivery,
             watcher,
-            scan,
+            scan.clone(),
             Some(&progress),
         )
         .expect("handoff");
@@ -1169,6 +1170,28 @@ mod tests {
             "one walk of the root and its two directories, the first pass not added in"
         );
         assert_eq!(snapshot.allocated, report.allocated_walked, "allocated restarts with them");
+
+        let (plain_watcher, _plain_sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        let plain = Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            plain_watcher,
+            scan,
+            None,
+        )
+        .expect("plain handoff");
+        let generated_at = std::time::SystemTime::now();
+        let observed_report = session.report(generated_at).expect("observed report");
+        let mut plain_report = plain.report(generated_at).expect("plain report");
+        plain_report.provenance = observed_report.provenance.clone();
+        let json = |report: &Report| {
+            crate::report_format::render(report, crate::report_format::Format::Json, false)
+                .expect("render")
+        };
+        assert_eq!(json(&plain_report), json(&observed_report));
+        assert_eq!(progress.snapshot(), snapshot, "the second handoff and reads were not observed");
     }
 
     /// A record says what the index can be asked, and nothing more.
@@ -1203,8 +1226,9 @@ mod tests {
     /// counts restart, which keeps the line moving on a large tree after the save,
     /// where a frozen count would look like a hang. The session it returns is the one
     /// [`Session::start`] returns, and it reports nothing further through the handle
-    /// once started. The exact reset is pinned by the scripted test below; with a real
-    /// backend, which may replay the tree's own creation, only lower bounds hold.
+    /// once started. The exact reset and report equivalence are pinned by the scripted
+    /// test above; independent native watchers may replay different creation hints and
+    /// record different legitimate setup-gap diagnostics, so only lower bounds hold.
     #[test]
     fn a_started_session_reports_its_second_pass_and_then_nothing() {
         let root = tempfile::tempdir().expect("root");
@@ -1260,13 +1284,9 @@ mod tests {
         let plain = Session::start(request(), delivery).expect("plain start");
         let generated_at = std::time::SystemTime::now();
         let observed_report = session.report(generated_at).expect("observed report");
-        let mut plain_report = plain.report(generated_at).expect("plain report");
-        plain_report.provenance = observed_report.provenance.clone();
-        let json = |report: &Report| {
-            crate::report_format::render(report, crate::report_format::Format::Json, false)
-                .expect("render")
-        };
-        assert_eq!(json(&plain_report), json(&observed_report));
+        let plain_report = plain.report(generated_at).expect("plain report");
+        assert!(observed_report.status.complete);
+        assert!(plain_report.status.complete);
         assert_eq!(progress.snapshot(), after_start, "the second start was not observed");
     }
 }
