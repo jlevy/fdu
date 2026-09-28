@@ -77,6 +77,8 @@ struct Pattern {
     ignored: bool,
     directory_only: bool,
     matches_path: bool,
+    /// No segment is a `**`, so the pattern matches only paths of its own length.
+    glob_only: bool,
     segments: Vec<Segment>,
 }
 
@@ -186,7 +188,8 @@ impl Pattern {
         if segments.is_empty() {
             return None;
         }
-        Some(Self { ignored, directory_only, matches_path, segments })
+        let glob_only = segments.iter().all(|segment| matches!(segment, Segment::Glob(_)));
+        Some(Self { ignored, directory_only, matches_path, glob_only, segments })
     }
 
     fn matches(&self, path: &[&[u8]], is_dir: bool) -> bool {
@@ -200,7 +203,7 @@ impl Pattern {
             return path.last().is_some_and(|component| glob_matches(pattern, component))
                 && (!self.directory_only || is_dir);
         }
-        segment_path_matches(&self.segments, path, self.directory_only, is_dir)
+        segment_path_matches(&self.segments, self.glob_only, path, self.directory_only, is_dir)
     }
 }
 
@@ -267,6 +270,7 @@ fn normalize_glob(pattern: &[u8]) -> Vec<u8> {
 
 fn segment_path_matches(
     pattern: &[Segment],
+    glob_only: bool,
     path: &[&[u8]],
     directory_only: bool,
     target_is_dir: bool,
@@ -277,7 +281,7 @@ fn segment_path_matches(
     // Without a `**`, each segment consumes exactly one component, so only a path of the
     // pattern's length can match, and it matches segment for segment. This is the shape
     // of every anchored rule such as `/vmlinux`, which most entries fail on length alone.
-    if !pattern.iter().any(|segment| !matches!(segment, Segment::Glob(_))) {
+    if glob_only {
         return pattern.len() == path.len()
             && pattern.iter().zip(path).all(|(segment, component)| match segment {
                 Segment::Glob(glob) => glob_matches(glob, component),
@@ -684,23 +688,31 @@ mod tests {
             b"/[ab]/?",
             b"a/b/",
             b"**/**/b",
+            b"**\\/b",
+            b"a/**\\/**\\/b",
+            b"/**",
+            b"**/b/",
+            b"!a/**/b",
+            b"/\xc3\xa9/*",
         ];
         for &source in sources {
             let pattern = Pattern::parse(source).expect("fixture pattern parses");
             for depth in [1usize, 2, 3, 31, 32, 33, 62, 63, 64, 70] {
-                for shape in 0..4 {
+                for shape in 0..5 {
                     let names: Vec<Vec<u8>> = (0..depth)
-                        // All `a`; `a` ending in `b`; `a` then all `b`; distinct names.
+                        // All `a`; `a` ending in `b`; `a` then all `b`; a multi-byte name then
+                        // `a`; distinct names.
                         .map(|at| match (shape, at) {
                             (1, at) if at + 1 == depth => b"b".to_vec(),
                             (2, at) if at > 0 => b"b".to_vec(),
-                            (0..=2, _) => b"a".to_vec(),
+                            (3, 0) => "\u{e9}".as_bytes().to_vec(),
+                            (0..=3, _) => b"a".to_vec(),
                             _ => format!("n{at}").into_bytes(),
                         })
                         .collect();
                     let path: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
                     let joined = names.join(&b'/');
-                    let text = std::str::from_utf8(&joined).expect("fixture names are ASCII");
+                    let text = std::str::from_utf8(&joined).expect("fixture names are UTF-8");
                     for is_dir in [false, true] {
                         let expected = if pattern.matches_path {
                             reference_segment_path_matches(
@@ -722,7 +734,7 @@ mod tests {
                         line.push(b'\n');
                         assert_eq!(
                             Gitignore::parse(&line).matches(Path::new(text), is_dir),
-                            expected.then_some(true),
+                            expected.then_some(pattern.ignored),
                             "{} through the public matcher at depth {depth}",
                             String::from_utf8_lossy(source)
                         );

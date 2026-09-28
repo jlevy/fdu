@@ -21,7 +21,7 @@
 mod gitignore;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use gitignore::Gitignore;
@@ -508,7 +508,15 @@ impl ControlTable {
     /// a whole listing resolves them here once and matches each child against the chain
     /// (H163). The chain owns its sources, so the table may change while it is held; it
     /// then answers for the table as it was when resolved.
+    ///
+    /// `directory` must be a normalized relative path, as every walked or event path is:
+    /// the chain counts one component per ancestor, which a `..` would break.
     pub(crate) fn chain_for(&self, directory: &Path) -> ControlChain {
+        debug_assert!(
+            directory.components().all(|component| matches!(component, Component::Normal(_))),
+            "control chains are resolved for normalized relative directories: {}",
+            directory.display()
+        );
         let mut governing = Vec::new();
         if !self.by_directory.is_empty() {
             let depth = gitignore::with_components(directory, None, |components| components.len());
@@ -1052,6 +1060,33 @@ mod tests {
             b"x.log",
             false
         ));
+    }
+
+    #[test]
+    fn a_chain_agrees_past_the_inline_buffers_and_beside_unrelated_controls() {
+        let mut table = ControlTable::default();
+        table.upsert(Path::new("z/.gitignore"), b"*.log\n".to_vec()).expect("unrelated");
+        let unrelated = table.chain_for(Path::new("a/b"));
+        assert!(!unrelated.is_ignored(Path::new("a/b"), b"x.log", false));
+        assert!(!table.matcher_for(Path::new("a/b/x.log")).is_ignored(false));
+
+        // A control 33 directories down, and directories of 31 to 34 components, cross the
+        // 32-component inline buffer both in the chain's key and in the matched path.
+        let deep: PathBuf = (0..33).map(|at| format!("d{at}")).collect();
+        table.upsert(Path::new(".gitignore"), b"**/x.log\n/d0/**/y.log\n".to_vec()).expect("root");
+        table.upsert(&deep.join(".gitignore"), b"!x.log\n*.tmp\n".to_vec()).expect("deep");
+        for depth in [31usize, 32, 33, 34] {
+            let directory: PathBuf = (0..depth).map(|at| format!("d{at}")).collect();
+            let chain = table.chain_for(&directory);
+            for name in ["x.log", "y.log", "z.tmp", "plain"] {
+                let path = directory.join(name);
+                assert_eq!(
+                    chain.is_ignored(&directory, name.as_bytes(), false),
+                    table.matcher_for(&path).is_ignored(false),
+                    "{name} at depth {depth}"
+                );
+            }
+        }
     }
 
     #[test]
