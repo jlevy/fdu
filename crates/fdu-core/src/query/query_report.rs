@@ -1497,25 +1497,25 @@ pub(crate) fn report_in(
         )
     });
 
-    let mut sections: Vec<Section> = query
-        .views
-        .iter()
-        .enumerate()
-        .map(|(position, view)| {
-            let shared_metric_summary =
-                shared_metric_summaries.as_mut().and_then(|summaries| summaries[position].take());
-            build_section(
-                *view,
-                index,
-                query,
-                content,
-                walked.as_ref(),
-                unfiltered_rows.as_deref(),
-                tree_measurements,
-                shared_metric_summary,
-            )
-        })
-        .collect();
+    // A plain loop, not an iterator chain: this is the deepest path a report takes, and
+    // in a debug build each adapter between here and `build_section` is a frame of its
+    // own, which is what put a deep tree past the stack `deep_rendering_is_stack_safe`
+    // allows on Windows.
+    let mut sections: Vec<Section> = Vec::with_capacity(query.views.len());
+    for (position, view) in query.views.iter().copied().enumerate() {
+        let shared_metric_summary =
+            shared_metric_summaries.as_mut().and_then(|summaries| summaries[position].take());
+        sections.push(build_section(
+            view,
+            index,
+            query,
+            content,
+            walked.as_ref(),
+            unfiltered_rows.as_deref(),
+            tree_measurements,
+            shared_metric_summary,
+        ));
+    }
 
     let age_reference_ns = crate::query::system_time_to_nanos(request.now);
     for section in &mut sections {
