@@ -12,9 +12,10 @@
 //!   remove of that name (see `RenameReporting` for what each backend promises).
 //! - When a directory is created, backends that watch per directory register the new
 //!   watch *after* the fact — anything created inside that window produces no event.
-//! - Kernel queues overflow. inotify's `Q_OVERFLOW`, `FSEvents`' `MustScanSubDirs`, and
-//!   Windows buffer overruns all mean "your view is now incomplete". They surface here
-//!   as `Flag::Rescan`, and dropping that signal is precisely how an event-driven index
+//! - Kernel queues overflow. inotify's `Q_OVERFLOW` and `FSEvents`' `MustScanSubDirs`
+//!   mean "your view is now incomplete" and surface here as `Flag::Rescan`. A Windows
+//!   buffer overrun does not: notify 8.2.0 logs `ERROR_NOTIFY_ENUM_DIR` and drops that
+//!   directory's watch without signaling it. Dropping the rescan signal is precisely how an event-driven index
 //!   silently diverges from the filesystem — which is what the `watchfiles` layer
 //!   metabrowser runs today does, mapping notify's rich event model down to
 //!   `(change, path)` and letting the rescan flag fall through a match arm.
@@ -157,7 +158,7 @@ enum Pending {
 ///   `IN_Q_OVERFLOW`, again `Flag::Rescan`.
 /// - `ReadDirectoryChangesW` reports the old and new names inside the tree (notify:
 ///   `From` and `To`, never paired), and a move across the tree's boundary as a plain
-///   removal or addition.
+///   removal or addition. notify 8.2.0 does not signal its buffer overflow.
 /// - kqueue reports only the renamed vnode's old path; the new name surfaces at most as
 ///   a write on its new parent directory, which this layer cannot turn into the entry.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

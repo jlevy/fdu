@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On macOS, `--watch` and an opened root report a file held open for writing, such as a
+  growing log or a SQLite write-ahead log, as of its last close.
+  The kernel emits a content event for descriptor writes only when the last descriptor
+  closes, and a watcher now reacts to the events it gets.
+  Earlier, the whole-tree reconcile that every rename triggered also re-read such files;
+  quiet trees already behaved this way.
+  A one-shot report, or an explicit refresh from Rust or Python, still reads their
+  current size.
 - **Breaking:** `--cache` takes `auto`, `on`, or `off`, and `auto` depends on the kind
   of request. A one-shot metadata report under `auto` no longer writes a snapshot, since
   no later one-shot report reads it; content analysis, `--watch`, and an opened index

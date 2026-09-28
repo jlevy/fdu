@@ -287,6 +287,9 @@ See [formats and directory selection](docs/usage.md#choose-a-format) and the
 Detection uses the platform’s native event backend (`FSEvents`, inotify,
 `ReadDirectoryChangesW`); an idle tree is not polled.
 Each hint is verified with a fresh stat before it becomes a delta.
+On macOS, the kernel reports writes to a file only when it is closed, so a file held
+open for writing, such as a growing log or database, shows its size as of its last
+close.
 
 ```shell
 fdu . --watch
