@@ -118,7 +118,7 @@ jobs:
           --work-dir "${RUNNER_TEMP}/fdu-crate"
       # Both crates are release artifacts: `fdu-core` has to be published first, or `fdu`
       # has nothing to resolve against.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-crate
           path: |
@@ -180,7 +180,7 @@ jobs:
           uv venv --clear .venv-sdist
           uv pip install --python .venv-sdist dist/fdu-${{ needs.plan.outputs.version }}.tar.gz
           uv run --no-project --python .venv-sdist python tests/public_smoke.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-sdist
           path: crates/fdu-py/dist/fdu-${{ needs.plan.outputs.version }}.tar.gz
@@ -255,7 +255,7 @@ jobs:
           uv run --no-project --python .venv-release python tests/public_smoke.py
           uv run --no-project --python .venv-release python tests/smoke.py
           uvx --isolated --no-index --find-links dist --from fdu fdu --version
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-wheel-${{ matrix.target }}
           path: crates/fdu-py/dist/*.whl
@@ -273,7 +273,7 @@ jobs:
         with:
           version: "0.12.1"
           enable-cache: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
           merge-multiple: true
@@ -291,7 +291,7 @@ jobs:
           --manifest release-manifest.json
           --version "${{ needs.plan.outputs.version }}"
           --output registry-state.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-evidence-${{ needs.plan.outputs.artifact_tag }}
           path: |
@@ -387,19 +387,19 @@ jobs:
             echo "EVIDENCE=${RUNNER_TEMP}/release-evidence"
             echo "MANIFEST=${RUNNER_TEMP}/release-evidence/release-manifest.json"
           } >> "${GITHUB_ENV}"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-evidence-${{ needs.plan.outputs.artifact_tag }}
           path: ${{ runner.temp }}/release-evidence
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-crate
           path: ${{ runner.temp }}/release-files
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-sdist
           path: ${{ runner.temp }}/release-files
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-wheel-*
           merge-multiple: true

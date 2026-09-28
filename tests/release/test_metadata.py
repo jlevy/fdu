@@ -288,6 +288,31 @@ class MetadataTests(unittest.TestCase):
         self.assertIn(f"$(UV) {UV_PYTHON.removeprefix('uv ')} {suite}", makefile)
         self.assertIn(f"{UV_PYTHON} {suite}", workflow)
 
+    def test_every_download_lands_its_files_directly_in_its_path(self) -> None:
+        # The inspector and `verify-files` expect the eight files flat in one directory.
+        # download-artifact extracts straight into `path` only for a download by `name`
+        # or a `pattern` with `merge-multiple: true`; otherwise each artifact gets its own
+        # subdirectory, and which case that is has changed between major versions. And
+        # since v8 a digest mismatch fails the download, which only holds while no step
+        # overrides `digest-mismatch` or skips decompression.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        downloads = [
+            step.split("\n      - ", 1)[0]
+            for step in workflow.split("- uses: actions/download-artifact@")[1:]
+        ]
+        self.assertEqual(len(downloads), 5)
+        for step in downloads:
+            with self.subTest(step=step):
+                self.assertRegex(step, r"(?m)^\s+path: \S.*$")
+                named = re.search(r"(?m)^\s+name: \S.*$", step) is not None
+                merged = re.search(r"(?m)^\s+pattern: \S.*$", step) is not None and (
+                    re.search(r"(?m)^\s+merge-multiple: true$", step) is not None
+                )
+                self.assertTrue(named != merged, "exactly one of name or a merged pattern")
+                self.assertNotRegex(
+                    step, r"(?m)^\s+(?:artifact-ids|skip-decompress|digest-mismatch):"
+                )
+
     def test_every_release_checkout_drops_its_credentials(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         checkouts = workflow.split("uses: actions/checkout@")[1:]
