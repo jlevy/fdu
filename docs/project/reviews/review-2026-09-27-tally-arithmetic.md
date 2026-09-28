@@ -191,10 +191,10 @@ The Linux-recorded parity artifact was adopted from
 differences cover schema 10, the accounting note, root-only remainder values, and skill
 wording; no new deviation class was introduced.
 
-The final rebuilt and installed candidate `0.1.0-dev+g0d5f9a10a` passed an independent
-77-check audit across 19 invocations, covering both byte measures, full expansion, bound
-composition, ignore controls, JSON and YAML facts, ANSI colors, and quiet diagnostics.
-The installed skill matches its bundled source byte-for-byte.
+The initial corrected and installed candidate `0.1.0-dev+g0d5f9a10a` passed an
+independent 77-check audit across 19 invocations, covering both byte measures, full
+expansion, bound composition, ignore controls, JSON and YAML facts, ANSI colors, and
+quiet diagnostics. The installed skill matches its bundled source byte-for-byte.
 Final matrix status is recorded in the
 [PR review](https://github.com/jlevy/fdu/pull/136).
 
@@ -209,6 +209,41 @@ The corrected test explicitly removes every display bound, independently asserts
 1,025 nodes and no omissions, and marks query, render, stream, and drop phases for
 failure diagnosis. It passes on macOS with the original 64 KiB stack.
 Windows validation remains pending under `fdu-4793`.
+
+## Presentation Follow-Up
+
+The subsequent presentation pass (`593cea57`) keeps remainder quantities in the same
+numeric roles as ordinary rows; only the “more files” annotation is gray.
+Unused bar cells are dim green.
+Directory names use regular cyan without bold only when their own path is gitignored,
+directly or through an ignored ancestor.
+Merely containing ignored files does not change a directory name, and file-name styling
+is unchanged.
+
+A nullable `entry_ignored` field carries that own-entry fact through Rust tree reports,
+machine output, and Python models.
+Tests distinguish empty ignored directories, inherited ignored directories, mixed
+directories, unknown classification, and unignored ancestors retained by
+`--ignored=only`. The expanded ANSI golden checks the actual folder and file styles.
+Progress and `perf:` now share one elapsed-time formatter, including two-decimal seconds
+such as `151.33 s` without minute/hour notation.
+
+Validation passed 98 CLI tests, 912 core tests (one intentional skip), 198 command-line
+goldens, 70 Python tests, and three terminal tests.
+The full handoff run completed; corrective Rust and library-only reruns passed after the
+progress-width expectations and one exact JSON assertion were updated.
+Minimum-Rust, wheel and source-package installation, concurrency, documentation, audits,
+2,267 path-independence cases, and 72 release tests passed.
+CLI/Python parity matched all 53 classified differences.
+
+The current parity record comes from
+[Linux CI run 36361381366](https://github.com/jlevy/fdu/actions/runs/36361381366),
+producer `345278eb4cde8b3ac03850bab240eae96ea0c036`, with SHA-256
+`1b02283b9e1eadcbfd142ad1345f0f7ef38609273f6a2bb65d9a8436d98b9a6f`. Its changes add the
+exact entry-classification facts and corresponding hunk offsets.
+The later commit corrects a test assertion and adopts this artifact; it does not change
+the report facts. Final installed-candidate acceptance and platform CI results are
+recorded in [PR #136](https://github.com/jlevy/fdu/pull/136).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
