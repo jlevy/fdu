@@ -5,7 +5,7 @@ title: "Change-source review follow-ups: choose a whole-home disk-growth acceler
 kind: epic
 status: open
 priority: 1
-version: 11
+version: 14
 spec_path: docs/project/research/research-2026-09-27-disk-growth-change-sources.md
 labels: []
 dependencies: []
@@ -20,7 +20,13 @@ child_order_hints:
   - is-01m3k8bze1qsyzxf6xnegjkf7p
   - is-01m3k8bzyw79ywfse1dwa77yp0
   - is-01m3k8c0kbjv92m08nyv6nb8th
+  - is-01m3kae7agsc4dtrx6jkffxfwx
+  - is-01m3kae8naxe9qex9zd7zkb5az
 created_at: 2026-09-28T05:38:50.767Z
-updated_at: 2026-09-28T05:38:57.258Z
+updated_at: 2026-09-28T06:15:08.201Z
 ---
 Epic for the 2026-09-27 change-source review (research doc: docs/project/research/research-2026-09-27-disk-growth-change-sources.md; evidence explorations/change-sources/). Findings: FSEvents misses open writers at event generation (live and replay); one-shot replay cost ~0.124 s per compressed journal MB behind the cursor plus ~10 us per matching record; flat snapshot load ~ walk cost; delta-only roll-up log diff 0.077 s for 4,618/95.5k changed dirs; APFS dir-stats gencount sees open-writer writes (verification pending). Children are the ranked experiments and the engine fixes the review found. Related: fdu-vhrb (writer coverage), fdu-uwhl (replay acceptance), fdu-vw9r (disk-pressure profile), fdu-8ybz (checkpoint store).
+
+## Notes
+
+2026-09-28: research doc and evidence landed as PR #142 (stack 141, on top of #139); corrections to the spike's own records pushed to #131 (commit 420f9841). Pending in the doc: resident soak (fdu-2o00) and APFS dir-stats verification (fdu-gpqz).
