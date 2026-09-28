@@ -298,6 +298,32 @@ Do not replace current classification with cached detection.
 Do not restore the rejected retained-resolution vector.
 Single metric views keep their original one-pass path.
 
+## Quiet confirmation attempt, 2026-09-28
+
+The confirming run (`fdu-9e9d`) was attempted once, on stack 141’s frozen top,
+`a5c0ab46`. The candidate was that commit’s release probe; the control was the same
+source with only the shared one-pass resolution disabled, because a full revert of
+`d0902cfd` and `93e417ca` conflicts with the section-builder changes merged after them.
+Job, oracle, subject, warmups, pairs, and resource rules were unchanged, and the subject
+matched this experiment’s fingerprint exactly.
+
+It failed to qualify.
+The quiet start gate admitted it at 25.0% CPU busy, but unrelated work kept the host
+near the threshold, and the unchanged gate invalidated 20 of the 24 timed samples,
+leaving no valid pair.
+The harness therefore produced no paired figure and the recorder could not write an
+artifact from it, so no experiment id was used; the raw run is preserved as
+[quiet-confirmation-attempt-2026-09-28-run.json](evidence/exp-159/quiet-confirmation-attempt-2026-09-28-run.json).
+No figure from its invalidated samples is a measurement, and this verdict stays as
+recorded above.
+
+One diagnostic concerns the gate rather than the timing: major faults followed run
+position, not arm.
+In 10 of the 12 pairs the second process recorded 117 major faults and
+the first none, whichever arm ran first; in the other two both recorded none.
+The zero-delta rule compares arms, so a position effect of that size can keep it
+inconclusive even on a quiet host.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

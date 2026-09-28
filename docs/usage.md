@@ -69,8 +69,9 @@ scanned and therefore changes the cache scope.
 Numeric content sorts such as `--sort=code_lines` require their analyzer.
 Use `files`, `list`, `tree`, or a metric grouping such as `languages` or `code` for
 these rankings. `extensions` groups metadata only and rejects content-metric sorts.
-The Code overview shows combined language totals with non-gitignored and gitignored
-contributions in parentheses; unknown classification is separate.
+The Code overview shows combined language totals; each row’s gitignored contribution
+follows in gray parentheses, such as `(0 gitignored)`, with an unknown contribution
+added only when some `.gitignore` could not be read or applied.
 
 Sizes use allocated bytes by default.
 Add `--size=apparent` for logical file lengths.
@@ -448,8 +449,10 @@ accepts, a rule between two flags, and a scan scope this build cannot honour, su
 
 `--watch` streams changes from a retained index.
 `--interval` throttles rendering, not change detection; an idle tree performs no polling
-scan. The duration uses the same age grammar as `--modified-since`: `2s`, `200ms`,
-`1h30m`. Fractional ages such as `0.2s` are still rejected.
+scan. On macOS, the kernel reports writes to a file only when it is closed, so watch
+shows a file held open for writing as of its last close; a one-shot report reads its
+current size. The duration uses the same age grammar as `--modified-since`: `2s`,
+`200ms`, `1h30m`. Fractional ages such as `0.2s` are still rejected.
 Content analysis is one-shot and cannot be combined with watch mode.
 
 Run `fdu --docs` for the offline guide and `fdu --help` for every flag.
@@ -475,9 +478,9 @@ the installing session’s prompt or memory.
 The skill prefers an `fdu` on `PATH` and otherwise runs `uvx --no-build fdu@latest`;
 installing the skill does not install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the
-[installation note](../README.md#install-the-command-line) if a just-published release
-is filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and
-later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
+[installation note](../README.md#other-ways-to-install) if a just-published release is
+filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and later
+`uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
 The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
 
 ## Quiet Diagnostics

@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 73 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 75 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
@@ -245,6 +245,8 @@ dead end.
 | 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
 | 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
 | 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp163--linux-auto-cache-policy-stops-oneshot-snapshot-writes-clears-3-on-defaulttree) | H160 | `default-tree` | -13.8% | ✅ accepted |
+| 164 | [macOS one-shot index release shows no wall change and no regression](#exp164--macos-oneshot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
+| 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp165--macos-auto-cache-policy-cuts-defaulttree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
 
 ## The experiments
 
@@ -5483,6 +5485,72 @@ zero.
 Full record:
 [`exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md`](../experiments/exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md)
 
+### exp-164 — macOS one-shot index release shows no wall change and no regression
+
+❌ rejected · 2026-09-28 · H156 · commit `71c52591`
+
+Control: pr137 probe at 4e008e78 (stack 141 layer 1): one-shot index released on the
+caller or joined writer thread
+
+Candidate: pr138 probe at ea786683 (layer 2): a large last index reference is released
+on a detached thread
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7354.1 | 7490.0 | -1.00% (n.s.) | [-5.13%, +6.11%] |
+| component (ms) | 7342.7 | 7475.9 | -1.05% (n.s.) | [-5.15%, +6.05%] |
+| cpu (ms) | 39155.2 | 38925.0 | -0.54% (n.s.) | [-2.66%, +0.66%] |
+| user (ms) | 1457.1 | 1408.0 | -2.43% (n.s.) | [-4.41%, +0.01%] |
+| system (ms) | 37673.7 | 37532.0 | -0.40% (n.s.) | [-2.65%, +0.82%] |
+| peak rss (MiB) | 381.1 | 381.0 | -0.05% (n.s.) | [-0.13%, +0.02%] |
+
+Other jobs, wall time: `cold-scan-index` +2.1% (n.s.), `default-tree-first` +0.2%
+(n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+**Rejected:** uncontrolled macOS balanced-1m default-tree -1.00% [-5.13%, +6.11%], first
+run +0.16% [-5.12%, +4.01%], placebo cold-scan-index +2.09% [-0.72%, +3.62%]: no wall
+change and no median past the +3% regression line; ships on the Linux accept (exp-160).
+
+Full record:
+[`exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md`](../experiments/exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md)
+
+### exp-165 — macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall
+
+❌ rejected · 2026-09-28 · H160 · commit `93cd1bb1`
+
+Control: pr138 probe at ea786683 (stack 141 layer 2): auto writes the snapshot after
+every one-shot metadata report
+
+Candidate: pr139 probe at a5c0ab46 (layer 3): auto persists only where a later request
+reads it
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7490.0 | 7229.9 | -3.09% (n.s.) | [-6.75%, +2.00%] |
+| component (ms) | 7475.9 | 7210.2 | -3.08% (n.s.) | [-6.77%, +2.02%] |
+| cpu (ms) | 38925.0 | 37743.6 | -1.49% (n.s.) | [-3.43%, +0.52%] |
+| user (ms) | 1408.0 | 1275.6 | -9.65% | [-11.20%, -8.80%] |
+| system (ms) | 37532.0 | 36488.3 | -1.16% (n.s.) | [-3.15%, +0.93%] |
+| peak rss (MiB) | 381.0 | 280.9 | -26.29% | [-26.34%, -26.23%] |
+
+Other jobs, wall time: `cold-scan-index` -0.4% (n.s.), `default-tree-first` -3.0%
+(n.s.).
+
+Cost to carry: 150 lines; no new dependencies.
+
+**Rejected:** uncontrolled macOS balanced-1m default-tree -3.09% [-6.75%, +2.00%] misses
+the accept rule; peak RSS -26.29% [-26.34%, -26.23%] and user CPU -9.65%; first run
+-2.98% [-7.12%, +5.12%]; placebo -0.44%; ships on the Linux accept (exp-163).
+
+Full record:
+[`exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md`](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5736,6 +5804,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 141 | H111 Linux floor and RSS gates fail on current engine | `default-tree` | 419.1 | 429.8 | +2.0% | ❌ rejected |
 | 142 | Linux H111 leftover is still walk floor plus retained-index RSS | `cold-scan-index` | 857.6 | 856.7 | +0.1% | ✅ accepted |
+
+### macos-balanced-1m (1,000,001 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 164 | macOS one-shot index release shows no wall change and no regression | `default-tree` | 7,354.1 | 7,490.0 | -1.0% | ❌ rejected |
+| 165 | macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall | `default-tree` | 7,490.0 | 7,229.9 | -3.1% | ❌ rejected |
 
 ### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

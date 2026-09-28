@@ -59,7 +59,11 @@ The code overview is one table with aligned code-line, share, comment, blank,
 analyzed-file, and language columns.
 Primary cells in the TOTAL row are bold; parenthetical population details keep the
 shared gray secondary role.
-TOTAL uses the complete selected population, including rows hidden by display limits.
+Each row and TOTAL show only the gitignored share, as in `(0 gitignored)`, because the
+row value already includes it; the non-gitignored complement is never repeated.
+An unknown share, from a `.gitignore` that could not be read or applied, is added only
+when non-empty: `(20 gitignored, 10 unknown)`. TOTAL uses the complete selected
+population, including rows hidden by display limits.
 Unmeasured SLOC displays a dash, distinct from a measured zero.
 File coverage states how much was analyzed.
 Compact coverage context follows the table, and totals are not repeated as a second

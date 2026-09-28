@@ -1,23 +1,35 @@
 # fdu
 
-**Fastest native du replacement and detailed file analytics for Python and Rust**
-
-On our million-entry macOS benchmark, fdu delivered **over 8× the throughput of standard
-`du`**, **about 60% more than [dust](https://github.com/bootandy/dust)**, and **roughly
-10% more than [dumac](https://github.com/healeycodes/dumac#readme)** while building a
-reusable index with counts, sizes, recency, and file-type tallies for every directory.
-These paired results used warm filesystem caches under background load, and the tools
-return different amounts of information.
-See [Speed](#speed) for the measurements and limits.
+**Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
 Use fdu to find what takes up space, locate old build directories, or summarize a tree
 without writing a filesystem walker.
-The same engine serves coding agents through a self-contained skill and ships as:
 
-- **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
-- **Python package:** typed, immutable values plus the native `fdu` command
-- **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
-  long-lived opened root)
+Key features:
+
+- **Speed:** Native Rust and native filesystem APIs make fdu fast.
+  On a one-million-file macOS benchmark, fdu ran at about 9× the speed of standard `du`,
+  over 50% faster than [dust](https://github.com/bootandy/dust), and about 9% faster
+  than [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool,
+  which returns only a total.
+  On Linux, fdu’s summary mode is the fastest tool measured, while building its full
+  index takes about 20% longer than the fastest peers.
+  See [Speed](#speed) for the measurements and limits.
+- **Text, file, and code analysis:** Rolls up content metrics, including lines, source
+  code lines by language, and words, paragraphs, and pages for Markdown and text.
+- **Cached statistics:** Content metrics require reading files, so fdu caches them
+  between runs and reads again only the files that changed.
+- **Watch and stream events:** Unlike `du` or dust, fdu can keep a result current and
+  stream its changes, using each platform’s native file watching (FSEvents, inotify,
+  `ReadDirectoryChangesW`).
+- **Rust and Python APIs:** Every capability is available directly from Rust and Python:
+  typed results, a retained index, a change feed, and a long-lived opened root, all
+  backed by the same native engine as the command line.
+- **Easy use as a skill or from the command line:** Nothing needs to be built from
+  source. Prebuilt binaries install from PyPI on macOS, Linux, and Windows, and the Rust
+  crates (`fdu` and `fdu-core`) are on crates.io.
+  Run `uvx fdu@latest` anywhere [uv](https://docs.astral.sh/uv/) is available, or
+  install a skill for coding agents as described below.
 
 ## Set Up with Any Coding Agent
 
@@ -37,56 +49,84 @@ See the [skill usage guide](docs/usage.md#agent-skill).
 
 ## Install the Command Line
 
-With [uv](https://docs.astral.sh/uv/), use the published wheel without a Rust toolchain:
+fdu is published as a Python wheel, so [uv](https://docs.astral.sh/uv/) is all you need.
+No Rust toolchain is required.
+
+**Try it without installing:**
 
 ```shell
 uvx --no-build fdu@latest .
+```
+
+**Install it as a command:**
+
+```shell
 uv tool install --no-build fdu
+```
+
+Then run it on any directory:
+
+```shell
 fdu .
+```
+
+**Upgrade later:**
+
+```shell
 uv tool upgrade --no-build fdu
 ```
 
-The first command runs fdu without keeping an installed command; the second keeps it on
-`PATH`. `--no-build` requires a compatible wheel instead of compiling from source.
-The wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64 and arm64),
-macOS (x86-64 and arm64), and Windows x86-64. A Python version is not needed in normal
-use: fdu declares Python 3.12 or newer and uv selects a matching interpreter.
-If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
-does not publish free-threaded wheels yet.
-For a repeatable run, replace `latest` with a release number, such as `fdu@0.1.0`. If uv
-is configured with an `exclude-newer` cool-off, a new fdu release may be filtered.
-Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
-to expire.
-`--no-config` is a one-off override that skips all uv configuration, including
-that policy.
+Wheels cover Linux, macOS, and Windows.
+For other platforms, pinned versions, and building from source, see
+[Other Ways to Install](#other-ways-to-install).
 
-To install the command from source, use Rust 1.85 or newer:
+## Quick Start
 
-```shell
-cargo install --locked fdu
-```
-
-`--locked` keeps the reviewed dependency set; see
-[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
-
-From a source checkout:
-
-```shell
-git clone https://github.com/jlevy/fdu.git
-cd fdu
-cargo install --locked --path crates/fdu
-```
-
-## Command Line
-
-fdu requires a path.
-Use `.` for the current directory:
+A one-level summary of this repository’s files:
 
 ```console
-$ fdu .
-     2.6 MiB  ██████████   100%  . 144 files
-     1.5 MiB  ██████░░░░    58%    crates 116 files
-     827 KiB  ███░░░░░░░    31%    tests 18 files
+$ fdu . --depth=1
+██████████   100%      23 MiB  . 872 files (4.0 KiB gitignored)
+█████░░░░░    55%      12 MiB    docs/ 315 files
+██░░░░░░░░    21%     4.7 MiB    crates/ 122 files
+██░░░░░░░░    17%     3.9 MiB    explorations/ 268 files
+░░░░░░░░░░     4%     932 KiB    tests/ 100 files (4.0 KiB gitignored)
+░░░░░░░░░░     1%     352 KiB    scripts/ 29 files
+░░░░░░░░░░     2%     440 KiB    … and 38 more files
+```
+
+Add `--analyze` to read file contents, here for lines of code and words in documents:
+
+```console
+$ fdu . --analyze=code,words
+CODE
+Code lines   Share  Comments   Blank  Analyzed files  Language
+    79,748   61.5%    12,801   6,720         101/101  Rust       (0 gitignored)
+    42,714   32.9%     1,697   5,218         133/133  Python     (0 gitignored)
+     3,988    3.1%       526     358           25/25  JavaScript (0 gitignored)
+     2,518    1.9%       229     145           19/19  C          (0 gitignored)
+       648    0.5%       124      64           18/18  Shell      (0 gitignored)
+        13   <0.1%         4       1             2/2  Swift      (0 gitignored)
+         6   <0.1%         4       1             2/2  C++        (0 gitignored)
+         3   <0.1%         3       1             1/1  C#         (0 gitignored)
+         3   <0.1%         4       0             1/1  Go         (0 gitignored)
+         3   <0.1%         4       0             1/1  PHP        (0 gitignored)
+         2   <0.1%         4       1             1/1  Java       (0 gitignored)
+         2   <0.1%         4       1             1/1  Kotlin     (0 gitignored)
+         2   <0.1%         4       1             1/1  Ruby       (0 gitignored)
+         2   <0.1%         4       1             1/1  SQL        (0 gitignored)
+         2   <0.1%         4       1             1/1  TypeScript (0 gitignored)
+         —       —         —       —             0/2  Make
+   129,654  100.0%    15,416  12,513         308/310  TOTAL      (0 gitignored)
+15 analyzed languages (include population)
+36 selected files with unclassified type
+2 unsupported
+
+DOCUMENTS
+Percentage column: document words
+   5.9 MiB   84.6%  markdown           317 files, 117,532 lines (104,000 nonblank, 13,532 blank), 507,111 words (2,028.4 pages), 4 generated, 288 documentation
+   748 KiB   13.4%  text               58 files, 5,455 lines (5,339 nonblank, 116 blank), 80,121 words (320.4 pages), 2 documentation
+   380 KiB    9.7%  html               1 file, 1,125 lines (1,110 nonblank, 15 blank), 58,222 words (232.8 pages), 1 documentation
 ```
 
 The default `list` view in `tree` format shows allocated sizes, largest first, down to
@@ -247,6 +287,9 @@ See [formats and directory selection](docs/usage.md#choose-a-format) and the
 Detection uses the platform’s native event backend (`FSEvents`, inotify,
 `ReadDirectoryChangesW`); an idle tree is not polled.
 Each hint is verified with a fresh stat before it becomes a delta.
+On macOS, the kernel reports writes to a file only when it is closed, so a file held
+open for writing, such as a growing log or database, shows its size as of its last
+close.
 
 ```shell
 fdu . --watch
@@ -373,23 +416,25 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
-On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.0
-seconds**, covering **146k files/s** and **0.50 GB/s**. Measured on an M1 Pro’s internal
-APFS SSD with warm filesystem caches and fdu’s cache disabled, 2026-09-26. These are
-approximate local results under background load.
+On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.4
+seconds**, covering **137k files/s** and **0.47 GB/s**. Measured on an M1 Pro’s internal
+APFS SSD with warm filesystem caches and fdu’s cache disabled (`--cache off`),
+2026-09-28. These are approximate local results under heavy background load.
+The default `fdu PATH` measured the same within 0.1%, because it no longer writes a
+snapshot on a one-shot run.
 
 | Tool | Work returned | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |
 | --- | --- | ---: | ---: | ---: | ---: |
-| **fdu** | reusable exact index and ten-row tree | **6.0 s** | baseline | **146k** | **0.50** |
-| dumac | allocated-byte total only | 6.3 s | **+8%** | 138k | 0.47 |
-| diskus | scalar total only | 8.7 s | +45% | 101k | 0.35 |
-| pdu | rendered tree | 9.2 s | +53% | 95k | 0.32 |
-| dust | allocated-byte total only | 9.6 s | +59% | 91k | 0.31 |
-| dua | scalar total only | 9.7 s | +63% | 90k | 0.31 |
-| gdu | rendered tree | 10.4 s | +64% | 84k | 0.29 |
-| BSD `du` | one total, serial | 49.3 s | +717% | 18k | 0.061 |
-| ncdu | reusable index | 60.6 s | +910% | 14k | 0.049 |
-| GNU `du` | one total, serial | 62.1 s | +955% | 14k | 0.048 |
+| **fdu** | reusable exact index and ten-row tree | **6.4 s** | baseline | **137k** | **0.47** |
+| dumac | allocated-byte total only | 6.9 s | **+9%** | 127k | 0.43 |
+| pdu | rendered tree | 9.2 s | +49% | 96k | 0.33 |
+| diskus | scalar total only | 9.3 s | +42% | 94k | 0.32 |
+| dua | scalar total only | 10.4 s | +61% | 84k | 0.29 |
+| gdu | rendered tree | 10.5 s | +67% | 83k | 0.28 |
+| dust | allocated-byte total only | 11.0 s | +57% | 79k | 0.27 |
+| BSD `du` | one total, serial | 55.6 s | +801% | 16k | 0.054 |
+| ncdu | reusable index | 67.3 s | +968% | 13k | 0.044 |
+| GNU `du` | one total, serial | 68.0 s | +960% | 13k | 0.044 |
 
 Positive percentages mean extra elapsed time: +60% means 1.6× as long as the adjacent
 fdu run. Rates count regular files and their disk space, not file-content reads; `k`
@@ -420,6 +465,8 @@ for the evidence and the work under way.
 Both tables measure fdu with its cache disabled, which is also what the default `fdu .`
 now does for a one-shot report: it used to write a snapshot that no later `fdu .` reads,
 about a fifth of a repeated run on this Linux tree and two fifths of a first one.
+On macOS the saving is memory rather than time: about 100 MiB of peak RSS, with no wall
+change the benchmark could resolve.
 The summary still needs `--no-gitignore`, because reading ignore rules falls back to the
 full index. The
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
@@ -433,10 +480,10 @@ In an exploratory, uncontrolled macOS benchmark on a 137,085-entry tree, a loop 
 constructed the unfiltered Types, Families, Languages, and Documents views 100 times
 from an already line-analyzed index took 12.0 seconds, down from 29.9 seconds—about
 **2.5× faster**, or roughly 120 ms instead of 299 ms per report.
-The code is retained provisionally; a quiet run must still resolve the inconclusive
-major-fault gate before the experiment is accepted.
-These timings predate the integration of the new Code overview, population controls, and
-tree accounting; the combined engine needs a fresh paired measurement.
+The code is retained provisionally; a quiet confirming run on the integrated stack
+(2026-09-28) failed to qualify on a loaded host, so the inconclusive major-fault gate
+still stands. These timings predate the integration of the new Code overview, population
+controls, and tree accounting; the combined engine needs a fresh paired measurement.
 
 This is not a scan or end-to-end full-analysis speedup.
 It applies only to unfiltered requests with multiple metric views; the default
@@ -458,10 +505,46 @@ Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreu
 exactly one persists anything, exactly one carries multiple metrics per pass, **none**
 does per-directory type tallies, and **none** does mtime-based incremental revalidation.
 None of them is a native library with a live change feed that a Rust or Python program
-can hold. That combination is what a live file browser actually needs.
+can hold. That combination is what a live file browser needs.
 
 The survey is in
 [the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
+
+## Other Ways to Install
+
+**Platforms:** Wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
+and arm64), macOS (x86-64 and arm64), and Windows x86-64. `--no-build` requires one of
+those wheels rather than compiling from source.
+You don’t need to pick a Python version: uv selects a matching interpreter.
+If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
+does not publish free-threaded wheels yet.
+
+**Pinned versions:** For a repeatable run, replace `latest` with a release number, such
+as `uvx --no-build fdu@0.2.0 .`.
+
+**uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
+fdu release may be filtered.
+Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
+to expire.
+`--no-config` is a one-off override that skips all uv configuration, including
+that policy.
+
+**From crates.io (Rust 1.85 or newer):**
+
+```shell
+cargo install --locked fdu
+```
+
+`--locked` keeps the reviewed dependency set; see
+[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+**From a source checkout:**
+
+```shell
+git clone https://github.com/jlevy/fdu.git
+cd fdu
+cargo install --locked --path crates/fdu
+```
 
 ## Documentation
 

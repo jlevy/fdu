@@ -4,12 +4,14 @@
 
 **Author:** fdu project
 
-**Status:** Proposed production design; validation is in progress.
-The August exploratory spike is recorded, and open
-[PR #131](https://github.com/jlevy/fdu/pull/131) adds a reproducible cross-process
-replay probe and revises the proposed freshness contract.
-That probe does not yet establish long-gap completeness, atomic publication, or a
-large-tree latency result.
+**Status:** Proposed design, revised 2026-09-27; production implementation pending.
+The August exploratory spike is complete, but its source and exact flags were not
+retained. The [reproducible probe](../../../../explorations/fsevents-replay/README.md)
+(`fdu-uwhl`) exercises immediate cross-process replay; it does not establish long-gap
+completeness, atomic publication, or a large-tree latency result.
+The
+[change-source review](../../research/research-2026-09-27-disk-growth-change-sources.md)
+recommends fixing the resident watcher first and keeping replay for gap recovery.
 [The campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) places persistent
 representation and replay work in Phase D; the probe can run independently.
 
@@ -23,10 +25,20 @@ journal: FSEvents history on macOS, or the USN journal on Windows.
 It is unrelated to the engine’s index journal
 ([`opened/journal.rs`](../../../../crates/fdu-core/src/opened/journal.rs)), the bounded,
 process-local commit history behind `since(clock)`. Proposed code uses history-replay
-names (the `history_replay` module, `ReplayCursor`, and the `history-replay` build
-feature) so the two never share an identifier.
+names (the `history_replay` module and `ReplayCursor`) so the two never share an
+identifier. Native replay is proposed under the existing `watch` build feature; enabling
+that build feature does not start a watcher or request replay.
 
 ## Overview
+
+**fdu need not remain running between scans.** macOS’s system `fseventsd` maintains the
+persistent history. fdu saves its inventory and cursor, exits, and later starts a new
+process to request changes since that cursor.
+Apple’s
+[persistent event guide](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/FSEvents_ProgGuide/UsingtheFSEventsFramework/UsingtheFSEventsFramework.html#//apple_ref/doc/uid/TP40005289-CH4-SW6)
+explicitly describes discovering changes while an application is not running and across
+reboots. No fdu daemon, scheduled refresh, or Spotlight indexing is required.
+The availability and completeness of retained history still limit this route.
 
 Reduce the filesystem work of a warm start on macOS by replaying a device-relative
 FSEvents stream from the last boundary whose work was applied, and revalidating only the
@@ -61,11 +73,15 @@ this plan inherits: Watchman’s `fsevents_try_resync` proves the *mechanics* (r
 a recorded event ID, UUID-guarded, wrap-vetoed) but uses them only for in-process
 recovery, off by default — and across restarts both Watchman and git’s fsmonitor daemon
 start at `SinceNow` and re-crawl.
-Cross-restart replay is Apple-documented and API-supported but unproven in major
-production tools; fdu would be pioneering it.
+These reviewed restart paths do not demonstrate one-shot inventory resume.
+The
+[September prior-art update](../../research/research-2026-09-27-persistent-change-prior-art.md)
+adds CCC Quick Update and SuperDuper Turbo: production FSEvents-guided enumeration
+between backup jobs, but without published cursor/barrier implementations.
+fdu must still establish its own correctness and cost.
 That is why the validation spike is Phase 0 rather than an afterthought, why the gate
 fails closed on every row, and why the full sweep remains the backstop on every platform
-— the only rung correctness ever depends on.
+— the route required when the caller requests full verification.
 
 ## Goals
 
@@ -77,8 +93,9 @@ fails closed on every row, and why the full sweep remains the backstop on every 
   only those scopes, emitting ordinary conditional deltas
 - Map every journal degradation signal onto the existing escalation vocabulary: scoped
   `InvalidateSubtree` where the flag is scoped, full sweep where it is not
-- Keep correctness identical to the sweep: same oracle, same digests, verified per trial
-  by the performance harness on both paths
+- Require the same facts as the sweep on every controlled test fixture, compared by the
+  independent oracle; preserve weaker provenance for journal-scoped answers even when
+  those tests pass
 - Land the numbers through the performance loop as experiments, with the accept rule
   deciding
 - Choose the measured cheaper path automatically, subject to the caller’s freshness
@@ -88,9 +105,10 @@ fails closed on every row, and why the full sweep remains the backstop on every 
 
 ## Non-Goals
 
-- Windows (USN journal) and Linux: Windows is deferred with the format leaving room for
-  it; Linux has no persistent journal, which is exactly why the parallel sweep must stay
-  fast there. The two investments are complements, not alternatives.
+- Windows (USN journal) and Linux adapters: this plan implements the macOS adapter.
+  Ordinary Linux inotify/fanotify queues cannot replay an offline gap; optional resident
+  observers and filesystem-specific change sources are separate work.
+  Portable full scans preserve the same checkpoint workflow on every platform.
 - Changing what is cached or where.
   This feature accelerates revalidation.
   The cursor rides in the existing snapshot, and the typed-gap rule that lets a
@@ -99,16 +117,18 @@ fails closed on every row, and why the full sweep remains the backstop on every 
   Current content-sidecar reuse and portable full sweeps remain available independently.
 - Touching the live watch layer.
   The watcher (rung 3) already exists behind the `watch` build feature; this is the
-  between-runs story, not the resident one.
+  between-runs story. Sharing its build feature does not require a resident process.
 - Spotlight or any other time-indexed query source.
   A query for currently indexed recent files cannot recover deleted paths or their old
   sizes. Comparing retained inventories can; an operation log accelerates their refresh.
-- The block snapshot format (H33/H35, bead `fdu-1vd0`). The cursor fields ride the
-  current flat format now and carry over unchanged when that lands.
+- The block snapshot format (`fdu-pdra`, `fdu-yr23`). The cursor initially rides the
+  flat format; bounded persistence is a separate prerequisite for the large-tree
+  end-to-end latency target.
 - Trusting the journal.
   Apple documents FSEvents as advisory.
-  Every use here is a *scoping hint* that decides where to look; what the index believes
-  still comes only from fresh stats through the delta contract.
+  It nominates where to look.
+  Changed facts come from fresh observations; untouched facts remain retained
+  observations with journal-scoped provenance.
 
 ## Background
 
@@ -128,13 +148,12 @@ Three experiments (exp-002, exp-004, exp-005 in the
 constants; none can change the asymptotics, because the sweep must stat every entry to
 be sound. Only change information can — and `fseventsd` records it, persisted to disk in
 per-volume journals.
-Event IDs come from a system-wide monotonic counter, but the stream, its UUID, and the
-retained history are bound to a volume, so software that persists a cursor across
-launches is expected to create the stream per disk with
-`FSEventStreamCreateRelativeToDevice` rather than per path with `FSEventStreamCreate`. A
-stored ID is replayed as `sinceWhen` either way, with flags for *several* of the ways
-history can be insufficient (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`,
-`KernelDropped`, `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
+The stream, its UUID, and retained history are bound to a volume.
+Software that persists a cursor across launches should create a per-device stream with
+`FSEventStreamCreateRelativeToDevice`. A stored ID is replayed as `sinceWhen` in that
+stream’s domain, with flags for *several* of the ways history can be insufficient
+(`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
+`EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 The iterative loop has since improved those constants without changing that shape.
 On the current 60,067-entry subject, exp-032 measures about 290 ms for cold index and
@@ -216,21 +235,23 @@ Binding options, evaluated against this repository’s supply-chain policy:
 | `fsevent-sys 4.1.0` (already present via `notify`) + own declarations | **0** | Ships `FSEventStreamCreate`, start/stop/invalidate/release, `FSEventsGetCurrentEventId`, and every event flag. Leaves `FSEventStreamCreateRelativeToDevice`, `FSEventStreamSetDispatchQueue`, and `FSEventsCopyUUIDForDevice` commented out; all three are declared in our FFI module, alongside `dispatch_queue_create`/`dispatch_release` (libdispatch is part of libSystem, linked on every macOS binary — no crate needed). |
 | `objc2-core-services` + `objc2-core-foundation` + `dispatch2` | ~4–5 | The modern generated bindings (verified: all four needed functions exist, including `FSEventStreamSetDispatchQueue` and `FSEventsCopyUUIDForDevice`). Signatures machine-derived from Apple headers. |
 
-**Decision: option 1.** The deciding fact is that `fsevent-sys` is *already in
-`Cargo.lock`*, so the entire feature adds zero new crates and nothing to the cool-off,
-while still using the non-deprecated dispatch-queue API — the handful of extern
-declarations we add are exactly the ones the objc2 crates would generate, and they are
-covered by the same integration tests either way.
-The objc2 route is the documented fallback if the hand-declared surface grows past a
-dozen functions; it is a maintained, widely-used ecosystem (winit), just not worth four
-new supply-chain entries for ~6 declarations today.
+**August preference: option 1; September decision reopened.** Reusing the locked binding
+avoids new packages, but the newer `fsevent-sys 5.2.0` is deprecated in favor of
+`objc2-core-services`, and notify’s 9.0 RC line has moved to objc2. Before engine
+integration, compare the maintained generated route against the locked binding plus
+reviewed declarations, including API coverage, unsafe ownership, MSRV, build-feature
+isolation, and supply-chain review.
+The table records the earlier dependency estimate, not a newly resolved lockfile.
+The standalone SDK probe settles API behavior without deciding Rust dependencies.
 
 The workspace denies `unsafe_code`; this FFI module carries a scoped
 `#[allow(unsafe_code)]` with every call site documented.
 The exp-022/026 `getattrlistbulk` work has established the same pattern for the scan
 boundary: an exact already-locked binding, unsafe confined to one leaf module, and
 byte-for-byte portable parity tests.
-The FSEvents module remains behind a non-default build feature on one platform.
+The FSEvents module remains behind `watch`, which is non-default in `fdu-core`, and a
+macOS platform gate.
+Runtime replay remains an explicit request.
 
 Replay semantics that the implementation and its tests must honor, from Apple’s
 documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
@@ -248,11 +269,12 @@ how far its production use actually goes):
   Re-scanning a little on the next open is the safe direction; skipping a change is not.
 - The end of history is a sentinel event flagged `HistoryDone` whose path is meaningless
   and must be ignored.
-- Event IDs are allocated from a machine-wide monotonic counter, but the journals they
-  index — and their retention — are per-volume.
-  Both facts drive the gate: G4 compares the cursor against the machine-wide current ID,
-  and the volume UUID (from `FSEventsCopyUUIDForDevice(st_dev)`, never `st_dev` itself,
-  which is not stable across reboots) pins which volume’s journal the cursor belongs to.
+- Persisted replay uses per-device stream IDs.
+  Apple’s guide distinguishes their ordering from per-host IDs, so the probe must
+  establish comparable capture and completion boundaries rather than mixing ID domains.
+  G4 rejects an invalid boundary, and the volume UUID (from
+  `FSEventsCopyUUIDForDevice(st_dev)`, never `st_dev` itself, which is not stable across
+  reboots) pins which volume’s journal the cursor belongs to.
   That UUID identifies the volume’s FSEvents database and changes when the database is
   discarded or event IDs wrap, which is what G3 must detect.
   It is not the filesystem volume UUID (`ATTR_VOL_UUID`) that the checkpoint plan
@@ -265,6 +287,85 @@ how far its production use actually goes):
   stays in safe code on the calling thread.
 
 ## Design
+
+### Cross-process lifecycle
+
+The first implementation supports a local macOS root with `one_filesystem` scope.
+Every run uses the same root, stored-state identities, and managed-store exclusion
+policy. The sequence is:
+
+1. Capture a device-relative journal fence before the initial full scan.
+   Record its journal database UUID and capture time.
+   Publish the completed inventory with that conservative fence, then exit.
+2. Leave fdu stopped while the user edits, installs, deletes, or moves files.
+   The operating system records available events independently of fdu.
+3. On the next invocation, admit the snapshot through the existing scope and engine
+   identity checks, then apply the replay gate below.
+4. Replay into bounded owned records, accepting `FullHistory` overlap.
+   Normalize events into dirty scopes, verify them with the existing scanner, and apply
+   the observations through the engine’s exact commit path.
+5. Publish the updated inventory, trust state, and fully applied replay boundary as one
+   revision. A subsequent process resumes from that published boundary.
+
+Cursor capture does not turn a traversal into a point-in-time filesystem snapshot.
+Changes racing the scan remain eligible for the next replay.
+If an opened lifecycle promises to enter watching with a closed registration gap, it
+must additionally use the existing observation-before-discovery and
+buffered-reconciliation protocol.
+That live handoff is separate from the first one-shot replay implementation.
+
+### Verification policy and user-visible trust
+
+The proposed policy has two explicit choices, with names subject to API review:
+
+| Requested verification | Permitted route | Meaning of the answer |
+| --- | --- | --- |
+| `full` (default) | Fresh scan or full reconciliation | Filesystem observations over the requested scope, with ordinary partial/error reporting |
+| `journal` (explicit opt-in) | Replay and scoped reconciliation, or full fallback | Untouched facts depend on journal completeness and carry `Source::JournalScoped` |
+
+`--cache auto` continues to describe storage policy; it does not authorize weaker
+verification. No entry-count threshold or latency estimate may change the requested
+verification. The engine planner chooses the cheaper route only among those the request
+permits. Cache-only remains its separate, explicitly stale contract.
+
+This is a proposed extension to the set of accepted answer guarantees.
+Before a public release, the request model and path-independence contract must express
+it explicitly (`fdu-kfp6`). The current default’s cold-answer invariant remains intact.
+An explicit journal request can receive the stronger fully scanned answer when replay is
+unavailable. No new CLI flag ships until Rust and Python can express the same choice.
+
+Freshly observed entries retain their observation provenance; untouched contributors
+remain journal-scoped, and a roll-up takes the weakest contributing trust.
+Text output must visibly label a journal-scoped answer, and machine output must retain
+that label, coverage, observation times, last full-verification time, and any fallback
+reason. A new replay does not make untouched facts newly observed.
+Snapshots must preserve enough trust state that reloading cannot upgrade a journal
+result into verified data.
+
+Mixed-source progressive serving is deferred.
+A later interactive client may display a provisional journal answer and request a
+background sweep, but only after per-subtree trust, deletion, and convergence obey the
+engine architecture’s composition rules.
+
+### Managed stores and partial coverage
+
+Whole-home roots include fdu’s default cache directory.
+Writing an inventory inside the observed tree can otherwise schedule another refresh and
+count fdu’s own growth.
+The proposal is an explicit engine-owned managed-store exclusion in scan scope, recorded
+in stored-state identity and shared by cold scans, full reconciliation, replay, and
+checkpoints (`fdu-gmw2`). Report those store bytes separately.
+A view-time exclude or an FSEvents self-event flag cannot establish that common scope.
+The disk-history profile opts into this scope explicitly; it must not silently alter
+ordinary roll-ups or cached content-analysis requests.
+
+Inaccessible subtrees are unknown, not deleted or unchanged.
+A persistent gap must be recorded before its event can count as applied.
+Until the snapshot can encode typed gaps, a partial pass cannot advance the durable
+cursor or replace its complete baseline.
+The checkpoint plan owns gap persistence; the first production slice can be restricted
+to complete readable roots.
+Long-lived partial roots require that gap slice.
 
 ### Where it fits
 
@@ -283,7 +384,7 @@ journal gate ──► pass ──► replay since cursor ──► changed-dir 
                                      conditional Upsert/Remove deltas
                                               │
                                               ▼
-                                     index.apply  (unchanged contract)
+                                     engine exact Commit path
                                               │
                                               ▼
                                      snapshot.save persists the pre-scan
@@ -300,8 +401,8 @@ layer needed it first.
 
 ### The gate
 
-The user-visible rule is **“journal when the risk is bounded and labelled, sweep
-otherwise.”**
+The user-visible rule is **“journal only when explicitly permitted and the gate passes;
+sweep otherwise.”**
 
 The word *provably* does not belong here, and an earlier draft of this plan used it.
 The Phase 0 report raised the opposite concern: an old `sinceWhen` returned
@@ -327,18 +428,18 @@ CoreServices. Every row falls closed to the sweep:
 
 | # | Condition | Decision |
 | --- | --- | --- |
-| G1 | Not macOS, build feature off, or `--revalidate=full` | full sweep |
+| G1 | Full verification requested, not macOS, `watch` build feature off, or unsupported storage | full sweep |
 | G2 | No usable snapshot, or one without a cursor (first save, older format, or an image discarded by a release upgrade, a scope change, or `--cache-clear`) | full sweep; persist its pre-scan cursor with the snapshot |
 | G3 | Root’s current volume UUID ≠ stored UUID (container change, FSEvents database purged or replaced, disk erased, UUID unreadable), or the root’s device number ≠ the one the snapshot recorded | full sweep; a renumbered device changes every retained `Fingerprint`, and a scoped refresh would leave entries under two device numbers |
-| G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
+| G4 | Stored event ID exceeds a comparable current journal boundary, or that comparison cannot be established | full sweep; never compare unrelated volume/host ID domains |
 | G5 | Applied cursor older than `max_cursor_age` (provisional default **24 hours**) | full sweep; an age limit bounds exposure but does not prove retained history is complete |
 | G6 | Stream creation fails, or replay exceeds the G11 budget without `HistoryDone` | full sweep |
 | G7 | Replay reports `EventIdsWrapped`, `RootChanged`, `Mount`, `Unmount`, `UserDropped`, or `KernelDropped` | full sweep |
 | G8 | Replay reports `MustScanSubDirs(path)` | scoped: `InvalidateSubtree(path)`, journal continues for the rest |
-| G9 | Changed-dir set exceeds `max_changed_fraction` (default 25%) of the snapshot’s directories | full sweep — scoped work would approach sweep cost with worse locality |
+| G9 | Changed-dir set exceeds `max_changed_fraction` (provisional 25%) or bounded event storage is exhausted | full sweep; measure entries in dirty scopes as well as directory count |
 | G10 | Otherwise | scoped revalidation of the changed-dir set |
 | G11 | Replay wall exceeds a budget scaled to the estimated sweep cost (measured: replay runs ~200 ms typical, up to 2 s from an old cursor) | abandon replay, full sweep |
-| G12 | Every Nth warm open (provisional default 20), regardless of what the journal reports | full sweep; also define and measure an elapsed-time verification limit |
+| G12 | Warm-open count (provisional 20) or an elapsed-time verification limit is reached | full sweep; persist both counters independently of replay-cursor age |
 
 The cursor age, last full-verification time, and checkpoint age are separate values.
 A week-old checkpoint can be compared against a freshly maintained inventory.
@@ -347,10 +448,13 @@ daily workflow constraint, not evidence that next-day refresh is already fast.
 Phase 0 must test 1-hour, 24-hour, 48-hour, and 7-day gaps before changing either risk
 control.
 
-The changed-dir set is normalized before G9: paths outside the root are dropped,
-descendants of a `MustScanSubDirs` subtree are absorbed into it, duplicates coalesce,
-and paths are mapped root-relative against the same canonicalized root the scan layer
-uses.
+The changed-dir set is normalized before G9. Unrelated paths outside the root are
+dropped, but an ancestor scope that covers the root must invalidate the root when its
+flags require recursive reconciliation.
+Global degradation flags are processed before path filtering.
+Descendants of a `MustScanSubDirs` subtree are absorbed into it, duplicates coalesce,
+and paths are mapped root-relative against the scan layer’s root.
+Keep stream progress separate from this filtered work set.
 
 The cursor’s volume identity is that FSEvents database UUID, not `st_dev` — device
 numbers are not stable across reboots.
@@ -369,9 +473,13 @@ After the scope header, propose one new optional section:
 ```
 replay_cursor: u8 tag         0 = none, 1 = fsevents-v1  (room for usn-v1 = 2)
 if fsevents-v1:
-  volume_uuid: 16 bytes
+  journal_uuid: 16 bytes      FSEvents database identity, not filesystem volume UUID
   event_id:    u64            applied fence; initially sampled before the full scan
   captured_at: i64 ns         time associated with that fence, for G5
+replay_state:
+  last_full_verification_started_at: i64 ns
+  replay_opens_since_full: u64
+  trust_and_gaps: versioned section
 ```
 
 The cursor is captured **before** the scan that populates the index begins, not after it
@@ -383,6 +491,28 @@ cursor-absent (G2); otherwise it remains a clean miss.
 Test each supported predecessor, unknown version, and corrupt cursor.
 Cursor, inventory generation, and publication must commit atomically: never save a
 boundary ahead of the reconciled data.
+
+These are proposed logical fields, not a frozen binary layout.
+Persist G12’s state so restarting fdu cannot reset the full-verification obligation.
+Validate all lengths, tags, counts, and timestamps before admitting the image.
+A future or invalid capture time cannot make an old cursor young; if wall-clock changes
+prevent an age decision, fall back.
+The engine fingerprint and scope identity still govern the whole image.
+
+A replay transaction needs a completed boundary in the stream’s ID domain, including
+when no root-local event arrives.
+The probe must establish how that boundary is obtained and ordered with `HistoryDone`;
+the maximum matching path ID is insufficient.
+Never sample a later global ID after reconciliation and treat it as applied progress.
+If a safe boundary cannot be established, retain the old cursor or scan again.
+Events arriving beyond the applied boundary remain eligible for the next replay.
+
+Concurrent writers serialize or compare the inventory revision before publication.
+Cancellation, queue overflow, reconciliation failure, or a failed save cannot publish a
+new cursor alone. The commit point installs facts, trust, gaps, and cursor together; an
+interruption leaves either the previous revision or the complete new one.
+Specify file and directory synchronization for crash durability separately from atomic
+rename visibility, and inject failures on both sides of that publication boundary.
 
 The snapshot is the checkpoint plan’s working inventory, and the cursor stays in it on
 purpose. Both are derived state that a full scan rebuilds, so they share the cache’s
@@ -396,15 +526,24 @@ incomplete directory is recorded as a gap, and still refuses any other partial i
 
 ### Components
 
-- `crates/fdu-core/src/history_replay/mod.rs` — platform-neutral surface: `ReplayCursor`
-  (encode/decode), `GateDecision`, the gate function, changed-set normalization.
-  Compiles everywhere; no FFI.
+- `crates/fdu-core/src/history_replay.rs` — private platform-neutral types:
+  `ReplayCursor` (encode/decode), `GateDecision`, the gate function, changed-set
+  normalization. Compiles everywhere; no FFI.
 - `crates/fdu-core/src/history_replay/fsevents.rs` — `#[cfg(target_os = "macos")]`,
-  build feature `history-replay`. The FFI module: current event ID, volume UUID for a
+  build feature `watch`. The FFI module: comparable event boundary, journal UUID for a
   device, and historical replay via the non-deprecated dispatch-queue API (create stream
   with `sinceWhen`, `FSEventStreamSetDispatchQueue` onto a private queue, start, receive
-  marshalled `(path, flags, event_id)` records over a channel until `HistoryDone` or the
-  G6 deadline, then stop/invalidate/release).
+  marshalled `(path, flags, event_id)` records over a channel until a validated
+  completed boundary or the G6 deadline, then stop/invalidate/release).
+  `HistoryDone` alone is not yet established as that boundary: the probe also flushes
+  buffered contemporary events, but does not prove that protocol sufficient.
+  Watchman reports earlier changes arriving after both a cookie notification and
+  `FSEventStreamFlushSync` under load; see its
+  [synchronization limitation](https://facebook.github.io/watchman/docs/cookies#limitation-macos-fsevents).
+  Quiescence and matching finite oracles do not establish a universal barrier.
+  Specify the completion and queue-drain protocol only after testing changes pending at
+  invocation and racing the history/live transition; a deadline without a proven
+  boundary takes the conservative fallback.
   Unsafe is confined to this leaf module, following the existing scan-boundary pattern.
 - `crates/fdu-core/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the
   bounded sweep. Reuses the existing per-directory emission; no new op kinds.
@@ -413,41 +552,44 @@ incomplete directory is recorded as a gap, and still refuses any other partial i
 - `crates/fdu-core/src/lib.rs` and the refresh orchestration — own the gate, pre-scan
   fence, reconciliation, and durable publication.
   CLI and Python delegate to the same engine capability.
-  The CLI may expose `--revalidate=auto|full` after the engine policy exists (`full`
-  forces the sweep). `--cache off` remains the explicit full-scan, no-snapshot policy and
+  The CLI may expose `--revalidate=full|journal` after the engine policy exists (`full`
+  is the default). `--cache off` remains the explicit full-scan, no-snapshot policy and
   bypasses the history-replay path unchanged.
-- Build feature `history-replay` in `crates/fdu-core/Cargo.toml`: gates
-  `dep:fsevent-sys` (macOS only via target-conditional dependency) and the FFI module.
-  Off by default initially; the CLI enables it once the evidence is in.
-  On non-macOS targets the build feature compiles to the gate returning G1, so
-  `--no-default-features` and Linux/Windows builds are unaffected.
+- Existing build feature `watch` in `crates/fdu-core/Cargo.toml`: also gates the macOS
+  replay FFI and the selected target-conditional optional native bindings.
+  Even reusing a locked dependency requires normal dependency review.
+  The optional native-observation capability remains removable under
+  `--no-default-features`.
 
 ### API changes
 
-Additive only. `snapshot::save`/`load` signatures stay unchanged: the index carries the
-optional pre-scan or replay-advanced cursor, `save` encodes it, and `load` restores it.
-New public surface: `ReplayCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
-documented as macOS-accelerator plumbing with the sweep as the portable contract.
+Expose the verification choice and its outcome through the shared request, planner, and
+report models. Keep `ReplayCursor`, gate internals, and scope reconciliation private
+unless a concrete external caller requires them.
+The index carries the applied cursor and trust state for snapshot save/load; library
+callers must not assert their own verified cursor.
+Opened refresh remains owned by `OpenedIndex`, using its existing commit and
+cancellation boundaries rather than a parallel replay service.
 
 ### Packaging and platform fallback
 
-One source tree, one build feature name, correct behavior on every platform without the
-consumer doing anything:
+The proposed packaging reuses `watch`, the engine’s only optional-capability build
+feature (`fdu-5l1j`). It groups the existing live observer and historical replay as
+native change discovery.
+Compile-time inclusion and process lifetime are independent: a one-shot replay starts
+only a temporary stream and stops it before returning.
 
-- The `history-replay` build feature exists on **all** platforms.
-  On macOS it compiles the FFI module and the gate can return scoped decisions;
-  elsewhere it compiles only the platform-neutral gate, whose first row (G1) answers
-  “full sweep.” Enabling it is therefore never a build error and never changes non-macOS
-  behavior — the fallback is the same code path Linux runs today, not a stub.
-- The dependency is target-conditional:
-  `[target.'cfg(target_os = "macos")'.dependencies] fsevent-sys = { version = "4.1", optional = true }`.
-  Linux and Windows builds with `--features history-replay` pull no new crates at all.
-- **Cargo consumers**: `default-features = false` builds are unaffected; the CLI build
-  turns the build feature on once the evidence gate passes.
+- Without `watch`, or on unsupported platforms, the gate chooses the portable sweep.
+  Enabling `watch` does not opt a request into journal-scoped trust.
+- Native replay dependencies are optional and target-conditional under
+  `[target.'cfg(target_os = "macos")'.dependencies]`; select their exact versions after
+  the binding review above.
+  Linux and Windows acquire no replay-specific native dependency.
+- **Cargo consumers**: `default-features = false` builds keep the sweep path; consumers
+  needing historical replay enable `watch` and explicitly request journal verification.
 - **PyPI / uv consumers**: `fdu-py` wheels are built per-platform by maturin, so the
-  macOS wheels carry the history-replay path and the manylinux wheels carry the
-  fallback, from the same source with no Python-side conditionals, extras, or
-  environment markers.
+  macOS wheels carry the replay path and the manylinux wheels carry the fallback, from
+  the same source with no Python-side conditionals, extras, or environment markers.
   `uv pip install fdu` (or `uvx fdu`) gets the right behavior on either OS because the
   platform selection already happened at wheel-build time — the same mechanism that
   ships every other platform difference today.
@@ -470,8 +612,9 @@ work (H12/H14) has produced the clean baseline Phase 2 must be judged against.
 Commit the probe and its invocation to the repository’s exploration tooling before
 making new claims. Record source revision, OS and filesystem, flags, stream kind,
 latency, saved fences, event IDs, mutations, and full-scan comparisons.
-It remains outside the shipped API and uses the locked bindings plus reviewed
-declarations. The earlier scratch spike is historical evidence, not a reproducible
+It remains outside the shipped API. The standalone instrument uses the installed Apple
+SDK directly, without changing fdu dependencies; Rust integration follows the binding
+review above. The earlier scratch spike is historical evidence, not a reproducible
 acceptance run. On a real volume, establish:
 
 - [ ] Dispatch-queue delivery works as designed: stream created with `sinceWhen`,
@@ -480,6 +623,11 @@ acceptance run. On a real volume, establish:
 - [ ] Replay semantics: compare runs with and without `FullHistory`; accept overlapping
   IDs, normalize actual file/directory events, and verify deep edits, deletion, rename,
   and subtree cloning against fresh scans
+- [ ] Long-lived writers: append and `fsync` while a descriptor remains open across
+  capture and replay, then close and replay the same cursor.
+  Separate genuinely fresh nominations from historical overlap that masks a missing
+  notification. Reproduce the September 27 stable real-root misses before promoting
+  replay to a default.
 - [ ] Quiet-root progress: establish a safe completed replay boundary even when no
   matching root event arrives.
   Filtering events outside the root must not confuse per-volume replay progress with the
@@ -705,11 +853,168 @@ claim size-independent warm opens or enable history replay by default from this 
 Full-scan oracle comparisons, replay-gap measurements, and whole-command cost are the
 acceptance evidence still needed.
 
+### Reproducible probe findings (2026-09-26)
+
+The [instrument and records](../../../../explorations/fsevents-replay/README.md) provide
+a reproducible starting point for further tests.
+Preparation, mutation, and replay run in separate processes, with no application-owned
+stream alive during mutation.
+The candidate inventory is compared with an independent full `lstat` walk, and omitted
+dirty scopes are a negative control.
+
+Immediate quiet, mixed-mutation, and deep-append trials on APFS matched the oracle with
+directory/file events and with/without `FullHistory`. The deep append changed a file
+without changing any directory metadata.
+These results support cross-process change discovery; they do not establish engine
+accounting parity or journal completeness.
+
+**Overlap can consume the expected savings.** `FullHistory` replayed fixture-creation
+events at or below the saved cursor, even on a quiet fixture.
+The probe’s conservative normalization selected the entire root in those trials.
+Without `FullHistory`, the deep-append case selected its parent, but omitting that flag
+is not an acceptable performance shortcut: Apple’s boundary-skip warning still applies.
+Production normalization must distinguish an immediate directory relist from a recursive
+invalidation, while preserving every required overlapping observation.
+Measure the resulting work; do not infer a fast refresh from an oracle match that
+rescanned the whole root.
+
+The probe drains fixture construction and records the resulting stream ID before
+scanning the baseline and exiting.
+It retains the preliminary device-time fence and drain summary, because a more
+conservative fence can include additional construction events.
+The SDK’s `FSEventsGetLastEventIdForDeviceBeforeTime` takes Unix-epoch seconds despite
+its `CFAbsoluteTime` type; using Core Foundation’s epoch would request the wrong time.
+
+The instrument flushes contemporary events before stopping, but the immediate
+observations do not establish a safe live handoff or advancing boundary under queued
+mutations. Quiet-root cursor advancement, long elapsed gaps, reboot, volume moves,
+controlled loss, and publication failures remain pending.
+Proceed with the private gate and deterministic transaction design, not a public replay
+release or a whole-command speed claim.
+
+### Real-root and next-day findings (2026-09-27)
+
+The
+[extended probe and sanitized evidence](../../../../explorations/fsevents-replay/README.md#real-roots-and-next-day-replay-2026-09-27)
+test existing roots without writing into them.
+A quiet 12,280-entry root matched both full oracles with no candidate entry
+observations. On a live 441,777-entry root, replay took about 181 ms, but the
+conservative subtree normalizer rescanned the whole root.
+Stable observations matched; concurrent mutations made overall validation inconclusive.
+This is not yet evidence for the large-tree latency target.
+
+The normalizer proposed above must implement immediate relists separately from recursive
+invalidation; the prototype’s recursive parent scans are not acceptable as the
+production fast path.
+Whole-image persistence costs remain independently visible.
+
+Replaying the preserved external APFS fixtures after about 26 hours produced events but
+no `HistoryDone` before the ten-second deadline in all sixteen attempts.
+These are recorded failures, not successful day-gap acceptance or proof of retention
+loss.
+Investigate bounded completion and volume-history cost before setting G5/G6 policy.
+Phase 2 remains gated on this and the rest of the acceptance matrix.
+
+### Shallow refresh and completion continuation (2026-09-27)
+
+`fdu-uz5r` extends the standalone instrument, not the engine.
+The real-root candidate now separates shallow relists from recursive invalidations,
+keeps deep scopes alongside a shallow root, discovers new/replaced directories, and
+expands observed hard-link changes to cached aliases.
+One cached parent index avoids O(tree × dirty directories) work.
+Eleven focused tests cover these transitions and failure paths; the
+[probe README](../../../../explorations/fsevents-replay/README.md) owns the full
+protocol and sanitized observations.
+
+The controlled 20,204-entry baseline grew to 20,206 entries.
+With `FileEvents | FullHistory`, refresh observed 712 entries in eight directory
+listings, matched both independent full oracles exactly, and reported the expected
+66,516-byte apparent increase (61,440 allocated bytes).
+The workload included root and nested edits, deletion, a directory rename, a new
+subtree, and a hard-link edit.
+This proves the prototype can avoid full traversal on that workload; it is not Rust
+engine parity or an accepted performance experiment.
+
+The live agent-state root gives the opposing evidence: a 454,775-entry baseline needed
+only 848 candidate observations, but one stable file differed from both oracles.
+A second replay from the unchanged fence observed 900 entries and still missed that
+file, with two stable mismatches overall.
+Both runs received `HistoryDone`, reported no degradation, and failed rather than
+treating the concurrent paths as an excuse for stable misses.
+The first missing file had grown by 23,948 apparent bytes after the pre-scan fence and
+before both oracles; its parent was absent from the replay scopes.
+A targeted descriptor query found it open read/write.
+That is a concrete coverage failure, not a performance pass or proof of its cause.
+
+An aged, owned synthetic file reproduced the open-writer failure directly: after append
+and `fsync`, while its descriptor stayed open, replay returned `HistoryDone` with zero
+change events and zero historical overlap.
+Both full oracles agreed on the changed file while the candidate retained its baseline
+value. Closing the descriptor and replaying the same cursor produced a fresh file event
+and exact agreement.
+A freshly created control had been masked by overlapping creation history, which is why
+the aged control matters.
+This establishes a concrete failure of history-only refresh for that open-writer
+workload, not a universal attribution of every live-tree miss.
+
+The next-day synthetic fixtures also separate delivery from completion: diagnostic waits
+initially completed at roughly 32–40 seconds with exact oracle agreement, while later
+repeats exceeded sixty seconds.
+A two-minute diagnostic run completed at 92.5 seconds.
+Early matching callbacks arrived in milliseconds.
+An initial asynchronous flush returned at once and did not bring `HistoryDone` inside
+the ten-second deadline; an initial synchronous flush blocks until `HistoryDone`, so its
+twenty-second parent termination measured the same historical cost.
+A missing final summary cannot localize a hang to replay versus teardown.
+The normal probe still has its ten-second wait and twenty-second parent bound;
+diagnostic deadlines are not new product defaults.
+
+**Gate decision:** no-go for default or fully verified history-only refresh.
+Retain `Source::JournalScoped`, independent periodic sweeps, and the portable full-scan
+path. Require an explicit open-writer coverage contract and investigate a bounded
+active-writer observation supplement; do not hardcode log directories or infer safety
+from filename patterns.
+If a supplement cannot establish coverage within permissions and cost limits, report
+that limit or sweep.
+G11 must budget the whole replay attempt, including flush and teardown, against the
+measured scan alternative.
+Flat-image loading, indexing, roll-ups, and saving remain O(tree), so smaller
+event-nominated work alone does not meet the daily workflow target.
+
+### Change-source review (2026-09-27)
+
+The
+[change-source review](../../research/research-2026-09-27-disk-growth-change-sources.md)
+tested the mechanisms behind these findings and their alternatives.
+The results that bear on this plan:
+
+- **The open-writer omission happens at event generation.** The kernel emits a content
+  event only at the last close of the open file description, or at the last unmap of a
+  writable mapping. A live stream misses the same writes as replay, so a resident watcher
+  is not a fix.
+- **The live-root misses were open writers.** Re-classified against the baseline, 13 and
+  14 files per trial changed with no event, and the harness dropped no nomination.
+- **Replay cost is a property of the volume.** It costs about 0.12 s per compressed MB
+  of the volume’s journal behind the cursor, plus about 10 µs per matching record.
+  The path filter does not reduce it.
+  The G11 budget should use this model, not cursor age.
+- **The day-old tail had a different cause.** The observed 32–92 s tail came from a
+  churning scratch volume and from contention with other `fseventsd` clients on a loaded
+  host. Abandoned replays leave no backlog: `fseventsd` stops within about a second.
+  A quiet folder on the internal volume replayed a day in 1.8 s.
+- **The device-relative filter must be the path relative to the containing volume’s
+  mount point.** For the Data volume that is the firmlink-free path minus
+  `/System/Volumes/Data`; a root spelled through `/System/Volumes/Data` matched only the
+  `HistoryDone` sentinel.
+  `ATTR_CMNEXT_NOFIRMLINKPATH` alone is not the key for other volumes, because
+  `/Volumes` is itself a firmlink.
+- **G12 sweeps should be time-based**, because exposure grows with hours of history.
+
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
 - [ ] Next available snapshot format version: cursor section, encode-side cursor field
   stub (writes `none` on all platforms), load-side decode, corrupt-cursor fails closed
-- [ ] `history_replay/mod.rs`: cursor types, gate decision table as a pure function,
+- [ ] `history_replay.rs`: private cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Round-trip tests for the new version; explicit predecessor migration or clean-miss
   tests, including the layout of the format version current at integration time
@@ -719,6 +1024,9 @@ acceptance evidence still needed.
 - [ ] Engine-owned refresh planning: compare measured full-scan and history-replay paths
   while preserving the baseline and respecting freshness policy; test decisions without
   OS APIs
+- [ ] Model explicit journal acceptance, persist trust and full-verification history,
+  and render the weaker provenance on every surface; default requests never take it
+- [ ] Define managed-store exclusions as scan scope and test parity across routes
 - [ ] Treat cache-capacity probes as optional performance diagnostics; do not use one
   host’s capacity as a correctness gate or universal threshold
 
@@ -735,34 +1043,53 @@ acceptance evidence still needed.
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`
   each degrade correctly
-- [ ] Cross-platform packaging: target-conditional dependency, `history-replay` build
-  feature compiling on every platform with the G1 fallback, ubuntu CI leg running the
-  fallback end-to-end with digest equality, wheel smoke exercising a warm open through
-  Python on both OSes
+- [ ] Cross-platform packaging: target-conditional dependency under `watch`, with the G1
+  fallback everywhere else, ubuntu CI leg running the fallback end-to-end with digest
+  equality, wheel smoke exercising a warm open through Python on both OSes
 - [ ] Performance loop: new `warm-revalidate-replay` job; the one-deep-edit acceptance
   scenario on the reference tree (quiet, one-file-touched at depth ≥ 10, and
   one-file-deleted rows, full sweep as the paired control) and a churn transition
   (measure replay, dirty-scope work, full-image costs, and total wall — H43/H38); ledger
-  entries either way; the build feature stays off by default until the loop accepts
+  entries either way; public runtime replay stays unavailable until acceptance
 
 ## Testing Strategy
 
 The gate is a pure function: every row in the table gets a direct unit test, no platform
-APIs involved.
-Replay is integration-tested only on macOS (`#[cfg]`-gated, running in the
-existing macos-latest CI leg): each test mutates a real temp tree between snapshot and
-reopen, then asserts the journal-scoped index equals a fresh scan’s by engine digest —
-the same equality the parallel-walker tests pin.
+APIs involved. Production replay will be integration-tested on macOS (`#[cfg]`-gated,
+running in the existing macos-latest CI leg): each test mutates a real temp tree between
+snapshot and reopen, then asserts the journal-scoped index equals a fresh scan’s by
+engine digest — the same equality the parallel-walker tests pin.
 Degradations are forced, not simulated: a wrong stored UUID, a stored event ID above
 current, an undersized `max_changed_fraction`. The performance harness needs no changes
 to verify correctness: its oracle already digests every trial’s index, so a journal-path
 trial that skips a real change fails the run loudly.
-Linux and Windows CI prove the build feature compiles away cleanly.
+Linux and Windows CI prove replay falls back, and no-default-build-feature tests prove
+native discovery stays removable.
+These production replay tests are planned, not the existing resident-watcher tests.
+
+The committed probe must spawn distinct capture and replay processes, with no fdu
+process or application-owned stream alive during mutation.
+Compare the replay-scoped candidate against an independent full scan on a quiesced
+fixture, and deliberately remove one needed scope to prove the oracle fails.
+Exercise duplicate delivery, deep append, rename, deletion, hard-link aliases,
+allocated-only changes, root replacement, and `.gitignore` edits.
+A changed control file must trigger the existing descendant classification invalidation
+even when no descendant event was emitted.
+
+Test cursor publication with cancellation, failed saves, concurrent refreshes, and
+crashes before and after commit.
+Native platform tests cover actual event delivery; deterministic injected records cover
+overflow, ambiguous flags, and fallback decisions.
+Immediate cross-process evidence does not establish 24-hour retention, reboot behavior,
+or a disk moved between computers.
+Report those as separate pending acceptance cells.
 
 ## Rollout Plan
 
-Build feature `history-replay`, off by default, on for the CLI build once both phases
-pass the gate *and* the loop’s experiments accept.
+First land the exploration probe and its reproducible immediate results.
+Then implement the private cursor/gate and replay transaction, followed by public opt-in
+journal verification after the correctness and performance acceptance runs.
+Use `watch` for packaging and retain full verification as the runtime default.
 The README and skill text may only claim what the ledger shows, per the existing
 no-unmeasured-claims convention.
 
@@ -773,9 +1100,13 @@ no-unmeasured-claims convention.
   bounds the damage if the answer is unfavorable.
 - Cursor-per-volume for multi-volume scans: deferred behind G2 + `one_filesystem` now;
   the tag byte leaves room for a multi-cursor section later.
-- Should `--revalidate=replay` exist (fail rather than sweep when the gate refuses)?
-  Useful for testing; possibly confusing as a user surface.
-  Deferred until the integration tests want it.
+- Which completed per-device boundary can safely advance a quiet root’s cursor?
+  The probe must establish this before production publication can be specified fully.
+- What age and elapsed-time verification limits support measured daily use?
+  The provisional 24-hour limit does not establish that use case.
+- Is a fail-instead-of-fallback option useful beyond tests?
+  Initially the public proposal allows the stronger sweep fallback and reports its
+  reason.
 
 ## References
 
@@ -788,7 +1119,9 @@ no-unmeasured-claims convention.
   — the non-deprecated scheduling API;
   [`ScheduleWithRunLoop` deprecation reports](https://github.com/fsnotify/fsevents/issues/59)
 - [objc2-core-services](https://crates.io/crates/objc2-core-services) — the generated
-  modern bindings, evaluated and documented as the fallback route
+  modern bindings, reconsidered as the preferred candidate for dependency review
+- [Persistent-change prior art](../../research/research-2026-09-27-persistent-change-prior-art.md)
+  — backup-product precedents, current Rust bindings, and platform limitations
 - [Watchman fsevents resync](https://facebook.github.io/watchman/docs/troubleshooting.html)
 - [End-to-end performance testing plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md)
 
