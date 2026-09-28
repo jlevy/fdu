@@ -179,14 +179,16 @@ Find every `.venv`, `node_modules`, and Cargo `target` directory under a work di
 largest first, then get their combined usage from the same cached scan:
 
 ```shell
-fdu ~/work --kind dir --include .venv --include node_modules --include target --full --long
 fdu ~/work --kind dir --include .venv --include node_modules --include target \
-  --view summary --cache only
+  --full --long --cache on
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view summary --stale-ok
 ```
 
 The first command lists each matching directory’s allocated size, modification age, and
-path. The second reads the snapshot without another walk; it describes that recorded
-scan, not changes made afterward.
+path. `--cache on` makes it leave a snapshot, which a one-shot report does not do by
+default. The second answers from that snapshot without another walk; it describes that
+recorded scan, not changes made afterward.
 Ignored directories are included by default, which is useful for environments and build
 outputs.
 
