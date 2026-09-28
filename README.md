@@ -82,13 +82,51 @@ For other platforms, pinned versions, and building from source, see
 
 ## Quick Start (and drop-in `du` replacement)
 
-For example, on the current directory:
+For example, a one-level summary of this repository’s files:
 
 ```console
-$ fdu .
-     2.6 MiB  ██████████   100%  . 144 files
-     1.5 MiB  ██████░░░░    58%    crates 116 files
-     827 KiB  ███░░░░░░░    31%    tests 18 files
+$ fdu . --depth=1
+██████████   100%      23 MiB  . 872 files (4.0 KiB gitignored)
+█████░░░░░    55%      12 MiB    docs/ 315 files
+██░░░░░░░░    21%     4.7 MiB    crates/ 122 files
+██░░░░░░░░    17%     3.9 MiB    explorations/ 268 files
+░░░░░░░░░░     4%     932 KiB    tests/ 100 files (4.0 KiB gitignored)
+░░░░░░░░░░     1%     352 KiB    scripts/ 29 files
+░░░░░░░░░░     2%     440 KiB    … and 38 more files
+```
+
+Add `--analyze` to read file contents, here for lines of code and words in documents:
+
+```console
+$ fdu . --analyze=code,words
+CODE
+Code lines   Share  Comments   Blank  Analyzed files  Language
+    79,760   61.5%    12,799   6,720         101/101  Rust       (79,760 non-gitignored, 0 gitignored)
+    42,714   32.9%     1,697   5,218         133/133  Python     (42,714 non-gitignored, 0 gitignored)
+     3,988    3.1%       526     358           25/25  JavaScript (3,988 non-gitignored, 0 gitignored)
+     2,518    1.9%       229     145           19/19  C          (2,518 non-gitignored, 0 gitignored)
+       648    0.5%       124      64           18/18  Shell      (648 non-gitignored, 0 gitignored)
+        13   <0.1%         4       1             2/2  Swift      (13 non-gitignored, 0 gitignored)
+         6   <0.1%         4       1             2/2  C++        (6 non-gitignored, 0 gitignored)
+         3   <0.1%         3       1             1/1  C#         (3 non-gitignored, 0 gitignored)
+         3   <0.1%         4       0             1/1  Go         (3 non-gitignored, 0 gitignored)
+         3   <0.1%         4       0             1/1  PHP        (3 non-gitignored, 0 gitignored)
+         2   <0.1%         4       1             1/1  Java       (2 non-gitignored, 0 gitignored)
+         2   <0.1%         4       1             1/1  Kotlin     (2 non-gitignored, 0 gitignored)
+         2   <0.1%         4       1             1/1  Ruby       (2 non-gitignored, 0 gitignored)
+         2   <0.1%         4       1             1/1  SQL        (2 non-gitignored, 0 gitignored)
+         2   <0.1%         4       1             1/1  TypeScript (2 non-gitignored, 0 gitignored)
+         —       —         —       —             0/2  Make
+   129,666  100.0%    15,414  12,513         308/310  TOTAL      (129,666 non-gitignored, 0 gitignored)
+15 analyzed languages (include population)
+36 selected files with unclassified type
+2 unsupported
+
+DOCUMENTS
+Percentage column: document words
+   5.9 MiB   84.6%  markdown           317 files, 117,527 lines (103,995 nonblank, 13,532 blank), 507,060 words (2,028.2 pages), 4 generated, 288 documentation
+   748 KiB   13.4%  text               58 files, 5,455 lines (5,339 nonblank, 116 blank), 80,121 words (320.4 pages), 2 documentation
+   380 KiB    9.7%  html               1 file, 1,125 lines (1,110 nonblank, 15 blank), 58,222 words (232.8 pages), 1 documentation
 ```
 
 The default `list` view in `tree` format shows allocated sizes, largest first, down to
