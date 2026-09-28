@@ -992,6 +992,13 @@ Unrelated work kept the host above the quiet gate all night, so every cell ran d
 - H153 quiet confirmation: failed to qualify, 20 of 24 timed samples invalidated; see
   item 1 below.
 
+**Linux round, 2026-09-28** (4-vCPU Firecracker guest, ext4, `linux-v6.12` rebuilt at
+`adc21867`): exp-187 H161 wall accepted; exp-188 and exp-189 H159 rejected; exp-173 H162
+and exp-174 H163 accepted.
+The comparison with pdu on a real tree, which found the `.gitignore` cost, is
+[the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
+exp-175–186 remain free in that block, and exp-190–199 in the 0.2.1 block.
+
 Next free ids are **exp-200** and **H180**. exp-173–199 and H162–H179 are reserved for
 Linux work running in parallel: the peer-tool research (`fdu-92hp`) takes exp-173–186
 and H162–H170, and the 0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179.
@@ -1038,14 +1045,20 @@ Its default single-view command is not covered by the earlier speedup.
    algorithmic candidate only if the post-H153 profile names at least 3% wall.
 4. Re-run H151 only when the quiet start gate holds.
    Do not spend an uncontrolled cell on the progress handle again.
-5. **H159 Linux decision** (`fdu-578e`) — run the pre-registered Linux cell in
-   [exp-167](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)
-   on a quiet Linux host: `default-tree` primary on `linux-v6.12`, `linux-balanced-1m`
-   screening, the `fdu-default-tree` product contract paired in the tool harness, and
-   peak RSS non-inferior.
-   macOS showed no regression and does not decide it.
-6. **H157 rerun** (`fdu-o6um`) — only after item 5, with its kept arm as the control and
-   the product `fdu` indexed-tree contract pre-registered as primary.
+5. **H159 Linux decision** (`fdu-578e`) — **ran 2026-09-28: rejected** on `linux-v6.12`
+   twice (exp-188, and exp-189 on the H162+H163 base), with −10.63% on the screening
+   `linux-balanced-1m`. Whether [#150](https://github.com/jlevy/fdu/pull/150) merges on
+   the generated tree alone is the maintainer’s decision.
+6. **H157 rerun** (`fdu-o6um`) — reimplemented on the H159 layer; measure with the
+   product `fdu` indexed-tree contract pre-registered as primary, against whichever arm
+   item 5’s decision keeps.
+7. **H164** (`fdu-emqf`) — classify `.gitignore` on the walker threads.
+   H161 (exp-187, Linux wall accepted), H162 (exp-173) and H163 (exp-174) cut the
+   default summary on `linux-v6.12` from 505 to 167 ms, and the default tree to 211 ms
+   against pdu’s 70 ms; what remains is serial classification.
+   Then H165 (walker count), H166 and H167 (the index-tier pair on the generated tree),
+   H169, H170; the order and pre-registrations are in
+   [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
 
 ## Before the First Round
 
