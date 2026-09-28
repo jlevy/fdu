@@ -16,10 +16,15 @@ Keep those comments and this guide consistent.
 
 ## Row Styling
 
+Human output calls the classification `gitignored` and its complement `non-gitignored`.
+This describes gitignore matching, not whether the run skipped files.
+The CLI keeps `--ignored` and structured field names remain unchanged.
+
 Names that use cyan are bright cyan and bold, except directories whose own path is
-gitignored directly or through an ignored ancestor: those use regular cyan without bold.
-Containing ignored files alone does not change a directory name; file-name colors are
-unchanged. Names shown in white or gray retain those colors.
+gitignored directly or through a gitignored ancestor: those use regular cyan without
+bold. Containing gitignored files alone does not change a directory name; file-name
+colors are unchanged.
+Names shown in white or gray retain those colors.
 Directory names have a gray trailing `/`, except `.` and `..`; regular file names do
 not. Path and structured formats keep their original path values.
 Sizes of at least 1 GiB are bold, including gray parenthetical sizes and performance
@@ -49,8 +54,15 @@ Human integer counts use comma grouping consistently: `13,580 files`, `1,234 rul
 calculations without losing precision.
 This is the single policy point for future localization or ungrouped display.
 Do not add grouping at individual call sites.
-Structured formats retain numeric values, and executable flag values retain their parser
-syntax. Durations, percentages, and scaled byte units keep their own precision rules.
+Human byte quantities use the shared binary size formatter (`B`, `KiB`, `MiB`, `GiB`,
+and larger units), including cache-status rows, stale and leftover cache files, and
+cleanup summaries. Colored sizes use `styled_bytes` so zero and large-size emphasis
+cannot diverge between commands.
+Do not print grouped raw bytes in human output where a scaled size is intended.
+
+Structured formats retain exact numeric byte values, and executable flag values retain
+their parser syntax.
+Durations, percentages, and scaled byte units keep their own precision rules.
 
 ## Streams and Categories
 
@@ -180,26 +192,38 @@ and other discovery restrictions still apply.
 
 ## Progress Timer
 
-Transient progress and `perf:` use the same elapsed-time formatter.
+Transient progress and `perf:` share elapsed-time formatting and rounding rules.
 A gray `·` separates progress facts from elapsed time, including between the total size
-and the timer. Durations of one second or more stay in seconds with two decimal places,
-such as `151.33 s`; there is no separate minute or hour notation.
-Subsecond durations use the same nanosecond, microsecond, or millisecond formatting on
-both surfaces.
+and the timer. Progress uses one decimal place for seconds, such as `151.3 s`; the final
+performance summary retains two decimals.
+Neither switches to minute or hour notation.
+Progress always displays seconds to the nearest tenth, including `0.5 s` for a subsecond
+frame. The final summary retains adaptive subsecond units.
+
+After more than five seconds, progress frames with walk counters append gray cumulative
+throughput, for example `151.3 s (40,858 files/s, 1.400 GiB/s)`. Rates divide observed
+file counts and the displayed size measure by actual elapsed time; GiB/s uses binary
+gigabytes and describes represented filesystem usage, not content read or physical
+device throughput. Rates stay hidden through five seconds and in phases without walk
+facts. Narrow terminals may omit rates to preserve the main progress facts.
+
+Progress waits 500 ms before its first frame and redraws at most ten times per second.
+The timer and rates use already available progress counters; rendering does not add
+filesystem traversal or per-file work.
 
 ## Performance Summary
 
 Start with elapsed wall-clock time, followed by work and throughput:
 
 ```text
-perf: took 66.0 ms to walk 13,580 files (225 MiB) at 205,709 files/s (3.583 GB/s); 675 gitignore rules (44 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+perf: took 66.0 ms to walk 13,580 files (225 MiB) at 205,757 files/s (3.329 GiB/s); 675 gitignore rules (44 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ```
 
 Use parentheses for associated quantities, such as bytes after a file count and ignore
 files after their rule count.
 Slashes belong only in rate units.
-Total rates use the displayed wall-clock interval; GB/s describes represented file size,
-not measured storage bandwidth.
+Total rates use the same wall-clock sample as the displayed duration; GiB/s describes
+represented file size, not measured storage bandwidth.
 Content-read rates describe bytes actually read.
 When ignore rules were not read, say `gitignore not read` rather than presenting zero as
 an observed count.

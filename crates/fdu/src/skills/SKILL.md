@@ -226,7 +226,7 @@ Content analysis is one-shot and cannot be combined with `--watch`.
 One-shot text reports end with a compact performance line.
 It reports regular files walked and their represented bytes, ignore files and accepted
 rules, actual content bytes read, fresh and cached analysis, the cache tier, and elapsed
-time. Total files/s and decimal GB/s use that elapsed time; represented GB/s is not
+time. Total files/s and binary GiB/s use that elapsed time; represented GiB/s is not
 content-read bandwidth.
 Content-read throughput uses the analysis duration.
 Known binary files can contribute walked bytes but zero read bytes.

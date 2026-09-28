@@ -12,7 +12,7 @@ env:
   TZ: UTC
 patterns:
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
-  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
 ---
 # Realistic Default Overview
 

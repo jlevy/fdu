@@ -175,7 +175,7 @@ START HERE
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size. Hidden
-  and ignored entries are included; .gitignore is read to label ignored shares, not to exclude them.
+  and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 
 VIEWS AND ANALYSIS
   --view chooses the question the report answers. Several views share one scan
@@ -302,18 +302,18 @@ CACHE BEHAVIOR
 
 IGNORE RULES
   Fresh scans read applicable .gitignore files by default; cache-only uses retained
-  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
-  Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
-  .git is unignored unless a rule names it. --ignored=include is default.
-  --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.
-  --ignored=only discovers ignored matches through ordinary ancestors, reading
-  only ignored bodies for analysis. Sort and --min-size follow the size shown.
+  rules. Summary, tree, and extension rows show gitignored size as `(128 B gitignored)`.
+  Ignoring a directory covers its descendants. Non-gitignored does not mean Git-tracked:
+  .git is non-gitignored unless a rule names it. --ignored=include is default.
+  --ignored=exclude prunes safely gitignored subtrees and skips gitignored body reads.
+  --ignored=only discovers gitignored matches through ordinary ancestors, reading
+  only gitignored bodies for analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes
   the result partial, like any unreadable path. A .gitignore past --gitignore-budget
   or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
-  ignored shares under that directory do not.
+  gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
   Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
@@ -327,7 +327,7 @@ OUTPUT AND AUTOMATION
   Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
   One-shot text reports end with gray perf: on stderr; machine formats omit it.
   It counts ignore files and accepted rules, including repeated governing sources.
-  Total files/s and decimal GB/s use the displayed elapsed duration. GB/s represents
+  Total files/s and binary GiB/s use the displayed elapsed duration. GiB/s represents
   walked file size; actual body-read throughput is reported separately.
   JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
@@ -495,7 +495,7 @@ pub struct Cli {
     #[arg(long, value_name = "SIZE", help_heading = "SCOPE")]
     pub gitignore_line_limit: Option<String>,
 
-    /// Read no .gitignore files: rows lose their ignored share, and the snapshot scope differs
+    /// Read no .gitignore files: rows lose their gitignored share, and the snapshot scope differs
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub no_gitignore: bool,
 
@@ -753,7 +753,7 @@ impl Cli {
         // not also a run that scans. Clear runs first so a combined invocation reports
         // the state it left behind.
         if self.cache_clear.is_some() || self.cache_status.is_some() {
-            return self.run_cache_lifecycle(out);
+            return self.run_cache_lifecycle(out, stdout_is_terminal);
         }
 
         // Parse the whole request before touching the filesystem, so a typo in a glob or a
@@ -1256,7 +1256,11 @@ impl Cli {
     }
 
     /// Run the cache lifecycle flags and report what they found or removed.
-    fn run_cache_lifecycle(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
+    fn run_cache_lifecycle(
+        &self,
+        out: &mut dyn Write,
+        stdout_is_terminal: bool,
+    ) -> anyhow::Result<RunOutcome> {
         // Lifecycle commands do not scan. With no PATH they retain their existing
         // current-root meaning so `--cache-status=all` and `--cache-clear=all` remain
         // useful discovery/maintenance actions without weakening report safety.
@@ -1366,7 +1370,7 @@ impl Cli {
                     }
                 }
             };
-            self.write_cache_status(out, &statuses, scope)?;
+            self.write_cache_status(out, &statuses, scope, stdout_is_terminal)?;
         }
 
         Ok(RunOutcome::Complete)
@@ -1378,11 +1382,28 @@ impl Cli {
         out: &mut dyn Write,
         statuses: &[fdu_core::CacheStatus],
         scope: CacheScope,
+        stdout_is_terminal: bool,
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
+        let color = ColorContext::from_environment(
+            self.color,
+            format.is_machine(),
+            false,
+            stdout_is_terminal,
+        )
+        .enabled();
         // Every format, human included, comes from the one renderer. While the CLI kept
         // the text layout to itself, no other caller could print what fdu prints.
-        writeln!(out, "{}", report_format::render_cache_status(statuses, scope, format))?;
+        writeln!(
+            out,
+            "{}",
+            report_format::render_cache_status_with_options(
+                statuses,
+                scope,
+                format,
+                report_format::RenderOptions { color, ..Default::default() },
+            )
+        )?;
         Ok(())
     }
 
@@ -1620,9 +1641,8 @@ fn human_rate(units: u64, elapsed_ns: u64) -> String {
     report_format::human_count_u128(u128::from(units) * 1_000_000_000 / u128::from(elapsed_ns))
 }
 
-/// Shared progress and perf duration: seconds keep two decimals above one second,
-/// without switching to minute or hour notation.
-pub(crate) fn human_duration(duration: Duration) -> String {
+/// Performance duration: adaptive units and two-decimal seconds.
+fn human_duration(duration: Duration) -> String {
     let nanos = duration.as_nanos();
     if nanos < 1_000 {
         format!("{nanos} ns")
@@ -1635,8 +1655,13 @@ pub(crate) fn human_duration(duration: Duration) -> String {
     }
 }
 
+/// Progress shows seconds to one decimal at every duration, using perf's rounding rule.
+pub(crate) fn progress_duration(duration: Duration) -> String {
+    format!("{} s", scaled_decimal(duration.as_nanos(), 1_000_000_000, 1))
+}
+
 /// Round an integer ratio to a fixed number of decimal places without losing precision.
-fn scaled_decimal(value: u128, unit: u128, precision: u32) -> String {
+pub(crate) fn scaled_decimal(value: u128, unit: u128, precision: u32) -> String {
     let factor = 10_u128.pow(precision);
     let scaled = value.saturating_mul(factor).saturating_add(unit / 2) / unit;
     let whole = scaled / factor;
@@ -2231,7 +2256,7 @@ mod tests {
         };
         assert_eq!(
             footer(&ControlCoverage::NotObserved),
-            "perf: took 3.0 ms to walk 7 files (269 B) at 2,333 files/s (0.000 GB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan"
+            "perf: took 3.0 ms to walk 7 files (269 B) at 2,333 files/s (0.000 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan"
         );
         // The walked bytes are the answer's metric, allocated unless `--size apparent`.
         assert!(
@@ -3209,7 +3234,7 @@ mod tests {
 
         assert_eq!(
             footer,
-            "perf: took 2.50 s to walk 12,345 files (2.0 KiB) at 4,938 files/s (0.000 GB/s); gitignore not read; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1,500 files/s, 2 cached (4.0 KiB); warm revalidation"
+            "perf: took 2.50 s to walk 12,345 files (2.0 KiB) at 4,938 files/s (0.000 GiB/s); gitignore not read; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1,500 files/s, 2 cached (4.0 KiB); warm revalidation"
         );
     }
 

@@ -37,14 +37,14 @@ pub(crate) const ERASE_LINE: &str = "\r\x1b[2K";
 const FIRST_FRAME_DELAY: Duration = Duration::from_millis(500);
 
 /// How often the line is redrawn once it is showing, one spinner cell per redraw.
-const REDRAW_INTERVAL: Duration = Duration::from_millis(80);
+const REDRAW_INTERVAL: Duration = Duration::from_millis(100);
 
 /// The width a frame must fit when stderr's own width is unknown.
 const FALLBACK_WIDTH: usize = 80;
 
 /// When the first frame appears and how often the line is redrawn after it.
 ///
-/// The shipped values are the plan's 500 ms and 80 ms; a test passes its own so it can
+/// The shipped values are the plan's 500 ms and 100 ms; a test passes its own so it can
 /// see a frame at once, or none at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Timing {
@@ -593,7 +593,7 @@ mod tests {
     fn the_shipped_timing_is_the_plan_s_and_the_width_falls_back_to_eighty() {
         let timing = Timing::default();
         assert_eq!(timing.delay, Duration::from_millis(500));
-        assert_eq!(timing.tick, Duration::from_millis(80));
+        assert_eq!(timing.tick, Duration::from_millis(100));
         let width = stderr_width();
         assert!(width >= 1, "a width of {width} fits nothing");
         if !io::IsTerminal::is_terminal(&io::stderr()) {

@@ -140,7 +140,7 @@ pub use crate::opened::{
 // previously required to compile the command line to get it (fdu-z7sp).
 pub use crate::execution::{
     Load, OutcomeClass, PerformanceSummary, Plan, Route, Verify, plan, prepare_report,
-    prepare_report_with_progress, prepare_report_with_scan_diagnostics,
+    prepare_report_with_progress, prepare_report_with_scan_diagnostics, throughput_rates,
 };
 pub use crate::progress::{Progress, ProgressPhase, ProgressSnapshot};
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
