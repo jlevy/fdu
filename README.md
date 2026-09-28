@@ -468,8 +468,9 @@ Under a preloaded jemalloc, fdu’s indexed tree ran level with pdu, so most of 
 allocator traffic between fdu’s walker threads and its index builder; the rest is
 walkers waiting on a shared queue where pdu’s rayon workers steal work.
 Returning the builder’s buffers to the walkers that allocated them
-([#150](https://github.com/jlevy/fdu/pull/150)) cut this indexed tree by 10.6% but did
-not help on a real source tree, so it is not yet adopted.
+([#150](https://github.com/jlevy/fdu/pull/150)) cut this indexed tree by 10.6% and a
+real directory-dense `node_modules` tree by 8.6%; the saving is per directory, so a
+source tree with few, larger directories does not show it.
 See the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 and

@@ -993,11 +993,12 @@ Unrelated work kept the host above the quiet gate all night, so every cell ran d
   item 1 below.
 
 **Linux round, 2026-09-28** (4-vCPU Firecracker guest, ext4, `linux-v6.12` rebuilt at
-`adc21867`): exp-187 H161 wall accepted; exp-188 and exp-189 H159 rejected; exp-173 H162
-and exp-174 H163 accepted.
+`adc21867`): exp-187 H161 wall accepted; exp-188 and exp-189 H159 without effect on that
+sparse tree and exp-190 H159 accepted on a directory-dense one; exp-173 H162 and exp-174
+H163 accepted; exp-191 H157 rejected.
 The comparison with pdu on a real tree, which found the `.gitignore` cost, is
 [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
-exp-175–186 remain free in that block, and exp-190–199 in the 0.2.1 block.
+exp-175–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
 
 Next free ids are **exp-200** and **H180**. exp-173–199 and H162–H179 are reserved for
 Linux work running in parallel: the peer-tool research (`fdu-92hp`) takes exp-173–186
@@ -1045,13 +1046,13 @@ Its default single-view command is not covered by the earlier speedup.
    algorithmic candidate only if the post-H153 profile names at least 3% wall.
 4. Re-run H151 only when the quiet start gate holds.
    Do not spend an uncontrolled cell on the progress handle again.
-5. **H159 Linux decision** (`fdu-578e`) — **ran 2026-09-28: rejected** on `linux-v6.12`
-   twice (exp-188, and exp-189 on the H162+H163 base), with −10.63% on the screening
-   `linux-balanced-1m`. Whether [#150](https://github.com/jlevy/fdu/pull/150) merges on
-   the generated tree alone is the maintainer’s decision.
-6. **H157 rerun** (`fdu-o6um`) — reimplemented on the H159 layer; measure with the
-   product `fdu` indexed-tree contract pre-registered as primary, against whichever arm
-   item 5’s decision keeps.
+5. **H159 Linux decision** (`fdu-578e`) — **ran 2026-09-28**: no effect on the
+   directory-sparse `linux-v6.12` (exp-188, exp-189), **accepted** on the real
+   directory-dense `node-modules-dense` (exp-190, −8.61%), as its per-directory
+   mechanism predicts. [#150](https://github.com/jlevy/fdu/pull/150) is ready for the
+   maintainer.
+6. **H157 rerun** (`fdu-o6um`) — **rejected** on its product-job primary on top of H159
+   (exp-191); kept on its branch for a re-screen after H166/H167.
 7. **H164** (`fdu-emqf`) — classify `.gitignore` on the walker threads.
    H161 (exp-187, Linux wall accepted), H162 (exp-173) and H163 (exp-174) cut the
    default summary on `linux-v6.12` from 505 to 167 ms, and the default tree to 211 ms

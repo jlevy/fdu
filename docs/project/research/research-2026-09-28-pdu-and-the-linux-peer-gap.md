@@ -5,8 +5,9 @@
 **Author:** fdu project, with Claude Code
 
 **Status:** Complete for the source study and this session’s measurements.
-H162 and H163 are accepted (exp-173, exp-174); H159 is rejected on its deciding subject
-(exp-188, exp-189); H164–H170 are proposed.
+H162 and H163 are accepted (exp-173, exp-174); H159 is accepted on a directory-dense
+real tree (exp-190) after no effect on the sparse kernel tree (exp-188, exp-189); H157
+is rejected again (exp-191); H164–H170 are proposed.
 
 ## Overview
 
@@ -302,6 +303,10 @@ control `main` with both cherry-picked), it was rejected again: `default-tree` +
 [−5.33%, +12.96%], and `cold-scan-index` +3.22% [+1.21%, +12.87%], a regression
 interval. The recycle pays on the directory-dense generated tree (eight entries per
 directory) and not on this source tree (16 per directory).
+Its saving is per directory, about 1.25 µs each, so a fair real deciding subject must be
+directory-dense: on a `node_modules` tree of 79,953 entries in 9,439 directories
+(exp-190, pre-registered for the purpose) it was accepted, `default-tree` −8.61%
+[−19.47%, −5.04%] and `cold-scan-index` −6.79%.
 
 #### D.2 On the generated tree, the gap is allocation and scheduling
 
@@ -692,7 +697,8 @@ which structure holds the classifying summary’s extra memory.
 - [Hypothesis registry](../guides/performance-loop.md#hypotheses): H59, H60, H64, H66,
   H72, H74, H84, H85, H157, H159, H161–H170
 - [Experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md):
-  exp-161, exp-170, exp-171, exp-173, exp-174, exp-187, exp-188, exp-189
+  exp-161, exp-170, exp-171, exp-173, exp-174, exp-187, exp-188, exp-189, exp-190,
+  exp-191
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

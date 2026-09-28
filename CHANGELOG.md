@@ -32,6 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   On Linux it took 19% less time and 97% less peak memory (314 to 8.6 MiB) on a
   million-entry tree with no `.gitignore`, and 7% less time and 23% less memory on the
   Linux v6.12 source tree.
+- On Linux, building the full index on a tree of many small directories is 7–11% faster:
+  the index builder returns each directory listing to the walker thread that allocated
+  it, so glibc no longer frees it across threads.
+  Measured on a million-entry generated tree (−10.6%) and a `node_modules` tree (−8.6%);
+  trees with few, larger directories are unchanged.
 - Classifying entries against `.gitignore` is about three times faster on trees with
   many ignore files, which is what the default `fdu PATH` and `--view summary` do.
   Matching no longer allocates, and each directory’s governing ignore files are resolved

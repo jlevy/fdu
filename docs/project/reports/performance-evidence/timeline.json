@@ -43508,6 +43508,482 @@
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H159 rejected again on linux-v6.12 after H162 and H163",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "a15b20f4 probe: H159 with H162 and H163",
+   "change_pct": -8.612,
+   "commit": "aa58a6b1",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "eb00edf8 scratch probe: main with H162 and H163",
+   "date": "2026-09-28",
+   "decision": "accepted",
+   "entries": 79953,
+   "family": "Linux:1523f67ca225",
+   "hypotheses": [
+    "H159"
+   ],
+   "id": "exp-190",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 81560357.5,
+        "control": 90149625
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -7.221,
+        "ci95_high_pct": -2.871,
+        "ci95_low_pct": -12.441,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 375992000,
+        "control": 391920500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -4.203,
+        "ci95_high_pct": -2.426,
+        "ci95_low_pct": -7.279,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 29833216,
+        "control": 31381504
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -3.84,
+        "ci95_high_pct": -1.097,
+        "ci95_low_pct": -7.596,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 196079500,
+        "control": 212303500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -6.808,
+        "ci95_high_pct": 1.42,
+        "ci95_low_pct": -11.449,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 180631500,
+        "control": 181595000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -3.778,
+        "ci95_high_pct": 2.962,
+        "ci95_low_pct": -9.733,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 185546083,
+        "control": 197703847
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -6.794,
+        "ci95_high_pct": -2.247,
+        "ci95_low_pct": -10.915,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2320.6894425474966,
+      "control": 2472.7508286118095
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 87109703.5,
+        "control": 100974887
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -9.763,
+        "ci95_high_pct": -5.127,
+        "ci95_low_pct": -20.125,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 292366500,
+        "control": 305415000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -4.775,
+        "ci95_high_pct": 1.712,
+        "ci95_low_pct": -10.622,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 30402560,
+        "control": 32636928
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -6.893,
+        "ci95_high_pct": -1.532,
+        "ci95_low_pct": -8.981,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 205577500,
+        "control": 212545000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.213,
+        "ci95_high_pct": 1.559,
+        "ci95_low_pct": -12.756,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 97101500,
+        "control": 92394000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1,
+        "ci95_high_pct": 32.421,
+        "ci95_low_pct": -20.689,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 92897838.5,
+        "control": 106253859.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.612,
+        "ci95_high_pct": -5.042,
+        "ci95_low_pct": -19.473,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1161.9056007904644,
+      "control": 1328.9540042274837
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 190,
+   "path": "exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet node-modules-dense (8.5 entries per directory) default-tree -8.61% [-19.47%, -5.04%], cold-scan-index -6.79%, peak RSS -6.89%; the per-directory saving the mechanism predicts, absent on sparse linux-v6.12",
+   "reference_tools": [],
+   "subject": "1523f67ca225:79953:d854e8b38414",
+   "title": "Linux H159 listing recycle clears 3 percent on a real directory-dense tree",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "4c283de0: direct file fold and moved walker names",
+   "change_pct": -5.513,
+   "commit": "4c283de0",
+   "complexity": {
+    "lines_changed": 60,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "a15b20f4 probe and CLI: H159 with H162 and H163",
+   "date": "2026-09-28",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:14549a49743a",
+   "hypotheses": [
+    "H157"
+   ],
+   "id": "exp-191",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 170163424.5,
+        "control": 198805260.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -14.743,
+        "ci95_high_pct": -7.433,
+        "ci95_low_pct": -19.103,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 590943000,
+        "control": 608740500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.241,
+        "ci95_high_pct": 2.494,
+        "ci95_low_pct": -8.627,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 32894976,
+        "control": 33929216
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -4.546,
+        "ci95_high_pct": -0.574,
+        "ci95_low_pct": -7.261,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 287740000,
+        "control": 282040500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.48,
+        "ci95_high_pct": 9.498,
+        "ci95_low_pct": -5.911,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 299358000,
+        "control": 329758000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -5.91,
+        "ci95_high_pct": -3.835,
+        "ci95_low_pct": -15.994,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 281315604,
+        "control": 303179323
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -5.513,
+        "ci95_high_pct": -1.287,
+        "ci95_low_pct": -12.125,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3042.10485109328,
+      "control": 3278.535837100158
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 205294267.5,
+        "control": 207959535.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -4.254,
+        "ci95_high_pct": 5.34,
+        "ci95_low_pct": -15.713,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 508671500,
+        "control": 535856500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -2.309,
+        "ci95_high_pct": 3.355,
+        "ci95_low_pct": -6.071,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 35463168,
+        "control": 35268608
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.687,
+        "ci95_high_pct": 3.598,
+        "ci95_low_pct": -2.789,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 297999000,
+        "control": 290825000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 5.602,
+        "ci95_high_pct": 12.925,
+        "ci95_low_pct": -1.449,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 214035000,
+        "control": 239021000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -9.887,
+        "ci95_high_pct": -2.279,
+        "ci95_low_pct": -13.17,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 211091183,
+        "control": 212596083
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -5.105,
+        "ci95_high_pct": 6.433,
+        "ci95_low_pct": -15.25,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2282.7084694076175,
+      "control": 2298.9822328438263
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 191,
+   "path": "exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md",
+   "platform": "Linux",
+   "primary_job": "cold-scan-index",
+   "primary_metric": "wall_ns",
+   "reason": "pre-registered primary, the product indexed-tree contract: control +3% [-1%, +10%] on linux-v6.12 and +1% [-3%, +6%] on balanced-1m; probe cold-scan-index -5.51% [-12.12%, -1.29%] secondary; allocations -40%",
+   "reference_tools": [],
+   "subject": "14549a49743a:92474:c7a4d447d9bf",
+   "title": "Linux H157 file fold cuts allocations but misses on the product job after H159",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-28",
@@ -43737,6 +44213,29 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759236097,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-173",
+    "exp-174",
+    "exp-187",
+    "exp-188",
+    "exp-189",
+    "exp-191"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "14549a49743a:92474:c7a4d447d9bf",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 179605080,
    "directories": 2240,
    "entries": 11141,
@@ -43779,28 +44278,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759236097,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-173",
-    "exp-174",
-    "exp-187",
-    "exp-188",
-    "exp-189"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "14549a49743a:92474:c7a4d447d9bf",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -44512,24 +44989,42 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": false
+  },
+  {
+   "apparent_bytes": 538478644,
+   "directories": 9439,
+   "entries": 79953,
+   "experiments": [
+    "exp-190"
+   ],
+   "files": 70407,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "1523f67ca225:79953:d854e8b38414",
+   "labels": [
+    "node-modules-dense"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
   }
  ],
  "totals": {
   "accepted_lines_changed": 20028,
   "decisions": {
-   "accepted": 98,
+   "accepted": 99,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 5,
-   "rejected": 55,
+   "rejected": 56,
    "superseded": 5
   },
-  "experiments": 175,
+  "experiments": 177,
   "first_date": "2026-08-10",
   "hypotheses": 120,
   "last_date": "2026-09-28",
   "platforms": {
-   "Linux": 38,
+   "Linux": 40,
    "macOS": 137
   }
  },

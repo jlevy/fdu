@@ -69,7 +69,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
-| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 9 |
+| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -257,6 +257,8 @@ dead end.
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
+| 190 | [Linux H159 listing recycle clears 3 percent on a real directory-dense tree](#exp190--linux-h159-listing-recycle-clears-3-percent-on-a-real-directorydense-tree) | H159 | `default-tree` | -8.6% | ✅ accepted |
+| 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
 
 ## The experiments
 
@@ -5876,6 +5878,66 @@ generated tree.
 Full record:
 [`exp-189-linux-h159-rejected-again-on-linux-v6-12-after-h162-and-h163.md`](../experiments/exp-189-linux-h159-rejected-again-on-linux-v6-12-after-h162-and-h163.md)
 
+### exp-190 — Linux H159 listing recycle clears 3 percent on a real directory-dense tree
+
+✅ accepted · 2026-09-28 · H159 · commit `aa58a6b1`
+
+Control: eb00edf8 scratch probe: main with H162 and H163
+
+Candidate: a15b20f4 probe: H159 with H162 and H163
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 106.3 | 92.9 | -8.61% | [-19.47%, -5.04%] |
+| component (ms) | 101.0 | 87.1 | -9.76% | [-20.12%, -5.13%] |
+| cpu (ms) | 305.4 | 292.4 | -4.78% (n.s.) | [-10.62%, +1.71%] |
+| user (ms) | 92.4 | 97.1 | +1.00% (n.s.) | [-20.69%, +32.42%] |
+| system (ms) | 212.5 | 205.6 | -2.21% (n.s.) | [-12.76%, +1.56%] |
+| peak rss (MiB) | 31.1 | 29.0 | -6.89% | [-8.98%, -1.53%] |
+
+Other jobs, wall time: `cold-scan-index` -6.8%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** quiet node-modules-dense (8.5 entries per directory) default-tree -8.61%
+[-19.47%, -5.04%], cold-scan-index -6.79%, peak RSS -6.89%; the per-directory saving the
+mechanism predicts, absent on sparse linux-v6.12.
+
+Full record:
+[`exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md`](../experiments/exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md)
+
+### exp-191 — Linux H157 file fold cuts allocations but misses on the product job after H159
+
+❌ rejected · 2026-09-28 · H157 · commit `4c283de0`
+
+Control: a15b20f4 probe and CLI: H159 with H162 and H163
+
+Candidate: 4c283de0: direct file fold and moved walker names
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 303.2 | 281.3 | -5.51% | [-12.12%, -1.29%] |
+| component (ms) | 198.8 | 170.2 | -14.74% | [-19.10%, -7.43%] |
+| cpu (ms) | 608.7 | 590.9 | -3.24% (n.s.) | [-8.63%, +2.49%] |
+| user (ms) | 329.8 | 299.4 | -5.91% | [-15.99%, -3.83%] |
+| system (ms) | 282.0 | 287.7 | +3.48% (n.s.) | [-5.91%, +9.50%] |
+| peak rss (MiB) | 32.4 | 31.4 | -4.55% | [-7.26%, -0.57%] |
+
+Other jobs, wall time: `default-tree` -5.1% (n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+**Rejected:** pre-registered primary, the product indexed-tree contract: control +3%
+[-1%, +10%] on linux-v6.12 and +1% [-3%, +6%] on balanced-1m; probe cold-scan-index
+-5.51% [-12.12%, -1.29%] secondary; allocations -40%.
+
+Full record:
+[`exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md`](../experiments/exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5996,6 +6058,17 @@ Baselines show one value because they measure a state rather than a change.
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 173 | Linux H162 allocation-free gitignore matching halves the default summary on a source tree | `aggregate-summary` | 504.9 | 260.2 | -47.0% | ✅ accepted |
+| 174 | Linux H163 per-listing control chains cut another third from the default summary | `aggregate-summary` | 260.7 | 166.5 | -36.4% | ✅ accepted |
+| 187 | Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore | `aggregate-summary` | 557.6 | 512.3 | -6.9% | ✅ accepted |
+| 188 | Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree | `default-tree` | 576.4 | 570.0 | -2.2% | ❌ rejected |
+| 189 | Linux H159 rejected again on linux-v6.12 after H162 and H163 | `default-tree` | 204.5 | 207.1 | +2.3% | ❌ rejected |
+| 191 | Linux H157 file fold cuts allocations but misses on the product job after H159 | `cold-scan-index` | 303.2 | 281.3 | -5.5% | ❌ rejected |
+
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6006,16 +6079,6 @@ Baselines show one value because they measure a state rather than a change.
 | 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 173 | Linux H162 allocation-free gitignore matching halves the default summary on a source tree | `aggregate-summary` | 504.9 | 260.2 | -47.0% | ✅ accepted |
-| 174 | Linux H163 per-listing control chains cut another third from the default summary | `aggregate-summary` | 260.7 | 166.5 | -36.4% | ✅ accepted |
-| 187 | Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore | `aggregate-summary` | 557.6 | 512.3 | -6.9% | ✅ accepted |
-| 188 | Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree | `default-tree` | 576.4 | 570.0 | -2.2% | ❌ rejected |
-| 189 | Linux H159 rejected again on linux-v6.12 after H162 and H163 | `default-tree` | 204.5 | 207.1 | +2.3% | ❌ rejected |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6293,6 +6356,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 090 | Bound FullIndex scan-diagnostics overhead | `default-tree` | 377.4 | 360.7 | -3.5% | ✅ accepted |
+
+### node-modules-dense (79,953 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 190 | Linux H159 listing recycle clears 3 percent on a real directory-dense tree | `default-tree` | 106.3 | 92.9 | -8.6% | ✅ accepted |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
