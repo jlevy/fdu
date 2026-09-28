@@ -1,0 +1,108 @@
+{
+ "stage": "root",
+ "root_gencount_before": 0,
+ "walk_cold": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 8410.6,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "walk_warm": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 9855.8,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "walk_warm_base_only": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 7739.5,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "walk_warm_ext_again": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 8910.5,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "walk_warm_gen_only": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 13034.4,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "walk_warm_base_again": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 8937.2,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "get_on_unmarked_root": {
+  "desc": 225653,
+  "phys": 2192588800,
+  "ms": 1843.5
+ },
+ "mark": {
+  "ms": 66363.1,
+  "returned": [
+   0,
+   0,
+   0
+  ],
+  "get_immediately": [
+   1,
+   225653,
+   2192588800,
+   52.5
+  ],
+  "get_second": [
+   1,
+   225653,
+   2192588800,
+   5.7
+  ],
+  "exact_vs_walk": true
+ },
+ "probe": {
+  "before_ms": {
+   "n": 973,
+   "p50": 0.442,
+   "p90": 5.936,
+   "max": 108.656,
+   "mean": 5.604,
+   "sum": 5452.8
+  },
+  "during_ms": {
+   "n": 1972,
+   "p50": 1.447,
+   "p90": 70.103,
+   "max": 406.322,
+   "mean": 13.39,
+   "sum": 26405.3
+  },
+  "after_ms": {},
+  "max_gap_ms": 408.9,
+  "iterations": 2945
+ },
+ "walk_after_mark": {
+  "entries": 225653,
+  "dirs": 21513,
+  "files": 204140,
+  "wall_ms": 111388.7,
+  "alloc": 2192588800,
+  "data": 1775048737
+ },
+ "root_gencount_after": 1
+}

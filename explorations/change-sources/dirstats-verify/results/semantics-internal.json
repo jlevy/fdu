@@ -1,0 +1,4182 @@
+{
+ "parent": "<user-temp>/dsverify-internal-17757",
+ "mount": "/dev/<disk> on /System/Volumes/Data (apfs, local, journaled, nobrowse, protect, root data)\n/dev/<disk> on <external-volume> (apfs, local, nodev, nosuid, journaled, noowners)\n/dev/<disk> on /Volumes/dsverify (apfs, local, nodev, nosuid, journaled, nobrowse, mounted by <user>)",
+ "uid": 502,
+ "replicates": [
+  {
+   "k": 0,
+   "base": "<user-temp>/dsverify-internal-17757/sem-0",
+   "log": [
+    {
+     "step": "noop",
+     "note": "polling itself",
+     "op_us": 4.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 274,
+       "read_us": 12.2,
+       "since_op_return_us": 0.5,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 274,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       274,
+       88,
+       258048
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 274,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       274,
+       88,
+       258048
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "sync",
+     "note": "sync(2)",
+     "op_us": 120913.1,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 274,
+       "read_us": 79.5,
+       "since_op_return_us": 6.8,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 274,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       274,
+       88,
+       258048
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 274,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       274,
+       88,
+       258048
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "append_close",
+     "note": "append 10 KiB, close",
+     "op_us": 997.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 276,
+       "read_us": 62.8,
+       "since_op_return_us": 2.9,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 2,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       2,
+       0,
+       12288
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 274,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       274,
+       88,
+       258048
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 276,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       276,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "ow_write1_nosync",
+     "note": "20 KiB write(), fd open, no fsync",
+     "op_us": 140.9,
+     "info": {
+      "written": 20480,
+      "fstat_size": 24576
+     },
+     "first_read": {
+      "root": {
+       "gen": 277,
+       "read_us": 12.3,
+       "since_op_return_us": 0.4,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 276,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       276,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 277,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       277,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "ow_write2_nosync",
+     "note": "second write(), same fd",
+     "op_us": 16.5,
+     "info": {
+      "written": 20480
+     },
+     "first_read": {
+      "root": {
+       "gen": 278,
+       "read_us": 10.5,
+       "since_op_return_us": 0.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 277,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       277,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 278,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       278,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "ow_write3_same_page",
+     "note": "pwrite 10 B at offset 0 (no size change)",
+     "op_us": 9.8,
+     "info": {
+      "written": 10
+     },
+     "first_read": {
+      "root": {
+       "gen": 279,
+       "read_us": 9.5,
+       "since_op_return_us": 0.2,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 278,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       278,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 279,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       279,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "ow_fsync",
+     "note": "fsync while open",
+     "op_us": 131.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 280,
+       "read_us": 11.6,
+       "since_op_return_us": 0.6,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       40960
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 279,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       279,
+       88,
+       270336
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 280,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       280,
+       88,
+       311296
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "ow_write4_after_fsync",
+     "note": "write after fsync",
+     "op_us": 25.1,
+     "info": {
+      "written": 4096
+     },
+     "first_read": {
+      "root": {
+       "gen": 281,
+       "read_us": 10.4,
+       "since_op_return_us": 0.2,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 280,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       280,
+       88,
+       311296
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 281,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       281,
+       88,
+       311296
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "ow_close",
+     "note": "close",
+     "op_us": 127.6,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 282,
+       "read_us": 23.2,
+       "since_op_return_us": 0.8,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       4096
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 281,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       281,
+       88,
+       311296
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 282,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       282,
+       88,
+       315392
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "sqlite_wal_insert_open",
+     "note": "sqlite3 WAL: create+insert 64 KiB, connection held open",
+     "op_us": 5631.4,
+     "info": {
+      "files": [
+       "wal.db",
+       "wal.db-shm",
+       "wal.db-wal"
+      ]
+     },
+     "first_read": {
+      "root": {
+       "gen": 322,
+       "read_us": 74.2,
+       "since_op_return_us": 3042.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 40,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       40,
+       3,
+       32768
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 282,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       282,
+       88,
+       315392
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 322,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       322,
+       91,
+       348160
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "sqlite_wal_insert2_open",
+     "note": "second 64 KiB insert, still open",
+     "op_us": 532.0,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 331,
+       "read_us": 33.2,
+       "since_op_return_us": 1.8,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 9,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       9,
+       0,
+       16384
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 322,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       322,
+       91,
+       348160
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 331,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       331,
+       91,
+       364544
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "sqlite_close",
+     "note": "close connection (checkpoint)",
+     "op_us": 4800.9,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 343,
+       "read_us": 49.0,
+       "since_op_return_us": 4.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 12,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       12,
+       -2,
+       -24576
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 331,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       331,
+       91,
+       364544
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 343,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       343,
+       89,
+       339968
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "overwrite_same_size",
+     "note": "pwrite 4096 B over 4096 B file",
+     "op_us": 186.6,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 344,
+       "read_us": 32.2,
+       "since_op_return_us": 0.8,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 343,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       343,
+       89,
+       339968
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 344,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       344,
+       89,
+       339968
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "truncate_0",
+     "note": "truncate to 0",
+     "op_us": 133.0,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 345,
+       "read_us": 28.5,
+       "since_op_return_us": 0.8,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       -4096
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 344,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       344,
+       89,
+       339968
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 345,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       345,
+       89,
+       335872
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "unlink",
+     "note": "unlink 4 KiB file",
+     "op_us": 300.3,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 349,
+       "read_us": 47.6,
+       "since_op_return_us": 2.7,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 4,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       4,
+       -1,
+       -4096
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 345,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       345,
+       89,
+       335872
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 349,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       349,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "rename_within_ops",
+     "note": "rename within same dir (non-origin ops)",
+     "op_us": 134.1,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 350,
+       "read_us": 12.0,
+       "since_op_return_us": 0.4,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 349,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       349,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 350,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       350,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "rename_ops_to_A",
+     "note": "move file ops -> origin A",
+     "op_us": 99.8,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 352,
+       "read_us": 626.8,
+       "since_op_return_us": 0.4,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 2,
+      "A.fsctl": [
+       1,
+       1,
+       4096
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       2,
+       0,
+       0
+      ],
+      "A.gen": 1,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 350,
+      "A.gen": 1,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       350,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       1,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 352,
+      "A.gen": 2,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       352,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       2,
+       19,
+       65536
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     }
+    },
+    {
+     "step": "rename_A_to_B",
+     "note": "move file origin A -> origin B",
+     "op_us": 172.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 354,
+       "read_us": 13.6,
+       "since_op_return_us": 0.5,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 1,
+      "root.gen": 2,
+      "A.fsctl": [
+       1,
+       -1,
+       -4096
+      ],
+      "B.fsctl": [
+       1,
+       1,
+       4096
+      ],
+      "root.fsctl": [
+       2,
+       0,
+       0
+      ],
+      "A.gen": 1,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 352,
+      "A.gen": 2,
+      "B.gen": 64,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       352,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       2,
+       19,
+       65536
+      ],
+      "B.fsctl": [
+       64,
+       18,
+       61440
+      ]
+     },
+     "after": {
+      "root.gen": 354,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       354,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "rename_dir_C_s0",
+     "note": "rename populated non-origin dir in place",
+     "op_us": 137.3,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 355,
+       "read_us": 10.5,
+       "since_op_return_us": 0.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 354,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       354,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 355,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       355,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "move_out",
+     "note": "move file out of tree",
+     "op_us": 112.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 356,
+       "read_us": 11.8,
+       "since_op_return_us": 0.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       -1,
+       -4096
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 355,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       355,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 356,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       356,
+       87,
+       327680
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "move_in",
+     "note": "move file back in",
+     "op_us": 94.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 357,
+       "read_us": 10.4,
+       "since_op_return_us": 0.2,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       1,
+       4096
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 356,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       356,
+       87,
+       327680
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "chmod",
+     "note": "chmod",
+     "op_us": 44.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 357,
+       "read_us": 9.6,
+       "since_op_return_us": 0.3,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "utime",
+     "note": "utime",
+     "op_us": 39.9,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 357,
+       "read_us": 10.4,
+       "since_op_return_us": 0.2,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "xattr_set",
+     "note": "xattr 100 B",
+     "op_us": 33085.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 357,
+       "read_us": 467.0,
+       "since_op_return_us": 24.2,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "read",
+     "note": "read file content",
+     "op_us": 112.8,
+     "info": {
+      "n": 4096
+     },
+     "first_read": {
+      "root": {
+       "gen": 357,
+       "read_us": 12.3,
+       "since_op_return_us": 0.4,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "listdir",
+     "note": "list A",
+     "op_us": 56.6,
+     "info": {
+      "n": 3
+     },
+     "first_read": {
+      "root": {
+       "gen": 357,
+       "read_us": 10.3,
+       "since_op_return_us": 0.3,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "hardlink_add_same_dir",
+     "note": "link in same dir",
+     "op_us": 399.6,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 358,
+       "read_us": 11.5,
+       "since_op_return_us": 0.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 357,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       357,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 358,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       358,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "hardlink_add_to_A",
+     "note": "link into origin A",
+     "op_us": 436.3,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 359,
+       "read_us": 26.9,
+       "since_op_return_us": 1.2,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 1,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 358,
+      "A.gen": 3,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       358,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       3,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 359,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       359,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "hardlink_rm_alias",
+     "note": "unlink alias in ops",
+     "op_us": 72.6,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 360,
+       "read_us": 11.7,
+       "since_op_return_us": 0.4,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 359,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       359,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 360,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       360,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "hardlink_to_outside",
+     "note": "link inside file to outside",
+     "op_us": 403.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 360,
+       "read_us": 14.1,
+       "since_op_return_us": 0.5,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 360,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       360,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 360,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       360,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "write_via_outside_link",
+     "note": "append 16 KiB through outside name",
+     "op_us": 321.3,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 362,
+       "read_us": 15.8,
+       "since_op_return_us": 0.5,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 2,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       2,
+       0,
+       16384
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 360,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       360,
+       88,
+       331776
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 362,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       362,
+       88,
+       348160
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "unlink_outside_alias",
+     "note": "remove outside name",
+     "op_us": 66.4,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 362,
+       "read_us": 11.2,
+       "since_op_return_us": 0.2,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 362,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       362,
+       88,
+       348160
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 362,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       362,
+       88,
+       348160
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "clone_cp_c",
+     "note": "cp -c 4 KiB",
+     "op_us": 43190.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 363,
+       "read_us": 110.6,
+       "since_op_return_us": 21.5,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       1,
+       4096
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 362,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       362,
+       88,
+       348160
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 363,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       363,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "clone_from_outside",
+     "note": "cp -c inside -> outside",
+     "op_us": 53120.8,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 363,
+       "read_us": 100.4,
+       "since_op_return_us": 8.5,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 363,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       363,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 363,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       363,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "mmap_store",
+     "note": "mmap store, no msync",
+     "op_us": 4981.8,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 363,
+       "read_us": 58.8,
+       "since_op_return_us": 7.1,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 363,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       363,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 363,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       363,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "mmap_msync",
+     "note": "msync",
+     "op_us": 72.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 364,
+       "read_us": 13.0,
+       "since_op_return_us": 0.6,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 363,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       363,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 364,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       364,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "mmap_close",
+     "note": "munmap+close",
+     "op_us": 30.9,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 365,
+       "read_us": 21.8,
+       "since_op_return_us": 0.7,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 364,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       364,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 365,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       365,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "mkdir_in_A_plus_100k",
+     "note": "new dir under A + 100 KB file; is newdir an origin?",
+     "op_us": 1051.2,
+     "info": {
+      "newdir.gen": 0,
+      "newdir.fsctl": [
+       0,
+       2,
+       12288
+      ],
+      "newdir.fsctl_us": 17.417
+     },
+     "first_read": {
+      "root": {
+       "gen": 370,
+       "read_us": 14.2,
+       "since_op_return_us": 0.9,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 5,
+      "A.fsctl": [
+       5,
+       3,
+       12288
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       5,
+       3,
+       12288
+      ],
+      "A.gen": 5,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 365,
+      "A.gen": 4,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       365,
+       89,
+       352256
+      ],
+      "A.fsctl": [
+       4,
+       18,
+       61440
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 370,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       370,
+       92,
+       364544
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "rsrc_fork_write",
+     "note": "20 KB resource fork",
+     "op_us": 31818.0,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 372,
+       "read_us": 132.2,
+       "since_op_return_us": 12.1,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 2,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       2,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 370,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       370,
+       92,
+       364544
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 372,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       372,
+       92,
+       364544
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "sparse_50M",
+     "note": "sparse file (50 MiB logical, 1 MiB in --small)",
+     "op_us": 843.3,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 376,
+       "read_us": 19.7,
+       "since_op_return_us": 0.9,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 4,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       4,
+       1,
+       1052672
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 372,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       372,
+       92,
+       364544
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 376,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       376,
+       93,
+       1417216
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "symlink",
+     "note": "symlink",
+     "op_us": 121.1,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 377,
+       "read_us": 12.8,
+       "since_op_return_us": 0.6,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       1,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 376,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       376,
+       93,
+       1417216
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 377,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       377,
+       94,
+       1417216
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "rm_rf_C_s1",
+     "note": "rm -rf C/s1 (20 files)",
+     "op_us": 585.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 399,
+       "read_us": 13.0,
+       "since_op_return_us": 0.4,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 22,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       22,
+       -6,
+       -20480
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 377,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       377,
+       94,
+       1417216
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 399,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       399,
+       88,
+       1396736
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "rename_origin_B",
+     "note": "rename origin B within root",
+     "op_us": 204.0,
+     "info": {
+      "B.gen_now": 65,
+      "B.fsctl_now": [
+       65,
+       19,
+       65536
+      ],
+      "us": 8.542
+     },
+     "first_read": {
+      "root": {
+       "gen": 400,
+       "read_us": 10.6,
+       "since_op_return_us": 0.2,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 399,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       399,
+       88,
+       1396736
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 400,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       400,
+       88,
+       1396736
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "rename_origin_B_back",
+     "note": "rename back",
+     "op_us": 129.8,
+     "info": {
+      "B.gen_now": 65,
+      "B.fsctl_now": [
+       65,
+       19,
+       65536
+      ],
+      "us": 5.125
+     },
+     "first_read": {
+      "root": {
+       "gen": 401,
+       "read_us": 8.6,
+       "since_op_return_us": 0.2,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 400,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       400,
+       88,
+       1396736
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 401,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       401,
+       88,
+       1396736
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "move_origin_A_out",
+     "note": "move origin A OUT of the tree",
+     "op_us": 181.6,
+     "info": {
+      "A_outside.gen": 9,
+      "A_outside.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "us": 5.541
+     },
+     "first_read": {
+      "root": {
+       "gen": 402,
+       "read_us": 8.8,
+       "since_op_return_us": 0.4,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       -22,
+       -73728
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 401,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       401,
+       88,
+       1396736
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 402,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       402,
+       66,
+       1323008
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "append_in_A_outside",
+     "note": "append inside moved-out origin A (still an origin?)",
+     "op_us": 216.7,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 402,
+       "read_us": 14.8,
+       "since_op_return_us": 0.5,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       2,
+       0,
+       12288
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 2,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 402,
+      "A.gen": 9,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       402,
+       66,
+       1323008
+      ],
+      "A.fsctl": [
+       9,
+       21,
+       73728
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 402,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       402,
+       66,
+       1323008
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "move_origin_A_back",
+     "note": "move A back in",
+     "op_us": 185.4,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 403,
+       "read_us": 27.3,
+       "since_op_return_us": 1.0,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       22,
+       86016
+      ],
+      "A.gen": 0,
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 402,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       402,
+       66,
+       1323008
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 403,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       403,
+       88,
+       1409024
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "mark_C_populated",
+     "note": "apfs.util -M on populated non-origin C: does root gen move?",
+     "op_us": 17773.2,
+     "info": {
+      "rc": 0,
+      "C.gen": 1,
+      "C.fsctl": [
+       1,
+       12,
+       40960
+      ],
+      "us": 10.667
+     },
+     "first_read": {
+      "root": {
+       "gen": 403,
+       "read_us": 13.7,
+       "since_op_return_us": 4.1,
+       "changed": false
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 0,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "A.gen": 0,
+      "C.gen": 1
+     },
+     "before": {
+      "root.gen": 403,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 0,
+      "ops.gen": 0,
+      "root.fsctl": [
+       403,
+       88,
+       1409024
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     },
+     "after": {
+      "root.gen": 403,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 1,
+      "ops.gen": 0,
+      "root.fsctl": [
+       403,
+       88,
+       1409024
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ]
+     }
+    },
+    {
+     "step": "append_in_C",
+     "note": "append under new origin C",
+     "op_us": 259.2,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 405,
+       "read_us": 33.2,
+       "since_op_return_us": 422.8,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": 0,
+      "root.gen": 2,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       2,
+       0,
+       4096
+      ],
+      "A.gen": 0,
+      "C.fsctl": [
+       2,
+       0,
+       4096
+      ],
+      "C.gen": 2
+     },
+     "before": {
+      "root.gen": 403,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 1,
+      "ops.gen": 0,
+      "root.fsctl": [
+       403,
+       88,
+       1409024
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ],
+      "C.fsctl": [
+       1,
+       12,
+       40960
+      ]
+     },
+     "after": {
+      "root.gen": 405,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 3,
+      "ops.gen": 0,
+      "root.fsctl": [
+       405,
+       88,
+       1413120
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ],
+      "C.fsctl": [
+       3,
+       12,
+       45056
+      ]
+     }
+    },
+    {
+     "step": "rmtree_origin_B",
+     "note": "rm -rf origin B",
+     "op_us": 2296.5,
+     "info": {},
+     "first_read": {
+      "root": {
+       "gen": 477,
+       "read_us": 33.8,
+       "since_op_return_us": 1.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "B.gen": [
+       65,
+       null
+      ],
+      "root.gen": 72,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "B.fsctl": [
+       [
+        65,
+        19,
+        65536
+       ],
+       null
+      ],
+      "root.fsctl": [
+       72,
+       -20,
+       -65536
+      ],
+      "A.gen": 0,
+      "C.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 405,
+      "A.gen": 11,
+      "B.gen": 65,
+      "C.gen": 3,
+      "ops.gen": 0,
+      "root.fsctl": [
+       405,
+       88,
+       1413120
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "B.fsctl": [
+       65,
+       19,
+       65536
+      ],
+      "C.fsctl": [
+       3,
+       12,
+       45056
+      ]
+     },
+     "after": {
+      "root.gen": 477,
+      "A.gen": 11,
+      "C.gen": 3,
+      "ops.gen": 0,
+      "root.fsctl": [
+       477,
+       68,
+       1347584
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "C.fsctl": [
+       3,
+       12,
+       45056
+      ]
+     }
+    },
+    {
+     "step": "mkdir_B_same_name",
+     "note": "recreate B (same name): origin flag gone with the inode?",
+     "op_us": 125.1,
+     "info": {
+      "B_new.gen": 0
+     },
+     "first_read": {
+      "root": {
+       "gen": 478,
+       "read_us": 8.7,
+       "since_op_return_us": 0.3,
+       "changed": true
+      }
+     },
+     "delta": {
+      "ops.gen": 0,
+      "root.gen": 1,
+      "A.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "root.fsctl": [
+       1,
+       1,
+       0
+      ],
+      "A.gen": 0,
+      "C.fsctl": [
+       0,
+       0,
+       0
+      ],
+      "C.gen": 0
+     },
+     "before": {
+      "root.gen": 477,
+      "A.gen": 11,
+      "C.gen": 3,
+      "ops.gen": 0,
+      "root.fsctl": [
+       477,
+       68,
+       1347584
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "C.fsctl": [
+       3,
+       12,
+       45056
+      ]
+     },
+     "after": {
+      "root.gen": 478,
+      "A.gen": 11,
+      "C.gen": 3,
+      "ops.gen": 0,
+      "root.fsctl": [
+       478,
+       69,
+       1347584
+      ],
+      "A.fsctl": [
+       11,
+       21,
+       86016
+      ],
+      "C.fsctl": [
+       3,
+       12,
+       45056
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

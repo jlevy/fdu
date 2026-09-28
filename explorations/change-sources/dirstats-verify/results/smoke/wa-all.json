@@ -1,0 +1,109 @@
+{
+ "label": "all-levels",
+ "rounds": [
+  {
+   "round": 0,
+   "order": [
+    "marked",
+    "control"
+   ],
+   "marked": {
+    "create": 0.08575704100076109,
+    "append": 0.1639412499498576,
+    "delete": 0.04777995799668133
+   },
+   "control": {
+    "create": 0.07344175002072006,
+    "append": 0.1200751670403406,
+    "delete": 0.037872959044761956
+   }
+  },
+  {
+   "round": 1,
+   "order": [
+    "control",
+    "marked"
+   ],
+   "control": {
+    "create": 0.07039670902304351,
+    "append": 0.09610954206436872,
+    "delete": 0.03183424996677786
+   },
+   "marked": {
+    "create": 0.08405479195062071,
+    "append": 0.13825370790436864,
+    "delete": 0.06187754194252193
+   }
+  },
+  {
+   "round": 2,
+   "order": [
+    "marked",
+    "control"
+   ],
+   "marked": {
+    "create": 0.1587677919305861,
+    "append": 0.13060987507924438,
+    "delete": 0.04622779204510152
+   },
+   "control": {
+    "create": 0.06668837496545166,
+    "append": 0.08278299996163696,
+    "delete": 0.028720209025777876
+   }
+  }
+ ],
+ "summary": {
+  "create": {
+   "marked_ms": {
+    "median": 85.8,
+    "min": 84.1,
+    "p90": 158.8
+   },
+   "control_ms": {
+    "median": 70.4,
+    "min": 66.7,
+    "p90": 73.4
+   },
+   "paired_ratio": {
+    "median": 1.194,
+    "min": 1.168,
+    "max": 2.381
+   }
+  },
+  "append": {
+   "marked_ms": {
+    "median": 138.3,
+    "min": 130.6,
+    "p90": 163.9
+   },
+   "control_ms": {
+    "median": 96.1,
+    "min": 82.8,
+    "p90": 120.1
+   },
+   "paired_ratio": {
+    "median": 1.439,
+    "min": 1.365,
+    "max": 1.578
+   }
+  },
+  "delete": {
+   "marked_ms": {
+    "median": 47.8,
+    "min": 46.2,
+    "p90": 61.9
+   },
+   "control_ms": {
+    "median": 31.8,
+    "min": 28.7,
+    "p90": 37.9
+   },
+   "paired_ratio": {
+    "median": 1.61,
+    "min": 1.262,
+    "max": 1.944
+   }
+  }
+ }
+}

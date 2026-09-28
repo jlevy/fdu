@@ -67,7 +67,10 @@ Instruments and sanitized results are in
     including writes through descriptors held open.
     It can be enabled without privileges through a shipped tool, but that tool uses a
     private interface and leaves a persistent flag on the directory.
-    Verification is *pending*.
+    Verified at 225,653 entries: a pruned refresh took 1.04 s against a 9 s walk and
+    missed no size or membership change.
+    Marking a populated tree is a slow, synchronous kernel operation, and its totals are
+    not fdu’s accounting.
 - **Open writers can be listed directly.** Same-user processes’ open-for-write files
   enumerate through libproc in about 15 ms without root.
   A monitor or replay plus this list covers the macOS gap, except for writers owned by
@@ -369,58 +372,126 @@ sizing (Apple File System Reference: `j_dir_stats_val_t`, `INODE_MAINTAIN_DIR_ST
   These update in the same transaction as each change.
 - The generation count is readable through the public `ATTR_CMNEXT_RECURSIVE_GENCOUNT`
   attribute, including in `getattrlistbulk`.
-- The totals come from a private `fsctl` in about 2 µs.
+- On an origin, the totals come from a private `fsctl` in a few microseconds.
 - Apple already uses it on this host’s iCloud sync roots.
   `~/Documents` advanced by 122 generations in 12 minutes.
 
-**What the first workstream found, on its own fixtures on the external volume:**
+**What was verified.** Two workstreams tested it: the first on the external volume, and
+an adversarial second one with its own code on both volumes and inside a throwaway disk
+image.
 
-- **Enabling it.** The shipped `apfs.util -M <dir>` marked directories without
-  privileges. That included populated trees: a 6,265-entry, 45 MB tree took 40 ms, with
-  exact totals immediately.
-  Apple’s guide says only empty directories are supported.
-- **What moves the generation count:**
-  - an open writer’s `write` before any `fsync` or close;
-  - deep appends (depth 13 and 121);
-  - truncation, deletion, renames, and moves in and out;
-  - hard links and clones;
-  - `msync` of a mapping;
-  - a write through a hard link that lives outside the tree.
-- **What does not:** chmod, utimes, xattr changes, and reads.
-- **Localization.** With 55 nested origins, one deep append changed exactly the three
-  origins on its path.
-- **Write overhead.** With one origin, writes slowed by 3–11%. A 13-deep chain of
-  origins was too noisy to measure on the loaded host.
+**Enabling and removing it:**
 
-**How a refresh would use it:**
+- **No privileges needed.** The shipped `apfs.util -M <dir>` issues a private `fsctl`
+  (`0xC1104A71`, a 272-byte structure).
+  It marked directories without privileges on the external volume, on an owned directory
+  on the internal Data volume, and on a disk image mounted with ownership enforced.
+- **Populated directories.** Apple’s guide says only empty directories are supported.
+  On populated trees the totals were exact against a walk immediately.
+- **The cost of marking is large.** Marking the root of a populated 225,653-entry
+  fixture was a synchronous 66 s kernel operation.
+  During it, a concurrent create/delete probe on the same volume slowed from 5.9 ms to
+  70 ms at p90. Marking the 8,049 directories at depth 3 or less took 46 s.
+- **Removing the flag.** The same `fsctl` with a different flag value clears an origin
+  in 0.1 ms. It is undocumented, so it must be re-verified per release.
+- **Recovery.** Marks and counts survived detach and reattach.
+  After a forced detach in the middle of a write burst, totals were still exact.
+  `fsck_apfs -n` reported the image clean at every stage.
+- **Drift on real volumes.** Apple’s discussion forums show First Aid reporting
+  directory-statistics totals that drifted on real Data volumes and needed repair.
+  A retired Apple engineer called the feature “never really hooked up or implemented
+  right”
+  ([summary](https://mjtsai.com/blog/2025/01/13/what-happened-to-apfs-fast-directory-sizing/)).
 
-1. Read the root’s generation count, which takes microseconds.
-2. If it is unchanged, nothing below it changed size or membership, including files held
-   open.
-3. If it changed, list the root, descend only into child origins whose count changed,
-   and walk unmarked subtrees fully.
+**What moves the generation count:** it updates synchronously, visible in the first read
+about a microsecond after `write` returns.
+Results were identical across three external-volume replicates and the internal volume.
+
+- **It moves for** every size or membership change:
+  - appends, in-place and same-size writes, and writes without `fsync`, including by an
+    open writer;
+  - truncation, deletion, and renames, including a populated directory (+1, not per
+    descendant);
+  - moves in and out;
+  - hard links, and writes through a link that lives outside the tree;
+  - clones, and SQLite WAL inserts while the connection is open;
+  - `msync`, and resource-fork writes.
+- **It does not move for:** chmod, utimes, xattr changes, reads, or a mapped store
+  before `msync`.
+- **Localization.** Only the origins on the path from a change to the root move.
+- **New directories.** A directory created inside a marked tree inherits maintenance but
+  is not an origin: its count reads 0, meaning “must descend”.
+- **Totals are cheap only on origins.** The totals `fsctl` takes about 4 µs on an
+  origin. On any other directory it walks the subtree in the kernel.
+
+**Refresh at scale.** The fixture had 225,653 entries (2.2 GB), shaped like agent data:
+a 20,000-file directory, deep trees, and Cargo-, `src`-, and `node_modules`-like
+subtrees. The workload was agent-like:
+
+- a 3,000-file build directory;
+- a log and a SQLite WAL, both held open;
+- a subtree deletion and a subtree rename;
+- a clone, a hard link from outside, and deep appends;
+- five mtime-only touches.
+
+| Origins marked | Entries visited | Pruned refresh | Full walk | Missed size or membership changes |
+| --- | ---: | ---: | ---: | ---: |
+| Depth ≤ 3 (8,049) | 24% | 1.04 s | 7.9–9.7 s | 0 |
+| Every directory (21,572) | 17% | 1.87 s | 9.6 s | 0 |
+
+The five mtime-only touches were missed in both layouts, by design.
+
+A totals-only diff, which reads each origin’s totals without listing anything, found the
+119–131 changed origins in 44–150 ms.
+It attributed bytes correctly except for the file hard-linked from outside the tree: a
+file counts under the origin holding its primary name.
+
+**Write overhead** (paired and interleaved, depth 12, noisy on the loaded host):
+
+| Layout | Create | Append | Delete |
+| --- | ---: | ---: | ---: |
+| One origin | 1.01× | 0.92× | 0.96× |
+| Origins at depth ≤ 3 | 1.10× | 0.75× | 1.07× |
+| An origin at every level | 1.28× | 1.26× | 1.86× |
+
+**Accounting.** A total counts the data-fork allocation of each regular file whose
+primary link is inside the subtree:
+
+- clones in full per holder;
+- no resource-fork or xattr bytes;
+- compressed files at their compressed allocation.
+
+An open writer’s bytes appear only at `fsync`, at close, or 4–11 s later when the syncer
+runs. That makes the totals a cross-check, not fdu’s authoritative allocated size.
+
+**Verdicts:**
+
+- **As a skip-unchanged-subtree signal: go, with conditions.**
+  - Read only `ATTR_CMNEXT_RECURSIVE_GENCOUNT` in the existing bulk walk, and treat 0 as
+    “descend”.
+  - Mark only on explicit opt-in, and only user-owned directories.
+  - Warn before marking a large populated root, and prefer marking a directory before it
+    fills.
+  - Mark new directories as they are discovered, never issue the totals `fsctl` on a
+    non-origin, and accept blindness to mtime-only changes.
+- **As a totals source: no-go**, for the accounting rules and drift above.
+
+**A separate lead.** On an *unmarked* 225,000-entry root, the same `fsctl` returned
+exact totals from an in-kernel walk in 1.84 s, against 7.7–9.9 s for a userspace bulk
+walk. That was one sample, with no side effect.
+It is worth a measurement of its own as a fast summary path.
 
 **Risks, most severe first:**
 
-1. Marking uses a private, undocumented interface.
-2. The flag is persistent and inherited on user data, with no documented way to clear
-   it.
-3. Marking populated directories is undocumented behavior.
-4. The count reports *that* a subtree changed, not *what* changed.
-5. Its size accounting differs from fdu’s: clones count in full per holder, and hard
-   links once.
-6. It is APFS-only.
+1. The flag is a persistent, inherited, undocumented on-disk change to user data.
+   Only `fsck` checks it, and drift has been reported on real volumes.
+2. Marking a populated tree is slow and degrades concurrent I/O.
+3. New directories are not origins until fdu marks them.
+4. The marking and unmarking interface is reverse-engineered; only the reader is public.
+5. It is APFS-only, and iCloud and File Provider interplay was not tested.
 
-**Verification (pending).** An adversarial verification covers five areas:
-
-- privilege on the internal volume;
-- persistence and `fsck` behavior across detach and forced detach, inside a throwaway
-  disk image;
-- scale at 200,000–300,000 entries;
-- the pruned refresh checked against a full-walk oracle;
-- exact accounting semantics.
-
-Evidence: [catalog](../../../explorations/change-sources/catalog/).
+Evidence: [catalog](../../../explorations/change-sources/catalog/) and
+[dirstats-verify](../../../explorations/change-sources/dirstats-verify/).
 
 ### Clone-Private Size Is an Exact “Freeable” Measure
 
@@ -728,7 +799,7 @@ baseline, on this host.
 | (b) One-shot replay plus writer list plus scoped relist, delta store | replay (volume journal plus matching) + relist | scratch volume ~45 s; internal quiet ~2 s | unknown: home’s matching records dominate | Other users’ writers; journal completeness unproven |
 | (b′) (b) with today’s flat snapshot | adds 3 s load plus save | same | adds ~45 s load | as (b) |
 | (c) Resident fdu monitor plus writer list, feeding the store | milliseconds | milliseconds | milliseconds while running; about 3 GB resident with today’s index | Other users’ writers; downtime needs replay or reconcile |
-| (d) APFS directory-statistics pruned refresh | list changed origins only (*pending*) | same | same, no daemon | Private marking interface; APFS only |
+| (d) APFS directory-statistics pruned refresh | ~1 s at 225k entries (measured), plus relists | same | lists changed origins only, no daemon | Private marking interface; slow marking of populated trees; mtime-only changes; APFS only |
 | (e) `searchfs` by ctime | 115–330 s | same | same | Deletes and renamed-directory contents |
 
 ## Recommendation and the Case Against It
@@ -777,7 +848,9 @@ The epic also tracks two engine fixes the review found: firmlink-free root ident
 
 | Rank | Bead | Experiment | Discriminating outcome | Go if |
 | --- | --- | --- | --- | --- |
-| 1 | `fdu-gpqz` | APFS directory statistics, adversarial verification (*pending*) | Privilege on the internal volume; persistence and `fsck` after forced detach; pruned refresh against a walk oracle at 200k–300k entries | Zero oracle misses across randomized workloads including open writers; refresh ≤ 10% of the walk; write overhead ≤ 10% at realistic depth; a clean removal path |
+| 1 | `fdu-gpqz` (done) | APFS directory statistics, adversarial verification | Privilege, persistence, `fsck`, unset, accounting, pruned refresh at 225k entries | Signal: go with conditions (0 misses; 1.04 s vs 9 s walk; undocumented unset). Totals: no-go |
+| 1a | `fdu-ns3n` | Opt-in gencount-gated walk in the engine | Pruning in the existing bulk walk; marking new directories on discovery; periodic full sweep | No oracle misses on the agent workload; refresh ≤ 20% of the walk at ≥ 1 M entries; a documented marking and unmarking contract |
+| 1b | `fdu-22hd` | In-kernel sizing of unmarked directories | Replicate 1.84 s vs 7.7–9.9 s at 225k; accounting against fdu’s totals | A faster exact summary path with a stated accounting rule |
 | 2 | `fdu-2o00` | Resident soak of `fdu --watch` on agent state B (*pending*) | Resident memory and CPU; misses caught by the writer list vs unexplained | Every stable miss explained by an open writer or another user; steady CPU below 1% of a core |
 | 3 | `fdu-yj8z` | Home-filter replay cost on the internal volume (1 h, 24 h; directory events) | Size of the matching-record term for home | Replay plus relist ≤ 25% of a home walk |
 | 4 | `fdu-uq1y` | Delta-store prototype | Capture writes only changed roll-ups at 450k and 1.5 M; query time; daily state growth | Capture ≤ walk + 5%; query ≤ 0.2 s; growth bounded |

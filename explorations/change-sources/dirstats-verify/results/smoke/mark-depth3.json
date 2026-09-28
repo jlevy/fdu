@@ -1,0 +1,40 @@
+{
+ "stage": "depth3",
+ "root_gencount_before": 15016,
+ "mark_depth3": {
+  "count": 430,
+  "fails": 0,
+  "ms": {
+   "n": 430,
+   "p50": 0.066,
+   "p90": 0.177,
+   "max": 43.758,
+   "mean": 0.366,
+   "sum": 157.2
+  },
+  "total_ms": 157.4
+ },
+ "get_origins_us": {
+  "n": 430,
+  "p50": 4.208,
+  "p90": 4.916,
+  "max": 36.458,
+  "mean": 4.64,
+  "sum": 1995.2
+ },
+ "root_get": {
+  "gen": 15016,
+  "desc": 9170,
+  "phys": 92921856,
+  "us": 15.125
+ },
+ "walk_after": {
+  "entries": 9170,
+  "dirs": 664,
+  "files": 8506,
+  "wall_ms": 83.6,
+  "alloc": 92921856,
+  "data": 75395616
+ },
+ "root_gencount_after": 15016
+}
