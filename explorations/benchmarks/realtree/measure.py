@@ -1743,10 +1743,6 @@ def _spawn(
         out_path = Path(scratch) / "stdout"
         err_path = Path(scratch) / "stderr"
         with out_path.open("xb") as out, err_path.open("xb") as err:
-            # Read last, just before the fork: the child inherits this process's high-water
-            # mark as its own starting peak, so growth between an earlier read and the
-            # fork would slip past the floor.
-            rss_floor = _inherited_rss_floor_bytes()
             start = time.perf_counter_ns()
             process = subprocess.Popen(
                 list(argv),
@@ -1784,6 +1780,11 @@ def _spawn(
                     _kill_group(process)
                     exit_code = process.wait()
             wall_ns = time.perf_counter_ns() - start
+            # Read after the child is reaped, outside the timed window. The child inherits
+            # this process's high-water mark as its starting peak at the fork, and Popen
+            # still runs Python before forking, so a read taken before Popen can miss that
+            # growth. The mark never falls, so this read bounds the inherited value.
+            rss_floor = _inherited_rss_floor_bytes()
         stdout = out_path.read_bytes()
         stderr = err_path.read_bytes().decode("utf-8", errors="replace")
 

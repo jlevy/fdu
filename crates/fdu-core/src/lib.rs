@@ -304,11 +304,15 @@ const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 64 * 1024;
 /// With counters on, the release stays inline. A thread's counts reach the totals only
 /// when it exits, so frees on a detached thread would land in a run's report or miss it
 /// depending on timing; counting runs trade the saving for a deterministic record.
+///
+/// On Windows the release stays inline too. `ExitProcess` terminates other threads
+/// without notice, so a release still running at exit can die holding the process heap's
+/// lock while DLL detach code allocates, and the saving was never measured there.
 pub(crate) fn release_index(index: std::sync::Arc<Index>) {
     let Some(index) = std::sync::Arc::into_inner(index) else {
         return;
     };
-    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() {
+    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() || cfg!(windows) {
         return;
     }
     let spawned = std::thread::Builder::new()

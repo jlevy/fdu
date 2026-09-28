@@ -946,9 +946,9 @@ The first run on `4c4917f` ranked them the same way.
 **H156 accepted** (exp-160): a large one-shot index is released on a detached thread,
 `default-tree` −3.19% [−4.88%, −1.79%], product CLI `--cache off` −4.31%
 [−5.99%, −3.25%]; on the integrated stack a paired screen without and with it moved the
-indexed tree −7.3%. **H157 rejected** on its probe job (exp-161, −2.22%) but −3.71% on
-the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H158 rejected**
-(exp-162): consumer `futex` wakes 106k → 18k, wall flat.
+indexed tree’s mean −6.9%. **H157 rejected** on its probe job (exp-161, −2.22%) but
+−3.71% on the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H158
+rejected** (exp-162): consumer `futex` wakes 106k → 18k, wall flat.
 **H159 open** (`fdu-578e`): the unchanged binary under `LD_PRELOAD` mimalloc closes the
 whole indexed gap, and the context-switch profile names the consumer’s frees of
 walker-allocated child lists and path keys.
