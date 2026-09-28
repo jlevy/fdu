@@ -939,12 +939,16 @@ Do not retry H116. H83 remains format.
 **H156–H159** are the
 [2026-09-27 Linux tool comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 on the balanced 1M-entry tree, 4-vCPU Firecracker KVM, quiet.
-fdu’s summary mode leads pdu (+11%) and diskus (+16%); the indexed tree trails them by
-19% and 18%. **H156 accepted** (exp-160): a large one-shot index is released on a
-detached thread, `default-tree` −3.19% [−4.88%, −1.79%], product CLI `--cache off`
-−4.31% [−5.99%, −3.25%]. **H157 rejected** on its probe job (exp-161, −2.22%) but −3.71%
-on the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H158
-rejected** (exp-162): consumer `futex` wakes 106k → 18k, wall flat.
+The 2026-09-28 refresh on the integrated stack (`7acface5`): fdu’s summary mode leads;
+pdu takes 8% longer and diskus 12% longer.
+On the indexed tree fdu takes 23% longer than pdu and 21% longer than diskus.
+The first run on `4c4917f` ranked them the same way.
+**H156 accepted** (exp-160): a large one-shot index is released on a detached thread,
+`default-tree` −3.19% [−4.88%, −1.79%], product CLI `--cache off` −4.31%
+[−5.99%, −3.25%]; on the integrated stack a paired screen without and with it moved the
+indexed tree −7.3%. **H157 rejected** on its probe job (exp-161, −2.22%) but −3.71% on
+the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H158 rejected**
+(exp-162): consumer `futex` wakes 106k → 18k, wall flat.
 **H159 open** (`fdu-578e`): the unchanged binary under `LD_PRELOAD` mimalloc closes the
 whole indexed gap, and the context-switch profile names the consumer’s frees of
 walker-allocated child lists and path keys.

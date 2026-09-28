@@ -85,6 +85,25 @@ The default tree pays 0.26 s over `--cache off` for the snapshot, and
 The default summary pays 0.21 s for a snapshot and 0.32 s for an index that the
 `--no-gitignore` path shows it does not need.
 
+### Re-screened on the integrated stack
+
+On 2026-09-28 the same commands were screened again on the integrated stack’s release
+build (`7acface5`: [#137](https://github.com/jlevy/fdu/pull/137) with the merged code
+analysis and presentation work, plus H156), ten runs per arm on the same host.
+The table’s proportions hold.
+
+| Command | Snapshot regime | Linux, fdu | `--cache off` | Snapshot cost |
+| --- | --- | ---: | ---: | ---: |
+| `fdu .` | an earlier run’s snapshot exists | 1.51 s | 1.27 s | 0.24 s |
+| `fdu . --view summary` | an earlier run’s snapshot exists | 1.51 s | 1.25 s | 0.26 s |
+| `fdu .` | first run, empty cache directory | 1.69–1.81 s | 1.25–1.27 s | 0.47–0.54 s |
+| `fdu . --view summary` | first run, empty cache directory | 1.69–1.75 s | 1.22–1.25 s | 0.47–0.50 s |
+| `--view summary --no-gitignore` | none written | 0.95 s | — | — |
+
+The first-run rows are the regime the next section describes: the kernel must allocate
+every page of a fresh 79 MB file.
+The refreshed tool matrices put pdu at 1.02 s and diskus at 1.04 s on the same host.
+
 ### Anatomy of the snapshot write
 
 The snapshot is the whole per-entry inventory: per entry, a parent slot (4 bytes), a

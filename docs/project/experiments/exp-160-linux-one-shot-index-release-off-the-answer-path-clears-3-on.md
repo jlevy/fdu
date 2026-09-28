@@ -435,9 +435,8 @@ Quiet 12-pair probe run on the generated `balanced` 1,000,001-entry tree.
 The product job the headline comparison measures,
 `fdu --cache off --depth 1 --limit 10`, has no probe job.
 The live tool harness paired the two CLI builds on the same tree, quiet, 12 adjacent
-pairs: −4.31% [−5.99%, −3.25%], peak RSS within 1%.
-That run is committed as [evidence/exp-160/cli-run.json](evidence/exp-160/cli-run.json),
-beside the probe run.
+pairs: −4.31% [−5.99%, −3.25%], peak RSS within 1%. That run is committed as
+[evidence/exp-160/cli-run.json](evidence/exp-160/cli-run.json), beside the probe run.
 
 ## Decision
 

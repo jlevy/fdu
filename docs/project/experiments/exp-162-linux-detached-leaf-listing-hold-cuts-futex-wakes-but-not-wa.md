@@ -322,8 +322,8 @@ the H156 + H157 build:
 The product CLI job, `fdu --cache off --depth 1 --limit 10`, paired the H156 + H157 +
 H158 build against the H156 build in the live tool harness, quiet, 12 adjacent pairs:
 −4.30% [−5.52%, −1.38%], against −3.71% for H157 alone, so H158 adds nothing
-distinguishable on the product job either. The run is
-[evidence/exp-161/cli-run.json](evidence/exp-161/cli-run.json).
+distinguishable on the product job either.
+The run is [evidence/exp-161/cli-run.json](evidence/exp-161/cli-run.json).
 
 ## Decision
 

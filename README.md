@@ -397,27 +397,28 @@ See the
 for methodology, memory use, confidence intervals, and exact results.
 
 On Linux the ranking depends on the job.
-The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 2026-09-27:
+The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 2026-09-28:
 
 | Tool | Work returned | Median wall-clock time | Wall time vs. fdu summary |
 | --- | --- | ---: | ---: |
-| **fdu `--no-gitignore --view summary`** | exact totals, no index | **0.97 s** | baseline |
-| pdu | rendered tree | 1.09 s | +11% |
-| diskus | scalar total only | 1.10 s | +16% |
-| fdu | reusable exact index and ten-row tree | 1.38 s | — |
-| dust | allocated-byte total only | 1.70 s | +77% |
-| gdu, GNU `du`, ncdu, dua | tree or total | 2.6–4.0 s | +166% to +299% |
+| **fdu `--no-gitignore --view summary`** | exact totals, no index | **0.94 s** | baseline |
+| pdu | rendered tree | 1.02 s | +8% |
+| diskus | scalar total only | 1.04 s | +12% |
+| fdu | reusable exact index and ten-row tree | 1.25 s | — |
+| dust | allocated-byte total only | 1.67 s | +76% |
+| gdu, GNU `du`, ncdu, dua | tree or total | 2.6–3.9 s | +162% to +303% |
 
-fdu’s summary mode is the fastest tool measured, but building the reusable index is
-about 19% slower than pdu or diskus there.
-That gap is glibc allocator contention between fdu’s walker threads and its index
-builder, not filesystem work; see the
+fdu’s summary mode is the fastest tool measured, but building the reusable index takes
+about 23% longer than pdu and 21% longer than diskus there.
+A screen attributes that gap to glibc allocator contention between fdu’s walker threads
+and its index builder rather than to filesystem work; that hypothesis is still open.
+See the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 for the evidence and the work under way.
 Both tables measure fdu with its cache disabled; the default `fdu .` also writes a
 snapshot that a later `fdu .` does not read, which on this Linux tree added about a
-fifth to the run, and the summary needs `--no-gitignore` because reading ignore rules
-still falls back to the full index.
+fifth to a repeated run and two fifths to a first one, and the summary needs
+`--no-gitignore` because reading ignore rules still falls back to the full index.
 The
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
 covers when the cache and the index pay on each platform.
