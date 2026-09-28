@@ -74,6 +74,13 @@ actions rather than telling them to run commands.
 
 <!-- END TBD INTEGRATION -->
 
+<!-- Kept outside the TBD INTEGRATION block, which `tbd setup` rewrites.
+-->
+
+An agent claims a bead under its own name: `tbd start <id> --as <agent>`, or with
+`TBD_AGENT` set. Without either, tbd falls back to a `<harness>@<host>` identity, which
+writes the machine’s host name into the shared sync branch.
+
 ## Build and Test
 
 ```shell
@@ -260,6 +267,15 @@ In practice:
   it, and detach it before handoff.
 - None of this is in `make check`. A timing gate on a shared CI runner measures the
   runner.
+
+## Releases
+
+Every release follows the
+[Release Checklist](docs/project/guides/release-process.md#release-checklist), and
+[Who Runs What](docs/project/guides/release-process.md#who-runs-what) says which steps
+an agent may run. The `make release-*` steps read, or write only what can be undone;
+pushing the tag, dispatching the publishing run, approving the `release` environment,
+and creating the GitHub release are the maintainer’s alone, whoever asks.
 
 ## Documentation
 
