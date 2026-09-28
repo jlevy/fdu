@@ -49,45 +49,36 @@ See the [skill usage guide](docs/usage.md#agent-skill).
 
 ## Install the Command Line
 
-With [uv](https://docs.astral.sh/uv/), use the published wheel without a Rust toolchain:
+fdu is published as a Python wheel, so [uv](https://docs.astral.sh/uv/) is all you need.
+No Rust toolchain is required.
+
+**Try it without installing:**
 
 ```shell
 uvx --no-build fdu@latest .
+```
+
+**Install it as a command:**
+
+```shell
 uv tool install --no-build fdu
+```
+
+Then run it on any directory:
+
+```shell
 fdu .
+```
+
+**Upgrade later:**
+
+```shell
 uv tool upgrade --no-build fdu
 ```
 
-The first command runs fdu without keeping an installed command; the second keeps it on
-`PATH`. `--no-build` requires a compatible wheel instead of compiling from source.
-The wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64 and arm64),
-macOS (x86-64 and arm64), and Windows x86-64. A Python version is not needed in normal
-use: fdu declares Python 3.12 or newer and uv selects a matching interpreter.
-If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
-does not publish free-threaded wheels yet.
-For a repeatable run, replace `latest` with a release number, such as `fdu@0.1.0`. If uv
-is configured with an `exclude-newer` cool-off, a new fdu release may be filtered.
-Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
-to expire.
-`--no-config` is a one-off override that skips all uv configuration, including
-that policy.
-
-To install the command from source, use Rust 1.85 or newer:
-
-```shell
-cargo install --locked fdu
-```
-
-`--locked` keeps the reviewed dependency set; see
-[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
-
-From a source checkout:
-
-```shell
-git clone https://github.com/jlevy/fdu.git
-cd fdu
-cargo install --locked --path crates/fdu
-```
+Wheels cover Linux, macOS, and Windows.
+For other platforms, pinned versions, and building from source, see
+[Other Ways to Install](#other-ways-to-install).
 
 ## Command Line
 
@@ -473,6 +464,42 @@ can hold. That combination is what a live file browser actually needs.
 
 The survey is in
 [the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
+
+## Other Ways to Install
+
+**Platforms.** Wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
+and arm64), macOS (x86-64 and arm64), and Windows x86-64. `--no-build` requires one of
+those wheels rather than compiling from source.
+You don’t need to pick a Python version: uv selects a matching interpreter.
+If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
+does not publish free-threaded wheels yet.
+
+**Pinned versions.** For a repeatable run, replace `latest` with a release number, such
+as `uvx --no-build fdu@0.1.0 .`.
+
+**uv cool-off policies.** If uv is configured with an `exclude-newer` cool-off, a new
+fdu release may be filtered.
+Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
+to expire.
+`--no-config` is a one-off override that skips all uv configuration, including
+that policy.
+
+**From crates.io**, with Rust 1.85 or newer:
+
+```shell
+cargo install --locked fdu
+```
+
+`--locked` keeps the reviewed dependency set; see
+[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+**From a source checkout:**
+
+```shell
+git clone https://github.com/jlevy/fdu.git
+cd fdu
+cargo install --locked --path crates/fdu
+```
 
 ## Documentation
 

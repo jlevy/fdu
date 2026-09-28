@@ -475,9 +475,9 @@ the installing session’s prompt or memory.
 The skill prefers an `fdu` on `PATH` and otherwise runs `uvx --no-build fdu@latest`;
 installing the skill does not install the command.
 The zero-install fallback follows uv’s `exclude-newer` policy; see the
-[installation note](../README.md#install-the-command-line) if a just-published release
-is filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and
-later `uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
+[installation note](../README.md#other-ways-to-install) if a just-published release is
+filtered. To keep the command on `PATH`, run `uv tool install --no-build fdu` and later
+`uv tool upgrade fdu`. `fdu --skill` prints the portable agent-facing contract.
 The skill names the build that wrote it, so re-run the installer after upgrading `fdu`.
 
 ## Quiet Diagnostics
