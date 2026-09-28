@@ -422,8 +422,10 @@ equal to `--cache off`. Re-screened on the integrated stack (2026-09-28, this br
 against the one below it, ten runs per arm in both orders, each run from an empty cache
 directory): `fdu .` 1.72 s → 1.24 s (−27.7%) and the default summary 1.71 s → 1.23 s
 (−27.9%). With the cache off they take 1.27 s and 1.22 s. `--cache on` pays the old cost
-again, 1.73 s, and `--stale-ok` answers in 0.94 s. Afterwards a one-shot tree or summary
-under `auto` has left no cache file, and `--cache on` has left one.
+again, 1.73 s, and `--stale-ok` answers in 0.94 s. The samples are in
+[the screen results](../reports/fdu-linux-screens-result-2026-09-28.json).
+Afterwards a one-shot tree or summary under `auto` has left no cache file, and
+`--cache on` has left one.
 
 ## Next Steps
 
