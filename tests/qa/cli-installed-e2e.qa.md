@@ -145,9 +145,10 @@ python3 scripts/run_installed_cli_qa.py --phases sanity,views,cache-analyze,watc
 - **Issue**: `/usr/bin/time: illegal option` **Fix**: the wrapper must pass `--` before
   `fdu`. The harness does this; do not invoke `/usr/bin/time` with a flag-looking first
   operand.
-- **Issue**: First “cold” metadata run looks warm **Fix**: the harness sets
-  `XDG_CACHE_HOME` to a fresh temp dir per arm.
-  Do not export a leftover `XDG_CACHE_HOME` that already holds a snapshot for that tree.
+- **Issue**: First “cold” analysis run looks warm (a metadata run under `auto` never
+  reads a snapshot) **Fix**: the harness sets `XDG_CACHE_HOME` to a fresh temp dir per
+  arm. Do not export a leftover `XDG_CACHE_HOME` that already holds a snapshot for that
+  tree.
 - **Issue**: Numbers cannot be compared to the last report **Fix**: record host, OS,
   `fdu --version`, and whether the filesystem cache was already warm.
   This suite is directional, not a paired `make perf-compare` claim.
@@ -229,7 +230,9 @@ The harness sets `XDG_CACHE_HOME` to a new directory for:
 ## Phase 2: Small-Tree View Robustness
 
 Tree: `FDU_QA_SMALL`. First metadata command is a cold/warm pair of the default tree
-view. Remaining views reuse that isolated `auto` cache.
+view.
+Under the default `auto` policy a one-shot metadata report neither reads nor writes
+a snapshot, so both runs, and every view after them, report `cold scan`.
 
 ### 2.1 Views the CLI Advertises
 
@@ -372,7 +375,10 @@ bodies. The harness analyzes `FDU_QA_MEDIUM_ANALYZE` or `$FDU_QA_MEDIUM/docs` on
 
 **Verify**:
 
-- [ ] Warm tree is faster than cold, or the footer says `warm revalidation`
+- [ ] Both tree runs report `cold scan`: a one-shot metadata report re-walks by design,
+  so the warm run need not be faster.
+  Reuse shows on the second subdirectory analyze instead, as `warm revalidation` with
+  non-zero `cached`
 - [ ] Analyze stays on the subdirectory
 - [ ] Output is not a multi-megabyte `files` dump (`--limit=10` on list views)
 
@@ -427,7 +433,9 @@ Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 - [ ] `fdu --analyze all` on a medium subdirectory shows `Analyzing` with a climbing
   percentage (the line is erased as soon as the work ends, so `100%` may never be seen)
 - [ ] A small tree (`fdu .` in this repository) shows no indicator at all
-- [ ] `fdu "$FDU_QA_MEDIUM" 2>/tmp/fdu-stderr` leaves `/tmp/fdu-stderr` empty
+- [ ] `fdu "$FDU_QA_MEDIUM" 2>/tmp/fdu-stderr` writes no progress to `/tmp/fdu-stderr`:
+  no carriage return or escape sequence, only the report’s `note:`, `warn:`, `tip:`, and
+  `perf:` lines, which go to stderr whether or not it is a terminal
 - [ ] `fdu --format json "$FDU_QA_MEDIUM" >/dev/null` shows nothing;
   `--progress always --format json` shows the indicator; `--progress never` shows
   nothing for any format
