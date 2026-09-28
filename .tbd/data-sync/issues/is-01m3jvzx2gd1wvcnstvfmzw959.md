@@ -5,16 +5,18 @@ title: Present code overview as a table with bold complete totals
 kind: feature
 status: in_progress
 priority: 2
-version: 6
+version: 8
 delegate: codex@spud10.local
-labels: []
+labels:
+  - cli-presentation
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:02:37.517Z
-updated_at: 2026-09-28T02:37:16.699Z
+updated_at: 2026-09-28T02:59:08.932Z
 started_at: 2026-09-28T02:03:07.793Z
 ---
+Present one code overview table with aligned per-language code/comment/blank/share/coverage columns and bold complete totals. Keep selected-population totals independent of row/share limits, distinguish unmeasured from measured zero, retain population details, and preserve structured report schema. Validate via full-output goldens, core formatting assertions, and CLI/Python parity; push and reinstall for local testing.
 
 ## Notes
 

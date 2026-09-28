@@ -5,16 +5,18 @@ title: Rename analysis-workers CLI option to workers after scope review
 kind: task
 status: in_progress
 priority: 2
-version: 3
+version: 5
 delegate: codex@spud10.local
-labels: []
+labels:
+  - cli-presentation
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:37:16.194Z
-updated_at: 2026-09-28T02:42:01.598Z
+updated_at: 2026-09-28T02:59:08.951Z
 started_at: 2026-09-28T02:38:36.876Z
 ---
+Confirm the simpler --workers name has no CLI conflict, rename the content-analysis concurrency option and current help/docs/skill/parity shim consistently, retain automatic zero and explicit scan-pool scope, validate parsing/goldens, and reinstall the resulting CLI and skill.
 
 ## Notes
 

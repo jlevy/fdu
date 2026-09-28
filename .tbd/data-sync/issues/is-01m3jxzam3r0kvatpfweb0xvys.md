@@ -5,16 +5,18 @@ title: Align content analyzer names views headers and coverage guidance
 kind: task
 status: in_progress
 priority: 2
-version: 3
+version: 5
 delegate: codex@spud10.local
-labels: []
+labels:
+  - cli-presentation
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:37:15.767Z
-updated_at: 2026-09-28T02:42:01.887Z
+updated_at: 2026-09-28T02:59:08.943Z
 started_at: 2026-09-28T02:38:36.854Z
 ---
+Review lines/code/words measurements, canonical view names, section headers, and coverage from first principles. Document lines value and implicit overlap; clarify Documents population versus word measurements; give actionable analyzer-as-view diagnostics on CLI and Python. Verify redundant analyzers preserve answers and unsupported SLOC still exposes physical lines.
 
 ## Notes
 
