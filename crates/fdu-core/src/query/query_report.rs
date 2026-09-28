@@ -1488,6 +1488,8 @@ pub(crate) fn report_in(
     let unfiltered_rows = (walked.is_none() && row_consumers > 1).then(|| every_entry(index));
     let metric_consumers =
         query.views.iter().copied().filter(|view| needs_metric_resolution(*view)).count();
+    // Every view that needs metric resolution also needs unfiltered entry rows, so more
+    // than one metric consumer means the rows above were built.
     let mut shared_metric_summaries = (walked.is_none() && metric_consumers > 1).then(|| {
         metric_summaries(
             &query.views,

@@ -15,7 +15,9 @@ detection rather than the current path classification used by the metric views.
 
 The regression test compares combined and independent reports across 18 combinations:
 three ignored populations, three sorting choices, and two share thresholds, with a
-one-row limit. Its fixture includes ignored code and an extensionless script.
+one-row limit. Only the six `Include` combinations take the shared pass; `Exclude` and
+`Only` walk a filtered population and confirm that path is unchanged.
+Its fixture includes ignored code and an extensionless script.
 The existing exact probe oracle remains outside the component timer.
 
 The upstream branch was rewritten during validation to add size/rate terminology,
