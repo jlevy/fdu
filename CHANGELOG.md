@@ -7,6 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-28
+
+fdu 0.2.0 makes the command people type cheaper and narrows what the cache does by
+default. `--cache` takes `auto`, `on`, or `off`: under `auto` a one-shot metadata report
+no longer writes a snapshot that no later one-shot report reads, and `--stale-ok`
+replaces `--cache only`. Code analysis gains an aligned code table and population
+control, tree output gains display bounds, multi-view reports resolve each file once,
+and a large one-shot index is freed after the answer instead of before it.
+Several flags, the report and cache-status schemas, and the macOS cache location changed
+incompatibly; [Upgrading from 0.1.0](#upgrading-from-010) says what to change.
+The GitHub release text is
+[docs/project/release-notes/0.2.0.md](docs/project/release-notes/0.2.0.md).
+
 ### Changed
 
 - **Breaking:** `--cache` takes `auto`, `on`, or `off`, and `auto` depends on the kind
@@ -16,12 +29,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--cache on` also writes after a one-shot metadata report.
   Python’s `CachePolicy` is `AUTO`, `ON`, `OFF`; Rust’s `CachePolicy` is `Auto`, `On`,
   `Off`, and `Plan::persists` replaces `CachePolicy::writes`.
+  - A default `fdu PATH` therefore no longer leaves a snapshot for a later `open`,
+    `--watch`, or `--analyze` run of the same root, and that run starts with a walk
+    unless an earlier run used `--cache on` or was itself one of those runs.
+    A one-shot metadata report never read the snapshot: revalidating it stats every
+    entry anyway, so it cannot make a metadata report cheaper, and on Linux it measured
+    slower than a fresh walk ([usage guide](docs/usage.md#understand-the-cache),
+    [platform tuning guide](docs/project/guides/platform-tuning.md#snapshot-participation-is-a-cost-decision-and-apfs-reverses-its-conclusion)).
+    What the missing snapshot costs the later run is small: on the million-entry Linux
+    tree, an `open` or watch that loaded one reached its first answer 0.22 s sooner
+    (1.00 s against 1.22 s, one probe), and a repeated `--analyze` keeps its savings in
+    the content sidecar, which analysis runs still write.
 - **Breaking:** `--cache only` is now `--stale-ok` (Python `stale_ok=True`, Rust
   `Delivery::stale_ok`), which answers from the snapshot without touching the tree.
-  Leave a snapshot for it with `--cache on`.
-- `--ignored=include|exclude|only` controls population.
-  Exclusion prunes safely ignored subtrees and skips their content analysis; only
-  analyzes ignored bodies.
+  Leave a snapshot for it with `--cache on`. Rust callers that build a `Delivery` by
+  struct literal must now name `stale_ok`, or build it with
+  `Delivery::new(cache, cache_path)` or `Delivery::stale_ok(cache_path)`.
+- **Breaking:** `--ignored=include|exclude|only` controls population, replacing
+  `--exclude-ignored` and `--only-ignored`. Exclusion prunes safely ignored subtrees and
+  skips their content analysis; only analyzes ignored bodies.
 - Tree output defaults to depth 5 and a 1% share of the selected root, with significant
   file leaves. `--breadth` bounds children; `--limit` bounds rows per section.
 - Code analysis defaults to a source-line overview with language and population totals,
@@ -33,11 +59,35 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Human output uses consistent names, primary totals, and gray parenthetical details.
   Performance includes ignore-file and rule counts plus total files/s and represented
   GiB/s.
-- `--workers` sets content-analysis concurrency (zero selects available parallelism).
-- Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and Linux default
-  to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
-- Report schema is `fdu.report/10`; cache status is `fdu.cache/3`. Python exposes
-  matching population, code overview, display limits, and cache destination controls.
+- **Breaking:** `--workers` sets content-analysis concurrency (zero selects available
+  parallelism), replacing `--analysis-workers`.
+- **Breaking:** Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and
+  Linux default to `~/.cache/fdu`, so the macOS default moved from
+  `~/Library/Caches/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
+- **Breaking:** Report schema is `fdu.report/10`; cache status is `fdu.cache/3`. Python
+  exposes matching population, code overview, display limits, and cache destination
+  controls.
+- A report with two or more unfiltered metric views (`types`, `families`, `languages`,
+  `documents`) resolves each regular file’s content record and path classification once
+  and feeds every view from one pass, instead of once per view (H153). Output is
+  unchanged; an exact oracle compares the combined result with separately built
+  single-view reports.
+  An exploratory macOS measurement found 100 four-view report constructions about 2.5
+  times faster on a 137,085-entry tree
+  ([exp-159](docs/project/experiments/exp-159-share-content-metric-resolution-across-views.md)).
+  It is not a scan or end-to-end speedup, the default command and single-view reports do
+  not take this path, and the change is retained provisionally until a quiet rerun
+  settles its inconclusive major-fault gate.
+- A one-shot report frees an index of at least 65,536 entries on a detached thread,
+  named `fdu-index-release`, after the answer is complete, instead of before returning
+  it (H156). On the million-entry Linux tree that release was 95 ms of a 1.39 s
+  `--cache off` report, and the default tree job took 3.19% less wall time (95% interval
+  1.79% to 4.88% less,
+  [exp-160](docs/project/experiments/exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)).
+  Library callers of `prepare_report` or Python’s `fdu.report` get the answer sooner and
+  see the memory return moments after the call rather than before it.
+  The release stays inline on Windows, with `FDU_COUNTERS=1`, for smaller indexes, and
+  when the thread cannot be started.
 
 ### Removed
 
@@ -46,6 +96,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `read-only` has no exact replacement: reading a snapshot without ever writing one is
   gone. Under `auto`, a failed snapshot write is reported as a warning, so a read-only
   cache directory still answers; `--cache off` reads nothing.
+
+### Upgrading from 0.1.0
+
+- **Command lines.** Replace `--cache only` with `--stale-ok`, `--cache refresh` with
+  `--cache on`, and drop `--cache read-only` (see Removed); fdu refuses each retired
+  value and names its replacement.
+  Replace `--exclude-ignored` with `--ignored=exclude`, `--only-ignored` with
+  `--ignored=only`, and `--analysis-workers N` with `--workers N`. These three are
+  refused as unknown arguments with exit status 2, and the parser’s suggestion does not
+  name the replacement: for `--exclude-ignored` it suggests `--exclude`, a different
+  option. A script that relied on a one-shot report to leave a snapshot, for a later
+  `--stale-ok` read or a warm `open` or `--watch`, adds `--cache on` to that report.
+- **Machine output.** A consumer pinned to `fdu.report/7` moves to `fdu.report/10`, and
+  one pinned to `fdu.cache/2` moves to `fdu.cache/3`; `fdu.stream/2` is unchanged.
+  [The machine-output reference](docs/machine-output.md) describes the current shapes.
+- **Cache files.** 0.2.0 neither reads nor removes the files 0.1.0 wrote.
+  Each cached tree’s first 0.2.0 run walks it, as after every upgrade, because the
+  engine fingerprint mixes in the crate version.
+  On macOS without `XDG_CACHE_HOME`, 0.1.0 wrote to `~/Library/Caches/fdu`, which 0.2.0
+  never looks at: delete that directory.
+  Elsewhere the old files share 0.2.0’s directory under their old names, `<key>.fdu` and
+  `<key>.content`; `fdu --cache-status=all` lists them as unrecognized, and
+  `fdu --cache-clear=all` leaves them in place.
+  Delete them by hand, or run 0.1.0’s `fdu --cache-clear=all` before upgrading.
+- **Rust.** `CachePolicy` is `Auto`, `On`, `Off`: `Only` becomes `Delivery::stale_ok`,
+  `Refresh` becomes `On`, and `ReadOnly` is gone.
+  `CachePolicy::writes` is replaced by `Plan::persists`. A `Delivery` built by struct
+  literal must name `stale_ok`, or use `Delivery::new` or `Delivery::stale_ok`.
+- **Python.** `CachePolicy.ONLY` becomes `stale_ok=True` on `fdu.report` and `fdu.open`,
+  `CachePolicy.REFRESH` becomes `CachePolicy.ON`, and `CachePolicy.READ_ONLY` is gone.
 
 ## [0.1.0] - 2026-09-25
 

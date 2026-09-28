@@ -335,6 +335,14 @@ token prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 `<release-commit>` are recorded in
 [Rehearse the Release Commit](#rehearse-the-release-commit).
 
+The commands spell out the first release, `0.1.0`. For a later release, replace `0.1.0`
+in every command and URL with the version being released, and `0.1.1` with the patch
+after it: for `0.2.0` that means the tag `v0.2.0`, the notes
+`docs/project/release-notes/0.2.0.md`, and files such as `fdu-0.2.0.tar.gz`. Skip the
+steps marked `0.1.0` only.
+The workflow’s plan job refuses a tag that disagrees with the Cargo version, but nothing
+checks which notes file the release body is derived from.
+
 ### Prerequisites
 
 1. **A tag-signing key.** The tag is signed with an SSH key.

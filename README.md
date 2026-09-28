@@ -469,7 +469,7 @@ The survey is in
   output
 - [Documentation index](docs/README.md): library, architecture, performance, release
 - [Design principles](docs/project/architecture/fdu-design-principles.md)
-- [0.1.0 release notes](docs/project/release-notes/0.1.0.md)
+- [0.2.0 release notes](docs/project/release-notes/0.2.0.md)
 - [Changelog](CHANGELOG.md)
 
 ## Development
