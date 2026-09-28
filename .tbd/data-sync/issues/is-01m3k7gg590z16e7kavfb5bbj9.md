@@ -3,9 +3,9 @@ type: is
 id: is-01m3k7gg590z16e7kavfb5bbj9
 title: "macOS: regression-check stack 141 (H156, --cache auto) and refresh macOS numbers"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-27-macos-performance-rerun.md
 labels:
   - performance
@@ -16,7 +16,11 @@ dependencies:
   - type: blocks
     target: is-01m3kfjccc35r78ty913v0xfec
 created_at: 2026-09-28T05:23:55.688Z
-updated_at: 2026-09-28T11:48:24.339Z
+updated_at: 2026-09-28T13:21:22.069Z
+closed_at: 2026-09-28T13:21:22.068Z
+close_reason: "#147 landed on main 6ec77163 via gh stack merge 148 (stack 141 layers 1-11); H153 confirmation stays with fdu-9e9d"
+resolution: null
+duplicate_of: null
 ---
 Stack 141 (main <- #137 <- #138 <- #139) was re-benchmarked on Linux only. On internal APFS, per the macOS rerun plan's storage rules, with immutable release builds of the three stack heads:
 1. H156 (detached one-shot index release, #138): pair #137 vs #138 on the cache-off indexed tree and default fdu . --cache off, with summary mode as the placebo. Linux measured -7.3% / -7.0% / +0.5%. macOS uses a different allocator, so check for regression, and record an experiment if it moves more than the 3% rule.
