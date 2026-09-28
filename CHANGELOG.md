@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- On macOS, `--watch` and an opened root report a file held open for writing, such as a
+  growing log or a SQLite write-ahead log, as of its last close.
+  The kernel emits a content event for descriptor writes only when the last descriptor
+  closes, and a watcher now reacts to the events it gets.
+  Earlier, the whole-tree reconcile that every rename triggered also re-read such files;
+  quiet trees already behaved this way.
+  A one-shot report, or an explicit refresh from Rust or Python, still reads their
+  current size.
 - **Breaking:** `--cache` takes `auto`, `on`, or `off`, and `auto` depends on the kind
   of request. A one-shot metadata report under `auto` no longer writes a snapshot, since
   no later one-shot report reads it; content analysis, `--watch`, and an opened index
@@ -50,6 +58,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `read-only` has no exact replacement: reading a snapshot without ever writing one is
   gone. Under `auto`, a failed snapshot write is reported as a warning, so a read-only
   cache directory still answers; `--cache off` reads nothing.
+
+### Fixed
+
+- A rename no longer makes `--watch` or an opened root reconcile the whole tree.
+  The event backends report each side of a rename as its own event, and every one of
+  them re-walked the root: on a busy 476k-entry agent-state tree on macOS, where atomic
+  temp-file writes rename constantly, that was a full walk every 20 s, 48% of a core,
+  and 6.9 GB of snapshot rewrites an hour.
+  Each side is now verified as its own path, like a create or a remove: a vanished name
+  is removed with its subtree, a present file is updated, and only a directory that
+  arrives by rename is relisted, bounded by that directory.
+  A rename that changes only case reconciles its parent.
+  Kernel event loss, a rename of the root itself, and kqueue renames still reconcile the
+  root. The removed root walks also happened to re-read files held open for writing,
+  whose writes macOS reports only when they close; on macOS such a file is now current
+  as of its last close.
 
 ## [0.1.0] - 2026-09-25
 

@@ -8,6 +8,11 @@
 
 ## Overview
 
+The [cross-process refresh proposal](#proposed-cross-process-refresh-2026-09-26)
+summarizes the current FSEvents design, its evidence, and the remaining validation.
+The older timing observations below describe their recorded regimes, not a shipped
+history-replay implementation.
+
 The [original engine research](research-2026-08-06-file-rollup-engine.md) chose the
 architecture and catalogued proven techniques from twelve tools.
 The [evidence research](research-2026-08-09-end-to-end-performance-evidence.md) defined
@@ -717,9 +722,13 @@ ID guarded by a `FSEventsCopyUUIDForDevice` equality check and an `EventIdsWrapp
 (briefly defaulted on, then reverted in December 2021 “due to possible correctness
 issues”); across restarts both Watchman and git’s fsmonitor daemon start at `SinceNow`
 and force a fresh crawl through their own logical clocks.
-Cross-restart replay is therefore Apple-documented and API-supported but unproven in
-major production tools — fdu would be pioneering it, which makes the backstop
-non-negotiable rather than merely prudent.
+Those reviewed restart paths do not demonstrate one-shot inventory resume.
+However, the
+[September prior-art update](research-2026-09-27-persistent-change-prior-art.md)
+identifies CCC Quick Update and SuperDuper Turbo as production examples of
+FSEvents-guided enumeration between backup jobs.
+Their private implementations do not establish fdu’s cursor or synchronization rules;
+the full-scan backstop and independent validation remain necessary.
 
 Implementation findings from the follow-up spec work (2026-08-10), recorded here so the
 platform picture stays in one place: the run-loop scheduling every older example uses
@@ -738,10 +747,12 @@ escalation shape: UUID mismatch, event ID regression,
 `kFSEventStreamEventFlagEventIdsWrapped`, or `MustScanSubDirs`/dropped-event flags each
 map to `InvalidateSubtree` (scoped or root) and the sweep runs as the backstop; Apple
 documents the journal as advisory, so a periodic paranoia sweep remains.
-Nothing in the du-tool space does this; it converts fdu’s warm-open story on macOS from
-“fast sweep” to “no sweep,” and it reuses the delta contract unchanged.
-Linux has no equivalent (confirmed below), which means the sweep must be fast there
-regardless — the two investments are complements, not alternatives.
+This could replace a full warm sweep with scoped observations on eligible macOS roots,
+reusing the delta contract.
+The reviewed tools do not establish fdu’s end-to-end speed.
+Ordinary Linux inotify/fanotify queues provide no offline replay equivalent; specialized
+filesystem adapters are discussed below.
+The portable sweep must remain fast.
 
 **Scheduling and measurement details:** Rust threads get `QOS_CLASS_DEFAULT` (P-core
 eligible — fine), but a CLI wanting max throughput should set worker QoS to
@@ -774,8 +785,7 @@ settles how the journal-resume module should be built:
   `EventIdsWrapped` is declared but never checked; scheduling still uses the deprecated
   `FSEventStreamScheduleWithRunLoop` (with an open initialization-deadlock report,
   notify #942). The 9.0 RC line migrates to objc2 bindings (PR #726) but changes none of
-  this, and upstream has *never discussed* exposing event IDs or `sinceWhen` — no
-  rejected proposal, no in-flight work.
+  this. No supported replay contract was found in those reviewed versions.
   What notify does surface — `MustScanSubDirs`+dropped flags as `Flag::Rescan` — is
   exactly what fdu’s watch layer already consumes, so notify remains the right live
   backend; resume is simply outside its model.
@@ -788,11 +798,14 @@ settles how the journal-resume module should be built:
   Persisting a token before shutdown cannot protect it from a later purge.
   Test the stop/restart lifecycle and treat lost history as a sweep fallback; token
   ordering alone does not establish replay continuity.
-- **Binding decision:** follow the FSEvents plan’s narrow module using already-locked
-  `fsevent-sys` plus reviewed missing declarations.
-  Generated `objc2-core-services`, `objc2-core-foundation`, and `dispatch2` bindings are
-  the fallback if that surface becomes harder to maintain.
-  Recheck available bindings and the supply-chain policy at implementation time.
+  The notify 9.0 RC line removed this purge call; upgrading requires a separate MSRV and
+  dependency review, not a research-only lockfile change.
+- **Binding decision remains open:** the locked `fsevent-sys` plus narrow declarations
+  was the August low-dependency option.
+  The newer `fsevent-sys 5.2.0` deprecation now favors evaluating generated
+  `objc2-core-services`, `objc2-core-foundation`, and dispatch bindings before extending
+  it. See the September update for primary sources.
+  Recheck API coverage, MSRV, and the supply-chain policy at implementation time.
   Extended-data inode values may help attribution, but cannot alone prove a rename or
   replace fresh metadata observations.
 - **Reference configurations from production:** Watchman and git both run
@@ -815,12 +828,14 @@ settles how the journal-resume module should be built:
   accompanying path is not meaningful), with a bounded wait.
   Match the plan: global dropped-event flags and `EventIdsWrapped` require a full sweep;
   a scoped `MustScanSubDirs` requires subtree reconciliation.
-  The new resume token — the max of the per-event IDs captured *inside* the callback,
-  not a cross-thread `GetLatestEventId` read — is persisted only after the corresponding
-  deltas are applied. `FullHistory` (macOS 10.15+) is load-bearing, not optional: Apple’s
-  header documents that without it, events near the sinceWhen boundary can be **silently
-  skipped** because history is stored in coalesced chunks; with it, replay is
-  overlapping, which fdu’s idempotent observations must absorb.
+  Persist a completed boundary in the same per-device ID domain only after the
+  corresponding observations are applied.
+  The maximum root-local event ID cannot advance a quiet root safely; the committed
+  probe must establish the stream-wide completion rule.
+  `FullHistory` (macOS 10.15+) is load-bearing, not optional: Apple’s header documents
+  that without it, events near the sinceWhen boundary can be **silently skipped**
+  because history is stored in coalesced chunks; with it, replay is overlapping, which
+  fdu’s idempotent observations must absorb.
   Journal availability belongs in the gate and the probe: UUID lookup can fail, logging
   can be disabled, and retention is finite.
   UUID equality and successful replay-through-`HistoryDone` do **not** prove complete
@@ -904,11 +919,10 @@ its costs at scale are now quantified: ~1 KB kernel memory per watch, a default
 `max_user_watches` ceiling of ~1M that a 10M-file tree’s ~700k directories approaches,
 and a reported ~35 s recursive arming crawl at that size.
 Overflow in either backend maps to the existing `InvalidateSubtree` escalation.
-And the structural fact, now confirmed: **Linux has no persistent change journal** — no
-USN, no fseventsd; fanotify is live-only, and the only changed-since query anywhere is
-btrfs’s root-only `find-new` (generation numbers), which misses deletions.
-fdu’s snapshot + revalidation design is therefore not a workaround on Linux; it is the
-only possible architecture, and the parallel sweep is its hot path.
+Neither inotify nor fanotify supplies persistent offline replay for ordinary ext4/XFS
+roots.
+Without a continuously running observer, those roots require revalidation by scan.
+Specialized filesystem sources below are exceptions, not portable replacements.
 
 **Why no Linux journal exists, and the partial analogs that do.** The absence is policy,
 not oversight: a persistent change journal taxes every write so occasional readers can
@@ -939,9 +953,12 @@ precisely an ext4/XFS statement, and four analogs deserve the record:
   changelog forever, which is fdu’s architecture at HPC scale — and NetApp SnapDiff /
   OneFS changelists are the NAS equivalents.
   Useful precedent; none of it reaches local ext4.
-- **`STATX_CHANGE_COOKIE` (kernel ≥ 6.6)** is a per-inode change counter: it cannot beat
-  the sweep (still one statx per entry) but hardens fingerprints against timestamp
-  forgery and granularity races at zero cost inside the existing mask.
+- **Do not rely on `STATX_CHANGE_COOKIE`.** The earlier claim that Linux 6.6 exposed
+  this through statx was unsupported: the reviewed upstream
+  [UAPI header](https://github.com/torvalds/linux/blob/master/include/uapi/linux/stat.h)
+  and [statx manual](https://man7.org/linux/man-pages/man2/statx.2.html) do not expose
+  it. Per-inode version ideas would still require visiting entries and are not a
+  directory change feed; a future adapter needs a concrete, versioned API and tests.
 
 Rejected for the record: dm-era/LVM thin-snapshot deltas (block-level; mapping blocks to
 files requires parsing the filesystem), auditd or eBPF write-logging (a resident
@@ -1143,10 +1160,10 @@ fast-but-wrong is a non-goal; fast-and-labeled is a feature).
    structure already matches).
    Requires findings 1–2 fixed (allocation-free expectations, parallel sweep) to reach
    the floor.
-2. **Journal-assisted revalidation (macOS today; Windows later; never Linux).** FSEvents
-   `sinceWhen` resume reduces the sweep to changed directories plus the validation
-   ladder. Quiet-tree whole-command latency still includes replay and snapshot access; it
-   has not been measured as size-independent.
+2. **Journal-assisted revalidation (macOS first; other native adapters separately).**
+   FSEvents `sinceWhen` resume reduces the sweep to changed directories plus the
+   validation ladder. Quiet-tree whole-command latency still includes replay and snapshot
+   access; it has not been measured as size-independent.
    The snapshot format needs two new fields (event ID, volume UUID) reserved now so the
    format does not break when this lands.
    A timestamp query alone is insufficient: `find -mmin` is itself a full N-stat walk,
@@ -1425,6 +1442,126 @@ checkpoint store, and report physical free-space change alongside entry sums.
 Per-path sums count every hard link in full unless files are counted once per
 `(dev, inode)`, and APFS clones and snapshots share blocks that no per-entry sum sees,
 so those sums are not a promise of reclaimable space.
+
+### Proposed Cross-Process Refresh (2026-09-26)
+
+The target is a second visit to a large local macOS tree: retain the first inventory,
+exit fdu, and later update the scopes changed during its absence.
+The system `fseventsd` maintains the history; an fdu daemon or resident watcher is
+unnecessary. Apple’s
+[persistent event guide](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/FSEvents_ProgGuide/UsingtheFSEventsFramework/UsingtheFSEventsFramework.html)
+describes replay while an application was stopped, including across reboots, and
+recommends per-device streams for persistence.
+Its advisory-history caveat still applies.
+Spotlight’s selective search index supplies neither the required before-state nor
+evidence that every changed or deleted path was covered.
+
+The evidence and implementation are at different stages:
+
+| Item | Established | Remaining |
+| --- | --- | --- |
+| Spotlight coverage check | The two September queries returned very different coverage, including zero under one populated cache | No controlled completeness or storage-delta benchmark; unsuitable as accounting authority |
+| August FSEvents scratch spike | Deep append produced an event despite unchanged directory mtimes; creates/clones and dispatch delivery worked in observed runs | Source and flags were not retained; no reproducible acceptance result |
+| September reproducible probe | Separate-process quiet, mixed, and deep-append candidates matched an independent metadata oracle; omitted-scope controls detected mutations | `FullHistory` overlap widened work to the root; elapsed-gap, reboot, loss, and engine parity remain untested |
+| Historical replay cost | Empty replay ranged from roughly 9–33 ms to 193–487 ms; synthetic older cursors reached about 2 s | Actual elapsed-gap trials and whole-command costs |
+| Missing expected history | An ancient synthetic cursor returned little history without a warning | Unknown pre-mutation fence and flags prevent attributing the cause to retention loss |
+| Shipped engine | Inventory, exact commits, bulk reconciliation, live observation, and `JournalScoped` trust vocabulary | No saved replay cursor, replay producer, or cross-process replay acceptance tests |
+
+The current snapshot format is flat and rebuilds its index on load.
+Existing live-watch tests establish resident behavior; they do not establish delivery
+during process absence.
+The
+[probe and implementation plan](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+owns the current validation status and detailed gates.
+
+The proposed transaction is:
+
+```text
+first run: capture pre-scan fence -> scan -> publish inventory and fence -> exit
+between runs: macOS records available history; fdu is stopped
+later run: load compatible inventory -> gate -> replay -> normalize dirty scopes
+          -> observe filesystem -> exact commits -> publish inventory and applied fence
+gate failure: full scan/reconciliation -> publish a new conservative fence
+```
+
+The initial support scope is one local volume, with the engine’s normal root and scope
+checks. File events nominate parent relists; directory events may require subtree
+reconciliation. Ambiguous or lost history widens to a sweep.
+Repeated events observe current facts again, so an append from 100 to 160 bytes
+contributes 60 once even if three events name it.
+Control-file edits use the existing classification invalidation rules.
+Hard-link aliases and root replacement need dedicated oracle cases.
+
+The proposal keeps full verification as the default.
+A caller explicitly accepting journal-scoped results may use replay with stronger sweep
+fallback. Cache policy and tree size cannot silently select that weaker guarantee.
+The shared request and answer models must carry this distinction, including visible text
+output and persisted trust; an untouched retained fact must not acquire a new
+observation timestamp or become verified merely because replay completed.
+Interactive provisional output followed by a background sweep is a later extension
+requiring a proof that subtree trust composes.
+
+The snapshot carries the inventory, applied per-device cursor, journal database UUID,
+last full-verification time, and replay count in one atomic publication.
+A known pre-scan fence protects against skipping mutations racing the walk; it does not
+freeze the filesystem.
+Advancing a cursor requires a proven completed boundary even when the root had no
+events. Failed saves, cancellation, and competing writers must never publish progress
+ahead of facts. Typed inaccessible gaps are needed before a denied subtree can count as
+applied work. Until then, limit successful persisted replay to complete roots and
+preserve the previous baseline on partial failure.
+
+The existing `watch` build feature can contain both native replay and live observation,
+with separate runtime requests and lifetimes.
+This keeps the dependency optional without introducing another optional-capability build
+feature. The exploratory probe does not need to change shipped dependencies.
+Exclude managed inventory and checkpoint stores through an explicit scan-scope policy
+shared by every route, since writing them under a home root otherwise creates
+self-generated changes.
+
+Filesystem work can shrink to dirty scopes, but total cost remains:
+
+```text
+load + replay(history) + observe(dirty-scope entries) + update(ancestors)
+     + persist + render(requested output)
+```
+
+The flat image keeps load/save proportional to the whole tree.
+Persisted aggregates, lazy blocks, and bounded changed-state publication (`fdu-yr23`,
+`fdu-pdra`, `fdu-3dtq`) are needed before claiming cost independent of unchanged
+entries. A single edit among 100,000 siblings may still cause a large relist, and
+unrelated volume traffic can increase replay cost.
+Measure all of these terms against the current full scan.
+
+The [reproducible probe](../../../explorations/fsevents-replay/README.md) supplies exact
+flags and fences, separate capture/replay processes, a full-scan oracle, and negative
+controls that detect omitted scopes.
+Its immediate tests support the mechanism, but `FullHistory` replayed old creation
+events and widened even quiet refreshes to the fixture root under conservative subtree
+normalization.
+Keep those events; measure whether immediate relists can avoid unnecessary
+recursive work without losing correctness.
+`fdu-uwhl` remains open for the rest of its acceptance matrix.
+Record 1-hour, 24-hour, 48-hour, 7-day, reboot, and moved-volume cases separately; a
+same-session success cannot close them.
+Then implement cursor/gate (`fdu-2cdv`), native replay (`fdu-3tun`), route selection
+(`fdu-6ld9`), scoped reconciliation (`fdu-rvje`), and whole-command evidence
+(`fdu-hs10`). The provisional 24-hour and 20-open limits remain unvalidated risk
+controls, not retention guarantees or evidence for next-day speed.
+
+Durable before/after comparisons are independently useful and belong to the
+[checkpoint plan](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md).
+They can initially use full scans.
+Replay accelerates obtaining the next inventory; checkpoint storage preserves a
+historical baseline that the replaceable cache cannot.
+The motivating application is the checkpoint plan’s
+[disk-pressure workflow](../specs/active/plan-2026-09-13-fdu-disk-usage-checkpoints.md#disk-pressure-workflow-where-did-the-space-go):
+attribute GB-scale agent-development growth across selected home, application, and
+temporary roots in seconds, comparing actual retained hour/day boundaries.
+This is additional to ordinary directory roll-ups and cache-assisted content analysis,
+not a replacement for them.
+Events cannot reconstruct old byte counts without a saved baseline, and path growth
+cannot by itself prove which process caused it.
 
 ## Key Insights
 
@@ -1832,7 +1969,7 @@ Linux and cloud:
 - [zfs diff](https://openzfs.github.io/openzfs-docs/man/master/8/zfs-diff.8.html) ·
   [btrfs send](https://btrfs.readthedocs.io/en/latest/btrfs-send.html) ·
   [Robinhood Policy Engine (Lustre changelog consumer)](https://github.com/cea-hpc/robinhood)
-  · [statx STATX_CHANGE_COOKIE](https://man7.org/linux/man-pages/man2/statx.2.html)
+  · [statx API](https://man7.org/linux/man-pages/man2/statx.2.html)
 - [btrfs find-new](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html) ·
   [dentry cache sizing incident](https://access.redhat.com/solutions/55818)
 
