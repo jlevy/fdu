@@ -64,12 +64,17 @@ If the release commit changes, start again with a new directory.
    ```
 
 4. **Rehearse on GitHub.** This pins `release/v$VERSION` at `COMMIT`, dispatches the
-   rehearsal, waits about twenty minutes for it, and downloads and verifies its eight
-   files into `$RELEASE/rehearsal`:
+   rehearsal, waits for it, and downloads and verifies its eight files into
+   `$RELEASE/rehearsal`:
 
    ```shell
    make release-candidate
    ```
+
+   Allow twenty minutes or more.
+   Alongside the builds, the run’s `semver` job compiles `cargo-semver-checks` from
+   source, with no cache, before checking both crates with and without build features,
+   and it can be the last job to finish.
 
 5. **Derive the release body**, then read `$RELEASE/notes.html`, the release page as
    GitHub will render it.
@@ -102,8 +107,10 @@ If the release commit changes, start again with a new directory.
      --json databaseId,event,headBranch,headSha
    ```
 
-   In about ten minutes its `Publish to crates.io and PyPI` job is *Waiting*, with every
-   job before it green, `Confirm the release environment is protected` included.
+   Its `Publish to crates.io and PyPI` job is *Waiting* once every job before it is
+   green, `Confirm the release environment is protected` included.
+   The builds take about ten minutes, and the `semver` job, uncached here as in the
+   rehearsal, adds roughly ten minutes or more to that.
    Confirm the listing shows `workflow_dispatch`, `v$VERSION`, and `$COMMIT`, then
    approve the `release` environment once, under Review deployments on the run’s page or
    through the API as [Publish Through the Workflow](#publish-through-the-workflow)
@@ -541,9 +548,9 @@ The workflow has no copy of the signing key, so GitHub’s verdict stands in for
 `COMMIT on origin/main` line.
 The publish job checks all of it again against its own checkout, since the approval can
 come long after the plan job ran.
-When the publish job is *Waiting*, the builds, smoke tests, inspection, and the
-`release-environment` check have passed; nothing has been uploaded, and the one approval
-covers both registries.
+When the publish job is *Waiting*, the builds, smoke tests, inspection, the `semver`
+check, and the `release-environment` check have passed; nothing has been uploaded, and
+the one approval covers both registries.
 
 The approval is a person’s act, taken in either of two ways.
 In the browser, choose Review deployments on the run’s page, select `release`, and
