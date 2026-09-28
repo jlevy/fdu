@@ -293,12 +293,15 @@ PUBLISH_STEP_ORDER = [
 # Changing one there is a change to publishing safety, so it is made here too.
 REVIEWED_PUBLISH_STEPS = """
       - name: Confirm the checkout is the planned release tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/release/resolve_plan.py
           --root .
           --mode release
           --ref "${GITHUB_REF}"
           --commit "${GITHUB_SHA}"
+          --repository "${GITHUB_REPOSITORY}"
           --validate-checkout
       - name: Verify the downloaded files against the manifest and SHA256SUMS
         run: >-
@@ -405,11 +408,13 @@ REVIEWED_PUBLISH_STEPS = """
 """
 
 # The plan job's step that refuses, in release mode, a run whose ref is not the version's
-# tag naming the checked-out commit: the first of the two places the tag is validated.
+# annotated, GitHub-verified tag naming the checked-out commit on `main`: the first of the
+# two places the tag is validated.
 REVIEWED_PLAN_STEPS = """
       - name: Resolve exact release identity
         id: plan
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           PUBLISH: ${{ inputs.publish }}
         run: |
           mode=rehearsal
@@ -421,6 +426,7 @@ REVIEWED_PLAN_STEPS = """
             --mode "${mode}" \\
             --ref "${GITHUB_REF}" \\
             --commit "${GITHUB_SHA}" \\
+            --repository "${GITHUB_REPOSITORY}" \\
             --validate-checkout \\
             --github-output "${GITHUB_OUTPUT}"
 """

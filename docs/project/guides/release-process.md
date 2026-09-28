@@ -509,10 +509,22 @@ it, as step 5 of
 
 The publishing run rebuilds, smoke-tests, and inspects every artifact from the tag, then
 uploads exactly those files from one job once you approve the `release` environment.
-The plan job fails at once unless the ref is `refs/tags/v$VERSION`, that tag names the
-checked-out commit, and the Cargo version is `$VERSION`. When the publish job is
-*Waiting*, the builds, smoke tests, inspection, and the `release-environment` check have
-passed; nothing has been uploaded, and the one approval covers both registries.
+The plan job fails at once, before anything is built, unless all of these hold:
+
+- the ref is `refs/tags/v$VERSION`, and the Cargo version is `$VERSION`;
+- that tag is an annotated tag object naming the checked-out commit, so a lightweight
+  tag is refused;
+- origin holds the same tag object, and GitHub reports its signature verified;
+- the commit is an ancestor of origin’s `main`.
+
+The workflow has no copy of the signing key, so GitHub’s verdict stands in for
+`make release-verify-tag`, and GitHub’s compare API for the preflight’s
+`COMMIT on origin/main` line.
+The publish job checks all of it again against its own checkout, since the approval can
+come long after the plan job ran.
+When the publish job is *Waiting*, the builds, smoke tests, inspection, and the
+`release-environment` check have passed; nothing has been uploaded, and the one approval
+covers both registries.
 
 The approval is a person’s act, taken in either of two ways.
 In the browser, choose Review deployments on the run’s page, select `release`, and
@@ -534,7 +546,7 @@ Before each upload the job proves what it is about to send:
 
 | Before | The job checks |
 | --- | --- |
-| Anything | Its own checkout is the tag and the commit the plan resolved, the environment check passed, and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
+| Anything | Its own checkout is the tag and the commit the plan resolved, and GitHub still reports that tag annotated, verified, and on `main`; the environment check passed; and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
 | The first write | Both registries are audited. An `identical` version is skipped, a `missing` one is published, and any conflict on either registry stops the job, so a PyPI conflict stops crates.io from being written first. |
 | Each crate | `cargo package --locked --no-verify` reproduces it from the tag, and its digest must equal the manifest’s. `fdu` is reproduced again against the published `fdu-core`. |
 | `fdu` and PyPI | For up to ten minutes, the job waits for crates.io to serve the manifest’s digest for the crate just published, in both the API record and the sparse index Cargo resolves from. Another digest in either stops the job. |
@@ -706,7 +718,9 @@ Otherwise they are the rehearsal’s:
 The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the token
 prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 Every command runs in a fresh clone of the tag, whose `rust-toolchain.toml` selects the
-pinned Rust, after confirming it names the rehearsed commit and the Cargo version:
+pinned Rust, after confirming it names the rehearsed commit and the Cargo version, and,
+as the workflow does, that the tag is annotated, GitHub reports it verified, and the
+commit is on `main`:
 
 ```shell
 git clone --branch "v$VERSION" https://github.com/jlevy/fdu "$RELEASE/fdu"

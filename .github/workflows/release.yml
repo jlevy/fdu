@@ -57,11 +57,14 @@ jobs:
           version: "0.12.1"
           enable-cache: false
       # A publishing run resolves in release mode, which fails here, before anything is
-      # built, unless the run is on `refs/tags/v{Cargo version}` and that tag names the
-      # checked-out commit. A rehearsal resolves exactly as it always has.
+      # built, unless the run is on `refs/tags/v{Cargo version}`, that tag is an annotated
+      # tag object naming the checked-out commit, origin holds the same object and GitHub
+      # reports its signature verified, and the commit is on `main`. The token only reads.
+      # A rehearsal resolves exactly as it always has, and reads nothing from GitHub.
       - name: Resolve exact release identity
         id: plan
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           PUBLISH: ${{ inputs.publish }}
         run: |
           mode=rehearsal
@@ -73,6 +76,7 @@ jobs:
             --mode "${mode}" \
             --ref "${GITHUB_REF}" \
             --commit "${GITHUB_SHA}" \
+            --repository "${GITHUB_REPOSITORY}" \
             --validate-checkout \
             --github-output "${GITHUB_OUTPUT}"
       - run: python3 -m unittest discover -s tests/release -p 'test_*.py'
@@ -314,14 +318,19 @@ jobs:
         with:
           persist-credentials: false
       # The same identity check the plan made, against this job's own checkout: the crates
-      # are packaged from it, so it has to be the tagged commit the rehearsal built.
+      # are packaged from it, so it has to be the tagged commit the rehearsal built. The
+      # tag's signature and the commit's place on `main` are read from GitHub again, since
+      # the approval can come long after the plan job ran.
       - name: Confirm the checkout is the planned release tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/release/resolve_plan.py
           --root .
           --mode release
           --ref "${GITHUB_REF}"
           --commit "${GITHUB_SHA}"
+          --repository "${GITHUB_REPOSITORY}"
           --validate-checkout
       # Outside the checkout, so the crates are packaged from a clean tree.
       - name: Locate the rehearsal's files
