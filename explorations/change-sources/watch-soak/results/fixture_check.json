@@ -1,0 +1,21 @@
+{
+  "purpose": "Method check on an owned fixture before the ~/.codex soak: how fdu --watch (installed 0.1.0-dev Python-package CLI, notify 8.2.0 FSEvents backend) reports and persists, and how the watcher's view is extracted.",
+  "script": "src/fixture_test.sh",
+  "source_facts": {
+    "persistence": "watch_session.rs Session::persist_due: a save is attempted after each batch and on each idle timeout, throttled to --interval, only when changes are pending; snapshot::save writes a sibling temp file and renames over <cache-dir>/<key>.metadata.bin",
+    "exit": "crates/fdu/src/cli.rs run_watch: no exit-time save; interrupt.rs installs a SIGINT handler only when a progress line is drawn, and it re-raises the default action. SIGTERM/SIGINT therefore end the process without persisting; the last throttled save is the persisted view",
+    "stream": "with --view files and a machine format, only fdu.stream/2 change records (upsert/remove/invalidate) follow the initial report; aggregate views are not repainted",
+    "escalation": "watch.rs record(): a notify Modify(Name(Any)) event, which is what notify's FSEvents backend emits for every kFSEventStreamEventFlagItemRenamed, is an unpaired rename and escalates the WHOLE ROOT (InvalidateReason::UnpairedRename); kernel MustScanSubDirs also escalates"
+  },
+  "observed": {
+    "initial_report_ms": 400,
+    "snapshot_written_after_startup": true,
+    "create_file": "one upsert record; snapshot rewritten within the 2 s interval; --cache only view and --cache off walk agree",
+    "append_4096_bytes_to_file_held_open": "NO stream record; snapshot unchanged; --cache only view shows the old 5-byte size while --cache off walk shows 4101 bytes (the expected FSEvents open-writer gap)",
+    "rename_file": "stream: invalidate path \"\" (root), then upserts for the renamed file AND for the still-open appended file (the root reconcile stat-verified it), and a remove for the old name",
+    "close_held_open_file": "no stream record (close-time ItemModified verified by stat: attrs already current)",
+    "delete_two_files": "stream: invalidate path \"\" again (FSEvents carries sticky ItemRenamed flags on paths renamed earlier), then dir upsert and two removes; snapshot and walk agree",
+    "sigterm": "exit status 143; snapshot size and mtime unchanged after the kill (no exit-time persistence)"
+  },
+  "conclusion": "W = the last persisted snapshot, read back with `fdu ROOT --cache only --cache-dir <copy>`; it equals the watcher's in-memory index as of its last throttled save. An open-writer append is invisible to the watcher until close, unless a root invalidation (any rename) happens to re-stat it."
+}

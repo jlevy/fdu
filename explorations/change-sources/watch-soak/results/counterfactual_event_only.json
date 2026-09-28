@@ -1,0 +1,50 @@
+{
+ "writer_samples": 116,
+ "changed_entries_W0_to_O2": 2883,
+ "of_which_new": 1578,
+ "of_which_removed": 1072,
+ "of_which_grown": 26,
+ "of_which_modified_same_allocation": 202,
+ "changed_entries_held_open_for_write_at_some_sample": 61,
+ "changed_entries_held_open_for_nearly_the_whole_soak": 21,
+ "grown_entries_held_open": 11,
+ "allocated_delta_all_changed_bytes": -73191424,
+ "allocated_delta_open_changed_bytes": -110571520,
+ "allocated_growth_grown_entries_bytes": 52871168,
+ "allocated_growth_open_grown_bytes": 52785152,
+ "open_changed_by_category": [
+  {
+   "category": ".jsonl at depth 5",
+   "count": 32
+  },
+  {
+   "category": ".lock at depth 2",
+   "count": 12
+  },
+  {
+   "category": ".sqlite-wal at depth 1",
+   "count": 6
+  },
+  {
+   "category": ".sqlite at depth 1",
+   "count": 4
+  },
+  {
+   "category": ".sqlite-shm at depth 1",
+   "count": 3
+  },
+  {
+   "category": "(none) at depth 4",
+   "count": 3
+  },
+  {
+   "category": ".db-wal at depth 2",
+   "count": 1
+  }
+ ],
+ "open_paths_with_stream_upserts": 74,
+ "stream_upserts_on_open_paths_total": 1881,
+ "open_changed_paths_seen_in_raw_fsevents_capture_10min": 14,
+ "open_paths_total_seen_in_raw_capture_10min": 16,
+ "distinct_open_paths": 118
+}

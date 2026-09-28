@@ -4,7 +4,6 @@
 
 **Status:** Review of the FSEvents replay spike and its alternatives.
 Research only: no engine or command-line behavior changes.
-Items marked *pending* are experiments still running when this was written.
 
 ## The Question
 
@@ -75,6 +74,13 @@ Instruments and sanitized results are in
   enumerate through libproc in about 15 ms without root.
   A monitor or replay plus this list covers the macOS gap, except for writers owned by
   other users.
+- **fdu’s own watcher is exact today only by accident.** On the busy agent-state root,
+  every macOS rename escalated to a full-root reconcile, 174 times an hour.
+  That cost 48% of a core and 6.9 GB of snapshot rewrites per hour.
+  - Without that polling, events alone would have missed 99.8% of in-place growth bytes,
+    all of it in held-open files.
+  - The writer list recovers all of it.
+  - With the rename fix, the event-driven cost is about 1% of a core.
 - **Directory deltas do not explain free-space changes by themselves.** During the
   review, Time Machine local snapshots released about 6 GB with no tree change, and 931
   MiB was held by deleted-but-open files.
@@ -84,8 +90,9 @@ The [recommendation](#recommendation-and-the-case-against-it) is:
 
 1. Build the delta-only checkpoint store and the identity fixes first, captured by
    walks. This is identical on Linux.
-2. Choose the home-scale accelerator between a resident fdu monitor with an open-writer
-   supplement and APFS directory statistics, using the experiments ranked at the end.
+2. Fix the watcher’s rename escalation and persistence cadence, and add the writer list.
+   Then choose the home-scale accelerator between a resident dirty-directory recorder
+   and APFS directory statistics, using the experiments ranked at the end.
 3. Keep one-shot replay only for bounded gaps, under an explicit cost budget.
 
 ## How the Review Was Run
@@ -528,7 +535,7 @@ Its `--cache only` is today’s `--stale-ok`. At these sizes the regime is catal
 | Agent state A (`~/.claude`) | 11,899 | 0.14 s | 0.11 s | 0.08 s |
 | Agent state B (`~/.codex`) | 451,711 | 5.72 s (5.03–5.95), 220 MB | 3.14 s, 41 MB | 3.15 s, 315 MB, one thread |
 | A project | 1,546,103 | 18.6 s (16.9–20.2) | 11.2 s | 10.0 s, 1.0 GB |
-| Home | ~6.7 M | minutes (not completed) |  |  |
+| Home | ~6.7 M | > 200 s (a bounded attempt timed out under load) |  |  |
 
 **The snapshot load costs as much as a walk.** The flat snapshot rebuilds the whole
 index on load, so a refresh that starts by loading it has spent about 55% of a walk
@@ -616,24 +623,87 @@ A report should state four things:
 
 Net-zero churn inside the interval stays invisible to every measure.
 
-## Resident Monitoring (pending)
+## Resident Monitoring: `fdu --watch` Soak
 
 fdu’s opened root with native observation already treats events as hints and verifies
 them by `stat`. It also closes the registration gap before watching, and serves
-`since(clock)`. Run as a resident process, it removes replay cost and makes queries
-immediate.
+`since(clock)`.
 
-It does not remove three gaps:
+A one-hour soak ran `fdu --watch` read-only on agent state B, measured at 475,674
+entries and 40.4 GB. Settings:
 
-- On macOS it still needs the open-writer supplement.
-- It holds the whole index: 220–315 MB at 450,000 entries.
-- It covers only the time it runs.
-  After downtime it must replay the gap or reconcile.
+- `--interval 10s`, with the cache on the external volume;
+- libproc writer enumeration every 30 s;
+- a raw FSEvents listener for ten minutes;
+- a final comparison of the watcher’s persisted view against two walks.
 
-A one-hour soak of `fdu --watch` on agent state B is *pending*. It is read-only, with
-writer enumeration every 30 s and a final comparison against two walks.
-It measures resident cost and classifies every difference as caught by the watch,
-recoverable by the writer list, or unexplained.
+**Its view was exact, but only because it kept re-walking the tree:**
+
+| Class | Paths |
+| --- | ---: |
+| Stable miss (both walks agree, watcher differs) | 0 |
+| False positive | 0 |
+| Changed between the two walks | 8, zero net allocated bytes |
+
+The per-directory totals matched the second walk exactly, except one SQLite file that
+grew 1 MiB between the walks.
+
+**Why it was exact: every macOS rename escalates to a full-root reconcile.**
+
+- The `notify` crate’s FSEvents backend reports each `ItemRenamed` as an unpaired
+  rename, and `watch.rs` escalates any unpaired rename to the whole root.
+- FSEvents flags are sticky per path, so later events on the same path escalate too.
+- 61.5% of this root’s raw events carried `ItemRenamed`, mostly from atomic temp-file
+  writes.
+- The watcher therefore reconciled the entire root 174 times in 61 minutes: once every
+  20 s, at 9.9 CPU s each.
+- Those reconciles re-stat’ed the open writers and hid the gap.
+
+**What that cost:**
+
+| Measure | Value |
+| --- | --- |
+| Startup to first report | 60.5 s from a cold start: 7 s parallel scan, then a 37 s serial revalidation walk. From an existing snapshot, 33–73 s at 452k entries (518 MB) and 123–126 s at 1.5 M (1.6 GB) |
+| CPU | 47.8% of one core over the hour, mostly system time; about 1% in windows with no root reconcile |
+| Resident memory | median 442 MB, peak 906 MB |
+| Raw events | 326 per minute on average, bursts to 1,443 |
+| Snapshot writes | 187 full rewrites of 36.7 MB, which is 6.9 GB written per hour |
+
+**Without the root escalation, events alone would miss the writes.**
+
+- 26 files grew in place between the start and the end.
+- 11 of them were held open.
+  Those 11 carry 99.8% of the in-place growth bytes.
+- Re-stat’ing the writer list, 45 ms per enumeration, recovers all of it.
+- Everything else in the change set was visible to events: 1,578 new entries, 1,072
+  removed, and 202 metadata-only changes.
+- Over the hour, 56% of gross growth, and nearly all in-place growth, was in files held
+  open.
+
+**How much state a recorder would need.** The hour touched 530 distinct parent
+directories, plus about 70 open-for-write files per sample.
+A resident recorder of dirty directories needs tens of kilobytes.
+The resident index floor is about 190 B per entry, which is about 1.3 GB for this host’s
+6.7 M-entry home.
+
+**Scaling today’s watcher up:**
+
+| Entries | Index | Per root reconcile | Per persist |
+| --- | ---: | ---: | ---: |
+| 1.5 M | ~285 MB | ~31 CPU s | ~116 MB |
+| 5 M | ~950 MB | ~104 CPU s | ~386 MB |
+
+At 5 M entries, one rename every 20 s would saturate a core.
+
+**The conclusion:** a resident fdu is viable only after three fixes, filed as beads:
+
+1. Scope one-sided renames (`fdu-822y`, P1).
+2. Persist deltas on their own cadence instead of full rewrites (`fdu-88p7`).
+3. Add the writer-list re-stat (`fdu-vhrb`).
+
+With those fixes, the measured event-driven cost is about 1% of a core.
+For home-scale roots, a dirty-directory recorder (`fdu-d2iz`) should replace the full
+resident index. The 37 s startup revalidation is tracked separately (`fdu-eru0`).
 
 ## Operating-System Facilities That Compute Changes As They Happen
 
@@ -798,7 +868,7 @@ baseline, on this host.
 | (a) Full walk plus delta-store diff | ~6 s (measured walk) | ~6 s | minutes | None beyond `stat`’s view; needs a retained baseline |
 | (b) One-shot replay plus writer list plus scoped relist, delta store | replay (volume journal plus matching) + relist | scratch volume ~45 s; internal quiet ~2 s | unknown: home’s matching records dominate | Other users’ writers; journal completeness unproven |
 | (b′) (b) with today’s flat snapshot | adds 3 s load plus save | same | adds ~45 s load | as (b) |
-| (c) Resident fdu monitor plus writer list, feeding the store | milliseconds | milliseconds | milliseconds while running; about 3 GB resident with today’s index | Other users’ writers; downtime needs replay or reconcile |
+| (c) Resident fdu monitor plus writer list, feeding the store | milliseconds | milliseconds | milliseconds while running; today’s watcher re-walks the root on every rename (48% of a core at 476k entries) and holds ~190 B per entry | Other users’ writers; downtime needs replay or reconcile; needs the rename, persistence, and recorder fixes |
 | (d) APFS directory-statistics pruned refresh | ~1 s at 225k entries (measured), plus relists | same | lists changed origins only, no daemon | Private marking interface; slow marking of populated trees; mtime-only changes; APFS only |
 | (e) `searchfs` by ctime | 115–330 s | same | same | Deletes and renamed-directory contents |
 
@@ -816,10 +886,19 @@ baseline, on this host.
 2. **For home scale, pick an accelerator by experiment, not by precedent.**
    - A resident fdu monitor with the open-writer list is public-API, cross-platform
      (complete on Linux), and reuses the opened-root contract.
-     It needs a lighter resident mode than today’s full in-memory index, and an explicit
-     decision to allow background monitoring.
-   - APFS directory statistics are daemonless and see open writers natively, but rest on
-     a private marking interface and leave a persistent flag on user data.
+   - The soak shows it first needs three fixes:
+     - one-sided renames scoped to their parent (`fdu-822y`);
+     - persistence decoupled from the render interval (`fdu-88p7`);
+     - for home scale, a dirty-directory recorder (`fdu-d2iz`) instead of a 190
+       B-per-entry resident index.
+   - It also needs an explicit decision to allow background monitoring.
+   - After the rename fix, the measured event-driven cost is about 1% of a core.
+   - APFS directory statistics are daemonless and see open writers natively.
+     - Verified as a skip signal: 0 misses of size or membership changes, and a 1.04 s
+       refresh against a 9 s walk at 225k entries.
+     - They rest on a private marking interface and leave a persistent flag on user
+       data.
+     - Marking a populated tree is slow and disrupts other I/O.
    - Both need a periodic full sweep as the safety net.
 
 3. **Demote one-shot replay** to bounded roles:
@@ -851,7 +930,9 @@ The epic also tracks two engine fixes the review found: firmlink-free root ident
 | 1 | `fdu-gpqz` (done) | APFS directory statistics, adversarial verification | Privilege, persistence, `fsck`, unset, accounting, pruned refresh at 225k entries | Signal: go with conditions (0 misses; 1.04 s vs 9 s walk; undocumented unset). Totals: no-go |
 | 1a | `fdu-ns3n` | Opt-in gencount-gated walk in the engine | Pruning in the existing bulk walk; marking new directories on discovery; periodic full sweep | No oracle misses on the agent workload; refresh ≤ 20% of the walk at ≥ 1 M entries; a documented marking and unmarking contract |
 | 1b | `fdu-22hd` | In-kernel sizing of unmarked directories | Replicate 1.84 s vs 7.7–9.9 s at 225k; accounting against fdu’s totals | A faster exact summary path with a stated accounting rule |
-| 2 | `fdu-2o00` | Resident soak of `fdu --watch` on agent state B (*pending*) | Resident memory and CPU; misses caught by the writer list vs unexplained | Every stable miss explained by an open writer or another user; steady CPU below 1% of a core |
+| 2 | `fdu-2o00` (done) | Resident soak of `fdu --watch` on agent state B | Resident memory and CPU; misses caught by the writer list vs unexplained | Exact view, but only through root re-walks on every rename (48% of a core); event-only would miss 99.8% of in-place growth, all recovered by the writer list |
+| 2a | `fdu-822y` | Scope one-sided macOS renames in `watch` | Root reconciles per hour and CPU on the same root after the fix, with the writer list added | CPU near 1% of a core; no stable misses against two walks |
+| 2b | `fdu-d2iz` | Resident dirty-directory recorder | Recorder state, CPU, and checkpoint cost on a home-scale root | Tens of KB of state; checkpoint ≤ relist of dirty directories |
 | 3 | `fdu-yj8z` | Home-filter replay cost on the internal volume (1 h, 24 h; directory events) | Size of the matching-record term for home | Replay plus relist ≤ 25% of a home walk |
 | 4 | `fdu-uq1y` | Delta-store prototype | Capture writes only changed roll-ups at 450k and 1.5 M; query time; daily state growth | Capture ≤ walk + 5%; query ≤ 0.2 s; growth bounded |
 | 5 | `fdu-cv15` | Writer list over three live refreshes | Share of changed files in the event set or the writer set | ≥ 99%, remainder attributed to other users |

@@ -1,0 +1,245 @@
+{
+ "experiment": "fdu --watch resident-monitor soak on the busiest agent-state root (~476k entries: 377,273 files/symlinks/others + 98,401 dirs; 40.4 GB allocated), 2026-09-27, macOS 26.5 APFS internal volume, loaded M-series host (load1 7-51, median 15)",
+ "binary": "the installed fdu 0.1.0-dev (Python-package CLI, native extension in-process, notify 8.2.0 FSEvents backend); cache on the external volume; --interval 10s; --view files --format jsonl --full",
+ "method": "W = watcher's last throttled persisted snapshot (copied aside, read back with --cache only) sandwiched between two fresh --cache off walks O1 and O2; W reconstructed from the stream (W0 + 6,182 change records) matched the persisted W on all 377,273 non-directory entries",
+ "accuracy": {
+  "stable_misses_O1_eq_O2_ne_W": 0,
+  "false_positives_W_has_O_lacks": 0,
+  "concurrent_O1_ne_O2": 8,
+  "root_allocated_bytes": {
+   "O1": 40412180480,
+   "W": 40412180480,
+   "O2": 40413229056
+  },
+  "top_level_dirs_with_W_ne_O2": 1,
+  "top_level_W_minus_O2_allocated_bytes": -1048576,
+  "why_accurate": "every FSEvents ItemRenamed (61.5% of raw events here) is an unpaired rename to notify/fdu and escalates to a whole-root reconciliation; the watcher ran one every ~20 s for the whole hour, so it was effectively a full-tree poller and re-stat'd held-open files as a side effect"
+ },
+ "startup": {
+  "seconds_to_initial_report": 60.5,
+  "phases_from_rss_cpu_samples": "parallel cold scan ~7 s (CPU 21.5 s), snapshot save ~4 s, serial revalidation walk ~37 s, JSON render of 225 MB initial files view ~10 s",
+  "rss_kb_after_start": 695248,
+  "snapshot_bytes": 36724375,
+  "lock": "timing lock NOT held at start (queue >5 min); host load ~25"
+ },
+ "steady_state": {
+  "wall_seconds": 3465,
+  "samples": 114,
+  "rss_kb": {
+   "min": 115616,
+   "p25": 379920,
+   "median": 442392.0,
+   "p75": 537168,
+   "max": 836528,
+   "wrapper_baseline_kb": 25792,
+   "time_l_max_rss_bytes": 906182656
+  },
+  "threads": 4,
+  "cpu": {
+   "user_s": 641.64,
+   "sys_s": 1136.45,
+   "real_s": 3722.42,
+   "utilization_of_one_core": 0.478,
+   "per_30s_median": 16.41999999999996,
+   "per_30s_in_windows_with_no_root_reconcile": [
+    0.2600000000000193,
+    0.3699999999999761,
+    0.25,
+    0.27000000000001023,
+    0.27000000000001023
+   ]
+  },
+  "root_reconciles": {
+   "count": 172,
+   "seconds_between": 20.1,
+   "cpu_seconds_each": 9.9,
+   "cpu_us_per_entry_per_pass": 20.9
+  },
+  "stream": {
+   "upsert": 4733,
+   "invalidate": 196,
+   "remove": 1262,
+   "root_invalidations": 174,
+   "subtree_invalidations": 22
+  },
+  "raw_fsevents_10min_parallel_capture": {
+   "events_per_minute": 326.0,
+   "burst_max_per_minute": 1443,
+   "share_with_ItemRenamed": 0.615,
+   "distinct_paths": 2824
+  },
+  "persistence": {
+   "writes": 187,
+   "snapshot_bytes": {
+    "min": 36666668,
+    "median": 36805799,
+    "max": 36819077,
+    "n": 187
+   },
+   "writes_per_minute": 3.238095238095238,
+   "bytes_written_total": 6877386227,
+   "note": "full 36.8 MB snapshot rewrite (77 B/entry) after nearly every reconcile: 6.9 GB written in the hour"
+  },
+  "fseventsd_cpu_seconds_delta": 234.21999999999753,
+  "fseventsd_note": "not attributable: other agents ran FSEvents history replays concurrently (per-30 s median 0.72 s, spikes to 23 s)"
+ },
+ "open_writer_supplement": {
+  "enumeration_ms": {
+   "min": 16.8,
+   "median": 45.2,
+   "max": 7265.0,
+   "n": 116
+  },
+  "open_for_write_under_root_per_sample": {
+   "fds": {
+    "min": 90,
+    "median": 101.0,
+    "max": 123,
+    "n": 114
+   },
+   "files": {
+    "min": 67,
+    "median": 70.0,
+    "max": 76,
+    "n": 114
+   },
+   "pids": {
+    "min": 5,
+    "median": 5.0,
+    "max": 8,
+    "n": 114
+   }
+  },
+  "distinct_paths_over_soak": 118,
+  "deleted_but_open_under_root": 0,
+  "counterfactual_event_only_watcher": {
+   "changed_entries_W0_to_O2": 2883,
+   "grown_in_place": 26,
+   "grown_in_place_held_open": 11,
+   "in_place_growth_bytes": 52871168,
+   "in_place_growth_bytes_in_held_open_files": 52785152,
+   "share_of_in_place_growth_recoverable_by_supplement": 0.9984,
+   "interpretation": "without the rename-triggered root reconciles, in-place growth (99.8% of it in held-open session logs and SQLite/WAL files) would be invisible until close; re-stat of the ~70 enumerated open files (45 ms median) recovers all of it"
+  }
+ },
+ "growth_W0_to_O2": {
+  "allocated_growth_bytes": 120807424,
+  "allocated_growth_in_files_ever_open_for_write": 68014080,
+  "share_of_growth_in_open_files": 0.5629958635654709,
+  "allocated_shrink_bytes": 178585600,
+  "new_files": 1578,
+  "grown_existing_files": 26,
+  "removed_files": 1072,
+  "removed_allocated_bytes": 15413248,
+  "by_top_level_dir_index": [
+   {
+    "dir_index": 32,
+    "allocated_growth": 52543488
+   },
+   {
+    "dir_index": 21,
+    "allocated_growth": 50348032
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 16777216
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 1048576
+   },
+   {
+    "dir_index": 22,
+    "allocated_growth": 45056
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 32768
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 8192
+   },
+   {
+    "dir_index": 7,
+    "allocated_growth": 4096
+   }
+  ],
+  "by_category": [
+   {
+    "category": ".jsonl at depth 5",
+    "allocated_growth": 50348032
+   },
+   {
+    "category": ".pyc at depth 7",
+    "allocated_growth": 25694208
+   },
+   {
+    "category": ".sqlite at depth 1",
+    "allocated_growth": 16777216
+   },
+   {
+    "category": ".pyc at depth 8",
+    "allocated_growth": 16121856
+   },
+   {
+    "category": ".pyc at depth 10",
+    "allocated_growth": 5197824
+   },
+   {
+    "category": ".pyc at depth 9",
+    "allocated_growth": 3100672
+   },
+   {
+    "category": ".sqlite-wal at depth 1",
+    "allocated_growth": 1056768
+   },
+   {
+    "category": ".pyc at depth 11",
+    "allocated_growth": 684032
+   },
+   {
+    "category": "(none) at depth 9",
+    "allocated_growth": 520192
+   },
+   {
+    "category": "(none) at depth 8",
+    "allocated_growth": 253952
+   },
+   {
+    "category": "(none) at depth 7",
+    "allocated_growth": 237568
+   },
+   {
+    "category": "(none) at depth 6",
+    "allocated_growth": 233472
+   }
+  ],
+  "net_allocated_delta_bytes": -73191424,
+  "note": "gross growth 120.8 MB (new files 1,578 mostly .pyc/.py under project worktrees inside the root, plus session .jsonl and SQLite growth) against 178.6 MB shrink/removal; 56% of gross growth and 99.8% of in-place growth was in files held open"
+ },
+ "dirty_directory_recorder_footprint": {
+  "change_records": 5995,
+  "distinct_changed_paths": 3372,
+  "distinct_parent_dirs_touched": 530,
+  "open_files_per_sample": 70
+ },
+ "extrapolation": {
+  "basis": "per-entry costs from this 476k-entry root: resident index ~190 B/entry (116 MB min RSS incl. 26 MB wrapper), reconcile transients push RSS to ~440 MB median / 837 MB peak (~0.9-1.8 KB/entry); reconcile 9.9 CPU s per pass = 21 us/entry (sys-heavy: 64% sys); snapshot 77 B/entry rewritten per persist",
+  "1.5M_entries": {
+   "index_rss_mb": 285,
+   "rss_with_reconcile_transients_mb": "1,300-2,600",
+   "cpu_s_per_root_reconcile": 31,
+   "snapshot_mb_per_write": 116,
+   "verdict": "one rename every 20 s keeps a core >100% busy; the watcher falls behind"
+  },
+  "5M_entries": {
+   "index_rss_mb": 950,
+   "rss_with_reconcile_transients_mb": "4,500-9,000",
+   "cpu_s_per_root_reconcile": 104,
+   "snapshot_mb_per_write": 386,
+   "verdict": "unusable as designed; needs paired renames (or subtree-scoped escalation) and incremental persistence before any resident mode"
+  },
+  "event_only_cost_if_root_escalation_were_fixed": "measured 0.25-0.37 CPU s per 30 s (~1% of a core) in windows with no root reconcile at 326 raw events/min; RSS would sit at the index floor"
+ }
+}

@@ -1,0 +1,913 @@
+{
+ "root_entries": {
+  "O1": {
+   "entries": 377273,
+   "files": 374420,
+   "bytes": 39395978663,
+   "allocated": 40412180480
+  },
+  "O2": {
+   "entries": 377273,
+   "files": 374420,
+   "bytes": 39396437875,
+   "allocated": 40413229056
+  },
+  "W": {
+   "entries": 377273,
+   "files": 374420,
+   "bytes": 39395980105,
+   "allocated": 40412180480
+  },
+  "W0": {
+   "entries": 376767,
+   "files": 373918,
+   "bytes": 39472303065,
+   "allocated": 40486420480
+  },
+  "dirs": {
+   "O1": 98401,
+   "O2": 98401,
+   "W": 98401,
+   "W0": 98396
+  }
+ },
+ "top_level_directories": [
+  {
+   "dir_index": 0,
+   "O2_files": 6248,
+   "O2_bytes": 111137298,
+   "O2_allocated": 126373888,
+   "W_files": 6248,
+   "W_bytes": 111137298,
+   "W_allocated": 126373888,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 1,
+   "O2_files": 24,
+   "O2_bytes": 677103,
+   "O2_allocated": 729088,
+   "W_files": 24,
+   "W_bytes": 677103,
+   "W_allocated": 729088,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 2,
+   "O2_files": 1,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 1,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 3,
+   "O2_files": 7,
+   "O2_bytes": 549,
+   "O2_allocated": 8192,
+   "W_files": 7,
+   "W_bytes": 549,
+   "W_allocated": 8192,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 4,
+   "O2_files": 24,
+   "O2_bytes": 368200,
+   "O2_allocated": 417792,
+   "W_files": 24,
+   "W_bytes": 368200,
+   "W_allocated": 417792,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 5,
+   "O2_files": 24,
+   "O2_bytes": 79389,
+   "O2_allocated": 139264,
+   "W_files": 24,
+   "W_bytes": 79389,
+   "W_allocated": 139264,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 6,
+   "O2_files": 68,
+   "O2_bytes": 13404,
+   "O2_allocated": 282624,
+   "W_files": 68,
+   "W_bytes": 13404,
+   "W_allocated": 282624,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 7,
+   "O2_files": 21,
+   "O2_bytes": 140180829,
+   "O2_allocated": 140247040,
+   "W_files": 21,
+   "W_bytes": 140180829,
+   "W_allocated": 140247040,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 4096,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 8,
+   "O2_files": 173,
+   "O2_bytes": 74533460,
+   "O2_allocated": 74911744,
+   "W_files": 173,
+   "W_bytes": 74533460,
+   "W_allocated": 74911744,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 9,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 10,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 11,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 12,
+   "O2_files": 1,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 1,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 13,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 14,
+   "O2_files": 2,
+   "O2_bytes": 6395,
+   "O2_allocated": 12288,
+   "W_files": 2,
+   "W_bytes": 6395,
+   "W_allocated": 12288,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 15,
+   "O2_files": 128,
+   "O2_bytes": 988971525,
+   "O2_allocated": 1001340928,
+   "W_files": 128,
+   "W_bytes": 988971525,
+   "W_allocated": 1001340928,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 16,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 17,
+   "O2_files": 1155,
+   "O2_bytes": 388204011,
+   "O2_allocated": 390877184,
+   "W_files": 1155,
+   "W_bytes": 388204011,
+   "W_allocated": 390877184,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": -1736704,
+   "O2_minus_W0_files": -152
+  },
+  {
+   "dir_index": 18,
+   "O2_files": 1,
+   "O2_bytes": 129185,
+   "O2_allocated": 131072,
+   "W_files": 1,
+   "W_bytes": 129185,
+   "W_allocated": 131072,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 19,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 20,
+   "O2_files": 1,
+   "O2_bytes": 10231,
+   "O2_allocated": 12288,
+   "W_files": 1,
+   "W_bytes": 10231,
+   "W_allocated": 12288,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 21,
+   "O2_files": 10242,
+   "O2_bytes": 16057193742,
+   "O2_allocated": 16132358144,
+   "W_files": 10242,
+   "W_bytes": 16057120996,
+   "W_allocated": 16131309568,
+   "W_minus_O2_bytes": -72746,
+   "W_minus_O2_allocated": -1048576,
+   "O2_minus_O1_allocated": 1048576,
+   "O2_minus_W0_allocated": 50270208,
+   "O2_minus_W0_files": 19
+  },
+  {
+   "dir_index": 22,
+   "O2_files": 17,
+   "O2_bytes": 707153,
+   "O2_allocated": 737280,
+   "W_files": 17,
+   "W_bytes": 707153,
+   "W_allocated": 737280,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 45056,
+   "O2_minus_W0_files": 1
+  },
+  {
+   "dir_index": 23,
+   "O2_files": 64,
+   "O2_bytes": 394731,
+   "O2_allocated": 536576,
+   "W_files": 64,
+   "W_bytes": 394731,
+   "W_allocated": 536576,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 24,
+   "O2_files": 11,
+   "O2_bytes": 1414598912,
+   "O2_allocated": 1417482240,
+   "W_files": 11,
+   "W_bytes": 1414598912,
+   "W_allocated": 1417482240,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 25,
+   "O2_files": 12,
+   "O2_bytes": 1965123,
+   "O2_allocated": 1990656,
+   "W_files": 12,
+   "W_bytes": 1965123,
+   "W_allocated": 1990656,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 26,
+   "O2_files": 24,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 24,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 27,
+   "O2_files": 8,
+   "O2_bytes": 6148,
+   "O2_allocated": 8192,
+   "W_files": 8,
+   "W_bytes": 6148,
+   "W_allocated": 8192,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 2
+  },
+  {
+   "dir_index": 28,
+   "O2_files": 0,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 0,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 29,
+   "O2_files": 1,
+   "O2_bytes": 0,
+   "O2_allocated": 0,
+   "W_files": 1,
+   "W_bytes": 0,
+   "W_allocated": 0,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 30,
+   "O2_files": 814,
+   "O2_bytes": 6334737,
+   "O2_allocated": 8175616,
+   "W_files": 814,
+   "W_bytes": 6334737,
+   "W_allocated": 8175616,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 31,
+   "O2_files": 2017,
+   "O2_bytes": 21900733,
+   "O2_allocated": 26693632,
+   "W_files": 2017,
+   "W_bytes": 21900733,
+   "W_allocated": 26693632,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 0,
+   "O2_minus_W0_files": 0
+  },
+  {
+   "dir_index": 32,
+   "O2_files": 353292,
+   "O2_bytes": 11377693350,
+   "O2_allocated": 12255985664,
+   "W_files": 353292,
+   "W_bytes": 11377693350,
+   "W_allocated": 12255985664,
+   "W_minus_O2_bytes": 0,
+   "W_minus_O2_allocated": 0,
+   "O2_minus_O1_allocated": 0,
+   "O2_minus_W0_allocated": 38866944,
+   "O2_minus_W0_files": 630
+  }
+ ],
+ "miss_classification": [
+  {
+   "class": "concurrent (O1 != O2): W matches O1",
+   "paths": 5,
+   "abs_allocated_delta_bytes": 0,
+   "top_categories": [
+    {
+     "category": ".sqlite at depth 1",
+     "count": 2
+    },
+    {
+     "category": ".jsonl at depth 5",
+     "count": 2
+    },
+    {
+     "category": ".sqlite-wal at depth 1",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "class": "concurrent (O1 != O2): W matches neither",
+   "paths": 3,
+   "abs_allocated_delta_bytes": 0,
+   "top_categories": [
+    {
+     "category": ".sqlite-wal at depth 1",
+     "count": 2
+    },
+    {
+     "category": ".jsonl at depth 5",
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "writers": {
+  "samples": 116,
+  "distinct_paths_open_for_write_under_root": 118,
+  "distinct_paths_seen_deleted_but_open": 0,
+  "by_category": [
+   {
+    "category": ".jsonl at depth 5",
+    "count": 41
+   },
+   {
+    "category": ".lock at depth 2",
+    "count": 41
+   },
+   {
+    "category": "(none) at depth 4",
+    "count": 7
+   },
+   {
+    "category": ".sqlite at depth 1",
+    "count": 6
+   },
+   {
+    "category": ".sqlite-wal at depth 1",
+    "count": 6
+   },
+   {
+    "category": ".sqlite-shm at depth 1",
+    "count": 6
+   },
+   {
+    "category": "(none) at depth 6",
+    "count": 3
+   },
+   {
+    "category": ".log at depth 2",
+    "count": 2
+   },
+   {
+    "category": "(none) at depth 7",
+    "count": 2
+   },
+   {
+    "category": ".db at depth 2",
+    "count": 1
+   },
+   {
+    "category": ".db-wal at depth 2",
+    "count": 1
+   },
+   {
+    "category": ".db-shm at depth 2",
+    "count": 1
+   }
+  ],
+  "deleted_open_files_per_sample": {
+   "min": 0,
+   "median": 0.0,
+   "max": 0,
+   "n": 116
+  },
+  "deleted_open_alloc_per_sample": {
+   "min": 0,
+   "median": 0.0,
+   "max": 0,
+   "n": 116
+  }
+ },
+ "growth_W0_to_O2": {
+  "allocated_growth_bytes": 120807424,
+  "allocated_growth_in_files_ever_open_for_write": 68014080,
+  "share_of_growth_in_open_files": 0.5629958635654709,
+  "allocated_shrink_bytes": 178585600,
+  "new_files": 1578,
+  "grown_existing_files": 26,
+  "removed_files": 1072,
+  "removed_allocated_bytes": 15413248,
+  "by_top_level_dir_index": [
+   {
+    "dir_index": 32,
+    "allocated_growth": 52543488
+   },
+   {
+    "dir_index": 21,
+    "allocated_growth": 50348032
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 16777216
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 1048576
+   },
+   {
+    "dir_index": 22,
+    "allocated_growth": 45056
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 32768
+   },
+   {
+    "dir_index": null,
+    "allocated_growth": 8192
+   },
+   {
+    "dir_index": 7,
+    "allocated_growth": 4096
+   }
+  ],
+  "by_category": [
+   {
+    "category": ".jsonl at depth 5",
+    "allocated_growth": 50348032
+   },
+   {
+    "category": ".pyc at depth 7",
+    "allocated_growth": 25694208
+   },
+   {
+    "category": ".sqlite at depth 1",
+    "allocated_growth": 16777216
+   },
+   {
+    "category": ".pyc at depth 8",
+    "allocated_growth": 16121856
+   },
+   {
+    "category": ".pyc at depth 10",
+    "allocated_growth": 5197824
+   },
+   {
+    "category": ".pyc at depth 9",
+    "allocated_growth": 3100672
+   },
+   {
+    "category": ".sqlite-wal at depth 1",
+    "allocated_growth": 1056768
+   },
+   {
+    "category": ".pyc at depth 11",
+    "allocated_growth": 684032
+   },
+   {
+    "category": "(none) at depth 9",
+    "allocated_growth": 520192
+   },
+   {
+    "category": "(none) at depth 8",
+    "allocated_growth": 253952
+   },
+   {
+    "category": "(none) at depth 7",
+    "allocated_growth": 237568
+   },
+   {
+    "category": "(none) at depth 6",
+    "allocated_growth": 233472
+   }
+  ]
+ },
+ "stream": {
+  "records_by_op": {
+   "upsert": 4733,
+   "invalidate": 196,
+   "remove": 1262
+  },
+  "root_invalidations": 174,
+  "invalidations_by_depth": {
+   "0": 174,
+   "3": 4,
+   "5": 6,
+   "6": 9,
+   "7": 3
+  },
+  "clock_first": 5,
+  "clock_last": 1489,
+  "changed_paths_by_category": [
+   {
+    "category": ".jsonl at depth 5",
+    "count": 1086
+   },
+   {
+    "category": ".sqlite-wal at depth 1",
+    "count": 534
+   },
+   {
+    "category": ".pyc at depth 7",
+    "count": 514
+   },
+   {
+    "category": ".py at depth 10",
+    "count": 463
+   },
+   {
+    "category": ".pyc at depth 8",
+    "count": 454
+   },
+   {
+    "category": ".pyc at depth 10",
+    "count": 398
+   },
+   {
+    "category": ".sqlite at depth 1",
+    "count": 207
+   },
+   {
+    "category": "(none) at depth 6",
+    "count": 205
+   },
+   {
+    "category": "(none) at depth 9",
+    "count": 189
+   },
+   {
+    "category": "(none) at depth 7",
+    "count": 188
+   },
+   {
+    "category": ".py at depth 9",
+    "count": 181
+   },
+   {
+    "category": ".pyc at depth 9",
+    "count": 156
+   }
+  ]
+ },
+ "resident_cost": {
+  "python_wrapper_note": "the installed fdu is the Python package CLI (native extension in-process); a trivial-root watch measured 25.8 MB RSS as the wrapper baseline",
+  "startup_seconds_to_initial_report": 60.481327,
+  "rss_kb_after_start": 695248,
+  "cputime_after_start": "0:40.84",
+  "startup_rss_samples_kb": [
+   95136,
+   151264,
+   265744,
+   265744,
+   265744,
+   267088,
+   175104,
+   171104,
+   173776,
+   178256,
+   181392,
+   185232,
+   187840,
+   189600,
+   191904,
+   193648,
+   195120,
+   196096,
+   197520,
+   198912,
+   172944,
+   285776,
+   505520,
+   825984,
+   836256
+  ],
+  "snapshot_after_start": "36724375 1790574234",
+  "lock_held_at_start": null,
+  "soak_wall_seconds_sampled": 3465,
+  "rss_kb": {
+   "min": 115616,
+   "median": 442392.0,
+   "max": 836528,
+   "n": 114
+  },
+  "rss_kb_first_last": [
+   115616,
+   521136
+  ],
+  "threads": {
+   "min": 4,
+   "median": 4.0,
+   "max": 4,
+   "n": 114
+  },
+  "watcher_cpu_seconds_total": 1707.03,
+  "watcher_cpu_seconds_at_end": 1769.19,
+  "watcher_cpu_utilization": 0.4926493506493506,
+  "watcher_cpu_per_30s_sample": {
+   "min": 0.25,
+   "median": 16.41999999999996,
+   "max": 19.909999999999997,
+   "n": 113
+  },
+  "fseventsd_cpu_seconds_delta": 234.21999999999753,
+  "fseventsd_cpu_per_30s_sample": {
+   "min": 0.13999999999941792,
+   "median": 0.7200000000011642,
+   "max": 23.299999999999272,
+   "n": 113
+  },
+  "load1": {
+   "min": 7.35,
+   "median": 15.01,
+   "max": 50.95,
+   "n": 114
+  },
+  "time_l": {
+   "real": 3722.42,
+   "user": 641.64,
+   "sys": 1136.45,
+   "maximum resident set size": 906182656,
+   "page reclaims": 873345,
+   "page faults": 23,
+   "voluntary context switches": 9994460,
+   "involuntary context switches": 5225128,
+   "peak memory footprint": 978568560
+  },
+  "persistence": {
+   "writes": 187,
+   "snapshot_bytes": {
+    "min": 36666668,
+    "median": 36805799,
+    "max": 36819077,
+    "n": 187
+   },
+   "writes_per_minute": 3.238095238095238,
+   "bytes_written_total": 6877386227
+  },
+  "stream_records_per_30s": {
+   "min": 0,
+   "median": 28,
+   "max": 936,
+   "n": 113
+  },
+  "root_invalidations_at_end": 173,
+  "writers_enumeration_ms": {
+   "min": 16.8,
+   "median": 45.2,
+   "max": 7265.0,
+   "n": 116
+  },
+  "open_writers_under_root_per_sample": {
+   "fds": {
+    "min": 90,
+    "median": 101.0,
+    "max": 123,
+    "n": 114
+   },
+   "files": {
+    "min": 67,
+    "median": 70.0,
+    "max": 76,
+    "n": 114
+   },
+   "pids": {
+    "min": 5,
+    "median": 5.0,
+    "max": 8,
+    "n": 114
+   }
+  },
+  "end_log": [
+   "endgame begin; watcher pid 64539 alive=yes",
+   "snapshot mtime before O1: 1790577871",
+   "O1 walk seconds=20.361578000 bytes=225335685 exit=0",
+   "snapshot mtime after wait: 1790577887 (changed=yes, waited ~0 s)",
+   "W copied: snapshot mtime=1790577910 size=36805799 stream_bytes=226604706",
+   "O2 walk seconds=24.275298000 bytes=225335795 exit=0",
+   "stopping watcher (SIGTERM to 64539)",
+   "snapshot at stop: before='36805799 1790577935' after='36805799 1790577935' (changed=no)",
+   "watcher alive after TERM: no; time wrapper alive: no",
+   "W extract exit=0 seconds=7.430941000 bytes=225335819"
+  ]
+ },
+ "stream_vs_persisted_W": {
+  "records_applied_up_to_copy": 6182,
+  "non_dir_entries_stream": 377273,
+  "non_dir_entries_persisted": 377273,
+  "identical": 377273,
+  "only_in_stream_view": 0,
+  "only_in_persisted": 0,
+  "attrs_differ": 0,
+  "differ_categories": []
+ }
+}

@@ -41,3 +41,6 @@ summarize.py	architecture/summarize.py	no	f8f6d4bda02b8a13532582bcdec1f3d30d69b4
 summary.txt	architecture/raw/bench-*.tsv	generated: summarize.py output over the sanitized raw/bench-*.tsv, with a provenance header	b952ef59a0acf2ecb8d2da82719c0c127c742420a188c900d543a779fc14a957	-
 volcap.swift	architecture/volcap.swift	no	b16437b3f527424496e4122a0b3b7de797318ad7dfb4940aec344d0e7e07a2a6	b16437b3f527424496e4122a0b3b7de797318ad7dfb4940aec344d0e7e07a2a6
 watch_first.py	architecture/watch_first.py	edited: absolute fdu path -> FDU environment variable; comment added	680012ea44c95e1a0ec3e4affbf71156f21fc0f55af6fa1b0bae96ce9e388130	75deee7875bfb5fc3ce194351a901832ea5e2fac0e8a132c4b0c12197cd6939d
+raw/home-attempt.txt	architecture/raw/home-attempt.txt	sanitized: root paths -> /Users/<u>, the private project label -> 'project'; added after the initial port	04a9942ffbe22b305fc7f0b4e9722172e63b0679b641ba4b42129dd1f4ca3f9c	-
+raw/watch-first.tsv	architecture/raw/watch-first.tsv	sanitized: root paths -> /Users/<u>, the private project label -> 'project'; added after the initial port	c7e44cce94326083ae360ec260c7f8fc1fc70d766eff873ef42e8fb0d4f6abd2	-
+raw/phase4.tsv	architecture/raw/phase4.tsv	sanitized: root paths -> /Users/<u>, the private project label -> 'project'; added after the initial port	95888c09ae9930e275a1488514754c8eae0904ce78a6ea11f873b78a6c8d4527	-
