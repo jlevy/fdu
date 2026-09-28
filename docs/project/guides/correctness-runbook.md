@@ -160,6 +160,47 @@ compiles.
 The macOS half — `~/Library` under TCC, APFS case-insensitivity and cloning, and iCloud
 dataless files that a read can materialize — is tracked separately as `fdu-q098`.
 
+### Last Recorded Run
+
+This run was on 2026-09-28, against release commit `6ec77163a` for 0.2.0. It used the
+`make build` debug binary from a clean worktree of that commit, with its own target
+directory.
+
+**Regime.**
+
+- **Host.** Bare-metal Apple silicon, macOS 26.5.2 (Darwin 25.5.0).
+- **Filesystem.** Internal APFS, which is case-insensitive.
+  The trees were under a short `/private/tmp` path so the socket kind could be built.
+- **Privilege.** Built and compared as a regular user, with no root on either side.
+- **Cache state.** A fresh cache directory for every case.
+
+This run says nothing about the Linux or Windows walk.
+
+**Kinds.** The refusal tree held 14 kinds, and the complete tree 13. Three kinds were
+absent:
+
+- `chardev` and `blockdev`: device nodes need root, which this run did not use.
+- `non-utf8-name`: APFS refuses names that are not valid UTF-8.
+
+The two case-colliding names became one file, as expected on a case-insensitive
+filesystem. `fdu-579b` has not yet decided how hard links are attributed.
+Their result therefore shows only that warm and cold agree, not that either is right.
+
+| Pass | Result |
+| --- | --- |
+| `--refusals-only`, refusal tree | 23 of 23 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants |
+| `warm_cold.py`, complete tree | 23 of 23 served `cache_only` and labelled `stale`; each analysis case’s warm content tier `revalidated`; 0 mismatches |
+| `cross_warm.py`, complete tree | 30 of 30 pairs matched the cold answer, and `analysis.analyze` named the requested set every time; 0 violations |
+
+Each pass was checked by breaking it:
+
+- **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`. Both scripts
+  exited 1. The 17 metadata cases reported `NO-SNAPSHOT`. The 6 analysis cases reported
+  `NOT-WARM(scanned)`, because under `auto` an analysis request writes its own snapshot.
+- **Partial answer stored.** A wrapper answered `--stale-ok` with the cold output
+  relabeled `cache_only`. All 23 cases reported `PARTIAL-STORED`, and `--refusals-only`
+  exited 1.
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->
