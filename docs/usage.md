@@ -363,7 +363,7 @@ analysis record cached, while metadata verification still occurs.
 | Policy | Behavior |
 | --- | --- |
 | `auto` | Read and write where this kind of run gains from it: analysis, `--watch`, and opened indexes, not one-shot metadata reports |
-| `on` | Read where `auto` reads, and write after every complete indexed scan |
+| `on` | Read and write where `auto` does, and also write after one-shot metadata reports |
 | `off` | Neither read nor write fdu cache data |
 
 `--stale-ok` answers from the snapshot without touching the source tree: the answer is

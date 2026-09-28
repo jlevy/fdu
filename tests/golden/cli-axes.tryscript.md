@@ -744,7 +744,13 @@ fdu: invalid --cache "only": answering from the snapshot alone is now --stale-ok
 
 ```console
 $ fdu --cache refresh project
-fdu: invalid --cache "refresh": removed; use on to write the snapshot after every complete run
+fdu: invalid --cache "refresh": removed; use on, which also writes after a one-shot report
+? 2
+```
+
+```console
+$ fdu --cache read-only project
+fdu: invalid --cache "read-only": removed; auto no longer writes after a one-shot metadata report, and off reads nothing
 ? 2
 ```
 

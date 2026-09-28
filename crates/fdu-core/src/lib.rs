@@ -251,7 +251,7 @@ pub enum CachePolicy {
     /// start from a default snapshot by discarding its control tier while loading.
     #[default]
     Auto,
-    /// Read where `Auto` reads, and write after every complete indexed run.
+    /// Read and write where `Auto` does, and also write after a one-shot report.
     ///
     /// The way to leave a current snapshot behind a one-shot report, for a later
     /// [`query::Delivery::stale_ok`] answer or a warm session. A summary that would
@@ -307,11 +307,15 @@ const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 64 * 1024;
 /// With counters on, the release stays inline. A thread's counts reach the totals only
 /// when it exits, so frees on a detached thread would land in a run's report or miss it
 /// depending on timing; counting runs trade the saving for a deterministic record.
+///
+/// On Windows the release stays inline too. `ExitProcess` terminates other threads
+/// without notice, so a release still running at exit can die holding the process heap's
+/// lock while DLL detach code allocates, and the saving was never measured there.
 pub(crate) fn release_index(index: std::sync::Arc<Index>) {
     let Some(index) = std::sync::Arc::into_inner(index) else {
         return;
     };
-    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() {
+    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() || cfg!(windows) {
         return;
     }
     let spawned = std::thread::Builder::new()

@@ -54,6 +54,8 @@ impl Watching {
             .args(selection)
             .arg(tree)
             .env("XDG_CACHE_HOME", cache)
+            // FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+            .env_remove("FDU_CACHE_DIR")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -154,6 +156,7 @@ fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
         .args(args)
         .arg(tree)
         .env("XDG_CACHE_HOME", cache)
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu");
     assert!(

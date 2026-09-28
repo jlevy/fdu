@@ -581,8 +581,8 @@ Metadata-only one-shot reports include current sizes or timestamps, so they must
 every entry; under `auto` they neither load a snapshot, which cannot make that
 verification cheaper, nor write one, which no later report reads.
 Content analysis, `--watch`, and an opened index read, revalidate, and write it.
-`--cache on` also writes after every complete scan, which is how to leave a snapshot for
-a later `--stale-ok` answer.
+`--cache on` also writes after a one-shot report, which is how to leave a snapshot for a
+later `--stale-ok` answer.
 
 Content analysis is where ordinary repeated runs benefit most.
 The first compatible run reads eligible bodies; a later run restores unchanged records
@@ -803,7 +803,7 @@ CACHE BEHAVIOR
   it. A metadata report neither reads nor writes one: checking a snapshot costs as
   much as the scan it would save, and no later report reads it. Content analysis
   and long-lived sessions read, revalidate, and write it. --cache=on also writes
-  after every complete scan, leaving a snapshot for a later --stale-ok answer.
+  after a one-shot report, leaving a snapshot for a later --stale-ok answer.
 
   Content analysis is where repeated-run caching pays most. The first run reads
   eligible file bodies. A compatible later run reuses results for unchanged files

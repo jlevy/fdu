@@ -91,6 +91,8 @@ On 2026-09-28 the same commands were screened again on the integrated stack’s 
 build (`7acface5`: [#137](https://github.com/jlevy/fdu/pull/137) with the merged code
 analysis and presentation work, plus H156), ten runs per arm on the same host.
 The table’s proportions hold.
+The raw samples are in
+[the screen results](../reports/fdu-linux-screens-result-2026-09-28.json).
 
 | Command | Snapshot regime | Linux, fdu | `--cache off` | Snapshot cost |
 | --- | --- | ---: | ---: | ---: |
@@ -181,7 +183,7 @@ A depth-*d* tree needs a roll-up per directory up to depth *d* and the *n* large
 children of each. Each roll-up is still a commutative fold, of everything below the
 directory, so a walk can stream it upward and retain only the directories it will print
 plus the open frames on its way down.
-pdu does exactly this at 3.8 MiB.
+pdu does exactly this at 3.7 MiB.
 
 A retained index, 319 MiB on this tree, is what a *second* question needs: a watch, a
 Python session, an opened root, or a filter changed without rescanning.
@@ -420,8 +422,10 @@ equal to `--cache off`. Re-screened on the integrated stack (2026-09-28, this br
 against the one below it, ten runs per arm in both orders, each run from an empty cache
 directory): `fdu .` 1.72 s → 1.24 s (−27.7%) and the default summary 1.71 s → 1.23 s
 (−27.9%). With the cache off they take 1.27 s and 1.22 s. `--cache on` pays the old cost
-again, 1.73 s, and `--stale-ok` answers in 0.94 s. Afterwards a one-shot tree or summary
-under `auto` has left no cache file, and `--cache on` has left one.
+again, 1.73 s, and `--stale-ok` answers in 0.94 s. The samples are in
+[the screen results](../reports/fdu-linux-screens-result-2026-09-28.json).
+Afterwards a one-shot tree or summary under `auto` has left no cache file, and
+`--cache on` has left one.
 
 ## Next Steps
 

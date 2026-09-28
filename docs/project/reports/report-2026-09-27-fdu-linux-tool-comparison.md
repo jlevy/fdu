@@ -41,26 +41,26 @@ two that were not.
 | Tool | Work class | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **fdu** | indexed tree | **1.25 s** | baseline | **699k** | **2.4** | — | 322.0 MiB |
-| pdu | rendered tree | 1.02 s | −21% | 860k | 2.9 | −23% to −19% | 3.8 MiB |
-| diskus | total only | 1.03 s | −17% | 846k | 2.9 | −20% to −16% | 6.0 MiB |
+| pdu | rendered tree | 1.02 s | −21% | 860k | 2.9 | −23% to −19% | 3.7 MiB |
+| diskus | total only | 1.03 s | −17% | 846k | 2.9 | −20% to −16% | 6.1 MiB |
 | dust | allocated total | 1.63 s | +32% | 537k | 1.8 | +27% to +34% | 446.1 MiB |
 | GNU `du` | total only | 2.53 s | +105% | 346k | 1.2 | +100% to +107% | 1.9 MiB |
 | gdu | rendered tree | 2.57 s | +110% | 341k | 1.2 | +103% to +118% | 565.1 MiB |
 | ncdu | indexed tree | 2.72 s | +120% | 321k | 1.1 | +112% to +123% | 2.0 MiB |
-| dua | total only | 3.82 s | +212% | 229k | 0.78 | +195% to +220% | 14.1 MiB |
+| dua | total only | 3.82 s | +212% | 229k | 0.78 | +195% to +220% | 14.4 MiB |
 
 ### Summary mode
 
 | Tool | Work class | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **fdu** | transient summary | **0.94 s** | baseline | **926k** | **3.2** | — | 9.7 MiB |
-| pdu | rendered tree | 1.02 s | +8% | 860k | 2.9 | +5% to +14% | 3.8 MiB |
-| diskus | total only | 1.04 s | +12% | 840k | 2.9 | +6% to +13% | 6.0 MiB |
+| **fdu** | transient summary | **0.94 s** | baseline | **926k** | **3.2** | — | 9.9 MiB |
+| pdu | rendered tree | 1.02 s | +8% | 860k | 2.9 | +5% to +14% | 3.7 MiB |
+| diskus | total only | 1.04 s | +12% | 840k | 2.9 | +6% to +13% | 6.1 MiB |
 | dust | allocated total | 1.67 s | +76% | 523k | 1.8 | +67% to +81% | 446.2 MiB |
 | GNU `du` | total only | 2.56 s | +162% | 342k | 1.2 | +160% to +172% | 1.9 MiB |
 | gdu | rendered tree | 2.66 s | +185% | 329k | 1.1 | +179% to +187% | 550.1 MiB |
 | ncdu | indexed tree | 2.75 s | +183% | 318k | 1.1 | +180% to +206% | 2.0 MiB |
-| dua | total only | 3.85 s | +303% | 227k | 0.78 | +281% to +324% | 14.1 MiB |
+| dua | total only | 3.85 s | +303% | 227k | 0.78 | +281% to +324% | 14.4 MiB |
 
 Positive percentages mean the peer took more wall time than its immediately adjacent fdu
 run. Files/s divides the subject’s 875,000 regular files by median wall time; GB/s
@@ -82,11 +82,12 @@ The first Linux run reported an identical 57.3 MiB for five different tools.
 The harness now withholds a peak at or below that floor and renders it as “≤ 57 MiB” in
 its own table. The Peak RSS values above for pdu, diskus, GNU `du`, ncdu, dua, and fdu’s
 summary mode were instead measured separately by GNU `time`, a small C launcher whose
-own floor is under 2 MiB, as the median of three runs each.
+own floor is under 2 MiB, as the median of three runs each; the raw values are in
+[the screen results](fdu-linux-screens-result-2026-09-28.json).
 Values above the floor (fdu’s index, dust, gdu) come from the harness.
 
 fdu’s indexed run holds 322 MiB for a million entries: the retained index is the
-product. Summary mode retains nothing and stays under 10 MiB (9.7 MiB, by GNU `time`, on
+product. Summary mode retains nothing and stays under 10 MiB (9.9 MiB, by GNU `time`, on
 the refreshed build).
 
 ## Where the Indexed Gap Comes From
@@ -139,9 +140,10 @@ The kept change removes the 95 ms teardown from every large one-shot report and 
 join a default `fdu PATH` waits on; `cold-scan-index`, which frees its index inside the
 timed region, was the placebo and did not move.
 On the integrated stack, a paired screen of the builds with and without H156 (#137 at
-`326b014b` against `7acface5`, ten runs per arm in both orders) moved the indexed tree
-−7.3% and the default `fdu . --cache off` −7.0%; summary mode, which builds no index,
-moved +0.5%.
+`326b014b` against `7acface5`, ten runs per arm in both orders) moved the pooled mean of
+the indexed tree −6.9% and of the default `fdu . --cache off` −7.2%; summary mode, which
+builds no index, moved +0.5%. Each build’s 20 samples are in
+[the screen results](fdu-linux-screens-result-2026-09-28.json).
 
 H157 cut allocations from 7.0 million to 4.3 million and cleared the rule on the product
 job, but not on the probe job it named beforehand, so it is not kept; a rerun with the

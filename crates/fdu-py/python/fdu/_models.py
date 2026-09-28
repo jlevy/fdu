@@ -80,7 +80,7 @@ class CachePolicy(StrEnum):
 
     ``AUTO`` uses the cache where the kind of request gains from it: a one-shot metadata
     report neither reads nor writes it, while content analysis and an opened index read,
-    revalidate, and write it. ``ON`` also writes after every complete scan, leaving a
+    revalidate, and write it. ``ON`` also writes after a one-shot report, leaving a
     snapshot for a later ``stale_ok`` answer. ``OFF`` neither reads nor writes.
     """
 

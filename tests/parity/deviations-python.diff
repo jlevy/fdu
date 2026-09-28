@@ -193,6 +193,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
   ✓ Retired Policies Name Their Replacement
   ✓ Retired Policies Name Their Replacement
+  ✓ Retired Policies Name Their Replacement
   ✗ A Stale Answer Needs a Policy That Reads
 @@ -1,1 +1,1 @@
 -fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
@@ -1375,7 +1376,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  it. A metadata report neither reads nor writes one: checking a snapshot costs as
 -  much as the scan it would save, and no later report reads it. Content analysis
 -  and long-lived sessions read, revalidate, and write it. --cache=on also writes
--  after every complete scan, leaving a snapshot for a later --stale-ok answer.
+-  after a one-shot report, leaving a snapshot for a later --stale-ok answer.
 -
 -  Content analysis is where repeated-run caching pays most. The first run reads
 -  eligible file bodies. A compatible later run reuses results for unchanged files
