@@ -999,8 +999,12 @@ The results that bear on this plan:
   churning scratch volume and from contention with other `fseventsd` clients on a loaded
   host. Abandoned replays leave no backlog: `fseventsd` stops within about a second.
   A quiet folder on the internal volume replayed a day in 1.8 s.
-- **The device-relative filter must be the firmlink-free path minus the mount point.** A
-  root spelled through `/System/Volumes/Data` matched nothing.
+- **The device-relative filter must be the path relative to the containing volume’s
+  mount point.** For the Data volume that is the firmlink-free path minus
+  `/System/Volumes/Data`; a root spelled through `/System/Volumes/Data` matched only the
+  `HistoryDone` sentinel.
+  `ATTR_CMNEXT_NOFIRMLINKPATH` alone is not the key for other volumes, because
+  `/Volumes` is itself a firmlink.
 - **G12 sweeps should be time-based**, because exposure grows with hours of history.
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)

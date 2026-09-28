@@ -109,10 +109,11 @@ adds measurements that bear on sequencing:
   checkpoint at 452k entries.
 - **Spotlight cannot nominate paths on this host.** Indexing is off on the Data volume.
 
-The review recommends building the checkpoint store (slices 2 and 4) before replay
-(slice 3), and choosing a whole-home accelerator by experiment.
-The candidates are a resident monitor with an open-writer list, and APFS directory
-statistics.
+The review recommends fixing the watcher first (one-sided rename scoping, persistence
+cadence, and the open-writer list), shipping walk-captured checkpoints for small scopes
+(slice 2), and prototyping a resident dirty-directory recorder for home scale.
+Slice 4 follows only if the recorder’s flat load then dominates.
+One-shot replay stays for gap recovery, and APFS directory statistics are parked.
 
 ## User Workflow
 
