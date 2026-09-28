@@ -14,8 +14,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rules and the heads of ignored subtrees.
   The answer is unchanged, on every surface.
   On macOS peak memory fell 69% on a 137k-entry source checkout and 58% on a 77k-entry
-  tree with no `.gitignore`, with wall time no worse; the Linux timing is not yet
-  measured.
+  tree with no `.gitignore`, with wall time no worse.
+  On Linux it took 19% less time and 97% less peak memory (314 to 8.6 MiB) on a
+  million-entry tree with no `.gitignore`, and 7% less time and 23% less memory on the
+  Linux v6.12 source tree.
+- Classifying entries against `.gitignore` is about three times faster on trees with
+  many ignore files, which is what the default `fdu PATH` and `--view summary` do.
+  Matching no longer allocates, and each directory’s governing ignore files are resolved
+  once for all its entries instead of once per entry.
+  On the Linux v6.12 source tree (358 `.gitignore` files) the default tree fell from 590
+  to 211 ms and the default summary from 505 to 167 ms; answers are unchanged.
 
 ## [0.2.0] - 2026-09-28
 
