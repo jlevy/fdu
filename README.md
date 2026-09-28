@@ -8,8 +8,8 @@ without writing a filesystem walker.
 Key features:
 
 - **Speed:** Native Rust and native filesystem APIs make fdu fast.
-  On a one-million-file macOS benchmark, fdu ran at over 8× the speed of standard `du`,
-  about 60% faster than [dust](https://github.com/bootandy/dust), and about 8% faster
+  On a one-million-file macOS benchmark, fdu ran at about 9× the speed of standard `du`,
+  over 50% faster than [dust](https://github.com/bootandy/dust), and about 9% faster
   than [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool,
   which returns only a total.
   On Linux, fdu’s summary mode is the fastest tool measured, while building its full
@@ -416,23 +416,25 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
-On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.0
-seconds**, covering **146k files/s** and **0.50 GB/s**. Measured on an M1 Pro’s internal
-APFS SSD with warm filesystem caches and fdu’s cache disabled, 2026-09-26. These are
-approximate local results under background load.
+On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.4
+seconds**, covering **137k files/s** and **0.47 GB/s**. Measured on an M1 Pro’s internal
+APFS SSD with warm filesystem caches and fdu’s cache disabled (`--cache off`),
+2026-09-28. These are approximate local results under heavy background load.
+The default `fdu PATH` measured the same within 0.1%, because it no longer writes a
+snapshot on a one-shot run.
 
 | Tool | Work returned | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |
 | --- | --- | ---: | ---: | ---: | ---: |
-| **fdu** | reusable exact index and ten-row tree | **6.0 s** | baseline | **146k** | **0.50** |
-| dumac | allocated-byte total only | 6.3 s | **+8%** | 138k | 0.47 |
-| diskus | scalar total only | 8.7 s | +45% | 101k | 0.35 |
-| pdu | rendered tree | 9.2 s | +53% | 95k | 0.32 |
-| dust | allocated-byte total only | 9.6 s | +59% | 91k | 0.31 |
-| dua | scalar total only | 9.7 s | +63% | 90k | 0.31 |
-| gdu | rendered tree | 10.4 s | +64% | 84k | 0.29 |
-| BSD `du` | one total, serial | 49.3 s | +717% | 18k | 0.061 |
-| ncdu | reusable index | 60.6 s | +910% | 14k | 0.049 |
-| GNU `du` | one total, serial | 62.1 s | +955% | 14k | 0.048 |
+| **fdu** | reusable exact index and ten-row tree | **6.4 s** | baseline | **137k** | **0.47** |
+| dumac | allocated-byte total only | 6.9 s | **+9%** | 127k | 0.43 |
+| pdu | rendered tree | 9.2 s | +49% | 96k | 0.33 |
+| diskus | scalar total only | 9.3 s | +42% | 94k | 0.32 |
+| dua | scalar total only | 10.4 s | +61% | 84k | 0.29 |
+| gdu | rendered tree | 10.5 s | +67% | 83k | 0.28 |
+| dust | allocated-byte total only | 11.0 s | +57% | 79k | 0.27 |
+| BSD `du` | one total, serial | 55.6 s | +801% | 16k | 0.054 |
+| ncdu | reusable index | 67.3 s | +968% | 13k | 0.044 |
+| GNU `du` | one total, serial | 68.0 s | +960% | 13k | 0.044 |
 
 Positive percentages mean extra elapsed time: +60% means 1.6× as long as the adjacent
 fdu run. Rates count regular files and their disk space, not file-content reads; `k`
@@ -463,6 +465,8 @@ for the evidence and the work under way.
 Both tables measure fdu with its cache disabled, which is also what the default `fdu .`
 now does for a one-shot report: it used to write a snapshot that no later `fdu .` reads,
 about a fifth of a repeated run on this Linux tree and two fifths of a first one.
+On macOS the saving is memory rather than time: about 100 MiB of peak RSS, with no wall
+change the benchmark could resolve.
 The summary still needs `--no-gitignore`, because reading ignore rules falls back to the
 full index. The
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
@@ -476,10 +480,10 @@ In an exploratory, uncontrolled macOS benchmark on a 137,085-entry tree, a loop 
 constructed the unfiltered Types, Families, Languages, and Documents views 100 times
 from an already line-analyzed index took 12.0 seconds, down from 29.9 seconds—about
 **2.5× faster**, or roughly 120 ms instead of 299 ms per report.
-The code is retained provisionally; a quiet run must still resolve the inconclusive
-major-fault gate before the experiment is accepted.
-These timings predate the integration of the new Code overview, population controls, and
-tree accounting; the combined engine needs a fresh paired measurement.
+The code is retained provisionally; a quiet confirming run on the integrated stack
+(2026-09-28) failed to qualify on a loaded host, so the inconclusive major-fault gate
+still stands. These timings predate the integration of the new Code overview, population
+controls, and tree accounting; the combined engine needs a fresh paired measurement.
 
 This is not a scan or end-to-end full-analysis speedup.
 It applies only to unfiltered requests with multiple metric views; the default
