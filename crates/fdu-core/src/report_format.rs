@@ -4686,10 +4686,7 @@ mod tests {
         assert!(colored.contains(&paint("TOTAL   ", AnsiStyle::new().bold(), true)), "{colored:?}");
         let colored_total = colored.lines().find(|line| line.contains("TOTAL")).expect("total row");
         assert_eq!(colored_total.matches("\x1b[1m").count(), 6, "all primary TOTAL cells are bold");
-        assert!(
-            colored.contains(&detail("(20 gitignored, 10 unknown)", true)),
-            "{colored:?}"
-        );
+        assert!(colored.contains(&detail("(20 gitignored, 10 unknown)", true)), "{colored:?}");
         assert!(!colored.contains("non-gitignored"), "the complement is never repeated");
         let plain = strip_ansi(&colored);
         assert!(
