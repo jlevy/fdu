@@ -5,9 +5,9 @@ title: "P2.1.3: Name-based grouping; probe results reported as detection counts"
 kind: task
 status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - core-models
 dependencies:
@@ -19,7 +19,7 @@ parent_id: is-01m2phzn814exmf4ty5vw6zha0
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:40.870Z
-updated_at: 2026-09-23T08:14:06.572Z
+updated_at: 2026-09-28T16:20:12.818Z
 started_at: 2026-09-20T04:39:46.875Z
 closed_at: 2026-09-23T08:14:06.572Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."

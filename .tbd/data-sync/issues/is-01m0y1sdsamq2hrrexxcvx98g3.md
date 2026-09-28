@@ -5,9 +5,9 @@ title: Add coherent bounded reads and maintained projections
 kind: feature
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - opened-root-rewrite
 dependencies:
@@ -19,7 +19,7 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-08-26T03:28:29.993Z
-updated_at: 2026-08-26T13:52:06.207Z
+updated_at: 2026-09-28T16:19:42.145Z
 started_at: 2026-08-26T12:41:14.531Z
 closed_at: 2026-08-26T13:52:06.206Z
 close_reason: Coherent bounded reads, paging, maintained projections, work accounting, portable diagnostics, and regression coverage implemented; full handoff and cross-target gates pass.

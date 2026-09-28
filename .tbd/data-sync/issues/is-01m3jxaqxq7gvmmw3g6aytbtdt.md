@@ -5,14 +5,14 @@ title: Make watch progress equivalence independent of native event timing
 kind: bug
 status: closed
 priority: 1
-version: 3
-delegate: codex@spud10.local
+version: 4
+delegate: codex
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:26:01.270Z
-updated_at: 2026-09-28T02:51:22.621Z
+updated_at: 2026-09-28T16:20:54.137Z
 started_at: 2026-09-28T02:26:11.323Z
 closed_at: 2026-09-28T02:51:22.620Z
 close_reason: be93cba0 moves exact progress report equivalence to identical scripted watcher streams with Summary coverage, preserves native start/progress/completeness checks, and masks no diagnostics. Full local gate and final macOS/Linux/Windows CI pass; senior review5333468298 confirms no findings.

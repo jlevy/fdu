@@ -5,8 +5,8 @@ title: "PR #122 review R1: install() promises all-or-nothing but only the refusa
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels:
   - skill
   - review
@@ -15,7 +15,7 @@ parent_id: is-01m395mzh0amwcywtecm7m1zkh
 hold: null
 hold_until: null
 created_at: 2026-09-24T07:39:20.651Z
-updated_at: 2026-09-24T07:45:17.582Z
+updated_at: 2026-09-28T16:20:50.620Z
 started_at: 2026-09-24T07:40:43.647Z
 closed_at: 2026-09-24T07:45:17.579Z
 close_reason: "Fixed in b4bdb9b2 on claude/skill-install (PR #122); disposition posted on the PR."

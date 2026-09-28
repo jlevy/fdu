@@ -5,8 +5,9 @@ title: "P1.2.4: Serve content by identity equality; delete satisfies and contain
 kind: task
 status: closed
 priority: 0
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
@@ -19,14 +20,13 @@ dependencies:
   - type: blocks
     target: is-01m2phvqccpjdrbbsr5y3kcydr
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
-created_at: 2026-09-17T05:46:35.114Z
-updated_at: 2026-09-17T23:46:47.856Z
-closed_at: 2026-09-17T23:46:47.856Z
-close_reason: "Shipped in PRs #81/#82 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:35.114Z
+updated_at: 2026-09-28T16:20:01.885Z
 started_at: 2026-09-17T15:02:00.779Z
+closed_at: 2026-09-17T23:46:47.856Z
+close_reason: "Shipped in PRs #81/#82 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 4. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

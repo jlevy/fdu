@@ -5,9 +5,9 @@ title: Publish the directory-query plan as a separate stacked PR
 kind: task
 status: closed
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies:
   - type: blocks
@@ -16,7 +16,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T05:13:06.838Z
-updated_at: 2026-09-20T05:37:57.838Z
+updated_at: 2026-09-28T16:20:35.731Z
 started_at: 2026-09-20T05:14:11.058Z
 closed_at: 2026-09-20T05:37:57.837Z
 close_reason: "Plan-only PR #96 published above #94 with the complete design and bead breakdown; local make check and all 19 GitHub CI checks passed. Implementation remains a separate follow-up."

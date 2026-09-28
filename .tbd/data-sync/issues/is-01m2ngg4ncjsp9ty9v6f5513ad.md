@@ -5,15 +5,15 @@ title: "PR #64 review RN64-6: clear_cache returns bool; only clear_all_caches re
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:48.139Z
-updated_at: 2026-09-16T16:34:15.255Z
+updated_at: 2026-09-28T16:19:55.593Z
 started_at: 2026-09-16T16:25:04.350Z
 closed_at: 2026-09-16T16:34:15.254Z
 close_reason: "258949d: clear_cache returns whether it removed a snapshot; only clear_all_caches returns ClearSummary (snapshots removed, leftovers reclaimed)"

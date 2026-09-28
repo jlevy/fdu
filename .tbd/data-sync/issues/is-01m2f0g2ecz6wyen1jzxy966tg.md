@@ -5,9 +5,9 @@ title: Ignore matcher drops empty segments, so a//b matches a/b where git matche
 kind: bug
 status: in_progress
 priority: 4
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - stack-followup
 dependencies:
@@ -17,7 +17,7 @@ parent_id: is-01m2ebb348tnqdeqn4fddykv4s
 hold: null
 hold_until: null
 created_at: 2026-09-14T03:48:42.060Z
-updated_at: 2026-09-20T05:30:29.116Z
+updated_at: 2026-09-28T16:19:52.821Z
 started_at: 2026-09-20T05:23:44.114Z
 ---
 Found while fixing fdu-bqan (escaped slashes) at 777dc6f on codex/opened-root-inventory-rewrite. Not an escaped form, so left out of that fix.

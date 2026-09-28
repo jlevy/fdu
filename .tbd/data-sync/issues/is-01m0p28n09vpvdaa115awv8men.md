@@ -5,16 +5,16 @@ title: "Correct the ripgrep-walker comparison: the lead is a generated-corpus ar
 kind: bug
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/reports/report-2026-08-23-metadata-walk-floor.md
 assignee: null
-delegate: claude-code@vm
+delegate: claude-code
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0p2gnca1a49bvcytekva6af
 created_at: 2026-08-23T01:02:53.449Z
-updated_at: 2026-09-27T08:27:08.877Z
+updated_at: 2026-09-28T16:19:37.837Z
 closed_at: 2026-08-23T01:16:14.788Z
 close_reason: null
 ---

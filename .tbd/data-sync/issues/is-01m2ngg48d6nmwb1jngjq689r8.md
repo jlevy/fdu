@@ -5,15 +5,15 @@ title: "PR #64 review RN64-5: 'No snapshot written by an earlier build serves 0.
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:47.724Z
-updated_at: 2026-09-16T16:34:19.453Z
+updated_at: 2026-09-28T16:19:57.330Z
 started_at: 2026-09-16T16:25:04.055Z
 closed_at: 2026-09-16T16:34:19.452Z
 close_reason: "79e8241: upgrade note says development builds already carried 0.1.0, so format 4 and the type-rule/.gitignore scope decide; older or other-scope snapshots scan cold once, a format-4 same-scope snapshot can be served"

@@ -5,15 +5,15 @@ title: "PR #98 review R3: 64-bit file index is not unique on ReFS (Dev Drive)"
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@vm
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m32h6dpd97fr5f8db831dn3y
 hold: null
 hold_until: null
 created_at: 2026-09-21T20:35:39.326Z
-updated_at: 2026-09-21T20:57:26.180Z
+updated_at: 2026-09-28T16:20:40.820Z
 started_at: 2026-09-21T20:36:00.249Z
 closed_at: 2026-09-21T20:57:26.180Z
 close_reason: "Fixed in 650b6b08: identity comes from GetFileInformationByHandleEx(FileIdInfo), folded so an identifier that is the 64-bit index zero-extended (NTFS) keeps the index and a nonzero high half is mixed in asymmetrically; a volume that does not answer FileIdInfo keeps the 64-bit index. Fold covered by a pure unit test; the existing windows_reconcile_detects_path_identity_replacement test passed in Windows CI. Not verified on ReFS itself."

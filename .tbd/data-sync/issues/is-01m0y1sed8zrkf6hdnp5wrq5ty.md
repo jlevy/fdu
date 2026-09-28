@@ -5,9 +5,9 @@ title: Add bounded verified multi-path refresh
 kind: feature
 status: closed
 priority: 1
-version: 10
+version: 11
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - opened-root-rewrite
 dependencies:
@@ -19,7 +19,7 @@ dependencies:
     target: is-01m0yhq8268z0qrza1fnwrddfm
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T03:28:30.631Z
-updated_at: 2026-08-26T19:32:50.286Z
+updated_at: 2026-09-28T16:19:47.403Z
 closed_at: 2026-08-26T19:32:50.285Z
 close_reason: Implemented in d5d9151. The complete local handoff gate, cross-platform lint, no-default Clippy, and all 19 GitHub checks in run 33005096442 pass.
 resolution: null

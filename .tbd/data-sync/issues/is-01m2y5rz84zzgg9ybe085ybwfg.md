@@ -5,15 +5,15 @@ title: "PR #92 review R1: remove single-view full-tree copy regression"
 kind: bug
 status: closed
 priority: 1
-version: 4
-delegate: unknown@spud10
+version: 5
+delegate: unknown
 labels: []
 dependencies: []
 parent_id: is-01m2y58e5s7yzpstkcqmheymy5
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:09:33.059Z
-updated_at: 2026-09-20T01:26:29.683Z
+updated_at: 2026-09-28T16:20:33.222Z
 started_at: 2026-09-20T01:20:42.954Z
 closed_at: 2026-09-20T01:26:29.683Z
 close_reason: "Addressed in f8a2ed94 on PR #92: R3 rejects noncanonical snapshot names and counts visited files; R1 owns a single-view walk; R2 covers analyzed mixed-view report semantics."

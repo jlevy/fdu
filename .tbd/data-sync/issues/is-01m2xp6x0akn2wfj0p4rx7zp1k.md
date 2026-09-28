@@ -5,9 +5,9 @@ title: "H125: cache-only completeness uses the candidate count restore already c
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels:
   - performance
   - campaign-2
@@ -16,7 +16,7 @@ parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 hold: null
 hold_until: null
 created_at: 2026-09-19T20:37:32.296Z
-updated_at: 2026-09-19T20:45:08.147Z
+updated_at: 2026-09-28T16:20:30.231Z
 started_at: 2026-09-19T20:37:38.219Z
 closed_at: 2026-09-19T20:45:08.145Z
 close_reason: "exp-124 accepted H125 restore-count completeness: wall -8.03% [-10.79%, -7.79%]; H113 file-count superseded; exp-113 unused"

@@ -5,14 +5,14 @@ title: Clarify README introduction and evaluate watch output invalidation
 kind: task
 status: closed
 priority: 2
-version: 9
-delegate: claude-code@spud10
+version: 10
+delegate: claude-code
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-27T06:08:16.938Z
-updated_at: 2026-09-27T07:07:55.457Z
+updated_at: 2026-09-28T16:20:47.008Z
 started_at: 2026-09-27T06:10:20.708Z
 closed_at: 2026-09-27T07:07:55.456Z
 close_reason: "README introduction and Speed section rewritten and condensed; wall-clock/throughput tables clarified and rounded; Linux rerun setup documented without stale ranking claims. Native-watch duplicate repaint reproduced and tracked as fdu-wb5n; Linux run tracked as fdu-nffc. Commits 2b2a0f44 and 0b75a79b pushed to PR #132. Full make check, 335 benchmark tests, docs formatting, shell syntax checks, and all required CI passed. Task-owned smoke environments relocated to external scratch and imports verified; configurable paths tracked as fdu-fihm."

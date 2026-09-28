@@ -5,13 +5,13 @@ title: Flush capture publishes retained overflow before acknowledging the barrie
 kind: bug
 status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: codex@spud10
+delegate: codex
 labels: []
 dependencies: []
 created_at: 2026-09-23T02:11:17.750Z
-updated_at: 2026-09-23T08:14:06.803Z
+updated_at: 2026-09-28T16:20:43.209Z
 closed_at: 2026-09-23T08:14:06.803Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
 resolution: null

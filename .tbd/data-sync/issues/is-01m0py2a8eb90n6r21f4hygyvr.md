@@ -5,8 +5,8 @@ title: "Content-tier instance of H86: key roll-ups by EntryId and defer to one b
 kind: task
 status: in_progress
 priority: 1
-version: 11
-delegate: unknown@spud10
+version: 12
+delegate: unknown
 labels:
   - performance
   - campaign-2
@@ -18,7 +18,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-23T09:08:45.960Z
-updated_at: 2026-09-19T07:25:31.766Z
+updated_at: 2026-09-28T16:19:38.546Z
 started_at: 2026-09-19T06:07:37.656Z
 ---
 The campaign plan's Phase C 'fdu-cq7t follow-on', which had no bead. H94 (exp-064/065) made ContentIndex::merge_ancestors cheap; this deletes it: key roll-ups by EntryId and compute them in one bottom-up pass, the shape that won -51.9% on snapshot load (4cc157d). Structural track: one composite experiment, differential oracle (content digest) plus pre-registered targets, measured on a dense real subject (cargo-registry-src is sparse-safe at 0.92 but only 5.8k entries here; exp-065's Linux subject was 13k). Plan against the warm number: content-cache-hit -25.78% was the transferable result.

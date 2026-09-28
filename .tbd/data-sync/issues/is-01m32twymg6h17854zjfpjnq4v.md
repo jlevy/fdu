@@ -5,15 +5,15 @@ title: "PR #99 review R2: panic message offers an opt-out that path deliberately
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@vm
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m32h6ea5cf5dd7rzf7ea0jdh
 hold: null
 hold_until: null
 created_at: 2026-09-21T20:35:41.327Z
-updated_at: 2026-09-21T20:57:27.128Z
+updated_at: 2026-09-28T16:20:37.946Z
 started_at: 2026-09-21T20:36:00.263Z
 closed_at: 2026-09-21T20:57:27.128Z
 close_reason: "Fixed in bf8f6241: wait helpers split by whether the watch is established. establish_watch honours the opt-out; wait_established (unit) and wait_for (integration) return the ops/change directly and on silence panic that the watch was established so this is a lost event, with no opt-out offered. The dead else-return arms are gone. Verified by mutation: keeping the warm-up and writing the subject elsewhere makes created_files_arrive_as_verified_upserts panic at watch.rs:1157 with the new message after 60s."

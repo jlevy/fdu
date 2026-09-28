@@ -5,16 +5,16 @@ title: "PR #120 review R-1: no test for a drawing run whose stdout closes early 
 kind: bug
 status: closed
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m38zd0fgqycxzrgtyps04zsx
 hold: null
 hold_until: null
 created_at: 2026-09-24T05:50:13.247Z
-updated_at: 2026-09-24T05:56:04.835Z
+updated_at: 2026-09-28T16:20:41.158Z
 started_at: 2026-09-24T05:50:16.002Z
 closed_at: 2026-09-24T05:56:04.835Z
 close_reason: "Fixed in f636e583 on claude/progress-indicator-review-fixes; coordinator merges into #120"

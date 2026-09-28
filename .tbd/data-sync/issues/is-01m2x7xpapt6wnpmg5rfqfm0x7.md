@@ -5,9 +5,9 @@ title: "H123: opened-root or refresh product path vs one-shot"
 kind: task
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels:
   - performance
   - campaign-2
@@ -17,7 +17,7 @@ parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 hold: null
 hold_until: null
 created_at: 2026-09-19T16:27:50.485Z
-updated_at: 2026-09-19T18:33:03.480Z
+updated_at: 2026-09-28T16:20:28.029Z
 started_at: 2026-09-19T18:04:38.610Z
 closed_at: 2026-09-19T18:33:03.479Z
 close_reason: "Confirmed exp-119: product query::report 1.7ms versus default-tree 2078ms (~1222x) on system-private-frameworks. Probe index-second-report kept. No serving-policy change and no CLI flag. Not a snapshot load on fdu PATH."

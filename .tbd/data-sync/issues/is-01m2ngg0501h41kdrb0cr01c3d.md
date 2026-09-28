@@ -5,8 +5,8 @@ title: "PR #64 review RN64-1: Memory limitation claims fdu peaks above dust; the
 kind: bug
 status: closed
 priority: 1
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels:
   - release
 dependencies: []
@@ -14,7 +14,7 @@ parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:43.519Z
-updated_at: 2026-09-16T16:34:14.622Z
+updated_at: 2026-09-28T16:19:56.617Z
 started_at: 2026-09-16T16:25:02.812Z
 closed_at: 2026-09-16T16:34:14.621Z
 close_reason: "031554d: memory limitation in both documents restated from the 2026-09-16 release-candidate comparison (fdu ~285 MiB vs dumac 29, dua 21, dust 641 MiB; --no-gitignore --view summary 4.876 s at 15.0 MiB vs default summary 4.942 s at 285.7 MiB), fdu-if7o as a range with its mechanism, report cited, no pdu figure"

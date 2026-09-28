@@ -5,9 +5,9 @@ title: Add progressive parent-first discovery, budget, and priority
 kind: feature
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - opened-root-rewrite
 dependencies:
@@ -19,7 +19,7 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-08-26T03:28:29.671Z
-updated_at: 2026-08-26T12:40:13.587Z
+updated_at: 2026-09-28T16:19:45.639Z
 started_at: 2026-08-26T12:05:27.833Z
 closed_at: 2026-08-26T12:40:13.586Z
 close_reason: Progressive discovery, exact budget/completeness state, priority scheduling, shared admission, and deterministic coverage are implemented and validated.

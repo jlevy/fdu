@@ -5,15 +5,15 @@ title: "PR #86 review R7: first-hour analyze should not require the release chec
 kind: task
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgak5bbbfm5y4pp08w8ztx
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:56.652Z
-updated_at: 2026-09-18T05:50:20.937Z
+updated_at: 2026-09-28T16:20:24.025Z
 started_at: 2026-09-18T05:45:13.600Z
 closed_at: 2026-09-18T05:50:20.937Z
 close_reason: "Fixed on PR #86 in d743e756"

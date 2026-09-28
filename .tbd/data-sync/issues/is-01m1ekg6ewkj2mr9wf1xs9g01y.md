@@ -5,9 +5,9 @@ title: Differentially profile residual one-shot baseline mutation work
 kind: task
 status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - profiling
@@ -16,7 +16,7 @@ parent_id: is-01m1dtr903vj783j9ajaxfnczf
 hold: null
 hold_until: null
 created_at: 2026-09-01T13:45:52.859Z
-updated_at: 2026-09-01T14:10:14.681Z
+updated_at: 2026-09-28T16:19:48.821Z
 started_at: 2026-09-01T13:45:55.744Z
 closed_at: 2026-09-01T14:10:14.679Z
 close_reason: "H106 ruled out revision bookkeeping by source comparison and causal publication by a 12-pair producer-only diagnostic: component +0.68% (95% CI -1.04% to +2.13%). Raw counter-disabled profiles also showed the standard profile command is now distorted by per-batch elapsed timers, so the next work is reproducible counter-disabled attribution before any larger structural experiment."

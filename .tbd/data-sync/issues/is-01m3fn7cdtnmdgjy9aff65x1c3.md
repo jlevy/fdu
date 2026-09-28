@@ -5,14 +5,14 @@ title: Evaluate code SLOC accuracy against established counters
 kind: task
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-26T20:06:39.289Z
-updated_at: 2026-09-26T20:12:40.403Z
+updated_at: 2026-09-28T16:20:43.560Z
 started_at: 2026-09-26T20:06:58.943Z
 closed_at: 2026-09-26T20:12:40.389Z
 close_reason: Completed 30 manually classified adversarial fixtures and exact-file comparison over 107 real sources with fdu0.1.0/Tokei14. Evidence and findings prepared for research brief. Confirmed parser bugs tracked in fdu-ov8o, fdu-f1m3, fdu-lr38. Adjudicated large scan.rs discrepancy as Tokei character-literal bug; aggregate disagreement is not an accuracy score.

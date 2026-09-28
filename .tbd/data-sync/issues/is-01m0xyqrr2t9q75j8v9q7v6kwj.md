@@ -5,13 +5,13 @@ title: "Address review: PR #48 — opened-root inventory design"
 kind: task
 status: closed
 priority: 1
-version: 21
+version: 22
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/48
     at: 2026-08-26T02:35:58.042Z
-delegate: codex@spud10.local
+delegate: codex
 labels: []
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
@@ -36,7 +36,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-08-26T02:35:09.952Z
-updated_at: 2026-08-26T03:08:38.859Z
+updated_at: 2026-09-28T16:19:43.903Z
 started_at: 2026-08-26T02:36:24.890Z
 closed_at: 2026-08-26T03:08:38.858Z
 close_reason: "All 15 review findings and both suggestions addressed in c4716ec, tracked child-by-child, published on PR #48, and validated by the complete local handoff gate and all-green final CI."

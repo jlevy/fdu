@@ -5,15 +5,15 @@ title: "PR #91 review R2: cover streamed sidecar rollback after a valid prefix"
 kind: task
 status: closed
 priority: 2
-version: 5
-delegate: unknown@spud10
+version: 6
+delegate: unknown
 labels: []
 dependencies: []
 parent_id: is-01m2y58e5s7yzpstkcqmheymy5
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:09:32.276Z
-updated_at: 2026-09-20T01:50:13.862Z
+updated_at: 2026-09-28T16:20:30.599Z
 started_at: 2026-09-20T01:10:13.063Z
 closed_at: 2026-09-20T01:50:13.862Z
 close_reason: Senior review fixes are reviewed, committed, and pushed on PR91 870bdcfb / PR92 937f9445. All required CI checks pass on both exact heads. Final finding dispositions are posted. Parent fdu-30ns retains local full checks blocked by host StorageFull.

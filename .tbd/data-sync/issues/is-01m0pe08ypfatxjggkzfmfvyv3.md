@@ -5,13 +5,13 @@ title: "Revalidate PR #38 (exp-064 content tier) against current main"
 kind: task
 status: closed
 priority: 1
-version: 4
+version: 5
 assignee: null
-delegate: claude-code@vm
+delegate: claude-code
 labels: []
 dependencies: []
 created_at: 2026-08-23T04:28:01.878Z
-updated_at: 2026-09-27T08:27:08.896Z
+updated_at: 2026-09-28T16:19:38.195Z
 closed_at: 2026-08-23T05:18:30.312Z
 close_reason: "PR #38 taken over and revalidated. exp-064 reproduces; exp-065 records the cross-subject result; the subject record now carries provenance."
 ---

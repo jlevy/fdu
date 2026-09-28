@@ -5,15 +5,15 @@ title: "PR #86 review R6: pin watch grammar and SIGINT to the simulation revisio
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgak5bbbfm5y4pp08w8ztx
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:56.002Z
-updated_at: 2026-09-18T05:50:20.930Z
+updated_at: 2026-09-28T16:20:18.306Z
 started_at: 2026-09-18T05:45:13.591Z
 closed_at: 2026-09-18T05:50:20.930Z
 close_reason: "Fixed on PR #86 in d743e756"

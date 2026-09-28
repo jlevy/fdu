@@ -5,15 +5,15 @@ title: "PR #99 review R1: make check as root fails as scattered panics; AGENTS.m
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@vm
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m32h6ea5cf5dd7rzf7ea0jdh
 hold: null
 hold_until: null
 created_at: 2026-09-21T20:35:40.675Z
-updated_at: 2026-09-21T20:57:26.670Z
+updated_at: 2026-09-28T16:20:39.154Z
 started_at: 2026-09-21T20:36:00.258Z
 closed_at: 2026-09-21T20:57:26.670Z
 close_reason: "Fixed in bf8f6241 on codex/release-ignore-correctness: a permission-bits Makefile preflight probes a mode-000 file the way the tests do and fails once with one message naming FDU_TEST_ALLOW_NO_PERMISSION_BITS=1; rust-test, lib-only and msrv depend on it. Verified as root: fails with the message, passes with the opt-out; scripts/check-uv-version.test.mjs still passes. AGENTS.md gains a Test Host Preconditions section naming both variables."

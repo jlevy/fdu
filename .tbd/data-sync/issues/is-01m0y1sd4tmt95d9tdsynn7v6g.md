@@ -5,9 +5,9 @@ title: Add the shared OpenedIndex owner and joined lifecycle
 kind: feature
 status: closed
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - opened-root-rewrite
 dependencies:
@@ -25,7 +25,7 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-08-26T03:28:29.336Z
-updated_at: 2026-08-26T12:05:03.188Z
+updated_at: 2026-09-28T16:19:46.699Z
 started_at: 2026-08-26T11:34:17.152Z
 closed_at: 2026-08-26T12:05:03.187Z
 close_reason: Added the direct shared OpenedIndex owner with applicable live OpenOptions, unique session identity, typed closed and worker failures, cancellation, deterministic concurrent and idempotent joined shutdown, final-reference fallback, and per-owner lifecycle test barriers. Existing free open remains unchanged. Focused tests, make check, and make cross-lint pass.

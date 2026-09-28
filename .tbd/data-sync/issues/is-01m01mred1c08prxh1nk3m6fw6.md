@@ -5,9 +5,9 @@ title: Probe --no-oracle mode and engine-scoped counters
 kind: task
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/research/research-2026-08-15-consumer-structural-headroom.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - perf
   - campaign-2
@@ -16,7 +16,7 @@ dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-08-15T02:42:02.273Z
-updated_at: 2026-09-01T14:25:40.659Z
+updated_at: 2026-09-28T16:19:36.659Z
 started_at: 2026-09-01T14:13:17.116Z
 closed_at: 2026-09-01T14:25:40.657Z
 close_reason: Added an explicitly labelled --no-oracle probe mode and independent profile counter/oracle switches; timing rejects attribution-only output while legacy verified controls remain valid. Engine-scoped counter deltas were already captured at component boundaries. Focused Rust tests, all 221 performance-harness tests, schema/ledger/report checks, a 23,663-sample clean profile, and a default compatibility capture pass.

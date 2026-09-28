@@ -5,9 +5,9 @@ title: "Windows revalidation misses a same-size rewrite that keeps mtime: no cha
 kind: bug
 status: closed
 priority: 1
-version: 10
+version: 11
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - release
   - cache
@@ -18,7 +18,7 @@ parent_id: is-01m2pmram44dgp78vm6xq4w7k7
 hold: null
 hold_until: null
 created_at: 2026-09-17T15:07:19.250Z
-updated_at: 2026-09-23T08:14:06.898Z
+updated_at: 2026-09-28T16:20:16.922Z
 started_at: 2026-09-20T05:10:48.766Z
 closed_at: 2026-09-23T08:14:06.898Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."

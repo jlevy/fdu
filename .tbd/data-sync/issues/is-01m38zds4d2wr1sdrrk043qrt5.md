@@ -5,16 +5,16 @@ title: "PR #120 review R-2: pty test skips when the binary is missing and leaks 
 kind: bug
 status: closed
 priority: 3
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m38zd0fgqycxzrgtyps04zsx
 hold: null
 hold_until: null
 created_at: 2026-09-24T05:50:13.644Z
-updated_at: 2026-09-24T05:56:04.844Z
+updated_at: 2026-09-28T16:20:49.160Z
 started_at: 2026-09-24T05:50:16.008Z
 closed_at: 2026-09-24T05:56:04.844Z
 close_reason: "Fixed in f636e583 on claude/progress-indicator-review-fixes; coordinator merges into #120"

@@ -5,14 +5,14 @@ title: "Spike: real-root FSEvents cached refresh against full-scan oracle"
 kind: task
 status: closed
 priority: 1
-version: 5
-delegate: claude-code@spud10
+version: 6
+delegate: claude-code
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:00:54.990Z
-updated_at: 2026-09-28T02:36:06.198Z
+updated_at: 2026-09-28T16:20:58.682Z
 started_at: 2026-09-28T02:02:02.625Z
 closed_at: 2026-09-28T02:36:06.196Z
 close_reason: "Research spike completed in commit 494169b8 / PR 131. Full make check, make cross-lint, focused probe tests, strict Python checks, and all applicable PR CI checks passed. Prior-art audit and sanitized real-root and 26-hour replay evidence committed. Production acceptance remains unproven: busy-root conservative scopes erase speed benefit and all 16 next-day trials time out before HistoryDone. Remaining implementation and replay-completion investigation stay open under fdu-uwhl."

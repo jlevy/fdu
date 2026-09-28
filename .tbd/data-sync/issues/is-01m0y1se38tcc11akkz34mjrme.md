@@ -5,9 +5,9 @@ title: Add the bounded commit journal and blocking changes poll
 kind: feature
 status: closed
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - opened-root-rewrite
 dependencies:
@@ -19,7 +19,7 @@ dependencies:
     target: is-01m0yhq8268z0qrza1fnwrddfm
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 created_at: 2026-08-26T03:28:30.311Z
-updated_at: 2026-08-26T14:12:34.856Z
+updated_at: 2026-09-28T16:19:47.751Z
 closed_at: 2026-08-26T14:12:34.855Z
 close_reason: Bounded exact change polling, cursor validation, idle/reset recovery, close wakeup, and deterministic concurrency coverage implemented; make check passes.
 resolution: null

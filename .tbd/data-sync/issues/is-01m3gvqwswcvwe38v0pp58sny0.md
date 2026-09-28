@@ -5,9 +5,9 @@ title: Six-hour cross-platform performance iteration from current main
 kind: task
 status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - campaign-2
@@ -20,7 +20,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-27T07:19:46.233Z
-updated_at: 2026-09-27T09:34:22.498Z
+updated_at: 2026-09-28T16:20:56.922Z
 started_at: 2026-09-27T07:19:56.353Z
 closed_at: 2026-09-27T09:34:22.486Z
 close_reason: "Completed the bounded iteration in PR #137. Astra-guided H152 added an exact report oracle; H153 kept a platform-neutral one-pass metric resolution cut with Darwin wall -47.01% and component -59.94%. Rejected the retained-vector variant for +29.58% minor faults. Published exp-158/159 and refreshed all evidence. make check, make cross-lint, and the full GitHub Linux/macOS/Windows matrix pass. Follow-ups fdu-wbhe (Linux replication) and fdu-83wn (post-H153 profile) remain open."

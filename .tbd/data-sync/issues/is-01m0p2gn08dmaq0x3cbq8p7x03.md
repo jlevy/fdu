@@ -5,14 +5,14 @@ title: Re-verify the metadata-walk physics evidence against the post-split crate
 kind: task
 status: closed
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/reports/report-2026-08-23-metadata-walk-floor.md
 assignee: null
-delegate: claude-code@vm
+delegate: claude-code
 labels: []
 dependencies: []
 created_at: 2026-08-23T01:07:15.592Z
-updated_at: 2026-09-27T08:27:08.887Z
+updated_at: 2026-09-28T16:19:37.439Z
 closed_at: 2026-08-23T01:16:05.702Z
 close_reason: null
 ---

@@ -5,9 +5,9 @@ title: "S1b: batch-shaped observations to remove the producer's per-entry PathBu
 kind: task
 status: closed
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - campaign-2
 dependencies: []
@@ -15,7 +15,7 @@ parent_id: is-01m01mqq3cqs8ae87qd2d3rydm
 hold: null
 hold_until: null
 created_at: 2026-08-14T15:56:24.105Z
-updated_at: 2026-09-01T18:30:39.138Z
+updated_at: 2026-09-28T16:19:35.886Z
 started_at: 2026-09-01T15:20:04.362Z
 closed_at: 2026-09-01T18:30:39.125Z
 close_reason: "Completed by the detached directory-group bootstrap: workers publish one parent path with component-only children before descendants become claimable; controls carry one verified fixed operation per directory. Differential worker-count tests, controls fixtures, allocation evidence, and the first exact mutation prove the route."

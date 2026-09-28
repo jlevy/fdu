@@ -5,9 +5,9 @@ title: "H124: first-pass analyze I/O type/size gate or read-ahead"
 kind: task
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels:
   - performance
   - campaign-2
@@ -17,7 +17,7 @@ parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 hold: null
 hold_until: null
 created_at: 2026-09-19T16:27:51.095Z
-updated_at: 2026-09-19T18:50:43.650Z
+updated_at: 2026-09-28T16:20:28.761Z
 started_at: 2026-09-19T18:35:08.825Z
 closed_at: 2026-09-19T18:50:43.649Z
 close_reason: "exp-121 rejected: every admitted open required for lines; skippable share under 1% wall; read calls already one data chunk per file; no engine change"

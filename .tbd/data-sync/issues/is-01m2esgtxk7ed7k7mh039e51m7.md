@@ -5,9 +5,9 @@ title: "Release note: the type_rules_fingerprint change cold-rescans every cache
 kind: task
 status: closed
 priority: 3
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - stack-followup
   - release
@@ -16,7 +16,7 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-09-14T01:46:47.090Z
-updated_at: 2026-09-16T18:16:55.943Z
+updated_at: 2026-09-28T16:19:51.298Z
 started_at: 2026-09-16T18:06:12.439Z
 closed_at: 2026-09-16T18:16:55.943Z
 close_reason: "PR #64 merged at a74dade1f90d1110e9a5bc3576d66f1ece10d90a with the final 0.1.0 release notes and upgrade guidance; all 19 CI jobs passed."

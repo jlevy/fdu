@@ -5,16 +5,16 @@ title: "Consolidate leftover 0.1.0 PRs #84-#88 into a 3-PR stack"
 kind: task
 status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2s0tq4ppsygrs129nw1m86n
 hold: null
 hold_until: null
 created_at: 2026-09-18T18:19:03.123Z
-updated_at: 2026-09-27T08:15:13.058Z
+updated_at: 2026-09-28T16:20:25.150Z
 started_at: 2026-09-18T18:19:18.098Z
 closed_at: 2026-09-18T18:28:48.267Z
 close_reason: "Leftover 0.1.0 PRs collapsed to three: #84 absorbed #88, #87 absorbed #85 (kept #87 CHANGELOG watch wording), #86 left as landing page. CI green on survivors. Nothing merged to main."

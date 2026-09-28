@@ -5,14 +5,14 @@ title: Research a consistent presentation design system and performance footer
 kind: task
 status: closed
 priority: 2
-version: 4
-delegate: codex@spud10.local
+version: 5
+delegate: codex
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-26T23:56:40.888Z
-updated_at: 2026-09-27T00:37:12.146Z
+updated_at: 2026-09-28T16:20:52.733Z
 started_at: 2026-09-26T23:56:57.850Z
 closed_at: 2026-09-27T00:37:12.133Z
 close_reason: "Published presentation research, controlled evidence, and implementation follow-ups in PR #130 at 5b41882d. Reviewed documentation and evidence with no blocking findings. Full local make check and all required CI jobs passed. External scratch, build/cache/environment routing verified; task mktemp wrapper prevents macOS default-temp fallback."

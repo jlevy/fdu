@@ -5,9 +5,9 @@ title: Add removal-aware control state and fixed all/unignored reducers
 kind: feature
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - opened-root-rewrite
 dependencies:
@@ -17,7 +17,7 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-08-26T03:28:28.613Z
-updated_at: 2026-08-26T10:59:02.889Z
+updated_at: 2026-09-28T16:19:41.048Z
 started_at: 2026-08-26T10:00:35.511Z
 closed_at: 2026-08-26T10:59:02.887Z
 close_reason: Implemented bounded exact .gitignore control state, atomic reclassification, fixed all/unignored reducers, producer integration, snapshot v3 persistence, feature-matrix gates, and MetaBrowser fixture coverage.

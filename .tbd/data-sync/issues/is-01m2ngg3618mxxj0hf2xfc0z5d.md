@@ -5,15 +5,15 @@ title: "PR #64 review RN64-3: release-process.md both freezes the notes before t
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:46.623Z
-updated_at: 2026-09-16T16:34:20.432Z
+updated_at: 2026-09-28T16:19:54.189Z
 started_at: 2026-09-16T16:25:03.439Z
 closed_at: 2026-09-16T16:34:20.431Z
 close_reason: "fe45170: one procedure in Tag the Release Commit step 1 before tagging: derive $RELEASE/notes.md (strip comments, flowmark --width 0), require exactly the footer comment, whitespace-only difference, and 0 <br> from the read-only gfm render; Announce uses the derived file. Verified: 97 <br> before, 0 after; no release created"

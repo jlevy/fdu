@@ -5,16 +5,16 @@ title: Verify unchanged defaults, directory formats, surface parity, and stacked
 kind: task
 status: closed
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:40.650Z
-updated_at: 2026-09-27T07:48:21.246Z
+updated_at: 2026-09-28T16:20:32.154Z
 started_at: 2026-09-20T06:16:21.022Z
 closed_at: 2026-09-27T07:48:21.232Z
 close_reason: "Directory-query implementation shipped in PR #117 and its verification is now complete against the accepted current contract. The original unchanged depth-2/directory-only presentation requirement was superseded by the owner-approved analysis/presentation plan. Full local check targets passed after adopting the reviewed Linux-owned four-line parity refresh; 185 goldens, 25 classified parity differences, and 2,267 path-independence cases passed. All 19 CI jobs passed at implementation 44f106ae in run 36303716655. Predicate and performance questions remain separate open follow-ups under fdu-65x1."

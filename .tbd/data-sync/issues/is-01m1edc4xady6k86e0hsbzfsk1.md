@@ -5,9 +5,9 @@ title: Compact optional fixed-partition storage
 kind: task
 status: closed
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - experiment
@@ -16,7 +16,7 @@ parent_id: is-01m1dtr903vj783j9ajaxfnczf
 hold: null
 hold_until: null
 created_at: 2026-09-01T11:58:48.745Z
-updated_at: 2026-09-01T12:16:03.637Z
+updated_at: 2026-09-28T16:19:49.170Z
 started_at: 2026-09-01T11:58:57.120Z
 closed_at: 2026-09-01T12:16:03.636Z
 close_reason: "Rejected exp-084 after the pre-registered gate: exact compact storage removed 56 requested bytes per entry and improved default-tree 2.628% (95% CI -3.172% to -1.188%) with 18.159% lower RSS, but missed the required 3% wall threshold and cold-scan-index was inconclusive. The 260-line spike was reverted and recorded."

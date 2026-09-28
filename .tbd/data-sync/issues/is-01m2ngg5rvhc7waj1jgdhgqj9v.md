@@ -5,15 +5,15 @@ title: "PR #64 review RN64-9: notes omit symlinks never followed, hard links cou
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:49.274Z
-updated_at: 2026-09-16T16:34:20.117Z
+updated_at: 2026-09-28T16:19:58.006Z
 started_at: 2026-09-16T16:25:05.251Z
 closed_at: 2026-09-16T16:34:20.116Z
 close_reason: "ea30d7a: allocated bytes by default, symlinks listed but never followed and adding nothing to totals, hard links counted once per path (fdu-579b open); verified in source and on a scratch tree"

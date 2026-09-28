@@ -5,14 +5,14 @@ title: Revise cross-process FSEvents replay design and validate with a committed
 kind: task
 status: closed
 priority: 1
-version: 4
-delegate: claude-code@spud10
+version: 5
+delegate: claude-code
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-26T23:50:04.998Z
-updated_at: 2026-09-27T00:45:38.714Z
+updated_at: 2026-09-28T16:20:53.800Z
 started_at: 2026-09-26T23:50:39.200Z
 closed_at: 2026-09-27T00:45:38.704Z
 close_reason: "Completed in PR #131 (d607d489): reviewed reproducible cross-process probe, explicit opt-in journal freshness contract, reuse of watch build feature, and additional multi-root hour/day disk-history proposal. Full local make check, cross-lint, probe tests, and all CI checks passed. Production replay, long-gap acceptance, and end-to-end large-tree latency remain separately tracked."

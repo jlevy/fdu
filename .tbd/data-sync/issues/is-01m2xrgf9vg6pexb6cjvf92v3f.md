@@ -5,16 +5,16 @@ title: "H129: cache-only restore omits classify"
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels: []
 dependencies: []
 parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 hold: null
 hold_until: null
 created_at: 2026-09-19T21:17:43.098Z
-updated_at: 2026-09-19T21:27:13.223Z
+updated_at: 2026-09-28T16:20:31.093Z
 started_at: 2026-09-19T21:17:53.095Z
 closed_at: 2026-09-19T21:27:13.222Z
 close_reason: Accepted exp-128. Restore-without-classify kept at 6887a864. Wall -13.11% on frozen metabrowser-clone. Quiet this tick 31.53%.

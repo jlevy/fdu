@@ -5,22 +5,22 @@ title: "P1.1.4: Add the unreadable-subtree mutation and its registry entries"
 kind: task
 status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pye70x3nc8p6t827sywb23
 parent_id: is-01m2pmr9n3mq4nb2r1pc328qpz
-created_at: 2026-09-17T05:46:33.103Z
-updated_at: 2026-09-17T23:46:47.265Z
-closed_at: 2026-09-17T23:46:47.265Z
-close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:33.103Z
+updated_at: 2026-09-28T16:20:07.337Z
 started_at: 2026-09-17T06:17:18.545Z
+closed_at: 2026-09-17T23:46:47.265Z
+close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", commit 4. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

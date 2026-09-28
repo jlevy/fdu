@@ -5,8 +5,8 @@ title: "PR #122 review R2: no test for the install I/O failure path (exit 1)"
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels:
   - skill
   - review
@@ -15,7 +15,7 @@ parent_id: is-01m395mzh0amwcywtecm7m1zkh
 hold: null
 hold_until: null
 created_at: 2026-09-24T07:39:22.512Z
-updated_at: 2026-09-24T07:45:18.598Z
+updated_at: 2026-09-28T16:20:48.762Z
 started_at: 2026-09-24T07:40:44.803Z
 closed_at: 2026-09-24T07:45:18.596Z
 close_reason: "Fixed in b4bdb9b2 on claude/skill-install (PR #122); disposition posted on the PR."

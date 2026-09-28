@@ -5,9 +5,9 @@ title: "P2.1.2: Per-analyzer records and sidecar layout, read back into today's 
 kind: task
 status: closed
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - core-models
 dependencies:
@@ -21,7 +21,7 @@ parent_id: is-01m2phzn814exmf4ty5vw6zha0
 hold: null
 hold_until: null
 created_at: 2026-09-17T05:46:40.531Z
-updated_at: 2026-09-23T08:14:06.565Z
+updated_at: 2026-09-28T16:20:03.349Z
 started_at: 2026-09-20T04:39:46.865Z
 closed_at: 2026-09-23T08:14:06.565Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."

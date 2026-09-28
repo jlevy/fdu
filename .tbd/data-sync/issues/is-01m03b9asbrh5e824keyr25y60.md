@@ -5,9 +5,9 @@ title: Extend scan diagnostics to the FullIndex plan
 kind: task
 status: closed
 priority: 2
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - instrumentation
@@ -18,7 +18,7 @@ parent_id: is-01kzkzm62q1vwxbv9hbp39bxxm
 hold: null
 hold_until: null
 created_at: 2026-08-15T18:34:58.730Z
-updated_at: 2026-09-01T15:01:21.944Z
+updated_at: 2026-09-28T16:19:37.021Z
 started_at: 2026-09-01T14:38:40.994Z
 closed_at: 2026-09-01T15:01:21.943Z
 close_reason: Cold FullIndex scans now expose the bounded fdu-scan-diagnostics-v1 trace through the existing opt-in API and installed-CLI transport; cache-only and warm-reconcile limitations are explicit and tested. Exp-090 measured diagnostics-on at -3.48% with paired 95% CI [-11.88%, +1.43%], below the +3% ceiling, with exact tallies and all resource gates held. Rust all-feature/no-default tests, clippy, the 221-test performance harness, schemas, ledger, report, and docs checks pass.

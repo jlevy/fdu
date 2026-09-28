@@ -5,13 +5,13 @@ title: Drop the undocumented --view docs alias for documents, which the no-alias
 kind: task
 status: closed
 priority: 3
-version: 4
-delegate: codex@spud10
+version: 5
+delegate: codex
 labels:
   - stack-followup
 dependencies: []
 created_at: 2026-09-16T16:34:26.045Z
-updated_at: 2026-09-16T18:34:26.739Z
+updated_at: 2026-09-28T16:19:58.717Z
 closed_at: 2026-09-16T18:34:26.738Z
 close_reason: "Merged PR #72 at 4a4965bdaf39f6a5369b5e0db2a5ff1fbf1011d0; removed the unreleased --view docs and --cache readonly aliases across core, CLI, and Python, with all 19 CI jobs passing."
 resolution: null

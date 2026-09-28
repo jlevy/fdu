@@ -5,15 +5,15 @@ title: "PR #64 review RN64-4: 'Renamed and removed interfaces' is a development 
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:47.181Z
-updated_at: 2026-09-16T16:34:19.787Z
+updated_at: 2026-09-28T16:19:57.675Z
 started_at: 2026-09-16T16:25:03.758Z
 closed_at: 2026-09-16T16:34:19.785Z
 close_reason: "5eb497b: removed the 33-line rename list from CHANGELOG and its pointer from the notes; kept the cold-scan, cache-clear and gitignore-feature bullets plus one instruction to take released names; no single entry kept (each fails loudly naming the old spelling or is shipped behavior under Added; the silent glob case is stated there by 258949d)"

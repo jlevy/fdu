@@ -5,14 +5,14 @@ title: "Release rehearsal: make ignored-share byte fixture platform-exact"
 kind: bug
 status: closed
 priority: 1
-version: 4
-delegate: codex@spud10
+version: 5
+delegate: codex
 labels:
   - release
 dependencies: []
 parent_id: is-01m01cj7m8tfwapt8575agzmgn
 created_at: 2026-09-16T19:43:43.488Z
-updated_at: 2026-09-16T20:09:55.964Z
+updated_at: 2026-09-28T16:20:00.117Z
 closed_at: 2026-09-16T20:09:55.961Z
 close_reason: "Fixed by PR #74 (29472e3): byte-accounting smoke fixtures now use write_bytes, and all 19 CI jobs passed including both Windows wheel smokes."
 resolution: null

@@ -5,16 +5,16 @@ title: "Finish PR #123 final release-gate review"
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
-delegate: codex@spud10.local
+delegate: codex
 labels: []
 dependencies: []
 parent_id: is-01kzg4c6vnh98mqrpkzw7ydne0
 hold: null
 hold_until: null
 created_at: 2026-09-25T23:48:52.666Z
-updated_at: 2026-09-26T00:00:01.993Z
+updated_at: 2026-09-28T16:20:42.863Z
 started_at: 2026-09-25T23:49:04.487Z
 closed_at: 2026-09-26T00:00:01.993Z
 close_reason: "PR #123 reviewed, fixed, CI green, and merged"

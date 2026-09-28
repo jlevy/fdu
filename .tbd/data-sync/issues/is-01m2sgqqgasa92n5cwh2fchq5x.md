@@ -5,15 +5,15 @@ title: "PR #88 review R5: opened-root spec still frames two live PRs"
 kind: task
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgape5ss3nrhm5em7a2fqq
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:54.537Z
-updated_at: 2026-09-18T05:50:22.103Z
+updated_at: 2026-09-28T16:20:17.951Z
 started_at: 2026-09-18T05:45:13.648Z
 closed_at: 2026-09-18T05:50:22.103Z
 close_reason: "Fixed on PR #88 in 4828d950"

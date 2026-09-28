@@ -5,8 +5,8 @@ title: Refresh macOS live-tool comparison with absolute throughput
 kind: task
 status: closed
 priority: 1
-version: 5
-delegate: claude-code@spud10
+version: 6
+delegate: claude-code
 labels:
   - performance
   - benchmark
@@ -15,7 +15,7 @@ dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-27T00:20:22.093Z
-updated_at: 2026-09-27T02:44:15.722Z
+updated_at: 2026-09-28T16:20:45.275Z
 started_at: 2026-09-27T00:20:36.672Z
 closed_at: 2026-09-27T02:44:15.693Z
 close_reason: "Implemented and published in PR #132. Refreshed the macOS comparison, added absolute throughput to the renderer and main table, documented internal measurement versus external build storage, committed raw evidence, passed full local make check, and all GitHub CI checks passed."

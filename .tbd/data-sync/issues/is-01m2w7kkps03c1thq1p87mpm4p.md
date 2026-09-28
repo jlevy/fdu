@@ -5,15 +5,15 @@ title: "H115: one bottom-up roll-up pass after sidecar restore"
 kind: task
 status: closed
 priority: 1
-version: 6
-delegate: unknown@spud10
+version: 7
+delegate: unknown
 labels: []
 dependencies: []
 parent_id: is-01m0py2a8eb90n6r21f4hygyvr
 hold: null
 hold_until: null
 created_at: 2026-09-19T07:03:05.687Z
-updated_at: 2026-09-19T07:25:32.121Z
+updated_at: 2026-09-28T16:20:26.235Z
 started_at: 2026-09-19T07:11:57.622Z
 closed_at: 2026-09-19T07:25:32.120Z
 close_reason: "exp-112 accepted: content-cache-hit wall -9.69% [-26.02%, -7.13%]; restore-only bottom-up rebuild kept at 7798fdc1"

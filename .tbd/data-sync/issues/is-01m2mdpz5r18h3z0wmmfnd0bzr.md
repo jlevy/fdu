@@ -5,8 +5,8 @@ title: "PR #65 delta review PR65D-WATCH-1: a default watch leaves each row's ign
 kind: bug
 status: closed
 priority: 3
-version: 6
-delegate: codex@spud10
+version: 7
+delegate: codex
 labels:
   - stack-followup
 dependencies:
@@ -15,7 +15,7 @@ dependencies:
 hold: null
 hold_until: null
 created_at: 2026-09-16T06:15:51.734Z
-updated_at: 2026-09-23T08:14:06.837Z
+updated_at: 2026-09-28T16:19:55.936Z
 started_at: 2026-09-20T04:43:25.631Z
 closed_at: 2026-09-23T08:14:06.837Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."

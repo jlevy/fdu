@@ -5,9 +5,9 @@ title: Core list selection with directory subtree metrics and union aggregation
 kind: feature
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies:
   - type: blocks
@@ -16,7 +16,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T01:37:22.965Z
-updated_at: 2026-09-20T07:12:32.202Z
+updated_at: 2026-09-28T16:20:31.803Z
 started_at: 2026-09-20T01:38:32.676Z
 closed_at: 2026-09-20T07:12:32.201Z
 close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."

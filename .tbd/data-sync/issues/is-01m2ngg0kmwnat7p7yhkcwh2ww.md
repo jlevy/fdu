@@ -5,15 +5,15 @@ title: "PR #64 review RN64-2: extension rows' ignored object has no dirs key, an
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2ngfd0y2yzwg2v10p2j601z
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:43.987Z
-updated_at: 2026-09-16T16:34:14.940Z
+updated_at: 2026-09-28T16:19:55.245Z
 started_at: 2026-09-16T16:25:03.129Z
 closed_at: 2026-09-16T16:34:14.939Z
 close_reason: "c6ab0de: summary and tree rows carry ignored {files,dirs,bytes,allocated}, extension rows {files,bytes,allocated}; Python IgnoredTally on SummaryRow/TreeNode, ExtensionTally on ExtensionRow, bool on FileRow"

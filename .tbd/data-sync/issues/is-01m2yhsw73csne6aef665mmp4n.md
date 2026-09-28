@@ -5,9 +5,9 @@ title: Expose list defaults, format aliases, and compatibility through the share
 kind: feature
 status: closed
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-20-directory-query-formats.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies:
   - type: blocks
@@ -18,7 +18,7 @@ parent_id: is-01m2y7b2f9f1cv1dssrtref7zd
 hold: null
 hold_until: null
 created_at: 2026-09-20T04:39:45.634Z
-updated_at: 2026-09-20T07:12:32.226Z
+updated_at: 2026-09-28T16:20:29.516Z
 started_at: 2026-09-20T06:07:21.006Z
 closed_at: 2026-09-20T07:12:32.226Z
 close_reason: "Implemented the tracked file/function plan above PR #96. Core/workspace tests, 168 CLI goldens, 48 Python tests, typing, docs formatting, and cross-platform lint passed. Final aggregate gate and stacked PR CI are tracked separately in fdu-arv8."

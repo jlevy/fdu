@@ -5,9 +5,9 @@ title: Write the 0.1.0 CHANGELOG section and GitHub release notes
 kind: task
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/guides/release-process.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - release
 dependencies: []
@@ -15,7 +15,7 @@ parent_id: is-01m2h6a9wd6f6xexfaw93whryr
 hold: null
 hold_until: null
 created_at: 2026-09-15T00:30:47.512Z
-updated_at: 2026-09-27T08:15:13.849Z
+updated_at: 2026-09-28T16:19:53.839Z
 started_at: 2026-09-16T18:06:10.045Z
 closed_at: 2026-09-16T18:16:55.932Z
 close_reason: "PR #64 merged at a74dade1f90d1110e9a5bc3576d66f1ece10d90a with the final 0.1.0 release notes and upgrade guidance; all 19 CI jobs passed."

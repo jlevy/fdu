@@ -5,22 +5,22 @@ title: "P1.1.1: Move the fixture, comparator, and matrix into tests/path_indepen
 kind: task
 status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
   - type: blocks
     target: is-01m2pye0422qnb6171mmxabt4x
 parent_id: is-01m2pmr9n3mq4nb2r1pc328qpz
-created_at: 2026-09-17T05:46:32.045Z
-updated_at: 2026-09-17T23:46:47.252Z
-closed_at: 2026-09-17T23:46:47.252Z
-close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:32.045Z
+updated_at: 2026-09-28T16:20:04.433Z
 started_at: 2026-09-17T06:17:15.699Z
+closed_at: 2026-09-17T23:46:47.252Z
+close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

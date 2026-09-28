@@ -5,15 +5,15 @@ title: "PR #77 review R3: port remaining README accuracy onto #86"
 kind: task
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgahvypvtjthpx1y142h7b
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:56.334Z
-updated_at: 2026-09-18T05:50:21.343Z
+updated_at: 2026-09-28T16:20:24.403Z
 started_at: 2026-09-18T05:45:13.663Z
 closed_at: 2026-09-18T05:50:21.339Z
 close_reason: "Ported remaining README accuracy onto PR #86 in d743e756"

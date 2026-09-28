@@ -5,14 +5,14 @@ title: Make bare Makefile scratch probes honor TMPDIR on macOS
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-27T00:31:02.538Z
-updated_at: 2026-09-27T00:45:39.337Z
+updated_at: 2026-09-28T16:20:54.832Z
 started_at: 2026-09-27T00:33:25.146Z
 closed_at: 2026-09-27T00:45:39.335Z
 close_reason: "PR #131 passes explicit TMPDIR-based templates to both remaining bare Makefile mktemp calls. Permission preflight and ledger check passed with external scratch; full local and cross-platform CI gates passed."

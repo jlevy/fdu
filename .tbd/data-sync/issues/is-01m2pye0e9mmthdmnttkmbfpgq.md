@@ -5,8 +5,9 @@ title: "P1.1.3: Seed the registry from a full Linux run; add Make targets and th
 kind: task
 status: closed
 priority: 0
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
@@ -21,14 +22,13 @@ dependencies:
   - type: blocks
     target: is-01m2pyeg0zegnzm857bvxrbpa6
 parent_id: is-01m2pmr9n3mq4nb2r1pc328qpz
-created_at: 2026-09-17T05:46:32.776Z
-updated_at: 2026-09-17T23:46:47.262Z
-closed_at: 2026-09-17T23:46:47.262Z
-close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:32.776Z
+updated_at: 2026-09-28T16:20:05.477Z
 started_at: 2026-09-17T06:17:17.812Z
+closed_at: 2026-09-17T23:46:47.262Z
+close_reason: "Shipped in PR #79 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 1: The Path-Independence Harness", commit 3. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

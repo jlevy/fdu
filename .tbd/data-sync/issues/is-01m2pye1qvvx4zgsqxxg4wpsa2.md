@@ -5,8 +5,9 @@ title: "P1.2.1: stored_state.rs: tier identities, EntryScope, serves_snapshot (E
 kind: task
 status: closed
 priority: 0
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
@@ -15,14 +16,13 @@ dependencies:
   - type: blocks
     target: is-01m2pye2d1y7k090q6k9d8mcc8
 parent_id: is-01m2pmram44dgp78vm6xq4w7k7
-created_at: 2026-09-17T05:46:34.107Z
-updated_at: 2026-09-17T23:46:47.846Z
-closed_at: 2026-09-17T23:46:47.846Z
-close_reason: "Shipped in PRs #81/#82 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:34.107Z
+updated_at: 2026-09-28T16:20:06.515Z
 started_at: 2026-09-17T06:17:20.323Z
+closed_at: 2026-09-17T23:46:47.846Z
+close_reason: "Shipped in PRs #81/#82 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 2: Store Identity, Equality Serve, and Per-Tier Writes", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

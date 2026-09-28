@@ -5,14 +5,14 @@ title: "PR #98 A98-R1: align Windows corpus oracle with final validity semantics
 kind: bug
 status: closed
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
-delegate: codex@local
+delegate: codex
 labels: []
 dependencies: []
 parent_id: is-01m35sm4jn2ytfmy91136g50b7
 created_at: 2026-09-23T00:20:27.753Z
-updated_at: 2026-09-23T08:14:06.891Z
+updated_at: 2026-09-28T16:20:40.481Z
 closed_at: 2026-09-23T08:14:06.891Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."
 resolution: null

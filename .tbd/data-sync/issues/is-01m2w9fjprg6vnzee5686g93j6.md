@@ -5,9 +5,9 @@ title: "H113 quiet confirmatory: skip second analysis_candidates walk after H115
 kind: task
 status: closed
 priority: 1
-version: 15
+version: 16
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels:
   - campaign-2
   - macos-agenda
@@ -17,7 +17,7 @@ parent_id: is-01kzysa79temyc45zjn2v98kpw
 hold: null
 hold_until: null
 created_at: 2026-09-19T07:35:50.742Z
-updated_at: 2026-09-19T20:45:08.157Z
+updated_at: 2026-09-28T16:20:26.951Z
 started_at: 2026-09-19T07:35:59.554Z
 closed_at: 2026-09-19T20:45:08.157Z
 close_reason: "exp-124 accepted H125 restore-count completeness: wall -8.03% [-10.79%, -7.79%]; H113 file-count superseded; exp-113 unused"

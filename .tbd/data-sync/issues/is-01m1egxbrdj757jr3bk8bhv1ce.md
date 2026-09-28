@@ -5,9 +5,9 @@ title: Fuse detached control-free scanner preparation and reduction
 kind: task
 status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - experiment
@@ -16,7 +16,7 @@ parent_id: is-01m1dtr903vj783j9ajaxfnczf
 hold: null
 hold_until: null
 created_at: 2026-09-01T13:00:38.540Z
-updated_at: 2026-09-01T13:32:23.148Z
+updated_at: 2026-09-28T16:19:50.253Z
 started_at: 2026-09-01T13:00:44.040Z
 closed_at: 2026-09-01T13:32:23.131Z
 close_reason: H104 was implemented and measured, but default-tree improved only 1.11% with CI [-2.47%, +0.40%] and cold-scan-index was flat. exp-087 records the result; the complete composite was removed under its preregistered gate.

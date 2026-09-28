@@ -5,15 +5,15 @@ title: "PR #88 review R3: write release body before check_release_body"
 kind: bug
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgape5ss3nrhm5em7a2fqq
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:53.214Z
-updated_at: 2026-09-18T05:50:22.090Z
+updated_at: 2026-09-28T16:20:17.593Z
 started_at: 2026-09-18T05:45:13.632Z
 closed_at: 2026-09-18T05:50:22.090Z
 close_reason: "Fixed on PR #88 in 4828d950"

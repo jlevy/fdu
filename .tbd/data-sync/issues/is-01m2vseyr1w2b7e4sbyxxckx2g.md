@@ -5,9 +5,9 @@ title: "H107: measure default gitignore-on vs no-controls"
 kind: task
 status: in_progress
 priority: 1
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels:
   - performance
   - campaign-2
@@ -17,7 +17,7 @@ parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 hold: null
 hold_until: null
 created_at: 2026-09-19T02:55:53.088Z
-updated_at: 2026-09-19T19:59:55.397Z
+updated_at: 2026-09-28T16:20:23.656Z
 started_at: 2026-09-19T17:59:25.895Z
 closed_at: null
 close_reason: null

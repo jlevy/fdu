@@ -5,9 +5,9 @@ title: Compact one-shot batches and fixed partitions
 kind: task
 status: closed
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - experiment
@@ -16,7 +16,7 @@ parent_id: is-01m1dtr903vj783j9ajaxfnczf
 hold: null
 hold_until: null
 created_at: 2026-09-01T12:20:01.882Z
-updated_at: 2026-09-01T12:40:20.363Z
+updated_at: 2026-09-28T16:19:48.459Z
 started_at: 2026-09-01T12:20:05.907Z
 closed_at: 2026-09-01T12:40:20.360Z
 close_reason: Rejected and reverted under the preregistered H99 gate. exp-085 records default-tree -2.56% CI [-3.33%, -0.13%], below the 3% structural threshold; cold-scan-index -1.63% CI [-2.74%, +0.34%]. Scanner-only transport was neutral, so the composite did not justify its 490-line representation and materialization paths.

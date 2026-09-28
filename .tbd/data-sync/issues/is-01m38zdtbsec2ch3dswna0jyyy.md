@@ -5,16 +5,16 @@ title: "PR #120 review R-5: Saving is at most one frame on the one-shot route; u
 kind: bug
 status: closed
 priority: 3
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m38zd0fgqycxzrgtyps04zsx
 hold: null
 hold_until: null
 created_at: 2026-09-24T05:50:14.903Z
-updated_at: 2026-09-24T05:56:04.867Z
+updated_at: 2026-09-28T16:20:41.496Z
 started_at: 2026-09-24T05:50:16.026Z
 closed_at: 2026-09-24T05:56:04.867Z
 close_reason: "Fixed in f636e583 on claude/progress-indicator-review-fixes; coordinator merges into #120"

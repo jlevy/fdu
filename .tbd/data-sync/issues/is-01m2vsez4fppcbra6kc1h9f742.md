@@ -5,15 +5,15 @@ title: "H109: control reclassification Path comparison"
 kind: task
 status: closed
 priority: 2
-version: 5
-delegate: unknown@spud10
+version: 6
+delegate: unknown
 labels: []
 dependencies: []
 parent_id: is-01m2vs96dg6kw3ka6k4ghyvf0f
 hold: null
 hold_until: null
 created_at: 2026-09-19T02:55:53.486Z
-updated_at: 2026-09-19T05:54:16.673Z
+updated_at: 2026-09-28T16:20:25.870Z
 started_at: 2026-09-19T05:39:15.487Z
 closed_at: 2026-09-19T05:54:16.672Z
 close_reason: "exp-108: deciding-scale content-cache-hit profile on metabrowser-clone; install_controls 7.2% of profile / 7.5% of engine; Path rewrite not justified; next-up H83"

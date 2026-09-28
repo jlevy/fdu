@@ -5,16 +5,16 @@ title: Present code overview as a table with bold complete totals
 kind: feature
 status: closed
 priority: 2
-version: 10
+version: 11
 spec_path: docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - cli-presentation
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:02:37.517Z
-updated_at: 2026-09-28T03:27:57.797Z
+updated_at: 2026-09-28T16:20:59.361Z
 started_at: 2026-09-28T02:03:07.793Z
 closed_at: 2026-09-28T03:27:57.787Z
 close_reason: "Implemented and reviewed the unified Code table, analysis/view naming guidance, and --workers. Full make check passed (202 goldens, 914 core and 100 CLI unit tests, 70 Python tests, packaging, parity, 2267 path-independence cases, release and terminal tests). PRs #133, #135, and #136 are pushed and each passed all 19 CI jobs. Installed fdu 0.1.0-dev+g7a499493e with matching skill; 111 installed checks passed. Plan, README, and engineering review updated."

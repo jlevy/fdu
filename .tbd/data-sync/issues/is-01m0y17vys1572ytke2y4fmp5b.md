@@ -5,16 +5,16 @@ title: "Map the rewrite to files, functions, tests, and PR #47 reuse"
 kind: task
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10.local
+delegate: codex
 labels: []
 dependencies: []
 parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-08-26T03:18:54.680Z
-updated_at: 2026-08-26T04:24:56.970Z
+updated_at: 2026-09-28T16:19:44.256Z
 started_at: 2026-08-26T03:18:59.672Z
 closed_at: 2026-08-26T04:24:56.968Z
 close_reason: "The requested implementation map, complete PR #47 reuse audit, architecture/test decisions, MetaBrowser integration plan, and wired bead graph are committed and pushed to draft PR #48; local and hosted validation pass."

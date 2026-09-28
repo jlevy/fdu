@@ -5,9 +5,9 @@ title: "H126: post-H125 cache-hit leftover profile"
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md
-delegate: unknown@spud10
+delegate: unknown
 labels:
   - performance
   - campaign-2
@@ -16,7 +16,7 @@ parent_id: is-01m2x7xbt1c4we0wffeth7jrd6
 hold: null
 hold_until: null
 created_at: 2026-09-19T20:48:23.984Z
-updated_at: 2026-09-19T20:56:18.746Z
+updated_at: 2026-09-28T16:20:27.320Z
 started_at: 2026-09-19T20:48:27.800Z
 closed_at: 2026-09-19T20:56:18.744Z
 close_reason: "H126 confirmed (exp-125): completeness walk gone (0.007% of content_open). First analysis_candidates walk remains 15.7%. Restore mix unchanged. No new userspace cut. Do not retry H116."

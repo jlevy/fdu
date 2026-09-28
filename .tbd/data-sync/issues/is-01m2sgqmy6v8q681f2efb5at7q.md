@@ -5,15 +5,15 @@ title: "PR #88 review R1: name-recheck pointer still says Tag step 3"
 kind: bug
 status: closed
 priority: 1
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgape5ss3nrhm5em7a2fqq
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:51.903Z
-updated_at: 2026-09-18T05:50:22.072Z
+updated_at: 2026-09-28T16:20:17.259Z
 started_at: 2026-09-18T05:45:13.616Z
 closed_at: 2026-09-18T05:50:22.071Z
 close_reason: "Fixed on PR #88 in 4828d950"

@@ -5,9 +5,9 @@ title: "H19-H22: Compact the reusable full-index entry layout"
 kind: task
 status: open
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - experiment
@@ -19,7 +19,7 @@ parent_id: is-01m01mqq3cqs8ae87qd2d3rydm
 hold: null
 hold_until: null
 created_at: 2026-08-13T03:36:06.814Z
-updated_at: 2026-09-17T02:10:30.287Z
+updated_at: 2026-09-28T16:19:33.366Z
 started_at: 2026-09-01T15:20:04.375Z
 ---
 Execute the existing H19-H22 memory-layout ladder against the new 1M evidence: unbox arena entries, store names once, move directory-only payloads off file entries, and compact identities/revisions. Profile and size the current Entry first; measure one structural arm at a time; preserve snapshots, deltas, stable identities, and exact query behavior. Preregister peak RSS (substantial reduction) plus wall/fault effects.

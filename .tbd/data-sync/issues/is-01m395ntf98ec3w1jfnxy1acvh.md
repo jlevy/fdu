@@ -5,8 +5,8 @@ title: "PR #122 review R5: let _ = remove_file(staged) lacks its stated reason"
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels:
   - skill
   - review
@@ -15,7 +15,7 @@ parent_id: is-01m395mzh0amwcywtecm7m1zkh
 hold: null
 hold_until: null
 created_at: 2026-09-24T07:39:28.615Z
-updated_at: 2026-09-24T07:45:21.168Z
+updated_at: 2026-09-28T16:20:50.962Z
 started_at: 2026-09-24T07:40:47.992Z
 closed_at: 2026-09-24T07:45:21.165Z
 close_reason: "Fixed in b4bdb9b2 on claude/skill-install (PR #122); disposition posted on the PR."

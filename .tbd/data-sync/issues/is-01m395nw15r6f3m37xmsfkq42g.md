@@ -5,8 +5,8 @@ title: "PR #122 review R6: install golden assumes the temp sandbox has no .git a
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels:
   - skill
   - review
@@ -15,7 +15,7 @@ parent_id: is-01m395mzh0amwcywtecm7m1zkh
 hold: null
 hold_until: null
 created_at: 2026-09-24T07:39:30.212Z
-updated_at: 2026-09-24T07:45:21.939Z
+updated_at: 2026-09-28T16:20:50.241Z
 started_at: 2026-09-24T07:40:48.827Z
 closed_at: 2026-09-24T07:45:21.928Z
 close_reason: "Fixed in b4bdb9b2 on claude/skill-install (PR #122); disposition posted on the PR."

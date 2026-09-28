@@ -5,15 +5,15 @@ title: "PR #68 review PR68-1: Release headline exceeds evidence scope"
 kind: bug
 status: closed
 priority: 0
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2nnn53byv4wgyjv0t0szynf
 hold: null
 hold_until: null
 created_at: 2026-09-16T17:54:04.617Z
-updated_at: 2026-09-16T17:58:27.292Z
+updated_at: 2026-09-28T16:19:59.410Z
 started_at: 2026-09-16T17:54:30.432Z
 closed_at: 2026-09-16T17:58:27.291Z
 close_reason: "Fixed in PR #68 commit 45e688c: narrowed the README/report to exploratory synthetic-corpus calibration with no release qualification or portable ordering, and committed the complete redacted harness result with exact commands, binary identities, raw pairs, resources, validity data and bootstrap intervals."

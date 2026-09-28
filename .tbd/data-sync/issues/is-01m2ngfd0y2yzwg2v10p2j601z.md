@@ -5,8 +5,8 @@ title: "Address review: PR #64 — 0.1.0 CHANGELOG and release notes documentati
 kind: task
 status: closed
 priority: 1
-version: 13
-delegate: claude-code@spud10
+version: 14
+delegate: claude-code
 labels:
   - release
 dependencies: []
@@ -24,7 +24,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-16T16:23:23.933Z
-updated_at: 2026-09-16T16:34:31.069Z
+updated_at: 2026-09-28T16:19:56.983Z
 started_at: 2026-09-16T16:25:02.512Z
 closed_at: 2026-09-16T16:34:31.052Z
 close_reason: "All ten findings of review 5225288341 fixed on PR #64: RN64-1 031554d, RN64-2 c6ab0de, RN64-3 and RN64-10 fe45170, RN64-4 5eb497b, RN64-5 79e8241, RN64-6/7/8 258949d, RN64-9 ea30d7a. Headline placeholder (fdu-y5xr, PR #68) left in place."

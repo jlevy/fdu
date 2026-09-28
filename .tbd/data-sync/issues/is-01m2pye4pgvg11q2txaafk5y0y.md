@@ -5,8 +5,9 @@ title: "P1.3.4: The command line and the Python binding build requests through R
 kind: task
 status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
@@ -15,14 +16,13 @@ dependencies:
   - type: blocks
     target: is-01m2pmrcrmjrm62bm1x3mxwgvm
 parent_id: is-01m2pmr9ytx0ye8d701mr5vp9s
-created_at: 2026-09-17T05:46:37.135Z
-updated_at: 2026-09-17T23:46:48.479Z
-closed_at: 2026-09-17T23:46:48.479Z
-close_reason: "Shipped in PR #83 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:37.135Z
+updated_at: 2026-09-28T16:20:10.299Z
 started_at: 2026-09-17T16:27:30.959Z
+closed_at: 2026-09-17T23:46:48.479Z
+close_reason: "Shipped in PR #83 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 3: The Request Model", commit 4. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

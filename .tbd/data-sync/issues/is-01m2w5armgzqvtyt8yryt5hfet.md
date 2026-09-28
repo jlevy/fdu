@@ -5,8 +5,8 @@ title: "H113: cache-only completeness should not re-walk analysis_candidates"
 kind: task
 status: closed
 priority: 1
-version: 5
-delegate: unknown@spud10
+version: 6
+delegate: unknown
 labels:
   - macos-agenda
   - campaign-2
@@ -17,7 +17,7 @@ dependencies:
 hold: null
 hold_until: null
 created_at: 2026-09-19T06:23:18.662Z
-updated_at: 2026-09-19T07:35:50.742Z
+updated_at: 2026-09-28T16:20:24.782Z
 started_at: 2026-09-19T06:32:23.444Z
 closed_at: 2026-09-19T06:42:08.557Z
 close_reason: "exp-110 rejected H113 on wall: median -7.59% but interval [-10.76%, +2.24%] includes zero. File-count shortcut reverted. Incomplete-sidecar fail-closed test kept. Next is H83 / fdu-jxhk."

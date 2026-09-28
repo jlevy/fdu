@@ -5,9 +5,9 @@ title: Coalesce causal scanner fragments in the one-shot builder
 kind: task
 status: closed
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-31-fdu-streaming-performance-parity.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - experiment
@@ -16,7 +16,7 @@ parent_id: is-01m1dtr903vj783j9ajaxfnczf
 hold: null
 hold_until: null
 created_at: 2026-09-01T13:32:23.267Z
-updated_at: 2026-09-01T13:45:41.455Z
+updated_at: 2026-09-28T16:19:49.530Z
 started_at: 2026-09-01T13:32:30.395Z
 closed_at: 2026-09-01T13:45:41.441Z
 close_reason: H105 reduced baseline applies from about 2,670 to about 124 per scan, but default-tree changed +0.13% (95% CI -1.08% to +2.29%) and cold-scan-index was flat; preparation rose because earlier-parent lookup reverse-scans larger batches. Candidate removed and exp-088 recorded.

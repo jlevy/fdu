@@ -5,15 +5,15 @@ title: "PR #98 review R1: zero FILETIME becomes an I/O error, so FAT/exFAT volum
 kind: bug
 status: closed
 priority: 1
-version: 3
-delegate: claude-code@vm
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m32h6dpd97fr5f8db831dn3y
 hold: null
 hold_until: null
 created_at: 2026-09-21T20:35:38.042Z
-updated_at: 2026-09-21T20:57:25.185Z
+updated_at: 2026-09-28T16:20:38.357Z
 started_at: 2026-09-21T20:36:00.223Z
 closed_at: 2026-09-21T20:57:25.185Z
 close_reason: "Fixed in 650b6b08 on codex/release-windows-validity: windows_time_to_unix_ns yields 0 for 0 ticks (unavailable, per the Attrs contract) and saturates any other out-of-range value like the Unix compose_ns; it no longer returns an error, so Observed::attrs is infallible. Unit test covers 0, 1 tick, i64::MIN, i64::MAX, and the epoch; the same function extracted verbatim was run on Linux, and the module's tests passed in the Windows CI Test job. Not verified: an actual FAT/exFAT volume scan, which needs a Windows host."

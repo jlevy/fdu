@@ -5,15 +5,15 @@ title: "PR #87 review R1: smoke_crate never exercises the cargo_vcs_info skip"
 kind: bug
 status: closed
 priority: 3
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgakjkfqnw5tt0ytshwgrj
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:51.197Z
-updated_at: 2026-09-18T05:50:21.729Z
+updated_at: 2026-09-28T16:20:20.048Z
 started_at: 2026-09-18T05:45:13.607Z
 closed_at: 2026-09-18T05:50:21.728Z
 close_reason: "Fixed on PR #87 in 3e4d9f4d"

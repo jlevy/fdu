@@ -5,15 +5,15 @@ title: "PR #77 review R2: port TODO.md done-spec links onto #88"
 kind: task
 status: closed
 priority: 2
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgahvypvtjthpx1y142h7b
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:55.181Z
-updated_at: 2026-09-18T05:50:22.437Z
+updated_at: 2026-09-28T16:20:23.273Z
 started_at: 2026-09-18T05:45:13.656Z
 closed_at: 2026-09-18T05:50:22.436Z
 close_reason: "Ported TODO.md done-spec links onto PR #88 in 4828d950"

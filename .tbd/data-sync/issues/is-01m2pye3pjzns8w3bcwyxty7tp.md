@@ -5,8 +5,9 @@ title: "P1.3.1: Request model: Basis, Request, Delivery (no workers), RequestErr
 kind: task
 status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
+delegate: claude-code
 labels:
   - core-models
 dependencies:
@@ -15,14 +16,13 @@ dependencies:
   - type: blocks
     target: is-01m2pye4c1h1kfcnsq59yfsnbt
 parent_id: is-01m2pmr9ytx0ye8d701mr5vp9s
-created_at: 2026-09-17T05:46:36.114Z
-updated_at: 2026-09-17T23:46:48.467Z
-closed_at: 2026-09-17T23:46:48.467Z
-close_reason: "Shipped in PR #83 and landed on main via stack merge 98379c76."
-delegate: claude-code@spud10
 hold: null
 hold_until: null
+created_at: 2026-09-17T05:46:36.114Z
+updated_at: 2026-09-28T16:20:06.159Z
 started_at: 2026-09-17T15:27:19.154Z
+closed_at: 2026-09-17T23:46:48.467Z
+close_reason: "Shipped in PR #83 and landed on main via stack merge 98379c76."
 ---
 Plan: `docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md`, section "Phase 1, Item 3: The Request Model", commit 1. Locators were verified at `5f2d36d`; they drift as earlier commits land, so re-find code by function name.
 

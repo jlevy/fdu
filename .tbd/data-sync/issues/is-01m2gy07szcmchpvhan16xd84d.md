@@ -5,8 +5,8 @@ title: Permission-bit tests skip by early return and report ok while asserting n
 kind: bug
 status: closed
 priority: 2
-version: 4
-delegate: codex@spud10
+version: 5
+delegate: codex
 labels:
   - stack-followup
 dependencies:
@@ -15,7 +15,7 @@ dependencies:
 hold: null
 hold_until: null
 created_at: 2026-09-14T21:43:34.964Z
-updated_at: 2026-09-27T08:12:58.956Z
+updated_at: 2026-09-28T16:19:53.159Z
 started_at: 2026-09-20T05:23:44.145Z
 closed_at: 2026-09-27T08:12:58.955Z
 close_reason: "Implemented: permission-bits preflight and explicit FDU_TEST_ALLOW_NO_PERMISSION_BITS opt-out in Makefile, test_support.rs, cli_exit.rs and AGENTS.md. Verified against current source and passing 19-job PR #133 CI (36303716655)."

@@ -5,9 +5,9 @@ title: "H152: profile and exact-oracle the current content-query path"
 kind: task
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/guides/performance-loop.md
-delegate: codex@spud10.local
+delegate: codex
 labels:
   - performance
   - experiment
@@ -16,7 +16,7 @@ parent_id: is-01m3gvqwswcvwe38v0pp58sny0
 hold: null
 hold_until: null
 created_at: 2026-09-27T07:24:38.503Z
-updated_at: 2026-09-27T08:59:07.597Z
+updated_at: 2026-09-28T16:20:56.215Z
 started_at: 2026-09-27T07:24:45.906Z
 closed_at: 2026-09-27T08:59:07.596Z
 close_reason: Exact content-query report oracle landed in 1ba06b19; exp-158 records current scale, profile limitation, and the bounded H153 mechanism.

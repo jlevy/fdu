@@ -5,15 +5,15 @@ title: "PR #137 review R1: qualify H153 verdict and headline"
 kind: bug
 status: closed
 priority: 1
-version: 3
-delegate: codex@spud10.local
+version: 4
+delegate: codex
 labels: []
 dependencies: []
 parent_id: is-01m3j2zt7g629pg4y9wt4g9px9
 hold: null
 hold_until: null
 created_at: 2026-09-27T18:45:46.464Z
-updated_at: 2026-09-27T19:17:24.996Z
+updated_at: 2026-09-28T16:20:57.256Z
 started_at: 2026-09-27T18:46:10.881Z
 closed_at: 2026-09-27T19:17:24.995Z
 close_reason: Review finding addressed by making exp-159 in-progress/provisionally retained, qualifying README/PR/ledger/report at the claim, preserving the observed speedup, and tracking the unresolved quiet major-fault gate separately as fdu-9e9d.

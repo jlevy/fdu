@@ -5,15 +5,15 @@ title: "PR #86 review R1: uv run after uv tool install cannot import fdu"
 kind: bug
 status: closed
 priority: 1
-version: 3
-delegate: claude-code@spud10
+version: 4
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2sgak5bbbfm5y4pp08w8ztx
 hold: null
 hold_until: null
 created_at: 2026-09-18T05:44:52.932Z
-updated_at: 2026-09-18T05:50:20.897Z
+updated_at: 2026-09-28T16:20:19.011Z
 started_at: 2026-09-18T05:45:13.548Z
 closed_at: 2026-09-18T05:50:20.896Z
 close_reason: "Fixed on PR #86 in d743e756"

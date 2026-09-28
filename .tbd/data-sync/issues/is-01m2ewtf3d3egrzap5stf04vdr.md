@@ -5,9 +5,9 @@ title: Coverage stays Partial(Inaccessible) after a refresh or observer walk dis
 kind: bug
 status: closed
 priority: 3
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
-delegate: codex@spud10
+delegate: codex
 labels:
   - stack-followup
 dependencies:
@@ -17,7 +17,7 @@ parent_id: is-01m0xs2ffhy8av1qm0dn9kyc31
 hold: null
 hold_until: null
 created_at: 2026-09-14T02:44:28.396Z
-updated_at: 2026-09-23T08:14:06.810Z
+updated_at: 2026-09-28T16:19:51.646Z
 started_at: 2026-09-20T04:45:29.607Z
 closed_at: 2026-09-23T08:14:06.810Z
 close_reason: "Implemented in the alpha correctness stack (#99, #98, #110, #112-#117), independently reviewed per layer with published reviews, dispositions and delta reviews; merged to main in 9989c5ad on 2026-09-23 after an uninterrupted make check and cross-lint on the gated tree and green CI on every layer. Acceptance of the conformance gate remains on fdu-xgjx; the analyzer-set containment deferral remains on fdu-7dj6."

@@ -5,9 +5,9 @@ title: "Address review: PR #119 — progress indicator plan"
 kind: task
 status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-09-23-fdu-progress-indicator.md
-delegate: claude-code@spud10
+delegate: claude-code
 labels: []
 dependencies: []
 parent_id: is-01m2nsj4zgw7r9j3d1rphnmwf2
@@ -19,7 +19,7 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-24T05:49:47.976Z
-updated_at: 2026-09-24T05:56:05.201Z
+updated_at: 2026-09-28T16:20:47.710Z
 started_at: 2026-09-24T05:50:16.040Z
 closed_at: 2026-09-24T05:56:05.200Z
 close_reason: "All findings dispositioned; disposition comments posted on #119 and #120"
