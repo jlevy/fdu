@@ -275,21 +275,22 @@ def render(experiments: Sequence[Mapping[str, Any]]) -> str:
 
 
 def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
-    """Where things ended up, taken from the most recent baseline-anchored experiment.
+    """Render the latest comparison anchored to the original campaign baseline.
 
-    Such an experiment measures today's build against the pre-work baseline in one
-    interleaved run, so it is the only comparison that can honestly be called a total.
-    Adding up the individual experiments would not be: each was measured against a
-    different control on a differently loaded machine.
+    Such an experiment measures one historical checkpoint against the pre-work baseline
+    in one interleaved run. It is a cumulative statement about that checkpoint, not the
+    current engine; later experiments use different controls and cannot be added to it.
     """
     latest = _campaign_headline(experiments)
     if latest is None:
         return []
-    lines = ["## Where it stands", ""]
+    lines = ["## Latest Comparison Against the Original Baseline", ""]
     lines.append(
-        f"Every accepted change together, measured against the pre-work baseline in "
-        f"one interleaved run of {latest['method']['trials']} paired trials "
-        f"({latest['id']})."
+        f"{latest['id']} measured the changes present at that checkpoint against the "
+        f"pre-work baseline in one interleaved run of "
+        f"{latest['method']['trials']} paired trials. Later experiments below are "
+        f"separate incremental comparisons; this table does not measure the current "
+        f"engine."
     )
     lines.append("")
     lines.append("| job | before | after | change | 95% interval |")

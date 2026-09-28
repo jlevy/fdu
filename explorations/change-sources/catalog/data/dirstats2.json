@@ -1,0 +1,120 @@
+{
+ "origin_rename": {
+  "before": {
+   "gen": 4695,
+   "desc": 1201,
+   "phys": 4677632
+  },
+  "after_rename": {
+   "gen": 4695,
+   "desc": 1201,
+   "phys": 4677632
+  },
+  "after_rename_back": {
+   "gen": 4695,
+   "desc": 1201,
+   "phys": 4677632
+  }
+ },
+ "many_origins": {
+  "enabled": 54,
+  "failed": [],
+  "enable_ms_total": 303.5,
+  "dirs_with_nonzero_gencount_after_enable": 55
+ },
+ "localization": {
+  "target": "d04/s2/file-007.txt",
+  "changed_gencounts": {
+   "/d04": [
+    1,
+    3
+   ],
+   "/d04/s2": [
+    1,
+    3
+   ]
+  },
+  "root_before": {
+   "gen": 4695,
+   "desc": 1201,
+   "phys": 4677632
+  },
+  "root_after": {
+   "gen": 4697,
+   "desc": 1201,
+   "phys": 4685824
+  },
+  "origin_stats_after": {
+   "gen": 3,
+   "desc": 20,
+   "phys": 90112
+  }
+ },
+ "outside_hardlink_write": {
+  "before": {
+   "gen": 4697,
+   "desc": 1201,
+   "phys": 4685824
+  },
+  "after_link": {
+   "gen": 4697,
+   "desc": 1201,
+   "phys": 4685824
+  },
+  "after_write_via_outside_path": {
+   "gen": 4699,
+   "desc": 1201,
+   "phys": 4702208
+  },
+  "inside_size_now": 30720
+ },
+ "mmap_write": {
+  "before": {
+   "gen": 4703,
+   "desc": 1202,
+   "phys": 4767744
+  },
+  "after_store": {
+   "gen": 4703,
+   "desc": 1202,
+   "phys": 4767744
+  },
+  "after_msync": {
+   "gen": 4704,
+   "desc": 1202,
+   "phys": 4767744
+  },
+  "after_close": {
+   "gen": 4705,
+   "desc": 1202,
+   "phys": 4767744
+  },
+  "after_sync": {
+   "gen": 4705,
+   "desc": 1202,
+   "phys": 4767744
+  }
+ },
+ "bulk_read_timing_informal": [
+  [
+   "base",
+   1204,
+   7.3
+  ],
+  [
+   "ext",
+   1204,
+   12.1
+  ],
+  [
+   "base",
+   1204,
+   6.9
+  ],
+  [
+   "ext",
+   1204,
+   11.7
+  ]
+ ]
+}

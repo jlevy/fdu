@@ -95,6 +95,8 @@ fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
         .args(args)
         .arg(tree)
         .env("XDG_CACHE_HOME", cache)
+        // FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu");
     assert!(
@@ -120,16 +122,16 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
 
     // Prime the cache, then prove the snapshot is usable with a cache-only read.
     //
-    // The priming uses `files` rather than `summary` because an unfiltered metadata
-    // summary is answered by the compact transient tier, which retains nothing and so
-    // writes nothing. The usability proof uses `--cache only` rather than a second
-    // ordinary run, because a one-shot metadata report deliberately does not read the
-    // snapshot — the read cannot save the walk the report is already doing. The watch
-    // below opens through the library path, which does read it: a session amortises the
-    // load across its whole lifetime, and that warm start is what this test pins.
-    report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
+    // The priming asks for `--cache on` because under `auto` a one-shot metadata report
+    // writes nothing: no later one-shot report would read it. The usability proof uses
+    // `--stale-ok` rather than a second ordinary run, because a one-shot metadata report
+    // deliberately does not read the snapshot — the read cannot save the walk the report
+    // is already doing. The watch below opens through the library path, which does read
+    // it: a session amortises the load across its whole lifetime, and that warm start is
+    // what this test pins.
+    report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "on"]);
     let usable =
-        report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "only"]);
+        report(&tree, cache.path(), &["--view", "files", "--format", "json", "--stale-ok"]);
     assert!(
         usable.contains("cache_only"),
         "expected the priming run to leave a usable snapshot, got: {usable}",
@@ -140,6 +142,7 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
             .args(["--watch", "--view", "files", "--interval", "1s"])
             .arg(&tree)
             .env("XDG_CACHE_HOME", cache.path())
+            .env_remove("FDU_CACHE_DIR")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -158,7 +161,7 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
 
     assert!(rewritten, "a warm-started watch never rewrote the snapshot after a change");
     let listed =
-        report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--cache", "only"]);
+        report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--stale-ok"]);
     assert!(
         listed.contains("second.txt"),
         "a warm-started watch did not persist what it observed. Listing was: {listed}",
@@ -175,7 +178,7 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
     fs::write(tree.join("ignored.log"), b"ignored").expect("write ignored file");
     fs::write(tree.join("first.txt"), b"first").expect("write first file");
 
-    report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
+    report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "on"]);
     let stronger = snapshot_fingerprint(cache.path()).expect("controls-on snapshot");
 
     let mut child = WatchChild(
@@ -192,6 +195,7 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
             ])
             .arg(&tree)
             .env("XDG_CACHE_HOME", cache.path())
+            .env_remove("FDU_CACHE_DIR")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -269,6 +273,7 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
             .args(["--watch", "--view", "files", "--interval", "1s"])
             .arg(&tree)
             .env("XDG_CACHE_HOME", cache.path())
+            .env_remove("FDU_CACHE_DIR")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -296,9 +301,10 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
     // The saved snapshot has to be usable, not merely present: a later run must accept
     // it as warm rather than rescanning.
     let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--view", "summary", "--format", "json", "--cache", "only"])
+        .args(["--view", "summary", "--format", "json", "--stale-ok"])
         .arg(&tree)
         .env("XDG_CACHE_HOME", cache.path())
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu against the saved cache");
 
@@ -319,9 +325,10 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
     // passed without the feature it exists to pin until this check was added. Only a file
     // created *after* the watch began can distinguish the two.
     let listing = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--view", "files", "--format", "jsonl", "--cache", "only"])
+        .args(["--view", "files", "--format", "jsonl", "--stale-ok"])
         .arg(&tree)
         .env("XDG_CACHE_HOME", cache.path())
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("list the saved cache");
     let listed = String::from_utf8_lossy(&listing.stdout);

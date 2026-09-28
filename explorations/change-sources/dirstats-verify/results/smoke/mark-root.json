@@ -1,0 +1,94 @@
+{
+ "stage": "root",
+ "root_gencount_before": 0,
+ "walk_cold": {
+  "entries": 9164,
+  "dirs": 658,
+  "files": 8506,
+  "wall_ms": 87.7,
+  "alloc": 92921856,
+  "data": 75395616
+ },
+ "walk_warm": {
+  "entries": 9164,
+  "dirs": 658,
+  "files": 8506,
+  "wall_ms": 66.2,
+  "alloc": 92921856,
+  "data": 75395616
+ },
+ "walk_warm_base_only": {
+  "entries": 9164,
+  "dirs": 658,
+  "files": 8506,
+  "wall_ms": 30.3,
+  "alloc": 92921856,
+  "data": 75395616
+ },
+ "walk_warm_ext_again": {
+  "entries": 9164,
+  "dirs": 658,
+  "files": 8506,
+  "wall_ms": 64.7,
+  "alloc": 92921856,
+  "data": 75395616
+ },
+ "mark": {
+  "ms": 101.1,
+  "returned": [
+   0,
+   0,
+   0
+  ],
+  "get_immediately": [
+   1,
+   9164,
+   92921856,
+   41.5
+  ],
+  "get_second": [
+   1,
+   9164,
+   92921856,
+   7.5
+  ],
+  "exact_vs_walk": true
+ },
+ "probe": {
+  "before_ms": {
+   "n": 2090,
+   "p50": 0.672,
+   "p90": 1.609,
+   "max": 22.634,
+   "mean": 0.922,
+   "sum": 1926.6
+  },
+  "during_ms": {
+   "n": 19,
+   "p50": 1.183,
+   "p90": 6.705,
+   "max": 19.911,
+   "mean": 2.592,
+   "sum": 49.3
+  },
+  "after_ms": {
+   "n": 8894,
+   "p50": 0.625,
+   "p90": 1.397,
+   "max": 25.569,
+   "mean": 0.826,
+   "sum": 7342.1
+  },
+  "max_gap_ms": 30.7,
+  "iterations": 11003
+ },
+ "walk_after_mark": {
+  "entries": 9164,
+  "dirs": 658,
+  "files": 8506,
+  "wall_ms": 80.0,
+  "alloc": 92921856,
+  "data": 75395616
+ },
+ "root_gencount_after": 1
+}

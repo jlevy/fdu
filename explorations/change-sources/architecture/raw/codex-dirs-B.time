@@ -1,0 +1,20 @@
+[timing-lock] waited 241.7s
+note: gitignored sizes are included in row totals
+       14.07 real         7.27 user        18.16 sys
+           768933888  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               51216  page reclaims
+                  12  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               55540  voluntary context switches
+              265758  involuntary context switches
+        129403011946  instructions retired
+         65704781440  cycles elapsed
+           734741488  peak memory footprint

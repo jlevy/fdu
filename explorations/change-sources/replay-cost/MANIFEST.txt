@@ -1,0 +1,22 @@
+# MANIFEST: explorations/change-sources/replay-cost/
+# Ported 2026-09-27 from the review's scratch directory; source paths are relative to it.
+# Tab-separated columns: ported_path, source_path, modified, sha256_ported, sha256_source.
+# modified = 'no' means byte-identical to the source (the two hashes are equal).
+# sha256_source is '-' for a generated file or one built from several sources.
+data/churn-2h.json	replay-cost/data/churn-2h.json	sanitized: private top-level directory name -> scratch-top-level	b30ffe27325c168a279981191f26290473e85b73cb44085f59b6c02ced587546	cbeb3c75045f74abe78cfe61298aa5dfbaa1913a834c5fa42da5b8b91c33ab9a
+data/logindex-summary.json	replay-cost/data/logindex-summary.json	no	ae7c9ac5c469060d1d89745e6070dd512c66a80f1b38bc174724f3622877a22d	ae7c9ac5c469060d1d89745e6070dd512c66a80f1b38bc174724f3622877a22d
+data/prior-runs-log-volume.json	replay-cost/data/prior-runs-log-volume.json	no	45d81c7c9399d26b16252d3391e662fbf6b4d11b4b14445db701fe068da06cf7	45d81c7c9399d26b16252d3391e662fbf6b4d11b4b14445db701fe068da06cf7
+data/prior-runs-timeline.json	replay-cost/data/prior-runs-timeline.json	no	620f27bfbc0c1631eac1b9f941ed5bb59ad6843899a297a7a5d967e56a9a9997	620f27bfbc0c1631eac1b9f941ed5bb59ad6843899a297a7a5d967e56a9a9997
+data/results-sanitized.json	replay-cost/data/runs.jsonl + replay-cost/data/logindex.csv	regenerated with the ported sanitize.py from the final 131-run runs.jsonl	bab82186975e6d96991b85ea552d2c415890e292ca9eb1782ff54a9033b00db4	-
+data/smoke.jsonl	replay-cost/data/smoke.jsonl	sanitized: st_dev numbers -> <dev-external>/<dev-internal>	37bfc1a68e3d4fffd99633f3971fa1641b1a24999ddce64b66328ec12c7c3a1f	93d671dfb693cde7274b0e2e49b820f5ff6b0128a7b9fa5a5a3ba86936a6acba
+data/summary.json	replay-cost/data/summary.json	sanitized: st_dev numbers -> <dev-external>/<dev-internal>	6bc755ca5222c4d7c3bea7c16ac7ce565be095755bfda56f9deef66567aafa94	ac440666b90ec61ae83526f4b9d2eda38460e4d112513ee2b94acc0a9828ad85
+src/analyze.py	replay-cost/src/analyze.py	edited: host device number -> EXTERNAL_DEV environment variable (plus import os); one-line comment added at top	d05c1455052a1dab64873630ac18256818d0898bed66efb2ff1aff7a6bf3bb4a	00c660aa2de33ccdf996c665ad41f078b947291473d250dee625d5b89a23f2d7
+src/breakeven.py	replay-cost/src/breakeven.py	no	fa8e69adc8391b9bbc5db9742620109e86986d35352ed8b15d895ab34c9eb4f5	fa8e69adc8391b9bbc5db9742620109e86986d35352ed8b15d895ab34c9eb4f5
+src/churn.py	replay-cost/src/churn.py	edited: private top-level directory name -> CHURN_SCRATCH_TOP; class label -> scratch-top-level; one-line comment added at top	aa655b65929ab4ec655ac977a71d5564c45fae722f3bfcf52f517747cfacbe51	19418cbb5086583edd9e8bf0244101f6718f0fc0bf6e6d2e536480e575a9816c
+src/cursorcost.c	replay-cost/src/cursorcost.c	no	5bc4a7893c2fbf96e1a4a9493d39691da2fdca2bbca060e3b1a49bec0209b8a8	5bc4a7893c2fbf96e1a4a9493d39691da2fdca2bbca060e3b1a49bec0209b8a8
+src/drive.py	replay-cost/src/drive.py	no	282e60931a375924626de74e54e95035ae2eeebd006bea1f5194550e8ef74776	282e60931a375924626de74e54e95035ae2eeebd006bea1f5194550e8ef74776
+src/logindex.py	replay-cost/src/logindex.py	no	8f514562ffa5222b5a9bcb4fa1281148cb84f72006c02d75e161a8d981cc174c	8f514562ffa5222b5a9bcb4fa1281148cb84f72006c02d75e161a8d981cc174c
+src/pidcpu.c	replay-cost/src/pidcpu.c	no	cb7a341f80da620cfd1a1e2ca3015d41b198c308ca111d9ee46d758396703ef6	cb7a341f80da620cfd1a1e2ca3015d41b198c308ca111d9ee46d758396703ef6
+src/replaycost.c	replay-cost/src/replaycost.c	no	7efcc247b2ad76be039b68baad118fa5c62b45a28f811dd5b18fb303619f878d	7efcc247b2ad76be039b68baad118fa5c62b45a28f811dd5b18fb303619f878d
+src/sanitize.py	replay-cost/src/sanitize.py	edited: host device number -> EXTERNAL_DEV; 'dev' added to the dropped result fields; one-line comment added at top	97330ecd115aa3821670e2dda7316c970767318410fdd89ad036f1556f55307c	32f28f38fb056028db8e00ec5b39fc3d716fd39bd7067db0db317cef73ff5b70
+src/since.py	replay-cost/src/since.py	no	763ab73551e82c6fd3910cb62358ff4912f8ce171e4b36cc070765bbf789235a	763ab73551e82c6fd3910cb62358ff4912f8ce171e4b36cc070765bbf789235a

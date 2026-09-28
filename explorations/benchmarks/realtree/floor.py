@@ -559,15 +559,15 @@ def _await_quiet(wait_seconds: float) -> bool:
 
     Returns whether it waited at all. It judges nothing: the regime entry that follows is
     `measure`'s own check and refuses a host that did not settle, and every trial is
-    still held to the gate. A load average that cannot be read is not waited for, since
-    time will not make it readable.
+    still held to the gate. A pressure reading that cannot be taken is not waited for,
+    since time will not make it readable.
     """
     regime = measure.HostRegime(name="quiet", initial={})
     started = time.monotonic()
     waited = False
     while True:
         snapshot = measure._host_pressure_snapshot(regime)
-        if snapshot.get("load_1m_per_cpu") is None:
+        if measure._gating_pressure(snapshot) is None:
             return waited
         if not measure._host_pressure_reasons(regime, snapshot, snapshot):
             return waited

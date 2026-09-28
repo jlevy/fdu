@@ -20,7 +20,15 @@ Spec = dict[str, Any]
 
 SCOPE_KEYS = frozenset({"no_gitignore", "budget", "line_limit", "scan_depth", "one_fs"})
 
-POLICIES = ("auto", "read-only", "only")
+# The deliveries a reader asks under. `stale-ok` is not a cache policy but the delivery
+# that answers from the snapshot alone; `cache_args` spells each on the command line.
+STALE_OK = "stale-ok"
+POLICIES = ("auto", "on", STALE_OK)
+
+
+def cache_args(policy: str) -> list[str]:
+    """The command-line arguments that ask for `policy`."""
+    return ["--stale-ok"] if policy == STALE_OK else ["--cache", policy]
 
 
 def spec(views: list[str] | None = None, analyze: str | None = None, **fields: Any) -> Spec:
@@ -161,18 +169,21 @@ REQUESTS: dict[str, Spec] = {
     "v_summary_a_lines": spec(views=["summary"], analyze="lines"),
 }
 
-# A warmer's spec and the cache policy its own run uses.
+# A warmer's spec and the cache policy its own run uses. A metadata warmer exists to
+# leave a snapshot of its scope, which a one-shot report does only under `on`; analysis
+# warmers leave theirs under `auto`, which is the path they cover. `W_auto` is the default
+# command's own history, which leaves nothing.
 WARMERS: dict[str, tuple[Spec, str]] = {
-    "W_default": (spec(), "auto"),
-    "W_nogi": (spec(no_gitignore=True), "auto"),
+    "W_default": (spec(), "on"),
+    "W_nogi": (spec(no_gitignore=True), "on"),
     "W_all": (spec(analyze="all"), "auto"),
     "W_code": (spec(analyze="code"), "auto"),
     "W_lines": (spec(analyze="lines"), "auto"),
     "W_words": (spec(analyze="words"), "auto"),
-    "W_budget1k": (spec(budget="1KiB"), "auto"),
-    "W_summary": (spec(views=["summary"]), "auto"),
-    "W_scandepth1": (spec(scan_depth=1), "auto"),
-    "W_refresh": (spec(), "refresh"),
+    "W_budget1k": (spec(budget="1KiB"), "on"),
+    "W_summary": (spec(views=["summary"]), "on"),
+    "W_scandepth1": (spec(scan_depth=1), "on"),
+    "W_auto": (spec(), "auto"),
 }
 
 

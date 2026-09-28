@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from benchmarks.realtree.report_html import (
     STYLE,
     axis_ticks,
+    decision_label,
     figure_absolute,
     figure_per_entry,
     fmt_primary,
@@ -338,6 +339,16 @@ class RenderTests(unittest.TestCase):
         )
         for construct in fetching:
             self.assertNotIn(construct, page, f"page retrieves something via {construct}")
+
+    def test_accepted_evidence_is_not_labelled_as_retained_code(self) -> None:
+        self.assertEqual(
+            decision_label({"decision": "accepted", "kept": None}),
+            "accepted evidence",
+        )
+        self.assertEqual(
+            decision_label({"decision": "accepted", "kept": "candidate"}),
+            "candidate kept",
+        )
 
     def test_links_are_allowed_and_the_project_is_one_of_them(self) -> None:
         # The counterpart to the check above: a reader arriving at this page cold should

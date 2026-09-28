@@ -47,10 +47,12 @@ this data can be read into a wrong answer.
 
 ## What each figure answers
 
-**Absolute.** Wall time in milliseconds at five cumulative checkpoints on one macOS
-tree. Each checkpoint re-measured the original pre-work binary against the code of the
-day, in one interleaved run, so every before-and-after pair comes from a single sitting
-rather than from two numbers taken days apart.
+**Absolute campaign checkpoint.** Historical wall time in milliseconds at five
+cumulative checkpoints on one macOS tree.
+Each checkpoint re-measured the original pre-work binary against the code of the day, in
+one interleaved run, so every before-and-after pair comes from a single sitting rather
+than from two numbers taken days apart.
+This series ends at its fifth checkpoint and does not describe the current engine.
 
 | job | before | after | change | spread across the five re-measurements |
 | --- | ---: | ---: | ---: | ---: |
@@ -64,6 +66,21 @@ The last column is the load-bearing one.
 It is the range the *unchanged* binary itself covered across those five runs, and it is
 the scale any movement between checkpoints has to be read against.
 On the producer job it is 35%, which is wider than several of the steps.
+
+**Pre-integration multi-view report construction.** H153 is a later exploratory,
+uncontrolled incremental comparison on a 137,085-entry macOS tree.
+Its 100-report loop for the unfiltered Types, Families, Languages, and Documents views
+moved from 29.9 seconds to 12.0 seconds: a paired −59.94%, or about 2.5× faster.
+The whole probe moved from 38.6 seconds to 20.6 seconds, a paired −47.01%, after one
+fresh scan and line-analysis setup was amortized across all 100 reports.
+These are report-projection results, not current scan speed or a one-shot full-analysis
+measurement. The candidate remains provisional because the major-fault non-regression
+gate was inconclusive; a quiet confirming run is still needed.
+The measured revisions predate the integration of #136’s Code overview, population
+controls, and tree accounting.
+The combined engine needs a fresh pair against the same feature stack without H153;
+these historical numbers do not establish its speedup.
+See [exp-159](../experiments/exp-159-share-content-metric-resolution-across-views.md).
 
 **Relative.** Every experiment’s paired effect on its primary job with its 95% interval,
 sorted by effect, against the -3% accept threshold.
@@ -91,8 +108,8 @@ That is wrong here.
 The absolute values are the median of each arm on its own.
 The relative values are the median of the *paired* differences, each candidate trial
 against the control trial interleaved beside it.
-When the host drifts mid-run the two diverge: across this record they differ by more
-than two percentage points on 21% of measurements, and sometimes differ in sign.
+When the host drifts mid-run the two can differ by several percentage points and
+sometimes differ in sign.
 exp-005’s `cold-scan-index` reads +2.8% by dividing its medians and -3.9% paired.
 
 The paired figure is the one that controls for drift, so it is the one every verdict
@@ -103,14 +120,14 @@ changed, measured between 210 ms and 327 ms across eleven runs.
 
 ## Two things the counts do not say on their own
 
-The number of changes kept and the number that measured an improvement whose interval
-excluded zero are close, and they are not the same set — the page prints both.
-
-Five improved and were not kept — below the threshold, superseded, or unfinished.
-Five were kept although their interval crossed zero, because what they bought was not
-speed. exp-052 and exp-053 are the clearest: instrumentation accepted on intervals of
-[-3.3%, +3.8%] and [-3.0%, +1.4%], which is a claim that the cost is undetectable, not
-that anything got faster.
+An accepted experiment verdict and a measured primary speed improvement are not the same
+set—the generated page computes both from the current artifacts.
+Some improvements remain below the threshold, are superseded, or are unfinished.
+Other verdicts accept noninferiority, instrumentation, or correctness evidence rather
+than faster primary wall time.
+exp-052 and exp-053 are the clearest instrumentation examples: their intervals of
+[-3.3%, +3.8%] and [-3.0%, +1.4%] bound the measurement cost instead of claiming a
+speedup.
 
 ## Keeping it current
 

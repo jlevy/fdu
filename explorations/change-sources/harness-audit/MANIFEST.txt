@@ -1,0 +1,10 @@
+# MANIFEST: explorations/change-sources/harness-audit/
+# Ported 2026-09-27 from the review's scratch directory; source paths are relative to it.
+# Tab-separated columns: ported_path, source_path, modified, sha256_ported, sha256_source.
+# modified = 'no' means byte-identical to the source (the two hashes are equal).
+# sha256_source is '-' for a generated file or one built from several sources.
+analyze_real_root.py	harness-audit/analyze_real_root.py	edited: absolute fsevents-replay import path -> repository-relative; one-line comment added at top	384bbc63ecbc9b06e8f5fe06ec073ffd6df08f88ead63ac99bdc8ba8380eab1a	2fbc1f9d9c647f1c41fe6b04e4a694e7e7bd7daa1673315705e001458c180a57
+close_order.py	harness-audit/close_order.py	no	fc48cdf76a77a8e14dc32b0c6b19124a2c022ccb365334a57a356008561f1dc8	fc48cdf76a77a8e14dc32b0c6b19124a2c022ccb365334a57a356008561f1dc8
+results/close-order-01.json	harness-audit/results/close-order-01.json	no	3f839759e7e43aad53a21596dd12f190f5a38a45f7a02193d5ad329f385b8ff8	3f839759e7e43aad53a21596dd12f190f5a38a45f7a02193d5ad329f385b8ff8
+results/codex-shallow-analysis-v2.sanitized.txt	harness-audit/results/codex-shallow-analysis-v2.txt	sanitized: path-hash labels re-keyed, inodes/pids tokenized, process names categorized, fd numbers dropped; header added	5c000e7f7c36250179f7adcf7c1d424af74786647f7b0371aed2ffbcae73faad	a4c4de596008ebfc01f13bcdbc9776fb74220cb061fed3dab570268e5798910c
+# Note: results/close-order-01.json field a1_id_greater_than_b compares the creation record; the raw IDs show the close-time ItemModified record (F+336,642) is greater than b's creation (F+336,004).

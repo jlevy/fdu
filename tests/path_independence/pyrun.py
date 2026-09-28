@@ -2,7 +2,7 @@
 
 Usage: pyrun.py '<job>', where job is
     {"root": str, "mode": "report" | "open" | "scan", "cache": str, "spec": {...}}
-and the caller has set XDG_CACHE_HOME.
+where cache is a cache policy or "stale-ok", and the caller has set the cache home.
 
 The envelope is {"ok": true, "answer": {...}}; {"ok": false, "kind": ..., "error": "..."}
 when the request raised, where kind is "fdu" for fdu.FduError, "refused" for ValueError,
@@ -63,14 +63,18 @@ def main() -> None:
     job = json.loads(sys.argv[1])
     try:
         scan, query, analysis = _build(job["spec"])
-        cache = fdu.CachePolicy(job["cache"])
+        stale_ok = job["cache"] == "stale-ok"
+        cache = fdu.CachePolicy.AUTO if stale_ok else fdu.CachePolicy(job["cache"])
         mode = job["mode"]
         if mode == "report":
-            report = fdu.report(job["root"], query, cache=cache, scan=scan, analysis=analysis)
+            report = fdu.report(
+                job["root"], query, cache=cache, stale_ok=stale_ok, scan=scan, analysis=analysis
+            )
         elif mode == "open":
             report = fdu.open(
                 job["root"],
                 cache=cache,
+                stale_ok=stale_ok,
                 scan=scan,
                 analysis=analysis,
                 ignored=query.selection.ignored or fdu.IgnoredEntries.INCLUDE,

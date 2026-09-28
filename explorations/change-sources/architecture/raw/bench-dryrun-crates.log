@@ -1,0 +1,8 @@
+=== Sun Sep 27 21:32:46 PDT 2026 label=dryrun-crates root=<fdu-checkout>/crates rounds=1 ===
+[21:32:46] dryrun-crates r0 auto rc=0 real=0.10s rss=25378816 load=14.04 fse_cpu=512:18.45 :: took 6.5 ms to walk 149 files (8.3 MiB) at 22,988 files/s (1.260 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+[21:32:46] dryrun-crates r1 off-nogitignore rc=0 real=0.06s rss=25214976 load=14.04 fse_cpu=512:18.45 :: took 1.1 ms to walk 149 files (8.3 MiB) at 131,344 files/s (7.200 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+[21:32:47] dryrun-crates r1 off rc=0 real=0.06s rss=25477120 load=14.04 fse_cpu=512:18.46 :: took 1.4 ms to walk 149 files (8.3 MiB) at 103,257 files/s (5.660 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+[21:32:47] dryrun-crates r1 auto rc=0 real=0.06s rss=25575424 load=14.04 fse_cpu=512:18.46 :: took 1.4 ms to walk 149 files (8.3 MiB) at 107,406 files/s (5.887 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+[21:32:47] dryrun-crates r1 only rc=0 real=0.06s rss=25493504 load=14.04 fse_cpu=512:18.46 :: took 913.6 µs to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+[21:32:47] dryrun-crates r1 refresh rc=0 real=0.06s rss=25526272 load=14.04 fse_cpu=512:18.46 :: took 1.4 ms to walk 149 files (8.3 MiB) at 108,749 files/s (5.961 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+=== done Sun Sep 27 21:32:47 PDT 2026 ===

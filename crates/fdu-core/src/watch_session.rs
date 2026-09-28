@@ -231,7 +231,7 @@ impl Session {
         }
         let interval = self.plan.delivery().watch.expect("watch plan").interval;
         self.persistence.persist_due(now, interval, || {
-            if !self.plan.delivery().cache.writes() || self.plan.delivery().cache_path.is_none() {
+            if !self.plan.persists() || self.plan.delivery().cache_path.is_none() {
                 return Ok(false);
             }
             let index = self.index.snapshot()?;
@@ -831,6 +831,7 @@ mod tests {
         );
         let interval = Duration::from_secs(2);
         let delivery = Delivery {
+            stale_ok: false,
             cache: crate::CachePolicy::Auto,
             cache_path: Some(cache_path.clone()),
             accept_partial: false,
@@ -869,8 +870,24 @@ mod tests {
     fn startup_save_failure_keeps_the_session_live_and_retries() {
         let root = tempfile::tempdir().expect("root");
         let cache = tempfile::tempdir().expect("cache");
-        let cache_path = cache.path().join("blocked-snapshot");
-        std::fs::create_dir(&cache_path).expect("directory blocks snapshot rename");
+        // A session reads before it writes, so the fixture must read as no snapshot yet
+        // refuse the write: a parent that cannot become a directory. On Unix that is a
+        // symbolic link to a directory that does not exist yet, since a path through a
+        // regular file fails to open rather than reading as absent; Windows spells a
+        // path through a regular file as not found, so a file serves there.
+        let parent = cache.path().join("blocked");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(cache.path().join("missing"), &parent)
+            .expect("dangling parent blocks the write");
+        #[cfg(not(unix))]
+        std::fs::write(&parent, b"").expect("file parent blocks the write");
+        let restore = || {
+            #[cfg(unix)]
+            std::fs::create_dir(cache.path().join("missing")).expect("restore the parent");
+            #[cfg(not(unix))]
+            std::fs::remove_file(&parent).expect("restore the parent");
+        };
+        let cache_path = parent.join("snapshot");
         std::fs::write(root.path().join("file.txt"), b"content").expect("file");
         let interval = Duration::from_secs(2);
         let request = Request::new(
@@ -883,7 +900,8 @@ mod tests {
             std::time::SystemTime::now(),
         );
         let delivery = Delivery {
-            cache: crate::CachePolicy::Refresh,
+            stale_ok: false,
+            cache: crate::CachePolicy::On,
             cache_path: Some(cache_path.clone()),
             accept_partial: false,
             watch: Some(WatchDelivery { interval }),
@@ -895,7 +913,7 @@ mod tests {
         assert!(session.report(std::time::SystemTime::now()).expect("live report").status.complete);
         let now = Instant::now();
         assert!(matches!(session.persist_due(now), SaveOutcome::Failed(_)));
-        std::fs::remove_dir(&cache_path).expect("restore writable destination");
+        restore();
         assert!(matches!(session.persist_due(now), SaveOutcome::Skipped));
         assert!(matches!(session.persist_due(now + interval), SaveOutcome::Written));
         assert!(crate::snapshot::load(&cache_path).expect("read snapshot").is_some());
@@ -921,6 +939,7 @@ mod tests {
             std::time::SystemTime::now(),
         );
         let delivery = Delivery {
+            stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
             accept_partial: false,
@@ -1016,6 +1035,7 @@ mod tests {
             ))
         });
         let delivery = Delivery {
+            stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
             accept_partial: false,
@@ -1067,6 +1087,7 @@ mod tests {
             std::time::SystemTime::now(),
         );
         let delivery = Delivery {
+            stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
             accept_partial: false,
@@ -1109,7 +1130,8 @@ mod tests {
 
     /// The handoff pass restarts the walk counters and enters `Revalidating`, whatever
     /// the first pass left in the handle: with a scripted watcher that reports nothing,
-    /// the counts afterwards are exactly one walk of the tree.
+    /// the counts afterwards are exactly one walk of the tree. Identical event streams
+    /// also make the observed and unobserved reports exactly comparable.
     #[test]
     fn the_handoff_pass_restarts_the_counts() {
         let root = tempfile::tempdir().expect("root");
@@ -1132,10 +1154,11 @@ mod tests {
                 scope: scan.clone().into(),
                 content: crate::content::AnalysisSet::NONE,
             },
-            Query::default(),
+            Query { views: vec![crate::query::ViewSpec::Summary], ..Query::default() },
             std::time::SystemTime::now(),
         );
         let delivery = Delivery {
+            stale_ok: false,
             cache: crate::CachePolicy::Off,
             cache_path: None,
             accept_partial: false,
@@ -1151,12 +1174,12 @@ mod tests {
         progress.add_walked(100, 100, 100, 100);
         progress.enter(crate::ProgressPhase::Saving);
 
-        Session::finish_initial_handoff(
-            IndexHandle::new(index),
-            request,
+        let session = Session::finish_initial_handoff(
+            IndexHandle::new(index.clone()),
+            request.clone(),
             &delivery,
             watcher,
-            scan,
+            scan.clone(),
             Some(&progress),
         )
         .expect("handoff");
@@ -1169,6 +1192,28 @@ mod tests {
             "one walk of the root and its two directories, the first pass not added in"
         );
         assert_eq!(snapshot.allocated, report.allocated_walked, "allocated restarts with them");
+
+        let (plain_watcher, _plain_sender) =
+            Watcher::scripted(root.path(), WatchConfig::default(), script.path()).expect("watcher");
+        let plain = Session::finish_initial_handoff(
+            IndexHandle::new(index),
+            request,
+            &delivery,
+            plain_watcher,
+            scan,
+            None,
+        )
+        .expect("plain handoff");
+        let generated_at = std::time::SystemTime::now();
+        let observed_report = session.report(generated_at).expect("observed report");
+        let mut plain_report = plain.report(generated_at).expect("plain report");
+        plain_report.provenance = observed_report.provenance.clone();
+        let json = |report: &Report| {
+            crate::report_format::render(report, crate::report_format::Format::Json, false)
+                .expect("render")
+        };
+        assert_eq!(json(&plain_report), json(&observed_report));
+        assert_eq!(progress.snapshot(), snapshot, "the second handoff and reads were not observed");
     }
 
     /// A record says what the index can be asked, and nothing more.
@@ -1203,8 +1248,9 @@ mod tests {
     /// counts restart, which keeps the line moving on a large tree after the save,
     /// where a frozen count would look like a hang. The session it returns is the one
     /// [`Session::start`] returns, and it reports nothing further through the handle
-    /// once started. The exact reset is pinned by the scripted test below; with a real
-    /// backend, which may replay the tree's own creation, only lower bounds hold.
+    /// once started. The exact reset and report equivalence are pinned by the scripted
+    /// test above; independent native watchers may replay different creation hints and
+    /// record different legitimate setup-gap diagnostics, so only lower bounds hold.
     #[test]
     fn a_started_session_reports_its_second_pass_and_then_nothing() {
         let root = tempfile::tempdir().expect("root");
@@ -1231,6 +1277,7 @@ mod tests {
             )
         };
         let delivery = Delivery {
+            stale_ok: false,
             cache: crate::CachePolicy::Auto,
             cache_path: Some(cache.path().join("snapshot")),
             accept_partial: false,
@@ -1260,13 +1307,9 @@ mod tests {
         let plain = Session::start(request(), delivery).expect("plain start");
         let generated_at = std::time::SystemTime::now();
         let observed_report = session.report(generated_at).expect("observed report");
-        let mut plain_report = plain.report(generated_at).expect("plain report");
-        plain_report.provenance = observed_report.provenance.clone();
-        let json = |report: &Report| {
-            crate::report_format::render(report, crate::report_format::Format::Json, false)
-                .expect("render")
-        };
-        assert_eq!(json(&plain_report), json(&observed_report));
+        let plain_report = plain.report(generated_at).expect("plain report");
+        assert!(observed_report.status.complete);
+        assert!(plain_report.status.complete);
         assert_eq!(progress.snapshot(), after_start, "the second start was not observed");
     }
 }

@@ -1,0 +1,122 @@
+# Read-only inspection of Apple system binaries (macOS 26.5.2), 2026-09-28T05:40Z
+# Tools: dyld_info -imports/-exports (shared-cache dylibs), nm -u (imports), strings -a (filtered). Apple build paths and non-relevant lines omitted.
+
+## StorageManagement.framework (dyld shared cache) -- dyld_info -imports, filtered
+_CacheDeleteCancelPurge  (from CacheDelete)
+_CacheDeleteCopyPurgeableSpaceWithInfo  (from CacheDelete)
+_CacheDeletePurgeAsync  (from CacheDelete)
+_FSEventStreamCreate  (from CoreServices)
+_FSEventStreamInvalidate  (from CoreServices)
+_FSEventStreamRelease  (from CoreServices)
+_FSEventStreamSetDispatchQueue  (from CoreServices)
+_FSEventStreamStart  (from CoreServices)
+_FSEventStreamStop  (from CoreServices)
+_MDItemCopyAttribute  (from CoreServices)
+_MDItemCreateWithURL  (from CoreServices)
+_kMDItemDateAdded  (from CoreServices)
+_kMDItemFSContentChangeDate  (from CoreServices)
+_kMDItemFSCreationDate  (from CoreServices)
+_kMDItemLastUsedDate  (from CoreServices)
+-- exports, filtered
+_STMSizeDirectoryWithExcludedChildURLs
+_kAppSizeKey
+_kDataSizeKey
+_kDeletableSizeKey
+_kSTDataDeviceSizeAvailable
+_kSTDataDeviceSizePurgeable
+_kSTDataDeviceSizeUsed
+_kSizeKey
+
+## ApplicationsStorageExtension.appex -- nm -u and strings, filtered
+_FSEventStreamCreate
+_FSEventStreamGetLatestEventId
+_FSEventStreamInvalidate
+_FSEventStreamRelease
+_FSEventStreamSetDispatchQueue
+_FSEventStreamStart
+_FSEventStreamStop
+_NSMetadataQueryDidFinishGatheringNotification
+_NSMetadataQueryDidUpdateNotification
+_NSMetadataQueryGatheringProgressNotification
+_OBJC_CLASS_$_NSMetadataQuery
+Spotlight is still gathering so returning an unknown total size instead of %lld
+Spotlight query is still gathering, so send an unknown size instead of %lld
+kMDItemContentType='com.apple.application-bundle'
+
+## diskspaced (StorageManagement LaunchAgent) -- strings, filtered
+com.apple.diskspaced.periodicScan
+com.apple.diskspaced.cacheDelete
+
+## DiskSpaceDiagnostics FilesystemMetadataSnapshotService.xpc -- strings and nm -u, filtered
+A filesystem metadata snapshot contains information necessary to investigate reports of issues with disk space.
+APFSIOC_CLONEGROUP_ITERATE failed on volume (%s) with error %d (%s)
+APFSIOC_DIR_STATS_OP failed for %s with error %s
+APFSIOC_GET_SHARED_EXTENTS failed for %s with error %s
+APFSIOC_PURGEABLE_GET_BULK_INFO failed for %s with error %s
+DirStat-ID
+DirStatsDataFilename
+Failed to allocate buffer for invoking APFSIOC_CLONEGROUP_ITERATE
+Failed to get APFSIOC_GET_INTERNAL_FLAGS for directory %s
+SAFDirStats
+SpaceAttribution snapshot
+Successfully collected SpaceAttribution snapshot
+T@"NSString",R,V_safeFilenameForDirStatsDataListing
+TB,R,V_shouldCollectDirStatsData
+__checkDirStatsDataCapabilityForVolume:
+_getDirStatsType:reply:
+_safeFilenameForDirStatsDataListing
+_shouldCollectDirStatsData
+getattrlistbulk on path %@ failed with error %s
+safeFilenameForDirStatsDataListing
+shouldCollectDirStatsData
+ugrep: error: error at position 66
+read|getattrlist|getattrlistbulk|readdir)(\)?$
+                            mismatched ( )___/
+
+
+
+## Time Machine backupd -- strings and nm -u, filtered (event-collection strategies)
+APFS snapshot diffing (catch-up)
+Cannot use FSEvents: Event ID was 0. (
+Cannot use FSEvents: Event store UUID was nil. (
+Deep scan (catch-up)
+FSEvents (catch-up)
+Failed to enumerate snapshot diffs, error: %@
+TMSnapshotDiffer
+Using APFS snapshot diffing (catch-up) for source: 
+Using APFS snapshot diffing for source: 
+Using FSEvents (catch-up) for source: 
+Using FSEvents for source: 
+Using a deep scan for want of a better EventCollectionStrategy
+kFSEventStreamEventFlagMustScanSubDirs - path: '
+_FSEventStreamCreateRelativeToDevice
+_FSEventStreamFlushAsync
+_FSEventStreamInvalidate
+_FSEventStreamSetDispatchQueue
+_FSEventStreamStart
+_FSEventStreamStop
+_FSEventsCopyUUIDForDevice
+_FSEventsGetCurrentEventId
+__TMDisableSnapshotDiffEventCollectionKey
+_fsctl
+
+## sysmond (backend of Activity Monitor via libsysmon) -- nm -u, filtered
+_coalition_info_resource_usage
+_proc_listpids
+_proc_pid_rusage
+_proc_pidinfo
+## Activity Monitor -- nm -u, filtered
+_sysmon_request_create
+_sysmon_request_execute
+_sysmon_row_get_value
+_sysmon_table_apply
+_bytesWritten
+_bytesWrittenDelta
+
+## storagekitd (/usr/libexec, root LaunchDaemon) -- strings, filtered
+-[SKAPFSDisk(Daemon) _cacheSpacesWithPurgeable:]
+Purgeable
+_cacheSpacesWithPurgeable:
+did best-effort create FSEventsNoIndexDir=%@ err=(ignoring)=%@
+did best-effort create FSEventsNoIndexFile=%@ success=%d
+purgeableSpace

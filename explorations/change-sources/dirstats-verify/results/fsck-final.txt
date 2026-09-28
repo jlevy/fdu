@@ -1,0 +1,16 @@
+** Checking the container superblock.
+   Checking the checkpoint with transaction ID 34.
+** Checking the space manager.
+** Checking the space manager free queue trees.
+** Checking the object map.
+** Checking volume /dev/<rdisk>.
+** Checking the APFS volume superblock.
+   The volume dsverify was formatted by newfs_apfs (2811.121.1) and last modified by apfs_kext (2811.121.1).
+** Checking the object map.
+** Checking the snapshot metadata tree.
+** Checking the snapshot metadata.
+** Checking the fsroot tree.
+** Checking the extent ref tree.
+** Verifying volume object map space.
+** Verifying allocated space.
+** The volume /dev/<rdisk> with UUID <uuid> appears to be OK.

@@ -1,0 +1,779 @@
+{
+ "label": "depth3",
+ "walk_before": {
+  "summary": "SUMMARY entries=225653 dirs=21513 files=204140 other=0 pruned=0 wall_ms=9664.6 alloc=2192588800 data=1775048737",
+  "ms": 9683.5
+ },
+ "checkpoint": {
+  "origins": 8049,
+  "totals_ms": 47.3,
+  "root_gencount": 70043
+ },
+ "workload": {
+  "build_files": 3000,
+  "log_bytes": 2097152,
+  "touched_mtime_only": 5,
+  "workload_ms": 588.7
+ },
+ "totals_only": {
+  "immediate": {
+   "changed_origins": 119,
+   "ms": 44.1
+  },
+  "after_sync": {
+   "changed_origins": 119,
+   "ms": 47.9,
+   "changed": {
+    "": {
+     "dgen": 13076,
+     "ddesc": 3049,
+     "dphys": 34045952
+    },
+    "deep-0": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "node_modules": {
+     "dgen": 50,
+     "ddesc": -17,
+     "dphys": -122880
+    },
+    "node_modules/pkg-1500": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -16,
+     "dphys": -122880
+    },
+    "node_modules/pkg-1500/lib": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -15,
+     "dphys": -122880
+    },
+    "src": {
+     "dgen": 955,
+     "ddesc": 4,
+     "dphys": 3903488
+    },
+    "src/m19": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -3100,
+     "dphys": -29282304
+    },
+    "src/m19/mod1900": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -376832
+    },
+    "src/m19/mod1901": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m19/mod1902": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -237568
+    },
+    "src/m19/mod1903": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m19/mod1904": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -204800
+    },
+    "src/m19/mod1905": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -184320
+    },
+    "src/m19/mod1906": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m19/mod1907": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m19/mod1908": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m19/mod1909": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -442368
+    },
+    "src/m19/mod1910": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m19/mod1911": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -331776
+    },
+    "src/m19/mod1912": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -208896
+    },
+    "src/m19/mod1913": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -270336
+    },
+    "src/m19/mod1914": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -331776
+    },
+    "src/m19/mod1915": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m19/mod1916": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m19/mod1917": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m19/mod1918": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -339968
+    },
+    "src/m19/mod1919": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -356352
+    },
+    "src/m19/mod1920": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m19/mod1921": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -401408
+    },
+    "src/m19/mod1922": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -352256
+    },
+    "src/m19/mod1923": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m19/mod1924": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -258048
+    },
+    "src/m19/mod1925": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -311296
+    },
+    "src/m19/mod1926": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m19/mod1927": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -315392
+    },
+    "src/m19/mod1928": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -331776
+    },
+    "src/m19/mod1929": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m19/mod1930": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m19/mod1931": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m19/mod1932": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -339968
+    },
+    "src/m19/mod1933": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m19/mod1934": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m19/mod1935": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m19/mod1936": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -270336
+    },
+    "src/m19/mod1937": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -323584
+    },
+    "src/m19/mod1938": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m19/mod1939": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m19/mod1940": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -270336
+    },
+    "src/m19/mod1941": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m19/mod1942": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m19/mod1943": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m19/mod1944": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m19/mod1945": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m19/mod1946": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -290816
+    },
+    "src/m19/mod1947": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m19/mod1948": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -397312
+    },
+    "src/m19/mod1949": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m19/mod1950": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m19/mod1951": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m19/mod1952": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m19/mod1953": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m19/mod1954": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m19/mod1955": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -450560
+    },
+    "src/m19/mod1956": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m19/mod1957": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m19/mod1958": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m19/mod1959": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -311296
+    },
+    "src/m19/mod1960": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m19/mod1961": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -315392
+    },
+    "src/m19/mod1962": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m19/mod1963": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m19/mod1964": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -270336
+    },
+    "src/m19/mod1965": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m19/mod1966": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m19/mod1967": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m19/mod1968": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -229376
+    },
+    "src/m19/mod1969": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m19/mod1970": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -364544
+    },
+    "src/m19/mod1971": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m19/mod1972": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m19/mod1973": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -212992
+    },
+    "src/m19/mod1974": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m19/mod1975": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m19/mod1976": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -466944
+    },
+    "src/m19/mod1977": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -204800
+    },
+    "src/m19/mod1978": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m19/mod1979": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -348160
+    },
+    "src/m19/mod1980": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -364544
+    },
+    "src/m19/mod1981": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m19/mod1982": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m19/mod1983": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m19/mod1984": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m19/mod1985": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -307200
+    },
+    "src/m19/mod1986": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m19/mod1987": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m19/mod1988": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -466944
+    },
+    "src/m19/mod1989": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m19/mod1990": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m19/mod1991": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -307200
+    },
+    "src/m19/mod1992": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m19/mod1993": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -196608
+    },
+    "src/m19/mod1994": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -438272
+    },
+    "src/m19/mod1995": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m19/mod1996": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -360448
+    },
+    "src/m19/mod1997": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -311296
+    },
+    "src/m19/mod1998": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -372736
+    },
+    "src/m19/mod1999": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "target": {
+     "dgen": 12062,
+     "ddesc": 3062,
+     "dphys": 30236672
+    },
+    "target/debug": {
+     "dgen": 12062,
+     "ddesc": 3062,
+     "dphys": 30236672
+    },
+    "target/debug/deps": {
+     "dgen": 1,
+     "ddesc": 1,
+     "dphys": 8192
+    },
+    "wide": {
+     "dgen": 3,
+     "ddesc": 0,
+     "dphys": 16384
+    }
+   }
+  }
+ },
+ "pruned_walk": {
+  "summary": "SUMMARY entries=54575 dirs=6269 files=48306 other=0 pruned=3026 wall_ms=1042.0 alloc=734609408 data=641705370",
+  "ms": 1055.4,
+  "visited": 54575,
+  "pruned_origins": 3026,
+  "misses": {
+   "added": 0,
+   "removed": 0,
+   "size_changed": 0,
+   "mtime_only": 5
+  },
+  "miss_examples": {
+   "added": [],
+   "removed": [],
+   "size_changed": [],
+   "mtime_only": [
+    "src/m00/mod0000/01.py",
+    "src/m00/mod0000/00.py",
+    "src/m00/mod0000/04.py",
+    "src/m00/mod0000/03.py",
+    "src/m00/mod0000/02.py"
+   ]
+  }
+ },
+ "walk_after": {
+  "summary": "SUMMARY entries=228703 dirs=21572 files=207131 other=0 pruned=0 wall_ms=7878.1 alloc=2226700288 data=1809184061",
+  "ms": 7897.9
+ },
+ "oracle": {
+  "added": 6168,
+  "removed": 3118,
+  "size_changed": 4,
+  "mtime_only": 5
+ },
+ "attribution": {
+  "origins_compared": 119,
+  "mismatches": {
+   "": {
+    "fsctl_dphys": 34045952,
+    "oracle_dalloc": 34111488,
+    "match": false
+   },
+   "wide": {
+    "fsctl_dphys": 16384,
+    "oracle_dalloc": 81920,
+    "match": false
+   }
+  },
+  "origins_with_oracle_delta_but_no_fsctl_change": [],
+  "n_silent": 0
+ }
+}

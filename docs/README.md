@@ -13,7 +13,8 @@ live change feed, and the Rust and Python libraries.
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
-- [0.1.0 release notes](project/release-notes/0.1.0.md)
+- [0.2.0 release notes](project/release-notes/0.2.0.md) and
+  [0.1.0 release notes](project/release-notes/0.1.0.md)
 
 ## Understand the Design
 
@@ -29,6 +30,7 @@ live change feed, and the Rust and Python libraries.
 
 ## Research
 
+- [Cache economics and default plans](project/research/research-2026-09-27-cache-economics-and-default-plans.md)
 - [Codebase analysis: accuracy and incremental improvements](project/research/research-2026-09-26-codebase-analysis.md)
 - [Presentation design and composable display limits](project/research/research-2026-09-26-presentation-design.md)
 - [File-type and content metrics](project/research/research-2026-08-12-fast-file-content-metrics.md)
@@ -49,7 +51,8 @@ live change feed, and the Rust and Python libraries.
 - [Performance evidence report](project/reports/report-2026-08-20-fdu-performance-evidence.md)
 - [Experiment ledger](project/reports/report-2026-08-10-fdu-performance-experiments.md)
 - [Performance loop](project/guides/performance-loop.md)
-- [Latest tool comparison](project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
+- [macOS tool comparison](project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+- [Linux tool comparison](project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 
 ## Build, Test, and Release
 

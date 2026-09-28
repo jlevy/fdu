@@ -1,0 +1,20 @@
+dirs A=95529 B=98294 changed_rollups=4618 (added 3665, removed 900)
+load A 2.47s+0.73s, load B 2.06s+0.79s, diff 0.077s
+root allocated delta: 602562560 bytes
+top 15 |delta allocated| (depth, delta, before, after) -- paths withheld:
+  depth=1 delta=+809771008 before=502206464 after=1311977472
+  depth=2 delta=+809771008 before=502206464 after=1311977472
+  depth=0 delta=+637218816 before=11555016704 after=12192235520
+  depth=0 delta=+602562560 before=30494826496 after=31097389056
+  depth=3 delta=+539877376 before=57135104 after=597012480
+  depth=4 delta=+515940352 before=56983552 after=572923904
+  depth=5 delta=+515940352 before=56983552 after=572923904
+  depth=6 delta=+515940352 before=56983552 after=572923904
+  depth=7 delta=+204656640 before=0 after=204656640
+  depth=1 delta=-172552192 before=2207260672 after=2034708480
+  depth=2 delta=-172552192 before=2207260672 after=2034708480
+  depth=3 delta=-172552192 before=172552192 after=0
+  depth=3 delta=+172552192 before=0 after=172552192
+  depth=8 delta=+123195392 before=0 after=123195392
+  depth=7 delta=+118525952 before=0 after=118525952
+changed dirs by depth: 0:11, 1:9, 2:22, 3:16, 4:164, 5:217, 6:404, 7:962, 8:438, 9:185, 10:150, 11:314, 12:382, 13:484, 14:433, 15:298, 16:69, 17:60

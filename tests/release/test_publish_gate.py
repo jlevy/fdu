@@ -34,7 +34,7 @@ from scripts.release.publish_gate import (
 )
 from scripts.release.registry_state import RegistryError
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 CRATES_IO = "https://crates.io/api/v1/crates"
 INDEX = "https://index.crates.io"
 PYPI = f"https://pypi.org/pypi/fdu/{VERSION}/json"
@@ -345,8 +345,8 @@ class PypiTests(unittest.TestCase):
         self.assertEqual(pypi_verdict(PYTHON, dict(PYTHON)), "identical")
         with self.assertRaisesRegex(Conflict, f"hash mismatch: {wheel}"):
             pypi_verdict(PYTHON, {**PYTHON, wheel: "0" * 64})
-        with self.assertRaisesRegex(Conflict, "unexpected: fdu-0.1.0-py3-none-any.whl"):
-            pypi_verdict(PYTHON, {**PYTHON, "fdu-0.1.0-py3-none-any.whl": "0" * 64})
+        with self.assertRaisesRegex(Conflict, "unexpected: fdu-0.2.0-py3-none-any.whl"):
+            pypi_verdict(PYTHON, {**PYTHON, "fdu-0.2.0-py3-none-any.whl": "0" * 64})
 
     def test_a_pypi_conflict_stops_the_audit_before_crates_io_is_written(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -11,12 +11,14 @@ records the status reconciliation and remaining evidence gaps.
 
 fdu 0.1.0 is published on crates.io, PyPI, and GitHub.
 Publication does not complete every first-user verification exercise.
-The analysis and inventory changes are implemented and verified in PRs #133 and #135 but
-await merge; research is in #130.
+The analysis and inventory work (#130, #133, #135, and the #136 tracking follow-up) and
+stack 141 (#137, #138, #139, and #142) landed for 0.2.0, whose
+[release notes](docs/project/release-notes/0.2.0.md) and CHANGELOG entry are written.
+0.2.0 is not yet tagged or published.
 
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
-| Current PR stack | `fdu-0gqc` | Ordered merge and post-merge verification of #130, #133, #135 and the tracking follow-up; [release process](docs/project/guides/release-process.md). No next release is implied. |
+| 0.2.0 release | `fdu-0gqc`, maintainer | `fdu-0gqc` owns post-merge verification of the landed work and does not tag or publish. The maintainer then runs the [installed-CLI QA playbook](tests/qa/cli-installed-e2e.qa.md) and its peer-agreement phase on the release commit, and the [release process](docs/project/guides/release-process.md): rehearse, tag, and publish. |
 | Output-design manual acceptance | `fdu-kwjc` | [Recorded candidate checks](docs/project/reports/report-2026-09-27-manual-acceptance.md): 30 of 33 passed or corrected; light/dark visual judgment, fresh-session skill discovery, and upgrade after this increment publishes remain open. |
 | Published 0.1.0 verification | `fdu-gjc2`, `fdu-yfej`, `fdu-vxvm` | Record the remaining [published-channel first-user checks](docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md). |
 | Release automation | `fdu-zr73` | [Packaging follow-ups](docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md), including registry propagation retry (`fdu-zx9y`). |
@@ -53,13 +55,28 @@ references.
 | Remaining hypotheses | `fdu-8ya1`, `fdu-4sg3` | [Post-H115 headroom](docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) and Linux handoff. `fdu-4sg3` is an undecomposed handoff referencing existing tasks, not a completed empty epic. |
 | Performance record | `fdu-j5k6` | [Record/report plan](docs/project/specs/active/plan-2026-08-15-fdu-performance-record-and-report.md): artifact backfill (`fdu-1dtd`), cross-platform matrix (`fdu-uxl0`), per-platform report sections (`fdu-72bn`), harness lint (`fdu-tt49`). |
 | Evidence scope | `fdu-ug4y` | [Scope enforcement](docs/project/specs/active/plan-2026-08-23-experiment-evidence-scope.md): partially implemented, with transfer/provenance enforcement outstanding. |
-| FSEvents scoped revalidation | `fdu-7w9a` | [Replay/revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md): #131 is an open probe/design PR, not production journal serving. |
+| FSEvents scoped revalidation | `fdu-7w9a` | [Replay/revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md): the #131 probe and the change-source review (#142) record the evidence; production replay is not implemented, and the review recommends fixing the watcher first (epic `fdu-tawn`). |
 | Reusable experiment framework | `fdu-7yx4` | [Framework extraction](docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md): reusable skill landed; remaining framework scope stays open. |
 
 The merged #132 comparisons are qualified exploratory measurements on an uncontrolled
 host. The quiet native/wheel release cell (`fdu-ow8y`) remains unresolved.
 `fdu-s234` owns reconciling the claim policy across these two evidence classes; the
 tracking cleanup does not waive a measurement gate.
+
+Stack 141 landed in 0.2.0. #137 reused per-file work across multi-view reports
+(H152–H155; the quiet-host confirmation is `fdu-9e9d`) and integrated #133 and #136.
+#138 recorded the 2026-09-27
+[Linux tool comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
+and the
+[cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
+(H156–H159). #139 stopped one-shot metadata runs writing a snapshot (`fdu-0t1v`). #142
+compared disk-growth change sources, research only; its ranked experiments are under
+`fdu-tawn`. The Linux comparison is a quiet cell on a virtualized host and advances
+`fdu-nffc`. It does not resolve `fdu-ow8y`, and `fdu-s234` covers its README table as
+well. Its follow-ups are `fdu-578e` (index-tier allocator contention), `fdu-o6um` (H157
+rerun), and `fdu-1ovb` (ignore-aware summary), all under `fdu-0myw`. The stack’s
+regression review left `fdu-hf20`, `fdu-t869`, `fdu-3l71`, and `fdu-9lgu` open as
+follow-ups, and the macOS regression check is `fdu-nr2y`.
 
 Other standalone findings remain discoverable through `tbd ready` and `tbd list`. They
 need not acquire an invented spec or parent: the bead itself can own a narrow bug,

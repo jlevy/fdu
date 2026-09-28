@@ -119,7 +119,7 @@ fn cached_partial_directory_rows_match_cold_and_pruned_subtrees_remain_complete(
         panic!("permission fixture precondition failed: host permits mode-000 directory listing");
     }
     assert_eq!(probe.expect_err("denied listing").kind(), std::io::ErrorKind::PermissionDenied);
-    let results: Vec<_> = [CachePolicy::Off, CachePolicy::Auto, CachePolicy::ReadOnly]
+    let results: Vec<_> = [CachePolicy::Off, CachePolicy::Auto, CachePolicy::On]
         .into_iter()
         .map(|policy| fdu_core::open(&basis, &Delivery::new(policy, Some(cache_path.clone()))))
         .collect();

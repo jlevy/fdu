@@ -1,7 +1,8 @@
 # fdu (Python)
 
-Python bindings for [fdu](https://github.com/jlevy/fdu), a fast, incremental file
-roll-up engine.
+**Fastest native du replacement and detailed file analytics for Python and Rust**
+
+Python bindings for [fdu](https://github.com/jlevy/fdu).
 
 ## Set Up with Any Coding Agent
 

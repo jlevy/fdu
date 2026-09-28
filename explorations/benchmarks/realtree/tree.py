@@ -68,6 +68,9 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
     counts = {"directories": 1, "files": 0, "other": 0, "symlinks": 0, "total": 1}
     apparent_bytes = 0
     allocated_bytes_total = 0
+    # Directory blocks are tracked apart from the file total fdu reports, because tools
+    # that sum every entry's blocks include them. The root is a directory like any other.
+    directory_allocated_bytes = _allocated_bytes(os.lstat(absolute))
     newest_file_mtime_ns: Optional[int] = None
     linked_files: Dict[Tuple[int, int], Tuple[int, int, int]] = {}
     depths: Dict[int, int] = {0: 1}
@@ -80,6 +83,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         if stat.S_ISDIR(mode):
             kind = "directory"
             counts["directories"] += 1
+            directory_allocated_bytes += _allocated_bytes(metadata)
         elif stat.S_ISREG(mode):
             kind = "file"
             counts["files"] += 1
@@ -136,6 +140,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         "sizes": {
             "allocated_bytes": allocated_bytes_total,
             "apparent_bytes": apparent_bytes,
+            "directory_allocated_bytes": directory_allocated_bytes,
         },
         "newest_file_mtime_ns": newest_file_mtime_ns,
         "depth_histogram": {str(key): depths[key] for key in sorted(depths)},

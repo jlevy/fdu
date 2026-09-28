@@ -1,0 +1,37 @@
+# Rendered 2026-09-27 by `summarize.py raw` over the sanitized raw/bench-*.tsv of this directory.
+# run-all.sh (project scope round 2 onward, user temp, /private/tmp, watch-first, bounded whole-home)
+# and phase4.sh were still running at port time, so this is a partial snapshot; re-render when they finish.
+# Scope labels: codex = agent state B (~/.codex), claude = agent state A (~/.claude),
+# project = a large project checkout, dryrun-crates = this repository's crates/ directory.
+
+== claude: 4.0 GiB  8,992 files, 2,907 directories
+   round0 auto: real=0.33 rss=31 MB rc=0 files=8992
+   off-nogitignore    median   0.11s  spread 0.11-0.15  user 0.06 sys 0.2-0.4  RSS 25 MB  rc=['0']  n=3
+   off                median   0.14s  spread 0.14-0.15  user 0.08 sys 0.4-0.5  RSS 30 MB  rc=['0']  n=3
+   auto               median   0.15s  spread 0.11-0.16  user 0.08 sys 0.2-0.5  RSS 31 MB  rc=['0']  n=3
+   only               median   0.08s  spread 0.08-0.08  user 0.07 sys 0.0-0.0  RSS 33 MB  rc=['0']  n=3
+   refresh            median   0.15s  spread 0.13-0.17  user 0.08 sys 0.2-0.5  RSS 32 MB  rc=['0']  n=3
+
+== codex: 36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+   round0 auto: real=5.99 rss=264 MB rc=0 files=356227
+   off-nogitignore    median   3.14s  spread 3.04-3.63  user 0.61 sys 18.2-25.8  RSS 39 MB  rc=['0']  n=3
+   off                median   5.72s  spread 5.03-5.95  user 3.20 sys 13.0-23.4  RSS 209 MB  rc=['0']  n=3
+   auto               median   5.78s  spread 5.27-6.11  user 3.25 sys 14.2-21.1  RSS 256 MB  rc=['0']  n=3
+   only               median   3.15s  spread 3.11-3.23  user 3.00 sys 0.1-0.1  RSS 300 MB  rc=['0']  n=3
+   refresh            median   5.79s  spread 5.12-5.79  user 3.19 sys 15.4-21.8  RSS 256 MB  rc=['0']  n=3
+
+== dryrun-crates: 8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+   round0 auto: real=0.10 rss=24 MB rc=0 files=149
+   off-nogitignore    median   0.06s  spread 0.06-0.06  user 0.05 sys 0.0-0.0  RSS 24 MB  rc=['0']  n=1
+   off                median   0.06s  spread 0.06-0.06  user 0.05 sys 0.0-0.0  RSS 24 MB  rc=['0']  n=1
+   auto               median   0.06s  spread 0.06-0.06  user 0.05 sys 0.0-0.0  RSS 24 MB  rc=['0']  n=1
+   only               median   0.06s  spread 0.06-0.06  user 0.05 sys 0.0-0.0  RSS 24 MB  rc=['0']  n=1
+   refresh            median   0.06s  spread 0.06-0.06  user 0.05 sys 0.0-0.0  RSS 24 MB  rc=['0']  n=1
+
+== project: 38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+   round0 auto: real=19.37 rss=740 MB rc=0 files=1193710
+   off-nogitignore    median  11.23s  spread 11.14-11.31  user 1.96 sys 67.2-69.9  RSS 49 MB  rc=['0']  n=2
+   off                median  18.55s  spread 16.89-20.21  user 9.04 sys 65.7-73.0  RSS 646 MB  rc=['0']  n=2
+   auto               median  25.39s  spread 24.50-26.29  user 9.19 sys 59.5-75.0  RSS 769 MB  rc=['0']  n=2
+   only               median   9.97s  spread 9.36-10.59  user 8.22 sys 0.3-0.7  RSS 959 MB  rc=['0']  n=2
+   refresh            median  15.31s  spread 15.31-15.31  user 9.01 sys 80.1-80.1  RSS 747 MB  rc=['0']  n=1

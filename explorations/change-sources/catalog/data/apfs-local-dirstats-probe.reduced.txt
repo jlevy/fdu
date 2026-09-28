@@ -1,0 +1,79 @@
+LOCAL READ-ONLY OBSERVATIONS, macOS 26.5 (Darwin 25.5.0), a non-root uid, 2026-09-27
+(reduced for publication; MANIFEST.txt lists what was removed)
+
+--- apfs.util usage lines (strings -a /System/Library/Filesystems/apfs.fs/Contents/Resources/apfs.util) ---
+Failed to set maintain-dir-stats on %s : %s
+Directory %s will now maintain dir-stats.
+Failed to get dir-stats info on %s : (err %d) %s
+   -M dir                    : flag the named directory as "maintain-dir-stats".
+   -r dir                    : set the sync-root flag on the specified directory.
+   -S dir                    : get the directory stats from dir.
+   -Y dir                    : get the sync-root flag from the specified directory.
+   -y path                   : get the sync-root flag from the first parent that has one for the item identified by 'path'.
+
+--- apfs.util -M / -S handlers (otool -tV on the same binary; summary of the disassembly) ---
+-M calls fsctl(path, 0xC1104A71, buf, 0) with a zeroed struct whose u32 at +4 is 1;
+-S calls the same fsctl with an all-zero struct and prints descendants, physical size and gen-count.
+
+--- apfs.util imports from APFS.framework (dyld_info -imports) ---
+only container/volume defrag, volume-group stitch and purge entry points; nothing for dir-stats.
+--- APFS.framework (dyld shared cache only) exports matching dir/stats/gencount: none of 161 exports ---
+--- fsck_apfs strings mentioning dir-stats (strings -a .../fsck_apfs | grep -i dir.stats) ---
+dir-stats origins, SAF dir-stats keys, shadow and 'calculating' dir-stats objects, and clone-size,
+purgeable-size and purgeable-resource-fork-size xfields of dir-stats objects.
+--- apfs_prepare_cryptex symbols mentioning dir_stats: get/update, move-origin, reconciliation, purgeable-state routines ---
+
+--- apfs.util -S / -Y probe (unprivileged) ---
+-- ~
+~:
+descendants: 6665085
+physical size: 361302290432
+gen-count: 0
+~ has sync root flag : 0x0
+-- ~/Documents
+~/Documents:
+descendants: 54924
+physical size: 26218496
+gen-count: 271913
+~/Documents has sync root flag : 0x1
+-- ~/Library/Mobile Documents
+~/Library/Mobile Documents:
+descendants: 1947
+physical size: 6160384
+gen-count: 207054
+~/Library/Mobile Documents has sync root flag : 0x1
+-- ~/Library/CloudStorage
+~/Library/CloudStorage:
+descendants: 1
+physical size: 8192
+gen-count: 0
+~/Library/CloudStorage has sync root flag : 0x0
+-- ~/Pictures/Photos Library.photoslibrary
+~/Pictures/Photos Library.photoslibrary:
+descendants: 257198
+physical size: 33860116480
+gen-count: 0
+~/Pictures/Photos Library.photoslibrary has sync root flag : 0x0
+-- /Applications
+/Applications:
+descendants: 597917
+physical size: 43980242944
+gen-count: 0
+/Applications has sync root flag : 0x0
+-- /System/Volumes/Data
+/System/Volumes/Data has sync root flag : 0x0
+
+--- timings (wall, apfs.util -S) ---
+~/Documents 54924 desc gen 271913: 11 ms; ~/Library/Mobile Documents 1947 desc gen 207054: 7 ms; ~/Desktop 99561 desc gen 211000: 7 ms (sync root 0x1)
+~/Library/Mobile Documents/com~apple~CloudDocs 347 desc gen 0
+Photos Library.photoslibrary 257198 desc gen 0: 6521 ms; /Library/Developer/CommandLineTools 165604 desc: 2154/365 ms; /usr/share 13435 desc: 220/52 ms; ~/Library/Caches 112537 desc: 2959/334 ms; ~ 6665085 desc gen 0 (tens of seconds)
+
+--- getattrlist(FSOPT_ATTR_CMN_EXTENDED) with ATTR_DIR_ENTRYCOUNT|ALLOCSIZE|DATALENGTH + ATTR_CMNEXT_RECURSIVE_GENCOUNT (python ctypes, unprivileged) ---
+~                                 entrycount 281  dir_allocsize 0  dir_datalength 9056  recursive_gencount 0
+~/Documents                       entrycount 89   dir_allocsize 0  dir_datalength 2912  recursive_gencount 271913
+~/Desktop                         entrycount 15   dir_allocsize 0  dir_datalength 544   recursive_gencount 211000
+~/Library/Mobile Documents        entrycount 122  dir_allocsize 0  dir_datalength 3968  recursive_gencount 207054
+~/Library/Mobile Documents/com~apple~CloudDocs  entrycount 18 dir_allocsize 0 dir_datalength 640 recursive_gencount 0
+~/Pictures/Photos Library.photoslibrary         entrycount 21 dir_allocsize 0 dir_datalength 736 recursive_gencount 0
+/Applications                     entrycount 168  dir_allocsize 0  dir_datalength 5440  recursive_gencount 0
+getattrlistbulk(~, FSOPT_ATTR_CMN_EXTENDED, forkattr=ATTR_CMNEXT_RECURSIVE_GENCOUNT): 281 entries; nonzero: Desktop 211000, Documents 271913

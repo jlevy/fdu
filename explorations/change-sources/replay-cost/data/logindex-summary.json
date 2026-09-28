@@ -1,0 +1,23 @@
+{
+ "directory": "<external volume>/.fseventsd",
+ "files": 15462,
+ "gz_bytes": 405366433,
+ "raw_bytes": 5352745750,
+ "records": 42207920,
+ "path_bytes": 4297192909,
+ "bad_files": 1,
+ "oldest_mtime": 1790388251.2315452,
+ "newest_mtime": 1790569947.2649186,
+ "index_seconds": 18.823814868927002,
+ "categories": {
+  "other": 39238936,
+  "cargo-target-like": 1525452,
+  "dot-dirs-top2": 881957,
+  "git-internals": 357672,
+  "node_modules": 203786,
+  "shallow(depth<=2)": 116,
+  "fseventsd": 1
+ },
+ "name_is_upper_bound": 15461,
+ "name_is_lower_bound": 1
+}

@@ -1,0 +1,839 @@
+{
+ "label": "all",
+ "walk_before": {
+  "summary": "SUMMARY entries=228701 dirs=21572 files=207129 other=0 pruned=0 wall_ms=26962.1 alloc=2227056640 data=1809128677",
+  "ms": 26978.6
+ },
+ "checkpoint": {
+  "origins": 21572,
+  "totals_ms": 1571.0,
+  "root_gencount": 118573
+ },
+ "workload": {
+  "build_files": 3000,
+  "log_bytes": 2097152,
+  "touched_mtime_only": 5,
+  "workload_ms": 665.5
+ },
+ "totals_only": {
+  "immediate": {
+   "changed_origins": 131,
+   "ms": 148.0
+  },
+  "after_sync": {
+   "changed_origins": 131,
+   "ms": 150.3,
+   "changed": {
+    "": {
+     "dgen": 13082,
+     "ddesc": 3049,
+     "dphys": 34050048
+    },
+    "deep-0": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1/d1/d1/d1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "node_modules": {
+     "dgen": 56,
+     "ddesc": -17,
+     "dphys": -118784
+    },
+    "node_modules/pkg-1501": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -16,
+     "dphys": -118784
+    },
+    "node_modules/pkg-1501/lib": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -15,
+     "dphys": -118784
+    },
+    "src": {
+     "dgen": 955,
+     "ddesc": 4,
+     "dphys": 3903488
+    },
+    "src/m17": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -3100,
+     "dphys": -29122560
+    },
+    "src/m17/mod1700": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -188416
+    },
+    "src/m17/mod1701": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m17/mod1702": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m17/mod1703": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -172032
+    },
+    "src/m17/mod1704": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m17/mod1705": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -360448
+    },
+    "src/m17/mod1706": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -307200
+    },
+    "src/m17/mod1707": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m17/mod1708": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m17/mod1709": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m17/mod1710": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -278528
+    },
+    "src/m17/mod1711": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m17/mod1712": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -290816
+    },
+    "src/m17/mod1713": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -278528
+    },
+    "src/m17/mod1714": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m17/mod1715": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m17/mod1716": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -442368
+    },
+    "src/m17/mod1717": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -204800
+    },
+    "src/m17/mod1718": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m17/mod1719": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m17/mod1720": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m17/mod1721": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m17/mod1722": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -184320
+    },
+    "src/m17/mod1723": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -389120
+    },
+    "src/m17/mod1724": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m17/mod1725": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m17/mod1726": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -352256
+    },
+    "src/m17/mod1727": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m17/mod1728": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -356352
+    },
+    "src/m17/mod1729": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -380928
+    },
+    "src/m17/mod1730": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m17/mod1731": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m17/mod1732": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -229376
+    },
+    "src/m17/mod1733": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m17/mod1734": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -376832
+    },
+    "src/m17/mod1735": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m17/mod1736": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m17/mod1737": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m17/mod1738": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -290816
+    },
+    "src/m17/mod1739": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m17/mod1740": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m17/mod1741": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m17/mod1742": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m17/mod1743": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -258048
+    },
+    "src/m17/mod1744": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -307200
+    },
+    "src/m17/mod1745": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m17/mod1746": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -348160
+    },
+    "src/m17/mod1747": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m17/mod1748": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -331776
+    },
+    "src/m17/mod1749": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m17/mod1750": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m17/mod1751": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m17/mod1752": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m17/mod1753": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -446464
+    },
+    "src/m17/mod1754": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -425984
+    },
+    "src/m17/mod1755": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -196608
+    },
+    "src/m17/mod1756": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -204800
+    },
+    "src/m17/mod1757": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -339968
+    },
+    "src/m17/mod1758": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -385024
+    },
+    "src/m17/mod1759": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -315392
+    },
+    "src/m17/mod1760": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m17/mod1761": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m17/mod1762": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m17/mod1763": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m17/mod1764": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -200704
+    },
+    "src/m17/mod1765": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -278528
+    },
+    "src/m17/mod1766": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -188416
+    },
+    "src/m17/mod1767": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m17/mod1768": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m17/mod1769": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m17/mod1770": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -372736
+    },
+    "src/m17/mod1771": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m17/mod1772": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m17/mod1773": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -454656
+    },
+    "src/m17/mod1774": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -299008
+    },
+    "src/m17/mod1775": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m17/mod1776": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -176128
+    },
+    "src/m17/mod1777": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -212992
+    },
+    "src/m17/mod1778": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -372736
+    },
+    "src/m17/mod1779": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -212992
+    },
+    "src/m17/mod1780": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m17/mod1781": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m17/mod1782": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -258048
+    },
+    "src/m17/mod1783": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -376832
+    },
+    "src/m17/mod1784": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -417792
+    },
+    "src/m17/mod1785": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -372736
+    },
+    "src/m17/mod1786": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m17/mod1787": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m17/mod1788": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m17/mod1789": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -339968
+    },
+    "src/m17/mod1790": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m17/mod1791": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m17/mod1792": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -323584
+    },
+    "src/m17/mod1793": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -372736
+    },
+    "src/m17/mod1794": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m17/mod1795": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m17/mod1796": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m17/mod1797": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m17/mod1798": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -315392
+    },
+    "src/m17/mod1799": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -393216
+    },
+    "target": {
+     "dgen": 12062,
+     "ddesc": 3062,
+     "dphys": 30236672
+    },
+    "target/debug": {
+     "dgen": 12062,
+     "ddesc": 3062,
+     "dphys": 30236672
+    },
+    "target/debug/deps": {
+     "dgen": 1,
+     "ddesc": 1,
+     "dphys": 8192
+    },
+    "wide": {
+     "dgen": 3,
+     "ddesc": 0,
+     "dphys": 16384
+    }
+   }
+  }
+ },
+ "pruned_walk": {
+  "summary": "SUMMARY entries=39327 dirs=3233 files=36094 other=0 pruned=3044 wall_ms=1873.3 alloc=623665152 data=555196535",
+  "ms": 1888.8,
+  "visited": 39327,
+  "pruned_origins": 3044,
+  "misses": {
+   "added": 0,
+   "removed": 0,
+   "size_changed": 0,
+   "mtime_only": 5
+  },
+  "miss_examples": {
+   "added": [],
+   "removed": [],
+   "size_changed": [],
+   "mtime_only": [
+    "src/m00/mod0000/01.py",
+    "src/m00/mod0000/00.py",
+    "src/m00/mod0000/04.py",
+    "src/m00/mod0000/03.py",
+    "src/m00/mod0000/02.py"
+   ]
+  }
+ },
+ "walk_after": {
+  "summary": "SUMMARY entries=231751 dirs=21631 files=210120 other=0 pruned=0 wall_ms=9626.3 alloc=2261172224 data=1843273877",
+  "ms": 9634.2
+ },
+ "oracle": {
+  "added": 6168,
+  "removed": 3118,
+  "size_changed": 4,
+  "mtime_only": 5
+ },
+ "attribution": {
+  "origins_compared": 131,
+  "mismatches": {
+   "": {
+    "fsctl_dphys": 34050048,
+    "oracle_dalloc": 34115584,
+    "match": false
+   },
+   "wide": {
+    "fsctl_dphys": 16384,
+    "oracle_dalloc": 81920,
+    "match": false
+   }
+  },
+  "origins_with_oracle_delta_but_no_fsctl_change": [],
+  "n_silent": 0
+ }
+}

@@ -35,6 +35,10 @@ Library steps are time-boxed and must stay bounded.
 
 ## Current Status (Last Update 2026-09-25)
 
+This table records the 0.1.0 release candidate.
+The 0.2.0 candidate has not been run through this playbook yet; replace the table when
+it is.
+
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 1: Setup | ✅ Passed | CI-built `fdu 0.1.0` wheel; `XDG_CACHE_HOME` isolation |
@@ -164,7 +168,7 @@ uv tool install --force --python 3.12 --no-index "$FDU_QA_OUT"/wheel/fdu-*.whl
 fdu --version
 ```
 
-The version names the commit it was built from (`0.1.0-dev+g` and its first nine hex
+The version names the commit it was built from (`0.2.0-dev+g` and its first nine hex
 digits); it must be the candidate’s, with no `.dirty` suffix.
 Keep the worktree and its build on a volume with room: a release build takes a few
 gigabytes.
@@ -184,11 +188,11 @@ fdu --help | sed -n '1,80p'
 **Expected output**:
 
 ```
-fdu 0.1.0-dev+g<sha>
+fdu 0.2.0-dev+g<sha>
 ```
 
-Help must list `--view`, `--analyze`, `--cache` (`auto`, `refresh`, `read-only`, `only`,
-`off`), `--cache-status`, `--cache-clear`, `--scan-depth`, `--watch`, and `--interval`.
+Help must list `--view`, `--analyze`, `--cache` (`auto`, `on`, `off`), `--stale-ok`,
+`--cache-status`, `--cache-clear`, `--scan-depth`, `--watch`, and `--interval`.
 
 **Verify**:
 
@@ -322,7 +326,8 @@ fdu "$FDU_QA_SMALL" --cache-status
 **Check for ERROR conditions**:
 
 - [ ] `--cache=off` must not populate the isolated cache dir
-- [ ] `--cache=auto` must not write `~/Library/Caches/fdu` while `XDG_CACHE_HOME` is set
+- [ ] `--cache=auto` must not write the default `~/.cache/fdu` while `XDG_CACHE_HOME` is
+  set
 
 ### 3.3 Extra Analyzers and Formats
 

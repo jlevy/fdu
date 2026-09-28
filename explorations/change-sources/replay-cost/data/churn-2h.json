@@ -1,0 +1,37 @@
+{
+ "cursor": 4786862476,
+ "prefix_len": 13,
+ "records_total": 42344420,
+ "records_after_cursor": 3166800,
+ "share_under_prefix": 0.8746,
+ "share_cargo_target_like": 0.082,
+ "share_node_modules": 0.0159,
+ "share_git_internals": 0.0128,
+ "share_by_top_level_class": {
+  "scratch-top-level": 0.8746,
+  "other-top-level": 0.1254
+ },
+ "distinct_depth2_dirs": 26,
+ "depth2_dirs_for_90pct": 6,
+ "top5_depth2_shares": [
+  0.3252,
+  0.2512,
+  0.1216,
+  0.1034,
+  0.0924
+ ],
+ "flag_histogram_low16": {
+  "0x2": 1306232,
+  "0x211": 700442,
+  "0x213": 212089,
+  "0x14": 169565,
+  "0x280": 132759,
+  "0x282": 132425,
+  "0x1": 114690,
+  "0x219": 75978,
+  "0x8": 75405,
+  "0x315": 50146,
+  "0x201": 27606,
+  "0x384": 19644
+ }
+}

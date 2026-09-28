@@ -42,9 +42,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 55 sessions differ, and every one of them has a named cause.
+# 57 sessions differ, and every one of them has a named cause.
 #
-#  19  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  20  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
 #      platform separator. The Python replay prints the sandbox root and a literal
 #      separator. Only the exact fixture root and otherwise identical lines match;
@@ -55,7 +55,7 @@
 #      Only the four exact action, setter, and value pairs emitted by the shared
 #      report renderer are accepted; every other line remains identical.
 #
-#  19  Each surface names its own parameter  [surface-label]
+#  20  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -153,9 +153,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ JSON Carries the Versioned Envelope
   ✗ JSONL Is One Document per Line
 @@ -1,2 +1,2 @@
--{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+-{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 -{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
-+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
++{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 +{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
     stderr:
 @@ -1,1 +1,1 @@
@@ -188,10 +188,16 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --depth "two": expected a whole number or `all`
 +fdu: invalid depth "two": expected a whole number or `all`
-  ✓ A First Run Scans Cold and Leaves a Snapshot
+  ✓ `--cache on` Scans Cold and Leaves a Snapshot
   ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
-  ✓ Cache-Only Answers Without Touching the Tree, and Says It Is Stale
-  ✓ Refresh Ignores the Snapshot and Scans Cold Again
+  ✓ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
+  ✓ Retired Policies Name Their Replacement
+  ✓ Retired Policies Name Their Replacement
+  ✓ Retired Policies Name Their Replacement
+  ✗ A Stale Answer Needs a Policy That Reads
+@@ -1,1 +1,1 @@
+-fdu: --stale-ok answers from the snapshot, which --cache off never reads; drop one of them
++fdu: stale_ok answers from the snapshot, which cache policy off never reads; drop one of them
   ✓ An Unknown Policy Lists Every Valid One
   ✓ The Unreleased Cache Alias Is Rejected
   ✓ Old Build Directories Use Subtree Size and Latest Activity
@@ -207,7 +213,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -256,11 +262,65 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✓ Verify No Cache Was Created
+  ✗ Report Under the Default Policy
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.2.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 269,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✓ Verify the Default Created No Cache
+  ✓ A Stale Answer Has Nothing to Read
   ✗ Create the Snapshot
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -313,7 +373,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -366,7 +426,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -414,11 +474,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
-  ✗ The Rewrite Kept the Snapshot Current for Cache-Only
+  ✗ The Rewrite Kept the Snapshot Current for a Stale Answer
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -469,13 +529,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Watching Rejects a Snapshot Nothing Verified
     stderr:
 @@ -1,1 +1,1 @@
--fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
-+fdu: watch cannot start from cache policy only: nothing verifies what changed between the snapshot and the start of the watch; use cache policy auto or read-only
+-fdu: --watch cannot start from a --stale-ok answer: nothing verifies what changed between the snapshot and the start of the watch; drop --stale-ok
++fdu: watch cannot start from a stale_ok answer: nothing verifies what changed between the snapshot and the start of the watch; drop stale_ok
   ✗ A Different Semantic Scan Scope Misses the Snapshot
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -529,7 +589,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -583,7 +643,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -635,7 +695,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -687,7 +747,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -720,7 +780,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -753,7 +813,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -824,9 +884,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ JSON Exposes Provenance, Exact Shares, Metrics, and Coverage
   ✗ JSONL Keeps the Envelope and Section Independently Parseable
 @@ -1,2 +1,2 @@
--{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+-{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 -{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-+{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 +{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
     stderr:
 @@ -1,1 +1,1 @@
@@ -1013,7 +1073,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
 @@ -1,9 +1,9 @@
  {
    "schema": "fdu.report/10",
-   "generator": "fdu 0.1.0",
+   "generator": "fdu 0.2.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
 +  "root": "[SANDBOX]/project",
@@ -1105,13 +1165,15 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ All-Cache Actions Need No Scan Root
   ✓ All-Cache Actions Need No Scan Root
   ✓ Status Before Anything Is Cached
-  ✓ A Report Leaves a Snapshot Behind
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
+  ✓ The Default Report Leaves Nothing Behind
+  ✓ The Default Report Leaves Nothing Behind
+  ✓ `--cache on` Leaves a Snapshot Behind
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
+  ✓ A Stale Answer Needs a Snapshot Something Left
   ✓ Status Maps a Hash-Named File Back to Its Tree
   ✓ Status Renders Through the Format Axis
   ✓ Status Renders Through the Format Axis
@@ -1156,7 +1218,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,213 +1,1 @@
+@@ -1,215 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -SET UP WITH ANY CODING AGENT
@@ -1307,21 +1369,23 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  --words-per-page changes only report-time page derivation.
 -  Unchanged results are restored from a separate sidecar written by the same
 -  analyzer set; any other set, wider or narrower, reads the files again.
--  --cache=only never opens source files and fails if requested content is absent.
+-  --stale-ok never opens source files and fails if requested content is absent.
 -
 -CACHE BEHAVIOR
--  No ordinary view requires a preexisting cache. Metadata-only one-shot reports
--  still inspect current metadata; under --cache=auto they skip loading a snapshot
--  that cannot make that work cheaper, though a complete indexed scan may write one.
+-  --cache=auto, the default, uses the cache only where the kind of run gains from
+-  it. A metadata report neither reads nor writes one: checking a snapshot costs as
+-  much as the scan it would save, and no later report reads it. Content analysis
+-  and long-lived sessions read, revalidate, and write it. --cache=on also writes
+-  after a one-shot report, leaving a snapshot for a later --stale-ok answer.
 -
 -  Content analysis is where repeated-run caching pays most. The first run reads
 -  eligible file bodies. A compatible later run reuses results for unchanged files
 -  and reads only changed or newly eligible bodies; the performance footer reports
 -  fresh and cached analysis separately. Repeat the same --analyze command to see it.
 -
--  --cache=only is different: it does no filesystem verification, requires a
--  compatible snapshot and content sidecar for the requested analysis, and labels
--  its answer stale. --cache=off neither reads nor writes fdu's cache.
+-  --stale-ok answers from the snapshot alone: it does no filesystem verification,
+-  requires a compatible snapshot and content sidecar for the requested analysis,
+-  and labels its answer stale. --cache=off neither reads nor writes fdu's cache.
 -
 -  macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
 -  --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
@@ -1329,7 +1393,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  stores derived metrics, not source bodies. Status and clear use the same directory.
 -
 -IGNORE RULES
--  Fresh scans read applicable .gitignore files by default; cache-only uses retained
+-  Fresh scans read applicable .gitignore files by default; --stale-ok uses retained
 -  rules. Summary, tree, and extension rows show gitignored size as `(128 B gitignored)`.
 -  Ignoring a directory covers its descendants. Non-gitignored does not mean Git-tracked:
 -  .git is non-gitignored unless a rule names it. --ignored=include is default.
@@ -1373,8 +1437,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 +fdu: --docs is a discovery surface the Python package does not carry
   ✗ Version Is Exact
 @@ -1,1 +1,1 @@
--fdu 0.1.0[DEV_REVISION]
-+fdu 0.1.0 (python parity surface)
+-fdu 0.2.0[DEV_REVISION]
++fdu 0.2.0 (python parity surface)
   ✗ An Explicit Current Root Works for an Empty Sandbox
     stderr:
 @@ -1,2 +1,2 @@

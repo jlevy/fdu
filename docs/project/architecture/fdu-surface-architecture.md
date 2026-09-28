@@ -141,12 +141,14 @@ observable.
 
 `open` retains an index and writes a snapshot: right for a caller asking many questions.
 `report` runs the command line’s one-shot contract, retaining the least state the
-request needs. An unfiltered summary that turns `.gitignore` observation off is answered
-by a transient tier that retains nothing and therefore writes no snapshot; the default
-summary reports its ignored share, which needs the index.
+request needs.
+Under the default `CachePolicy.AUTO` a metadata report writes no snapshot,
+and an unfiltered summary that turns `.gitignore` observation off is answered by a
+transient tier that retains nothing; the default summary reports its ignored share,
+which needs the index.
 
 Using `open` for a single question caches state the walk never saved, which a later
-cache-only read can see.
+`stale_ok` read can see.
 That was a real defect: a Python run left cache state on a tree that the same command
 would not have.
 

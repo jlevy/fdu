@@ -8,7 +8,7 @@ It exists so that any contributor — human or agent — can pick the loop up mo
 re-run it, and get numbers comparable to the ones already recorded.
 
 New here? To run the next iteration, start at
-[the runbook’s current standing](performance-loop-runbook.md#current-standing-2026-09-18).
+[the runbook’s Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
 [The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
 is the history through 2026-08-23. This document is the protocol.
 
@@ -285,8 +285,10 @@ Drift is expected — a nominated tree is somebody’s live working directory �
 What matters is that a reader is told before comparing last month’s number with today’s.
 The Darwin/arm64 set was re-nominated on 2026-09-18: rustup is 77k (was 175k), and the
 source-checkout is the live metabrowser clone (the 2026-08 corpus path is gone).
-Current sizes and the next-up list are in
-[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18).
+Current sizes are in
+[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18); the
+action order is in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
 
 ### Say where the tree came from
 
@@ -749,9 +751,10 @@ enforce this along with the standalone document shape.
 
 ## Hypotheses
 
-Kept as a live list; the *ordering* — which of these to run next and why — is
-[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18) and
-[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+Kept as a live list; the *ordering* — which of these to run next and why — is in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
+[The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+records the earlier Darwin queue, not current priorities.
 [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) is
 the floor-anchored strategy, not the live queue.
 Numbering is shared with the
@@ -765,9 +768,12 @@ H147 used for the Linux transient recycle keep; H148 recorded on
 [the Linux PGO screen](../specs/done/plan-2026-09-20-linux-pgo-screen.md) (folded onto
 [#97](https://github.com/jlevy/fdu/pull/97)); H149 is the leftover-timer restore mix on
 [#105](https://github.com/jlevy/fdu/pull/105); H150 and H151 are the progress handle’s
-cost on [#120](https://github.com/jlevy/fdu/pull/120); next free unused id is H152) so
-no id ever means two things.
-Each is stated so it can be wrong, with the metric that would show it.
+cost on [#120](https://github.com/jlevy/fdu/pull/120); H152 and H153 are the exact
+`content-query` oracle and shared-resolution keep; H154 and H155 are the Linux
+replication and post-H153 profile follow-ups; H156–H159 are the Linux tool comparison of
+[2026-09-27](../reports/report-2026-09-27-fdu-linux-tool-comparison.md); H160 is the
+cache-policy default that followed it; next free unused id is H161) so no id ever means
+two things. Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
 The 2026-09-18 honesty pass (`fdu-p0nc`) reconciled this table with the engine that
@@ -795,8 +801,9 @@ record of what that later experiment actually tested.
 | H103 | Content roll-up `PathKey` and FxHash (refuted, exp-104) | exp-086: scanner phase counters (baseline) |
 | H104–H106 | (unused here when assigned) | exp-087–089: fuse / coalesce / suppress causal scan (all rejected) |
 
-New work takes **H107** and up.
-Do not mint another meaning for H91–H106.
+The post-0.1.0 registry began at **H107**. Do not mint another meaning for H91–H106; the
+current next-free id is in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
 
 ### Current engine (0.1.0)
 
@@ -856,11 +863,19 @@ engine. Revisit a prior result only when that difference touches its mechanism.
 | H149 | After leftover apply-timer expansion (`fdu-2pct`: apply starts at `candidates.remove`), a Linux `content-cache-hit` restore mix names whether apply is ≥50% of restore and ≥3% of wall, or the leftover is still H144. Not a retry of H144, H116, H125, H129, H131, or H133. | Determination: named leftover is or is not a new compileable ≥3% userspace cut on reconstructible `linux-v6.12` | **Same leftover identity** (exp-155, quiet). Apply 60–62% of the four restore rows (89–99 ms) because HashMap remove + fingerprint now sit in apply. That clears the H121 restore-share bar as an instrument change, not a new mechanism. Parse and candidates ~24–26 ms; read ~8–9 ms. Digest `06260f6c…`. Load/core 0.059–0.102 held. No new compileable cut. No further engine patch. Do not retry H116. Do not retry H125/H129/H131/H133. H83 remains format, not another apply/install increment. |
 | H150 | The progress indicator’s engine handle costs nothing measurable when no handle is attached: walkers pay one `Option` check per chunk of directories (per directory on revalidation), which is every non-interactive run. Not an optimization; a cost bound for `fdu-2e8o`. | Branch probe versus `main` probe: every metadata job’s paired wall interval includes zero, and `default-tree`’s upper bound is at most +3%, on a deciding immutable subject | **Confirmed, uncontrolled** (exp-156). `default-tree` −1.78% [−6.33%, +2.90%] on `system-private-frameworks`, 20 pairs; all seven job intervals include zero, three noninferior, four too wide to bound at +3% (busy host, quiet refused at 84.6%). Peak RSS +1.58% [+0.90%, +2.23%] with identical allocation counts; within the 5% limit, cause not isolated. |
 | H151 | With a handle attached and polled every 80 ms (the ticker’s cadence), the default command stays within noise: shared counters are added once per chunk of at most four directories, never per entry. | Same probe with and without `--progress`: `default-tree` paired wall upper bound at most +3% | **Open** (exp-157, uncontrolled, in progress). +5.75% [−5.34%, +10.91%], 12 pairs, host 100% to 72% busy: neither noninferiority nor a cost established. Pairs split by time (first six +8% to +37%, last six −18% to +3%); user CPU −0.63%. Needs a quiet cell on `default-tree`, with `summary` and the `--no-controls` fold. |
+| H152 | Before another report-path change, make `content-query` validate the exact combined report outside its timer and profile the current path. Advance only a named repeated operation; a whole-process sample dominated by setup is not a query-path percentage. | Determination: exact combined-versus-independent report oracle passes; current `content-query` absolute component and profile limitation recorded; one bounded mechanism named or the tier stops | **Accepted as an instrumentation and selection milestone** (exp-158, uncontrolled). The oracle landed in `1ba06b19`. A byte-identical 12-pair attachment measured ~29.5–29.6 s component for 100 reports (~295 ms/report); its +1.02% [0.05%, 15.62%] wall statistic is host noise, not a code delta. The 8 s sample was setup-skewed (`read` 62.97%, `open` 17.22%). Code inspection named four repeated content lookups and current path classifications after H138’s shared row walk. H153 is the bounded follow-up. |
+| H153 | For an unfiltered report with multiple Types / Families / Languages / Documents sections, resolve `ContentIndex::file` and current `Index::classify` once per file and feed every metric accumulator in one streaming pass. Keep filtered and single-view paths unchanged. Do not substitute cached detection. | `content-query` wall down at least 3% with the interval below zero on deciding-scale metabrowser; exact combined-versus-independent report identity; RSS and faults non-inferior | **In progress; provisionally retained** (exp-159, uncontrolled). Wall −47.01% [−47.49%, −45.23%], component −59.94%, user CPU −50.75% over 12 valid pairs on 137,085-entry `metabrowser-clone`. Peak RSS −0.17% and minor faults −0.05%, both non-inferior; major-fault non-regression is inconclusive. A first retained-resolution vector was rejected before commit because minor faults rose 29.58%; the provisional one-pass form (`d0902cfd`) drops each classification immediately. Quiet confirmation remains open: the 2026-09-28 attempt on `a5c0ab46` failed to qualify (20 of 24 timed samples invalidated by the 25% gate), and its major faults tracked run position, not arm. Pure Rust and expected to transfer, but Linux is unmeasured. |
+| H156 | A one-shot report frees its whole index on the caller’s thread after the answer is complete, and the joined snapshot writer frees it before its join returns: 95 ms of a 1.39 s million-entry Linux `--cache off` run. Handing the last reference of a large one-shot index to a detached release thread removes that wait without changing the answer. | `default-tree` wall down at least 3% with the interval below zero; `cold-scan-index`, which drops its own index inside the timed region, includes zero | **Accepted** (exp-160, quiet). `default-tree` −3.19% [−4.88%, −1.79%]; `default-tree-first` −5.41% [−6.94%, +0.79%]; placebo `cold-scan-index` +0.00% [−2.24%, +2.15%]. Product CLI `--cache off` indexed tree, paired in the tool harness: −4.31% [−5.99%, −3.25%], peak RSS within 1%. macOS (exp-164, uncontrolled): no wall change and no regression, `default-tree` −1.00% [−5.13%, +6.11%], placebo +2.09% [−0.72%, +3.62%], user CPU −2.4%. Windows keeps the inline release: `ExitProcess` can end the thread holding the heap lock, and the saving is unmeasured there. |
+| H157 | After H156, the detached consumer allocates two one-element extension maps per file only to merge and free them, and walkers allocate every name twice. Folding a file straight into its parent and moving the owned name removes 39% of allocations and should cut the index tier. | `cold-scan-index` wall down at least 3% with the interval below zero | **Rejected** (exp-161, quiet). −2.22% [−4.04%, +0.04%]; component −4.12% [−7.40%, +1.25%]. Allocations 7.03M → 4.28M. The product CLI job, paired in the tool harness, measured −3.71% [−4.71%, −1.97%]; that is a lead for a pre-registered product-job rerun (`fdu-o6um`), not a keep. |
+| H158 | The detached walker publishes after every chunk, even one that makes nothing claimable, so the parked consumer is woken on nearly every send (105,732 `futex` calls per million entries). Holding leaf-only chunks until a batch fills keeps parent-first causality and removes the wakes. | `cold-scan-index` wall down at least 3% with the interval below zero | **Rejected** (exp-162, quiet). +0.88% [−0.17%, +1.94%] with `futex` calls down to 17,938. The wakes are real but off the critical path on four cores. |
+| H159 | On Linux the remaining index-tier gap to pdu and diskus is glibc arena contention from cross-thread frees in the detached builder, not allocation volume. A different allocator, or a builder whose buffers are freed on the thread that allocated them, closes it. Not H74’s index result, which predates the detached builder. | Screen: CLI indexed tree and transient summary under `LD_PRELOAD` mimalloc, jemalloc, tcmalloc. Keep only a dependency-free structural change measured under the accept rule | **Open** (screen, 2026-09-27). Unchanged binary under `LD_PRELOAD`: indexed 1.39 → 1.11–1.13 s, summary 0.98 → 0.82 s; `glibc.malloc.arena_max=1` 3.3 s. Context-switch profile names consumer frees of walker-owned child lists and directory path keys. `fdu-578e`. |
+| H160 | A one-shot metadata report never reads the snapshot (H108), and no later one-shot report reads what it writes, yet under `auto` it encodes, checksums, writes, and syncs a full image every run. Letting `auto` decide per analysis, and skip persistence for one-shot metadata reports, removes that work without changing any answer; `--cache on` keeps it for callers who want a snapshot. | `default-tree` wall down at least 3% with the interval below zero; `cold-scan-index`, which writes nothing on either arm, includes zero | **Accepted** (exp-163, quiet). `default-tree` −13.81% [−15.99%, −10.65%]; `default-tree-first` −32.74% [−33.57%, −24.41%]; placebo `cold-scan-index` −1.32% [−3.54%, +1.25%]. CLI screen: `fdu .` 1.51 → 1.25 s, equal to `--cache off`. macOS (exp-165, uncontrolled): `default-tree` −3.09% [−6.75%, +2.00%] and `default-tree-first` −2.98% [−7.12%, +5.12%] miss the accept rule there; peak RSS −26.29% (381 → 281 MiB) and user CPU −9.65%. |
 
 The ordered pickup — metric, subject, what would falsify, what not to retry — is
-[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). The
-remaining unaddressed queue after the H116–H120 overnight lives in
-[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+[the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). Quiet
+H153 confirmation, H154 Linux replication, and H155 post-H153 profiling are the current
+next-up work. Earlier H116–H120 planning is in
+[the historical post-H115 queue](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 Linux replication and H111 are recorded in
 [the Linux parallel-validation block](../specs/done/plan-2026-09-19-linux-parallel-validation.md).
 Linux leftover iteration after that block lives in
@@ -987,9 +1002,10 @@ module any other way does not resolve the package.
 `NAME` the run, which becomes `run-<NAME>.json` under `PERF_RESULTS`.
 [The runbook](performance-loop-runbook.md) is one round of this on the nominated
 subjects, start to finish, including the record and the handoff.
-Its [current standing](performance-loop-runbook.md#current-standing-2026-09-18) is the
-pickup: standing best, regime, subjects, and the next-up list.
-Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
+Its [current standing](performance-loop-runbook.md#current-standing-2026-09-18) records
+standing best, regime, and subjects;
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27) owns the next-up
+order. Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
 `PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
 directly to the harness contracts.
 The defaults are exploratory and uncontrolled, so an omitted variable cannot
@@ -1069,19 +1085,20 @@ change to the walker or the index should be judged on.
 `fdu-transient-summary` adds `--no-gitignore` so the request stays on the transient plan
 and records the `transient-summary` work class.
 `PERF_TOOL_CONTRACT` defaults to that transient contract.
-`fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, snapshot
-written on every run — and is the only contract that measures what a user gets by typing
-nothing else.
+`fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, and,
+since `auto` stopped persisting one-shot metadata reports, no snapshot write — and is
+the only contract that measures what a user gets by typing nothing else.
 
 Prefer `fdu-index-summary` for engine work and the default contract for user-visible
 claims; a change can move one and not the other, and for three campaigns nothing
 measured the second, which is how a default-path regression stayed invisible while every
 `--cache off` cell looked healthy.
-The default contract writes a snapshot, so the harness gives it an isolated cache
-directory for the run: measuring against the operator’s own cache would let an unrelated
-earlier run set this one’s starting state, and would leave a snapshot of the subject
-tree behind. It is a legal anchor but not a summary contract, so it cannot carry a
-held-out release claim.
+The default contract may write a snapshot (every binary before that change did), so the
+harness gives it an isolated cache directory for the run: measuring against the
+operator’s own cache would let an unrelated earlier run set this one’s starting state,
+and would leave a snapshot of the subject tree behind.
+It is a legal anchor but not a summary contract, so it cannot carry a held-out release
+claim.
 
 The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and
 fast total-only lower bounds (`dua`, `diskus`, and macOS `dumac`). `ncdu` is a useful

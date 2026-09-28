@@ -54,6 +54,8 @@ impl Watching {
             .args(selection)
             .arg(tree)
             .env("XDG_CACHE_HOME", cache)
+            // FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+            .env_remove("FDU_CACHE_DIR")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -154,6 +156,7 @@ fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
         .args(args)
         .arg(tree)
         .env("XDG_CACHE_HOME", cache)
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu");
     assert!(
@@ -231,7 +234,7 @@ fn a_control_file_edited_past_the_bound_does_not_end_a_watch() {
     // And it persisted them under its own scope: once its snapshot holds the later file,
     // the next watch starts warm from it and answers completely.
     let started = Instant::now();
-    while !report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--cache", "only"])
+    while !report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--stale-ok"])
         .contains("\"path\": \"after.txt\"")
     {
         assert!(started.elapsed() < DEADLINE, "the watch never persisted the later change");
@@ -272,8 +275,9 @@ fn a_watch_and_a_one_shot_report_start_warm_from_each_others_snapshot() {
         "a report after a watch rescanned instead of reusing the watch's snapshot: {analyzed}",
     );
 
-    // And the other order: a one-shot report's snapshot starts the next watch warm.
-    report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "refresh"]);
+    // And the other order: a one-shot report that keeps its snapshot starts the next watch
+    // warm.
+    report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "on"]);
     let mut watch = Watching::spawn(&tree, cache.path());
     let envelope = watch.initial_report();
     assert!(

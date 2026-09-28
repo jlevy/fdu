@@ -1,0 +1,136 @@
+==> bench-dryrun-crates-r0-auto.txt <==
+   8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 6.5 ms to walk 149 files (8.3 MiB) at 22,988 files/s (1.260 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.10 real         0.06 user         0.01 sys
+            25378816  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1763  page reclaims
+                 141  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 106  voluntary context switches
+                 214  involuntary context switches
+           494366697  instructions retired
+           213282692  cycles elapsed
+            13681096  peak memory footprint
+
+==> bench-dryrun-crates-r1-auto.txt <==
+   8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 1.4 ms to walk 149 files (8.3 MiB) at 107,406 files/s (5.887 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.06 real         0.05 user         0.01 sys
+            25575424  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1915  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  85  involuntary context switches
+           463637132  instructions retired
+           183489075  cycles elapsed
+            13844912  peak memory footprint
+
+==> bench-dryrun-crates-r1-off-nogitignore.txt <==
+   8.3 MiB  149 files, 36 directories
+perf: took 1.1 ms to walk 149 files (8.3 MiB) at 131,344 files/s (7.200 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.06 real         0.05 user         0.01 sys
+            25214976  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1894  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  87  involuntary context switches
+           463967210  instructions retired
+           185791840  cycles elapsed
+            14008776  peak memory footprint
+
+==> bench-dryrun-crates-r1-off.txt <==
+   8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 1.4 ms to walk 149 files (8.3 MiB) at 103,257 files/s (5.660 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.06 real         0.05 user         0.01 sys
+            25477120  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1904  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   1  voluntary context switches
+                  87  involuntary context switches
+           464188311  instructions retired
+           186008478  cycles elapsed
+            13828528  peak memory footprint
+
+==> bench-dryrun-crates-r1-only.txt <==
+   8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 913.6 µs to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        0.06 real         0.05 user         0.00 sys
+            25493504  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1883  page reclaims
+                   8  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  31  involuntary context switches
+           456449423  instructions retired
+           176446587  cycles elapsed
+            13713840  peak memory footprint
+
+==> bench-dryrun-crates-r1-refresh.txt <==
+   8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 1.4 ms to walk 149 files (8.3 MiB) at 108,749 files/s (5.961 GiB/s); 2 gitignore rules (2 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+        0.06 real         0.05 user         0.01 sys
+            25526272  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                1909  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                  92  involuntary context switches
+           465938514  instructions retired
+           184056810  cycles elapsed
+            13844936  peak memory footprint

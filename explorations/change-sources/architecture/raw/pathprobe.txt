@@ -1,0 +1,15 @@
+--- filter=Users/<u>/.claude
+[timing-lock] waited 206.6s
+  sample event: prefix="Users/<u>/.claude" flags=0x11000
+  sample event: prefix="Users/<u>/.claude" flags=0x11000
+  sample event: prefix="Users/<u>/.claude" flags=0x11000
+{"mnt":"/System/Volumes/Data","filter":"Users/<u>/.claude","age_s":120,"flags":16,"cursor":4808998121,"now_id":4809097188,"first_cb_ms":12.4,"history_ms":28.2,"timeout":false,"events":15}
+--- filter=/Users/<u>/.claude
+[timing-lock] waited 102.3s
+  sample event: prefix="Users/<u>/.claude" flags=0x11000
+  sample event: prefix="Users/<u>/.claude" flags=0x11000
+  sample event: prefix="Users/<u>/.claude" flags=0x11000
+{"mnt":"/System/Volumes/Data","filter":"/Users/<u>/.claude","age_s":120,"flags":16,"cursor":4809079432,"now_id":4809598263,"first_cb_ms":7.4,"history_ms":85.1,"timeout":false,"events":22}
+--- filter=System/Volumes/Data/Users/<u>/.claude
+[timing-lock] waited 26.7s
+{"mnt":"/System/Volumes/Data","filter":"System/Volumes/Data/Users/<u>/.claude","age_s":120,"flags":16,"cursor":4809079432,"now_id":4809604577,"first_cb_ms":66.7,"history_ms":66.2,"timeout":false,"events":1}

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import signal
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -424,8 +423,8 @@ class Index:
     def refresh(self) -> RefreshResult:
         """Reverify metadata and content, then persist according to this index's cache policy.
 
-        Under ``auto``, a later cache-only open sees the refreshed facts. Partial scans
-        preserve the complete snapshot and save only verified compatible content.
+        Under ``auto``, a later ``stale_ok=True`` open sees the refreshed facts. Partial
+        scans preserve the complete snapshot and save only verified compatible content.
         """
         value = _call(self._native.refresh)
         return RefreshResult(
@@ -485,18 +484,24 @@ def open(
     *,
     ignored: IgnoredEntries = IgnoredEntries.INCLUDE,
     cache: CachePolicy = CachePolicy.AUTO,
+    stale_ok: bool = False,
     cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
     """Open a root using the requested cache policy, then return a retained index.
 
+    An opened index is its own later reader, so under ``CachePolicy.AUTO`` it reads and
+    revalidates a usable snapshot and writes one back. ``stale_ok=True`` answers from the
+    snapshot alone without touching the tree; such an index can be neither refreshed nor
+    watched.
+
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
     default, and so does :func:`report`, so the two share one snapshot scope and each starts
     warm from the other's snapshot. ``ScanOptions(read_controls=False)`` turns observation
-    off: that ``open`` reads no control file and keeps a snapshot of another scope. A policy
-    that scans treats a snapshot of the other scope as a miss and scans cold, and
-    ``CachePolicy.ONLY``, which never scans, raises :class:`FduError` naming the remedy.
+    off: that ``open`` reads no control file and keeps a snapshot of another scope. A
+    scanning request treats a snapshot of the other scope as a miss and scans cold, and a
+    ``stale_ok`` one, which never scans, raises :class:`FduError` naming the remedy.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -505,6 +510,7 @@ def open(
         _native.open,
         root,
         cache=cache.value,
+        stale_ok=stale_ok,
         cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
@@ -553,11 +559,17 @@ def report(
     query: Query | None = None,
     *,
     cache: CachePolicy = CachePolicy.AUTO,
+    stale_ok: bool = False,
     cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Report:
     """One report, retaining the least state the request needs.
+
+    Under ``CachePolicy.AUTO`` a metadata report neither reads nor writes the snapshot
+    cache, and a content-analysis report reads and writes it; ``CachePolicy.ON`` writes
+    after a one-shot report too, which is how to leave a snapshot for a later
+    ``stale_ok=True`` report that answers without touching the tree.
 
     The contract the command line runs under, and until now the only way to get it was to
     be the command line. :func:`open` takes the session path: it retains an index and
@@ -565,7 +577,7 @@ def report(
     asking a single question. An unfiltered summary is answered by a transient tier that
     retains nothing, so writing a snapshot for it caches state the walk never saved --
     which meant a Python caller left cache state on a tree that the same command would
-    not have, visible to a later cache-only read.
+    not have, visible to a later ``stale_ok=True`` read.
 
     A report observes ``.gitignore`` control state unless ``ScanOptions(read_controls=False)``
     turns it off: every summary, tree, extension, and file row then carries its ignored
@@ -583,6 +595,7 @@ def report(
         _native.report_once,
         str(root),
         cache=str(cache),
+        stale_ok=stale_ok,
         cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
@@ -718,14 +731,3 @@ def clear_all_caches(*, cache_dir: str | Path | None = None) -> ClearSummary:
     """
     summary = _call(_native.clear_all_caches, cache_dir=cache_dir)
     return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
-
-
-def _main() -> int:
-    """Console-script boundary; argument parsing remains in the native CLI."""
-
-    # Python's SIGINT handler only sets a flag the native CLI never checks, so a
-    # `--watch` console script would ignore Ctrl-C until the native call returned.
-    # Restore the default disposition so the process dies on interrupt the way the
-    # cargo-installed binary does (fdu-18vk).
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    return _native.main()

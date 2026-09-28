@@ -1,6 +1,6 @@
 # fdu
 
-**Fast, incremental file roll-up engine** — `fd` and `du`, read as “fast du”.
+**Fastest native du replacement and detailed file analytics for Python and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
@@ -95,7 +95,7 @@ The API is documented on [docs.rs](https://docs.rs/fdu), and
   analyzer, cache policy, selection, and automation contract
 - [Repository README](https://github.com/jlevy/fdu#readme): performance evidence, cost
   layers, and how the engine works
-- [0.1.0 release notes](https://github.com/jlevy/fdu/blob/main/docs/project/release-notes/0.1.0.md)
+- [0.2.0 release notes](https://github.com/jlevy/fdu/blob/main/docs/project/release-notes/0.2.0.md)
   and [changelog](https://github.com/jlevy/fdu/blob/main/CHANGELOG.md)
 - [Security policy](https://github.com/jlevy/fdu/blob/main/SECURITY.md)
 

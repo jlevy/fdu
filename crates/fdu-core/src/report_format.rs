@@ -1677,15 +1677,11 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
     );
     for row in &overview.languages {
         let measured = row.selected.analyzed_files > 0;
+        // The row's value already includes every population, so the parenthetical names
+        // only the gitignored share (and any unknown share), never its complement.
         let mut annotation = String::new();
-        if let (true, Some(non_ignored), Some(ignored)) = (measured, &row.non_ignored, &row.ignored)
-        {
-            let _ = write!(
-                annotation,
-                "{} non-gitignored, {} gitignored",
-                human_count(non_ignored.metrics.code_lines),
-                human_count(ignored.metrics.code_lines)
-            );
+        if let (true, Some(ignored)) = (measured, &row.ignored) {
+            let _ = write!(annotation, "{} gitignored", human_count(ignored.metrics.code_lines));
         }
         if measured && row.unknown.source_files > 0 {
             let _ = write!(
@@ -1728,15 +1724,8 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
     }
     render_share_omission(out, overview.share_omitted, "languages", color);
     let mut total_detail = String::new();
-    if let (true, Some(non_ignored), Some(ignored)) =
-        (selected.analyzed_files > 0, &overview.non_ignored, &overview.ignored)
-    {
-        let _ = write!(
-            total_detail,
-            "{} non-gitignored, {} gitignored",
-            human_count(non_ignored.metrics.code_lines),
-            human_count(ignored.metrics.code_lines)
-        );
+    if let (true, Some(ignored)) = (selected.analyzed_files > 0, &overview.ignored) {
+        let _ = write!(total_detail, "{} gitignored", human_count(ignored.metrics.code_lines));
     }
     if selected.analyzed_files > 0 && overview.unknown.source_files > 0 {
         let _ = write!(
@@ -4697,10 +4686,8 @@ mod tests {
         assert!(colored.contains(&paint("TOTAL   ", AnsiStyle::new().bold(), true)), "{colored:?}");
         let colored_total = colored.lines().find(|line| line.contains("TOTAL")).expect("total row");
         assert_eq!(colored_total.matches("\x1b[1m").count(), 6, "all primary TOTAL cells are bold");
-        assert!(
-            colored.contains(&detail("(80 non-gitignored, 20 gitignored, 10 unknown)", true)),
-            "{colored:?}"
-        );
+        assert!(colored.contains(&detail("(20 gitignored, 10 unknown)", true)), "{colored:?}");
+        assert!(!colored.contains("non-gitignored"), "the complement is never repeated");
         let plain = strip_ansi(&colored);
         assert!(
             plain.lines().next().expect("header").contains("Analyzed files  Language"),
@@ -4729,7 +4716,7 @@ mod tests {
         overview.languages[0].unknown = CodeTally::default();
         report.sections = vec![Section::Code(Box::new(overview))];
         let text = render(&report, Format::Text, false);
-        assert!(!text.contains("non-gitignored") && !text.contains(" unknown"), "{text}");
+        assert!(!text.contains("gitignored") && !text.contains(" unknown"), "{text}");
     }
 
     #[test]
@@ -4789,7 +4776,7 @@ mod tests {
             total.split_whitespace().take(6).collect::<Vec<_>>(),
             ["—", "—", "—", "—", "0/2", "TOTAL"]
         );
-        assert!(!unmeasured.contains("0 non-gitignored") && !unmeasured.contains("0 gitignored"));
+        assert!(!unmeasured.contains("gitignored"), "{unmeasured}");
         assert!(unmeasured.contains("2 unsupported"), "{unmeasured}");
         assert!(unmeasured.lines().all(|line| line.trim_end() == line), "{unmeasured:?}");
     }

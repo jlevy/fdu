@@ -1,0 +1,500 @@
+{
+ "uid": 502,
+ "mount_line": [
+  "/dev/<disk> on /Volumes/dsverify (apfs, local, nodev, nosuid, journaled, nobrowse, mounted by <user>)"
+ ],
+ "privilege": {
+  "empty_M": {
+   "rc": 0,
+   "out": "Directory /Volumes/dsverify/priv-empty will now maintain dir-stats.",
+   "err": ""
+  },
+  "empty_state": {
+   "gencount": 1,
+   "fsctl": [
+    1,
+    0,
+    0
+   ],
+   "fsctl_us": 10.8
+  },
+  "populated_M": {
+   "rc": 0,
+   "out": "Directory /Volumes/dsverify/priv-populated will now maintain dir-stats.",
+   "err": ""
+  },
+  "populated_state": {
+   "gencount": 1,
+   "fsctl": [
+    1,
+    105,
+    409600
+   ],
+   "fsctl_us": 10.3
+  },
+  "populated_walk": {
+   "entries": 105,
+   "dirs": 5,
+   "files": 100,
+   "alloc": 409600,
+   "data": 409600,
+   "wall_ms": 0.6
+  }
+ },
+ "fsck_before_mark": {
+  "rc": 0,
+  "stdout": "** Checking the container superblock.\n   Checking the checkpoint with transaction ID 8.\n** Checking the space manager.\n** Checking the space manager free queue trees.\n** Checking the object map.\n** Checking volume /dev/<rdisk>.\n** Checking the APFS volume superblock.\n   The volume dsverify was formatted by newfs_apfs (2811.121.1) and last modified by apfs_kext (2811.121.1).\n** Checking the object map.\n** Checking the snapshot metadata tree.\n** Checking the snapshot metadata.\n** Checking the fsroot tree.\n** Checking the extent ref tree.\n** Verifying volume object map space.\n** Verifying allocated space.\n** The volume /dev/<rdisk> with UUID <uuid> appears to be OK.\n",
+  "stderr": ""
+ },
+ "persistence": {
+  "mark_big_ms": 153.3,
+  "mark_rc": [
+   0,
+   0
+  ],
+  "before_detach": {
+   "big": {
+    "gencount": 129,
+    "fsctl": [
+     129,
+     1051,
+     4222976
+    ],
+    "fsctl_us": 9.0
+   },
+   "sub": {
+    "gencount": 1,
+    "fsctl": [
+     1,
+     50,
+     204800
+    ],
+    "fsctl_us": 4.3
+   },
+   "walk": {
+    "entries": 1051,
+    "dirs": 22,
+    "files": 1029,
+    "alloc": 4222976,
+    "data": 4222976,
+    "wall_ms": 29.7
+   }
+  },
+  "after_reattach": {
+   "big": {
+    "gencount": 129,
+    "fsctl": [
+     129,
+     1051,
+     4222976
+    ],
+    "fsctl_us": 19.6
+   },
+   "sub": {
+    "gencount": 1,
+    "fsctl": [
+     1,
+     50,
+     204800
+    ],
+    "fsctl_us": 11.8
+   },
+   "walk": {
+    "entries": 1051,
+    "dirs": 22,
+    "files": 1029,
+    "alloc": 4222976,
+    "data": 4222976,
+    "wall_ms": 81.1
+   }
+  },
+  "survived": false
+ },
+ "fsck_after_mark": {
+  "rc": 0,
+  "stdout": "** Checking the container superblock.\n   Checking the checkpoint with transaction ID 11.\n** Checking the space manager.\n** Checking the space manager free queue trees.\n** Checking the object map.\n** Checking volume /dev/<rdisk>.\n** Checking the APFS volume superblock.\n   The volume dsverify was formatted by newfs_apfs (2811.121.1) and last modified by apfs_kext (2811.121.1).\n** Checking the object map.\n** Checking the snapshot metadata tree.\n** Checking the snapshot metadata.\n** Checking the fsroot tree.\n** Checking the extent ref tree.\n** Verifying volume object map space.\n** Verifying allocated space.\n** The volume /dev/<rdisk> with UUID <uuid> appears to be OK.\n",
+  "stderr": ""
+ },
+ "forced_detach": {
+  "detach_rc": 0,
+  "detach_ms": 630,
+  "detach_err": "",
+  "pre": {
+   "state": {
+    "gencount": 811,
+    "fsctl": [
+     811,
+     210,
+     819200
+    ],
+    "fsctl_us": 12.7
+   },
+   "walk": {
+    "entries": 210,
+    "dirs": 10,
+    "files": 200,
+    "alloc": 819200,
+    "data": 819200,
+    "wall_ms": 4.8
+   }
+  },
+  "fsck_after_force": {
+   "rc": 0,
+   "stdout": "** Checking the container superblock.\n   Checking the checkpoint with transaction ID 16.\n** Checking the space manager.\n** Checking the space manager free queue trees.\n** Checking the object map.\n** Checking volume /dev/<rdisk>.\n** Checking the APFS volume superblock.\n   The volume dsverify was formatted by newfs_apfs (2811.121.1) and last modified by apfs_kext (2811.121.1).\n** Checking the object map.\n** Checking the snapshot metadata tree.\n** Checking the snapshot metadata.\n** Checking the fsroot tree.\n** Checking the extent ref tree.\n** Verifying volume object map space.\n** Verifying allocated space.\n** The volume /dev/<rdisk> with UUID <uuid> appears to be OK.\n",
+   "stderr": ""
+  },
+  "post": {
+   "state": {
+    "gencount": 10466,
+    "fsctl": [
+     10466,
+     2531,
+     20848640
+    ],
+    "fsctl_us": 22.4
+   },
+   "walk": {
+    "entries": 2531,
+    "dirs": 60,
+    "files": 2471,
+    "alloc": 20848640,
+    "data": 20848640,
+    "wall_ms": 172.6
+   },
+   "persist_state": {
+    "gencount": 129,
+    "fsctl": [
+     129,
+     1051,
+     4222976
+    ],
+    "fsctl_us": 14.5
+   },
+   "persist_walk": {
+    "entries": 1051,
+    "dirs": 22,
+    "files": 1029,
+    "alloc": 4222976,
+    "data": 4222976,
+    "wall_ms": 43.6
+   }
+  },
+  "exact": true
+ },
+ "flag_removal_attempts": [
+  {
+   "w1": "0x0",
+   "w0": "0x0",
+   "call": {
+    "ok": true,
+    "gen": 1,
+    "desc": 22,
+    "phys": 81920,
+    "words": {
+     "0x18": "0xe97",
+     "0x20": "0xeae",
+     "0x30": "0x1",
+     "0x38": "0x16",
+     "0x40": "0x14000"
+    }
+   },
+   "state_after": {
+    "gencount": 1,
+    "fsctl": [
+     1,
+     22,
+     81920
+    ],
+    "fsctl_us": 5.0
+   }
+  },
+  {
+   "w1": "0x2",
+   "w0": "0x0",
+   "call": {
+    "ok": true,
+    "gen": 0,
+    "desc": 0,
+    "phys": 0,
+    "words": {
+     "0x0": "0x200000000",
+     "0x20": "0xeae"
+    }
+   },
+   "state_after": {
+    "gencount": 1,
+    "fsctl": [
+     1,
+     22,
+     81920
+    ],
+    "fsctl_us": 3.7
+   }
+  },
+  {
+   "w1": "0x3",
+   "w0": "0x0",
+   "call": {
+    "ok": true,
+    "gen": 0,
+    "desc": 0,
+    "phys": 0,
+    "words": {
+     "0x0": "0x300000000"
+    }
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 32.8
+   }
+  },
+  {
+   "w1": "0x4",
+   "w0": "0x0",
+   "call": {
+    "ok": false,
+    "errno": 22,
+    "strerror": "Invalid argument"
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 34.3
+   }
+  },
+  {
+   "w1": "0x8",
+   "w0": "0x0",
+   "call": {
+    "ok": false,
+    "errno": 22,
+    "strerror": "Invalid argument"
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 24.8
+   }
+  },
+  {
+   "w1": "0x10",
+   "w0": "0x0",
+   "call": {
+    "ok": false,
+    "errno": 22,
+    "strerror": "Invalid argument"
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 23.5
+   }
+  },
+  {
+   "w1": "0x80000000",
+   "w0": "0x0",
+   "call": {
+    "ok": false,
+    "errno": 22,
+    "strerror": "Invalid argument"
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 23.5
+   }
+  },
+  {
+   "w1": "0xffffffff",
+   "w0": "0x0",
+   "call": {
+    "ok": false,
+    "errno": 22,
+    "strerror": "Invalid argument"
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 22.3
+   }
+  },
+  {
+   "w1": "0x0",
+   "w0": "0x1",
+   "call": {
+    "ok": true,
+    "gen": 0,
+    "desc": 22,
+    "phys": 81920,
+    "words": {
+     "0x0": "0x1",
+     "0x38": "0x16",
+     "0x40": "0x14000"
+    }
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 22.2
+   }
+  },
+  {
+   "w1": "0x0",
+   "w0": "0x2",
+   "call": {
+    "ok": true,
+    "gen": 0,
+    "desc": 22,
+    "phys": 81920,
+    "words": {
+     "0x0": "0x2",
+     "0x38": "0x16",
+     "0x40": "0x14000"
+    }
+   },
+   "state_after": {
+    "gencount": 0,
+    "fsctl": [
+     0,
+     22,
+     81920
+    ],
+    "fsctl_us": 22.1
+   }
+  },
+  {
+   "w1": "0x1",
+   "w0": "0x1",
+   "call": {
+    "ok": true,
+    "gen": 0,
+    "desc": 0,
+    "phys": 0,
+    "words": {
+     "0x0": "0x100000001"
+    }
+   },
+   "state_after": {
+    "gencount": 1,
+    "fsctl": [
+     1,
+     22,
+     81920
+    ],
+    "fsctl_us": 3.5
+   }
+  },
+  {
+   "w1": "0x0",
+   "w0": "0x80000000",
+   "call": {
+    "ok": false,
+    "errno": 22,
+    "strerror": "Invalid argument"
+   },
+   "state_after": {
+    "gencount": 1,
+    "fsctl": [
+     1,
+     22,
+     81920
+    ],
+    "fsctl_us": 3.0
+   }
+  }
+ ],
+ "rmtree_recreate": {
+  "gencount": 0,
+  "fsctl": [
+   0,
+   0,
+   0
+  ],
+  "fsctl_us": 7.5
+ },
+ "move_origin": {
+  "before": {
+   "gencount": 1,
+   "fsctl": [
+    1,
+    105,
+    409600
+   ],
+   "fsctl_us": 4.4
+  },
+  "after_move": {
+   "gencount": 1,
+   "fsctl": [
+    1,
+    105,
+    409600
+   ],
+   "fsctl_us": 4.1
+  },
+  "after_append_in_moved": {
+   "gencount": 3,
+   "fsctl": [
+    3,
+    105,
+    413696
+   ],
+   "fsctl_us": 7.7
+  },
+  "after_move_back": {
+   "gencount": 3,
+   "fsctl": [
+    3,
+    105,
+    413696
+   ],
+   "fsctl_us": 3.8
+  }
+ },
+ "cp_R_of_origin": {
+  "gencount": 0,
+  "fsctl": [
+   0,
+   105,
+   413696
+  ],
+  "fsctl_us": 137.1
+ },
+ "fsctl_on_volume_root": {
+  "gencount": 0,
+  "fsctl": [
+   0,
+   3799,
+   25899008
+  ],
+  "fsctl_us": 119.5
+ }
+}

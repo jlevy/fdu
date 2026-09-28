@@ -1,0 +1,46 @@
+./results/accounting.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	584a11160ec632d39fc8b9fe6fc482d30c64987f2f4cd1351cbaf22ee15bf133
+./results/dmg-tests.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	bc535ebbb65f1f46dcba8ceaf2e2cb7b5e2c49dcfe2ea559d7f51efc1c2a5ef8
+./results/flag-unset.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	93f350747edca620a874b587f9a7e64da08310fd38713cd26b8938456a393f8b
+./results/fsck-final.txt	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	1a97ce2761360b8c9d36d15c433aa076871907b338c561b17d9d9d0c333836c2
+./results/hardlink-primary.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	5adaeec0ff4fe70f44561abd4318055f7c547a178dd2fc580afa9ea9ac39317b
+./results/ow-lag.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	3e3d00c8caa15e4005e6533933df93609c11437a513152736e13e63a8e3cf516
+./results/research-notes.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	b15720f7085a807048f4f5d562c24498f5c9c5afc0895d8987e2440de389b4d0
+./results/scale/mark-all.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	7d4eb7810178c4b56d1cce05755adbfd3941a0afbd87cca44913804ab809ebfc
+./results/scale/mark-depth3.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	63ad8ea73b642a05c6189f4a2c6aece797964966b5ecc4e856ad22fb10ffef44
+./results/scale/mark-root.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	f5fcb68ff73b0dc8080a64879a46a750611fa5d750d8deda44837f7eddee0cf0
+./results/scale/probe-lat.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	9e45fda0858ce7edd9f6941c76701caed14bdf7f4908efb27f382ec955a70a46
+./results/scale/refresh-all.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	4b08c394c60d2577095feda74510e1899e66539e6f0f2e2f6dcdc2a6842046ca
+./results/scale/refresh-depth3.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	155b3d8db352df728c364b5e3926fd37e5c71ef024ecd7a860c1908d131f48dd
+./results/scale/wa-all-levels.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	cbc2db99db87bc12382539287dc5a7430577b388087df8b69e078388f0a508bf
+./results/scale/wa-depth3.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	ca795125c81b1d18480caae9704217154f77f41cb5894a66bd3cf293c0215de3
+./results/scale/wa-one-origin.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	cde9ada47637a9b4d981ca83841885f3215e568bc152ed7b3e0dfea2ee20cf97
+./results/semantics-ext.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	a18656a5ab66274a94c93fdeb0e1903989299c4f85bff71686d47042c07d6238
+./results/semantics-internal.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	24c6b8ce558320c0292b61c7a40a12873ee44892efda0e2f66b597f779b87b9f
+./results/smoke/concurrent-writers.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	65510207973c807fd7b86da27283b4f6d98e0a887c8db6739dde3435042dd816
+./results/smoke/mark-all.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	1b94f5ff72ffd25f83b64aa765667e5d4039dfddce167750372fa66da63f64c2
+./results/smoke/mark-depth3.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	70808d47cdacfaa4e29c54ca407edbde96c1e7ae98d14c48177e2d09b80c6013
+./results/smoke/mark-root.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	616365e07b631e6664a689bab60c72f950dbda012e8b70ffbc6e47072b3b3c1c
+./results/smoke/read-cost.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	ace378d2e89a04de6ad320510ffbdd14b78e73ff6ccb93bcc879ef7a2dc57ac0
+./results/smoke/refresh-all.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	4ebd5b362487e3d37db8f202514a70e32a67435f1606f102b21e33848a403fda
+./results/smoke/refresh-depth3.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	32b2cf5912dd9cd4ba12361b98973f9118815633ed6d5f84bf62db647f285ed7
+./results/smoke/unmark-smoke.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	27e6d5a9e2343a616e1233f6dd0fbe01f4c1e2ca0a1f07101aae42aa976281b3
+./results/smoke/wa-all.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	56736114c5d1d96915fe99d291363ed5f8271a1ffe198dbbcd5b0e9e2d0ddaed
+./results/smoke/wa-one.json	sanitized: volume paths, user, disk identifiers, UUIDs replaced by placeholders	99d01946b0624e5ac1adb342dbca3dea779a241d9b796e45e689300830bd4f30
+./src/accounting.py	unchanged	e49904babd52b205a2bf6a2af5380182ea70d1fff7b36b0afd03a7021841c212
+./src/bench_wa.py	unchanged	ee1cae0650f79e64969e3654b9587dc2d5f58756ee5cd7d940cff08d09963213
+./src/concurrent.py	unchanged	12bf4dc46b6a5ec793ff3d3fd50cc238848471c4c9320bbffdb4c57a2af41ce9
+./src/dmg_tests.py	unchanged	155b50d152a41256294506b78fac5fa8feb3817311d9887e0a283411b1f6b1fb
+./src/ds.c	unchanged	09d0a9696f402024b849245ca4a1f98fd19290c0cb1da4fb0e24276178c2f4ec
+./src/dsapi.py	unchanged	b7f8e77bf2bf7422725e7c7ad0228eae0e90949d00f5f9b531dbafeae0680424
+./src/flag_unset.py	unchanged	260b2d625d936c958323759c646da39ad1227cbc69819f3ee12a416b5e924fdf
+./src/hardlink_primary.py	unchanged	a308b6333eb3c4d360b5ffc18597c3a75e439b805f6273d4599105e50cc8180b
+./src/mark_cost.py	unchanged	3cf2a9f9c236e1c5061d2da57ac1149162ec4ade8fee60f989762463a2d3b0af
+./src/ow_lag.py	unchanged	793501b760b690ae599bf9362f1b1c97cc292c4f2dc4e75cd4d9c66d5d5cae51
+./src/refresh.py	unchanged	d5eafbe65d23ff4b7268d4d47043e2ad7e9ff49ea91abe76726ad4fe3a5d1511
+./src/run_scale.sh	unchanged	5cc27b3989a0992aa1c46c4bffa7659fc978bceb41d361ac6cd343cd10de7506
+./src/sanitize.py	external volume path from $EXTERNAL_VOLUME	1778dc25ff64fa804367303c1ded80e4cea445a336486ef65701beb55830061f
+./src/scale_build.py	unchanged	a516a939fdc6294673be93f5f9c06a2ee1c8e4782b34cf2f60307faa730c5b1e
+./src/semantics.py	unchanged	3de12a963aca298576fbe38a1865fd84114816a812d1a805f9dd9b12edcb5c00
+./src/summarize.py	unchanged	8c52846cd853531b09bddf3805073e0ef8e07092b5532c00773b1e1901323be0
+# Not ported: results/summary.json (1 MB digest duplicating the files above), results/smoke/probe-lat.json (541 KB raw latency array), data/ (raw walks with absolute paths), fixtures/, attic/ (disk image).
+# Note: results/dmg-tests.json has persistence.survived = false, but its before/after values are identical (gencount 129, totals [129, 1051, 4222976]); the flag is a script error and the marks did survive.

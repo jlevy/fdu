@@ -1,0 +1,28 @@
+{
+ "immediately_after_writers_exit": {
+  "fsctl": [
+   35282,
+   6299,
+   46727168
+  ],
+  "walk": [
+   6299,
+   46727168
+  ],
+  "desc_exact": true,
+  "phys_exact": true
+ },
+ "after_sync": {
+  "fsctl": [
+   35282,
+   6299,
+   46727168
+  ],
+  "walk": [
+   6299,
+   46727168
+  ],
+  "desc_exact": true,
+  "phys_exact": true
+ }
+}
