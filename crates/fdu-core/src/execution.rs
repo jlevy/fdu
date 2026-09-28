@@ -617,10 +617,12 @@ fn prepare_report_internal(
 /// - A worker publishes a listing before any directory in it becomes claimable, so an
 ///   entry arrives after its parent's own observation, as a listing reaches the builder
 ///   after its parent's.
-/// - A classifying walk sends each listing in one batch with its control first
-///   (`SinkMode::groups_directories` in the scanner), so a directory's control is
-///   applied before any entry in it is classified, as the builder applies a listing's
-///   control before its children.
+/// - A classifying walk sends each directory's control ahead of its entries
+///   (`SinkMode::groups_directories` in the scanner), so it is applied before any entry
+///   in the directory is classified, as the builder applies a listing's control before
+///   its children. A listing that fills a batch before its `.gitignore` is listed has
+///   that file read directly, and the read stands for the listing; on a tree nothing
+///   modifies during the walk it is the same file with the same bytes.
 /// - One consumer applies every control in arrival order, as the builder's one consumer
 ///   does. Which files a budget refuses when several compete for it depends on that
 ///   order on both routes; with one worker the order is the same on both, and with
@@ -648,8 +650,8 @@ struct SummaryControls {
     table: crate::control::ControlTable,
     /// Ignored directories whose parent is not ignored.
     ignored_heads: std::collections::HashSet<std::path::PathBuf>,
-    /// The parent last looked up, and whether it is ignored. A listing's entries arrive
-    /// together, so this answers all but the first of them.
+    /// The parent last looked up, and whether it is ignored. A listing's entries mostly
+    /// arrive together, so this answers nearly all of them.
     parent: Option<(std::path::PathBuf, bool)>,
     /// Every entry no rule ignores, as the index's `unignored` partition.
     unignored: crate::index::RollUpScalars,

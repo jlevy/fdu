@@ -355,8 +355,9 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description=(
             "The shape of `fdu --view summary`: five exact tallies, no snapshot. It reads "
-            ".gitignore by default, which retains the index to classify entries; with "
-            "--no-controls it is the transient aggregate plan, the tier closest to the "
+            ".gitignore by default, which before fdu-1ovb retained the index to classify "
+            "entries and since then classifies them in the transient aggregate plan; with "
+            "--no-controls it is that plan without classification, the tier closest to the "
             "machine floor."
         ),
         oracle="tallies",

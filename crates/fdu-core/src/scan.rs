@@ -1577,8 +1577,8 @@ pub fn scan(
 /// drained batches to the producing worker so each arena is allocated and freed on one
 /// thread. Tallies must match [`scan`], and so must the normalized error set: the
 /// summary report's status is built from these errors exactly as a retained walk's is.
-/// A scan that reads `.gitignore` delivers each directory's observations in one batch,
-/// its control first, so the fold can classify each entry as the index would
+/// A scan that reads `.gitignore` delivers each directory's control ahead of every entry
+/// it governs, so the fold can classify each entry as the index would
 /// ([`SinkMode::groups_directories`]).
 pub(crate) fn scan_summary_fold(
     root: &Path,
@@ -1686,15 +1686,17 @@ impl SinkMode {
         self == Self::TransientFold
     }
 
-    /// Each directory's observations reach the consumer in one batch, its control first
+    /// Each directory's control reaches the consumer ahead of every entry it governs
     /// (fdu-1ovb).
     ///
     /// The transient summary classifies every entry against `.gitignore` on its
     /// consumer, as the detached index builder does, and the builder applies a
     /// directory's control before it classifies any child because it receives each
     /// listing whole. A streaming batch keeps listing order, where `.gitignore` can come
-    /// last, so a worker holds a directory's observations until its listing ends and
-    /// moves the control ahead of them. The retained stream keeps listing order: the
+    /// last, so a worker holds a listing's observations and moves the control ahead of
+    /// them when the listing ends, or, if the batch fills first, reads the directory's
+    /// control directly and lets that read stand for the listing
+    /// (`StreamingEmission::send_if_full`). The retained stream keeps listing order: the
     /// index reclassifies the subtree a control governs when that control arrives.
     fn groups_directories(self, config: &ScanConfig) -> bool {
         self == Self::TransientFold && config.read_controls
@@ -2922,11 +2924,30 @@ struct StreamingEmission {
     recycle_tx: Option<std::sync::mpsc::Sender<Vec<ObservationOp>>>,
     recycle_rx: Option<std::sync::mpsc::Receiver<Vec<ObservationOp>>>,
     skip_dir_symlink_stat: bool,
-    /// Whether each directory's observations stay together, control first
+    /// Whether each listing's control goes ahead of its entries
     /// ([`SinkMode::groups_directories`]).
     group_directories: bool,
-    /// Where the directory being listed begins in `batch`, while grouping.
+    /// Where the listing being recorded begins in `batch`.
     directory_start: usize,
+    /// Whether that listing's control already leads its observations, so the batch may be
+    /// sent before the listing ends.
+    listing_settled: bool,
+    /// Where that listing stands on its directory's control.
+    listing_control: ListingControl,
+}
+
+/// Where the listing a grouping worker is recording stands on its directory's control.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ListingControl {
+    /// No `.gitignore` entry seen yet.
+    Unread,
+    /// The listing's own `.gitignore` was read, or failed to read; its observation, if any,
+    /// is among the held ones.
+    Listed,
+    /// The held observations filled the batch before any `.gitignore` entry came, so the
+    /// directory's control was read directly and stands for the whole listing, as the
+    /// narrowed-population walk reads it (`read_directory_control`).
+    Probed,
 }
 
 impl StreamingEmission {
@@ -2950,17 +2971,83 @@ impl StreamingEmission {
             skip_dir_symlink_stat: mode.skips_dir_symlink_stat(),
             group_directories: mode.groups_directories(config),
             directory_start: 0,
+            listing_settled: false,
+            listing_control: ListingControl::Unread,
         }
     }
 
-    /// Whether the batch is due to be sent in the middle of a listing.
+    /// Send the batch once it is full, settling a grouped listing's control first.
     ///
-    /// Never while grouping: the directory being listed may still reveal its control, so
-    /// its observations wait for the chunk boundary, where every listing in the batch has
-    /// ended. A batch therefore exceeds `batch_size` by at most one chunk's listings,
-    /// which is what the detached builder holds per listing too.
-    fn due_mid_listing(&self) -> bool {
-        !self.group_directories && self.batch.len() >= self.batch_size
+    /// A grouped listing's observations are held until its control leads them: at the
+    /// listing's end ([`WalkEmission::finish_directory`]), or here, when the batch fills
+    /// first. So a batch never holds more than `batch_size` observations and one control,
+    /// however long the listing, and a fill that finds the listing's `.gitignore` not yet
+    /// listed costs one metadata probe for it: at most one probe per batch sent. Returns
+    /// whether the consumer is still there.
+    #[allow(clippy::too_many_arguments)]
+    fn send_if_full(
+        &mut self,
+        root: &Path,
+        rel_dir: &Path,
+        config: &ScanConfig,
+        report: &mut ScanReport,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        chunk_send_ns: &mut u64,
+        diagnostics: Option<&ScanDiagnosticsRecorder>,
+    ) -> bool {
+        if self.batch.len() < self.batch_size {
+            return true;
+        }
+        if self.group_directories && !self.listing_settled {
+            self.settle_listing(root, rel_dir, config, report);
+        }
+        let send_started = std::time::Instant::now();
+        let sent = self.send_full(sender, diagnostics);
+        *chunk_send_ns += elapsed_ns(send_started);
+        sent
+    }
+
+    /// Put the current listing's control ahead of its held observations.
+    fn settle_listing(
+        &mut self,
+        root: &Path,
+        rel_dir: &Path,
+        config: &ScanConfig,
+        report: &mut ScanReport,
+    ) {
+        self.listing_settled = true;
+        if self.listing_control != ListingControl::Unread {
+            controls_first(&mut self.batch[self.directory_start..]);
+            return;
+        }
+        self.listing_control = ListingControl::Probed;
+        let control = rel_dir.join(crate::control::CONTROL_FILE_NAME);
+        match read_directory_control(config, root, &control) {
+            Ok(Some(op)) => {
+                self.batch.insert(self.directory_start, ObservationOp::unconditional(op));
+            }
+            Ok(None) => {}
+            Err(error) => report.errors.push(error),
+        }
+    }
+
+    /// The control a listed entry carries, and its read error, as this listing takes them.
+    ///
+    /// A probed listing already read its directory's control, so a `.gitignore` entry met
+    /// later contributes its row and nothing else: one read stands for the listing, as in
+    /// the narrowed-population walk (`read_listed_control_op`).
+    fn listed_control(
+        &mut self,
+        control: Option<Op>,
+        control_error: Option<Error>,
+    ) -> (Option<Op>, Option<Error>) {
+        if self.listing_control == ListingControl::Probed {
+            return (None, None);
+        }
+        if control.is_some() || control_error.is_some() {
+            self.listing_control = ListingControl::Listed;
+        }
+        (control, control_error)
     }
 
     fn wrap(&self, ops: Vec<ObservationOp>) -> ScannerBatch {
@@ -2993,6 +3080,8 @@ impl StreamingEmission {
         let ops = std::mem::take(&mut self.batch);
         let sent = send_scanner_batch(sender, self.wrap(ops), diagnostics);
         self.batch = self.next_vec();
+        // A listing sent partway continues at the start of the new batch.
+        self.directory_start = 0;
         sent
     }
 }
@@ -3002,6 +3091,8 @@ impl WalkEmission for StreamingEmission {
 
     fn begin_directory(&mut self, _path: &Path) {
         self.directory_start = self.batch.len();
+        self.listing_settled = false;
+        self.listing_control = ListingControl::Unread;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3043,7 +3134,7 @@ impl WalkEmission for StreamingEmission {
     }
 
     fn finish_directory(&mut self, _directory: Self::Directory) {
-        if self.group_directories {
+        if self.group_directories && !self.listing_settled {
             controls_first(&mut self.batch[self.directory_start..]);
         }
     }
@@ -3055,10 +3146,7 @@ impl WalkEmission for StreamingEmission {
         chunk_send_ns: &mut u64,
         diagnostics: Option<&ScanDiagnosticsRecorder>,
     ) -> bool {
-        // A grouped batch that filled mid-listing is sent here, once every listing in it
-        // has ended.
-        let held_full = self.group_directories && self.batch.len() >= self.batch_size;
-        if self.batch.is_empty() || !(has_discovered || held_full) {
+        if self.batch.is_empty() || !has_discovered {
             return true;
         }
         let send_started = std::time::Instant::now();
@@ -3534,20 +3622,31 @@ fn record_walk_entry(
     else {
         return true;
     };
-    if let Some(error) = prepared.control_error {
+    let (mut control, control_error) =
+        emission.listed_control(prepared.control, prepared.control_error);
+    if let Some(error) = control_error {
         report.errors.push(error);
     }
-    if !prepared.retained {
-        if let Some(control) = prepared.control {
+    // A grouping emission holds an entry's control ahead of the entry itself, so no send
+    // can take the entry, `.gitignore` included, before the control that governs it.
+    if !prepared.retained || emission.group_directories {
+        if let Some(control) = control.take() {
             emission.batch.push(ObservationOp::unconditional(control));
-            if emission.due_mid_listing() {
-                let send_started = std::time::Instant::now();
-                let sent = emission.send_full(sender, diagnostics);
-                *chunk_send_ns += elapsed_ns(send_started);
-                return sent;
+            if !emission.send_if_full(
+                root,
+                rel_dir,
+                config,
+                report,
+                sender,
+                chunk_send_ns,
+                diagnostics,
+            ) {
+                return false;
             }
         }
-        return true;
+        if !prepared.retained {
+            return true;
+        }
     }
     report.observe(kind, attrs);
     emission.batch.push(ObservationOp::unconditional(Op::Upsert {
@@ -3555,23 +3654,14 @@ fn record_walk_entry(
         kind,
         attrs,
     }));
-    if emission.due_mid_listing() {
-        let send_started = std::time::Instant::now();
-        let sent = emission.send_full(sender, diagnostics);
-        *chunk_send_ns += elapsed_ns(send_started);
-        if !sent {
-            return false;
-        }
+    if !emission.send_if_full(root, rel_dir, config, report, sender, chunk_send_ns, diagnostics) {
+        return false;
     }
-    if let Some(control) = prepared.control {
+    if let Some(control) = control {
         emission.batch.push(ObservationOp::unconditional(control));
-        if emission.due_mid_listing() {
-            let send_started = std::time::Instant::now();
-            let sent = emission.send_full(sender, diagnostics);
-            *chunk_send_ns += elapsed_ns(send_started);
-            if !sent {
-                return false;
-            }
+        if !emission.send_if_full(root, rel_dir, config, report, sender, chunk_send_ns, diagnostics)
+        {
+            return false;
         }
     }
     if prepared.descend {
@@ -6729,12 +6819,14 @@ mod tests {
         assert_eq!(report.bytes_walked, expected_bytes);
     }
 
-    /// A transient fold that reads `.gitignore` receives each listing whole with its
-    /// control first, whatever the batch size, the worker count, or where `.gitignore`
-    /// falls in the listing (fdu-1ovb). Its consumer classifies each entry as it arrives,
-    /// so an entry folded before its directory's control would miss that control's rules.
+    /// A transient fold that reads `.gitignore` receives each directory's control, once,
+    /// ahead of every entry in that directory, whatever the batch size, the worker count,
+    /// or where `.gitignore` falls in the listing (fdu-1ovb). Its consumer classifies each
+    /// entry as it arrives, so an entry folded before its directory's control would miss
+    /// that control's rules. Batches smaller than a listing force the probe path; the
+    /// default batch holds whole listings and moves the listed control.
     #[test]
-    fn a_classifying_summary_fold_receives_each_listing_whole_and_its_control_first() {
+    fn a_classifying_summary_fold_receives_each_control_ahead_of_its_entries() {
         const DIRS: usize = 12;
         const FILES_PER_DIR: usize = 30;
         let dir = tempfile::tempdir().expect("tempdir");
@@ -6747,41 +6839,46 @@ mod tests {
             }
             write_file(&child.join("nested/n.dat"), b"n");
         }
-        for (threads, batch_size) in [(Some(1), 1), (Some(4), 1), (Some(4), 3), (None, 7)] {
+        let default_batch = ScanConfig::default().batch_size;
+        for (threads, batch_size) in [
+            (Some(1), 1),
+            (Some(4), 1),
+            (Some(4), 3),
+            (None, 7),
+            (Some(4), 16),
+            (None, default_batch),
+        ] {
             let config = ScanConfig { batch_size, threads, ..ScanConfig::default() };
             assert!(config.read_controls, "observation is the default");
-            // Each op's directory, and whether it is a control.
-            let mut stream: Vec<(PathBuf, bool)> = Vec::new();
+            // Per directory: the positions of its control observations and of its entries.
+            let mut seen: std::collections::BTreeMap<PathBuf, (Vec<usize>, Vec<usize>)> =
+                std::collections::BTreeMap::new();
+            let mut position = 0;
             scan_summary_fold(dir.path(), &config, &mut |observed| {
                 let (path, control) = match &observed.op {
                     Op::Upsert { path, .. } => (path, false),
                     Op::ControlUpsert { path, .. } | Op::ControlRemove { path } => (path, true),
                     other => panic!("a cold walk emitted {other:?}"),
                 };
-                stream
-                    .push((path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(), control));
+                let directory = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+                let (controls, entries) = seen.entry(directory).or_default();
+                if control { controls } else { entries }.push(position);
+                position += 1;
             })
             .expect("fold");
 
-            let mut listed = std::collections::BTreeSet::new();
-            let mut start = 0;
-            while start < stream.len() {
-                let directory = stream[start].0.clone();
+            assert_eq!(seen.len(), 1 + 2 * DIRS, "the root, each child, and each nested");
+            for (directory, (controls, entries)) in &seen {
                 let label = format!("{directory:?} with {threads:?} workers, batch {batch_size}");
-                assert!(listed.insert(directory.clone()), "{label} arrived in pieces");
-                let end = stream[start..]
-                    .iter()
-                    .position(|(parent, _)| *parent != directory)
-                    .map_or(stream.len(), |length| start + length);
-                let listing = &stream[start..end];
-                let controls = listing.iter().take_while(|(_, control)| *control).count();
-                assert!(listing[controls..].iter().all(|(_, control)| !control), "{label}");
                 let governed = directory.as_os_str().is_empty()
                     || directory.file_name().is_some_and(|name| name != "nested");
-                assert_eq!(controls, usize::from(governed), "{label}: its control comes first");
-                start = end;
+                assert_eq!(controls.len(), usize::from(governed), "{label}: one control read");
+                if let (Some(last_control), Some(first_entry)) =
+                    (controls.iter().max(), entries.iter().min())
+                {
+                    assert!(last_control < first_entry, "{label}: its control comes first");
+                }
             }
-            assert_eq!(listed.len(), 1 + 2 * DIRS, "the root, each child, and each nested");
         }
     }
 
