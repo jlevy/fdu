@@ -13,7 +13,9 @@
 //! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
 //! file counts belong directly after the name, outside parentheses. Secondary breakdowns
 //! such as nonblank/blank counts use the same gray parenthetical role. Human directory
-//! names have a gray slash except `.` and `..`. Sizes >= 1 GiB are bold even in gray
+//! names have a gray slash except `.` and `..`. Directly or ancestrally gitignored
+//! directories use regular, nonbold cyan; merely containing ignored files does not
+//! change a directory name, and file-name styling is unchanged. Sizes >= 1 GiB are bold even in gray
 //! details; zero sizes and exact shares below 1% are gray. Pad cells before applying ANSI styles.
 //! Colored bars use green solid non-gitignored and shaded gitignored usage, with dim green
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
@@ -75,6 +77,9 @@ pub const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 
 /// Directory names in a tree, so structure reads at a glance.
 pub const STYLE_NAME: AnsiStyle = AnsiColor::BrightCyan.on_default().bold();
+
+/// A directory whose own path is gitignored, directly or by an ignored ancestor.
+const STYLE_IGNORED_NAME: AnsiStyle = AnsiColor::Cyan.on_default();
 
 const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 
@@ -1156,6 +1161,9 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 emit_str_field(sink, "name", &node.name);
                 emit_path_fields(sink, &node.path);
                 emit_str_field(sink, "kind", kind_label(node.kind));
+                emit_field(sink, Field::nullable("entry_ignored"), true, |sink| {
+                    emit_scalar(sink, node.entry_ignored.map_or(Scalar::Null, Scalar::Bool));
+                });
                 emit_u64_field(sink, "bytes", node.bytes);
                 emit_u64_field(sink, "allocated", node.allocated);
                 emit_u64_field(sink, "files", node.files);
@@ -1315,11 +1323,18 @@ fn percentage_cell(part: u64, whole: u64, decimals: usize, width: usize, color: 
 }
 
 /// Human directory markers are presentation only, never part of structured paths.
-fn human_name(name: &str, kind: EntryKind, color: bool) -> String {
+fn human_name(name: &str, kind: EntryKind, ignored: Option<bool>, color: bool) -> String {
+    // Own classification matters: a directory merely containing ignored files keeps
+    // the primary style, even if every selected descendant happens to be ignored.
+    let style = if kind == EntryKind::Dir && ignored == Some(true) {
+        STYLE_IGNORED_NAME
+    } else {
+        STYLE_NAME
+    };
     let slash = kind == EntryKind::Dir && !matches!(name, "." | "..") && !name.ends_with('/');
     format!(
         "{}{}",
-        paint(&escaped_human(name), STYLE_NAME, color),
+        paint(&escaped_human(name), style, color),
         if slash { detail("/", color) } else { String::new() }
     )
 }
@@ -1841,7 +1856,7 @@ fn render_text_tree(
                 "{bar_prefix}{}  {}  {indent}{}{}{}",
                 percentage_cell(bytes, grand, 0, 5, color),
                 styled_bytes(bytes, 10, color, false),
-                human_name(&node.name, node.kind, color),
+                human_name(&node.name, node.kind, node.entry_ignored, color),
                 count,
                 ignored_suffix(node.ignored, size, selected, color),
             );
@@ -1965,7 +1980,7 @@ fn render_text_ranked_files(
             out,
             "{}  {}",
             value,
-            human_name(&row.path.to_string_lossy(), row.kind, color)
+            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color)
         );
     }
 }
@@ -1997,7 +2012,7 @@ fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
             out,
             "{:>width$}  {}{}",
             value,
-            human_name(&row.path.to_string_lossy(), row.kind, color),
+            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color),
             classification
         );
     }
@@ -4375,7 +4390,7 @@ mod tests {
         assert!(
             colored.contains(&format!(
                 "{} 3,508 files {}",
-                human_name("a(b)\n界", EntryKind::Dir, true),
+                human_name("a(b)\n界", EntryKind::Dir, None, true),
                 detail("(43 B gitignored)", true)
             )),
             "{colored:?}"
@@ -4623,14 +4638,30 @@ mod tests {
         assert_eq!(human_percentage(u64::MAX / 100 + 1, u64::MAX, 0), "1%");
         assert_eq!(human_percentage(u64::MAX / 1_000, u64::MAX, 1), "<0.1%");
         for name in [".", ".."] {
-            assert_eq!(human_name(name, EntryKind::Dir, false), name);
+            assert_eq!(human_name(name, EntryKind::Dir, None, false), name);
         }
         assert_eq!(
-            human_name("build", EntryKind::Dir, true),
+            human_name("build", EntryKind::Dir, None, true),
             format!("{}{}", paint("build", STYLE_NAME, true), detail("/", true))
         );
-        assert_eq!(human_name("build", EntryKind::File, false), "build");
-        assert_eq!(human_name("build", EntryKind::Dir, false), "build/");
+        assert_eq!(human_name("build", EntryKind::File, None, false), "build");
+        assert_eq!(human_name("build", EntryKind::Dir, None, false), "build/");
+    }
+
+    #[test]
+    fn only_own_ignored_directories_lose_bold_name_styling() {
+        for ignored in [None, Some(false), Some(true)] {
+            let style = if ignored == Some(true) { STYLE_IGNORED_NAME } else { STYLE_NAME };
+            assert_eq!(
+                human_name("node_modules", EntryKind::Dir, ignored, true),
+                format!("{}{}", paint("node_modules", style, true), detail("/", true))
+            );
+            assert_eq!(
+                human_name("file.rs", EntryKind::File, ignored, true),
+                paint("file.rs", STYLE_NAME, true)
+            );
+            assert_eq!(human_name("node_modules", EntryKind::Dir, ignored, false), "node_modules/");
+        }
     }
 
     #[test]

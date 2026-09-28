@@ -16,10 +16,12 @@ Keep those comments and this guide consistent.
 
 ## Row Styling
 
-Names that use cyan are bright cyan and bold; names shown in white or gray retain those
-colors.
-Directory names have a gray trailing `/`, except `.` and `..`; regular file names
-do not. Path and structured formats keep their original path values.
+Names that use cyan are bright cyan and bold, except directories whose own path is
+gitignored directly or through an ignored ancestor: those use regular cyan without bold.
+Containing ignored files alone does not change a directory name; file-name colors are
+unchanged. Names shown in white or gray retain those colors.
+Directory names have a gray trailing `/`, except `.` and `..`; regular file names do
+not. Path and structured formats keep their original path values.
 Sizes of at least 1 GiB are bold, including gray parenthetical sizes and performance
 details. The threshold uses exact bytes, before rounding.
 Zero sizes such as `0 B` are gray.
@@ -175,6 +177,14 @@ regular file, keeps the same aggregate measurements, returns `remainder: null`, 
 emits no omission notes or tips.
 Display bounds do not control scan completeness: `--scan-depth`, unreadable directories,
 and other discovery restrictions still apply.
+
+## Progress Timer
+
+Transient progress and `perf:` use the same elapsed-time formatter.
+Durations of one second or more stay in seconds with two decimal places, such as
+`151.33 s`; there is no separate minute or hour notation.
+Subsecond durations use the same nanosecond, microsecond, or millisecond formatting on
+both surfaces.
 
 ## Performance Summary
 

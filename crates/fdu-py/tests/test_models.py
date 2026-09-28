@@ -369,6 +369,7 @@ def test_tree_parser_is_iterative_at_filesystem_depth() -> None:
         "name": "leaf",
         "path": "leaf",
         "kind": "dir",
+        "entry_ignored": None,
         "bytes": 0,
         "allocated": 0,
         "files": 0,
@@ -404,6 +405,7 @@ def test_native_json_fallback_parses_a_deep_rendered_report_end_to_end() -> None
         "name": "leaf",
         "path": "leaf",
         "kind": "dir",
+        "entry_ignored": None,
         "bytes": 0,
         "allocated": 0,
         "files": 0,
@@ -564,6 +566,7 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
         "name": "dist",
         "path": "dist",
         "kind": "dir",
+        "entry_ignored": True,
         "bytes": 128,
         "allocated": 4096,
         "files": 1,
@@ -574,7 +577,15 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
         "omissions": [],
         "children": [],
     }
-    root = {**leaf, "name": ".", "path": "", "dirs": 1, "ignored": share, "children": [leaf]}
+    root = {
+        **leaf,
+        "name": ".",
+        "path": "",
+        "dirs": 1,
+        "entry_ignored": False,
+        "ignored": share,
+        "children": [leaf],
+    }
     summary = {"files": 2, "dirs": 1, "bytes": 164, "allocated": 8192, "ignored": share}
     report = report_from_dict(
         _envelope(
@@ -637,7 +648,9 @@ def test_every_row_parses_its_ignored_share_and_keeps_null_distinct_from_zero() 
     assert isinstance(tree_section, TreeSection)
     assert tree_section.tree is not None
     assert tree_section.tree.ignored == IgnoredTally(1, 1, 128, 4096)
+    assert tree_section.tree.entry_ignored is False
     assert tree_section.tree.children[0].ignored == IgnoredTally(1, 0, 128, 4096)
+    assert tree_section.tree.children[0].entry_ignored is True
     assert isinstance(extensions_section, ExtensionsSection)
     assert extensions_section.share_omitted == 3
     gz, rs = extensions_section.extensions

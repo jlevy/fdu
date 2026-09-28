@@ -194,8 +194,11 @@ Colored bars use green `█` for non-gitignored usage, green `▓` for gitignore
 green `▒` when classification is unknown; dim green `░` fills unused width.
 Zero sizes and percentages below 1% are gray; sizes at least 1 GiB are bold.
 Cyan names are bright and bold.
-Directories get a gray `/` suffix, except `.` and `..`; file names and structured paths
-do not change. Hidden and ignored entries are included.
+Gitignored directories use regular, nonbold cyan; containing ignored files is not
+enough.
+Directories get a gray `/` suffix, except `.` and `..`; file names and structured
+paths do not change.
+Hidden and ignored entries are included.
 `.gitignore` is read to label ignored shares, not to exclude matching entries.
 A parenthetical amount such as `(73 MiB gitignored)` is included in the row total.
 

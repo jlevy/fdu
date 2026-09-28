@@ -579,6 +579,9 @@ pub struct TreeNode {
     pub name: String,
     /// What the entry is.
     pub kind: EntryKind,
+    /// Whether this entry itself is gitignored, or `None` when its classification is unknown.
+    /// This is independent of the selected subtree's `ignored` tally.
+    pub entry_ignored: Option<bool>,
     /// Apparent bytes in this subtree.
     pub bytes: u64,
     /// Allocated bytes in this subtree.
@@ -2726,6 +2729,7 @@ fn tree_node(
         path: PathBuf::new(),
         name: ".".to_string(),
         kind: EntryKind::Dir,
+        entry_ignored: index.ignored_classification_of(Path::new(""), EntryId::ROOT),
         bytes: root_summary.bytes,
         allocated: root_summary.allocated,
         files: root_summary.files,
@@ -2876,6 +2880,7 @@ fn expand(
             path: node.path.clone(),
             name: node.name.clone(),
             kind: node.kind,
+            entry_ignored: node.entry_ignored,
             bytes: node.bytes,
             allocated: node.allocated,
             files: node.files,
@@ -2992,9 +2997,10 @@ fn child_rows(
         }) {
             continue;
         }
+        let entry_ignored = index.ignored_classification_of(&child_path, child);
         let summary = if kind == EntryKind::File {
             let attrs = index.attrs_of(child).expect("live child has attributes");
-            let ignored = index.ignored_classification(&child_path).map(|ignored| {
+            let ignored = entry_ignored.map(|ignored| {
                 if ignored {
                     IgnoredTally {
                         files: 1,
@@ -3029,6 +3035,7 @@ fn child_rows(
                 path: child_path,
                 name,
                 kind,
+                entry_ignored,
                 bytes: summary.bytes,
                 allocated: summary.allocated,
                 files: summary.files,
@@ -5107,6 +5114,70 @@ mod tests {
     }
 
     #[test]
+    fn tree_entry_classification_is_independent_of_selected_subtree_tallies() {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        index.apply_ok(&Observation::new(vec![
+            Op::ControlUpsert {
+                path: PathBuf::from(CONTROL),
+                source: b"empty/\nzero.txt\n*.log\n".to_vec(),
+            },
+            upsert("empty", EntryKind::Dir, Attrs::default()),
+            upsert("zero.txt", EntryKind::File, attrs(0, 0)),
+            upsert("mixed", EntryKind::Dir, Attrs::default()),
+            upsert("mixed/ignored.log", EntryKind::File, attrs(5, 5)),
+            upsert("mixed/ordinary.rs", EntryKind::File, attrs(7, 7)),
+        ]));
+        let selection = |ignored| Selection {
+            ignored,
+            depth: Some(Bound::All),
+            breadth: Some(Bound::All),
+            limit: Some(Bound::All),
+            min_share: Some(ShareThreshold::parse("0%").expect("share")),
+            ..Selection::default()
+        };
+        let included =
+            tree_of(&run(&index, &query(&[ViewSpec::Tree], selection(IgnoredEntries::Include))));
+        assert_eq!(included.entry_ignored, Some(false));
+        let child = |name: &str| included.children.iter().find(|row| row.name == name).expect(name);
+        let empty = child("empty");
+        assert_eq!((empty.kind, empty.bytes, empty.entry_ignored), (EntryKind::Dir, 0, Some(true)));
+        assert_eq!(child("zero.txt").entry_ignored, Some(true));
+        let mixed = child("mixed");
+        assert_eq!(mixed.entry_ignored, Some(false));
+        assert_eq!(mixed.ignored.expect("known").bytes, 5);
+        assert_eq!(
+            mixed
+                .children
+                .iter()
+                .find(|row| row.name == "ignored.log")
+                .expect("ignored leaf")
+                .entry_ignored,
+            Some(true)
+        );
+
+        let only =
+            tree_of(&run(&index, &query(&[ViewSpec::Tree], selection(IgnoredEntries::Only))));
+        assert_eq!(only.entry_ignored, Some(false));
+        let mixed_only = only.children.iter().find(|row| row.name == "mixed").expect("ancestor");
+        assert_eq!(mixed_only.entry_ignored, Some(false));
+        assert_eq!(mixed_only.ignored.expect("known").bytes, 5);
+
+        let mut unobserved =
+            Index::new_with_scope("/root", crate::test_support::not_observing_controls());
+        unobserved.apply_ok(&Observation::new(vec![upsert(
+            "plain",
+            EntryKind::Dir,
+            Attrs::default(),
+        )]));
+        let unknown = tree_of(&run(
+            &unobserved,
+            &query(&[ViewSpec::Tree], selection(IgnoredEntries::Include)),
+        ));
+        assert_eq!(unknown.entry_ignored, None);
+        assert_eq!(unknown.children[0].entry_ignored, None);
+    }
+
+    #[test]
     fn ignored_size_interpretation_note_appears_once_only_when_relevant() {
         let classified = classified_sample();
         for (population, expected) in
@@ -5224,6 +5295,15 @@ mod tests {
         };
         let cases = [
             ("INCLUDE", &classified, selection(IgnoredEntries::Include)),
+            (
+                "INCLUDE EXPANDED",
+                &classified,
+                Selection {
+                    depth: Some(Bound::Limit(2)),
+                    min_share: Some(ShareThreshold::parse("0%").expect("share")),
+                    ..selection(IgnoredEntries::Include)
+                },
+            ),
             ("EXCLUDE", &classified, selection(IgnoredEntries::Exclude)),
             ("ONLY", &classified, selection(IgnoredEntries::Only)),
             ("NO CONTROLS", &unobserved, selection(IgnoredEntries::Include)),
