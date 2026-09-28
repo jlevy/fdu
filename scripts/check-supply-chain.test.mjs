@@ -419,6 +419,25 @@ test("a cargo tool is installed locked at exactly its reviewed version", () => {
   });
 });
 
+test("a comment is not a cargo install, neither refused nor counted", () => {
+  // A full-line comment may name any command, at any indentation, without pinning it.
+  validateCargoToolPins(CARGO_TOOLS, {
+    "release.yml":
+      "# Never `cargo install cargo-semver-checks` unpinned: it resolves the newest release.\n" +
+      "      # cargo install cargo-deny would need an inventory entry of its own.\n" +
+      installStep("cargo install --locked cargo-semver-checks --version 0.50.0"),
+    "ci.yml": "    # cargo install --locked cargo-semver-checks --version 0.50.0\n",
+  });
+  // And a commented-out install does not keep an inventoried file's pin alive.
+  assert.throws(
+    () =>
+      validateCargoToolPins(CARGO_TOOLS, {
+        "release.yml": "      # - run: cargo install --locked cargo-semver-checks --version 0.50.0\n",
+      }),
+    /does not install cargo tool cargo-semver-checks@0\.50\.0/,
+  );
+});
+
 test("an unpinned, unlocked, or uninventoried cargo install fails closed", () => {
   const refused = {
     "no version resolves the newest release": [

@@ -682,7 +682,8 @@ export function validateRustToolchainPins(rustToolchains, texts) {
  * to its contents, must name a tool inventoried for that file, with `--locked` so its
  * own lockfile decides its dependencies, and exactly the reviewed `--version`. Each
  * inventoried file must also install its tool at least once, so the pin cannot rot in a
- * file that stopped using it.
+ * file that stopped using it. A full-line `#` comment is neither: it may mention any
+ * command, and a commented-out install installs nothing.
  */
 export function validateCargoToolPins(cargoTools, texts) {
   const inventoried = new Map();
@@ -697,6 +698,9 @@ export function validateCargoToolPins(cargoTools, texts) {
     const tools = inventoried.get(file) ?? [];
     const installed = new Set();
     for (const [line] of text.matchAll(/^.*\bcargo(?:\s+\+\S+)?\s+install\b.*$/gm)) {
+      if (/^\s*#/.test(line)) {
+        continue;
+      }
       const tool = tools.find((candidate) =>
         new RegExp(`(?:^|\\s)${escapeRegExp(candidate.name)}(?:\\s|$)`).test(line),
       );
