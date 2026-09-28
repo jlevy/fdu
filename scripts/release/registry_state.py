@@ -211,6 +211,12 @@ def exit_status(states: list[RegistryState], *, require_identical: bool) -> int:
     return 0
 
 
+def registry_document(version: str, states: list[RegistryState]) -> str:
+    """Render the audit as the JSON document a GitHub release attaches."""
+    document = {"version": version, "registries": [asdict(state) for state in states]}
+    return json.dumps(document, indent=2, sort_keys=True) + "\n"
+
+
 def parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     result = argparse.ArgumentParser()
@@ -234,8 +240,7 @@ def main() -> None:
         states.extend(crates_io_state(args.manifest, args.version))
     if args.channel in {"all", "pypi"}:
         states.append(pypi_state(args.manifest, args.version))
-    document = {"version": args.version, "registries": [asdict(state) for state in states]}
-    rendered = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    rendered = registry_document(args.version, states)
     print(rendered, end="")
     if args.output is not None:
         args.output.write_text(rendered, encoding="utf-8")

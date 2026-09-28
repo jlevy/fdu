@@ -35,8 +35,8 @@ repository would.
 
 - Publishing `0.1.0`. That procedure is
   [Publishing a Release](../../guides/release-process.md#publishing-a-release), with
-  [Publishing 0.1.0 by Hand](../../guides/release-process.md#publishing-010-by-hand) as
-  its fallback, tracked on `fdu-9cf0`.
+  [Publishing by Hand](../../guides/release-process.md#publishing-by-hand) as its
+  fallback, tracked on `fdu-9cf0`.
 - Replacing `make release-rehearse`. Rehearsal already packages and inspects artifacts;
   this plan is the stranger path on top of them.
 - Contacting crates.io or PyPI during the first checklist.

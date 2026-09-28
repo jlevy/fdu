@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -38,6 +38,8 @@ help:
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
 	@echo "make python-concurrency  Prove Python GIL release and runtime borrow exclusion"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
+	@echo "make release-rehearse  Build and inspect this host's release artifacts locally"
+	@echo "make release-preflight  First maintainer release step (docs/project/guides/release-process.md)"
 	@echo "make cli        Build and run the CLI against this repo"
 	@echo "make docs-format  Auto-format all Markdown with flowmark"
 	@echo ""
@@ -490,6 +492,14 @@ release-rehearse: release-test
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
 			--manifest "$$artifact_dir/manifest.json" --checksums "$$artifact_dir/SHA256SUMS"
+
+# The maintainer's release checklist, one step per target in order, then the recovery
+# audit; see docs/project/guides/release-process.md. Each reads VERSION, COMMIT, RELEASE,
+# and SIGNING_KEY from the environment, and ARGS passes a step's own options. None of
+# them tags, dispatches a publishing run, approves, or announces: those stay the
+# maintainer's.
+release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit: uv-version
+	$(UV) run --no-project --python 3.12 python scripts/release/maintainer.py $(patsubst release-%,%,$@) $(ARGS)
 
 cli:
 	$(CARGO) run --locked --release --bin fdu -- --cache off -d 2 .
