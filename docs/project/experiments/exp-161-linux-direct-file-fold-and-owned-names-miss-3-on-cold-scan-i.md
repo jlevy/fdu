@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /opt/fdu-bench/results/perf/run-linux-detached-alloc.json
+    run_artifact: docs/project/experiments/evidence/exp-161/run.json
   results:
     - job: cold-scan-index
       start_state: cold
@@ -319,6 +319,12 @@ Allocations fell from 7,032,800 to 4,282,804 and bytes allocated from 1.12 GB to
 
 - `cold-scan-index`: −2.22% [−4.04%, +0.04%].
 - `default-tree-first`: −3.10% [−7.33%, +5.20%].
+
+The product CLI job, `fdu --cache off --depth 1 --limit 10`, was paired against the H156
+build in the live tool harness, quiet, 12 adjacent pairs: −3.71% [−4.71%, −1.97%]. That
+run, which also carries the H157 + H158 arm recorded in
+[exp-162](exp-162-linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wa.md), is
+committed as [evidence/exp-161/cli-run.json](evidence/exp-161/cli-run.json).
 
 ## Decision
 

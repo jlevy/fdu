@@ -300,11 +300,15 @@ const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 64 * 1024;
 /// process that exits first lets the operating system reclaim the pages instead, and a
 /// long-lived caller gets the memory back moments later rather than before its answer.
 /// A host that cannot spawn the thread releases the index inline, as before.
+///
+/// With counters on, the release stays inline. A thread's counts reach the totals only
+/// when it exits, so frees on a detached thread would land in a run's report or miss it
+/// depending on timing; counting runs trade the saving for a deterministic record.
 pub(crate) fn release_index(index: std::sync::Arc<Index>) {
     let Some(index) = std::sync::Arc::into_inner(index) else {
         return;
     };
-    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES {
+    if index.len() < BACKGROUND_RELEASE_MIN_ENTRIES || crate::counters::enabled() {
         return;
     }
     let spawned = std::thread::Builder::new()
