@@ -5,7 +5,7 @@ title: "Final gate on the stack top: make check and make cross-lint, CI green in
 kind: task
 status: open
 priority: 0
-version: 3
+version: 4
 labels: []
 dependencies:
   - type: blocks
@@ -14,6 +14,10 @@ dependencies:
     target: is-01m3kfjkha31pmqt9kkssk7znr
 parent_id: is-01m3kfj7vjnh8patz58z2p2bh1
 created_at: 2026-09-28T07:44:50.407Z
-updated_at: 2026-09-28T07:45:10.642Z
+updated_at: 2026-09-28T12:10:11.591Z
 ---
 Run once on the final top layer with the worktree's own ./target (fdu-dfbu): make check, make cross-lint (targets installed per AGENTS.md). Then CI on every stack PR green; the version bump needs the Linux parity diff re-recorded by CI. Report results honestly; fix bottom-up if anything fails.
+
+## Notes
+
+2026-09-28: gate requeued on #148 head 48812041 (after the admission fix); first attempt at 2a9339e3 was stopped while still waiting for the timing lock.
