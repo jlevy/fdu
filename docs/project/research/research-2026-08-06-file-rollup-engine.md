@@ -1409,8 +1409,9 @@ Grouped by what each tool proves.
 | ncdu 2 | Zig | **yes** (LIFO queue) | openat + fstatat | 1 | JSON + **binary, seekable** | no | no |
 | dust | Rust | rayon `par_bridge` | `symlink_metadata` | 1 (mode-switched) | no | no | no |
 | dua-cli | Rust | **custom work-stealing** | batched stat (4/job) | 3 | no | no | **yes (2 crates)** |
-| pdu | Rust | rayon | std | 1 | no | no | partial |
-| diskus | Rust | rayon | std | 1 (total only) | no | no | no |
+| pdu† | Rust | rayon | std | 1 | no | no | partial |
+| diskus† | Rust | rayon | std | 1 (total only) | no | no | no |
+| dumac† | Rust | rayon + bounded concurrency | getattrlistbulk | 1 (total only) | no | no | no |
 | gdu | Go | goroutine fan-out | std | **5** | **Badger/SQLite/JSON** | no | informal |
 | erdtree | Rust | `ignore` WalkParallel | std | 1 (mode-switched) | no | no | no |
 | **dut** | C | custom lock-free pool | **getdents64 + dirfd statx** | 2 | no | no | no |
@@ -1424,6 +1425,24 @@ Grouped by what each tool proves.
 | git status | C | partial | stat fingerprints | status | yes (index) | **yes** | libgit2 |
 | metabrowser | Python | no (GIL) | `os.scandir` | 3 | no | watcher only | internal |
 | **Proposed** | Rust | custom, dut-style | getdents + statx + opt. io_uring | **extensible** | **binary snapshot** | **yes** | **Rust + Py + CLI** |
+
+**Later additions (2026-09-28).** † These rows were checked against source after this
+survey, which consulted pdu and diskus through their documentation only (see
+*References*). [The pdu brief](research-2026-09-28-pdu-and-the-linux-peer-gap.md) has
+the detail; in short:
+
+- **pdu 0.24.0:** recursive rayon tasks on the global pool; `symlink_metadata` on each
+  entry’s full path; retains only the nodes within its display depth and sums the rest;
+  optional hard-link deduplication that records only files with several links;
+  `--json-output` and `--json-input`; library crate `parallel_disk_usage`.
+- **diskus 0.9.0:** a pool of `3 × min(cores, 64)` threads and one channel message per
+  entry to a summing thread.
+  It does expose a small library (`diskus::DiskUsage`), so its Library API entry should
+  read “yes (total only)”.
+- **dumac `1ffbe3c`:** macOS only; reads each directory’s entries and attributes in
+  `getattrlistbulk` batches, runs a rayon pool sized to the core count and capped at
+  224, keeps a sharded inode set, and reduces to one allocated total.
+  Added because it later became the macOS comparator.
 
 ## Options Considered
 
