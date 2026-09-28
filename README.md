@@ -1,23 +1,35 @@
 # fdu
 
-**Fastest native du replacement and detailed file analytics for Python and Rust**
-
-On our million-entry macOS benchmark, fdu delivered **over 8× the throughput of standard
-`du`**, **about 60% more than [dust](https://github.com/bootandy/dust)**, and **roughly
-10% more than [dumac](https://github.com/healeycodes/dumac#readme)** while building a
-reusable index with counts, sizes, recency, and file-type tallies for every directory.
-These paired results used warm filesystem caches under background load, and the tools
-return different amounts of information.
-See [Speed](#speed) for the measurements and limits.
+**Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
 Use fdu to find what takes up space, locate old build directories, or summarize a tree
 without writing a filesystem walker.
-The same engine serves coding agents through a self-contained skill and ships as:
 
-- **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
-- **Python package:** typed, immutable values plus the native `fdu` command
-- **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
-  long-lived opened root)
+Key features:
+
+- **Speed:** Native Rust and native filesystem APIs make fdu fast.
+  On a one-million-file macOS benchmark, fdu ran at over 8× the speed of standard `du`,
+  about 60% faster than [dust](https://github.com/bootandy/dust), and about 8% faster
+  than [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool,
+  which returns only a total.
+  On Linux, fdu’s summary mode is the fastest tool measured, while building its full
+  index takes about 20% longer than the fastest peers.
+  See [Speed](#speed) for the measurements and limits.
+- **Text, file, and code analysis:** Rolls up content metrics, including lines, source
+  code lines by language, and words, paragraphs, and pages for Markdown and text.
+- **Cached statistics:** Content metrics require reading files, so fdu caches them
+  between runs and reads again only the files that changed.
+- **Watch and stream events:** Unlike `du` or dust, fdu can keep a result current and
+  stream its changes, using each platform’s native file watching (FSEvents, inotify,
+  `ReadDirectoryChangesW`).
+- **Rust and Python APIs:** Every capability is available directly from Rust and Python:
+  typed results, a retained index, a change feed, and a long-lived opened root, all
+  backed by the same native engine as the command line.
+- **Easy use as a skill or from the command line:** Nothing needs to be built from
+  source. Prebuilt binaries install from PyPI on macOS, Linux, and Windows, and the Rust
+  crates (`fdu` and `fdu-core`) are on crates.io.
+  Run `uvx fdu@latest` anywhere [uv](https://docs.astral.sh/uv/) is available, or
+  install a skill for coding agents as described below.
 
 ## Set Up with Any Coding Agent
 
