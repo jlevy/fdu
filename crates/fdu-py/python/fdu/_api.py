@@ -424,8 +424,8 @@ class Index:
     def refresh(self) -> RefreshResult:
         """Reverify metadata and content, then persist according to this index's cache policy.
 
-        Under ``auto``, a later cache-only open sees the refreshed facts. Partial scans
-        preserve the complete snapshot and save only verified compatible content.
+        Under ``auto``, a later ``stale_ok=True`` open sees the refreshed facts. Partial
+        scans preserve the complete snapshot and save only verified compatible content.
         """
         value = _call(self._native.refresh)
         return RefreshResult(
@@ -578,7 +578,7 @@ def report(
     asking a single question. An unfiltered summary is answered by a transient tier that
     retains nothing, so writing a snapshot for it caches state the walk never saved --
     which meant a Python caller left cache state on a tree that the same command would
-    not have, visible to a later cache-only read.
+    not have, visible to a later ``stale_ok=True`` read.
 
     A report observes ``.gitignore`` control state unless ``ScanOptions(read_controls=False)``
     turns it off: every summary, tree, extension, and file row then carries its ignored
