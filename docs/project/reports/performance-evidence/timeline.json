@@ -41501,6 +41501,421 @@
    "subject": "8069cdcb1ddc:1000001:b38a1acc3a93",
    "title": "macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "060bbfe6 probe: the transient summary classifies entries against .gitignore",
+   "change_pct": -69.119,
+   "commit": "060bbfe6",
+   "complexity": {
+    "lines_changed": 999,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "a listing that fills a batch before its .gitignore is listed takes one extra metadata probe"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "Two engine files carry the change: scan.rs groups a classifying fold's controls ahead of their entries on the streaming path only (the detached builder is untouched), and execution.rs adds the SummaryFold reducer; query_report.rs shares its notes with report_in. lines_changed counts crates/fdu-core/src including about 450 test lines."
+   },
+   "control": "a5c0ab46 probe: the default summary falls closed to the full index",
+   "date": "2026-09-28",
+   "decision": "accepted",
+   "entries": 137085,
+   "family": "macOS:a319238d9c29",
+   "hypotheses": [
+    "H161"
+   ],
+   "id": "exp-170",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 265704188,
+        "control": 288190750
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -4.079,
+        "ci95_high_pct": -0.019,
+        "ci95_low_pct": -11.219,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1612795500,
+        "control": 1686726000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -4.26,
+        "ci95_high_pct": 0.087,
+        "ci95_low_pct": -7.333,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 11575296,
+        "control": 37625856
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -69.119,
+        "ci95_high_pct": -68.71,
+        "ci95_low_pct": -71.094,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1490813500,
+        "control": 1553882000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -4.05,
+        "ci95_high_pct": 0.214,
+        "ci95_low_pct": -6.782,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 123177500,
+        "control": 133119000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -5.751,
+        "ci95_high_pct": 0.4,
+        "ci95_low_pct": -10.411,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 270792166.5,
+        "control": 293712604.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.278,
+        "ci95_high_pct": -0.214,
+        "ci95_low_pct": -11.333,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1975.3595688806215,
+      "control": 2142.5582995951418
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 170,
+   "path": "exp-170-macos-ignore-aware-transient-summary-cuts-default-summary-pe.md",
+   "platform": "macOS",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "peak_rss_bytes",
+   "reason": "Pre-registered primary peak RSS -69.12% [-71.09%, -68.71%], past the 50% bar; wall -4.28% [-11.33%, -0.21%], non-inferior; placebo --no-controls on both arms includes zero on wall and RSS. Uncontrolled host; the Linux wall cell is pending.",
+   "reference_tools": [],
+   "subject": "a319238d9c29:137085:0eed491edf9b",
+   "title": "macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "060bbfe6 probe: the transient summary classifies entries against .gitignore",
+   "change_pct": -57.86,
+   "commit": "060bbfe6",
+   "complexity": {
+    "lines_changed": 999,
+    "new_dependencies": [],
+    "new_failure_modes": [
+     "a listing that fills a batch before its .gitignore is listed takes one extra metadata probe"
+    ],
+    "new_unsafe_blocks": 0,
+    "notes": "Two engine files carry the change: scan.rs groups a classifying fold's controls ahead of their entries on the streaming path only (the detached builder is untouched), and execution.rs adds the SummaryFold reducer; query_report.rs shares its notes with report_in. lines_changed counts crates/fdu-core/src including about 450 test lines."
+   },
+   "control": "a5c0ab46 probe: the default summary falls closed to the full index",
+   "date": "2026-09-28",
+   "decision": "accepted",
+   "entries": 77159,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H161"
+   ],
+   "id": "exp-171",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 120342791.5,
+        "control": 123877354.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.562,
+        "ci95_high_pct": 0.219,
+        "ci95_low_pct": -10.954,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 607661000,
+        "control": 642986000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -5.79,
+        "ci95_high_pct": 2.988,
+        "ci95_low_pct": -6.566,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 11395072,
+        "control": 26345472
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -57.86,
+        "ci95_high_pct": -53.963,
+        "ci95_low_pct": -58.978,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 567125000,
+        "control": 583154500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.555,
+        "ci95_high_pct": 6.476,
+        "ci95_low_pct": -4.561,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 40964000,
+        "control": 60734000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -32.249,
+        "ci95_high_pct": -29.018,
+        "ci95_low_pct": -33.762,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 126022708,
+        "control": 129686604.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -3.87,
+        "ci95_high_pct": 0.013,
+        "ci95_low_pct": -10.856,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1633.2859160953356,
+      "control": 1680.7709340452832
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 171,
+   "path": "exp-171-macos-ignore-aware-transient-summary-cuts-peak-rss-58-on-a-t.md",
+   "platform": "macOS",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "peak_rss_bytes",
+   "reason": "Pre-registered primary peak RSS -57.86% [-58.98%, -53.96%], past the 50% bar; wall -3.87% [-10.86%, +0.01%], non-inferior; user CPU -32.25%; placebo --no-controls on both arms includes zero. Uncontrolled host; the Linux wall cell is pending.",
+   "reference_tools": [],
+   "subject": "36ce9b22af9a:77159:b2e3920a7009",
+   "title": "macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "cbeb9e57 probe: first cut, each listing held whole until it ends",
+   "change_pct": -17.072,
+   "commit": "cbeb9e57",
+   "complexity": {
+    "lines_changed": 900,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": "First cut of H161; its scan.rs emission held each listing until it ended."
+   },
+   "control": "a5c0ab46 probe: the default summary falls closed to the full index",
+   "date": "2026-09-28",
+   "decision": "superseded",
+   "entries": 77159,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H161"
+   ],
+   "id": "exp-172",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 117092374.5,
+        "control": 113823771.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 3.284,
+        "ci95_high_pct": 15.167,
+        "ci95_low_pct": -10.517,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 600185000,
+        "control": 625217500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.803,
+        "ci95_high_pct": 2.516,
+        "ci95_low_pct": -10.706,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 22298624,
+        "control": 26877952
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -17.072,
+        "ci95_high_pct": -12.091,
+        "ci95_low_pct": -21.272,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 563045500,
+        "control": 573559500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.305,
+        "ci95_high_pct": 5.153,
+        "ci95_low_pct": -9.612,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 37063500,
+        "control": 48990500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -24.386,
+        "ci95_high_pct": -22.182,
+        "ci95_low_pct": -28.961,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 122416437.5,
+        "control": 119419770.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 2.917,
+        "ci95_high_pct": 14.515,
+        "ci95_low_pct": -9.905,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1586.547745564354,
+      "control": 1547.7101893492659
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": null,
+   "number": 172,
+   "path": "exp-172-macos-whole-listing-hold-keeps-only-17-rss-saving-on-wide-di.md",
+   "platform": "macOS",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "peak_rss_bytes",
+   "reason": "Peak RSS -17.07% [-21.27%, -12.09%] (25 to 21 MiB, against 10 MiB without controls) fails the pre-registered 50% bar: holding whole listings sizes batches by the widest listing. Superseded by 060bbfe6, which sends at batch_size and probes the directory control when a batch fills first (exp-171).",
+   "reference_tools": [],
+   "subject": "36ce9b22af9a:77159:b2e3920a7009",
+   "title": "macOS whole-listing hold keeps only 17% RSS saving on wide directories",
+   "trials": 12
   }
  ],
  "prepared": "2026-09-28",
@@ -42003,6 +42418,26 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1643250814,
+   "directories": 9936,
+   "entries": 137085,
+   "experiments": [
+    "exp-158",
+    "exp-159",
+    "exp-170"
+   ],
+   "files": 127104,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "a319238d9c29:137085:0eed491edf9b",
+   "labels": [
+    "metabrowser-clone"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -42137,25 +42572,6 @@
    "synthetic": false
   },
   {
-   "apparent_bytes": 1643250814,
-   "directories": 9936,
-   "entries": 137085,
-   "experiments": [
-    "exp-158",
-    "exp-159"
-   ],
-   "files": 127104,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "a319238d9c29:137085:0eed491edf9b",
-   "labels": [
-    "metabrowser-clone"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
    "apparent_bytes": 793658448,
    "directories": 125001,
    "entries": 1000001,
@@ -42169,6 +42585,25 @@
    "key": "8069cdcb1ddc:1000001:b38a1acc3a93",
    "labels": [
     "macos-balanced-1m"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 3212541127,
+   "directories": 3420,
+   "entries": 77159,
+   "experiments": [
+    "exp-171",
+    "exp-172"
+   ],
+   "files": 73739,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "36ce9b22af9a:77159:b2e3920a7009",
+   "labels": [
+    "rustup-toolchains"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -42464,22 +42899,22 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 17776,
+  "accepted_lines_changed": 19774,
   "decisions": {
-   "accepted": 93,
+   "accepted": 95,
    "baseline": 10,
    "blocked": 2,
    "in-progress": 4,
    "rejected": 53,
-   "superseded": 3
+   "superseded": 4
   },
-  "experiments": 165,
+  "experiments": 168,
   "first_date": "2026-08-10",
-  "hypotheses": 116,
+  "hypotheses": 117,
   "last_date": "2026-09-28",
   "platforms": {
    "Linux": 33,
-   "macOS": 132
+   "macOS": 135
   }
  },
  "version": "fdu.performance.timeline/1"

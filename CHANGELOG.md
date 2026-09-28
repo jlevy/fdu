@@ -7,6 +7,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The default `--view summary` no longer builds the full index to report its ignored
+  share: it classifies each entry against `.gitignore` as it counts it, keeping only the
+  rules and the heads of ignored subtrees.
+  The answer is unchanged, on every surface.
+  On macOS peak memory fell 69% on a 137k-entry source checkout and 58% on a 77k-entry
+  tree with no `.gitignore`, with wall time no worse; the Linux timing is not yet
+  measured.
+
 ## [0.2.0] - 2026-09-28
 
 fdu 0.2.0 makes the command people type cheaper and narrows what the cache does by

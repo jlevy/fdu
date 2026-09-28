@@ -943,10 +943,10 @@ impl PyOneShot {
 ///
 /// `open` takes the session path: it retains an index and writes a snapshot, which is
 /// right for a caller asking many questions and wrong for one asking a single question.
-/// An unfiltered summary that reads no `.gitignore` is answered by a transient tier that
-/// retains nothing, so writing a snapshot for it caches state the walk never saved -- and a
-/// Python caller therefore left cache state on a tree that the same command would not
-/// have, which a later cache-only read could see (fdu-4msv).
+/// An unfiltered summary is answered by a transient tier that retains no index, so writing
+/// a snapshot for it caches state the walk never saved -- and a Python caller therefore
+/// left cache state on a tree that the same command would not have, which a later
+/// cache-only read could see (fdu-4msv).
 ///
 /// `read_controls`, `control_budget`, and `control_line_limit` are the engine's, with the
 /// defaults [`open`] has: on, 4 MiB, and 16 KiB. The report observes `.gitignore` as they

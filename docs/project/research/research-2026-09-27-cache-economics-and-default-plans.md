@@ -463,7 +463,9 @@ On macOS (2026-09-28, uncontrolled) the same pair measured −3.09% [−6.75%, +
 
 - [x] Decide Option A, including whether it applies to Python `open` defaults
   (`fdu-0t1v`): adopted as above; `open` keeps writing
-- [ ] Measure the ignore-aware summary reducer (C.1, `fdu-1ovb`) under the accept rule
+- [ ] Measure the ignore-aware summary reducer (C.1, `fdu-1ovb`) under the accept rule:
+  implemented as H161; accepted on macOS on peak RSS (exp-170, exp-171), Linux wall cell
+  pending
 - [ ] Re-prioritize H66 (`fdu-sk7v`) and H159 (`fdu-578e`)
 - [ ] Measure default-invocation contracts on Linux and macOS through the harness: macOS
   done on 2026-09-28 (uncontrolled, `fdu-default-tree` paired with `--cache off`); Linux

@@ -467,8 +467,10 @@ now does for a one-shot report: it used to write a snapshot that no later `fdu .
 about a fifth of a repeated run on this Linux tree and two fifths of a first one.
 On macOS the saving is memory rather than time: about 100 MiB of peak RSS, with no wall
 change the benchmark could resolve.
-The summary still needs `--no-gitignore`, because reading ignore rules falls back to the
-full index. The
+The default summary, which reads ignore rules, no longer falls back to the full index:
+it classifies each entry as it counts it.
+Its Linux time is not yet measured, so the table keeps the `--no-gitignore` figure.
+The
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
 covers when the cache and the index pay on each platform.
 Windows builds and passes tests but has not been performance-benchmarked.

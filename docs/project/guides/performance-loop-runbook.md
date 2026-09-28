@@ -992,7 +992,9 @@ Unrelated work kept the host above the quiet gate all night, so every cell ran d
 - H153 quiet confirmation: failed to qualify, 20 of 24 timed samples invalidated; see
   item 1 below.
 
-Next free experiment id is **exp-166** and next free unused hypothesis id is **H161**.
+Next free experiment id is **exp-173** and next free unused hypothesis id is **H162**.
+exp-170–172 record H161, the ignore-aware transient summary.
+exp-166–167 are claimed by H159’s branch, and exp-168–169 are unused.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
