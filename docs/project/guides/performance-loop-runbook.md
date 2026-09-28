@@ -992,11 +992,12 @@ Unrelated work kept the host above the quiet gate all night, so every cell ran d
 - H153 quiet confirmation: failed to qualify, 20 of 24 timed samples invalidated; see
   item 1 below.
 
-Next free experiment id is **exp-173** and next free unused hypothesis id is **H162**.
+Next free ids are **exp-200** and **H180**. exp-173–199 and H162–H179 are reserved for
+Linux work running in parallel: the peer-tool research (`fdu-92hp`) takes exp-173–186
+and H162–H170, and the 0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179.
 exp-170–172 record H161, the ignore-aware transient summary.
 exp-166–167 are claimed by H159’s branch, and exp-168–169 are unused.
-This is the one statement of the next free ids for Darwin and Linux alike; the
-[registry header](performance-loop.md#hypotheses) agrees.
+This is the one statement of the next free ids for Darwin and Linux alike.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
 keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
 (exp-156–157) the Darwin progress-handle cost on
@@ -1126,8 +1127,9 @@ tbd update fdu-XXXX --status in_progress
 ### PREDICT
 
 Before touching code, write down in the bead notes: the hypothesis id (an existing `HNN`
-from the registry, or the next free number — the registry header says which), the tier
-and the job that measures it, the subject, the metric and direction, and the regime.
+from the registry, or the next free number from
+[Current Pickup](#current-pickup-2026-09-27)), the tier and the job that measures it,
+the subject, the metric and direction, and the regime.
 If the change is expected to move a component rather than wall, say so now; a metric
 chosen after the run is never an accept.
 
@@ -1247,8 +1249,9 @@ the artifact and the regenerated views naming its hash.
 Recording before committing puts the *control’s* hash in the field, which points a
 reader at the code without the change; that had happened to four artifacts before it was
 caught. `--primary-metric` is added only when the hypothesis pre-registered a component.
-The id is the next free `exp-NNN`; two agents in one night reserve ranges first, because
-a collision is silent until `perf-ledger` fails.
+The id is the next free `exp-NNN` from [Current Pickup](#current-pickup-2026-09-27);
+agents recording at the same time first reserve disjoint blocks there, because a
+collision is silent until `perf-ledger` fails.
 
 ### COMMIT
 
