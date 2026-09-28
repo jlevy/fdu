@@ -25,11 +25,11 @@
 //! name, so a `.GITIGNORE` governs there as it does for git, and nowhere else. The rules
 //! are recorded under the canonical path `<dir>/.gitignore` whatever spelling holds them:
 //! every control operation, table key, refusal, and change names that path, as
-//! `git check-ignore -v` does. A walk pays for this only on a listed name spelled
-//! `.gitignore` in another case ([`ControlSpelling::Variant`]), which it resolves with one
-//! lookup of the canonical path; the exact name is read by its own path as before, and
-//! every other name costs a length comparison. A name some filesystem folds to
-//! `.gitignore` through a non-ASCII character is not looked up.
+//! `git check-ignore -v` does, so [`is_control_file`] accepts only that path. A walk pays
+//! for this only on a listed name spelled `.gitignore` in another ASCII case, which it
+//! resolves with one lookup of the canonical path; the exact name is read by its own path
+//! as before, and every other name costs a length comparison. A name some filesystem
+//! folds to `.gitignore` through a non-ASCII character is not looked up.
 
 mod gitignore;
 
