@@ -12,7 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 
-enum { MAX_EVENTS = 100000, HISTORY_TIMEOUT_SECONDS = 10 };
+enum { MAX_EVENTS = 100000, HISTORY_TIMEOUT_SECONDS = 10, MAX_HISTORY_TIMEOUT_SECONDS = 120 };
 static const CFTimeInterval STREAM_LATENCY_SECONDS = 0.01;
 
 struct context {
@@ -22,7 +22,12 @@ struct context {
     bool history_done;
     bool truncated;
     FSEventStreamEventId history_id;
+    size_t callbacks;
+    double first_callback;
+    double last_callback;
 };
+
+static double monotonic(void);
 
 static void hex(const char *s) {
     putchar('"');
@@ -36,6 +41,9 @@ static void callback(ConstFSEventStreamRef stream, void *info, size_t count,
                      const FSEventStreamEventId ids[]) {
     (void)stream;
     struct context *ctx = info;
+    ++ctx->callbacks;
+    ctx->last_callback = monotonic();
+    if (ctx->callbacks == 1) ctx->first_callback = ctx->last_callback;
     const char **names = paths;
     for (size_t i = 0; i < count; ++i) {
         if (ctx->count++ >= MAX_EVENTS) {
@@ -85,13 +93,20 @@ static double monotonic(void) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3 && argc != 5) {
-        fprintf(stderr, "usage: probe capture ROOT | probe replay ROOT CURSOR FLAGS\n");
+    if (argc != 3 && argc != 5 && argc != 7) {
+        fprintf(stderr, "usage: probe capture ROOT | probe replay ROOT CURSOR FLAGS [TIMEOUT wait|async|sync]\n");
         return 2;
     }
     bool capture = strcmp(argv[1], "capture") == 0;
-    if ((capture && argc != 3) || (!capture && (strcmp(argv[1], "replay") || argc != 5)))
+    if ((capture && argc != 3) || (!capture && (strcmp(argv[1], "replay") || (argc != 5 && argc != 7))))
         return 2;
+    uint64_t deadline = argc == 7 ? number(argv[5]) : HISTORY_TIMEOUT_SECONDS;
+    const char *flush_mode = argc == 7 ? argv[6] : "wait";
+    if (!deadline || deadline > MAX_HISTORY_TIMEOUT_SECONDS ||
+        (strcmp(flush_mode, "wait") && strcmp(flush_mode, "async") && strcmp(flush_mode, "sync")))
+        return 2;
+    // Preserve bounded diagnostic output even if a parent kills a stuck flush.
+    setvbuf(stdout, NULL, _IOLBF, 0);
     char root[PATH_MAX];
     struct stat st;
     struct statfs fs;
@@ -138,8 +153,12 @@ int main(int argc, char **argv) {
     FSEventStreamSetDispatchQueue(stream, queue);
     double start = monotonic();
     bool started = FSEventStreamStart(stream);
+    FSEventStreamEventId async_id = 0;
+    if (started && !strcmp(flush_mode, "async")) async_id = FSEventStreamFlushAsync(stream);
+    if (started && !strcmp(flush_mode, "sync")) FSEventStreamFlushSync(stream);
+    double initial_flush_end = monotonic();
     long timeout = started ? dispatch_semaphore_wait(ctx.history,
-        dispatch_time(DISPATCH_TIME_NOW, HISTORY_TIMEOUT_SECONDS * NSEC_PER_SEC)) : 1;
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)deadline * NSEC_PER_SEC)) : 1;
     double history_end = monotonic();
     // The Python parent bounds this synchronous flush and kills a stuck subprocess.
     // It collects buffered contemporary events after the historical sentinel.
@@ -154,12 +173,18 @@ int main(int argc, char **argv) {
     printf("{\"type\":\"summary\",\"pid\":%d,\"cursor\":%" PRIu64
            ",\"create_flags\":%" PRIu64 ",\"started\":%s,\"history_done\":%s,"
            "\"timeout\":%s,\"truncated\":%s,\"latest_id\":%" PRIu64
-           ",\"history_id\":%" PRIu64 ",\"history_ms\":%.3f,\"flush_ms\":%.3f,\"elapsed_ms\":%.3f}\n",
+           ",\"history_id\":%" PRIu64 ",\"history_ms\":%.3f,\"flush_ms\":%.3f,\"elapsed_ms\":%.3f,"
+           "\"deadline_seconds\":%" PRIu64 ",\"initial_flush\":\"%s\",\"initial_flush_ms\":%.3f,"
+           "\"async_id\":%" PRIu64 ",\"callbacks\":%zu,\"events\":%zu,"
+           "\"first_callback_ms\":%.3f,\"last_callback_ms\":%.3f}\n",
            getpid(), cursor, requested_flags, started ? "true" : "false",
            ctx.history_done ? "true" : "false", timeout ? "true" : "false",
            ctx.truncated ? "true" : "false", latest, ctx.history_id,
            (history_end - start) * 1000, (flush_end - history_end) * 1000,
-           (monotonic() - start) * 1000);
+           (monotonic() - start) * 1000, deadline, flush_mode,
+           (initial_flush_end - start) * 1000, async_id, ctx.callbacks, ctx.count,
+           ctx.callbacks ? (ctx.first_callback - start) * 1000 : -1,
+           ctx.callbacks ? (ctx.last_callback - start) * 1000 : -1);
     dispatch_release(queue);
     dispatch_release(ctx.history);
     return started && !timeout && !ctx.truncated ? 0 : 1;

@@ -59,7 +59,7 @@ and nothing re-verified.
 | `--cache only` | Loads saved facts without filesystem verification and labels them stale | Useful for viewing an old inventory, not for discovering changes |
 | Snapshot persistence | One replaceable flat image per root, at the current format version (`snapshot::FORMAT_VERSION`). `engine_fingerprint` mixes the crate version, format version, and classification version; a mismatch, or a stored scan scope that cannot serve the request, is a miss, and the next complete indexed scan replaces the image | No baseline survives an upgrade, a rules change, or a scope change; loading materializes the full index |
 | Opened roots | Bounded change polling, verified multi-path refresh, and `since(clock)` over the index journal | The history is process-local; it does not recover a day of changes after process exit |
-| FSEvents history replay | Proposed integration with a reproducible standalone probe; immediate cross-process trials match its metadata oracle | No engine replay module or replay cursor in the snapshot format; long-gap acceptance remains open |
+| FSEvents history replay | Proposed integration with a standalone probe; controlled shallow refresh matches its metadata oracle, but busy-root replay has stable misses and day-old completion has a long variable tail | No engine replay module or replay cursor in the snapshot format; correctness and whole-command latency acceptance remain open |
 | Partial scans | Report errors; `snapshot::save` refuses an incomplete index | `--allow-partial` changes exit acceptance only; a denied home-folder scan is not cacheable |
 
 Source: [execution planning](../../../../crates/fdu-core/src/execution.rs),
@@ -70,6 +70,32 @@ Source: [execution planning](../../../../crates/fdu-core/src/execution.rs),
 
 Build this feature through the engine and mirror it in CLI and Python; do not make a
 Python inventory replica or persist an opened handle’s session identity.
+
+### September 27 spike decision
+
+The
+[replay continuation](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md#shallow-refresh-and-completion-continuation-2026-09-27)
+demonstrates changed-scope observation on a controlled 20k-entry tree, but does not
+validate this plan’s complete agent-coding workflow.
+Two busy-root trials missed stable changes despite completed replay and no degradation
+signal. A missed growing log was still open for writing.
+An aged controlled file then reproduced the failure: append and `fsync` while open
+yielded no change event despite completed replay; closing it and replaying the same
+cursor yielded the event and exact agreement.
+
+The workflow must account for active logs and databases, not merely files that have been
+closed. Native active-writer discovery is a research candidate, with explicit
+permission/coverage and cost limits, not an implemented fix.
+A recent-file heuristic or skill-selected folder list cannot establish completeness.
+Keep profile defaults in the skill, while the engine owns generic coverage,
+verification, and fallback semantics.
+
+Historical completion can also cost tens of seconds or exceed a diagnostic minute even
+when the changed fixture is tiny.
+Compare total refresh cost against fdu’s full scan; do not promise seconds-scale daily
+results from the event callback latency alone.
+These findings do not change immutable checkpoint comparisons or authorize background
+monitoring. They gate the accelerated refresh route used to produce a new checkpoint.
 
 ## User Workflow
 

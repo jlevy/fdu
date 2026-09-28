@@ -129,8 +129,9 @@ At this recording, the following remained untested: reboot continuity, unclean c
 termination, controlled journal loss, 1-hour/24-hour/48-hour/7-day gaps, high churn,
 non-APFS volumes, root moves, mount changes, hard-link effects outside dirty scopes,
 symlinks and permission errors, and fdu’s admission/accounting semantics.
-The candidate deliberately rescans subtrees; it is not the engine’s intended relisting
-algorithm. A full-root candidate can pass while providing no incremental savings.
+The fixture candidate in `run.py` deliberately rescans subtrees; it is not the engine’s
+intended relisting algorithm.
+A full-root candidate can pass while providing no incremental savings.
 Neither `HistoryDone`, UUID equality, nor these oracle matches proves universal journal
 completeness. Keep `fdu-uwhl` open for the remaining acceptance matrix.
 
@@ -178,6 +179,25 @@ The baseline and its cursor are never advanced or overwritten, so repeated trial
 increasing real gaps from the same before-state.
 Changing the harness, native source, or helper invalidates its provenance: make a new
 baseline instead of silently testing a different program against the old record.
+
+The real-root candidate distinguishes shallow parent listings from recursive subtree
+invalidation. Root-level file activity relists the root without walking every unchanged
+descendant.
+Separately nominated deep scopes remain necessary even when their ancestor is
+relisted. New or replaced directories are discovered recursively; deleted subtrees are
+removed after a successful containing-directory observation.
+Directory lifecycle events and `MustScanSubDirs` request recursive work.
+Ambiguous file-kind flags and global degradation select an explicit full-root fallback.
+Observed hard-link changes expand to cached alias parents, without changing the
+prototype’s per-path accounting.
+A change through an unobserved external alias is still a history-coverage question, not
+solved by that expansion.
+
+One parent-to-children index avoids repeatedly walking the cached inventory for each
+dirty directory. Its construction remains O(tree), is timed separately, and is not the
+proposed persisted representation.
+Summary fields distinguish a shallow root relist from recursive full-root fallback,
+including fallbacks that happen to match the oracle.
 
 Refresh independently scans an oracle before the candidate, constructs the candidate
 only from the baseline and event-nominated observations, persists it, then scans a
@@ -230,8 +250,8 @@ The real-root runs used harness SHA-256
 subsequently fixed three strict-type-check findings: context-manager return annotations
 and a summary-list cast.
 The [exact annotation patch](harness-type-annotations.patch) preserves the recorded
-source: in an isolated checkout, reverse-apply it to `real_tree.py` and verify that hash
-before resuming these old baselines.
+source: in an isolated checkout at commit `494169b8`, reverse-apply it to `real_tree.py`
+and verify that hash before resuming these old baselines.
 The current script intentionally refuses their older source hash; do not edit the saved
 provenance to bypass that check.
 New captures use the corrected script.
@@ -281,6 +301,144 @@ No reboot or journal-loss injection was performed.
 evidence, but this prototype does not yet validate fast daily large-tree refresh.
 Keep the real baselines for longer-gap trials; resolve scope inflation and replay
 completion before the engine implementation gate.
+
+## Shallow Refresh and Open Writers: 2026-09-27 Continuation
+
+[The continuation record](observations-2026-09-27-continuation.json) retains the
+controlled growth test, both real-root trials, native regression matrix, historical
+completion diagnostics, and open-writer control.
+These are mechanism tests on one live macOS/APFS host, not paired performance
+measurements.
+
+| Workload | Baseline entries | Candidate observations | Result |
+| --- | ---: | ---: | --- |
+| Controlled growth | 20,204 | 712 | Exact match against both full oracles; eight directory listings |
+| Agent state A | 12,280 | 0 | Quiet; exact match |
+| Agent state B, first refresh | 454,775 | 848 | One stable mismatch and 19 concurrent paths; failed |
+| Agent state B, repeat from same fence | 454,775 | 900 | Two stable mismatches and 34 concurrent paths; failed |
+
+The controlled workload became 20,206 entries and gained 66,516 apparent bytes and
+61,440 allocated bytes.
+It exercised root and nested edits, deletion, a directory rename, creation of a new
+subtree, and an edit through a hard link.
+Shallow root relisting did not traverse its unchanged descendants.
+The native helper also passed sixteen fresh quiet/mixed regression trials across all
+four flag modes and both orders.
+
+The live root avoided recursive fallback, but correctness did not pass: the first stable
+miss retained the baseline value for a file that had grown by 23,948 apparent bytes
+after the saved fence.
+Both full oracles agreed on its newer metadata, and its parent was absent from the
+nominated scopes. The same file remained missed on repeat.
+A targeted `lsof` query of that one file found a read/write descriptor.
+No real folder was mutated to investigate this, and no private path appears in the
+shared record.
+
+The first live refresh spent 54 ms in replay and 1.77 s in scoped observation, including
+1.47 s building the parent index.
+Its measured refresh segment was 10.98 s because flat-image load, roll-ups/diff, and
+save still dominate.
+That is a *failed candidate’s* cost, not an accepted speedup.
+The controlled candidate’s segment was 1.03 s. The before-oracle warms metadata caches;
+these numbers retain the ordering and measurement limitations above.
+
+### Reproducing controlled growth
+
+Choose new, disjoint external paths for the owned fixture and its state.
+The workload uses about 20,000 small files; it refuses reused preparation paths and
+repeated mutations. Its mutation helper uses no-follow descriptor-relative access and
+validates existing targets before writing.
+
+```shell
+uv run --no-project python explorations/fsevents-replay/fixture_workload.py prepare "$FDU_GROWTH_ROOT"
+uv run --no-project python explorations/fsevents-replay/real_tree.py baseline \
+  "$FDU_GROWTH_ROOT" "$FDU_GROWTH_STATE" --alias controlled-growth \
+  --helper "$FDU_PROBE_SCRATCH/example/probe"
+uv run --no-project python explorations/fsevents-replay/fixture_workload.py mutate "$FDU_GROWTH_ROOT"
+uv run --no-project python explorations/fsevents-replay/real_tree.py refresh \
+  "$FDU_GROWTH_ROOT" "$FDU_GROWTH_STATE" --label fullhistory-01
+```
+
+### Historical completion is a separate cost
+
+`history_completion.py` deliberately permits a new replay instrument against preserved
+synthetic capture state and records both provenances.
+It validates the saved helper, checks replay sources around compilation and execution,
+and records the new compiler and SDK. This differs from `run.py`’s exact-source-resume
+protocol; no stored provenance or cursor is edited.
+Partial JSON at a timeout is an explicit parse failure with private raw output retained,
+never an accepted empty replay.
+
+```shell
+uv run --no-project python explorations/fsevents-replay/history_completion.py \
+  "$FDU_PROBE_SCRATCH/aged-fixture" "$FDU_PROBE_SCRATCH/new-diagnostic" \
+  --seconds 120 --mode wait --flags 144
+```
+
+The unchanged native default is ten seconds.
+Diagnostic waits are explicitly bounded at up to 120 seconds, with a parent bound ten
+seconds longer. Initial day-old replays completed at about 32–40 seconds; subsequent
+final-instrument trials timed out at sixty seconds, and a 120-second diagnostic
+completed at 92.5 seconds with exact oracle agreement.
+In that last run, the first callback arrived in 8.84 ms.
+Completion latency is therefore not explained by the number of dirty entries alone.
+
+Initial asynchronous flushing did not complete within ten seconds.
+Synchronous flushing at startup required parent termination at twenty seconds.
+A no-`FullHistory` control also failed its parent bound, so removing overlap is neither
+a validated fix nor a safe optimization.
+A killed run without a final summary cannot localize delay to history, flush, or
+teardown. Do not raise product deadlines to match these diagnostic tails: budget the
+complete attempt against the full-scan alternative.
+
+### An open writer can be invisible to completed replay
+
+`open_writer.py` holds a synthetic regular-file descriptor open across baseline capture,
+append, `fsync`, and a fresh replay subprocess.
+It then closes the writer and replays the same cursor.
+Each stage independently scans before and after the candidate.
+There is no resident FSEvents probe during the mutation; the synthetic writer stays
+alive as an application would.
+
+A newly created fixture was inconclusive: overlapping creation events nominated the file
+even though no fresh write nomination arrived while it was open.
+An older owned fixture removed that masking.
+With flags 144 and a genuine pre-append device-time fence, the while-open stage
+completed with zero change events, zero overlap, and one stable mismatch.
+After close, a fresh event arrived and the candidate matched both oracles.
+This directly demonstrates a history-only refresh limitation for the tested workload; it
+does not establish the exact cause of every live application mismatch.
+The final instrument reproduced this on two untouched aged leaves, including an
+independent parent-agent run.
+A fresh-file control under the same final source remained overlap-masked.
+`diagnostic_valid: true` means both experiment stages completed with matching identities
+and no observation errors; it does not mean the while-open refresh was correct.
+Invalid experiment stages exit nonzero.
+
+```shell
+# Use only an existing tree created by fixture_workload.py, with its ownership marker.
+# Let natural history progress; overlapping creation events make the result inconclusive.
+uv run --no-project python explorations/fsevents-replay/open_writer.py \
+  "$FDU_PROBE_SCRATCH/new-open-writer-trial" \
+  --helper "$FDU_PROBE_SCRATCH/example/probe" \
+  --owned-fixture "$FDU_GROWTH_ROOT" --leaf branch-150/file-000
+```
+
+Apple’s published
+[XNU close path](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_vnops.c)
+contains a content-modified notification for written descriptors, consistent with this
+test. The installed system’s entire notification behavior is not inferred from that
+source alone.
+
+**Disposition:** keep the spike and its negative controls; do not enable production
+history-only refresh.
+Shallow normalization works on the controlled workload, but active-writer coverage and
+historical-completion cost remain blockers for the intended daily workflow.
+Track active-writer coverage in `fdu-vhrb`, the longer acceptance matrix in `fdu-uwhl`,
+and the continuation evidence in `fdu-uz5r`. Generic native writer discovery is a next
+experiment, not an implemented solution; permissions or unavailable coverage must lead
+to an explicit limitation or scan fallback.
+Suggested roots remain skill/profile policy, never a list embedded in the engine.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

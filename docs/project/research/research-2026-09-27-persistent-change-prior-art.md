@@ -32,6 +32,7 @@ verification, and whole-command latency requirements.
 | August fdu scratch spike, about 60,000 entries | A deep append generated a parent-directory event despite unchanged directory mtimes; dispatch delivery and historical replay worked | Source and exact flags were not retained; no reproducible large-tree refresh result |
 | [September fdu probe](../../../explorations/fsevents-replay/README.md) | 48 recorded short-gap cross-process micro-fixture replays matched an independent metadata oracle on two APFS volumes | Hour/day retention, live large-tree correctness, engine parity, or end-to-end savings |
 | September 27 real-root and next-day extension | Quiet-root agreement; zero stable mismatches on a live 442k-entry root; 26-hour fixture events still delivered | Large root widened to a full scan with concurrent paths; all sixteen next-day attempts timed out before historical completion |
+| September 27 shallow-refresh continuation | Controlled 20k-entry tree matched exactly with 712 observations; a live 455k-entry root needed only 848–900 observations | Live runs missed one and two stable changes despite completed replay; day-old completion had a variable tail, including sixty-second timeouts |
 | Carbon Copy Cloner Quick Update | A shipping macOS backup workflow narrows enumeration using FSEvents history from the previous successful task | Its private cursor, completion, and reconciliation implementation; fdu speed or correctness |
 | SuperDuper Turbo Smart Update | Another shipping macOS backup workflow uses FSEvents to reduce visits between compatible jobs | A reusable implementation or a completeness proof |
 | Watchman and Git fsmonitor source review | Resident monitoring, invalidation, and recovery mechanics; reviewed restart paths recrawl | Independent one-shot processes resuming an fdu inventory without a resident observer |
@@ -142,10 +143,63 @@ obtained candidate paths.
 
 ## What to Validate Next
 
+### Continuation findings (2026-09-27)
+
+The preserved next-day fixtures completed initial diagnostic replays in about 32–40
+seconds, then exceeded sixty seconds on later repeats.
+A final two-minute diagnostic bound completed in 92.5 seconds with exact full-oracle
+agreement. Matching path callbacks arrived in milliseconds.
+This separates early delivery of matching paths from historical completion.
+An initial asynchronous flush still failed the ten-second deadline; an initial
+synchronous flush was killed by the parent at twenty seconds.
+Neither an empty mismatch list before completion nor receipt of the expected change
+qualifies as an accepted replay.
+
+The ordinary probe retains its ten-second deadline; extending the diagnostic wait is not
+a proposed product default or evidence that daily replay meets a fast-refresh budget.
+The new diagnostic keeps original capture provenance separate from the changed replay
+instrument and never advances the preserved cursor.
+
+Shallow relisting passed a controlled end-to-end growth workload: 712 observations in a
+20,206-entry tree, exact metadata and roll-up agreement, including root-level writes,
+directory lifecycle changes, and hard links.
+But a live 454,775-entry agent root failed two comparisons with one and two stable
+misses, respectively, despite `HistoryDone` and no reported degradation.
+The first missed file remained stale on repeat and was open read/write during a targeted
+descriptor check.
+
+An aged controlled file reproduced a missing notification while its descriptor stayed
+open after append and `fsync`: completed replay, zero change events, zero overlap, and
+one stable candidate miss.
+Closing the descriptor and replaying the unchanged cursor produced the fresh event and
+exact agreement. A new-file control was overlap-masked; retaining that negative result
+prevents confusing old creation events with a fresh write notification.
+
+This makes long-lived open writers an explicit coverage contract.
+Apple’s published
+[XNU `vn_close` implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/vfs/vfs_vnops.c)
+emits `FSE_CONTENT_MODIFIED` when the descriptor was written.
+That supports testing a close-related explanation; it does not establish the exact cause
+of the observed application miss or describe every notification path in the installed
+kernel. No journal purge was performed.
+The older notify purge call is not a demonstrated cause either: Apple documents that
+operation as root-only, and these tests run as an ordinary user.
+
+**Design consequence:** event-nominated observation can save substantial filesystem
+work, but it cannot yet satisfy the requested active-agent disk-growth workflow alone.
+Investigate generic active-writer observation, its permissions and coverage gaps, and
+budgeted full-scan fallback.
+Do not patch the evidence by hardcoding agent folders or calling a recently
+modified-file heuristic complete.
+The
+[updated replay plan](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md#shallow-refresh-and-completion-continuation-2026-09-27)
+keeps production integration gated.
+
 The
 [September 27 observations](../../../explorations/fsevents-replay/README.md#real-roots-and-next-day-replay-2026-09-27)
-make two immediate priorities concrete: implement relisting without unnecessary
-recursive scope inflation, and establish a bounded historical-completion protocol.
+motivated relisting without unnecessary recursive scope inflation.
+The continuation demonstrates that mechanism and adds stable missed-change coverage to
+the unresolved historical-completion budget.
 The real-root spike does not yet validate fast daily refresh.
 
 Use arbitrary real roots, with metadata-only reads and state outside the measured root.

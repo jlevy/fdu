@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Proposed design, revised 2026-09-26; production implementation pending.
+**Status:** Proposed design, revised 2026-09-27; production implementation pending.
 The August exploratory spike is complete, but its source and exact flags were not
 retained. The [reproducible probe](../../../../explorations/fsevents-replay/README.md)
 (`fdu-uwhl`) exercises immediate cross-process replay; long-gap and publication
@@ -620,6 +620,11 @@ acceptance run. On a real volume, establish:
 - [ ] Replay semantics: compare runs with and without `FullHistory`; accept overlapping
   IDs, normalize actual file/directory events, and verify deep edits, deletion, rename,
   and subtree cloning against fresh scans
+- [ ] Long-lived writers: append and `fsync` while a descriptor remains open across
+  capture and replay, then close and replay the same cursor.
+  Separate genuinely fresh nominations from historical overlap that masks a missing
+  notification. Reproduce the September 27 stable real-root misses before promoting
+  replay to a default.
 - [ ] Quiet-root progress: establish a safe completed replay boundary even when no
   matching root event arrives.
   Filtering events outside the root must not confuse per-volume replay progress with the
@@ -906,6 +911,71 @@ These are recorded failures, not successful day-gap acceptance or proof of reten
 loss.
 Investigate bounded completion and volume-history cost before setting G5/G6 policy.
 Phase 2 remains gated on this and the rest of the acceptance matrix.
+
+### Shallow refresh and completion continuation (2026-09-27)
+
+`fdu-uz5r` extends the standalone instrument, not the engine.
+The real-root candidate now separates shallow relists from recursive invalidations,
+keeps deep scopes alongside a shallow root, discovers new/replaced directories, and
+expands observed hard-link changes to cached aliases.
+One cached parent index avoids O(tree × dirty directories) work.
+Eleven focused tests cover these transitions and failure paths; the
+[probe README](../../../../explorations/fsevents-replay/README.md) owns the full
+protocol and sanitized observations.
+
+The controlled 20,204-entry baseline grew to 20,206 entries.
+With `FileEvents | FullHistory`, refresh observed 712 entries in eight directory
+listings, matched both independent full oracles exactly, and reported the expected
+66,516-byte apparent increase (61,440 allocated bytes).
+The workload included root and nested edits, deletion, a directory rename, a new
+subtree, and a hard-link edit.
+This proves the prototype can avoid full traversal on that workload; it is not Rust
+engine parity or an accepted performance experiment.
+
+The live agent-state root gives the opposing evidence: a 454,775-entry baseline needed
+only 848 candidate observations, but one stable file differed from both oracles.
+A second replay from the unchanged fence observed 900 entries and still missed that
+file, with two stable mismatches overall.
+Both runs received `HistoryDone`, reported no degradation, and failed rather than
+treating the concurrent paths as an excuse for stable misses.
+The first missing file had grown by 23,948 apparent bytes after the pre-scan fence and
+before both oracles; its parent was absent from the replay scopes.
+A targeted descriptor query found it open read/write.
+That is a concrete coverage failure, not a performance pass or proof of its cause.
+
+An aged, owned synthetic file reproduced the open-writer failure directly: after append
+and `fsync`, while its descriptor stayed open, replay returned `HistoryDone` with zero
+change events and zero historical overlap.
+Both full oracles agreed on the changed file while the candidate retained its baseline
+value. Closing the descriptor and replaying the same cursor produced a fresh file event
+and exact agreement.
+A freshly created control had been masked by overlapping creation history, which is why
+the aged control matters.
+This establishes a concrete failure of history-only refresh for that open-writer
+workload, not a universal attribution of every live-tree miss.
+
+The next-day synthetic fixtures also separate delivery from completion: diagnostic waits
+initially completed at roughly 32–40 seconds with exact oracle agreement, while later
+repeats exceeded sixty seconds.
+A two-minute diagnostic run completed at 92.5 seconds.
+Early matching callbacks arrived in milliseconds.
+An initial asynchronous flush did not solve the ten-second deadline; an initial
+synchronous flush required parent termination at twenty seconds.
+A missing final summary cannot localize a hang to replay versus teardown.
+The normal probe still has its ten-second wait and twenty-second parent bound;
+diagnostic deadlines are not new product defaults.
+
+**Gate decision:** no-go for default or fully verified history-only refresh.
+Retain `Source::JournalScoped`, independent periodic sweeps, and the portable full-scan
+path. Require an explicit open-writer coverage contract and investigate a bounded
+active-writer observation supplement; do not hardcode log directories or infer safety
+from filename patterns.
+If a supplement cannot establish coverage within permissions and cost limits, report
+that limit or sweep.
+G11 must budget the whole replay attempt, including flush and teardown, against the
+measured scan alternative.
+Flat-image loading, indexing, roll-ups, and saving remain O(tree), so smaller
+event-nominated work alone does not meet the daily workflow target.
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 

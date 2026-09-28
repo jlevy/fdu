@@ -29,7 +29,11 @@ FILE_EVENTS = 0x10
 FULL_HISTORY = 0x80
 HISTORY_DONE = 0x10
 IS_DIRECTORY = 0x20000
-DEGRADED = 0x01 | 0x02 | 0x04 | 0x08 | 0x20 | 0x40 | 0x80
+IS_FILE = 0x10000
+IS_SYMLINK = 0x40000
+MUST_SCAN_SUBDIRS = 0x01
+GLOBAL_DEGRADATION = 0x02 | 0x04 | 0x08 | 0x20 | 0x40 | 0x80
+DIRECTORY_LIFECYCLE = 0x100 | 0x200 | 0x800 | 0x400000
 ALLOWED_FLAGS = (0, FILE_EVENTS, FULL_HISTORY, FILE_EVENTS | FULL_HISTORY)
 HELPER_TIMEOUT_SECONDS = 20
 OPEN_DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -55,6 +59,15 @@ class Limits:
 
 class EntryBudgetExceeded(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ScopePlan:
+    """Shallow listings do not cover descendant changes; recursive scans do."""
+
+    relist: tuple[str, ...] = ()
+    recursive: tuple[str, ...] = ()
+    fallback_reasons: tuple[str, ...] = ()
 
 
 class Facts(NamedTuple):
@@ -124,7 +137,12 @@ def error_record(path: str, error: OSError | ValueError) -> Record:
 
 
 def scan_fd(
-    descriptor: int, prefix: str, device: int, max_entries: int = DEFAULT_MAX_ENTRIES
+    descriptor: int,
+    prefix: str,
+    device: int,
+    max_entries: int = DEFAULT_MAX_ENTRIES,
+    *,
+    recursive: bool = True,
 ) -> tuple[Inventory, Record]:
     """Observe metadata only; reject mount crossings and directory-substitution races."""
     inventory: Inventory = {}
@@ -148,7 +166,7 @@ def scan_fd(
                     metadata = facts(entry.stat(follow_symlinks=False))
                     if metadata.device != device:
                         raise ValueError("cross-device entry")
-                    if stat.S_ISDIR(metadata.mode):
+                    if recursive and stat.S_ISDIR(metadata.mode):
                         child = os.open(entry.name, OPEN_DIRECTORY, dir_fd=current)
                         try:
                             visit(child, relative, metadata)
@@ -182,33 +200,61 @@ def full_scan(
     return inventory, stats
 
 
-def normalize_events(records: list[Record], flags: int) -> tuple[list[str], list[str]]:
-    dirty: set[str] = set()
-    refused: list[str] = []
+def normalize_events(records: list[Record], flags: int) -> ScopePlan:
+    relist: set[str] = set()
+    recursive: set[str] = set()
+    fallback: set[str] = set()
     for event in records:
         if event.get("type") != "event":
             continue
         event_flags = event["flags"]
-        if event_flags & DEGRADED:
-            refused.append(f"degradation:{event_flags:#x}")
+        if event_flags & GLOBAL_DEGRADATION:
+            fallback.add(f"global-degradation:{event_flags:#x}")
         if event_flags & HISTORY_DONE:
+            if event_flags & MUST_SCAN_SUBDIRS:
+                fallback.add("unscoped-recursive-control")
             continue
         if event.get("ancestor"):
-            dirty.add(".")
+            recursive.add(".")
             continue
         if not event.get("inside"):
-            refused.append("outside-root-event")
+            fallback.add("unclassified-outside-root-event")
             continue
         path = os.fsdecode(bytes.fromhex(event["path_hex"]))
         normalized_parts(path)
-        if flags & FILE_EVENTS and not event_flags & IS_DIRECTORY:
-            path = str(PurePosixPath(path).parent)
-        dirty.add(str(PurePosixPath(path)))
-    result: list[str] = []
-    for path in sorted(dirty, key=lambda value: (len(PurePosixPath(value).parts), value)):
-        if not any(contains(parent, path) for parent in result):
-            result.append(path)
-    return result, refused
+        path = str(PurePosixPath(path))
+        kind = event_flags & (IS_FILE | IS_DIRECTORY | IS_SYMLINK)
+        if flags & FILE_EVENTS and kind not in (IS_FILE, IS_DIRECTORY, IS_SYMLINK):
+            fallback.add("ambiguous-item-kind")
+            continue
+        if event_flags & MUST_SCAN_SUBDIRS:
+            recursive.add(path if kind in (0, IS_DIRECTORY) else str(PurePosixPath(path).parent))
+            continue
+        if not flags & FILE_EVENTS:
+            relist.add(path)
+        elif kind == IS_DIRECTORY:
+            if event_flags & DIRECTORY_LIFECYCLE:
+                relist.add(str(PurePosixPath(path).parent))
+                recursive.add(path)
+            else:
+                relist.add(path)
+        else:
+            relist.add(str(PurePosixPath(path).parent))
+    if fallback:
+        return ScopePlan(recursive=(".",), fallback_reasons=tuple(sorted(fallback)))
+    reduced_recursive: list[str] = []
+    for path in sorted(recursive, key=lambda value: (len(PurePosixPath(value).parts), value)):
+        if not any(contains(parent, path) for parent in reduced_recursive):
+            reduced_recursive.append(path)
+    # In particular, a shallow '.' must not absorb a separately nominated deep directory.
+    reduced_relist = tuple(
+        sorted(
+            path
+            for path in relist
+            if not any(contains(parent, path) for parent in reduced_recursive)
+        )
+    )
+    return ScopePlan(reduced_relist, tuple(reduced_recursive))
 
 
 def contains(parent: str, path: str) -> bool:
@@ -216,7 +262,9 @@ def contains(parent: str, path: str) -> bool:
 
 
 @contextlib.contextmanager
-def scope_fd(root_fd: int, scope: str, device: int) -> Generator[tuple[int, str, Inventory]]:
+def scope_fd(
+    root_fd: int, scope: str, device: int, baseline: Inventory
+) -> Generator[tuple[int, str, Inventory]]:
     """Widen missing scopes to their nearest extant parent; never traverse a symlink."""
     current = os.dup(root_fd)
     current_path = "."
@@ -241,6 +289,10 @@ def scope_fd(root_fd: int, scope: str, device: int) -> Generator[tuple[int, str,
             current = child
             current_path = str(PurePosixPath(current_path) / part)
             ancestors[current_path] = facts(os.fstat(current))
+            previous = baseline.get(current_path)
+            if previous is None or identity(previous) != identity(ancestors[current_path]):
+                # A replaced ancestor invalidates all its cached descendants, not just scope.
+                break
         yield current, current_path, ancestors
     finally:
         os.close(current)
@@ -250,7 +302,7 @@ def reconcile(
     root: Path,
     baseline: Inventory,
     expected: tuple[int, int],
-    dirty: list[str],
+    plan: ScopePlan,
     max_entries: int = DEFAULT_MAX_ENTRIES,
 ) -> tuple[Inventory, Record]:
     candidate = baseline.copy()
@@ -259,45 +311,166 @@ def reconcile(
         "directory_lists": 0,
         "ancestor_observations": 0,
         "effective_scopes": [],
+        "relisted_scopes": [],
+        "recursive_scopes": [],
+        "hardlink_alias_scopes": [],
+        "removed_entries": 0,
+        "hardlink_index_seconds": 0.0,
+        "fallback_reasons": list(plan.fallback_reasons),
         "errors": [],
     }
-    completed: list[str] = []
+    completed_recursive: set[str] = set()
+    completed_relist: set[str] = set()
+    alias_parents: dict[tuple[int, int], set[str]] | None = None
+    index_started = time.perf_counter()
+    child_index: dict[str, set[str]] = {}
+    for path in candidate:
+        if path != ".":
+            child_index.setdefault(str(PurePosixPath(path).parent), set()).add(path)
+    stats["parent_index_seconds"] = time.perf_counter() - index_started
+
+    def accumulate(scan_stats: Record) -> None:
+        stats["observed_entries"] += scan_stats["observed_entries"]
+        stats["directory_lists"] += scan_stats["directory_lists"]
+        stats["errors"].extend(scan_stats["errors"])
+
+    def remember_aliases(
+        previous: Facts | None, current: Facts | None, aliases: set[tuple[int, int]]
+    ) -> None:
+        if previous == current:
+            return
+        for value in (previous, current):
+            if value is not None and stat.S_ISREG(value.mode) and value.nlink > 1:
+                aliases.add(identity(value))
+
     with directory_fd(root) as root_fd:
         root_facts = facts(os.fstat(root_fd))
         if identity(root_facts) != expected:
             raise ValueError("root identity changed")
-        for scope in dirty:
+        work = [(path, False) for path in plan.relist] + [(path, True) for path in plan.recursive]
+        for scope, requested_recursive in work:
             try:
-                with scope_fd(root_fd, scope, root_facts.device) as (
+                with scope_fd(root_fd, scope, root_facts.device, candidate) as (
                     descriptor,
                     effective,
                     ancestors,
                 ):
-                    if any(contains(prior, effective) for prior in completed):
+                    if any(contains(prior, effective) for prior in completed_recursive):
+                        continue
+                    recursive = requested_recursive and effective == scope
+                    old_directory = candidate.get(effective)
+                    if (
+                        old_directory is None
+                        or not stat.S_ISDIR(old_directory.mode)
+                        or identity(old_directory) != identity(ancestors[effective])
+                    ):
+                        recursive = True
+                    if not recursive and effective in completed_relist:
                         continue
                     observed, scan_stats = scan_fd(
-                        descriptor, effective, root_facts.device, max_entries
+                        descriptor, effective, root_facts.device, max_entries, recursive=recursive
                     )
-                    stats["observed_entries"] += scan_stats["observed_entries"]
-                    stats["directory_lists"] += scan_stats["directory_lists"]
+                    accumulate(scan_stats)
                     stats["ancestor_observations"] += len(ancestors)
-                    stats["errors"].extend(scan_stats["errors"])
                     stats["effective_scopes"].append(effective)
                     if scan_stats["errors"]:
                         continue
-                    candidate = {
-                        key: value
-                        for key, value in candidate.items()
-                        if not contains(effective, key)
-                    }
+                    remove: set[str] = {effective} if recursive else set()
+                    discovered: list[str] = []
+                    if not recursive:
+                        direct_before = {
+                            path: candidate[path] for path in child_index.get(effective, set())
+                        }
+                        remove.update(path for path in direct_before if path not in observed)
+                        failed = False
+                        for path, value in list(observed.items()):
+                            if path == effective:
+                                continue
+                            previous = direct_before.get(path)
+                            was_directory = previous is not None and stat.S_ISDIR(previous.mode)
+                            is_directory = stat.S_ISDIR(value.mode)
+                            if was_directory and not is_directory:
+                                remove.add(path)
+                            if is_directory and (
+                                not was_directory
+                                or previous is None
+                                or identity(previous) != identity(value)
+                            ):
+                                remove.add(path)
+                                child = os.open(
+                                    PurePosixPath(path).name, OPEN_DIRECTORY, dir_fd=descriptor
+                                )
+                                try:
+                                    if identity(facts(os.fstat(child))) != identity(value):
+                                        raise ValueError(
+                                            "new directory changed before recursive discovery"
+                                        )
+                                    subtree, subtree_stats = scan_fd(
+                                        child, path, root_facts.device, max_entries
+                                    )
+                                finally:
+                                    os.close(child)
+                                accumulate(subtree_stats)
+                                if subtree_stats["errors"]:
+                                    failed = True
+                                    break
+                                observed.update(subtree)
+                                discovered.append(path)
+                        if failed:
+                            continue
+                    # A changed inode can have retained names outside these dirty scopes.
+                    # Index all baseline files lazily: creating a second link changes a
+                    # formerly single-link inode too, so filtering the index by nlink is unsafe.
+                    touched_aliases: set[tuple[int, int]] = set()
+
+                    for path, current in observed.items():
+                        remember_aliases(candidate.get(path), current, touched_aliases)
+                    pending_removal = list(remove)
+                    while pending_removal:
+                        path = pending_removal.pop()
+                        pending_removal.extend(child_index.pop(path, ()))
+                        previous = candidate.pop(path, None)
+                        if previous is not None:
+                            stats["removed_entries"] += 1
+                            remember_aliases(previous, observed.get(path), touched_aliases)
+                        if path != ".":
+                            child_index.get(str(PurePosixPath(path).parent), set()).discard(path)
+                    if touched_aliases:
+                        if alias_parents is None:
+                            alias_started = time.perf_counter()
+                            alias_parents = {}
+                            for path, value in baseline.items():
+                                if stat.S_ISREG(value.mode):
+                                    alias_parents.setdefault(identity(value), set()).add(
+                                        str(PurePosixPath(path).parent)
+                                    )
+                            stats["hardlink_index_seconds"] = time.perf_counter() - alias_started
+                        queued = {path for path, _ in work}
+                        for file_identity in sorted(touched_aliases):
+                            for parent in sorted(alias_parents.get(file_identity, set[str]())):
+                                if parent not in queued:
+                                    work.append((parent, False))
+                                    queued.add(parent)
+                                    stats["hardlink_alias_scopes"].append(parent)
                     candidate.update(ancestors)
                     candidate.update(observed)
+                    for path in ancestors.keys() | observed.keys():
+                        if path != ".":
+                            child_index.setdefault(str(PurePosixPath(path).parent), set()).add(path)
                     if len(candidate) > max_entries:
                         raise EntryBudgetExceeded("candidate entry budget exhausted")
-                    completed.append(effective)
+                    if recursive:
+                        completed_recursive.add(effective)
+                        stats["recursive_scopes"].append(effective)
+                    else:
+                        completed_relist.add(effective)
+                        stats["relisted_scopes"].append(effective)
+                    completed_recursive.update(discovered)
+                    stats["recursive_scopes"].extend(discovered)
             except (OSError, ValueError) as error:
                 stats["errors"].append(error_record(scope, error))
-    stats["root_fallback"] = "." in stats["effective_scopes"]
+    stats["root_fallback"] = "." in stats["recursive_scopes"]
+    stats["root_relisted"] = "." in stats["relisted_scopes"]
     return candidate, stats
 
 
@@ -616,13 +789,11 @@ def refresh(root: Path, state: Path, label: str, flags: int) -> int:
             raise ValueError("root or device changed during replay")
         phase = "normalization"
         start = time.perf_counter()
-        dirty, refused = normalize_events(records, flags)
+        plan = normalize_events(records, flags)
         timings["normalization"] = time.perf_counter() - start
-        if refused:
-            raise ValueError(f"replay refused: {refused}")
         phase = "scoped-scan"
         start = time.perf_counter()
-        candidate, candidate_stats = reconcile(root, baseline, expected, dirty, limits.max_entries)
+        candidate, candidate_stats = reconcile(root, baseline, expected, plan, limits.max_entries)
         timings["scoped_scan"] = time.perf_counter() - start
         phase = "rollup-and-diff"
         start = time.perf_counter()
@@ -676,7 +847,7 @@ def refresh(root: Path, state: Path, label: str, flags: int) -> int:
         private = {
             "comparison": comparison,
             "native_records": records,
-            "dirty_scopes": dirty,
+            "scope_plan": asdict(plan),
             "candidate_stats": candidate_stats,
             "before_stats": before_stats,
             "after_stats": after_stats,
@@ -711,12 +882,22 @@ def refresh(root: Path, state: Path, label: str, flags: int) -> int:
             "root_totals_before": baseline_data["rollups"]["."],
             "root_totals_candidate": candidate_totals["."],
             "changed_entry_count": len(changes),
-            "dirty_scope_count": len(dirty),
+            "dirty_scope_count": len(plan.relist) + len(plan.recursive),
+            "planned_relist_scope_count": len(plan.relist),
+            "planned_recursive_scope_count": len(plan.recursive),
+            "fallback_reasons": list(plan.fallback_reasons),
             "effective_scope_count": len(candidate_stats["effective_scopes"]),
+            "relisted_scope_count": len(candidate_stats["relisted_scopes"]),
+            "recursive_scope_count": len(candidate_stats["recursive_scopes"]),
+            "hardlink_alias_scope_count": len(candidate_stats["hardlink_alias_scopes"]),
             "candidate_observed_entries": candidate_stats["observed_entries"],
             "candidate_ancestor_observations": candidate_stats["ancestor_observations"],
             "candidate_directory_lists": candidate_stats["directory_lists"],
+            "candidate_removed_entries": candidate_stats["removed_entries"],
+            "parent_index_seconds": candidate_stats["parent_index_seconds"],
+            "hardlink_index_seconds": candidate_stats["hardlink_index_seconds"],
             "root_fallback": candidate_stats["root_fallback"],
+            "root_relisted": candidate_stats["root_relisted"],
             "error_count": len(errors),
             "mismatch_counts": {
                 key: len(cast(list[object], value))
@@ -772,6 +953,188 @@ def refresh(root: Path, state: Path, label: str, flags: int) -> int:
 
 
 class InstrumentTests(unittest.TestCase):
+    @staticmethod
+    def event(path: str, flags: int, **extra: object) -> Record:
+        return {
+            "type": "event",
+            "path_hex": os.fsencode(path).hex(),
+            "flags": flags,
+            "inside": True,
+            "id": 1,
+            **extra,
+        }
+
+    def test_shallow_root_preserves_deep_scope_and_negative_control(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "deep").mkdir()
+            (root / "untouched").mkdir()
+            for name in ("root-file", "deep/file", "untouched/file"):
+                (root / name).write_bytes(b"old")
+            expected = root_identity(root)
+            baseline, _ = full_scan(root, expected)
+            (root / "root-file").write_bytes(b"root changed")
+            (root / "deep/file").write_bytes(b"nested changed")
+            records = [
+                self.event("root-file", IS_FILE | 0x1000),
+                self.event("deep/file", IS_FILE | 0x1000),
+            ]
+            plan = normalize_events(records + records, FILE_EVENTS | FULL_HISTORY)
+            self.assertEqual(plan, ScopePlan(relist=(".", "deep")))
+            oracle, _ = full_scan(root, expected)
+            omitted, omitted_stats = reconcile(root, baseline, expected, ScopePlan(relist=(".",)))
+            self.assertEqual(
+                compare_oracles(omitted, oracle, oracle)["stable_mismatches"], ["deep/file"]
+            )
+            self.assertEqual(omitted_stats["directory_lists"], 1)
+            candidate, stats = reconcile(root, baseline, expected, plan)
+            self.assertEqual(candidate, oracle)
+            self.assertEqual(stats["directory_lists"], 2)
+            self.assertEqual(stats["observed_entries"], 6)
+            self.assertTrue(stats["root_relisted"])
+            self.assertFalse(stats["root_fallback"])
+            self.assertEqual(stats["recursive_scopes"], [])
+
+    def test_normalization_controls_kinds_and_overlap(self) -> None:
+        flags = FILE_EVENTS | FULL_HISTORY
+        self.assertEqual(
+            normalize_events([self.event("link", IS_SYMLINK)], flags), ScopePlan(relist=(".",))
+        )
+        self.assertEqual(
+            normalize_events([self.event("deep", IS_DIRECTORY)], flags), ScopePlan(relist=("deep",))
+        )
+        for lifecycle in (0x100, 0x200, 0x800, 0x400000):
+            self.assertEqual(
+                normalize_events([self.event("deep", IS_DIRECTORY | lifecycle)], flags),
+                ScopePlan(relist=(".",), recursive=("deep",)),
+            )
+        must_scan = self.event("deep", IS_DIRECTORY | MUST_SCAN_SUBDIRS)
+        self.assertEqual(
+            normalize_events([must_scan, self.event("deep/nested/file", IS_FILE)], flags),
+            ScopePlan(recursive=("deep",)),
+        )
+        for event in (
+            self.event(".", 0x02, inside=False),
+            self.event(".", HISTORY_DONE | 0x04, inside=False),
+            self.event("file", 0x1000),
+            self.event("file", MUST_SCAN_SUBDIRS),
+            self.event("file", IS_FILE | IS_DIRECTORY),
+        ):
+            with self.subTest(event_flags=event["flags"]):
+                plan = normalize_events([event], flags)
+                self.assertEqual(plan.recursive, (".",))
+                self.assertTrue(plan.fallback_reasons)
+        self.assertEqual(
+            normalize_events([self.event("deep", 0x1000)], FULL_HISTORY),
+            ScopePlan(relist=("deep",)),
+        )
+        self.assertEqual(
+            normalize_events(
+                [self.event(".", MUST_SCAN_SUBDIRS, inside=False, ancestor=True)], flags
+            ),
+            ScopePlan(recursive=(".",)),
+        )
+        with self.assertRaises(ValueError):
+            normalize_events([self.event("../escape", IS_FILE)], flags)
+
+    def test_directory_lifecycle_and_in_place_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "root"
+            root.mkdir()
+            for directory in ("deleted", "renamed", "replaced/sub", "untouched"):
+                (root / directory).mkdir(parents=True)
+                (root / directory / "file").write_bytes(b"old")
+            expected = root_identity(root)
+            baseline, _ = full_scan(root, expected)
+            (root / "deleted/file").unlink()
+            (root / "deleted").rmdir()
+            (root / "renamed").rename(root / "new-name")
+            (root / "replaced").rename(base / "outside-root")
+            (root / "replaced/sub").mkdir(parents=True)
+            (root / "replaced/sub/new-file").write_bytes(b"replacement")
+            (root / "replaced/new-sibling").mkdir()
+            (root / "replaced/new-sibling/file").write_bytes(b"discover sibling too")
+            (root / "created/nested").mkdir(parents=True)
+            (root / "created/nested/file").write_bytes(b"new")
+            candidate, stats = reconcile(root, baseline, expected, ScopePlan(relist=(".",)))
+            oracle, _ = full_scan(root, expected)
+            self.assertEqual(candidate, oracle)
+            self.assertFalse(stats["root_fallback"])
+            self.assertNotIn("untouched", stats["recursive_scopes"])
+            self.assertNotIn("deleted/file", candidate)
+            self.assertNotIn("renamed/file", candidate)
+            # Reaching into a replaced ancestor must rediscover its other descendants.
+            partial, partial_stats = reconcile(
+                root, baseline, expected, ScopePlan(relist=("replaced/sub",))
+            )
+            self.assertEqual(partial_stats["recursive_scopes"], ["replaced"])
+            self.assertIn("replaced/new-sibling/file", partial)
+            self.assertNotIn("replaced/sub/file", partial)
+
+    def test_recursive_invalidation_and_missing_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "deep/sub").mkdir(parents=True)
+            (root / "deep/sub/file").write_bytes(b"before")
+            expected = root_identity(root)
+            baseline, _ = full_scan(root, expected)
+            (root / "deep/sub/file").write_bytes(b"after")
+            plan = normalize_events(
+                [self.event("deep", MUST_SCAN_SUBDIRS | IS_DIRECTORY)], FILE_EVENTS
+            )
+            candidate, stats = reconcile(root, baseline, expected, plan)
+            oracle, _ = full_scan(root, expected)
+            self.assertEqual(candidate, oracle)
+            self.assertEqual(stats["recursive_scopes"], ["deep"])
+            fallback = normalize_events([self.event(".", 0x02, inside=False)], FILE_EVENTS)
+            candidate, stats = reconcile(root, baseline, expected, fallback)
+            self.assertEqual(candidate, oracle)
+            self.assertTrue(stats["root_fallback"])
+            self.assertEqual(stats["observed_entries"], len(oracle))
+            (root / "deep/sub/file").unlink()
+            (root / "deep/sub").rmdir()
+            candidate, stats = reconcile(
+                root, baseline, expected, ScopePlan(recursive=("deep/sub",))
+            )
+            oracle, _ = full_scan(root, expected)
+            self.assertEqual(candidate, oracle)
+            self.assertEqual(stats["relisted_scopes"], ["deep"])
+
+    def test_hardlink_alias_parents_reconciled_for_change_create_and_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in ("left", "right"):
+                (root / directory).mkdir()
+            left, right = root / "left/file", root / "right/alias"
+            left.write_bytes(b"before")
+            expected = root_identity(root)
+            for mutation in ("create", "change", "delete"):
+                with self.subTest(mutation=mutation):
+                    baseline, _ = full_scan(root, expected)
+                    if mutation == "create":
+                        os.link(left, right)
+                        nominated = "right"
+                    elif mutation == "change":
+                        left.write_bytes(b"new data" * 100)
+                        nominated = "left"
+                    else:
+                        left.unlink()
+                        nominated = "left"
+                    plan = (
+                        ScopePlan(recursive=(nominated,))
+                        if mutation == "change"
+                        else ScopePlan(relist=(nominated,))
+                    )
+                    candidate, stats = reconcile(root, baseline, expected, plan)
+                    oracle, _ = full_scan(root, expected)
+                    self.assertEqual(candidate, oracle)
+                    self.assertEqual(
+                        stats["hardlink_alias_scopes"],
+                        ["left" if nominated == "right" else "right"],
+                    )
+                    self.assertFalse(stats["root_fallback"])
+
     def test_narrow_change_never_scans_unchanged_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -782,7 +1145,7 @@ class InstrumentTests(unittest.TestCase):
             expected = root_identity(root)
             baseline, _ = full_scan(root, expected)
             (root / "changed/file").write_bytes(b"after" * 500)
-            candidate, stats = reconcile(root, baseline, expected, ["changed"])
+            candidate, stats = reconcile(root, baseline, expected, ScopePlan(relist=("changed",)))
             oracle, _ = full_scan(root, expected)
             self.assertEqual(candidate, oracle)
             self.assertEqual(stats["effective_scopes"], ["changed"])
@@ -819,9 +1182,9 @@ class InstrumentTests(unittest.TestCase):
             (root / "deep/created").write_bytes(b"new")
             (root / "old").rename(root / "new")
             before, _ = full_scan(root, expected)
-            omitted, _ = reconcile(root, baseline, expected, [])
+            omitted, _ = reconcile(root, baseline, expected, ScopePlan())
             self.assertEqual(compare_oracles(omitted, before, before)["status"], "mismatch")
-            candidate, stats = reconcile(root, baseline, expected, ["deep", "old", "new"])
+            candidate, stats = reconcile(root, baseline, expected, ScopePlan(relist=(".", "deep")))
             after, _ = full_scan(root, expected)
             self.assertEqual(candidate, after)
             self.assertFalse(stats["errors"])
@@ -842,7 +1205,7 @@ class InstrumentTests(unittest.TestCase):
             baseline, _ = full_scan(root, expected)
             (root / "a").rename(root / "old-a")
             (root / "a").symlink_to(outside, target_is_directory=True)
-            candidate, stats = reconcile(root, baseline, expected, ["a/sub"])
+            candidate, stats = reconcile(root, baseline, expected, ScopePlan(relist=("a/sub",)))
             self.assertTrue(stats["errors"])
             self.assertNotIn("a/secret", candidate)
             full, full_stats = full_scan(root, expected)
