@@ -5,13 +5,17 @@ title: "Spike: resolve historical replay completion and shallow real-root refres
 kind: task
 status: in_progress
 priority: 1
-version: 2
+version: 3
 delegate: claude-code@spud10
 labels: []
 dependencies: []
 hold: null
 hold_until: null
 created_at: 2026-09-28T02:50:21.069Z
-updated_at: 2026-09-28T02:50:35.918Z
+updated_at: 2026-09-28T03:18:23.368Z
 started_at: 2026-09-28T02:50:35.917Z
 ---
+
+## Notes
+
+Continuation implemented and measured: shallow relisting/recursive invalidation with one parent index and cached hardlink-alias expansion. Controlled20204->20206-entry growth:712 observations,exact metadata+rollup match,expected66516 apparent/61440 allocated byte gain. Real455k root848/900 observations but1/2stable misses:failed. Investigated with targeted descriptor query then reproducible open-writer controls, now tracked fdu-vhrb. Final historical144 run completed at92.5s under120s diagnostic bound;60s repeats fail. Native default unchanged. Sources/tests/research/plans updated; full handoff gate in progress. No engine/dependency changes, all scratch external.
