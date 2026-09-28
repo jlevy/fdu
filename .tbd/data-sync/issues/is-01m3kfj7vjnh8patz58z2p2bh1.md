@@ -5,7 +5,7 @@ title: Land stack 141 stabilized for v0.2.0
 kind: epic
 status: open
 priority: 0
-version: 10
+version: 12
 labels: []
 dependencies: []
 child_order_hints:
@@ -18,7 +18,9 @@ child_order_hints:
   - is-01m3kfjj22b63eyenyc9ys3b28
   - is-01m3kfjkha31pmqt9kkssk7znr
   - is-01m3khnx6m2hcmqms4gv4ww7xq
+  - is-01m3kjws5eyytmn0gxfe823rnw
+  - is-01m3kjwsmxyw2qe5kznj3t5j29
 created_at: 2026-09-28T07:44:41.326Z
-updated_at: 2026-09-28T08:21:38.640Z
+updated_at: 2026-09-28T08:42:52.956Z
 ---
 Tonight's landing (2026-09-28): main <- #137 <- #138 <- #139 <- #142 (change-source research) <- #143 (README quick start, other session) <- docs layer (claude/docs-polish) <- macOS performance evidence (claude/macos-rerun-2026-09-28) <- watch rename fix (claude/watch-rename-scope) <- 0.2.0 release prep (claude/release-0.2.0). Coordination rules: /Volumes/spud-ext1/agent-scratch/fdu-fsevents-review-20260927/COORDINATION.md (heavy jobs under timing-lock). Merge lower layers upward when linking (user-approved); never rebase or force-push. Publishing 0.2.0 (signed tag, release.yml dispatch, uploads) is maintainer-only.
