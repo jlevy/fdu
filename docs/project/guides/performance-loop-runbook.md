@@ -41,6 +41,14 @@ The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains
 FSEvents probe/design increment.
 These status corrections do not alter the measured regimes or experiment verdicts below.
 
+**Tracking update (2026-09-27):** The
+[current work map](../../../TODO.md#performance-and-evidence) records open owners.
+Linux parallel, iteration and PGO-screen increments are recorded in `specs/done/`; PGO
+release adoption (`fdu-pdne`) and cold-regime tuning (`fdu-tk1b`) remain.
+The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains an open
+FSEvents probe/design increment.
+These status corrections do not alter the measured regimes or experiment verdicts below.
+
 ### Standing Best and Regime
 
 **H133 / exp-132** is the latest wall-speed increment on deciding-scale

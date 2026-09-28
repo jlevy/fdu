@@ -23,7 +23,7 @@ patterns:
   SCAN_PATH: '[^\r\n]+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
-  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
   FILE_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s'
   BYTE_RATE: '[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB)/s'
   SEP: '[/\\]'
@@ -674,16 +674,16 @@ The overview still counts every selected source file and all 40 code lines.
 $ fdu --cache off --analyze code --view code --sort code_lines --reverse --min-share 7% --limit all --size apparent code-project
 40 code lines (53 comment, 12 blank)
 15 of 15 source files analyzed across 15 languages (include population)
-40 non-ignored code lines (0 ignored)
+40 non-gitignored code lines (0 gitignored)
 Language shares of measured code lines
 … 8 languages omitted (below share threshold)
-         3    7.5%  C++ (1/1 analyzed; 3 non-ignored, 0 ignored)
-         3    7.5%  C# (1/1 analyzed; 3 non-ignored, 0 ignored)
-         3    7.5%  Go (1/1 analyzed; 3 non-ignored, 0 ignored)
-         3    7.5%  JavaScript (1/1 analyzed; 3 non-ignored, 0 ignored)
-         3    7.5%  PHP (1/1 analyzed; 3 non-ignored, 0 ignored)
-         4   10.0%  Shell (1/1 analyzed; 4 non-ignored, 0 ignored)
-         5   12.5%  Python (1/1 analyzed; 5 non-ignored, 0 ignored)
+         3    7.5%  C++ (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         3    7.5%  C# (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         3    7.5%  Go (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         3    7.5%  JavaScript (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         3    7.5%  PHP (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         4   10.0%  Shell (1/1 analyzed; 4 non-gitignored, 0 gitignored)
+         5   12.5%  Python (1/1 analyzed; 5 non-gitignored, 0 gitignored)
 ! tip: show smaller entries: --min-share=0%
 ! perf: took [PERF_TIME] to walk 15 files (1.4 KiB) at [PERF_RATE]; 0 gitignore rules (0 files); content read 1.4 KiB at [BYTE_RATE]; analysis 15 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -700,9 +700,9 @@ $ fdu --cache off --analyze code --include src --include main.rs --exclude "*.py
 CODE
 3 code lines (0 comment, 1 blank)
 1 of 1 source files analyzed across 1 languages (include population)
-3 non-ignored code lines (0 ignored)
+3 non-gitignored code lines (0 gitignored)
 Language shares of measured code lines
-         3  100.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
+         3  100.0%  Rust (1/1 analyzed; 3 non-gitignored, 0 gitignored)
 
 LANGUAGES
 Percentage column: code lines
@@ -760,10 +760,10 @@ $ fdu --cache off --color never --size apparent --analyze lines content-project
 $ fdu --cache off --color never --size apparent --analyze code content-project
 4 code lines (1 comment, 2 blank)
 2 of 2 source files analyzed across 2 languages (include population)
-4 non-ignored code lines (0 ignored)
+4 non-gitignored code lines (0 gitignored)
 Language shares of measured code lines
-         3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
-         1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
+         3   75.0%  Rust (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         1   25.0%  Python (1/1 analyzed; 1 non-gitignored, 0 gitignored)
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
 ```
@@ -782,10 +782,10 @@ $ fdu --cache off --color never --size apparent --analyze code,words content-pro
 CODE
 4 code lines (1 comment, 2 blank)
 2 of 2 source files analyzed across 2 languages (include population)
-4 non-ignored code lines (0 ignored)
+4 non-gitignored code lines (0 gitignored)
 Language shares of measured code lines
-         3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
-         1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
+         3   75.0%  Rust (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         1   25.0%  Python (1/1 analyzed; 1 non-gitignored, 0 gitignored)
 
 DOCUMENTS
 Percentage column: document words
@@ -895,10 +895,10 @@ EXTENSIONS  (2 of 6)
 CODE
 4 code lines (1 comment, 2 blank)
 2 of 2 source files analyzed across 2 languages (include population)
-4 non-ignored code lines (0 ignored)
+4 non-gitignored code lines (0 gitignored)
 Language shares of measured code lines
-         3   75.0%  Rust (1/1 analyzed; 3 non-ignored, 0 ignored)
-         1   25.0%  Python (1/1 analyzed; 1 non-ignored, 0 ignored)
+         3   75.0%  Rust (1/1 analyzed; 3 non-gitignored, 0 gitignored)
+         1   25.0%  Python (1/1 analyzed; 1 non-gitignored, 0 gitignored)
 
 DOCUMENTS
 Percentage column: document words

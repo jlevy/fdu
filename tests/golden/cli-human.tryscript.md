@@ -13,7 +13,7 @@ env:
 patterns:
   SCAN_PATH: '[^\r\n]+'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
-  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
   HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
   AGE: '\s*-?[0-9]{1,3}(?:,[0-9]{3})*(s|m|h|d|w|mo|y)'
   SEP: '[/\\]'

@@ -665,6 +665,7 @@ def render_cache_status(
     format: Format = Format.TEXT,
     *,
     scope: CacheScope,
+    color: bool = False,
 ) -> str:
     """Render cache files exactly as ``fdu --cache-status`` prints them.
 
@@ -676,6 +677,8 @@ def render_cache_status(
     reclaiming stale snapshots, and naming the wrong one would send a caller to clear more,
     or less, than it asked about.
 
+    `color` applies the CLI's human cache-status styling. Machine formats ignore it.
+
     Named for the files rather than for the values: each entry is only a way of naming a
     cache file, and the file is **re-read at render time**. Passing a :class:`CacheStatus`
     obtained earlier therefore renders what that file says now, not the fields the value
@@ -686,7 +689,10 @@ def render_cache_status(
     """
 
     paths = [str(cache.path) if isinstance(cache, CacheStatus) else str(cache) for cache in caches]
-    return cast(str, _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format)))
+    return cast(
+        str,
+        _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format), color),
+    )
 
 
 def cache_path(root: str | Path, *, cache_dir: str | Path | None = None) -> Path | None:

@@ -21,7 +21,9 @@
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
-//! policy through [`human_count`] and [`human_count_u128`].
+//! policy through [`human_count`] and [`human_count_u128`]. Every human byte quantity,
+//! including cache rows and lifecycle totals, uses [`styled_bytes`] for its units and
+//! zero/large-value emphasis. Machine fields retain exact integer bytes.
 //!
 //! Tree columns are bar, root percentage, size, then indented name. One remainder
 //! row per tree uses those same columns and quantity styles for unlisted root branches.
@@ -1303,11 +1305,17 @@ pub fn escaped_human(text: &str) -> String {
         .collect()
 }
 
-/// Style a human size after padding: zero is gray; large values are bold, including gray details.
-/// Plain and structured numbers never depend on styling; the threshold uses bytes.
-pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> String {
+/// The shared human byte color role: zero is gray; large values are bold, including gray details.
+/// The threshold uses exact bytes, not the rounded display unit.
+pub fn byte_style(bytes: u64, secondary: bool) -> AnsiStyle {
     let style = if secondary || bytes == 0 { STYLE_DETAIL } else { AnsiStyle::new() };
-    let style = if bytes >= 1 << 30 { style.bold() } else { style };
+    if bytes >= 1 << 30 { style.bold() } else { style }
+}
+
+/// Render a human byte quantity after padding with the shared size and emphasis rules.
+/// Plain and structured numbers never depend on styling.
+pub fn styled_bytes(bytes: u64, width: usize, color: bool, secondary: bool) -> String {
+    let style = byte_style(bytes, secondary);
     let text = format!("{:>width$}", human_bytes(bytes));
     if bytes > 0 && bytes < 1 << 30 && !secondary { text } else { paint(&text, style, color) }
 }
@@ -1668,9 +1676,9 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
     if let (Some(non_ignored), Some(ignored)) = (&overview.non_ignored, &overview.ignored) {
         let _ = writeln!(
             out,
-            "{} non-ignored code lines {}",
+            "{} non-gitignored code lines {}",
             human_count(non_ignored.metrics.code_lines),
-            detail(&format!("({} ignored)", human_count(ignored.metrics.code_lines)), color)
+            detail(&format!("({} gitignored)", human_count(ignored.metrics.code_lines)), color)
         );
     }
     if overview.unknown.source_files > 0 {
@@ -1723,7 +1731,7 @@ fn render_text_code(out: &mut String, overview: &CodeOverview, color: bool) {
         if let (Some(non_ignored), Some(ignored)) = (&row.non_ignored, &row.ignored) {
             let _ = write!(
                 annotation,
-                "; {} non-ignored, {} ignored",
+                "; {} non-gitignored, {} gitignored",
                 human_count(non_ignored.metrics.code_lines),
                 human_count(ignored.metrics.code_lines)
             );
@@ -2445,6 +2453,17 @@ pub fn render_cache_status(
     scope: crate::CacheScope,
     format: Format,
 ) -> String {
+    render_cache_status_with_options(statuses, scope, format, RenderOptions::default())
+}
+
+/// Render cache status with the same human color roles as report rows.
+/// Machine formats ignore the presentation options; cache text has no usage bar.
+pub fn render_cache_status_with_options(
+    statuses: &[crate::CacheStatus],
+    scope: crate::CacheScope,
+    format: Format,
+    options: RenderOptions,
+) -> String {
     match format {
         Format::Jsonl => {
             let mut sink = JsonSink::line();
@@ -2467,7 +2486,7 @@ pub fn render_cache_status(
         // was to be the CLI: the Python API returned CacheStatus values nothing could
         // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
         Format::Text | Format::Tree | Format::Paths | Format::Long => {
-            render_cache_status_text(statuses, scope)
+            render_cache_status_text(statuses, scope, options.color)
         }
         Format::Json => render_cache_machine(statuses, JsonSink::pretty()),
     }
@@ -2679,7 +2698,11 @@ fn content_identity_field(identity: &crate::ContentTierIdentity) -> CacheField {
 
 /// The human cache-status layout: one line per file, then what can be done about the
 /// files this build cannot use.
-fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::CacheScope) -> String {
+fn render_cache_status_text(
+    statuses: &[crate::CacheStatus],
+    scope: crate::CacheScope,
+    color: bool,
+) -> String {
     use crate::{CacheScope, CacheState, LeftoverKind, StaleReason};
 
     let mut lines = Vec::new();
@@ -2699,11 +2722,11 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     .as_ref()
                     .is_some_and(|content| matches!(content.state, crate::ContentState::Stale(_)));
                 lines.push(format!(
-                    "{}  {} entries, {} metadata bytes, {} {}content bytes  {}",
+                    "{}  {} entries, {} metadata, {} {}content  {}",
                     status.path.display(),
                     human_count(info.entries),
-                    human_count(status.bytes),
-                    human_count(content_bytes),
+                    styled_bytes(status.bytes, 0, color, false),
+                    styled_bytes(content_bytes, 0, color, false),
                     if stale_content { "stale " } else { "" },
                     info.root.display()
                 ));
@@ -2723,10 +2746,11 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     StaleReason::Unreadable => "unreadable by this build".to_string(),
                 };
                 lines.push(format!(
-                    "{}  stale ({why}), {} metadata bytes, {} content bytes",
+                    "{}  stale {}, {} metadata, {} content",
                     status.path.display(),
-                    human_count(status.bytes),
-                    human_count(content_bytes)
+                    detail(&format!("({why})"), color),
+                    styled_bytes(status.bytes, 0, color, false),
+                    styled_bytes(content_bytes, 0, color, false)
                 ));
             }
             CacheState::Leftover(kind) => {
@@ -2740,18 +2764,19 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
                     LeftoverKind::OrphanedContent => "orphaned content sidecar",
                 };
                 lines.push(format!(
-                    "{}  leftover ({what}), {} bytes",
+                    "{}  leftover {}, {}",
                     status.path.display(),
-                    human_count(status.bytes)
+                    detail(&format!("({what})"), color),
+                    styled_bytes(status.bytes, 0, color, false)
                 ));
             }
             CacheState::Unrecognized => {
                 unrecognized += 1;
                 unrecognized_bytes = unrecognized_bytes.saturating_add(status.bytes);
                 lines.push(format!(
-                    "{}  unrecognized, {} bytes",
+                    "{}  unrecognized, {}",
                     status.path.display(),
-                    human_count(status.bytes)
+                    styled_bytes(status.bytes, 0, color, false)
                 ));
             }
             // Root scope synthesises a status for the path a snapshot *would* occupy, so a
@@ -2778,8 +2803,8 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             }
         };
         lines.push(format!(
-            "{subject} ({} bytes) cannot be served by this build; {remedy}.",
-            human_count(stale_bytes)
+            "{subject} {} cannot be served by this build; {remedy}.",
+            cache_size_detail(stale_bytes, color)
         ));
     }
     if leftover > 0 {
@@ -2800,9 +2825,9 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             ""
         };
         lines.push(format!(
-            "{subject} ({} bytes) {predicate} fdu's own, left by an interrupted \
+            "{subject} {} {predicate} fdu's own, left by an interrupted \
              write; fdu --cache-clear=all reclaims {object}{caveat}.",
-            human_count(leftover_bytes)
+            cache_size_detail(leftover_bytes, color)
         ));
     }
     if unrecognized > 0 {
@@ -2816,11 +2841,15 @@ fn render_cache_status_text(statuses: &[crate::CacheStatus], scope: crate::Cache
             )
         };
         lines.push(format!(
-            "{subject} ({} bytes) {predicate}, so fdu leaves {object} in place.",
-            human_count(unrecognized_bytes)
+            "{subject} {} {predicate}, so fdu leaves {object} in place.",
+            cache_size_detail(unrecognized_bytes, color)
         ));
     }
     lines.join("\n")
+}
+
+fn cache_size_detail(bytes: u64, color: bool) -> String {
+    format!("{}{}{}", detail("(", color), styled_bytes(bytes, 0, color, true), detail(")", color))
 }
 
 #[cfg(test)]
@@ -2923,14 +2952,29 @@ mod tests {
         ];
         assert_eq!(
             render_cache_status(&stale, CacheScope::All, Format::Text),
-            "a.fdu  stale (older snapshot format 2), 10 metadata bytes, 5 content bytes\n\
-             b.fdu  stale (newer snapshot format 99), 20 metadata bytes, 5 content bytes\n\
-             c.fdu  stale (written by another fdu version), 30 metadata bytes, 5 content bytes\n\
-             d.fdu  stale (unreadable by this build), 40 metadata bytes, 5 content bytes\n\
-             notes.txt  unrecognized, 14 bytes\n\
-             4 stale snapshots (120 bytes) cannot be served by this build; \
+            "a.fdu  stale (older snapshot format 2), 10 B metadata, 5 B content\n\
+             b.fdu  stale (newer snapshot format 99), 20 B metadata, 5 B content\n\
+             c.fdu  stale (written by another fdu version), 30 B metadata, 5 B content\n\
+             d.fdu  stale (unreadable by this build), 40 B metadata, 5 B content\n\
+             notes.txt  unrecognized, 14 B\n\
+             4 stale snapshots (120 B) cannot be served by this build; \
              fdu --cache-clear=all removes them.\n\
-             1 unrecognized file (14 bytes) is not an fdu snapshot, so fdu leaves it in place."
+             1 unrecognized file (14 B) is not an fdu snapshot, so fdu leaves it in place."
+        );
+        let colored = render_cache_status_with_options(
+            &stale,
+            CacheScope::All,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert!(colored.contains(&detail("(older snapshot format 2)", true)), "{colored:?}");
+        assert!(
+            colored.contains(&format!("4 stale snapshots {} cannot", cache_size_detail(120, true))),
+            "{colored:?}"
+        );
+        assert_eq!(
+            strip_ansi(&colored),
+            render_cache_status(&stale, CacheScope::All, Format::Text)
         );
 
         // fdu's own debris is named as fdu's, so a reader is not told to leave it alone.
@@ -2944,27 +2988,27 @@ mod tests {
         ];
         assert_eq!(
             render_cache_status(&leftovers, CacheScope::All, Format::Text),
-            ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 bytes\n\
-             h.analysis.bin  leftover (orphaned content sidecar), 70 bytes\n\
-             2 leftover files (130 bytes) are fdu's own, left by an interrupted write; \
+            ".g.fdu.tmp.1.2.3  leftover (staging temporary), 60 B\n\
+             h.analysis.bin  leftover (orphaned content sidecar), 70 B\n\
+             2 leftover files (130 B) are fdu's own, left by an interrupted write; \
              fdu --cache-clear=all reclaims them, though a staging file waits until it is \
              too old to be a running writer's."
         );
         assert!(render_cache_status(&leftovers[..1], CacheScope::Root, Format::Text).ends_with(
-            "1 leftover file (60 bytes) is fdu's own, left by an interrupted write; \
+            "1 leftover file (60 B) is fdu's own, left by an interrupted write; \
                  fdu --cache-clear=all reclaims it, though a staging file waits until it \
                  is too old to be a running writer's."
         ));
         // With no staging file listed, nothing is held back and the promise is plain: a
         // status that named an exception with no file it could apply to would be noise.
         assert!(render_cache_status(&leftovers[1..], CacheScope::All, Format::Text).ends_with(
-            "1 leftover file (70 bytes) is fdu's own, left by an interrupted write; \
+            "1 leftover file (70 B) is fdu's own, left by an interrupted write; \
                  fdu --cache-clear=all reclaims it."
         ));
 
         let root = [cache_file("a.fdu", 10, CacheState::Stale(StaleReason::OtherEngine))];
         assert!(render_cache_status(&root, CacheScope::Root, Format::Text).ends_with(
-            "1 stale snapshot (15 bytes) cannot be served by this build; \
+            "1 stale snapshot (15 B) cannot be served by this build; \
                  fdu --cache-clear PATH removes it."
         ));
 
@@ -2979,12 +3023,12 @@ mod tests {
         );
         let mixed = [stale[0].clone(), current, stale[4].clone(), stale[4].clone()];
         assert!(render_cache_status(&mixed, CacheScope::All, Format::Text).ends_with(
-            "e.fdu  3 entries, 50 metadata bytes, 0 content bytes  /tree\n\
-             notes.txt  unrecognized, 14 bytes\n\
-             notes.txt  unrecognized, 14 bytes\n\
-             1 stale snapshot (15 bytes) cannot be served by this build; \
+            "e.fdu  3 entries, 50 B metadata, 0 B content  /tree\n\
+             notes.txt  unrecognized, 14 B\n\
+             notes.txt  unrecognized, 14 B\n\
+             1 stale snapshot (15 B) cannot be served by this build; \
              fdu --cache-clear=all removes it, along with every current snapshot.\n\
-             2 unrecognized files (28 bytes) are not fdu snapshots, so fdu leaves them in place."
+             2 unrecognized files (28 B) are not fdu snapshots, so fdu leaves them in place."
         ));
 
         let absent = [cache_file("f.fdu", 0, CacheState::Absent)];
@@ -3108,6 +3152,53 @@ mod tests {
                 entries.replace("\n  ", "\n")
             )
         );
+        let mut large = status.clone();
+        large.bytes = 60_696_111;
+        large.content.as_mut().expect("fixture has a content sidecar").bytes = 120_783_062;
+        assert_eq!(
+            render_cache_status(std::slice::from_ref(&large), CacheScope::Root, Format::Text),
+            "e.fdu  3 entries, 57 MiB metadata, 115 MiB content  /tree"
+        );
+        let colored = render_cache_status_with_options(
+            std::slice::from_ref(&large),
+            CacheScope::Root,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert_eq!(
+            strip_ansi(&colored),
+            render_cache_status(&[large], CacheScope::Root, Format::Text)
+        );
+        let zero = render_cache_status_with_options(
+            std::slice::from_ref(&status),
+            CacheScope::Root,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert!(!zero.contains("\x1b["), "positive sub-GiB sizes stay unstyled: {zero:?}");
+        let mut zero_and_gib = status.clone();
+        zero_and_gib.bytes = 0;
+        zero_and_gib.content.as_mut().expect("fixture has a content sidecar").bytes = 1 << 30;
+        let colored = render_cache_status_with_options(
+            std::slice::from_ref(&zero_and_gib),
+            CacheScope::Root,
+            Format::Text,
+            RenderOptions { color: true, ..RenderOptions::default() },
+        );
+        assert!(colored.contains(&paint("0 B", STYLE_DETAIL, true)), "{colored:?}");
+        assert!(colored.contains(&paint("1.0 GiB", AnsiStyle::new().bold(), true)), "{colored:?}");
+        assert_eq!(strip_ansi(&colored), "e.fdu  3 entries, 0 B metadata, 1.0 GiB content  /tree");
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            assert_eq!(
+                render_cache_status_with_options(
+                    std::slice::from_ref(&status),
+                    CacheScope::Root,
+                    format,
+                    RenderOptions { color: true, ..RenderOptions::default() },
+                ),
+                render_cache_status(std::slice::from_ref(&status), CacheScope::Root, format)
+            );
+        }
         // A sidecar this build cannot serve is named in text too.
         let stale_content = crate::CacheStatus {
             content: Some(ContentStatus {
@@ -3118,7 +3209,7 @@ mod tests {
         };
         assert_eq!(
             render_cache_status(&[stale_content], CacheScope::Root, Format::Text),
-            "e.fdu  3 entries, 50 metadata bytes, 9 stale content bytes  /tree"
+            "e.fdu  3 entries, 50 B metadata, 9 B stale content  /tree"
         );
     }
 
@@ -4128,6 +4219,15 @@ mod tests {
             ignored_suffix(Some(dirs_only), SizeMetric::Apparent, IgnoredEntries::Include, false),
             ""
         );
+        let large_ignored = IgnoredTally { files: 1, dirs: 0, bytes: 1 << 30, allocated: 1 << 30 };
+        let suffix = ignored_suffix(
+            Some(large_ignored),
+            SizeMetric::Apparent,
+            IgnoredEntries::Include,
+            true,
+        );
+        assert!(suffix.contains(&paint("1.0 GiB", STYLE_DETAIL.bold(), true)), "{suffix:?}");
+        assert_eq!(strip_ansi(&suffix), " (1.0 GiB gitignored)");
         let only = render(
             &report(
                 &observed,
@@ -4489,12 +4589,13 @@ mod tests {
         report.sections = vec![Section::Code(Box::new(overview.clone()))];
         let colored = render(&report, Format::Text, true);
         assert!(
-            colored.contains("80 non-ignored code lines \x1b[90m(20 ignored)\x1b[0m"),
+            colored.contains("80 non-gitignored code lines \x1b[90m(20 gitignored)\x1b[0m"),
             "{colored:?}"
         );
         assert!(
-            colored
-                .contains("\x1b[90m(3/3 analyzed; 80 non-ignored, 20 ignored, 10 unknown)\x1b[0m"),
+            colored.contains(
+                "\x1b[90m(3/3 analyzed; 80 non-gitignored, 20 gitignored, 10 unknown)\x1b[0m"
+            ),
             "{colored:?}"
         );
         assert_eq!(strip_ansi(&colored), render(&report, Format::Text, false));
@@ -4510,7 +4611,7 @@ mod tests {
         overview.languages[0].unknown = CodeTally::default();
         report.sections = vec![Section::Code(Box::new(overview))];
         let text = render(&report, Format::Text, false);
-        assert!(!text.contains("non-ignored") && !text.contains(" unknown"), "{text}");
+        assert!(!text.contains("non-gitignored") && !text.contains(" unknown"), "{text}");
     }
 
     #[test]

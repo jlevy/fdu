@@ -69,7 +69,7 @@ scanned and therefore changes the cache scope.
 Numeric content sorts such as `--sort=code_lines` require their analyzer.
 Use `files`, `list`, `tree`, or a metric grouping such as `languages` or `code` for
 these rankings. `extensions` groups metadata only and rejects content-metric sorts.
-The Code overview shows combined language totals with non-ignored and ignored
+The Code overview shows combined language totals with non-gitignored and gitignored
 contributions in parentheses; unknown classification is separate.
 
 Sizes use allocated bytes by default.
@@ -324,7 +324,7 @@ Rules count each governing location, including repeated rule sources and negatio
 exclude comments, blank lines, and rejected patterns.
 Refused files are named separately.
 
-Total files/s and decimal GB/s divide walked files and represented size by the same
+Total files/s and binary GiB/s divide walked files and represented size by the same
 elapsed wall-clock duration shown first in the `perf:` line.
 Represented size uses the selected apparent or allocated measure; it is not disk-read
 bandwidth. Actual content-read throughput uses bytes read and the content-analysis
@@ -356,6 +356,8 @@ Each canonical root has `<16-hex-key>.metadata.bin`, holding filesystem facts an
 controls, and optional `<16-hex-key>.analysis.bin`, holding derived counts and
 classifications. These disposable binary files do not store source-file bodies.
 Use cache status to inspect their roots, scope, and freshness.
+Human cache status uses the same binary size units as reports, such as
+`57 MiB metadata, 115 MiB content`; JSON and YAML retain exact byte counts.
 
 The [cache design](project/guides/cache-design.md) explains snapshot scopes,
 verification costs, atomic writes, and cleanup rules.

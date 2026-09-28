@@ -414,7 +414,7 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     # The note names the directory and the limit that fired, as this surface spells it.
     note, unknown_note = observed_report.notes
     assert unknown_note == (
-        "note: ignored subtotals are unavailable where governing rules could not be verified"
+        "note: gitignored subtotals are unavailable where governing rules could not be verified"
     ), unknown_note
     assert "affected: ." in note, note
     assert "line over the 16 KiB line limit" in note, note
@@ -837,6 +837,16 @@ def main() -> None:
     assert status.identity.ignore_rules is not None, status
     assert status.identity.entries.max_depth is None, status
     assert status.content is None, status
+    plain_cache = fdu.render_cache_status([status], scope=fdu.CacheScope.ROOT)
+    colored_cache = fdu.render_cache_status([status], scope=fdu.CacheScope.ROOT, color=True)
+    assert re.search(r"\d+(?:\.\d+)? (?:B|KiB|MiB|GiB|TiB|PiB) metadata", plain_cache)
+    assert "0 B content" in plain_cache
+    assert "\x1b[" not in plain_cache and "\x1b[" in colored_cache
+    assert re.sub(r"\x1b\[[0-9;]*m", "", colored_cache) == plain_cache
+    for machine_format in (fdu.Format.JSON, fdu.Format.JSONL, fdu.Format.YAML):
+        assert fdu.render_cache_status(
+            [status], machine_format, scope=fdu.CacheScope.ROOT, color=True
+        ) == fdu.render_cache_status([status], machine_format, scope=fdu.CacheScope.ROOT)
     # A snapshot an earlier format wrote is still fdu's: reported stale with its version,
     # and cleared, rather than stranded as a file nothing will delete. The version sits
     # after the eight-byte magic in every format.

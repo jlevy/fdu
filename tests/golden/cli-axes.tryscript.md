@@ -28,7 +28,7 @@ patterns:
   SOURCE: 'cold_scan|warm_revalidate'
   HUMAN_SIZE: '\s*[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]+)? (B|KiB|MiB|GiB|TiB|PiB)'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
-  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
 ---
 # The Five Axes Compose
 
@@ -460,7 +460,7 @@ $ node -e "const fs=require('node:fs'); fs.mkdirSync('long-rule'); fs.writeFileS
 $ fdu --cache off --view summary --size apparent long-rule
     16 KiB  2 files, 0 directories
 ! note: ignore classification incomplete: 1 ignore file not applied (1 with a line over the 16 KiB line limit); affected: .
-! note: ignored subtotals are unavailable where governing rules could not be verified
+! note: gitignored subtotals are unavailable where governing rules could not be verified
 ! tip: apply refused ignore files: raise --gitignore-line-limit above 16 KiB, or set it to all
 ! perf: took [PERF_TIME] to walk 2 files (16 KiB) at [PERF_RATE]; 0 gitignore rules (1 file), 1 refused; content read 0 B; analysis 0 fresh, 0 cached; cold scan
 ? 0
