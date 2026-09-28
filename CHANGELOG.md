@@ -38,6 +38,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
 - Report schema is `fdu.report/10`; cache status is `fdu.cache/3`. Python exposes
   matching population, code overview, display limits, and cache destination controls.
+- The `fdu` command installed from the Python wheel starts about 44 ms faster:
+  `fdu --version` takes 22 ms rather than 65 ms on an Apple silicon Mac.
+  The package imports its Python API on first use, so the command, which hands its
+  arguments to the native command line, loads only the native module.
 
 ### Removed
 
