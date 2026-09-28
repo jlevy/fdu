@@ -80,9 +80,9 @@ Wheels cover Linux, macOS, and Windows.
 For other platforms, pinned versions, and building from source, see
 [Other Ways to Install](#other-ways-to-install).
 
-## Quick Start (and drop-in `du` replacement)
+## Quick Start
 
-For example, a one-level summary of this repository’s files:
+A one-level summary of this repository’s files:
 
 ```console
 $ fdu . --depth=1
@@ -101,30 +101,30 @@ Add `--analyze` to read file contents, here for lines of code and words in docum
 $ fdu . --analyze=code,words
 CODE
 Code lines   Share  Comments   Blank  Analyzed files  Language
-    79,760   61.5%    12,799   6,720         101/101  Rust       (79,760 non-gitignored, 0 gitignored)
-    42,714   32.9%     1,697   5,218         133/133  Python     (42,714 non-gitignored, 0 gitignored)
-     3,988    3.1%       526     358           25/25  JavaScript (3,988 non-gitignored, 0 gitignored)
-     2,518    1.9%       229     145           19/19  C          (2,518 non-gitignored, 0 gitignored)
-       648    0.5%       124      64           18/18  Shell      (648 non-gitignored, 0 gitignored)
-        13   <0.1%         4       1             2/2  Swift      (13 non-gitignored, 0 gitignored)
-         6   <0.1%         4       1             2/2  C++        (6 non-gitignored, 0 gitignored)
-         3   <0.1%         3       1             1/1  C#         (3 non-gitignored, 0 gitignored)
-         3   <0.1%         4       0             1/1  Go         (3 non-gitignored, 0 gitignored)
-         3   <0.1%         4       0             1/1  PHP        (3 non-gitignored, 0 gitignored)
-         2   <0.1%         4       1             1/1  Java       (2 non-gitignored, 0 gitignored)
-         2   <0.1%         4       1             1/1  Kotlin     (2 non-gitignored, 0 gitignored)
-         2   <0.1%         4       1             1/1  Ruby       (2 non-gitignored, 0 gitignored)
-         2   <0.1%         4       1             1/1  SQL        (2 non-gitignored, 0 gitignored)
-         2   <0.1%         4       1             1/1  TypeScript (2 non-gitignored, 0 gitignored)
+    79,748   61.5%    12,801   6,720         101/101  Rust       (0 gitignored)
+    42,714   32.9%     1,697   5,218         133/133  Python     (0 gitignored)
+     3,988    3.1%       526     358           25/25  JavaScript (0 gitignored)
+     2,518    1.9%       229     145           19/19  C          (0 gitignored)
+       648    0.5%       124      64           18/18  Shell      (0 gitignored)
+        13   <0.1%         4       1             2/2  Swift      (0 gitignored)
+         6   <0.1%         4       1             2/2  C++        (0 gitignored)
+         3   <0.1%         3       1             1/1  C#         (0 gitignored)
+         3   <0.1%         4       0             1/1  Go         (0 gitignored)
+         3   <0.1%         4       0             1/1  PHP        (0 gitignored)
+         2   <0.1%         4       1             1/1  Java       (0 gitignored)
+         2   <0.1%         4       1             1/1  Kotlin     (0 gitignored)
+         2   <0.1%         4       1             1/1  Ruby       (0 gitignored)
+         2   <0.1%         4       1             1/1  SQL        (0 gitignored)
+         2   <0.1%         4       1             1/1  TypeScript (0 gitignored)
          —       —         —       —             0/2  Make
-   129,666  100.0%    15,414  12,513         308/310  TOTAL      (129,666 non-gitignored, 0 gitignored)
+   129,654  100.0%    15,416  12,513         308/310  TOTAL      (0 gitignored)
 15 analyzed languages (include population)
 36 selected files with unclassified type
 2 unsupported
 
 DOCUMENTS
 Percentage column: document words
-   5.9 MiB   84.6%  markdown           317 files, 117,527 lines (103,995 nonblank, 13,532 blank), 507,060 words (2,028.2 pages), 4 generated, 288 documentation
+   5.9 MiB   84.6%  markdown           317 files, 117,532 lines (104,000 nonblank, 13,532 blank), 507,111 words (2,028.4 pages), 4 generated, 288 documentation
    748 KiB   13.4%  text               58 files, 5,455 lines (5,339 nonblank, 116 blank), 80,121 words (320.4 pages), 2 documentation
    380 KiB    9.7%  html               1 file, 1,125 lines (1,110 nonblank, 15 blank), 58,222 words (232.8 pages), 1 documentation
 ```
@@ -498,31 +498,31 @@ Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreu
 exactly one persists anything, exactly one carries multiple metrics per pass, **none**
 does per-directory type tallies, and **none** does mtime-based incremental revalidation.
 None of them is a native library with a live change feed that a Rust or Python program
-can hold. That combination is what a live file browser actually needs.
+can hold. That combination is what a live file browser needs.
 
 The survey is in
 [the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
 
 ## Other Ways to Install
 
-**Platforms.** Wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
+**Platforms:** Wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
 and arm64), macOS (x86-64 and arm64), and Windows x86-64. `--no-build` requires one of
 those wheels rather than compiling from source.
 You don’t need to pick a Python version: uv selects a matching interpreter.
 If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
 does not publish free-threaded wheels yet.
 
-**Pinned versions.** For a repeatable run, replace `latest` with a release number, such
+**Pinned versions:** For a repeatable run, replace `latest` with a release number, such
 as `uvx --no-build fdu@0.1.0 .`.
 
-**uv cool-off policies.** If uv is configured with an `exclude-newer` cool-off, a new
+**uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
 fdu release may be filtered.
 Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
 to expire.
 `--no-config` is a one-off override that skips all uv configuration, including
 that policy.
 
-**From crates.io**, with Rust 1.85 or newer:
+**From crates.io (Rust 1.85 or newer):**
 
 ```shell
 cargo install --locked fdu
