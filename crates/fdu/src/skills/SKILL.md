@@ -357,7 +357,9 @@ The default `include` measures both populations and reports their contributions
 separately. Unknown classifications cannot justify pruning.
 `--no-gitignore` with either selection is a usage error.
 Only per-directory `.gitignore` files apply, not `core.excludesFile`,
-`.git/info/exclude`, or a global ignore file, and matching is case-sensitive.
+`.git/info/exclude`, or a global ignore file.
+Each is found as git opens it, so a `.GITIGNORE` counts on a case-insensitive volume;
+matching itself is case-sensitive.
 Unignored does not mean tracked: `.git` is unignored unless a rule names it.
 For recent working files, add both `--ignored=exclude` and `--exclude='.git/**'`. An
 unreadable `.gitignore` makes the result partial (exit 2), while one past

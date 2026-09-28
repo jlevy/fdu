@@ -315,11 +315,12 @@ IGNORE RULES
   --ignored=only discovers gitignored matches through ordinary ancestors, reading
   only gitignored bodies for analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
-  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
-  and matching is case-sensitive on every platform. An unreadable .gitignore makes
-  the result partial, like any unreadable path. A .gitignore past --gitignore-budget
-  or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
-  gitignored shares under that directory do not.
+  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file.
+  Each is found as git opens it, so a .GITIGNORE counts on a case-insensitive
+  volume; matching itself is case-sensitive on every platform. An unreadable
+  .gitignore makes the result partial, like any unreadable path. A .gitignore past
+  --gitignore-budget or --gitignore-line-limit is refused whole and named in a note:
+  sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
   Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
