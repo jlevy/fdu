@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::{Coverage, CoverageReason, Freshness, Index, Issue, Source};
 
-use super::{ReportSource, Request};
+use super::{IgnoredEntries, ReportSource, Request};
 
 /// Completeness of the facts used to answer one report.
 #[derive(Clone, Debug)]
@@ -32,6 +32,21 @@ impl TreeStatus {
                 &mut details,
                 (issue.path.clone().unwrap_or_default(), issue.clone()),
             );
+        }
+        let unknown_population = request.query.selection.ignored != IgnoredEntries::Include
+            && index.control_table().refused_len() > 0;
+        if unknown_population {
+            for refusal in index.control_table().refusals() {
+                detail_count = detail_count.saturating_add(1);
+                let issue = Issue::provider_failure(
+                    Some(&refusal.path),
+                    format!(
+                        "ignored population is unknown below this refused control ({})",
+                        refusal.reason.label()
+                    ),
+                );
+                retain_first_detail(&mut details, (refusal.path, issue));
+            }
         }
         let wanted = index.content_identity(request.basis.content);
         let admitted = index.content().and_then(|content| content.admit(&wanted));
@@ -84,10 +99,15 @@ impl TreeStatus {
         let complete = state.coverage == Coverage::Complete
             && content_failures == 0
             && !content_tier_partial
-            && !content_pending;
+            && !content_pending
+            && !unknown_population;
         Self {
             complete,
-            coverage: if content_failures == 0 && !content_tier_partial && !content_pending {
+            coverage: if content_failures == 0
+                && !content_tier_partial
+                && !content_pending
+                && !unknown_population
+            {
                 state.coverage
             } else {
                 Coverage::Partial(CoverageReason::Failed)

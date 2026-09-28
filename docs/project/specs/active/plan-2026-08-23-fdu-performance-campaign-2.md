@@ -4,7 +4,10 @@
 
 **Author:** fdu project
 
-**Status:** Active. This plan owns the current prioritization; the queue orderings in
+**Status:** Active.
+Completed experiments settle their measured cells; the H148 Linux PGO
+screen did not adopt a release profile, which remains `fdu-pdne`. This plan owns the
+current prioritization; the queue orderings in
 [the structural review](../../research/research-2026-08-14-structural-performance-review.md)
 and
 [the consumer structural-headroom review](../../research/research-2026-08-15-consumer-structural-headroom.md)
@@ -267,12 +270,17 @@ content sidecar). A 2026-09-18 revisit recorded exp-105 (uncontrolled rustup bas
 exp-106 (H107 rejected on metabrowser), exp-107 (H108 confirmed: second `fdu PATH` stays
 `cold scan`), then H112 timers kept, H115 accepted (−9.69% cache-hit wall), H120
 accepted (−10.13% cache-hit RSS), H117 confirmed as a probe, H116/H118/H119 rejected or
-screened, and H124 rejected (exp-121). The live next-up list, host-regime note, and
-subject sizes are in
+screened, and H124 rejected (exp-121). H152 then added the exact multi-view report
+oracle, and H153 provisionally retained a platform-neutral one-pass metric aggregation,
+measured in an uncontrolled Darwin cell on the current 137,085-entry metabrowser tree:
+`content-query` wall −47.01% [−47.49%, −45.23%], component −59.94%, with RSS and minor
+faults non-inferior.
+Major-fault non-regression remains inconclusive; quiet confirmation and Linux magnitude
+remain unmeasured. The current next-up work is quiet H153 confirmation, H154 Linux
+replication, and H155 post-H153 profiling, with host regime and subject details in
 [the runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18).
-The remaining unaddressed queue after that overnight is
-[the remaining-headroom block](plan-2026-09-19-post-h115-remaining-headroom.md), not
-this file’s 2026-08-23 Tier 1–3 list.
+Earlier H116–H120 planning is in
+[the historical post-H115 queue](plan-2026-09-19-post-h115-remaining-headroom.md).
 H86’s remaining gap is still the Linux floor after H111 failed on
 [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized); leftover is H143.
 That is not a rewrite, and not this Darwin host.
@@ -526,15 +534,17 @@ strategy and the record is visible in review.
 - [The performance-loop runbook](../../guides/performance-loop-runbook.md) — one
   unattended round and the 2026-09-18 standing
 - [Post-H115 remaining headroom](plan-2026-09-19-post-h115-remaining-headroom.md) —
-  remaining Darwin queue after the H116–H120 overnight
-- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
-  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
+  historical Darwin H107–H138 queue after the H116–H120 overnight; current priorities
+  are in
+  [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
+- [Linux parallel validation](../done/plan-2026-09-19-linux-parallel-validation.md) —
+  H139–H143 recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed on that
   virtualized host; base `main`, merges onto `main` then #97
-- [Linux performance iteration](plan-2026-09-20-linux-performance-iteration.md) —
-  leftover records, H147/H72 keeps, and H148 PGO screen on
+- [Linux performance iteration](../done/plan-2026-09-20-linux-performance-iteration.md)
+  — leftover records, H147/H72 keeps, and H148 PGO screen on
   [#97](https://github.com/jlevy/fdu/pull/97)
-- [Linux PGO screen](plan-2026-09-20-linux-pgo-screen.md) — H148 / exp-154 folded onto
-  #97
+- [Linux PGO screen](../done/plan-2026-09-20-linux-pgo-screen.md) — H148 / exp-154
+  folded onto #97
 - [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
   the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal

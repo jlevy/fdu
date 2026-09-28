@@ -7,6 +7,46 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `--cache` takes `auto`, `on`, or `off`, and `auto` depends on the kind
+  of request. A one-shot metadata report under `auto` no longer writes a snapshot, since
+  no later one-shot report reads it; content analysis, `--watch`, and an opened index
+  still read, revalidate, and write.
+  `--cache on` also writes after a one-shot metadata report.
+  Python’s `CachePolicy` is `AUTO`, `ON`, `OFF`; Rust’s `CachePolicy` is `Auto`, `On`,
+  `Off`, and `Plan::persists` replaces `CachePolicy::writes`.
+- **Breaking:** `--cache only` is now `--stale-ok` (Python `stale_ok=True`, Rust
+  `Delivery::stale_ok`), which answers from the snapshot without touching the tree.
+  Leave a snapshot for it with `--cache on`.
+- `--ignored=include|exclude|only` controls population.
+  Exclusion prunes safely ignored subtrees and skips their content analysis; only
+  analyzes ignored bodies.
+- Tree output defaults to depth 5 and a 1% share of the selected root, with significant
+  file leaves. `--breadth` bounds children; `--limit` bounds rows per section.
+- Code analysis defaults to a source-line overview with language and population totals,
+  coverage, and metric sorting.
+  The code table aligns per-language counts and a bold TOTAL row; display limits
+  preserve complete totals.
+  Correct multiline literals, heredocs, Rust lifetimes, and JavaScript regex handling;
+  invalidate prior code-analysis records.
+- Human output uses consistent names, primary totals, and gray parenthetical details.
+  Performance includes ignore-file and rule counts plus total files/s and represented
+  GiB/s.
+- `--workers` sets content-analysis concurrency (zero selects available parallelism).
+- Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and Linux default
+  to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
+- Report schema is `fdu.report/10`; cache status is `fdu.cache/3`. Python exposes
+  matching population, code overview, display limits, and cache destination controls.
+
+### Removed
+
+- **Breaking:** `--cache refresh` and `--cache read-only`, with their Python and Rust
+  counterparts. Each retired value is refused with its replacement named.
+  `read-only` has no exact replacement: reading a snapshot without ever writing one is
+  gone. Under `auto`, a failed snapshot write is reported as a warning, so a read-only
+  cache directory still answers; `--cache off` reads nothing.
+
 ## [0.1.0] - 2026-09-25
 
 The first release. fdu walks a directory tree once and answers, for every directory at

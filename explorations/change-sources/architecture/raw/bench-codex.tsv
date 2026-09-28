@@ -1,0 +1,17 @@
+label	round	policy	rc	real_s	user_s	sys_s	max_rss_bytes	wall_ms_incl_lockwait	load1	files_walked	files_per_s	tier	summary
+codex	0	auto	0	5.99	3.25	20.96	277495808	6106	11.88	356227	60473	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	1	off-nogitignore	0	3.63	0.63	25.78	41107456	3702	12.61	356227	101031	cold scan	36 GiB  356,227 files, 95,484 directories
+codex	1	off	0	5.03	3.18	23.44	217956352	5090	13.44	356227	71905	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	1	auto	0	5.27	3.16	21.14	269123584	5341	13.41	356227	68486	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	1	only	0	3.11	2.95	0.08	315506688	3174	14.97	0	0	cache only	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	1	refresh	0	5.79	3.29	21.76	268484608	5852	14.97	356227	62381	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	2	off-nogitignore	0	3.14	0.61	22.20	39223296	3204	18.42	356227	115993	cold scan	36 GiB  356,227 files, 95,484 directories
+codex	2	off	0	5.72	3.20	18.34	220135424	5785	18.42	356227	63183	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	2	auto	0	5.78	3.25	17.09	266256384	5856	18.95	356227	62514	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	2	only	0	3.23	3.00	0.10	315375616	3333	17.84	0	0	cache only	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	2	refresh	0	5.79	3.19	15.37	268779520	5852	17.84	356227	62294	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	3	off-nogitignore	0	3.04	0.59	18.25	41861120	3107	18.22	356227	119754	cold scan	36 GiB  356,227 files, 95,484 directories
+codex	3	off	0	5.95	3.28	13.04	220987392	6013	18.22	356227	60680	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)
+codex	3	auto	0	6.11	3.25	14.21	269926400	14941	18.52	356228	59014	cold scan	36 GiB  356,228 files, 95,484 directories (3.1 GiB gitignored)
+codex	3	only	0	3.15	3.01	0.07	315310080	3228	20.10	0	0	cache only	36 GiB  356,228 files, 95,484 directories (3.1 GiB gitignored)
+codex	3	refresh	0	5.12	3.12	17.21	267845632	5180	20.26	356227	70553	cold scan	36 GiB  356,227 files, 95,484 directories (3.1 GiB gitignored)

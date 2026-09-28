@@ -1,0 +1,83 @@
+# Host facts for the OS-facilities survey (read-only commands, unprivileged, 2026-09-28T05:40Z)
+# Sanitized: hostnames and private paths removed.
+
+## OS
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:18:58 PDT 2026; root:xnu-12377.121.10~1/RELEASE_ARM64_T6000
+
+## Spotlight indexing status (mdutil -a -s)
+/:
+	Indexing disabled.
+/System/Volumes/Data:
+	Indexing disabled.
+/System/Volumes/Preboot:
+	Indexing disabled.
+<external-volume>:
+	Indexing enabled. 
+
+## eslogger --list-events (count and list)
+     104
+access authentication authorization_judgement authorization_petition btm_launch_item_add btm_launch_item_remove chdir chroot clone close copyfile create cs_invalidated deleteextattr dup exchangedata exec exit fcntl file_provider_materialize file_provider_update fork fsgetpath gatekeeper_user_override get_task get_task_inspect get_task_name get_task_read getattrlist getextattr iokit_open kextload kextunload link listextattr login_login login_logout lookup lw_session_lock lw_session_login lw_session_logout lw_session_unlock mmap mount mprotect od_attribute_set od_attribute_value_add od_attribute_value_remove od_create_group od_create_user od_delete_group od_delete_user od_disable_user od_enable_user od_group_add od_group_remove od_group_set od_modify_password open openssh_login openssh_logout proc_check proc_suspend_resume profile_add profile_remove pty_close pty_grant readdir readlink remote_thread_create remount rename screensharing_attach screensharing_detach searchfs setacl setattrlist setegid seteuid setextattr setflags setgid setmode setowner setregid setreuid settime setuid signal stat su sudo tcc_modify trace truncate uipc_bind uipc_connect unlink unmount utimes write xp_malware_detected xp_malware_remediated xpc_connect 
+
+## kdebug / DTrace tools without root
+$ ktrace info
+ktrace: failed to get kernel tracing information: Too many levels of remote in path
+$ fs_usage -t 1
+'fs_usage' must be run as root...
+$ dtrace -l
+dtrace: system integrity protection is on, some features will not be available
+dtrace: failed to initialize dtrace: DTrace requires additional privileges
+
+## Quotas / snapshots
+$ quota -v
+Disk quotas for user <user> (uid <uid>): none
+$ tmutil listlocalsnapshots /
+Snapshots for disk /:
+com.apple.TimeMachine.2026-09-27-223502.local
+$ diskutil apfs listSnapshots <Data volume>
+Snapshot for <disk> (1 found)
+|
++-- <uuid>
+$ diskutil info <Data volume> (space lines)
+Volume Used Space:         449.2 GB (449222897664 Bytes) (exactly 877388472 512-Byte-Units)
+Container Total Space:     494.4 GB (494384795648 Bytes) (exactly 965595304 512-Byte-Units)
+Container Free Space:      11.2 GB (11166490624 Bytes) (exactly 21809552 512-Byte-Units)
+
+## Storage-related daemons present (process names only)
+_mds_stores mds_stores
+<user> corespotlightd
+<user> deleted
+<user> fileproviderd
+<user> managedcorespotlightd
+root apfsd
+root backupd
+root backupd-helper
+root deleted_helper
+root fseventsd
+root mds
+root revisiond
+root storagekitd
+root sysmond
+
+## launchd jobs (system plists) related to storage
+com.apple.StorageManagement.Service.plist
+com.apple.StorageManagementUIHelper.plist
+com.apple.amsondevicestoraged.plist
+com.apple.apfsuseragent.plist
+com.apple.diskspaced.plist
+com.apple.protectedcloudstorage.protectedcloudkeysyncing.plist
+com.apple.apfsd.plist
+com.apple.corestorage.corestoraged.plist
+com.apple.corestorage.corestoragehelperd.plist
+com.apple.deleted_helper.plist
+com.apple.mobile.storage_mounter.plist
+com.apple.mobile.storage_mounter_proxy.plist
+com.apple.storagede.helper.plist
+com.apple.storagekitd.plist
+com.apple.xartstorageremoted.plist
+
+## Installed third-party watchers
+ls: fswatch: No such file or directory
+watchman

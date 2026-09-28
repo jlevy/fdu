@@ -1,0 +1,44 @@
+mdutil status of volume:
+<external-volume>:
+	Indexing enabled. 
+start Sun Sep 27 22:33:10 PDT 2026
+t+12s content-hits=0 name-hits=0
+t+22s content-hits=0 name-hits=0
+t+33s content-hits=0 name-hits=0
+t+43s content-hits=0 name-hits=0
+t+53s content-hits=0 name-hits=0
+t+63s content-hits=0 name-hits=0
+t+72s content-hits=0 name-hits=0
+t+82s content-hits=0 name-hits=0
+t+91s content-hits=0 name-hits=0
+t+101s content-hits=0 name-hits=0
+t+110s content-hits=0 name-hits=0
+t+120s content-hits=0 name-hits=0
+t+130s content-hits=0 name-hits=0
+t+145s content-hits=0 name-hits=0
+t+155s content-hits=0 name-hits=0
+t+165s content-hits=0 name-hits=0
+t+174s content-hits=0 name-hits=0
+t+184s content-hits=0 name-hits=0
+t+194s content-hits=0 name-hits=0
+t+204s content-hits=0 name-hits=0
+t+214s content-hits=0 name-hits=0
+t+224s content-hits=0 name-hits=0
+t+233s content-hits=0 name-hits=0
+t+244s content-hits=0 name-hits=0
+t+254s content-hits=0 name-hits=0
+t+264s content-hits=0 name-hits=0
+t+274s content-hits=0 name-hits=0
+t+284s content-hits=0 name-hits=0
+t+294s content-hits=0 name-hits=0
+t+304s content-hits=0 name-hits=0
+--- name query results (paths relative to test dir):
+--- content query results:
+--- mdls kMDItemFSSize per file:
+visible: kMDItemContentModificationDate = (null) kMDItemFSSize                  = (null) 
+.hidden: kMDItemContentModificationDate = 2026-09-28 05:33:10 +0000 kMDItemFSSize                  = 49 
+skip.noindex: kMDItemContentModificationDate = 2026-09-28 05:33:10 +0000 kMDItemFSSize                  = 54 
+Library: kMDItemContentModificationDate = (null) kMDItemFSSize                  = (null) 
+--- mdimport -d1 of hidden file (does importer see it?):
+Imported '<test-dir>/.hidden/probe-.hidden.txt' of type 'public.plain-text' with plugIn /System/Library/Spotlight/RichText.mdimporter.
+29 attributes returned

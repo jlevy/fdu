@@ -1,0 +1,238 @@
+==> bench-project-r0-auto.txt <==
+    38 GiB  1,193,710 files, 352,387 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 19.29 s to walk 1,193,710 files (38 GiB) at 61,866 files/s (2.011 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       19.37 real         9.19 user        63.54 sys
+           776634368  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               91384  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              173044  voluntary context switches
+              628733  involuntary context switches
+        261007613209  instructions retired
+        189823504905  cycles elapsed
+           733643784  peak memory footprint
+
+==> bench-project-r1-auto.txt <==
+[timing-lock] waited 73.6s
+    38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 24.39 s to walk 1,193,723 files (38 GiB) at 48,942 files/s (1.591 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       24.50 real         9.01 user        75.01 sys
+           804356096  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               51943  page reclaims
+                 142  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              185522  voluntary context switches
+              820146  involuntary context switches
+        262260669928  instructions retired
+        218610284987  cycles elapsed
+           729039880  peak memory footprint
+
+==> bench-project-r1-off-nogitignore.txt <==
+[timing-lock] waited 370.5s
+    38 GiB  1,193,723 files, 352,380 directories
+perf: took 11.19 s to walk 1,193,723 files (38 GiB) at 106,714 files/s (3.468 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       11.31 real         1.95 user        67.25 sys
+            52051968  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3472  page reclaims
+                 116  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              182725  voluntary context switches
+              765838  involuntary context switches
+        165256695949  instructions retired
+        180269162300  cycles elapsed
+            30851552  peak memory footprint
+
+==> bench-project-r1-off.txt <==
+[timing-lock] waited 48.5s
+    38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 16.77 s to walk 1,193,723 files (38 GiB) at 71,185 files/s (2.314 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       16.89 real         8.85 user        65.68 sys
+           704364544  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               44820  page reclaims
+                 140  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              188069  voluntary context switches
+              630275  involuntary context switches
+        257644730393  instructions retired
+        194386493408  cycles elapsed
+           555615096  peak memory footprint
+
+==> bench-project-r1-only.txt <==
+[timing-lock] waited 164.7s
+    38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 10.40 s to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+       10.59 real         8.35 user         0.67 sys
+          1006321664  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               61656  page reclaims
+                 134  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 116  voluntary context switches
+               85032  involuntary context switches
+        111255460290  instructions retired
+         23827135294  cycles elapsed
+           918897792  peak memory footprint
+
+==> bench-project-r1-refresh.txt <==
+[timing-lock] waited 243.6s
+    38 GiB  1,193,724 files, 352,383 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 15.23 s to walk 1,193,724 files (38 GiB) at 78,361 files/s (2.547 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       15.31 real         9.01 user        80.11 sys
+           784138240  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               50854  page reclaims
+                  67  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              185591  voluntary context switches
+              763440  involuntary context switches
+        262908375566  instructions retired
+        233494538634  cycles elapsed
+           708674568  peak memory footprint
+
+==> bench-project-r2-auto.txt <==
+[timing-lock] waited 317.6s
+    38 GiB  1,193,746 files, 352,389 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 26.08 s to walk 1,193,746 files (38 GiB) at 45,771 files/s (1.488 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       26.29 real         9.37 user        59.50 sys
+           809713664  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               51731  page reclaims
+                 605  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              183192  voluntary context switches
+              536670  involuntary context switches
+        260576342575  instructions retired
+        179167039874  cycles elapsed
+           735151136  peak memory footprint
+
+==> bench-project-r2-off-nogitignore.txt <==
+[timing-lock] waited 237.2s
+    38 GiB  1,193,724 files, 352,383 directories
+perf: took 11.03 s to walk 1,193,724 files (38 GiB) at 108,178 files/s (3.516 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       11.14 real         1.98 user        69.91 sys
+            51019776  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3397  page reclaims
+                 116  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              187069  voluntary context switches
+              873615  involuntary context switches
+        166140057129  instructions retired
+        186805705588  cycles elapsed
+            40010232  peak memory footprint
+
+==> bench-project-r2-off.txt <==
+[timing-lock] waited 378.4s
+    38 GiB  1,193,736 files, 352,389 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 20.08 s to walk 1,193,736 files (38 GiB) at 59,434 files/s (1.932 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cold scan
+       20.21 real         9.22 user        73.04 sys
+           651264000  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               42700  page reclaims
+                  28  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+              178926  voluntary context switches
+              857390  involuntary context switches
+        262757746589  instructions retired
+        212777105688  cycles elapsed
+           574555000  peak memory footprint
+
+==> bench-project-r2-only.txt <==
+[timing-lock] waited 28.2s
+    38 GiB  1,193,746 files, 352,389 directories (26 GiB gitignored)
+note: gitignored sizes are included in row totals
+perf: took 9.24 s to walk 0 files (0 B) at 0 files/s (0.000 GiB/s); 10,791 gitignore rules (969 files); content read 0 B; analysis 0 fresh, 0 cached; cache only
+        9.36 real         8.09 user         0.32 sys
+          1006288896  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               61778  page reclaims
+                   8  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 103  voluntary context switches
+               11341  involuntary context switches
+        110267352982  instructions retired
+         22307480280  cycles elapsed
+           918865024  peak memory footprint
+
+==> bench-project-r2-refresh.txt <==

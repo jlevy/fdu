@@ -1,0 +1,11 @@
+label	round	policy	rc	real_s	user_s	sys_s	max_rss_bytes	wall_ms_incl_lockwait	load1	files_walked	files_per_s	tier	summary
+project	0	auto	0	19.37	9.19	63.54	776634368	19449	19.01	1193710	61866	cold scan	38 GiB  1,193,710 files, 352,387 directories (26 GiB gitignored)
+project	1	off-nogitignore	0	11.31	1.95	67.25	52051968	381926	24.97	1193723	106714	cold scan	38 GiB  1,193,723 files, 352,380 directories
+project	1	off	0	16.89	8.85	65.68	704364544	65467	9.32	1193723	71185	cold scan	38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+project	1	auto	0	24.50	9.01	75.01	804356096	98232	11.93	1193723	48942	cold scan	38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+project	1	only	0	10.59	8.35	0.67	1006321664	175357	11.24	0	0	cache only	38 GiB  1,193,723 files, 352,380 directories (26 GiB gitignored)
+project	1	refresh	0	15.31	9.01	80.11	784138240	259042	12.76	1193724	78361	cold scan	38 GiB  1,193,724 files, 352,383 directories (26 GiB gitignored)
+project	2	off-nogitignore	0	11.14	1.98	69.91	51019776	248445	10.29	1193724	108178	cold scan	38 GiB  1,193,724 files, 352,383 directories
+project	2	off	0	20.21	9.22	73.04	651264000	398789	12.44	1193736	59434	cold scan	38 GiB  1,193,736 files, 352,389 directories (26 GiB gitignored)
+project	2	auto	0	26.29	9.37	59.50	809713664	344088	15.08	1193746	45771	cold scan	38 GiB  1,193,746 files, 352,389 directories (26 GiB gitignored)
+project	2	only	0	9.36	8.09	0.32	1006288896	37615	11.96	0	0	cache only	38 GiB  1,193,746 files, 352,389 directories (26 GiB gitignored)

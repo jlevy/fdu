@@ -22,7 +22,9 @@ use crate::control::{ControlLimits, DEFAULT_CONTROL_BUDGET, DEFAULT_CONTROL_LINE
 use crate::engine_contract::EntryKind;
 use crate::query::query_glob::Pattern;
 use crate::query::query_report::{AxisNames, Query, ViewSpec};
-use crate::query::query_selection::{Bound, IgnoredEntries, Selection, SizeMetric, SortKey};
+use crate::query::query_selection::{
+    Bound, IgnoredEntries, Selection, ShareThreshold, SizeMetric, SortKey,
+};
 use crate::query::query_values::{
     parse_control_budget, parse_control_line_limit, parse_size, parse_when, system_time_to_nanos,
 };
@@ -46,6 +48,8 @@ pub struct Scope {
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
     /// Whether gitignore control files are observed.
     pub read_controls: bool,
+    /// Ignored population retained by this basis.
+    pub population: IgnoredEntries,
     /// Control admission limits.
     pub control_limits: ControlLimits,
 }
@@ -64,6 +68,7 @@ impl From<ScanConfig> for Scope {
             exclude_special: scan.exclude_special,
             types: scan.types,
             read_controls: scan.read_controls,
+            population: scan.population,
             control_limits: scan.control_limits,
         }
     }
@@ -79,6 +84,7 @@ impl Scope {
             exclude_special: self.exclude_special,
             types: self.types.clone(),
             read_controls: self.read_controls,
+            population: self.population,
             control_limits: self.control_limits,
             threads: delivery.workers.scan,
             batch_size: delivery.batch_size,
@@ -95,6 +101,7 @@ impl Scope {
             exclude_special: self.exclude_special,
             types: self.types.clone(),
             read_controls: self.read_controls,
+            population: self.population,
             control_limits: self.control_limits,
             ..ScanConfig::default()
         }
@@ -161,6 +168,7 @@ impl Basis {
                 one_filesystem: scope.one_filesystem,
                 exclude_special: scope.exclude_special,
                 read_controls: controls.is_observed(),
+                population: scope.population,
                 control_limits: match controls {
                     crate::ControlTierIdentity::Observed { limits } => limits,
                     crate::ControlTierIdentity::NotObserved => Self::UNOBSERVED_LIMITS,
@@ -183,7 +191,8 @@ impl Basis {
     /// [`RequestError`] for a value no grammar accepts, named as `axes` spells its axis.
     pub fn build(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> Result<Self, RequestError> {
         let content = parse_content(spec, axes)?;
-        let scope = parse_scope(spec, axes)?;
+        let mut scope = parse_scope(spec, axes)?;
+        scope.population = parse_population(spec.read.ignored, axes)?;
         Ok(Self { root: spec.root.to_path_buf(), scope, content })
     }
 
@@ -207,6 +216,15 @@ impl Basis {
 pub struct Delivery {
     /// How the snapshot cache may be used.
     pub cache: CachePolicy,
+    /// Answer from the snapshot alone, without touching the tree.
+    ///
+    /// The one delivery whose answer can be stale, and it says so: the report's
+    /// provenance is `cache_only` and its freshness `stale`. It fails when no usable
+    /// snapshot exists rather than quietly scanning, because a fast path that is sometimes
+    /// a full walk, with nothing in the output to say which happened, is worse than none.
+    /// It writes nothing, and it is refused with [`CachePolicy::Off`], with a watch, and
+    /// by a refresh, none of which can take an unverified snapshot as their answer.
+    pub stale_ok: bool,
     /// Where the snapshot for this root lives, or `None` for no cache at all.
     pub cache_path: Option<PathBuf>,
     /// Whether a partial answer is accepted as a success.
@@ -226,6 +244,7 @@ impl Delivery {
     pub fn new(cache: CachePolicy, cache_path: Option<PathBuf>) -> Self {
         Self {
             cache,
+            stale_ok: false,
             cache_path,
             accept_partial: false,
             watch: None,
@@ -235,22 +254,29 @@ impl Delivery {
         }
     }
 
+    /// Ordinary execution settings that answer from the snapshot at `cache_path` alone.
+    pub fn stale_ok(cache_path: Option<PathBuf>) -> Self {
+        Self { stale_ok: true, ..Self::new(CachePolicy::Auto, cache_path) }
+    }
+
     /// Representative deliveries for checking policy independently of route.
-    /// Worker counts and cache location are fixed; every cache, partial-answer, and
-    /// watch choice is represented.
+    /// Worker counts and cache location are fixed; every cache, stale-answer,
+    /// partial-answer, and watch choice is represented.
     pub fn enumerate() -> impl Iterator<Item = Self> {
         [
-            CachePolicy::Auto,
-            CachePolicy::Refresh,
-            CachePolicy::ReadOnly,
-            CachePolicy::Only,
-            CachePolicy::Off,
+            (CachePolicy::Auto, false),
+            (CachePolicy::On, false),
+            (CachePolicy::Off, false),
+            (CachePolicy::Auto, true),
+            (CachePolicy::On, true),
+            (CachePolicy::Off, true),
         ]
         .into_iter()
-        .flat_map(|cache| {
+        .flat_map(|(cache, stale_ok)| {
             [false, true].into_iter().flat_map(move |accept_partial| {
                 [None, Some(WatchDelivery::default())].into_iter().map(move |watch| Self {
                     cache,
+                    stale_ok,
                     cache_path: Some(PathBuf::from("cache.fdu")),
                     accept_partial,
                     watch,
@@ -353,6 +379,10 @@ pub struct ReadSpec<'a> {
     pub ignored: Option<&'a str>,
     /// Rendered tree depth: a whole number or `all`.
     pub depth: Option<&'a str>,
+    /// Minimum displayed contribution to the selected root, as a percentage.
+    pub min_share: Option<&'a str>,
+    /// Maximum immediate children shown per directory: a whole number or `all`.
+    pub breadth: Option<&'a str>,
     /// Rows per view: a whole number or `all`.
     pub limit: Option<&'a str>,
     /// Ordering key: `size`, `count`, `mtime`, or `name`.
@@ -378,6 +408,8 @@ impl ReadSpec<'_> {
             kinds: None,
             ignored: None,
             depth: None,
+            min_share: None,
+            breadth: None,
             limit: None,
             sort: None,
             reverse: false,
@@ -498,7 +530,10 @@ impl Request {
         now: SystemTime,
         axes: &'static AxisNames,
     ) -> Result<Self, RequestError> {
-        let query = build_query(basis.content, spec, now, axes)?;
+        let mut query = build_query(basis.content, spec, now, axes)?;
+        if spec.ignored.is_none() {
+            query.selection.ignored = basis.scope.population;
+        }
         let request = Self::new(basis, query, now);
         request.validate()?;
         Ok(request)
@@ -521,7 +556,8 @@ impl Request {
         // the callers that fix a basis and read it many times.
         let content = parse_content(spec, axes)?;
         let query = build_query(content, &spec.read, now, axes)?;
-        let scope = parse_scope(spec, axes)?;
+        let mut scope = parse_scope(spec, axes)?;
+        scope.population = query.selection.ignored;
         Ok(Self::new(Basis { root: spec.root.to_path_buf(), scope, content }, query, now))
     }
 
@@ -571,7 +607,13 @@ impl Request {
     ///
     /// Each was a guard on one surface, which is why a library caller and a Python caller
     /// could ask for what the command line refuses.
+    ///
+    /// One refusal applies to every route: a stale answer comes from the snapshot, which
+    /// [`CachePolicy::Off`] never reads ([`RequestError::StaleOkCacheOff`]).
     pub fn validate_delivery(&self, delivery: &Delivery) -> Result<(), RequestError> {
+        if delivery.stale_ok && delivery.cache == CachePolicy::Off {
+            return Err(RequestError::StaleOkCacheOff);
+        }
         if delivery.watch.is_none() {
             return Ok(());
         }
@@ -581,7 +623,7 @@ impl Request {
         if self.basis.content.is_enabled() {
             return Err(RequestError::WatchContent);
         }
-        if delivery.cache == CachePolicy::Only {
+        if delivery.stale_ok {
             return Err(RequestError::WatchCacheOnly);
         }
         Ok(())
@@ -624,7 +666,66 @@ impl Request {
             }
         }
         check_views(&self.query.views, basis.content)?;
-        check_observation(self.query.selection.ignored, basis.scope.read_controls)
+        if let Some(SortKey::Metric(name)) = self.query.selection.sort {
+            let metric =
+                crate::content::METRICS.iter().find(|metric| metric.name == name).ok_or_else(
+                    || invalid(self.query.axes.sort, name, "expected a registered numeric metric"),
+                )?;
+            if self.query.views.contains(&ViewSpec::Extensions) {
+                return Err(invalid(
+                    self.query.axes.sort,
+                    name,
+                    "extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view",
+                ));
+            }
+            if !basis.content.contains(metric.owner) {
+                let analyzer = if metric.owner.includes_code() {
+                    "code"
+                } else if metric.owner.includes_words() {
+                    "words"
+                } else {
+                    "lines"
+                };
+                return Err(RequestError::NeedsAnalyzer { item: metric.name, analyzer });
+            }
+        }
+        let hierarchy = self.query.views.iter().any(|view| self.query.tree_for(*view));
+        // Neutral bounds compose across views, including the CLI --full shorthand.
+        // A finite hierarchy bound on flat output would promise filtering it cannot do.
+        if matches!(self.query.selection.depth, Some(Bound::Limit(_))) && !hierarchy {
+            return Err(invalid(self.query.axes.depth, "", "requires a hierarchical view"));
+        }
+        if matches!(self.query.selection.breadth, Some(Bound::Limit(_))) && !hierarchy {
+            return Err(invalid(self.query.axes.breadth, "", "requires a hierarchical view"));
+        }
+        let additive = self.query.views.iter().any(|view| {
+            self.query.tree_for(*view)
+                || matches!(
+                    view,
+                    ViewSpec::Extensions
+                        | ViewSpec::Types
+                        | ViewSpec::Families
+                        | ViewSpec::Languages
+                        | ViewSpec::Documents
+                        | ViewSpec::Code
+                )
+        });
+        if self.query.selection.min_share.as_ref().is_some_and(|share| !share.admits(0, 1))
+            && !additive
+        {
+            return Err(invalid(self.query.axes.min_share, "", "requires an additive view"));
+        }
+        check_observation(basis.scope.population, basis.scope.read_controls)?;
+        check_observation(self.query.selection.ignored, basis.scope.read_controls)?;
+        if basis.scope.population != IgnoredEntries::Include
+            && self.query.selection.ignored != basis.scope.population
+        {
+            return Err(RequestError::PopulationMismatch {
+                held: basis.scope.population,
+                requested: self.query.selection.ignored,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -635,6 +736,16 @@ fn parse_content(
 ) -> Result<AnalysisSet, RequestError> {
     spec.analyze.map_or(Ok(Request::DEFAULTS.content), |value| {
         AnalysisSet::parse_rejecting(value).map_err(|rejection| rejection.on(axes.analyze))
+    })
+}
+
+fn parse_population(
+    value: Option<&str>,
+    axes: &'static AxisNames,
+) -> Result<IgnoredEntries, RequestError> {
+    value.map_or(Ok(IgnoredEntries::Include), |value| {
+        IgnoredEntries::parse(value)
+            .map_err(|expected| Rejection::new(value, expected).on(axes.ignored))
     })
 }
 
@@ -682,11 +793,34 @@ fn build_query(
     now: SystemTime,
     axes: &'static AxisNames,
 ) -> Result<Query, RequestError> {
-    let (views, omitted_views) = ViewSpec::resolve_rejecting(spec.views, content)
-        .map_err(|rejection| rejection.on(axes.view))?;
+    let (views, omitted_views) =
+        ViewSpec::resolve_rejecting(spec.views, content).map_err(|rejection| {
+            let suggestion = match rejection.value().to_ascii_lowercase().as_str() {
+                "lines" => Some(("lines", "families")),
+                "words" => Some(("words", "documents")),
+                _ => None,
+            };
+            match suggestion {
+                Some((analyzer, suggested_view)) => RequestError::AnalyzerNamedAsView {
+                    value: rejection.value().to_string(),
+                    analyzer,
+                    suggested_view,
+                },
+                None => rejection.on(axes.view),
+            }
+        })?;
 
     let mut selection = Selection {
         depth: spec.depth.map(|value| parse_bound(value, axes.depth)).transpose()?,
+        min_share: spec
+            .min_share
+            .map(|value| {
+                ShareThreshold::parse(value).ok_or_else(|| {
+                    invalid(axes.min_share, value, "expected a percentage from 0% through 100%")
+                })
+            })
+            .transpose()?,
+        breadth: spec.breadth.map(|value| parse_bound(value, axes.breadth)).transpose()?,
         limit: spec.limit.map(|value| parse_bound(value, axes.limit)).transpose()?,
         reverse: spec.reverse,
         size: spec
@@ -717,10 +851,7 @@ fn build_query(
     if let Some(value) = spec.sort {
         selection.sort = Some(parse_sort(value, axes.sort)?);
     }
-    if let Some(value) = spec.ignored {
-        selection.ignored = IgnoredEntries::parse(value)
-            .map_err(|expected| Rejection::new(value, expected).on(axes.ignored))?;
-    }
+    selection.ignored = parse_population(spec.ignored, axes)?;
     let words_per_page =
         spec.words_per_page.map_or(Ok(Request::DEFAULTS.words_per_page), |value| {
             value
@@ -799,10 +930,33 @@ pub enum RequestError {
         /// What the grammar accepts instead.
         expected: String,
     },
+    /// An analyzer name was supplied where a report view was expected.
+    AnalyzerNamedAsView {
+        /// The rejected token in the caller's spelling.
+        value: String,
+        /// The analysis unit to request.
+        analyzer: &'static str,
+        /// A canonical view of that analysis.
+        suggested_view: &'static str,
+    },
     /// A view has no metadata-only projection, and the request enables no analyzer.
     ViewNeedsContent(ViewSpec),
+    /// A view or ordering key requires an analyzer the request did not enable.
+    NeedsAnalyzer {
+        /// Requested view or metric label.
+        item: &'static str,
+        /// Analysis unit to add.
+        analyzer: &'static str,
+    },
     /// A selection by ignored state over a scan that observes no `.gitignore`.
     IgnoredWithoutObservation(IgnoredEntries),
+    /// A retained narrow population cannot answer a read of another population.
+    PopulationMismatch {
+        /// Population retained by the holder.
+        held: IgnoredEntries,
+        /// Population this read selected.
+        requested: IgnoredEntries,
+    },
     /// A scan scope this build cannot honour, whatever the delivery.
     ScopeUnsupported {
         /// Which axis, so each surface names it in its own words.
@@ -823,6 +977,8 @@ pub enum RequestError {
     WatchContent,
     /// A watch was asked to start from a snapshot nothing verifies.
     WatchCacheOnly,
+    /// A stale answer was asked of a delivery that never reads the snapshot.
+    StaleOkCacheOff,
     /// An operation names another root than the retained index it would mutate.
     RootMismatch {
         /// Root held by the index.
@@ -854,11 +1010,19 @@ impl RequestError {
     pub fn message(&self, axes: &AxisNames) -> String {
         match self {
             Self::InvalidValue { axis, value, expected } => invalid_message(axis, value, expected),
+            Self::AnalyzerNamedAsView { value, analyzer, suggested_view } => format!(
+                "invalid {} {value:?}: {analyzer} is an analyzer; use {}={analyzer} with {}={suggested_view}",
+                axes.view, axes.analyze, axes.view
+            ),
             Self::ViewNeedsContent(view) => format!(
                 "{} {} requires content analysis: add {} lines, code, words, or all; views never \
                  enable content analysis implicitly",
                 axes.view,
                 view.label(),
+                axes.analyze
+            ),
+            Self::NeedsAnalyzer { item, analyzer } => format!(
+                "{item} requires {analyzer} analysis: add {} {analyzer}; views and sorts never enable analysis implicitly",
                 axes.analyze
             ),
             Self::IgnoredWithoutObservation(ignored) => format!(
@@ -869,6 +1033,13 @@ impl RequestError {
                     IgnoredEntries::Include => axes.ignored,
                 },
                 axes.read_controls
+            ),
+            Self::PopulationMismatch { held, requested } => format!(
+                "{}={} cannot be read from retained {}={} scope",
+                axes.ignored,
+                requested.label(),
+                axes.ignored,
+                held.label()
             ),
             // The sentence the engine has always printed, with only the axis renamed: a
             // Python caller reads the words they wrote, and the command line names its
@@ -899,9 +1070,15 @@ impl RequestError {
                 axes.analyze, axes.watch
             ),
             Self::WatchCacheOnly => format!(
-                "{watch} cannot start from {cache} only: nothing verifies what changed between \
-                 the snapshot and the start of the watch; use {cache} auto or read-only",
+                "{watch} cannot start from a {stale_ok} answer: nothing verifies what changed \
+                 between the snapshot and the start of the watch; drop {stale_ok}",
                 watch = axes.watch,
+                stale_ok = axes.stale_ok,
+            ),
+            Self::StaleOkCacheOff => format!(
+                "{stale_ok} answers from the snapshot, which {cache} off never reads; drop one \
+                 of them",
+                stale_ok = axes.stale_ok,
                 cache = axes.cache,
             ),
             Self::ViewLimit { attempted, limit } => {
@@ -963,6 +1140,9 @@ fn watch_scope_message(axes: &AxisNames) -> String {
 pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<(), RequestError> {
     for view in views {
         match view {
+            ViewSpec::Code if !content.includes_code() => {
+                return Err(RequestError::NeedsAnalyzer { item: "code view", analyzer: "code" });
+            }
             ViewSpec::Documents if !content.is_enabled() => {
                 return Err(RequestError::ViewNeedsContent(*view));
             }
@@ -972,6 +1152,7 @@ pub(crate) fn check_views(views: &[ViewSpec], content: AnalysisSet) -> Result<()
             | ViewSpec::Extensions
             | ViewSpec::Families
             | ViewSpec::Languages
+            | ViewSpec::Code
             | ViewSpec::Documents
             | ViewSpec::Files
             | ViewSpec::Largest
@@ -1011,6 +1192,10 @@ pub(crate) struct Rejection {
 impl Rejection {
     pub(crate) fn new(value: impl Into<String>, expected: impl Into<String>) -> Self {
         Self { value: value.into(), expected: expected.into() }
+    }
+
+    pub(crate) fn value(&self) -> &str {
+        &self.value
     }
 
     /// The refusal, on the axis a surface named.
@@ -1101,14 +1286,23 @@ pub fn parse_bound(value: &str, axis: &'static str) -> Result<Bound, RequestErro
         .map_err(|_| invalid(axis, value, "expected a whole number or `all`"))
 }
 
-/// Parse an ordering key: `size`, `count`, `mtime`, or `name`.
+/// Parse a metadata ordering key or a registered numeric content metric.
 pub fn parse_sort(value: &str, axis: &'static str) -> Result<SortKey, RequestError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "size" => Ok(SortKey::Size),
         "count" => Ok(SortKey::Count),
         "mtime" => Ok(SortKey::Mtime),
         "name" => Ok(SortKey::Name),
-        other => Err(invalid(axis, other, "expected one of size, count, mtime, name")),
+        other => crate::content::METRICS.iter().find(|metric| metric.name == other).map_or_else(
+            || {
+                Err(invalid(
+                    axis,
+                    other,
+                    "expected size, count, mtime, name, or a registered numeric metric",
+                ))
+            },
+            |metric| Ok(SortKey::Metric(metric.name)),
+        ),
     }
 }
 
@@ -1137,15 +1331,37 @@ pub fn bound_nanos(value: &str, when: SystemTime, axis: &'static str) -> Result<
     })
 }
 
-/// Parse a cache policy: `auto`, `refresh`, `read-only`, `only`, or `off`.
+/// Parse a cache policy: `auto`, `on`, or `off`.
+///
+/// The three values that earlier releases also accepted are refused with the replacement,
+/// since each still appears in scripts and a bare list of values would not say where
+/// `only` went.
 pub fn parse_cache_policy(value: &str, axis: &'static str) -> Result<CachePolicy, RequestError> {
+    let stale_ok = if axis == AxisNames::FLAGS.cache {
+        AxisNames::FLAGS.stale_ok
+    } else {
+        AxisNames::FIELDS.stale_ok
+    };
     match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Ok(CachePolicy::Auto),
-        "refresh" => Ok(CachePolicy::Refresh),
-        "read-only" => Ok(CachePolicy::ReadOnly),
-        "only" => Ok(CachePolicy::Only),
+        "on" => Ok(CachePolicy::On),
         "off" => Ok(CachePolicy::Off),
-        other => Err(invalid(axis, other, "expected one of auto, refresh, read-only, only, off")),
+        "only" => Err(invalid(
+            axis,
+            "only",
+            format!("answering from the snapshot alone is now {stale_ok}"),
+        )),
+        "refresh" => Err(invalid(
+            axis,
+            "refresh",
+            "removed; use on, which also writes after a one-shot report",
+        )),
+        "read-only" => Err(invalid(
+            axis,
+            "read-only",
+            "removed; auto no longer writes after a one-shot metadata report, and off reads nothing",
+        )),
+        other => Err(invalid(axis, other, "expected one of auto, on, off")),
     }
 }
 
@@ -1201,8 +1417,8 @@ mod tests {
                 "invalid depth \"two\": expected a whole number or `all`",
             ),
             (
-                "invalid --sort \"newest\": expected one of size, count, mtime, name",
-                "invalid sort \"newest\": expected one of size, count, mtime, name",
+                "invalid --sort \"newest\": expected size, count, mtime, name, or a registered numeric metric",
+                "invalid sort \"newest\": expected size, count, mtime, name, or a registered numeric metric",
             ),
             (
                 "invalid --size \"logical\": expected allocated or apparent",
@@ -1215,9 +1431,8 @@ mod tests {
                  fdu can represent (about 1677 to 2262)",
             ),
             (
-                "invalid --cache \"readonly\": expected one of auto, refresh, read-only, only, off",
-                "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, \
-                 only, off",
+                "invalid --cache \"readonly\": expected one of auto, on, off",
+                "invalid cache policy \"readonly\": expected one of auto, on, off",
             ),
         ];
         for ((grammar, flag, field), (flag_text, field_text)) in cases.into_iter().zip(expected) {
@@ -1251,19 +1466,44 @@ mod tests {
             ("count", SortKey::Count),
             ("MTIME", SortKey::Mtime),
             ("name", SortKey::Name),
+            ("CODE_LINES", SortKey::Metric("code_lines")),
         ] {
             assert_eq!(parse_sort(spelling, axis), Ok(key));
         }
         assert_eq!(parse_size_metric("Allocated", axis), Ok(SizeMetric::Allocated));
         assert_eq!(parse_size_metric("apparent", axis), Ok(SizeMetric::Apparent));
-        for (spelling, policy) in [
-            ("auto", CachePolicy::Auto),
-            ("refresh", CachePolicy::Refresh),
-            ("read-only", CachePolicy::ReadOnly),
-            ("ONLY", CachePolicy::Only),
-            ("off", CachePolicy::Off),
-        ] {
+        for (spelling, policy) in
+            [("auto", CachePolicy::Auto), ("ON", CachePolicy::On), ("off", CachePolicy::Off)]
+        {
             assert_eq!(parse_cache_policy(spelling, axis), Ok(policy));
+        }
+        // The retired values name their replacement, in each surface's own words.
+        for (spelling, flags, fields) in [
+            (
+                "only",
+                "invalid --cache \"only\": answering from the snapshot alone is now --stale-ok",
+                "invalid cache policy \"only\": answering from the snapshot alone is now stale_ok",
+            ),
+            (
+                "refresh",
+                "invalid --cache \"refresh\": removed; use on, which also writes after a one-shot \
+                 report",
+                "invalid cache policy \"refresh\": removed; use on, which also writes after a \
+                 one-shot report",
+            ),
+            (
+                "read-only",
+                "invalid --cache \"read-only\": removed; auto no longer writes after a one-shot \
+                 metadata report, and off reads nothing",
+                "invalid cache policy \"read-only\": removed; auto no longer writes after a \
+                 one-shot metadata report, and off reads nothing",
+            ),
+        ] {
+            let message = |axis| {
+                parse_cache_policy(spelling, axis).expect_err("retired").message(&AxisNames::FLAGS)
+            };
+            assert_eq!(message(AxisNames::FLAGS.cache), flags);
+            assert_eq!(message(AxisNames::FIELDS.cache), fields);
         }
         let epoch = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2);
         assert_eq!(bound_nanos("@2", epoch, axis), Ok(2_000_000_000));
@@ -1296,14 +1536,14 @@ mod tests {
             ),
             (
                 RequestError::IgnoredWithoutObservation(IgnoredEntries::Exclude),
-                "--exclude-ignored needs .gitignore classification, and --no-gitignore turned it \
+                "--ignored=exclude needs .gitignore classification, and --no-gitignore turned it \
                  off; drop one of them",
                 "ignored=exclude needs .gitignore classification, and read_controls turned it \
                  off; drop one of them",
             ),
             (
                 RequestError::IgnoredWithoutObservation(IgnoredEntries::Only),
-                "--only-ignored needs .gitignore classification, and --no-gitignore turned it \
+                "--ignored=only needs .gitignore classification, and --no-gitignore turned it \
                  off; drop one of them",
                 "ignored=only needs .gitignore classification, and read_controls turned it off; \
                  drop one of them",
@@ -1344,10 +1584,17 @@ mod tests {
             ),
             (
                 RequestError::WatchCacheOnly,
-                "--watch cannot start from --cache only: nothing verifies what changed between the \
-                 snapshot and the start of the watch; use --cache auto or read-only",
-                "watch cannot start from cache policy only: nothing verifies what changed between \
-                 the snapshot and the start of the watch; use cache policy auto or read-only",
+                "--watch cannot start from a --stale-ok answer: nothing verifies what changed \
+                 between the snapshot and the start of the watch; drop --stale-ok",
+                "watch cannot start from a stale_ok answer: nothing verifies what changed between \
+                 the snapshot and the start of the watch; drop stale_ok",
+            ),
+            (
+                RequestError::StaleOkCacheOff,
+                "--stale-ok answers from the snapshot, which --cache off never reads; drop one of \
+                 them",
+                "stale_ok answers from the snapshot, which cache policy off never reads; drop one \
+                 of them",
             ),
             (
                 RequestError::ViewLimit { attempted: 17, limit: 16 },
@@ -1403,13 +1650,14 @@ mod tests {
     }
 
     #[test]
-    fn documents_is_the_only_view_that_needs_content() {
+    fn documents_and_code_are_the_views_that_need_content() {
         for content in [AnalysisSet::NONE, AnalysisSet::NONE.with_lines(), AnalysisSet::ALL] {
             for view in ViewSpec::ALL {
                 let refused = check_views(&[view], content).is_err();
                 assert_eq!(
                     refused,
-                    view == ViewSpec::Documents && !content.is_enabled(),
+                    (view == ViewSpec::Documents && !content.is_enabled())
+                        || (view == ViewSpec::Code && !content.includes_code()),
                     "{view:?}"
                 );
             }
@@ -1437,12 +1685,55 @@ mod tests {
     }
 
     /// A spec over the test root whose basis is every default and whose read is `read`.
+    #[allow(clippy::large_types_passed_by_value)]
     fn reading(read: ReadSpec<'_>) -> RequestSpec<'_> {
         RequestSpec { read, ..RequestSpec::new(root()) }
     }
 
     fn built(spec: &RequestSpec<'_>) -> Request {
         Request::build(spec, instant(), &AxisNames::FIELDS).expect("the spec parses")
+    }
+
+    #[test]
+    fn retained_population_allows_narrower_reads_only_from_include() {
+        let read = |basis: Basis, ignored| {
+            Request::read(
+                basis,
+                &ReadSpec { ignored, ..ReadSpec::default() },
+                instant(),
+                &AxisNames::FIELDS,
+            )
+        };
+        let include = Basis {
+            root: root().to_path_buf(),
+            scope: Scope::default(),
+            content: AnalysisSet::NONE,
+        };
+        assert_eq!(
+            read(include.clone(), Some("exclude")).expect("narrow exclude").query.selection.ignored,
+            IgnoredEntries::Exclude
+        );
+        assert_eq!(
+            read(include, Some("only")).expect("narrow only").query.selection.ignored,
+            IgnoredEntries::Only
+        );
+
+        let excluded = Basis {
+            root: root().to_path_buf(),
+            scope: Scope { population: IgnoredEntries::Exclude, ..Scope::default() },
+            content: AnalysisSet::NONE,
+        };
+        assert_eq!(
+            read(excluded.clone(), None).expect("basis default").query.selection.ignored,
+            IgnoredEntries::Exclude
+        );
+        assert!(matches!(
+            read(excluded, Some("only")),
+            Err(RequestError::PopulationMismatch {
+                held: IgnoredEntries::Exclude,
+                requested: IgnoredEntries::Only
+            })
+        ));
     }
 
     fn refusal(spec: &RequestSpec<'_>, axes: &'static AxisNames) -> String {
@@ -1491,7 +1782,8 @@ mod tests {
         flat.query.format = Format::Paths;
         assert!(flat.query.needs_selection_walk());
         assert_eq!(flat.query.limit_for(ViewSpec::List), Bound::All);
-        assert_eq!(request.query.limit_for(ViewSpec::List), Bound::Limit(10));
+        assert_eq!(request.query.limit_for(ViewSpec::List), Bound::All);
+        assert_eq!(request.query.depth_for(ViewSpec::List), Bound::Limit(5));
     }
 
     #[test]
@@ -1567,6 +1859,8 @@ mod tests {
                 kinds: Some("file,dir"),
                 ignored: Some("include"),
                 depth: Some("all"),
+                min_share: Some("1%"),
+                breadth: Some("all"),
                 limit: Some("5"),
                 sort: Some("name"),
                 reverse: true,
@@ -1662,7 +1956,7 @@ mod tests {
             ),
             (
                 reading(ReadSpec { ignored: Some("maybe"), ..ReadSpec::new() }),
-                "invalid --exclude-ignored/--only-ignored \"maybe\": expected one of include, \
+                "invalid --ignored \"maybe\": expected one of include, \
                  exclude, only",
                 "invalid ignored \"maybe\": expected one of include, exclude, only",
             ),
@@ -1693,6 +1987,32 @@ mod tests {
             assert_eq!(refusal(&spec, &AxisNames::FLAGS), flags);
             assert_eq!(refusal(&spec, &AxisNames::FIELDS), fields);
         }
+    }
+
+    #[test]
+    fn analyzer_names_in_view_axis_point_to_both_correct_axes() {
+        for (token, analyzer, view) in
+            [("LiNeS", "lines", "families"), ("words", "words", "documents")]
+        {
+            let spec = reading(ReadSpec { views: Some(token), ..ReadSpec::new() });
+            for axes in [&AxisNames::FLAGS, &AxisNames::FIELDS] {
+                let error = Request::build(&spec, instant(), axes).expect_err("not a view");
+                assert!(matches!(error, RequestError::AnalyzerNamedAsView { .. }));
+                assert_eq!(
+                    error.message(axes),
+                    format!(
+                        "invalid {} {token:?}: {analyzer} is an analyzer; use {}={analyzer} with {}={view}",
+                        axes.view, axes.analyze, axes.view
+                    )
+                );
+            }
+        }
+        let combination = reading(ReadSpec { views: Some("full,words"), ..ReadSpec::new() });
+        assert_eq!(
+            refusal(&combination, &AxisNames::FLAGS),
+            ViewSpec::resolve(Some("full,words"), AnalysisSet::NONE, "--view")
+                .expect_err("full is exclusive")
+        );
     }
 
     /// The order `build` names axes in, when more than one of them is wrong.
@@ -1823,6 +2143,44 @@ mod tests {
         .expect("metadata grouping never requires content I/O");
     }
 
+    #[test]
+    fn code_view_and_metric_sort_require_their_registered_analyzer() {
+        let plain = basis(AnalysisSet::NONE, true);
+        let code = request_with(&[ViewSpec::Code], Selection::default(), plain.clone());
+        assert_eq!(
+            code.validate(),
+            Err(RequestError::NeedsAnalyzer { item: "code view", analyzer: "code" })
+        );
+        let selection =
+            Selection { sort: Some(SortKey::Metric("code_lines")), ..Selection::default() };
+        let files = request_with(&[ViewSpec::Files], selection.clone(), plain);
+        assert_eq!(
+            files.validate(),
+            Err(RequestError::NeedsAnalyzer { item: "code_lines", analyzer: "code" })
+        );
+        request_with(&[ViewSpec::Files], selection, basis(AnalysisSet::NONE.with_code(), true))
+            .validate()
+            .expect("code metrics are available with the code analyzer");
+    }
+
+    #[test]
+    fn extension_view_refuses_metric_sort_before_reading() {
+        let held = basis(AnalysisSet::NONE.with_code(), true);
+        let selection =
+            Selection { sort: Some(SortKey::Metric("code_lines")), ..Selection::default() };
+        let request = request_with(&[ViewSpec::Extensions], selection.clone(), held.clone());
+        let expected = invalid(
+            request.query.axes.sort,
+            "code_lines",
+            "extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view",
+        );
+        assert_eq!(request.validate(), Err(expected.clone()));
+        assert_eq!(request.validate_read(&held), Err(expected));
+        request_with(&[ViewSpec::Files], selection, held)
+            .validate()
+            .expect("files retain metric sorting");
+    }
+
     /// A scope this build cannot honour is refused by request validation itself.
     ///
     /// Both entry points, because they cover different routes: `validate` is what a
@@ -1875,7 +2233,7 @@ mod tests {
             .expect_err("no entry can be shown to be ignored");
         assert_eq!(
             refused.message(&AxisNames::FLAGS),
-            "--exclude-ignored needs .gitignore classification, and --no-gitignore turned it \
+            "--ignored=exclude needs .gitignore classification, and --no-gitignore turned it \
              off; drop one of them"
         );
         let refused = request_with(&[ViewSpec::Summary], only, blind.clone())
@@ -1981,6 +2339,7 @@ mod tests {
     #[test]
     fn a_watch_refuses_what_it_cannot_keep_current() {
         let one_shot = Delivery {
+            stale_ok: false,
             cache: CachePolicy::Auto,
             cache_path: None,
             accept_partial: false,
@@ -2013,12 +2372,12 @@ mod tests {
         let plain = built(&RequestSpec::new(root()));
         plain.validate_delivery(&watching).expect("a full-scope metadata watch is deliverable");
         assert_eq!(
-            plain.validate_delivery(&Delivery { cache: CachePolicy::Only, ..watching.clone() }),
+            plain.validate_delivery(&Delivery { stale_ok: true, ..watching.clone() }),
             Err(RequestError::WatchCacheOnly),
             "nothing verifies the window between the snapshot and the start of the watch"
         );
         plain
-            .validate_delivery(&Delivery { cache: CachePolicy::Only, ..one_shot })
+            .validate_delivery(&Delivery { stale_ok: true, ..one_shot })
             .expect("a one-shot report is exactly what a snapshot answers");
     }
 
@@ -2032,7 +2391,8 @@ mod tests {
     #[test]
     fn the_watch_rules_speak_in_one_order() {
         let cache_only_watch = Delivery {
-            cache: CachePolicy::Only,
+            cache: CachePolicy::Auto,
+            stale_ok: true,
             cache_path: None,
             accept_partial: false,
             watch: Some(WatchDelivery::default()),
@@ -2057,7 +2417,7 @@ mod tests {
             assert_eq!(built(&spec).validate_delivery(&cache_only_watch), Err(expected));
         }
         built(&RequestSpec::new(root()))
-            .validate_delivery(&Delivery { cache: CachePolicy::Auto, ..cache_only_watch })
+            .validate_delivery(&Delivery { stale_ok: false, ..cache_only_watch })
             .expect("nothing left to refuse");
     }
 
@@ -2068,6 +2428,7 @@ mod tests {
     #[test]
     fn a_watch_refuses_one_filesystem_where_the_build_honors_it() {
         let watch = Delivery {
+            stale_ok: false,
             cache: CachePolicy::Auto,
             cache_path: None,
             accept_partial: false,

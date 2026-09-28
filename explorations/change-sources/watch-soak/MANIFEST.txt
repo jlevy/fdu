@@ -1,0 +1,16 @@
+./results/counterfactual_event_only.json	binary path replaced by "the installed fdu"	0cd9241da0e3fd6cf194aaf0bf4a43e498778938a4acb4d06500a8f9834687e5
+./results/fixture_check.json	binary path replaced by "the installed fdu"	6081b13841a8828563dd125821d3f3564dfe41f5764b67a49fff470f3ec4ed4e
+./results/fsevents_raw_10min.json	binary path replaced by "the installed fdu"	182c31083a5d277098a2ee1de83000c13e1cbd7bdca696aa9d3b24b6d72d4f0b
+./results/reconcile_cadence.json	binary path replaced by "the installed fdu"	4d813595c4a121ff86b8c2f7750b195cd51d5b0546c5e6ae15d8b30efe3e489b
+./results/summary.json	binary path replaced by "the installed fdu"	6457d032c8507d37231eee9cab4e53fadcfac6eb8806317c070ab6616339a5ef
+./results/watch-soak-results.json	binary path replaced by "the installed fdu"	4526eb963b16ac33d267b624a54efcea4b4cb31291214f9dede735b4a2deab99
+./src/compare.py	binary path replaced by "the installed fdu"	96a66cd8838a0b0d91ae14acee31ca555a99793b98286825dd91e664c338194e
+./src/counterfactual.py	unchanged	1df3d6e56330d7823a45f77ca181be0096b1f34a79e53f9aba8ad74ed10d3295
+./src/fixture_test.sh	reads $REVIEW and $FDU from the environment	200a03b4fdade85e1682026dfeb78f0e900aba4111e91364ce2db82b4292f11a
+./src/livewatch_stats.py	unchanged	bd2146f47499a0545f9552193e1e691b53369292bdadcb57f35a9581282b8009
+./src/lockwait.c	unchanged	f84150d1e66037d831de43d85293afe52d6c36cfd3b82f659f8552e9acf2e8f1
+./src/sampler.sh	reads $REVIEW and $FDU from the environment	6a57940e1da26023f0b6479525e8805552c2181fdb9da7d25847129ae51a1525
+./src/soak_end.sh	reads $REVIEW and $FDU from the environment	44e757db0adf0eea104069f7e6a6ea3526cd028ef39318c245f12b053cedae88
+./src/soak_start.sh	reads $REVIEW and $FDU from the environment	dcaa09565c568f4164522ab11f73d02339c63646dfeb716c67bcd002e464152c
+./src/writers_under.c	unchanged	77e19922623558bf5f531cb12e225f2d200baf0b723f8222c3edb6bbb604df90
+# Not ported: private/ (streams, oracle walks, writer logs with real file names), cache/, fixture/.

@@ -1,0 +1,4 @@
+[timing-lock] waited 476.7s
+create_500   13-origins median=  222.8 ms min=  178.1  plain median=  271.6 ms min=  127.3  ratio=0.82
+append_500   13-origins median=  206.9 ms min=  142.8  plain median=  329.7 ms min=  145.0  ratio=0.63
+delete_500   13-origins median=  141.7 ms min=   82.2  plain median=   70.5 ms min=   54.1  ratio=2.01

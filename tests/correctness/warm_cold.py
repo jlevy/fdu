@@ -47,11 +47,11 @@ CASES: list[tuple[str, list[str]]] = [
     ("size-allocated", ["--size", "allocated"]),
     ("sort-mtime", ["--sort", "mtime"]),
     ("sort-name", ["--sort", "name"]),
-    ("depth-1", ["-d", "1"]),
+    ("depth-1", ["--view", "tree", "-d", "1"]),
     ("scan-depth-2", ["--scan-depth", "2"]),
     ("min-size", ["--min-size", "1024"]),
     ("no-gitignore", ["--no-gitignore"]),
-    ("exclude-ignored", ["--exclude-ignored"]),
+    ("exclude-ignored", ["--ignored=exclude"]),
     ("one-filesystem", ["--one-filesystem"]),
     ("analyze-lines", ["--analyze", "lines"]),
     ("analyze-code", ["--analyze", "code"]),
@@ -66,7 +66,13 @@ STALE_REFERENCES: list[str] = []
 
 
 def run(args: list[str], cache_home: Path) -> tuple[int, str, str]:
-    env = dict(os.environ, XDG_CACHE_HOME=str(cache_home), NO_COLOR="1")
+    # FDU_CACHE_DIR outranks XDG_CACHE_HOME, so both name the case's own directory.
+    env = dict(
+        os.environ,
+        XDG_CACHE_HOME=str(cache_home),
+        FDU_CACHE_DIR=str(cache_home / "fdu"),
+        NO_COLOR="1",
+    )
     started = time.time_ns()
     proc = subprocess.run([FDU, *args], capture_output=True, text=True, env=env, timeout=300)
     problem = reference_outside(proc.stdout, started, time.time_ns())
@@ -100,10 +106,11 @@ def main() -> int:
             base = [str(root), "--format", "json", *extra]
 
             cold_rc, cold_out, _ = run([*base, "--cache", "off"], cache_home)
-            # Warm the cache with the same request, then ask again.
-            run([*base, "--cache", "auto"], cache_home)
+            # Leave a snapshot with the same request, then ask again under the default. A
+            # one-shot metadata report under `auto` writes nothing, so `on` is the writer.
+            run([*base, "--cache", "on"], cache_home)
             warm_rc, warm_out, _ = run([*base, "--cache", "auto"], cache_home)
-            only_rc, only_out, _ = run([*base, "--cache", "only"], cache_home)
+            only_rc, only_out, _ = run([*base, "--stale-ok"], cache_home)
 
             warm_source = source_of(warm_out) or "-"
             warm_content = content_source_of(warm_out) or "-"

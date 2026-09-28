@@ -20,7 +20,15 @@ Spec = dict[str, Any]
 
 SCOPE_KEYS = frozenset({"no_gitignore", "budget", "line_limit", "scan_depth", "one_fs"})
 
-POLICIES = ("auto", "read-only", "only")
+# The deliveries a reader asks under. `stale-ok` is not a cache policy but the delivery
+# that answers from the snapshot alone; `cache_args` spells each on the command line.
+STALE_OK = "stale-ok"
+POLICIES = ("auto", "on", STALE_OK)
+
+
+def cache_args(policy: str) -> list[str]:
+    """The command-line arguments that ask for `policy`."""
+    return ["--stale-ok"] if policy == STALE_OK else ["--cache", policy]
 
 
 def spec(views: list[str] | None = None, analyze: str | None = None, **fields: Any) -> Spec:
@@ -60,11 +68,15 @@ def cli_args(request: Spec) -> list[str]:
     if "kind" in selection:
         args += ["--kind", ",".join(selection["kind"])]
     if selection.get("ignored") == "exclude":
-        args.append("--exclude-ignored")
+        args.append("--ignored=exclude")
     if selection.get("ignored") == "only":
-        args.append("--only-ignored")
+        args.append("--ignored=only")
     if "depth" in selection:
         args += ["--depth", str(selection["depth"])]
+    if "min_share" in selection:
+        args += ["--min-share", selection["min_share"]]
+    if "breadth" in selection:
+        args += ["--breadth", str(selection["breadth"])]
     if "limit" in selection:
         args += ["--limit", str(selection["limit"])]
     if "sort" in selection:
@@ -102,8 +114,8 @@ REQUESTS: dict[str, Spec] = {
     "limit2": spec(limit=2),
     "sort_name": spec(sort="name"),
     "sort_mtime_rev": spec(sort="mtime", reverse=True, views=["files"]),
-    "depth1": spec(depth=1),
-    "depthall": spec(depth="all"),
+    "depth1": spec(views=["tree"], depth=1),
+    "depthall": spec(views=["tree"], depth="all"),
     "sizeapp": spec(size="apparent"),
     # views, metadata only
     "v_summary": spec(views=["summary"]),
@@ -144,6 +156,10 @@ REQUESTS: dict[str, Spec] = {
     "a_lines_incl_rs": spec(analyze="lines", include=["*.rs"]),
     "a_all_sizeapp": spec(analyze="all", size="apparent"),
     "a_code_langs_name_lim1": spec(analyze="code", views=["languages"], sort="name", limit=1),
+    "a_code_metric_rev": spec(
+        analyze="code", views=["code"], sort="code_lines", reverse=True, min_share="7%"
+    ),
+    "v_tree_bounds": spec(views=["tree"], depth=2, min_share="0%", breadth=1),
     # the summary tier
     "v_summary_exclign": spec(views=["summary"], ignored="exclude"),
     "v_summary_nogi": spec(views=["summary"], no_gitignore=True),
@@ -153,18 +169,21 @@ REQUESTS: dict[str, Spec] = {
     "v_summary_a_lines": spec(views=["summary"], analyze="lines"),
 }
 
-# A warmer's spec and the cache policy its own run uses.
+# A warmer's spec and the cache policy its own run uses. A metadata warmer exists to
+# leave a snapshot of its scope, which a one-shot report does only under `on`; analysis
+# warmers leave theirs under `auto`, which is the path they cover. `W_auto` is the default
+# command's own history, which leaves nothing.
 WARMERS: dict[str, tuple[Spec, str]] = {
-    "W_default": (spec(), "auto"),
-    "W_nogi": (spec(no_gitignore=True), "auto"),
+    "W_default": (spec(), "on"),
+    "W_nogi": (spec(no_gitignore=True), "on"),
     "W_all": (spec(analyze="all"), "auto"),
     "W_code": (spec(analyze="code"), "auto"),
     "W_lines": (spec(analyze="lines"), "auto"),
     "W_words": (spec(analyze="words"), "auto"),
-    "W_budget1k": (spec(budget="1KiB"), "auto"),
-    "W_summary": (spec(views=["summary"]), "auto"),
-    "W_scandepth1": (spec(scan_depth=1), "auto"),
-    "W_refresh": (spec(), "refresh"),
+    "W_budget1k": (spec(budget="1KiB"), "on"),
+    "W_summary": (spec(views=["summary"]), "on"),
+    "W_scandepth1": (spec(scan_depth=1), "on"),
+    "W_auto": (spec(), "auto"),
 }
 
 
@@ -322,6 +341,8 @@ SUBSET = Tier(
         "a_all",
         "a_lines_v_documents",
         "a_code_langs_name_lim1",
+        "a_code_metric_rev",
+        "v_tree_bounds",
         "a_all_nogi",
         "onefs",
     ),

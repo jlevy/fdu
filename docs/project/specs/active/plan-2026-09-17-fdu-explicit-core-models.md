@@ -1,24 +1,28 @@
 # Feature: Explicit Core Models, So Caching Never Changes Semantics
 
-**Date:** 2026-09-17
+**Date:** 2026-09-17 (last updated 2026-09-27)
 
 **Author:** fdu project, with Claude assistance
 
-**Status:** In Progress.
-Ships in 0.1.0: the release waits for the acceptance criteria below, and scope may
-shrink only by the deferrals this plan names.
+**Status:** The `0.1.0` semantic core and conformance gate shipped.
+This plan remains active for the analyzer reuse and projection work, session rules, and
+documentation follow-ups tracked below.
+The scope deferrals remain explicit.
 
 ## Current Delivery
 
-The [alpha correctness stack](plan-2026-09-22-fdu-alpha-correctness-stack.md) maps the
-remaining implementation beads to review and validation layers.
-Request and stored-state foundations are on main.
-The dependent layers of that stack (#112 through #117) implement per-analyzer measured
-values, the typed answer and its writers, provenance and tree status on every route,
+The [alpha correctness stack](plan-2026-09-22-fdu-alpha-correctness-stack.md) merged
+through pull requests #99, #98, #110, and #112–#117 on 2026-09-23. It delivered
+per-analyzer measured values, typed answers and writers, provenance and tree status,
 reconciliation scope, controls-off projection, and the execution-plan model.
-Scope deferrals are listed below.
-No conformance acceptance is claimed until the criteria below pass on the merged
-candidate, and `fdu-xgjx` records that evidence.
+The conformance cleanup `fdu-xgjx` closed after pull request #124 merged on 2026-09-24,
+with `make check`, cross-lint, and CI evidence in its close record.
+
+Epic `fdu-h7xy` remains open: `fdu-azz3` tracks independently reusable analyzer records,
+requested-analyzer projection, and the exact-memory follow-up; `fdu-fjh1` tracks session
+request rules; `fdu-kq8c` tracks stale code comments.
+The existing analyzer-set containment deferral does not assert cross-set cache reuse.
+Keep these outstanding contracts visible even though the first release is public.
 
 ## Overview
 
@@ -1190,7 +1194,7 @@ convenience and none changes an answer or leaves a concept without its model:
 - Related plans:
   [file content metrics](../done/plan-2026-08-12-fdu-file-content-metrics.md),
   [cache layers and defaults](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md),
-  [view vocabulary and output contract](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md),
+  [view vocabulary and output contract](../done/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md),
   [opened-root inventory engine](plan-2026-08-25-fdu-opened-root-inventory-engine.md),
   and [disk-usage checkpoints](plan-2026-09-13-fdu-disk-usage-checkpoints.md), whose
   checkpoint compatibility should follow the stored-state model

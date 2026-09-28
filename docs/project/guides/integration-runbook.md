@@ -187,10 +187,10 @@ than a human can read is not a feature.
 ```shell
 # In the watch terminal: Ctrl-C, or from elsewhere, kill -9 the process.
 ls "$XDG_CACHE_HOME"/fdu
-./target/debug/fdu --view summary --format json --cache only "$tree"
+./target/debug/fdu --view summary --format json --stale-ok "$tree"
 ```
 
-✅ A snapshot exists and the cache-only read succeeds, reporting
+✅ A snapshot exists and the `--stale-ok` read succeeds, reporting
 `"source": "cache_only"`. A watch session persists as it goes rather than only at exit,
 so even an abrupt kill leaves the next run warm.
 `crates/fdu/tests/watch_persistence.rs` pins this automatically; running it by hand is

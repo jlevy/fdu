@@ -139,17 +139,17 @@ CONTRACTS: Dict[str, ToolContract] = {
     # the gap that let a default-path regression go unmeasured through three campaigns.
     #
     # Under the cost model this plan neither reads nor revalidates a snapshot, so each
-    # trial is the same work as the last: a cold scan, an index, a rendered tree, and a
-    # snapshot write. That is what makes it a stable job rather than a first-run-only
-    # measurement, and it is why the write belongs inside the timed region — a default
-    # run pays it every time.
+    # trial is the same work as the last: a cold scan, an index, and a rendered tree.
+    # Under `--cache auto` it writes no snapshot either; a binary from before that
+    # policy wrote one on every run, inside the timed region, because a default run paid
+    # it every time. The run is isolated from the operator's cache either way.
     "fdu-default-tree": ToolContract(
         name="fdu-default-tree",
         work_class="default-tree",
         description=(
             "the bare default invocation: complete scan, reusable exact metadata "
-            "index, rendered depth-2 tree, and a persisted snapshot written on every "
-            "run"
+            "index, and rendered default tree; a binary that persists a snapshot by "
+            "default writes it inside the timed run"
         ),
         argv=("{binary}", "--color", "never", "{root}"),
         version_argv=("{binary}", "--version"),
@@ -756,6 +756,7 @@ def _run_one(
         "stdout_sha256": hashlib.sha256(result["stdout"]).hexdigest(),
         "semantic_sha256": semantic_sha256,
         "semantic_total_bytes": semantic_total_bytes,
+        "peak_rss_floor_bytes": result.get("peak_rss_floor_bytes"),
         "scan_diagnostics": scan_diagnostics,
         "summary_oracle_error": summary_oracle_error,
         "stderr_bytes": len(stderr),
@@ -816,7 +817,14 @@ def _dust_semantics(
         return None, "dust claim-grade contract excludes symlink-bearing subjects"
     observed = int(matched.group("bytes"))
     duplicate_allocated = (oracle.get("hardlinks") or {}).get("duplicate_allocated_bytes", 0)
-    expected = int(oracle["sizes"]["allocated_bytes"]) - int(duplicate_allocated)
+    # dust sums every entry's blocks, directories included. APFS reports none for a
+    # directory, so the two agreed there by coincidence; ext4 reports a block each.
+    directory_allocated = oracle["sizes"].get("directory_allocated_bytes", 0)
+    expected = (
+        int(oracle["sizes"]["allocated_bytes"])
+        - int(duplicate_allocated)
+        + int(directory_allocated)
+    )
     if observed != expected:
         return (
             observed,
@@ -841,9 +849,10 @@ def _summary_semantics(
         return None, None, f"summary output was not JSON: {error}"
     if not isinstance(document, dict):
         return None, None, "summary output was not a JSON object"
-    if document.get("source") != "cold_scan" or document.get("freshness") != "fresh":
+    envelope = _report_envelope(document)
+    if envelope["source"] != "cold_scan" or envelope["freshness"] != "fresh":
         return None, None, "cache-off summary was not a fresh cold scan"
-    if document.get("complete") is not True or document.get("errors") != []:
+    if envelope["complete"] is not True or envelope["errors"] != []:
         return None, None, "summary output was partial or reported errors"
     reports = document.get("reports")
     if (
@@ -856,16 +865,28 @@ def _summary_semantics(
     summary = reports[0].get("summary")
     if not isinstance(summary, dict):
         return None, None, "summary report did not contain a summary object"
-    stable = {
-        "schema": document.get("schema"),
-        "source": document.get("source"),
-        "freshness": document.get("freshness"),
-        "complete": document.get("complete"),
-        "errors": document.get("errors"),
-        "reports": reports,
-    }
+    stable = {"schema": document.get("schema"), **envelope, "reports": reports}
     encoded = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest(), summary, None
+
+
+def _report_envelope(document: Mapping[str, Any]) -> Dict[str, Any]:
+    """Read the run facts a timing sample depends on, from either report layout.
+
+    `fdu.report/7` moved source and freshness under `provenance` and completeness and
+    errors under `status`; earlier schemas carried all four at the top level. Only these
+    four are read, so a run-specific field in either object never enters the digest.
+    """
+    provenance = document.get("provenance")
+    status = document.get("status")
+    origin = provenance if isinstance(provenance, dict) else document
+    outcome = status if isinstance(status, dict) else document
+    return {
+        "source": origin.get("source"),
+        "freshness": origin.get("freshness"),
+        "complete": outcome.get("complete"),
+        "errors": outcome.get("errors"),
+    }
 
 
 def _summary_oracle_error(summary: Mapping[str, Any], oracle: Mapping[str, Any]) -> Optional[str]:
@@ -956,6 +977,22 @@ def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
     return statistics_document
 
 
+def _censored_peak_rss(samples: Sequence[Mapping[str, Any]]) -> Optional[int]:
+    """The bound on a peak RSS the kernel reported only as the harness's own.
+
+    Present only when no sample measured the peak; a mixture keeps the measured values.
+    """
+    floors = [
+        int(sample["peak_rss_floor_bytes"])
+        for sample in samples
+        if sample["metrics"].get("peak_rss_bytes") is None
+        and sample.get("peak_rss_floor_bytes") is not None
+    ]
+    if not floors or len(floors) != len(samples):
+        return None
+    return max(floors)
+
+
 def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
     """Summarize each executable once; fdu includes every adjacent anchor sample."""
     result: Dict[str, Any] = {}
@@ -987,6 +1024,7 @@ def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
                 for metric in measure.LOWER_IS_BETTER
                 if metric != "component_ns" and metric != "blocked_ns"
             },
+            "peak_rss_at_most_bytes": _censored_peak_rss(selected),
         }
     return result
 
@@ -1241,8 +1279,12 @@ def render(document: Mapping[str, Any]) -> str:
         "",
         _hardlink_note(tree_document),
         "",
-        "| Tool | Work class | Median wall | Versus paired anchor | 95% interval | Peak RSS |",
-        "| --- | --- | ---: | ---: | ---: | ---: |",
+        (
+            "| Tool | Work class | Median wall-clock time | "
+            f"Wall time vs. {document['anchor']} | Files/s | GB/s | "
+            "95% interval | Peak RSS |"
+        ),
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     anchor = document["anchor"]
     anchor_metrics = document["overall"][anchor]["metrics"]
@@ -1254,8 +1296,9 @@ def render(document: Mapping[str, Any]) -> str:
                 document["tools"][anchor]["work_class"],
                 _seconds(anchor_metrics["wall_ns"]),
                 "baseline",
+                *_throughput(tree_document, anchor_metrics["wall_ns"]),
                 "—",
-                _mib(anchor_metrics["peak_rss_bytes"]),
+                _rss_cell(anchor_metrics["peak_rss_bytes"], document["overall"][anchor]),
             ]
         )
         + " |"
@@ -1275,14 +1318,36 @@ def render(document: Mapping[str, Any]) -> str:
                     contract["work_class"],
                     _seconds(wall),
                     change[0],
+                    *_throughput(tree_document, wall),
                     change[1],
-                    _mib(rss),
+                    _rss_cell(rss, document["overall"].get(name, {})),
                 ]
             )
             + " |"
         )
     lines.extend(
         [
+            "",
+            (
+                f"Rates divide the subject's {tree_document['counts']['files']:,} regular "
+                f"files and {tree_document['sizes']['allocated_bytes']:,} allocated bytes by "
+                "each row's wall median. Displayed values are rounded; k means thousands. "
+                "GB is decimal (1,000,000,000 bytes); the byte rate "
+                "describes metadata coverage, not file-body read bandwidth."
+            ),
+            *(
+                [
+                    "",
+                    "A Peak RSS of ≤ N is a bound, not a measurement: Linux carries a "
+                    "process's peak RSS across exec, so a tool smaller than the harness "
+                    "that launched it reports the harness's own high-water mark.",
+                ]
+                if any(
+                    isinstance(entry.get("peak_rss_at_most_bytes"), int)
+                    for entry in document["overall"].values()
+                )
+                else []
+            ),
             "",
             "## Release qualification",
             "",
@@ -1332,6 +1397,31 @@ def render(document: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _throughput(
+    tree_document: Mapping[str, Any], wall: Optional[Mapping[str, Any]]
+) -> Tuple[str, str]:
+    """Format regular-file and allocated-byte coverage from a wall median.
+
+    A tool with no valid sample has no distribution at all; the row still renders, so
+    the invalidity is visible in the report rather than aborting it.
+    """
+    if not wall:
+        return "—", "—"
+    wall_ns = wall.get("median")
+    if not isinstance(wall_ns, (int, float)) or wall_ns <= 0:
+        return "—", "—"
+    seconds = wall_ns / 1_000_000_000
+    files = int(tree_document["counts"]["files"])
+    allocated_bytes = int(tree_document["sizes"]["allocated_bytes"])
+    files_per_second = files / seconds
+    file_rate = (
+        f"{files_per_second / 1_000:,.0f}k"
+        if files_per_second >= 1_000
+        else f"{files_per_second:,.0f}"
+    )
+    return file_rate, f"{allocated_bytes / seconds / 1_000_000_000:.2g}"
 
 
 def _warm_cache_evidence(warmups: int) -> Dict[str, Any]:
@@ -1456,7 +1546,20 @@ def _progress(position: int, total: int, sample: Mapping[str, Any]) -> None:
 
 
 def _seconds(distribution: Optional[Mapping[str, Any]]) -> str:
-    return "—" if not distribution else f"{distribution['median'] / 1e9:.3f} s"
+    if not distribution:
+        return "—"
+    seconds = distribution["median"] / 1e9
+    return f"{seconds:.1f} s" if seconds >= 1 else f"{seconds:.2g} s"
+
+
+def _rss_cell(distribution: Optional[Mapping[str, Any]], overall: Mapping[str, Any]) -> str:
+    """A measured median, or the bound the harness could establish instead."""
+    if distribution:
+        return _mib(distribution)
+    at_most = overall.get("peak_rss_at_most_bytes")
+    if isinstance(at_most, int):
+        return f"≤ {at_most / 1024 / 1024:.1f} MiB"
+    return "—"
 
 
 def _mib(distribution: Optional[Mapping[str, Any]]) -> str:
@@ -1464,7 +1567,7 @@ def _mib(distribution: Optional[Mapping[str, Any]]) -> str:
 
 
 def _percent(value: float) -> str:
-    return f"{value:+.1f}%"
+    return f"{value:+.0f}%"
 
 
 def _comparison_change(comparison: Optional[Mapping[str, Any]]) -> Tuple[str, str]:

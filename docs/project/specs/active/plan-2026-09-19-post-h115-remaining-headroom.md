@@ -4,12 +4,14 @@
 
 **Author:** fdu project
 
-**Status:** Active. Overnight H116–H120 is done.
-This file is the remaining unaddressed-hypothesis queue after that overnight: H107
-(ignore-is-the-walk only).
-H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141); leftover is H143.
-H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed (exp-119). H121
-is confirmed (exp-120): apply no longer dominates.
+**Status:** Historical queue through H138. The current actionable queue starts with
+quiet H153 confirmation, then H154–H155, in
+[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+This file preserves the detailed H107–H138 planning record after the H116–H120
+overnight.
+H111 failed on [#94](https://github.com/jlevy/fdu/pull/94) (exp-141); leftover
+is H143. H122 is confirmed (exp-118, tighter leftover exp-122). H123 is confirmed
+(exp-119). H121 is confirmed (exp-120): apply no longer dominates.
 H124 is rejected (exp-121). H125 is accepted (exp-124): restore-count completeness.
 H126 is confirmed (exp-125): completeness walk gone; no new userspace cut.
 H127 is confirmed (exp-126): opened-discovery ~8.8× first-pass; no smallest cut.
@@ -25,12 +27,11 @@ H135 is confirmed (exp-134): first-pass leftover after H124 is still file I/O; n
 the walk; snapshot write ~45 ms is ≥3% and not skippable.
 H137 is confirmed (exp-136): content-query leftover is `every_entry` per unfiltered
 metric view (~278 ms / four-view report).
-Sharing one walk is the leftover cut, not compiled here.
 H138 is accepted (exp-137): share one `every_entry` (−18.76% wall).
 Engine kept (`a5c98d59`). H113 is superseded by H125.
-[The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
-keeps an abbreviated next-up in that order; this file is the source of truth for the
-full rows. The loop guide registry remains the full hypothesis text.
+[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
+keeps the live next-up after the later H152–H153 round.
+The loop guide registry remains the full hypothesis text.
 
 ## Overview
 
@@ -67,7 +68,7 @@ H113 is superseded. Do not retry the file-count shortcut.
   H113 is superseded.
 - Own next-up after the overnight: order, metric, subject, accept-rule sketch, why next,
   what refutes, bead
-- Keep one source of truth for that queue (this file)
+- Preserve the detailed historical queue while the runbook owns current pickup
 
 ## Non-Goals
 
@@ -79,8 +80,8 @@ H113 is superseded. Do not retry the file-count shortcut.
 - Retrying H113 on an uncontrolled cell, H114 alloc trims, H109 Path rewrites, parse
   speed, or H103-shaped instruction cuts
 - Linux H111 and #92 replication on this Darwin host (recorded on
-  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md) /
-  [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
+  [the Linux parallel-validation block](../done/plan-2026-09-19-linux-parallel-validation.md)
+  / [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
 - A capability that exists only on the command line
 - Replacing the overnight macOS-agenda epic (`fdu-d4kg`) or rewriting campaign-2’s
   2026-08-23 Tier 1–3 list
@@ -264,8 +265,8 @@ These were considered against the post-H115 path and not registered:
 - Hardware CRC32C (`fdu-6kyn`) or PGO (`fdu-pdne`) as this increment’s wall hunt
 - `searchfs` (H77): person-gated
 - Linux H111 and #92 replication on this Darwin host (recorded on
-  [the Linux parallel-validation block](plan-2026-09-19-linux-parallel-validation.md) /
-  [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
+  [the Linux parallel-validation block](../done/plan-2026-09-19-linux-parallel-validation.md)
+  / [#94](https://github.com/jlevy/fdu/pull/94); H111 failed)
 - Bounding the observation channel (H91) without a current-engine occupancy trace
 - Directory-only transient tree (H66) as a cache-hit leftover
 
@@ -288,7 +289,7 @@ These were considered against the post-H115 path and not registered:
 
 ## Implementation Plan
 
-### Remaining Queue (Source of Truth)
+### Remaining Queue at 2026-09-19
 
 Take these in order.
 Overnight H116–H120 is history, not a retry list.
@@ -436,9 +437,10 @@ one-shot `cold scan`. Record every verdict, including skips at the quiet gate.
 
 ## Rollout Plan
 
-#91 review fixes landed at `e667b739`. Further measurement is on stacked
-`perf/campaign-next-2026-09-19`, base `perf/campaign-quiet-2026-09-18`, not `main`. Do
-not push to #91. No merge, no force-push.
+#91 review fixes landed at `e667b739`. The 2026-09-19 measurements used the stacked
+`perf/campaign-next-2026-09-19` branch, based on `perf/campaign-quiet-2026-09-18`. Those
+branches have since merged; new work starts from
+[Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
 Engine changes land only as the experiment that tests the next row.
 
 ## Open Questions
@@ -518,9 +520,9 @@ Engine changes land only as the experiment that tests the next row.
 
 - [The loop guide registry](../../guides/performance-loop.md#current-engine-010) —
   H107–H143
-- [Linux parallel validation](plan-2026-09-19-linux-parallel-validation.md) — H139–H143
-  recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed
-- [The runbook standing](../../guides/performance-loop-runbook.md#current-standing-2026-09-18)
+- [Linux parallel validation](../done/plan-2026-09-19-linux-parallel-validation.md) —
+  H139–H143 recorded on [#94](https://github.com/jlevy/fdu/pull/94); H111 failed
+- [Current Pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
 - [Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) — floor-anchored strategy
 - [First Principles](../../architecture/fdu-design-principles.md#first-principles)
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) — one-shot vs

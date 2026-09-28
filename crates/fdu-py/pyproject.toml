@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fdu"
-description = "Fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
+description = "Fastest native du replacement and detailed file analytics for Python and Rust"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]

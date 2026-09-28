@@ -25,6 +25,7 @@ from ._models import (
     ClearSummary,
     EntryKind,
     Format,
+    IgnoredEntries,
     Provenance,
     Query,
     RefreshResult,
@@ -281,10 +282,12 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "kind": [kind.value for kind in selection.kinds],
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),
+        "breadth": _bound(selection.breadth),
+        "min_share": selection.min_share,
         "sort": selection.sort.value if selection.sort is not None else None,
         "reverse": selection.reverse,
         "size": selection.size.value,
-        "ignored": selection.ignored.value,
+        "ignored": selection.ignored.value if selection.ignored is not None else None,
         "words_per_page": query.words_per_page,
         "format": query.format.value,
     }
@@ -317,12 +320,14 @@ class Watch(Iterator[tuple[Change, ...]]):
         wire = _loads_object(_call(handle.render, "json", False))
         notes = tuple(_call(handle.notes))
 
-        def renderer(format: str, color: bool) -> str:
+        def renderer(format: str, color: bool, bar_size: int) -> str:
             # A snapshot: rendering twice gives the same answer, where re-reporting the
             # session would quietly give a newer one.
-            return cast(str, _call(handle.render, format, color))
+            return cast(str, _call(handle.render, format, color, bar_size))
 
-        return replace(report_from_dict(wire, notes), _renderer=renderer)
+        return replace(
+            report_from_dict(wire, notes), tips=tuple(_call(handle.tips)), _renderer=renderer
+        )
 
     def close(self) -> None:
         self._native.close()
@@ -379,10 +384,10 @@ class Index:
         # Bound to the finished report, not to the query: re-projecting the index per
         # format would let one `Report` answer differently each time it was rendered
         # (fdu-4gno).
-        def renderer(format: str, color: bool) -> str:
-            return cast(str, _call(handle.render, format, color))
+        def renderer(format: str, color: bool, bar_size: int) -> str:
+            return cast(str, _call(handle.render, format, color, bar_size))
 
-        return replace(report, _renderer=renderer)
+        return replace(report, tips=tuple(_call(handle.tips)), _renderer=renderer)
 
     def total(self) -> RollUp:
         return rollup_from_dict(_call(self._native.total), self.provenance())
@@ -419,8 +424,8 @@ class Index:
     def refresh(self) -> RefreshResult:
         """Reverify metadata and content, then persist according to this index's cache policy.
 
-        Under ``auto``, a later cache-only open sees the refreshed facts. Partial scans
-        preserve the complete snapshot and save only verified compatible content.
+        Under ``auto``, a later ``stale_ok=True`` open sees the refreshed facts. Partial
+        scans preserve the complete snapshot and save only verified compatible content.
         """
         value = _call(self._native.refresh)
         return RefreshResult(
@@ -478,18 +483,26 @@ def _change(value: dict[str, Any]) -> Change:
 def open(
     root: str | Path,
     *,
+    ignored: IgnoredEntries = IgnoredEntries.INCLUDE,
     cache: CachePolicy = CachePolicy.AUTO,
+    stale_ok: bool = False,
+    cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
     """Open a root using the requested cache policy, then return a retained index.
 
+    An opened index is its own later reader, so under ``CachePolicy.AUTO`` it reads and
+    revalidates a usable snapshot and writes one back. ``stale_ok=True`` answers from the
+    snapshot alone without touching the tree; such an index can be neither refreshed nor
+    watched.
+
     The index observes ``.gitignore`` control state, as the engine's ``open`` does by
     default, and so does :func:`report`, so the two share one snapshot scope and each starts
     warm from the other's snapshot. ``ScanOptions(read_controls=False)`` turns observation
-    off: that ``open`` reads no control file and keeps a snapshot of another scope. A policy
-    that scans treats a snapshot of the other scope as a miss and scans cold, and
-    ``CachePolicy.ONLY``, which never scans, raises :class:`FduError` naming the remedy.
+    off: that ``open`` reads no control file and keeps a snapshot of another scope. A
+    scanning request treats a snapshot of the other scope as a miss and scans cold, and a
+    ``stale_ok`` one, which never scans, raises :class:`FduError` naming the remedy.
     """
 
     scan_options = scan if scan is not None else ScanOptions()
@@ -498,12 +511,15 @@ def open(
         _native.open,
         root,
         cache=cache.value,
+        stale_ok=stale_ok,
+        cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
         control_budget=_bound(scan_options.control_budget),
         control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
+        ignored=str(ignored),
         analysis_workers=analysis_options.workers,
     )
     return Index(native)
@@ -512,6 +528,7 @@ def open(
 def scan(
     root: str | Path,
     *,
+    ignored: IgnoredEntries = IgnoredEntries.INCLUDE,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Index:
@@ -532,6 +549,7 @@ def scan(
         control_budget=_bound(scan_options.control_budget),
         control_line_limit=_bound(scan_options.control_line_limit),
         analyze=str(analysis_options.analyze),
+        ignored=str(ignored),
         analysis_workers=analysis_options.workers,
     )
     return Index(native)
@@ -542,10 +560,17 @@ def report(
     query: Query | None = None,
     *,
     cache: CachePolicy = CachePolicy.AUTO,
+    stale_ok: bool = False,
+    cache_dir: str | Path | None = None,
     scan: ScanOptions | None = None,
     analysis: AnalysisOptions | None = None,
 ) -> Report:
     """One report, retaining the least state the request needs.
+
+    Under ``CachePolicy.AUTO`` a metadata report neither reads nor writes the snapshot
+    cache, and a content-analysis report reads and writes it; ``CachePolicy.ON`` writes
+    after a one-shot report too, which is how to leave a snapshot for a later
+    ``stale_ok=True`` report that answers without touching the tree.
 
     The contract the command line runs under, and until now the only way to get it was to
     be the command line. :func:`open` takes the session path: it retains an index and
@@ -553,7 +578,7 @@ def report(
     asking a single question. An unfiltered summary is answered by a transient tier that
     retains nothing, so writing a snapshot for it caches state the walk never saved --
     which meant a Python caller left cache state on a tree that the same command would
-    not have, visible to a later cache-only read.
+    not have, visible to a later ``stale_ok=True`` read.
 
     A report observes ``.gitignore`` control state unless ``ScanOptions(read_controls=False)``
     turns it off: every summary, tree, extension, and file row then carries its ignored
@@ -571,6 +596,8 @@ def report(
         _native.report_once,
         str(root),
         cache=str(cache),
+        stale_ok=stale_ok,
+        cache_dir=cache_dir,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
         read_controls=scan_options.read_controls,
@@ -583,13 +610,13 @@ def report(
     wire = _loads_object(_call(handle.render, "json", False))
     parsed = report_from_dict(wire, tuple(_call(handle.notes)))
 
-    def renderer(format: str, color: bool) -> str:
+    def renderer(format: str, color: bool, bar_size: int) -> str:
         # The handle owns the finished report, so a second format costs no second walk.
         # Rebuilding it from the query would mean rescanning, which is the cost a one-shot
         # exists to avoid.
-        return cast(str, _call(handle.render, format, color))
+        return cast(str, _call(handle.render, format, color, bar_size))
 
-    return replace(parsed, _renderer=renderer)
+    return replace(parsed, tips=tuple(_call(handle.tips)), _renderer=renderer)
 
 
 def watch_rule(at: datetime | int) -> str:
@@ -638,6 +665,7 @@ def render_cache_status(
     format: Format = Format.TEXT,
     *,
     scope: CacheScope,
+    color: bool = False,
 ) -> str:
     """Render cache files exactly as ``fdu --cache-status`` prints them.
 
@@ -649,6 +677,8 @@ def render_cache_status(
     reclaiming stale snapshots, and naming the wrong one would send a caller to clear more,
     or less, than it asked about.
 
+    `color` applies the CLI's human cache-status styling. Machine formats ignore it.
+
     Named for the files rather than for the values: each entry is only a way of naming a
     cache file, and the file is **re-read at render time**. Passing a :class:`CacheStatus`
     obtained earlier therefore renders what that file says now, not the fields the value
@@ -659,29 +689,40 @@ def render_cache_status(
     """
 
     paths = [str(cache.path) if isinstance(cache, CacheStatus) else str(cache) for cache in caches]
-    return cast(str, _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format)))
+    return cast(
+        str,
+        _call(_native.render_cache_status, paths, str(CacheScope(scope)), str(format), color),
+    )
 
 
-def cache_path(root: str | Path) -> Path | None:
-    value = _call(_native.cache_path, root)
+def cache_path(root: str | Path, *, cache_dir: str | Path | None = None) -> Path | None:
+    value = _call(_native.cache_path, root, cache_dir=cache_dir)
     return None if value is None else Path(value)
 
 
-def cache_status(root: str | Path) -> CacheStatus | None:
-    value = _call(_native.cache_status, root)
+def cache_directory(*, cache_dir: str | Path | None = None) -> Path | None:
+    """Resolve the cache destination without requiring a scan root."""
+    value = _call(_native.cache_directory, cache_dir=cache_dir)
+    return None if value is None else Path(value)
+
+
+def cache_status(root: str | Path, *, cache_dir: str | Path | None = None) -> CacheStatus | None:
+    value = _call(_native.cache_status, root, cache_dir=cache_dir)
     return None if value is None else cache_status_from_dict(value)
 
 
-def list_caches(root: str | Path = Path()) -> tuple[CacheStatus, ...]:
-    return tuple(cache_status_from_dict(value) for value in _call(_native.list_caches, root))
+def list_caches(*, cache_dir: str | Path | None = None) -> tuple[CacheStatus, ...]:
+    return tuple(
+        cache_status_from_dict(value) for value in _call(_native.list_caches, cache_dir=cache_dir)
+    )
 
 
-def clear_cache(root: str | Path) -> bool:
+def clear_cache(root: str | Path, *, cache_dir: str | Path | None = None) -> bool:
     """Remove a root's snapshot, current or stale; return whether one was removed."""
-    return bool(_call(_native.clear_cache, root))
+    return bool(_call(_native.clear_cache, root, cache_dir=cache_dir))
 
 
-def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
+def clear_all_caches(*, cache_dir: str | Path | None = None) -> ClearSummary:
     """Remove every fdu snapshot, and the files fdu left behind; return what went.
 
     A file that is not one of fdu's stays, and `list_caches` reports it as
@@ -689,7 +730,7 @@ def clear_all_caches(root: str | Path = Path()) -> ClearSummary:
     `LeftoverKind`, so a staging file a running writer may still hold survives and is still
     listed as `CacheState.LEFTOVER`.
     """
-    summary = _call(_native.clear_all_caches, root)
+    summary = _call(_native.clear_all_caches, cache_dir=cache_dir)
     return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
 
 

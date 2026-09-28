@@ -149,27 +149,38 @@ The Make defaults put baselines, scratch snapshots, profiles, and results under
 `/tmp/fdu-realtree`; the CLI also rejects explicit output or scratch paths inside the
 measured root.
 
-Run tree and scalar work classes as separate matrices so the headline does not present a
-one-number total as equivalent to a reusable index and rendered tree:
+On macOS, put the measured corpus, the benchmark-owned temporary directory, isolated fdu
+cache state, baseline, and result files on the internal APFS volume.
+Build outputs and task-specific Cargo, uv, and Python environment caches may live on an
+external scratch volume, and the immutable benchmark binary may be copied from there.
+Set `TMPDIR`, `CARGO_TARGET_DIR`, `UV_CACHE_DIR`, and `UV_PROJECT_ENVIRONMENT`
+explicitly; change `TMPDIR` to an internal path for generation and measurement.
+Do not build, install, or update dependencies while timings are running.
+
+For the main orientation table, run one full matrix anchored on fdu’s indexed-tree
+contract. Every competitor then receives an adjacent fdu control under the same host
+conditions, while the rendered report keeps each work class visible:
 
 ```shell
-make perf-compare-tools \
-  PERF_LABEL=benchmarks-self-contained \
-  PERF_TOOL_CONTROL=/tmp/fdu-tool-comparison/bin/fdu \
-  PERF_TOOL_CONTRACT=fdu-index-summary \
-  TOOL_ARGS='--tool dust=/path/to/dust --tool gdu=/path/to/gdu-go --tool pdu=/path/to/pdu --tool ncdu=/path/to/ncdu' \
-  STORAGE='local APFS SSD' NAME=tree-900k
-
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
   uv run --project explorations/benchmarks --frozen \
   python -m benchmarks.realtree.compare_tools \
-  --root explorations/benchmarks --label benchmarks-self-contained \
-  --anchor fdu-index-summary=/tmp/fdu-tool-comparison/bin/fdu \
+  --root /internal/path/to/generated/corpus --label balanced-1m \
+  --anchor fdu=/external/scratch/artifacts/fdu \
+  --tool dust=/path/to/dust --tool gdu=/path/to/gdu-go \
+  --tool pdu=/path/to/pdu --tool ncdu=/path/to/ncdu \
   --tool dumac=/path/to/dumac --tool diskus=/path/to/diskus \
   --tool dua=/path/to/dua --tool bsd-du=/usr/bin/du \
   --tool gnu-du=/path/to/gnu-du --trials 12 --warmups 3 \
-  --storage 'local APFS SSD' --name scalar-900k
+  --baseline-output /internal/path/to/results/balanced-1m.json \
+  --output-dir /internal/path/to/results \
+  --storage 'internal APFS SSD' --name macos-balanced-1m
 ```
+
+This mixed-work-class table is orientation evidence, not a claim that one aggregate is
+equivalent to a reusable index or rendered tree.
+Run separate matrices with matching work classes for optimization verdicts and
+semantic-equivalence claims.
 
 Homebrew installs the Go disk analyzer as `gdu-go` when GNU coreutils also owns `gdu`.
 Resolve and hash the actual executable rather than assuming the command name.
@@ -186,8 +197,8 @@ A work class is declared by the contract, not inferred from the run.
 `fdu-transient-summary` passes `--no-gitignore` so the request stays on the transient
 plan; `fdu-index-summary` is the same summary with `.gitignore` observation on.
 
-The reviewed M1/APFS result and exact manifest are in the
-[live tool comparison](../../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
+The current reviewed M1/APFS result and exact manifest are in the
+[live tool comparison](../../docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md).
 The architecture-level synthesis is the
 [performance white paper](../../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
 
@@ -199,7 +210,92 @@ the subject creates.
 It never means an fdu snapshot was used, and it never implies that all dentries, inodes,
 vnodes, or APFS metadata blocks remained resident.
 
-### Future Linux warm and cold comparison
+### Linux Comparison Rerun
+
+Use the current release build on a quiet Linux host with the corpus on a local SSD. The
+current result, warm-steady on a 4-vCPU virtualized ext4 host, is the
+[Linux tool comparison](../../docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md);
+the remaining regimes (bare-metal local SSD, pagecache-drop-only, controlled cold, XFS)
+are tracked as `fdu-nffc`.
+
+On Linux the quiet gate reads CPU occupancy from `/proc/stat` over one second before and
+after every sample, as the macOS gate reads Mach counters; load average is recorded but
+not judged, because it still counts the benchmark’s own previous samples.
+Linux also carries a process’s peak RSS across `execve`, so a tool cannot report less
+than the harness’s own high-water mark: the report renders such a peak as “≤ N MiB”, and
+a small tool’s true peak needs a separate measurement from a small launcher such as GNU
+`time`.
+
+Before setup, choose existing writable directories: `FDU_BUILD_DIR` for disposable
+builds and caches, and `FDU_BENCH_DIR` on the SSD being measured.
+Give this checkout its own build directory.
+Install and verify dust, gdu, pdu, ncdu, diskus, dua, and GNU du before measurement; the
+harness records their versions and executable hashes.
+
+```shell
+set -eu
+: "${FDU_BUILD_DIR:?Set an existing build-scratch directory}"
+: "${FDU_BENCH_DIR:?Set an existing directory on the measured local SSD}"
+test -d "$FDU_BUILD_DIR"
+test -w "$FDU_BUILD_DIR"
+test -d "$FDU_BENCH_DIR"
+test -w "$FDU_BENCH_DIR"
+findmnt --target "$FDU_BENCH_DIR"
+df -h "$FDU_BENCH_DIR"
+df -i "$FDU_BENCH_DIR"
+export TMPDIR="$FDU_BUILD_DIR/tmp"
+export CARGO_TARGET_DIR="$FDU_BUILD_DIR/target"
+export UV_CACHE_DIR="$FDU_BUILD_DIR/uv-cache"
+export UV_PROJECT_ENVIRONMENT="$FDU_BUILD_DIR/venv"
+mkdir -p "$TMPDIR" "$FDU_BUILD_DIR/artifacts"
+test -z "$(git status --porcelain)"
+make check
+cargo build --locked --release -p fdu
+export FDU_BIN="$FDU_BUILD_DIR/artifacts/fdu-$(git rev-parse --short HEAD)"
+test ! -e "$FDU_BIN"
+cp "$CARGO_TARGET_DIR/release/fdu" "$FDU_BIN"
+
+export TMPDIR="$FDU_BENCH_DIR/tmp"
+mkdir -p "$TMPDIR" "$FDU_BENCH_DIR/results"
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate create \
+  --recipe balanced --entries 1000000 --work-dir "$FDU_BENCH_DIR/subjects"
+```
+
+Set `FDU_RUN_ROOT` to the returned `run_root`. Measure only its `corpus` subdirectory;
+keep binaries, caches, and results outside it.
+Stop builds and other disk-heavy work.
+
+```shell
+: "${FDU_RUN_ROOT:?Set run_root from the generator output}"
+PYTHONPATH=explorations uv run --no-project python -m benchmarks.generate verify \
+  --run-root "$FDU_RUN_ROOT"
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
+  uv run --project explorations/benchmarks --frozen \
+  python -m benchmarks.realtree.compare_tools \
+  --root "$FDU_RUN_ROOT/corpus" --label linux-balanced-1m \
+  --anchor "fdu=$FDU_BIN" \
+  --tool "dust=$(command -v dust)" --tool "gdu=$(command -v gdu)" \
+  --tool "pdu=$(command -v pdu)" --tool "ncdu=$(command -v ncdu)" \
+  --tool "diskus=$(command -v diskus)" --tool "dua=$(command -v dua)" \
+  --tool "gnu-du=$(command -v du)" --trials 12 --warmups 3 \
+  --host-regime quiet --storage 'Linux local SSD' \
+  --baseline-output "$FDU_BENCH_DIR/results/linux-balanced-1m.json" \
+  --output-dir "$FDU_BENCH_DIR/results" --name linux-balanced-1m-indexed
+```
+
+Repeat with `--anchor "fdu:fdu-transient-summary=$FDU_BIN"` and distinct `--name` and
+`--baseline-output` values to measure summary mode separately.
+Also run on a frozen representative real tree before generalizing beyond the generated
+corpus. The current adapters cover the seven peers above; dut needs its own verified
+adapter before joining the matrix.
+
+Publish both modes, host/cache conditions, memory use, validity checks, and raw samples.
+Do not weaken the quiet gate or infer a ranking from earlier fdu-versus-fdu
+improvements. The existing runner establishes `warm-steady`, not controlled-cold.
+Keep the evidence outside disposable scratch; clean up only the recorded generator
+`run_root` with `benchmarks.generate cleanup` after results are preserved.
+
+### Future Linux Cold Comparison
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)

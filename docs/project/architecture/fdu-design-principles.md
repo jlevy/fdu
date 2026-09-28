@@ -25,6 +25,10 @@ resembled what other tools do.
 The first two are the deepest: model every key concept explicitly, in one place, and as
 a consequence, let caching improve performance without ever changing semantics.
 
+Human output follows the [output design](fdu-output-design.md): data and diagnostics use
+separate streams, categories have stable prefixes, and omissions explain their
+accounting without repeating advice.
+
 For what is built and what comes next, see the dated plans under
 [`docs/project/specs`](../specs/). For where the design comes from and which prior art
 each piece draws on, see
@@ -93,7 +97,7 @@ changes, a run returns one of four outcomes, compared on content and tree status
   cold answer over that part, with its tree status naming what is missing (retained
   facts under an unverified subtree are never served);
 - a failure that names why the delivery cannot answer;
-- under `--cache only`, the cold answer at a recorded earlier state, labelled stale.
+- under `--stale-ok`, the cold answer at a recorded earlier state, labelled stale.
 
 For one request, delivery, and history, every route and surface returns the same kind of
 outcome, and every machine format parses back to the same value.
@@ -200,8 +204,9 @@ Every default claims that most callers want this answer.
 If you cannot name the question it answers in one sentence, it is not a default; it is
 an accident that shipped.
 
-`fdu PATH` answers “which directories are big”: depth two, ten per directory, size
-descending, and every part of that follows from the question.
+`fdu PATH` answers “which contents account for at least 1% of this root, down to depth
+5?” It shows significant directories and files, largest first, without a breadth or
+section-row cap. Each display bound is independently adjustable.
 The `files` default could not finish the sentence, which is the test it should have
 failed at review.
 
@@ -414,10 +419,10 @@ Every option belongs to exactly one axis:
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read, and which metrics are measured? | `--analyze` |
-| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--exclude-ignored`, `--only-ignored`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,largest,recent,files,summary` or `--view full`, `--words-per-page` |
+| Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
+| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
-| Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--analysis-workers`, `--allow-partial` |
+| Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--workers`, `--allow-partial` |
 
 A proposed flag that fits no axis is a design smell: either it generalizes into an axis
 value, or it does not ship.
@@ -530,11 +535,13 @@ anything is rendered.
 Cache behavior is one explicit policy axis, and every machine-format report carries its
 `source`, `freshness`, `complete`, and `errors`; human text reports errors and partial
 results on standard error.
-The cache policy is the user’s choice.
+The cache policy is the user’s choice: `auto` lets the plan read and write only where
+the kind of request gains from it, `on` also keeps a snapshot after every complete scan,
+and `off` stays out of the cache.
 Within it, the execution plan may pick the cheapest route that can answer, and routes
 differ only in cost and provenance, never in the answer.
 
-`--cache only` is the one tier that can be stale, and it says so: the loaded index is
+`--stale-ok` is the one tier that can be stale, and it says so: the loaded index is
 marked unverified rather than replaying the freshness it was saved with.
 It fails when no usable snapshot exists rather than silently scanning, because a fast
 path that is sometimes a full walk — with nothing in the output to say which happened —

@@ -1,0 +1,1982 @@
+[
+ {
+  "step": "baseline_noop",
+  "comment": "no-op: does polling itself change anything?",
+  "op_ms": 0.0,
+  "info": {},
+  "root_gencount_before": 4122,
+  "root_gencount_after": 4122,
+  "root_before": {
+   "ms": 5.33,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4149248,
+   "gen_count": 4122
+  },
+  "root_after": {
+   "ms": 5.77,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4149248,
+   "gen_count": 4122
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 6.19,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 45056,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.47,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 6.46,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 8192,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.98,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "sync_only",
+  "comment": "sync",
+  "op_ms": 75.57,
+  "info": {},
+  "root_gencount_before": 4122,
+  "root_gencount_after": 4122,
+  "root_before": {
+   "ms": 5.7,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4149248,
+   "gen_count": 4122
+  },
+  "root_after": {
+   "ms": 5.26,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4149248,
+   "gen_count": 4122
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.37,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 45056,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.06,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 6.75,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 8192,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.27,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "append_close",
+  "comment": "append 10 KiB and close",
+  "op_ms": 9.91,
+  "info": {},
+  "root_gencount_before": 4122,
+  "root_gencount_after": 4124,
+  "root_before": {
+   "ms": 5.37,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4149248,
+   "gen_count": 4122
+  },
+  "root_after": {
+   "ms": 5.63,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4161536,
+   "gen_count": 4124
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.85,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 57344,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.27,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 8192,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.64,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "deep_append_close",
+  "comment": "append at depth 13",
+  "op_ms": 0.33,
+  "info": {},
+  "root_gencount_before": 4124,
+  "root_gencount_after": 4126,
+  "root_before": {
+   "ms": 5.33,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4161536,
+   "gen_count": 4124
+  },
+  "root_after": {
+   "ms": 5.59,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4169728,
+   "gen_count": 4126
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.58,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 57344,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.43,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.67,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 6.98,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "open_writer_write_no_sync",
+  "comment": "write 20 KiB, fd still open, no fsync",
+  "op_ms": 0.13,
+  "info": {
+   "fstat_size": 24576
+  },
+  "root_gencount_before": 4126,
+  "root_gencount_after": 4127,
+  "root_before": {
+   "ms": 5.31,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4169728,
+   "gen_count": 4126
+  },
+  "root_after": {
+   "ms": 4.68,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4169728,
+   "gen_count": 4127
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.31,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 57344,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.32,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.76,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.3,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "open_writer_wait_2s",
+  "comment": "wait 2 s while open",
+  "op_ms": 2005.45,
+  "info": {},
+  "root_gencount_before": 4127,
+  "root_gencount_after": 4127,
+  "root_before": {
+   "ms": 5.37,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4169728,
+   "gen_count": 4127
+  },
+  "root_after": {
+   "ms": 12.04,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4169728,
+   "gen_count": 4127
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.24,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 57344,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.19,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.07,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "open_writer_fsync",
+  "comment": "fsync while open",
+  "op_ms": 1.0,
+  "info": {},
+  "root_gencount_before": 4127,
+  "root_gencount_after": 4128,
+  "root_before": {
+   "ms": 5.32,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4169728,
+   "gen_count": 4127
+  },
+  "root_after": {
+   "ms": 5.3,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4190208,
+   "gen_count": 4128
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.78,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 77824,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.32,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.43,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 6.0,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "open_writer_write_again",
+  "comment": "second write while open",
+  "op_ms": 0.05,
+  "info": {},
+  "root_gencount_before": 4128,
+  "root_gencount_after": 4129,
+  "root_before": {
+   "ms": 6.03,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4190208,
+   "gen_count": 4128
+  },
+  "root_after": {
+   "ms": 5.58,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4190208,
+   "gen_count": 4129
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.38,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 77824,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.07,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.1,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "open_writer_close",
+  "comment": "close",
+  "op_ms": 1.24,
+  "info": {},
+  "root_gencount_before": 4129,
+  "root_gencount_after": 4130,
+  "root_before": {
+   "ms": 5.09,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4190208,
+   "gen_count": 4129
+  },
+  "root_after": {
+   "ms": 5.25,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4214784,
+   "gen_count": 4130
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.84,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 102400,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.26,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.26,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.34,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "truncate",
+  "comment": "truncate to 0",
+  "op_ms": 0.15,
+  "info": {},
+  "root_gencount_before": 4130,
+  "root_gencount_after": 4131,
+  "root_before": {
+   "ms": 5.36,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4214784,
+   "gen_count": 4130
+  },
+  "root_after": {
+   "ms": 4.97,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4210688,
+   "gen_count": 4131
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.45,
+    "rc": 0,
+    "descendants": 11,
+    "physical_size": 98304,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.14,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.13,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.39,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "delete",
+  "comment": "unlink",
+  "op_ms": 0.16,
+  "info": {},
+  "root_gencount_before": 4131,
+  "root_gencount_after": 4135,
+  "root_before": {
+   "ms": 5.37,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4210688,
+   "gen_count": 4131
+  },
+  "root_after": {
+   "ms": 5.06,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4135
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 10,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.69,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.87,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.07,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "rename_same_dir",
+  "comment": "rename in place",
+  "op_ms": 0.15,
+  "info": {},
+  "root_gencount_before": 4135,
+  "root_gencount_after": 4136,
+  "root_before": {
+   "ms": 5.15,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4135
+  },
+  "root_after": {
+   "ms": 5.09,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4136
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.88,
+    "rc": 0,
+    "descendants": 10,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.27,
+    "rc": 0,
+    "descendants": 20,
+    "physical_size": 81920,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.31,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.22,
+    "rc": 0,
+    "descendants": 105,
+    "physical_size": 409600,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "rename_across_subdirs",
+  "comment": "ops -> d03/s2",
+  "op_ms": 0.17,
+  "info": {},
+  "root_gencount_before": 4136,
+  "root_gencount_after": 4137,
+  "root_before": {
+   "ms": 5.06,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4136
+  },
+  "root_after": {
+   "ms": 5.97,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4137
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.19,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.35,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.96,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 4.66,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "rename_dir_within",
+  "comment": "rename a populated dir",
+  "op_ms": 0.23,
+  "info": {},
+  "root_gencount_before": 4137,
+  "root_gencount_after": 4138,
+  "root_before": {
+   "ms": 5.32,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4137
+  },
+  "root_after": {
+   "ms": 5.23,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4138
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.05,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.97,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.88,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.33,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "move_out_of_tree",
+  "comment": "to unmaintained sibling",
+  "op_ms": 0.19,
+  "info": {},
+  "root_gencount_before": 4138,
+  "root_gencount_after": 4139,
+  "root_before": {
+   "ms": 4.92,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4138
+  },
+  "root_after": {
+   "ms": 4.72,
+   "rc": 0,
+   "descendants": 1084,
+   "physical_size": 4202496,
+   "gen_count": 4139
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.78,
+    "rc": 0,
+    "descendants": 8,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.73,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.0,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.35,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "move_into_tree",
+  "comment": "back from unmaintained sibling",
+  "op_ms": 0.15,
+  "info": {},
+  "root_gencount_before": 4139,
+  "root_gencount_after": 4140,
+  "root_before": {
+   "ms": 5.36,
+   "rc": 0,
+   "descendants": 1084,
+   "physical_size": 4202496,
+   "gen_count": 4139
+  },
+  "root_after": {
+   "ms": 4.69,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.95,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.55,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.99,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.27,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "chmod",
+  "comment": "chmod",
+  "op_ms": 0.08,
+  "info": {},
+  "root_gencount_before": 4140,
+  "root_gencount_after": 4140,
+  "root_before": {
+   "ms": 4.96,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "root_after": {
+   "ms": 5.03,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.24,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.22,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.55,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.07,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "touch_mtime_only",
+  "comment": "utime",
+  "op_ms": 0.07,
+  "info": {},
+  "root_gencount_before": 4140,
+  "root_gencount_after": 4140,
+  "root_before": {
+   "ms": 5.41,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "root_after": {
+   "ms": 5.18,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.24,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.43,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.36,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.38,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "xattr_set",
+  "comment": "xattr",
+  "op_ms": 6.45,
+  "info": {},
+  "root_gencount_before": 4140,
+  "root_gencount_after": 4140,
+  "root_before": {
+   "ms": 5.4,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "root_after": {
+   "ms": 4.61,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.38,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.0,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.93,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 4.99,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "hardlink_add",
+  "comment": "hard link in same dir",
+  "op_ms": 0.46,
+  "info": {},
+  "root_gencount_before": 4140,
+  "root_gencount_after": 4141,
+  "root_before": {
+   "ms": 4.69,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4140
+  },
+  "root_after": {
+   "ms": 4.5,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4141
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.01,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.69,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.61,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.34,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "hardlink_add_other_dir",
+  "comment": "hard link into d03/s2",
+  "op_ms": 0.42,
+  "info": {},
+  "root_gencount_before": 4141,
+  "root_gencount_after": 4142,
+  "root_before": {
+   "ms": 4.99,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4141
+  },
+  "root_after": {
+   "ms": 5.2,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4142
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.94,
+    "rc": 0,
+    "descendants": 9,
+    "physical_size": 90112,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.1,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.59,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.11,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "clone_cp_c",
+  "comment": "cp -c clone",
+  "op_ms": 6.21,
+  "info": {},
+  "root_gencount_before": 4142,
+  "root_gencount_after": 4143,
+  "root_before": {
+   "ms": 5.18,
+   "rc": 0,
+   "descendants": 1085,
+   "physical_size": 4206592,
+   "gen_count": 4142
+  },
+  "root_after": {
+   "ms": 5.31,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4210688,
+   "gen_count": 4143
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.2,
+    "rc": 0,
+    "descendants": 10,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.67,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 4.64,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.26,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "symlink",
+  "comment": "symlink",
+  "op_ms": 0.12,
+  "info": {},
+  "root_gencount_before": 4143,
+  "root_gencount_after": 4144,
+  "root_before": {
+   "ms": 5.39,
+   "rc": 0,
+   "descendants": 1086,
+   "physical_size": 4210688,
+   "gen_count": 4143
+  },
+  "root_after": {
+   "ms": 5.31,
+   "rc": 0,
+   "descendants": 1087,
+   "physical_size": 4210688,
+   "gen_count": 4144
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.32,
+    "rc": 0,
+    "descendants": 10,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.26,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.56,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.22,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "mkdir_new",
+  "comment": "mkdir -p",
+  "op_ms": 0.22,
+  "info": {},
+  "root_gencount_before": 4144,
+  "root_gencount_after": 4146,
+  "root_before": {
+   "ms": 4.8,
+   "rc": 0,
+   "descendants": 1087,
+   "physical_size": 4210688,
+   "gen_count": 4144
+  },
+  "root_after": {
+   "ms": 5.06,
+   "rc": 0,
+   "descendants": 1089,
+   "physical_size": 4210688,
+   "gen_count": 4146
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.16,
+    "rc": 0,
+    "descendants": 12,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.32,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.7,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "create_in_new_dir",
+  "comment": "100000-byte file in new subdir",
+  "op_ms": 0.53,
+  "info": {},
+  "root_gencount_before": 4146,
+  "root_gencount_after": 4149,
+  "root_before": {
+   "ms": 5.4,
+   "rc": 0,
+   "descendants": 1089,
+   "physical_size": 4210688,
+   "gen_count": 4146
+  },
+  "root_after": {
+   "ms": 5.1,
+   "rc": 0,
+   "descendants": 1090,
+   "physical_size": 4313088,
+   "gen_count": 4149
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 13,
+    "physical_size": 196608,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 4.97,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.0,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 33.69,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "rmtree_subdir",
+  "comment": "rm -rf d08 (100 files)",
+  "op_ms": 14.91,
+  "info": {},
+  "root_gencount_before": 4149,
+  "root_gencount_after": 4561,
+  "root_before": {
+   "ms": 5.92,
+   "rc": 0,
+   "descendants": 1090,
+   "physical_size": 4313088,
+   "gen_count": 4149
+  },
+  "root_after": {
+   "ms": 5.54,
+   "rc": 0,
+   "descendants": 984,
+   "physical_size": 3903488,
+   "gen_count": 4561
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.9,
+    "rc": 0,
+    "descendants": 13,
+    "physical_size": 196608,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.56,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.55,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.32,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "sparse_file",
+  "comment": "50 MiB sparse file: physical vs logical",
+  "op_ms": 0.29,
+  "info": {},
+  "root_gencount_before": 4561,
+  "root_gencount_after": 4565,
+  "root_before": {
+   "ms": 5.15,
+   "rc": 0,
+   "descendants": 984,
+   "physical_size": 3903488,
+   "gen_count": 4561
+  },
+  "root_after": {
+   "ms": 5.48,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3907584,
+   "gen_count": 4565
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.49,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.23,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.37,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 4.84,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "read_only_stat",
+  "comment": "lstat only",
+  "op_ms": 0.04,
+  "info": {},
+  "root_gencount_before": 4565,
+  "root_gencount_after": 4565,
+  "root_before": {
+   "ms": 4.87,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3907584,
+   "gen_count": 4565
+  },
+  "root_after": {
+   "ms": 5.06,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3907584,
+   "gen_count": 4565
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 0
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.36,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.62,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.06,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.4,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 0
+   }
+  }
+ },
+ {
+  "step": "nested_origin_enable_d03",
+  "comment": "apfs.util -M on non-empty d03 inside tree",
+  "op_ms": 5.45,
+  "info": {
+   "rc": 0,
+   "out": "Directory $REVIEW/catalog/fixtures/ds2/d03 will now maintain dir-stats.",
+   "err": ""
+  },
+  "root_gencount_before": 4565,
+  "root_gencount_after": 4565,
+  "root_before": {
+   "ms": 5.06,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3907584,
+   "gen_count": 4565
+  },
+  "root_after": {
+   "ms": 4.93,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3907584,
+   "gen_count": 4565
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 1
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.3,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.26,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 86016,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.03,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.18,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 413696,
+    "gen_count": 1
+   }
+  }
+ },
+ {
+  "step": "append_under_nested_origin",
+  "comment": "append in d03/s2: does d03's gencount move? root's?",
+  "op_ms": 0.68,
+  "info": {},
+  "root_gencount_before": 4565,
+  "root_gencount_after": 4567,
+  "root_before": {
+   "ms": 5.03,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3907584,
+   "gen_count": 4565
+  },
+  "root_after": {
+   "ms": 4.57,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3915776,
+   "gen_count": 4567
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 3
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 4.89,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.22,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.24,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.08,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 421888,
+    "gen_count": 3
+   }
+  }
+ },
+ {
+  "step": "move_populated_unmaintained_dir_in",
+  "comment": "90 x 8 KiB files (737280 B) moved in from an unmaintained dir: immediate or 'calculating'?",
+  "op_ms": 16.42,
+  "info": {},
+  "root_gencount_before": 4567,
+  "root_gencount_after": 4568,
+  "root_before": {
+   "ms": 5.26,
+   "rc": 0,
+   "descendants": 985,
+   "physical_size": 3915776,
+   "gen_count": 4567
+  },
+  "root_after": {
+   "ms": 5.63,
+   "rc": 0,
+   "descendants": 1079,
+   "physical_size": 4653056,
+   "gen_count": 4568
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 3
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.67,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.56,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.43,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.41,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 421888,
+    "gen_count": 3
+   }
+  }
+ },
+ {
+  "step": "recheck_after_1s",
+  "comment": "re-read totals after 1 s",
+  "op_ms": 1000.63,
+  "info": {},
+  "root_gencount_before": 4568,
+  "root_gencount_after": 4568,
+  "root_before": {
+   "ms": 5.34,
+   "rc": 0,
+   "descendants": 1079,
+   "physical_size": 4653056,
+   "gen_count": 4568
+  },
+  "root_after": {
+   "ms": 5.79,
+   "rc": 0,
+   "descendants": 1079,
+   "physical_size": 4653056,
+   "gen_count": 4568
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 3
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.28,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.43,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.52,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.34,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 421888,
+    "gen_count": 3
+   }
+  }
+ },
+ {
+  "step": "deep_chain_121_create",
+  "comment": "121-level chain + 12 KiB leaf: chain-too-long limit?",
+  "op_ms": 8.82,
+  "info": {
+   "depth": 121
+  },
+  "root_gencount_before": 4568,
+  "root_gencount_after": 4693,
+  "root_before": {
+   "ms": 5.57,
+   "rc": 0,
+   "descendants": 1079,
+   "physical_size": 4653056,
+   "gen_count": 4568
+  },
+  "root_after": {
+   "ms": 5.22,
+   "rc": 0,
+   "descendants": 1201,
+   "physical_size": 4665344,
+   "gen_count": 4693
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 3
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.74,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 5.59,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 7.09,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.8,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 421888,
+    "gen_count": 3
+   }
+  }
+ },
+ {
+  "step": "deep_chain_121_append",
+  "comment": "append 12 KiB at depth 121",
+  "op_ms": 0.54,
+  "info": {},
+  "root_gencount_before": 4693,
+  "root_gencount_after": 4695,
+  "root_before": {
+   "ms": 5.63,
+   "rc": 0,
+   "descendants": 1201,
+   "physical_size": 4665344,
+   "gen_count": 4693
+  },
+  "root_after": {
+   "ms": 6.18,
+   "rc": 0,
+   "descendants": 1201,
+   "physical_size": 4677632,
+   "gen_count": 4695
+  },
+  "sub_gencounts_after": {
+   "ops": 0,
+   "d03/s2": 0,
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": 0,
+   "d03": 3
+  },
+  "sub_stats_after": {
+   "ops": {
+    "ms": 5.79,
+    "rc": 0,
+    "descendants": 14,
+    "physical_size": 200704,
+    "gen_count": 0
+   },
+   "d03/s2": {
+    "ms": 6.09,
+    "rc": 0,
+    "descendants": 21,
+    "physical_size": 94208,
+    "gen_count": 0
+   },
+   "deep/level00/level01/level02/level03/level04/level05/level06/level07/level08/level09/level10/level11": {
+    "ms": 5.3,
+    "rc": 0,
+    "descendants": 1,
+    "physical_size": 16384,
+    "gen_count": 0
+   },
+   "d03": {
+    "ms": 5.22,
+    "rc": 0,
+    "descendants": 106,
+    "physical_size": 421888,
+    "gen_count": 3
+   }
+  }
+ }
+]

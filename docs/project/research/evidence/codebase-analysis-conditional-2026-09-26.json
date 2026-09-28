@@ -1,0 +1,755 @@
+{
+  "schema": "fdu.code-analysis-conditional-evidence/1",
+  "date": "2026-09-26",
+  "basis": {
+    "prior_evidence": "docs/project/research/evidence/codebase-analysis-2026-09-26.json",
+    "working_tree_analyzer": {
+      "id": "code-sloc-v1",
+      "version": 2
+    },
+    "method": "Each unchanged fixture source was written as the only file in an isolated directory on external scratch and scanned with fdu --cache off --analyze code --view code --format json. Code selected tally was compared with the prior hand-adjudicated tuple. No counter was treated as an oracle.",
+    "units": [
+      "code_lines",
+      "comment_lines",
+      "blank_lines"
+    ]
+  },
+  "lexical": {
+    "fixtures": [
+      {
+        "name": "rust_control.rs",
+        "sha256": "2ffcea4580804793a3dae2b0b6137294b3a5aac25e73c6be26433ad7599a411f",
+        "previous_fdu": [
+          3,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          1,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          1,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "rust_multiline.rs",
+        "sha256": "26d766abf48ffa6cb770fa31c5a06d899144f0853ac1abff0bfe351a9540dee4",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "rust_lifetime.rs",
+        "sha256": "1ea4b3587e43b31a6207cab169831ce5d8b6ef11147ef97b2ed82d80150b4e14",
+        "previous_fdu": [
+          3,
+          0,
+          0
+        ],
+        "current_fdu": [
+          2,
+          1,
+          0
+        ],
+        "adjudicated_expected": [
+          2,
+          1,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "rust_raw.rs",
+        "sha256": "493cec9e632b9cabaa8a1a93cb0f9fe2ff6b473fbd965ffd7b2055a671cefe01",
+        "previous_fdu": [
+          3,
+          0,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "rust_nested.rs",
+        "sha256": "ae511f1d6da857c9d34604ca60698494055eceb4c97783f7e06b055220751f23",
+        "previous_fdu": [
+          1,
+          3,
+          0
+        ],
+        "current_fdu": [
+          1,
+          3,
+          0
+        ],
+        "adjudicated_expected": [
+          1,
+          3,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "cpp_raw.cpp",
+        "sha256": "7bd4cb695da3da406071f56c9e3071cc7abe2a897ac8b4a85153e83beeccc14e",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "c_continuation.c",
+        "sha256": "53eebf13022b1f2c4832f35c42d8dccd820603bd3a03884e3795bacbd5a22fa5",
+        "previous_fdu": [
+          1,
+          1,
+          0
+        ],
+        "current_fdu": [
+          2,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          2,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "c_control.c",
+        "sha256": "685f7e2e95426e42a3e4df40a56d57ea26df95f7c0ec08609d23155002059aff",
+        "previous_fdu": [
+          1,
+          1,
+          0
+        ],
+        "current_fdu": [
+          1,
+          1,
+          0
+        ],
+        "adjudicated_expected": [
+          1,
+          1,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "java_textblock.java",
+        "sha256": "9c431d2bbd7b64c3863e429814f25f57acd752a2327450f9894e3767e203c9c9",
+        "previous_fdu": [
+          3,
+          1,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "csharp_verbatim.cs",
+        "sha256": "5d6672f603e541cda17937f1deb3aea2232c3070d1ed009caf1073ebf849c790",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "csharp_raw.cs",
+        "sha256": "2dac186ac40f0edc72eb9377b30c2fb713d79127ac3751ce82d96f34495b1f58",
+        "previous_fdu": [
+          3,
+          1,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "javascript_template.js",
+        "sha256": "1a2cf476f8cf29c05aeca3245cdb1d695b07ad354e9465e42c9fe0b88771581d",
+        "previous_fdu": [
+          3,
+          0,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "javascript_regex.js",
+        "sha256": "d3ed3b8e5f56fa2ed7d2584975027d07b90648a7bfad9ec75655ab05d55df918",
+        "previous_fdu": [
+          1,
+          1,
+          0
+        ],
+        "current_fdu": [
+          2,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          2,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "typescript_template.ts",
+        "sha256": "c4a2b2f686a8c030091fffb918ed66b25043bb1a1579d046262f54222dc165b5",
+        "previous_fdu": [
+          3,
+          0,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "go_raw.go",
+        "sha256": "15129349db7c138d3c8a88b82b1c3f7f0aa4582ee8a2050207aa08b34e0cecb0",
+        "previous_fdu": [
+          4,
+          0,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "python_docstring.py",
+        "sha256": "1f02bb8db7c71233350e7a758bf77a91c4bca6a484d07c6d557581357f05460f",
+        "previous_fdu": [
+          4,
+          0,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "python_control.py",
+        "sha256": "e4033cf09c654fe52f676dde5e032ad37d3796ad0abb3d4081f5615384cc9f0f",
+        "previous_fdu": [
+          1,
+          1,
+          1
+        ],
+        "current_fdu": [
+          1,
+          1,
+          1
+        ],
+        "adjudicated_expected": [
+          1,
+          1,
+          1
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "ruby_percent.rb",
+        "sha256": "2554bb355d2a5841919d800e25da8003d5ec85fb91454646334248e8fa72ec70",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "ruby_heredoc.rb",
+        "sha256": "f60fd790c7eb71afb73b1dcdb788d96721feee19c7694cee766127815d94c1f1",
+        "previous_fdu": [
+          3,
+          1,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "ruby_regular.rb",
+        "sha256": "e17d0655d2ff6e026f40ddc7811b6ab74a7b5776626ffcd20b4d9b3757ab9722",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "shell_heredoc.sh",
+        "sha256": "2f4f2788048f5f5d26d36d3090f241a09dbb0d260bb4b9b6b4cfc33e4e40a134",
+        "previous_fdu": [
+          3,
+          1,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "shell_quote.sh",
+        "sha256": "2a0b09815746e2bf9040528289a6c3d1a3fa84ca47a7526472afc4580b6a673d",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "sql_dollar.sql",
+        "sha256": "14182ad72553a7d07abb601ec985163a1d3686bd2075edf7271058e4a7fcf1b3",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "sql_quote.sql",
+        "sha256": "0e078282e90fad7f0d1ad0da10a8599ecbbf0098c7c1901a4fc27e9ecac7052b",
+        "previous_fdu": [
+          2,
+          1,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "sql_control.sql",
+        "sha256": "ecafcf5568959c24ece308230924d8b547f777f5624c00750c06442175d3b477",
+        "previous_fdu": [
+          1,
+          1,
+          0
+        ],
+        "current_fdu": [
+          1,
+          1,
+          0
+        ],
+        "adjudicated_expected": [
+          1,
+          1,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "php_heredoc.php",
+        "sha256": "edc15f05770d5b6c27635fd200570ae9968c20571e7e0f5596783a95e8e98822",
+        "previous_fdu": [
+          4,
+          1,
+          0
+        ],
+        "current_fdu": [
+          5,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          5,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "kotlin_triple.kt",
+        "sha256": "3033a4df5638d7a4d33e6d8a05e465c5b70acb3e657f3aba93daf217c77ea2b9",
+        "previous_fdu": [
+          3,
+          0,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "swift_triple.swift",
+        "sha256": "e2a89b4ccb89ffbd9871c8d1c310c7fbaa6902243aa02cdc245d20d4a0ce9c1e",
+        "previous_fdu": [
+          4,
+          0,
+          0
+        ],
+        "current_fdu": [
+          4,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          4,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "blank_block.rs",
+        "sha256": "f06e94b3a1e6e4c5795f5382c8d9d4846a7479d376f2e2966477b913b6d8d8e8",
+        "previous_fdu": [
+          0,
+          3,
+          0
+        ],
+        "current_fdu": [
+          0,
+          3,
+          0
+        ],
+        "adjudicated_expected": [
+          0,
+          3,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      },
+      {
+        "name": "blank_string.rs",
+        "sha256": "dd5c218bda40e985177fa76357a19e3290d503a5faf006e2ef1785079d22927f",
+        "previous_fdu": [
+          3,
+          0,
+          0
+        ],
+        "current_fdu": [
+          3,
+          0,
+          0
+        ],
+        "adjudicated_expected": [
+          3,
+          0,
+          0
+        ],
+        "current_coverage": {
+          "analyzed": 1
+        }
+      }
+    ],
+    "matched_adjudicated": 30,
+    "fixture_count": 30,
+    "previous_matched_adjudicated": 14,
+    "corrected_fixture_count": 16,
+    "coverage_analyzed_count": 30,
+    "limitations": "Purposefully adversarial 30 cases; these counts are not a random-sample accuracy rate or a proof over all language syntax."
+  },
+  "classification": {
+    "observed_contract": "Per-file type, family, source, confidence, and generated/vendored/documentation flags are exposed; unsupported and unknown coverage remain explicit.",
+    "gaps": [
+      "Generated flag uses bounded prefix markers, so a directory named generated alone is not generated evidence.",
+      "Vendor and documentation flags use conventional path names; they do not implement .gitattributes linguist overrides.",
+      "Ambiguous extensions, embedded languages, notebooks, and unrecognized extensions lack an independently adjudicated compatibility corpus."
+    ],
+    "gitattributes_verdict": "defer",
+    "reason": "No independent fixture corpus yet demonstrates which overrides improve this local-filesystem classification, and this increment does not promise exact Linguist parity."
+  },
+  "counter_library": {
+    "candidate": "Tokei 14.0.0 from prior comparison; crates.io currently pins a different release.",
+    "verdict": "defer",
+    "reason": "The native counter matches all 30 adjudicated diagnostic cases after repair; prior Tokei matched 21/30 and has a reproduced Rust character-literal defect. A replacement has no demonstrated correctness gain on this corpus and would require dependency and performance review."
+  },
+  "branch_points": {
+    "prototype": "explorations/branch_points_probe.rs",
+    "rules": {
+      "rust": [
+        "if",
+        "for",
+        "while",
+        "match"
+      ],
+      "javascript": [
+        "if",
+        "for",
+        "while",
+        "switch",
+        "catch"
+      ]
+    },
+    "implementation": "Research-only byte scan counts ASCII identifier tokens during the same newline-count loop; no comments, strings, templates, or regex states.",
+    "counterexample": {
+      "source": "let text = \"if\"; // while\n",
+      "expected_branch_points": 0,
+      "prototype_branch_points": 2,
+      "reason": "Both keywords are non-executable text."
+    },
+    "cost": {
+      "corpus": "80 currently present Rust paths from the earlier real-file list; 3,987,516 bytes at start, one path changed by 11 bytes during the concurrent run. Files were loaded before timing.",
+      "iterations": 200,
+      "paired_runs": 5,
+      "baseline_ns": [
+        154642625,
+        154976208,
+        154964833,
+        155396166,
+        155247750
+      ],
+      "probe_ns": [
+        1925995958,
+        1930742625,
+        1929781792,
+        1936243625,
+        1934008125
+      ],
+      "median_baseline_ns": 154976208,
+      "median_probe_ns": 1930742625,
+      "ratio": 12.4583,
+      "incremental_ns_per_input_byte_pass": 2.2267,
+      "memory": "Scanner state is O(1); input buffers are shared by both variants and allocated before timing. Peak process memory was not measured.",
+      "interpretation": "This is the cost of a deliberately naive Rust token probe relative to newline counting, not the incremental cost inside the production fdu analyzer; it cannot set a shipping performance budget."
+    },
+    "ranking_evidence": "none: no independent file-level branch ranking labels or user-task evaluation",
+    "verdict": "defer",
+    "reason": "The prototype has known false positives and no ranking evidence. A lexer-aware optional analyzer would need new per-language fixtures and paired production measurements before a public contract."
+  }
+}

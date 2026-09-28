@@ -1,0 +1,177 @@
+{
+ "label": "all-levels",
+ "rounds": [
+  {
+   "round": 0,
+   "order": [
+    "marked",
+    "control"
+   ],
+   "marked": {
+    "create": 0.12045899999793619,
+    "append": 0.14867424999829382,
+    "delete": 0.07230141595937312
+   },
+   "control": {
+    "create": 0.0798952920595184,
+    "append": 0.08962041710037738,
+    "delete": 0.03878845809958875
+   }
+  },
+  {
+   "round": 1,
+   "order": [
+    "control",
+    "marked"
+   ],
+   "control": {
+    "create": 0.07796125009190291,
+    "append": 0.0824189999839291,
+    "delete": 0.0374732919735834
+   },
+   "marked": {
+    "create": 0.12042366701643914,
+    "append": 0.10371837497223169,
+    "delete": 0.07347620895598084
+   }
+  },
+  {
+   "round": 2,
+   "order": [
+    "marked",
+    "control"
+   ],
+   "marked": {
+    "create": 0.21724099991843104,
+    "append": 0.15250583400484174,
+    "delete": 0.06435458397027105
+   },
+   "control": {
+    "create": 0.1439972911030054,
+    "append": 0.04306308296509087,
+    "delete": 0.12234616710338742
+   }
+  },
+  {
+   "round": 3,
+   "order": [
+    "control",
+    "marked"
+   ],
+   "control": {
+    "create": 0.07163329201284796,
+    "append": 0.04377862496767193,
+    "delete": 0.21462712506763637
+   },
+   "marked": {
+    "create": 0.09152733301743865,
+    "append": 0.4279485419392586,
+    "delete": 0.08753216697368771
+   }
+  },
+  {
+   "round": 4,
+   "order": [
+    "marked",
+    "control"
+   ],
+   "marked": {
+    "create": 0.08848150004632771,
+    "append": 0.6396674170391634,
+    "delete": 0.0720721249235794
+   },
+   "control": {
+    "create": 0.19851354195270687,
+    "append": 0.6149581659119576,
+    "delete": 0.033150749979540706
+   }
+  },
+  {
+   "round": 5,
+   "order": [
+    "control",
+    "marked"
+   ],
+   "control": {
+    "create": 1.1856059998972341,
+    "append": 1.2413084589643404,
+    "delete": 0.07405741594266146
+   },
+   "marked": {
+    "create": 0.7981622499646619,
+    "append": 1.22380212508142,
+    "delete": 0.45407954207621515
+   }
+  },
+  {
+   "round": 6,
+   "order": [
+    "marked",
+    "control"
+   ],
+   "marked": {
+    "create": 0.28995091700926423,
+    "append": 0.14070083398837596,
+    "delete": 0.40614425006788224
+   },
+   "control": {
+    "create": 0.42978304193820804,
+    "append": 0.2837205829564482,
+    "delete": 0.22885291604325175
+   }
+  }
+ ],
+ "summary": {
+  "create": {
+   "marked_ms": {
+    "median": 120.5,
+    "min": 88.5,
+    "p90": 798.2
+   },
+   "control_ms": {
+    "median": 144.0,
+    "min": 71.6,
+    "p90": 1185.6
+   },
+   "paired_ratio": {
+    "median": 1.278,
+    "min": 0.446,
+    "max": 1.545
+   }
+  },
+  "append": {
+   "marked_ms": {
+    "median": 152.5,
+    "min": 103.7,
+    "p90": 1223.8
+   },
+   "control_ms": {
+    "median": 89.6,
+    "min": 43.1,
+    "p90": 1241.3
+   },
+   "paired_ratio": {
+    "median": 1.258,
+    "min": 0.496,
+    "max": 9.775
+   }
+  },
+  "delete": {
+   "marked_ms": {
+    "median": 73.5,
+    "min": 64.4,
+    "p90": 454.1
+   },
+   "control_ms": {
+    "median": 74.1,
+    "min": 33.2,
+    "p90": 228.9
+   },
+   "paired_ratio": {
+    "median": 1.864,
+    "min": 0.408,
+    "max": 6.131
+   }
+  }
+ }
+}

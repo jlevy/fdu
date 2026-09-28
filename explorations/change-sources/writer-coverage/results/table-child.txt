@@ -1,0 +1,40 @@
+| op | rep | live events while open (after FlushSync) | events at/after close | replay while open | replay after close | stat while open (vs before) | notes |
+| --- | ---: | --- | --- | --- | --- | --- | --- |
+| child_sigkill | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| child_sigkill | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| child_sigkill | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | size,blocks,mtime_ns,ctime_ns |  |
+| child_exit | 1 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | n/a |  |
+| child_exit | 2 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | n/a |  |
+| child_exit | 3 | none | target:ItemModified|ItemIsFile | none | target:ItemCreated|ItemModified|ItemXattrMod|ItemIsFile | n/a |  |
+
+Stat samples (size/blocks/mtime/ctime relative to 'before'):
+  child_sigkill r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  child_sigkill r1 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.033 dctime=5.033
+  child_sigkill r1 child-open+1s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.033 dctime=5.033
+  child_sigkill r1 child-open+10s               dsize=   16384 dblocks=   128 nlink=1 dmtime=5.033 dctime=5.033
+  child_sigkill r1 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.033 dctime=5.033
+  child_sigkill r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  child_sigkill r2 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.04 dctime=5.04
+  child_sigkill r2 child-open+1s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.04 dctime=5.04
+  child_sigkill r2 child-open+10s               dsize=   16384 dblocks=   128 nlink=1 dmtime=5.04 dctime=5.04
+  child_sigkill r2 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.04 dctime=5.04
+  child_sigkill r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  child_sigkill r3 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.054 dctime=5.054
+  child_sigkill r3 child-open+1s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.054 dctime=5.054
+  child_sigkill r3 child-open+10s               dsize=   16384 dblocks=   128 nlink=1 dmtime=5.054 dctime=5.054
+  child_sigkill r3 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.054 dctime=5.054
+  child_exit r1 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  child_exit r1 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.067 dctime=5.067
+  child_exit r1 child-open+1s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.067 dctime=5.067
+  child_exit r1 child-open+8s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.067 dctime=5.067
+  child_exit r1 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.067 dctime=5.067
+  child_exit r2 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  child_exit r2 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.038 dctime=5.038
+  child_exit r2 child-open+1s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.038 dctime=5.038
+  child_exit r2 child-open+8s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.038 dctime=5.038
+  child_exit r2 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.038 dctime=5.038
+  child_exit r3 before                       dsize=       0 dblocks=     0 nlink=1 dmtime=0.0 dctime=0.0
+  child_exit r3 op-done                      dsize=   16384 dblocks=   128 nlink=1 dmtime=5.037 dctime=5.037
+  child_exit r3 child-open+1s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.037 dctime=5.037
+  child_exit r3 child-open+8s                dsize=   16384 dblocks=   128 nlink=1 dmtime=5.037 dctime=5.037
+  child_exit r3 post-close                   dsize=   16384 dblocks=   128 nlink=1 dmtime=5.037 dctime=5.037

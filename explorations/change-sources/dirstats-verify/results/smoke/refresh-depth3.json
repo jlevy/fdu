@@ -1,0 +1,779 @@
+{
+ "label": "depth3",
+ "walk_before": {
+  "summary": "SUMMARY entries=9085 dirs=654 files=8431 other=0 pruned=0 wall_ms=84.4 alloc=92213248 data=74844227",
+  "ms": 98.8
+ },
+ "checkpoint": {
+  "origins": 420,
+  "totals_ms": 20.8,
+  "root_gencount": 132108
+ },
+ "workload": {
+  "build_files": 3000,
+  "log_bytes": 2097152,
+  "touched_mtime_only": 5,
+  "workload_ms": 589.1
+ },
+ "totals_only": {
+  "immediate": {
+   "changed_origins": 119,
+   "ms": 2.2
+  },
+  "after_sync": {
+   "changed_origins": 119,
+   "ms": 3.7,
+   "changed": {
+    "": {
+     "dgen": 13082,
+     "ddesc": 3049,
+     "dphys": 34009088
+    },
+    "deep-0": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-0/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-1/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "deep-2/d1/d1": {
+     "dgen": 2,
+     "ddesc": 0,
+     "dphys": 4096
+    },
+    "node_modules": {
+     "dgen": 56,
+     "ddesc": -17,
+     "dphys": -208896
+    },
+    "node_modules/pkg-0072": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -16,
+     "dphys": -208896
+    },
+    "node_modules/pkg-0072/lib": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -15,
+     "dphys": -208896
+    },
+    "src": {
+     "dgen": 955,
+     "ddesc": 4,
+     "dphys": 3903488
+    },
+    "src/m-restored-depth3": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -3100,
+     "dphys": -27967488
+    },
+    "src/m-restored-depth3/mod0000": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -323584
+    },
+    "src/m-restored-depth3/mod0001": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m-restored-depth3/mod0002": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -237568
+    },
+    "src/m-restored-depth3/mod0003": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -188416
+    },
+    "src/m-restored-depth3/mod0004": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -278528
+    },
+    "src/m-restored-depth3/mod0005": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m-restored-depth3/mod0006": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m-restored-depth3/mod0007": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -311296
+    },
+    "src/m-restored-depth3/mod0008": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -331776
+    },
+    "src/m-restored-depth3/mod0009": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -180224
+    },
+    "src/m-restored-depth3/mod0010": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -184320
+    },
+    "src/m-restored-depth3/mod0011": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -348160
+    },
+    "src/m-restored-depth3/mod0012": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m-restored-depth3/mod0013": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m-restored-depth3/mod0014": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -180224
+    },
+    "src/m-restored-depth3/mod0015": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -212992
+    },
+    "src/m-restored-depth3/mod0016": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m-restored-depth3/mod0017": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m-restored-depth3/mod0018": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -421888
+    },
+    "src/m-restored-depth3/mod0019": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -176128
+    },
+    "src/m-restored-depth3/mod0020": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -208896
+    },
+    "src/m-restored-depth3/mod0021": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m-restored-depth3/mod0022": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m-restored-depth3/mod0023": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -204800
+    },
+    "src/m-restored-depth3/mod0024": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -364544
+    },
+    "src/m-restored-depth3/mod0025": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -278528
+    },
+    "src/m-restored-depth3/mod0026": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m-restored-depth3/mod0027": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -208896
+    },
+    "src/m-restored-depth3/mod0028": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m-restored-depth3/mod0029": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -262144
+    },
+    "src/m-restored-depth3/mod0030": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -200704
+    },
+    "src/m-restored-depth3/mod0031": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m-restored-depth3/mod0032": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -204800
+    },
+    "src/m-restored-depth3/mod0033": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -315392
+    },
+    "src/m-restored-depth3/mod0034": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -266240
+    },
+    "src/m-restored-depth3/mod0035": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m-restored-depth3/mod0036": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m-restored-depth3/mod0037": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m-restored-depth3/mod0038": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m-restored-depth3/mod0039": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m-restored-depth3/mod0040": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -331776
+    },
+    "src/m-restored-depth3/mod0041": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -364544
+    },
+    "src/m-restored-depth3/mod0042": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m-restored-depth3/mod0043": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -274432
+    },
+    "src/m-restored-depth3/mod0044": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m-restored-depth3/mod0045": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -192512
+    },
+    "src/m-restored-depth3/mod0046": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -307200
+    },
+    "src/m-restored-depth3/mod0047": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -229376
+    },
+    "src/m-restored-depth3/mod0048": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m-restored-depth3/mod0049": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -258048
+    },
+    "src/m-restored-depth3/mod0050": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -311296
+    },
+    "src/m-restored-depth3/mod0051": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m-restored-depth3/mod0052": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -208896
+    },
+    "src/m-restored-depth3/mod0053": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -425984
+    },
+    "src/m-restored-depth3/mod0054": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m-restored-depth3/mod0055": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -421888
+    },
+    "src/m-restored-depth3/mod0056": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -307200
+    },
+    "src/m-restored-depth3/mod0057": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -405504
+    },
+    "src/m-restored-depth3/mod0058": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -425984
+    },
+    "src/m-restored-depth3/mod0059": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -303104
+    },
+    "src/m-restored-depth3/mod0060": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -180224
+    },
+    "src/m-restored-depth3/mod0061": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m-restored-depth3/mod0062": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m-restored-depth3/mod0063": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -245760
+    },
+    "src/m-restored-depth3/mod0064": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m-restored-depth3/mod0065": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -208896
+    },
+    "src/m-restored-depth3/mod0066": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -237568
+    },
+    "src/m-restored-depth3/mod0067": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "src/m-restored-depth3/mod0068": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -356352
+    },
+    "src/m-restored-depth3/mod0069": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -233472
+    },
+    "src/m-restored-depth3/mod0070": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m-restored-depth3/mod0071": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -286720
+    },
+    "src/m-restored-depth3/mod0072": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -270336
+    },
+    "src/m-restored-depth3/mod0073": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -253952
+    },
+    "src/m-restored-depth3/mod0074": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m-restored-depth3/mod0075": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m-restored-depth3/mod0076": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -360448
+    },
+    "src/m-restored-depth3/mod0077": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -397312
+    },
+    "src/m-restored-depth3/mod0078": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -442368
+    },
+    "src/m-restored-depth3/mod0079": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -294912
+    },
+    "src/m-restored-depth3/mod0080": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -319488
+    },
+    "src/m-restored-depth3/mod0081": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m-restored-depth3/mod0082": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m-restored-depth3/mod0083": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -225280
+    },
+    "src/m-restored-depth3/mod0084": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -184320
+    },
+    "src/m-restored-depth3/mod0085": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m-restored-depth3/mod0086": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -335872
+    },
+    "src/m-restored-depth3/mod0087": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -217088
+    },
+    "src/m-restored-depth3/mod0088": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m-restored-depth3/mod0089": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -249856
+    },
+    "src/m-restored-depth3/mod0090": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -237568
+    },
+    "src/m-restored-depth3/mod0091": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -327680
+    },
+    "src/m-restored-depth3/mod0092": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -344064
+    },
+    "src/m-restored-depth3/mod0093": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -241664
+    },
+    "src/m-restored-depth3/mod0094": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -221184
+    },
+    "src/m-restored-depth3/mod0095": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -385024
+    },
+    "src/m-restored-depth3/mod0096": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -200704
+    },
+    "src/m-restored-depth3/mod0097": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -368640
+    },
+    "src/m-restored-depth3/mod0098": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -409600
+    },
+    "src/m-restored-depth3/mod0099": {
+     "gone": 2,
+     "dgen": null,
+     "ddesc": -30,
+     "dphys": -282624
+    },
+    "target": {
+     "dgen": 12062,
+     "ddesc": 3062,
+     "dphys": 30285824
+    },
+    "target/debug": {
+     "dgen": 12062,
+     "ddesc": 3062,
+     "dphys": 30285824
+    },
+    "target/debug/deps": {
+     "dgen": 1,
+     "ddesc": 1,
+     "dphys": 57344
+    },
+    "wide": {
+     "dgen": 3,
+     "ddesc": 0,
+     "dphys": 16384
+    }
+   }
+  }
+ },
+ "pruned_walk": {
+  "summary": "SUMMARY entries=8081 dirs=371 files=7710 other=0 pruned=152 wall_ms=62.3 alloc=91377664 data=81637296",
+  "ms": 71.9,
+  "visited": 8081,
+  "pruned_origins": 152,
+  "misses": {
+   "added": 0,
+   "removed": 3116,
+   "size_changed": 0,
+   "mtime_only": 0
+  },
+  "miss_examples": {
+   "added": [],
+   "removed": [
+    "node_modules/pkg-0072/lib",
+    "node_modules/pkg-0072/lib/11.js",
+    "node_modules/pkg-0072/lib/01.js",
+    "node_modules/pkg-0072/lib/05.js",
+    "node_modules/pkg-0072/lib/14.js"
+   ],
+   "size_changed": [],
+   "mtime_only": []
+  }
+ },
+ "walk_after": {
+  "summary": "SUMMARY entries=12135 dirs=713 files=11422 other=0 pruned=0 wall_ms=118.3 alloc=126287872 data=108938511",
+  "ms": 126.2
+ },
+ "oracle": {
+  "added": 6168,
+  "removed": 3118,
+  "size_changed": 4,
+  "mtime_only": 0
+ },
+ "attribution": {
+  "origins_compared": 119,
+  "mismatches": {
+   "": {
+    "fsctl_dphys": 34009088,
+    "oracle_dalloc": 34074624,
+    "match": false
+   },
+   "wide": {
+    "fsctl_dphys": 16384,
+    "oracle_dalloc": 81920,
+    "match": false
+   }
+  },
+  "origins_with_oracle_delta_but_no_fsctl_change": [],
+  "n_silent": 0
+ }
+}

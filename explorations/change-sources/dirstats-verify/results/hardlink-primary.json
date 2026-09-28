@@ -1,0 +1,252 @@
+[
+ {
+  "step": "1a create root/f1",
+  "root": [
+   4,
+   1,
+   65536
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "1b link f1 -> outside/f1",
+  "root": [
+   0,
+   0,
+   0
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "1c unlink root/f1 (inode lives outside only)",
+  "root": [
+   1,
+   -1,
+   -65536
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "2a create outside/f2",
+  "root": [
+   0,
+   0,
+   0
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "2b link outside/f2 -> root/f2",
+  "root": [
+   1,
+   0,
+   0
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "2c unlink outside/f2 (inode lives in root only)",
+  "root": [
+   1,
+   1,
+   65536
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "2d append 16K to root/f2",
+  "root": [
+   2,
+   0,
+   16384
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "3a create root/f3",
+  "root": [
+   4,
+   1,
+   65536
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "3b link root/f3 -> B/f3",
+  "root": [
+   1,
+   0,
+   0
+  ],
+  "B": [
+   1,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "3c unlink root/f3 (inode only in B now)",
+  "root": [
+   2,
+   0,
+   0
+  ],
+  "B": [
+   1,
+   1,
+   65536
+  ]
+ },
+ {
+  "step": "3d append 16K to B/f3",
+  "root": [
+   2,
+   0,
+   16384
+  ],
+  "B": [
+   2,
+   0,
+   16384
+  ]
+ },
+ {
+  "step": "4a create B/f4",
+  "root": [
+   4,
+   1,
+   65536
+  ],
+  "B": [
+   4,
+   1,
+   65536
+  ]
+ },
+ {
+  "step": "4b link B/f4 -> other/f4",
+  "root": [
+   1,
+   0,
+   0
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "4c unlink B/f4 (inode only in other now)",
+  "root": [
+   2,
+   0,
+   0
+  ],
+  "B": [
+   1,
+   -1,
+   -65536
+  ]
+ },
+ {
+  "step": "5a create root/f5",
+  "root": [
+   4,
+   1,
+   65536
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "5b link root/f5 -> root/f5b",
+  "root": [
+   1,
+   0,
+   0
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "5c unlink root/f5 (first name)",
+  "root": [
+   1,
+   0,
+   0
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "step": "5d unlink root/f5b (last name)",
+  "root": [
+   3,
+   -1,
+   -65536
+  ],
+  "B": [
+   0,
+   0,
+   0
+  ]
+ },
+ {
+  "root_fsctl": {
+   "gen": 35,
+   "desc": 5,
+   "phys": 229376,
+   "us": 55.416
+  },
+  "B_fsctl": {
+   "gen": 10,
+   "desc": 1,
+   "phys": 81920,
+   "us": 6.875
+  },
+  "walk_root": "SUMMARY entries=5 dirs=2 files=3 other=0 pruned=0 wall_ms=0.1 alloc=229376 data=229376",
+  "walk_B": "SUMMARY entries=1 dirs=0 files=1 other=0 pruned=0 wall_ms=0.1 alloc=81920 data=81920"
+ }
+]

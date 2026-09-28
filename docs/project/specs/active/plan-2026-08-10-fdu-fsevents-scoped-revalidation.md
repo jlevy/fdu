@@ -7,9 +7,12 @@
 **Status:** Proposed design, revised 2026-09-27; production implementation pending.
 The August exploratory spike is complete, but its source and exact flags were not
 retained. The [reproducible probe](../../../../explorations/fsevents-replay/README.md)
-(`fdu-uwhl`) exercises immediate cross-process replay; long-gap and publication
-boundaries remain acceptance work before production integration.
-[Campaign 2](plan-2026-08-23-fdu-performance-campaign-2.md) places the persistent
+(`fdu-uwhl`) exercises immediate cross-process replay; it does not establish long-gap
+completeness, atomic publication, or a large-tree latency result.
+The
+[change-source review](../../research/research-2026-09-27-disk-growth-change-sources.md)
+recommends fixing the resident watcher first and keeping replay for gap recovery.
+[The campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) places persistent
 representation and replay work in Phase D; the probe can run independently.
 
 Production replay is not implemented on `main`: the snapshot format has no replay

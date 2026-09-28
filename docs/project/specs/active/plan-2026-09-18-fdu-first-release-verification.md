@@ -1,15 +1,16 @@
 # Feature: First-Release Verification
 
-**Date:** 2026-09-18 (last updated 2026-09-24)
+**Date:** 2026-09-18 (last updated 2026-09-27)
 
 **Author:** fdu project
 
-**Status:** Active. The pre-registry simulation at `98379c76` is recorded on `fdu-bnp9`.
-Green checks on the current performance changes do not close the remaining JSONL, YAML,
-and provenance conformance work (`fdu-bqb7`, `fdu-c2ml`) in the
-[explicit core models plan](plan-2026-09-17-fdu-explicit-core-models.md), or final
-candidate verification (`fdu-tyvq`). Post-publish items wait until `0.1.0` is on the
-channels.
+**Status:** Active. The pre-registry simulation is recorded on `fdu-bnp9`, and final
+candidate verification on closed `fdu-tyvq`. Version `0.1.0` is public on crates.io,
+PyPI, and GitHub Releases (`fdu-9cf0`). The post-publish first-user checklist below
+still needs direct execution and evidence.
+The closed `fdu-wpxu` created that checklist; it did not run it.
+
+**Remaining execution owner:** `fdu-vxvm`, under `fdu-yfej`.
 
 ## Overview
 
@@ -40,9 +41,9 @@ repository would.
   this plan is the stranger path on top of them.
 - Contacting crates.io or PyPI during the first checklist.
 - Fixing gaps the simulation already recorded on `origin/main` `98379c76` (`fdu-18vk`,
-  `fdu-i142`). Those remain on their own beads.
-  Pull request #87 is the leftovers that restore wheel SIGINT, accept whole-millisecond
-  `--interval`, and ship a crates.io README with absolute links.
+  `fdu-i142`). Those beads are closed.
+  Pull request #87 merged the wheel SIGINT, whole-millisecond `--interval`, and
+  crates.io README link fixes.
 
 ## Background
 
@@ -54,8 +55,8 @@ pages, docs.rs, or GitHub release assets until they exist.
 A 2026-09-18 run against `origin/main` (`98379c76`) is recorded on `fdu-bnp9`. Watch,
 Python, Rust, and CLI succeeded from packaged artifacts.
 On that revision a wheel-installed `--watch` ignores Ctrl-C (`fdu-18vk`) and relative
-README links that crates.io would resolve under `crates/fdu/` 404 (`fdu-i142`). Pull
-request #87 is the change that restores SIGINT, accepts whole milliseconds, and ships
+README links that crates.io would resolve under `crates/fdu/` 404 (`fdu-i142`). Merged
+pull request #87 restored SIGINT, accepted whole milliseconds, and shipped
 `crates/fdu/README.md` with absolute links.
 
 ## Design
@@ -144,6 +145,14 @@ Run these from a machine and account that did **not** just publish, or from a cl
 container with no `CARGO_REGISTRY_TOKEN`, no `UV_PUBLISH_TOKEN`, and no checkout of this
 repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain ≥ 1.85.
 
+Publication evidence establishes that both crates and six Python files are available,
+both docs.rs builds succeeded, the signed tag verifies, and the GitHub Release has 11
+assets (`fdu-9cf0`). Public `cargo`, `uv tool`, `uvx`, and Python API smoke checks
+returned `0.1.0`. Those smoke checks do not establish the exact stranger-path commands,
+interpreter choices, page links, watch behavior, and first-hour checks below.
+Keep their boxes open until a post-publish run records them.
+The transient PyPI propagation retry defect is separately tracked on `fdu-zx9y`.
+
 #### crates.io
 
 - [ ] `curl` the crate pages: [fdu](https://crates.io/crates/fdu) and
@@ -152,8 +161,9 @@ repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain
 - [ ] Each README renders, and every link on it resolves (no `crates/fdu/`-relative
   404).
 
-- [ ] docs.rs built both: [fdu](https://docs.rs/crate/fdu/0.1.0/builds) and
+- [x] docs.rs built both: [fdu](https://docs.rs/crate/fdu/0.1.0/builds) and
   [fdu-core](https://docs.rs/crate/fdu-core/0.1.0/builds).
+  Publication evidence is recorded on `fdu-9cf0`.
 
 - [ ] From an empty directory:
 
@@ -200,10 +210,10 @@ repository. Use a GIL-enabled CPython 3.12 (and again 3.14) and a Rust toolchain
 
 #### GitHub Release
 
-- [ ] https://github.com/jlevy/fdu/releases/tag/v0.1.0 exists, the tag verifies, and
+- [x] https://github.com/jlevy/fdu/releases/tag/v0.1.0 exists, the tag verifies, and
   `gh release view v0.1.0 --json assets --jq '.assets | length'` prints `11` (two
   crates, sdist, five wheels, plus `registry-state.json`, `release-manifest.json`,
-  `SHA256SUMS`).
+  `SHA256SUMS`). The signed tag and 11 assets are recorded on `fdu-9cf0`.
 - [ ] The release body is the notes file, not the flowmark-wrapped source with a line
   break in every paragraph.
 

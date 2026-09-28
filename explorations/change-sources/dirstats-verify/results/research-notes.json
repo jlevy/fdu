@@ -1,0 +1,39 @@
+{
+ "purpose": "Documentation and prior-art notes gathered during the dir-stats verification (2026-09-27). Read-only research; nothing here was tested against iCloud or FileProvider directories.",
+ "public_api": {
+  "ATTR_CMNEXT_RECURSIVE_GENCOUNT": "Documented in getattrlist(2) on this host: 'the recursive generation count of a directory that has been marked as maintain-dir-stats in an apfs file system ... updated any time any child is modified ... If the directory is not marked maintain-dir-stats, a zero is returned.' No deprecation note. Requires FSOPT_ATTR_CMN_EXTENDED (always set by getattrlistbulk).",
+  "setter": "No public header declares the maintain-dir-stats setter. Libc's libdarwin/dirstat.c includes <apfs/apfs_fsctl.h>, which is not in the macOS SDK; the SDK has no usr/include/apfs directory and no dirstat.h. apfs.util -M issues fsctl 0xC1104A71 with a 272-byte struct whose u32 at +4 is 1.",
+  "dirstat_np": "Exported by libsystem_darwin but forced to the fallback walk by rdar://32794924 in the open-source Libc; DIRSTAT_FAST_ONLY therefore always fails."
+ },
+ "prior_art": [
+  {
+   "source": "https://mjtsai.com/blog/2025/01/13/what-happened-to-apfs-fast-directory-sizing/",
+   "notes": "Quotes Jim Luther (Apple, retired) that fast directory sizing 'never really was hooked up or implemented right'; the Finder team requested it and declined to use it. Constraints cited: must be enabled on a new directory before content is added; counts data forks only (no xattrs/resource fork); synchronous API with no progress callbacks."
+  },
+  {
+   "source": "https://developer.apple.com/forums/thread/79901",
+   "notes": "2017-2018 thread: no public API to enable it; ATTR_DIR_ALLOCSIZE/DATALENGTH do not return subtree sizes; nobody could find a directory where it was enabled by default."
+  },
+  {
+   "source": "https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/FAQ/FAQ.html",
+   "notes": "APFS Guide: fast directory sizing can be enabled on empty directories only (contradicted by observation: apfs.util -M succeeds on populated directories and the totals are exact immediately)."
+  },
+  {
+   "source": "https://discussions.apple.com/thread/255192520",
+   "notes": "Sonoma users report fsck_apfs / First Aid warnings such as 'missing dir-stats object (id N) referenced by 2 files / directories' on the Data volume; exit code 0; moderators say ignore."
+  },
+  {
+   "source": "https://developer.apple.com/forums/thread/739654",
+   "notes": "First Aid on a Sonoma Data volume: 'descendants (2727) of dir-stats object (id 272950) is less than expected (2729)', 'physical_size (6608224256) of dir-stats object (id 272950) is greater than expected (6580809728)', several more; Disk Utility performed deferred repairs. Shows maintained totals can drift on real volumes and are corrected only by fsck."
+  }
+ ],
+ "who_uses_it": "On this host nonzero gencounts were observed by the sibling reviewer only on iCloud sync roots (Desktop, Documents, Mobile Documents; EF_IS_SYNC_ROOT set). XNU's namespace-resolver completion path (vfs_syscalls.c, nspace_resolver_completion_data.orig_gencount) compares va_recursive_gencount before/after a dataless-file materialization and fails with EBUSY if it moved: FileProvider/iCloud is the in-tree consumer. Whether FileProvider re-marks or clears the flag on a sync root it does not own was not tested (touching iCloud directories was out of scope).",
+ "snapshots_and_time_machine": "Not testable here without creating snapshots on the internal volume (tmutil localsnapshot acts on all volumes). The APFS reference lists INODE_MAINTAIN_DIR_STATS alongside INODE_SNAPSHOT_COW_EXEMPTION as the two inherited internal flags; ATTR_CMNEXT_PRIVATESIZE excludes bytes retained by snapshots while the dir-stats physical size does not know about snapshots (it counts allocated data-fork bytes of live files). fsck strings mention clone-group and purgeable dir-stats xfields.",
+ "non_apfs_behaviour_observed": {
+  "devfs": "fsctl GET -> ENOTSUP (45); getattrlist returns no CMNEXT attributes (ret_fork=0)",
+  "autofs": "fsctl GET -> EINVAL (22)",
+  "read_only_apfs": "mark -> EROFS (30); GET and gencount read work",
+  "non_directory": "GET and mark -> EINVAL (22)",
+  "sealed_system_volume": "gencount 0; GET performs a kernel walk (624 entries in 6.5 ms cold)"
+ }
+}

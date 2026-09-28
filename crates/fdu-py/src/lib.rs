@@ -60,7 +60,8 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         // Everything else is the operation failing on its own terms: the cache had no
         // usable snapshot, a lock was poisoned, a watch worker stopped. The arguments were
         // fine, so calling these ValueError told a caller to look in the wrong place -- and
-        // it made `--cache only` exit 2 as a usage error where the command line exits 1
+        // it made `--cache only`, now `--stale-ok`, exit 2 as a usage error where the command
+        // line exits 1
         // (fdu-4msv).
         operational => PyRuntimeError::new_err(operational.to_string()),
     }
@@ -180,6 +181,8 @@ impl PyIndex {
         ignored = None,
         depth = None,
         limit = None,
+        breadth = None,
+        min_share = None,
         sort = None,
         reverse = false,
         size = None,
@@ -199,6 +202,8 @@ impl PyIndex {
         ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
+        breadth: Option<&str>,
+        min_share: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
         size: Option<&str>,
@@ -216,6 +221,8 @@ impl PyIndex {
             ignored,
             depth,
             limit,
+            breadth,
+            min_share,
             sort,
             reverse,
             size,
@@ -242,6 +249,8 @@ impl PyIndex {
         ignored = None,
         depth = None,
         limit = None,
+        breadth = None,
+        min_share = None,
         sort = None,
         reverse = false,
         size = None,
@@ -262,6 +271,8 @@ impl PyIndex {
         ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
+        breadth: Option<&str>,
+        min_share: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
         size: Option<&str>,
@@ -272,7 +283,7 @@ impl PyIndex {
         // last place a request meant one thing at this door and another at the next.
         let request = build_request(
             SystemTime::now(),
-            &self.basis,
+            RequestBasis::Held(&self.basis),
             views,
             format,
             include,
@@ -284,6 +295,8 @@ impl PyIndex {
             ignored,
             depth,
             limit,
+            breadth,
+            min_share,
             sort,
             reverse,
             size,
@@ -470,6 +483,8 @@ impl PyIndex {
         ignored: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
+        breadth: Option<&str>,
+        min_share: Option<&str>,
         sort: Option<&str>,
         reverse: bool,
         size: Option<&str>,
@@ -480,7 +495,7 @@ impl PyIndex {
         let now = SystemTime::now();
         let request = build_request(
             now,
-            &self.basis,
+            RequestBasis::Held(&self.basis),
             views,
             format,
             include,
@@ -492,6 +507,8 @@ impl PyIndex {
             ignored,
             depth,
             limit,
+            breadth,
+            min_share,
             sort,
             reverse,
             size,
@@ -553,6 +570,7 @@ fn build_basis(
     control_budget: Option<&str>,
     control_line_limit: Option<&str>,
     analyze: &str,
+    ignored: Option<&str>,
 ) -> PyResult<Basis> {
     let scan_depth = max_depth.map(|depth| depth.to_string());
     let spec = RequestSpec {
@@ -562,6 +580,7 @@ fn build_basis(
         control_budget,
         control_line_limit,
         analyze: Some(analyze),
+        read: ReadSpec { ignored, ..ReadSpec::new() },
         ..RequestSpec::new(root)
     };
     Basis::build(&spec, &AxisNames::FIELDS).map_err(|error| value_error(&error))
@@ -795,6 +814,12 @@ impl PyWatch {
     }
 }
 
+/// A new scan derives its population from the request; a retained read uses held scope.
+enum RequestBasis<'a> {
+    Held(&'a Basis),
+    Fresh(Box<RequestSpec<'a>>),
+}
+
 /// Build one request from the keyword arguments every report path accepts.
 ///
 /// `basis` is what the index or the one-shot holds -- root, scope, and analyzers -- and the
@@ -805,7 +830,7 @@ impl PyWatch {
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
 fn build_request(
     now: SystemTime,
-    basis: &Basis,
+    basis: RequestBasis<'_>,
     views: Option<Vec<String>>,
     format: Option<&str>,
     include: Option<Vec<String>>,
@@ -817,6 +842,8 @@ fn build_request(
     ignored: Option<&str>,
     depth: Option<&str>,
     limit: Option<&str>,
+    breadth: Option<&str>,
+    min_share: Option<&str>,
     sort: Option<&str>,
     reverse: bool,
     size: Option<&str>,
@@ -848,17 +875,23 @@ fn build_request(
         ignored,
         depth,
         limit,
+        breadth,
+        min_share,
         sort,
         reverse,
         size,
     };
-    // The basis is the holder's, never the caller's: an index was opened with its root,
-    // scope, and analyzers, and a read of it names only what this read asks. Handing it to
-    // the model up front is what lets the view axis default from the analyzers the holder
-    // already holds -- a request that paid to read files displays what it read -- rather
-    // than spelling that typed set back into the grammar to ask.
-    Request::read(basis.clone(), &spec, now, &AxisNames::FIELDS)
-        .map_err(|error| value_error(&error))
+    match basis {
+        RequestBasis::Held(basis) => Request::read(basis.clone(), &spec, now, &AxisNames::FIELDS),
+        RequestBasis::Fresh(mut fresh) => {
+            fresh.read = spec;
+            Request::build(&fresh, now, &AxisNames::FIELDS).and_then(|request| {
+                request.validate()?;
+                Ok(request)
+            })
+        }
+    }
+    .map_err(|error| value_error(&error))
 }
 
 /// One report, holding only what the request needed.
@@ -873,9 +906,17 @@ struct PyOneShot {
 
 #[pymethods]
 impl PyOneShot {
-    fn render(&self, format: &str, color: bool) -> PyResult<String> {
-        fdu_core::report_format::render(&self.report, parse_format(format)?, color)
-            .map_err(to_py_err)
+    #[pyo3(signature = (format, color, bar_size=10))]
+    fn render(&self, format: &str, color: bool, bar_size: i64) -> PyResult<String> {
+        let bar_size = usize::try_from(bar_size.max(0)).map_err(|_| {
+            PyValueError::new_err("bar_size exceeds this platform's supported width")
+        })?;
+        fdu_core::report_format::render_with_options(
+            &self.report,
+            parse_format(format)?,
+            fdu_core::report_format::RenderOptions { color, bar_size },
+        )
+        .map_err(to_py_err)
     }
 
     /// What the report says about itself, as values rather than as rendered text.
@@ -887,10 +928,14 @@ impl PyOneShot {
     fn notes(&self) -> Vec<String> {
         use fdu_core::report_format::{self, Format};
         if matches!(self.report.format, Format::Paths | Format::Long) {
-            report_format::flat_diagnostics(&self.report)
+            report_format::flat_diagnostic_lines(&self.report).notes
         } else {
-            self.report.notes.clone()
+            report_format::report_notes(&self.report)
         }
+    }
+    /// Actionable suggestions, separate from factual notes and formatted output.
+    fn tips(&self) -> Vec<String> {
+        fdu_core::report_format::report_tips(&self.report)
     }
 }
 
@@ -911,6 +956,8 @@ impl PyOneShot {
     root,
     *,
     cache = "auto",
+    stale_ok = false,
+    cache_dir = None,
     max_depth = None,
     one_filesystem = false,
     read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
@@ -929,6 +976,8 @@ impl PyOneShot {
     ignored = None,
     depth = None,
     limit = None,
+    breadth = None,
+    min_share = None,
     sort = None,
     reverse = false,
     size = None,
@@ -943,6 +992,8 @@ fn report_once(
     py: Python<'_>,
     root: PathBuf,
     cache: &str,
+    stale_ok: bool,
+    cache_dir: Option<PathBuf>,
     max_depth: Option<usize>,
     one_filesystem: bool,
     read_controls: bool,
@@ -961,6 +1012,8 @@ fn report_once(
     ignored: Option<&str>,
     depth: Option<&str>,
     limit: Option<&str>,
+    breadth: Option<&str>,
+    min_share: Option<&str>,
     sort: Option<&str>,
     reverse: bool,
     size: Option<&str>,
@@ -969,32 +1022,21 @@ fn report_once(
     // One instant for the whole request: the report's `generated_at` and the clock its time
     // bounds resolve against come from one reading rather than two.
     let now = SystemTime::now();
-    let basis = build_basis(
-        &root,
-        max_depth,
+    let scan_depth = max_depth.map(|depth| depth.to_string());
+    let fresh = RequestSpec {
+        scan_depth: scan_depth.as_deref(),
         one_filesystem,
-        read_controls,
+        read_controls: Some(read_controls),
         control_budget,
         control_line_limit,
-        analyze,
-    )?;
-    let delivery = Delivery {
-        cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
-            .map_err(|error| value_error(&error))?,
-        cache_path: fdu_core::default_cache_path(&root),
-        workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
-        batch_size: fdu_core::ScanConfig::default().batch_size,
-        order: fdu_core::ScanOrder::default(),
-        // A one-shot report is neither partial-tolerant nor repeated: this function
-        // returns one complete answer or raises.
-        accept_partial: false,
-        watch: None,
+        analyze: Some(analyze),
+        ..RequestSpec::new(&root)
     };
     // Refused before any scan, in the API's own names; the engine refuses the same request
     // with the same typed value for a Rust caller.
     let request = build_request(
         now,
-        &basis,
+        RequestBasis::Fresh(Box::new(fresh)),
         views,
         format,
         include,
@@ -1006,11 +1048,28 @@ fn report_once(
         ignored,
         depth,
         limit,
+        breadth,
+        min_share,
         sort,
         reverse,
         size,
         words_per_page,
     )?;
+
+    let delivery = Delivery {
+        cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
+            .map_err(|error| value_error(&error))?,
+        stale_ok,
+        cache_path: fdu_core::default_cache_path_in(&root, cache_dir.as_deref())
+            .map_err(to_py_err)?,
+        workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
+        batch_size: fdu_core::ScanConfig::default().batch_size,
+        order: fdu_core::ScanOrder::default(),
+        // A one-shot report is neither partial-tolerant nor repeated: this function
+        // returns one complete answer or raises.
+        accept_partial: false,
+        watch: None,
+    };
 
     let prepared = py.detach(|| fdu_core::prepare_report(&request, &delivery));
     let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;
@@ -1098,9 +1157,14 @@ fn render_change(
 /// is cheap, keeps one definition of what a status *is*, and means a caller cannot hand
 /// the renderer a status the engine never produced.
 #[pyfunction]
-#[pyo3(signature = (paths, scope, format = "text"))]
+#[pyo3(signature = (paths, scope, format = "text", color = false))]
 #[allow(clippy::needless_pass_by_value)]
-fn render_cache_status(paths: Vec<PathBuf>, scope: &str, format: &str) -> PyResult<String> {
+fn render_cache_status(
+    paths: Vec<PathBuf>,
+    scope: &str,
+    format: &str,
+    color: bool,
+) -> PyResult<String> {
     let scope = fdu_core::CacheScope::parse(scope).ok_or_else(|| {
         PyValueError::new_err(format!(
             "invalid cache scope {:?}: expected one of {}",
@@ -1113,7 +1177,12 @@ fn render_cache_status(paths: Vec<PathBuf>, scope: &str, format: &str) -> PyResu
         .iter()
         .map(|path| fdu_core::cache_status(path).map_err(to_py_err))
         .collect::<PyResult<Vec<_>>>()?;
-    Ok(fdu_core::report_format::render_cache_status(&statuses, scope, format))
+    Ok(fdu_core::report_format::render_cache_status_with_options(
+        &statuses,
+        scope,
+        format,
+        fdu_core::report_format::RenderOptions { color, ..Default::default() },
+    ))
 }
 
 /// Decode the authoritative cache wire row instead of maintaining a second schema.
@@ -1130,18 +1199,34 @@ fn cache_status_dict<'py>(
     Ok(parsed.get_item("caches")?.get_item(0)?.cast_into::<PyDict>()?)
 }
 
-/// The cache directory this build would use for a root.
+/// The metadata snapshot path this build would use for a root.
 #[pyfunction]
+#[pyo3(signature = (root, *, cache_dir = None))]
 #[allow(clippy::needless_pass_by_value)]
-fn cache_path(root: PathBuf) -> Option<PathBuf> {
-    fdu_core::default_cache_path(&root)
+fn cache_path(root: PathBuf, cache_dir: Option<PathBuf>) -> PyResult<Option<PathBuf>> {
+    fdu_core::default_cache_path_in(&root, cache_dir.as_deref()).map_err(to_py_err)
+}
+
+/// The cache destination this build would use, independent of any root.
+#[pyfunction]
+#[pyo3(signature = (*, cache_dir = None))]
+#[allow(clippy::needless_pass_by_value)]
+fn cache_directory(cache_dir: Option<PathBuf>) -> PyResult<Option<PathBuf>> {
+    fdu_core::default_cache_dir(cache_dir.as_deref()).map_err(to_py_err)
 }
 
 /// Status of the snapshot for one root.
 #[pyfunction]
+#[pyo3(signature = (root, *, cache_dir = None))]
 #[allow(clippy::needless_pass_by_value)]
-fn cache_status(py: Python<'_>, root: PathBuf) -> PyResult<Option<Bound<'_, PyDict>>> {
-    let Some(path) = fdu_core::default_cache_path(&root) else {
+fn cache_status(
+    py: Python<'_>,
+    root: PathBuf,
+    cache_dir: Option<PathBuf>,
+) -> PyResult<Option<Bound<'_, PyDict>>> {
+    let Some(path) =
+        fdu_core::default_cache_path_in(&root, cache_dir.as_deref()).map_err(to_py_err)?
+    else {
         return Ok(None);
     };
     let status = fdu_core::cache_status(&path).map_err(to_py_err)?;
@@ -1150,12 +1235,11 @@ fn cache_status(py: Python<'_>, root: PathBuf) -> PyResult<Option<Bound<'_, PyDi
 
 /// Every cache file this build can see, recognized or not.
 #[pyfunction]
+#[pyo3(signature = (*, cache_dir = None))]
 #[allow(clippy::needless_pass_by_value)]
-fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
+fn list_caches(py: Python<'_>, cache_dir: Option<PathBuf>) -> PyResult<Bound<'_, PyList>> {
     let list = PyList::empty(py);
-    let Some(dir) =
-        fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf))
-    else {
+    let Some(dir) = fdu_core::default_cache_dir(cache_dir.as_deref()).map_err(to_py_err)? else {
         return Ok(list);
     };
     for status in fdu_core::list_caches(&dir).map_err(to_py_err)? {
@@ -1166,9 +1250,10 @@ fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
 
 /// Remove the snapshot for one root, current or stale. Returns whether one was removed.
 #[pyfunction]
+#[pyo3(signature = (root, *, cache_dir = None))]
 #[allow(clippy::needless_pass_by_value)]
-fn clear_cache(root: PathBuf) -> PyResult<bool> {
-    match fdu_core::default_cache_path(&root) {
+fn clear_cache(root: PathBuf, cache_dir: Option<PathBuf>) -> PyResult<bool> {
+    match fdu_core::default_cache_path_in(&root, cache_dir.as_deref()).map_err(to_py_err)? {
         Some(path) => fdu_core::clear_cache(&path).map_err(to_py_err),
         None => Ok(false),
     }
@@ -1177,13 +1262,13 @@ fn clear_cache(root: PathBuf) -> PyResult<bool> {
 /// Remove every fdu snapshot, current or stale, and reclaim the files fdu left behind,
 /// leaving unrecognized files alone. Returns the two counts as a dict.
 #[pyfunction]
+#[pyo3(signature = (*, cache_dir = None))]
 #[allow(clippy::needless_pass_by_value)]
-fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>> {
-    let summary =
-        match fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
-            Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err)?,
-            None => fdu_core::ClearSummary::default(),
-        };
+fn clear_all_caches(py: Python<'_>, cache_dir: Option<PathBuf>) -> PyResult<Bound<'_, PyDict>> {
+    let summary = match fdu_core::default_cache_dir(cache_dir.as_deref()).map_err(to_py_err)? {
+        Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err)?,
+        None => fdu_core::ClearSummary::default(),
+    };
     let dict = PyDict::new(py);
     dict.set_item("snapshots", summary.snapshots)?;
     dict.set_item("leftovers", summary.leftovers)?;
@@ -1202,12 +1287,15 @@ fn clear_all_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyDict>
     root,
     *,
     cache = "auto",
+    stale_ok = false,
+    cache_dir = None,
     max_depth = None,
     one_filesystem = false,
     read_controls = fdu_core::query::Request::DEFAULTS.read_controls,
     control_budget = None,
     control_line_limit = None,
     analyze = ANALYZE_DEFAULT,
+    ignored = None,
     analysis_workers = 0
 ))]
 #[allow(
@@ -1219,12 +1307,15 @@ fn open(
     py: Python<'_>,
     root: PathBuf,
     cache: &str,
+    stale_ok: bool,
+    cache_dir: Option<PathBuf>,
     max_depth: Option<usize>,
     one_filesystem: bool,
     read_controls: bool,
     control_budget: Option<&str>,
     control_line_limit: Option<&str>,
     analyze: &str,
+    ignored: Option<&str>,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let basis = build_basis(
@@ -1235,11 +1326,14 @@ fn open(
         control_budget,
         control_line_limit,
         analyze,
+        ignored,
     )?;
     let delivery = Delivery {
         cache: parse_cache_policy(cache, AxisNames::FIELDS.cache)
             .map_err(|error| value_error(&error))?,
-        cache_path: fdu_core::default_cache_path(&root),
+        stale_ok,
+        cache_path: fdu_core::default_cache_path_in(&root, cache_dir.as_deref())
+            .map_err(to_py_err)?,
         workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
         batch_size: fdu_core::ScanConfig::default().batch_size,
         order: fdu_core::ScanOrder::default(),
@@ -1267,6 +1361,7 @@ fn open(
     control_budget = None,
     control_line_limit = None,
     analyze = ANALYZE_DEFAULT,
+    ignored = None,
     analysis_workers = 0
 ))]
 #[allow(
@@ -1283,6 +1378,7 @@ fn scan(
     control_budget: Option<&str>,
     control_line_limit: Option<&str>,
     analyze: &str,
+    ignored: Option<&str>,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let basis = build_basis(
@@ -1293,10 +1389,12 @@ fn scan(
         control_budget,
         control_line_limit,
         analyze,
+        ignored,
     )?;
     // A bare scan consults no cache at all, so its delivery names none.
     let delivery = Delivery {
         cache: CachePolicy::Off,
+        stale_ok: false,
         cache_path: None,
         workers: fdu_core::query::Workers { analysis: analysis_workers, ..Default::default() },
         batch_size: fdu_core::ScanConfig::default().batch_size,
@@ -1327,7 +1425,7 @@ fn main(py: Python<'_>) -> PyResult<u8> {
 #[pyfunction]
 fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let contract = PyDict::new(py);
-    contract.set_item("cache_policies", ["auto", "refresh", "read-only", "only", "off"])?;
+    contract.set_item("cache_policies", ["auto", "on", "off"])?;
     contract.set_item("analysis", ["none", "lines", "code", "words", "all"])?;
     // Derived, never copied. A hand-written list here is a second definition of a
     // grammar the library owns, and a parity test comparing two copies of the same
@@ -1340,7 +1438,11 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("formats", fdu_core::report_format::Format::ALL)?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
-    contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
+    let sort_keys: Vec<_> = ["size", "count", "mtime", "name"]
+        .into_iter()
+        .chain(fdu_core::content::METRICS.iter().map(|metric| metric.name))
+        .collect();
+    contract.set_item("sort_keys", sort_keys)?;
     contract.set_item("cache_scopes", fdu_core::CacheScope::LABELS)?;
     contract.set_item("cache_states", fdu_core::CacheState::LABELS)?;
     contract.set_item("content_states", fdu_core::ContentState::LABELS)?;
@@ -1364,6 +1466,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWatch>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(cache_path, m)?)?;
+    m.add_function(wrap_pyfunction!(cache_directory, m)?)?;
     m.add_function(wrap_pyfunction!(cache_status, m)?)?;
     m.add_function(wrap_pyfunction!(render_cache_status, m)?)?;
     m.add_function(wrap_pyfunction!(report_once, m)?)?;
@@ -1391,17 +1494,13 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn cache_policy_accepts_only_the_canonical_read_only_spelling() {
+    fn cache_policy_names_the_stale_answer_in_this_apis_words() {
         let axis = AxisNames::FIELDS.cache;
-        assert_eq!(
-            parse_cache_policy("read-only", axis).expect("the canonical policy name parses"),
-            CachePolicy::ReadOnly
-        );
-        let refused = parse_cache_policy("readonly", axis)
-            .expect_err("an unreleased alias must not become a contract");
+        assert_eq!(parse_cache_policy("on", axis).expect("a policy"), CachePolicy::On);
+        let refused = parse_cache_policy("only", axis).expect_err("retired");
         assert_eq!(
             refused.message(&AxisNames::FIELDS),
-            "invalid cache policy \"readonly\": expected one of auto, refresh, read-only, only, off"
+            "invalid cache policy \"only\": answering from the snapshot alone is now stale_ok"
         );
     }
 
@@ -1432,6 +1531,7 @@ mod tests {
                     },
                     delivery: Delivery {
                         cache: CachePolicy::Off,
+                        stale_ok: false,
                         cache_path: None,
                         accept_partial: false,
                         watch: None,

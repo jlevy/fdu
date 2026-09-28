@@ -1,0 +1,87 @@
+{
+ "span_seconds": 598.7,
+ "events": 3253,
+ "events_per_minute": 326.0,
+ "callbacks": 612,
+ "distinct_paths": 2824,
+ "events_with_ItemRenamed": 2002,
+ "share_with_ItemRenamed": 0.615,
+ "flag_counts": {
+  "IsFile": 3101,
+  "ItemRenamed": 2002,
+  "ItemModified": 1142,
+  "XattrMod": 1112,
+  "ItemCreated": 1103,
+  "ItemRemoved": 1002,
+  "IsDir": 148,
+  "InodeMetaMod": 70,
+  "ChangeOwner": 9,
+  "IsSymlink": 4
+ },
+ "top_flag_combinations": [
+  {
+   "flags": "ItemRemoved",
+   "count": 1002
+  },
+  {
+   "flags": "ItemRenamed",
+   "count": 695
+  },
+  {
+   "flags": "ItemCreated|ItemRenamed|ItemModified|XattrMod",
+   "count": 679
+  },
+  {
+   "flags": "ItemRenamed|ItemModified",
+   "count": 363
+  },
+  {
+   "flags": "ItemCreated|ItemRenamed|XattrMod",
+   "count": 252
+  },
+  {
+   "flags": "ItemCreated|XattrMod",
+   "count": 110
+  },
+  {
+   "flags": "ItemCreated|ItemModified|XattrMod",
+   "count": 58
+  },
+  {
+   "flags": "InodeMetaMod",
+   "count": 44
+  },
+  {
+   "flags": "InodeMetaMod|ItemModified",
+   "count": 13
+  },
+  {
+   "flags": "ItemModified",
+   "count": 12
+  }
+ ],
+ "events_by_depth": {
+  "1": 89,
+  "2": 4,
+  "4": 9,
+  "5": 19,
+  "6": 295,
+  "7": 299,
+  "8": 896,
+  "9": 441,
+  "10": 1055,
+  "11": 146
+ },
+ "events_per_minute_series": [
+  15,
+  17,
+  4,
+  12,
+  27,
+  642,
+  9,
+  1015,
+  69,
+  1443
+ ]
+}

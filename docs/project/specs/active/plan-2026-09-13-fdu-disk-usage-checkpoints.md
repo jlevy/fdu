@@ -890,9 +890,9 @@ Accounting cases have stated expected deltas:
 - **Hard link added to an existing in-scope file:** per-path allocated grows by the
   file’s allocated size at the new link’s directory; unique allocated is unchanged in
   total, and its attribution moves only if the new link sorts first.
-- **Hard link added in scope to a file outside the scope:** for example, uv on Linux,
-  which hard-links from its cache by default, installing from a cache outside the root
-  into an environment inside it.
+- **Hard link added in scope to a file outside the scope:** for example, uv configured
+  with `--link-mode hardlink`, installing from a cache outside the root into an
+  environment inside it.
   Both allocated measures grow by the file’s allocated size at the new link’s directory,
   and the row is marked shared.
 - **One link of a multi-link file renamed:** apparent and per-path allocated bytes move

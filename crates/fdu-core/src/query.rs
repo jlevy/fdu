@@ -16,9 +16,11 @@ mod query_values;
 
 pub use query_glob::Pattern;
 pub use query_report::{
-    AxisNames, ContentReportMetadata, FileRow, IgnoredTally, MetricGroup, MetricRow, MetricShare,
-    MetricSummary, Pages, Query, Report, ReportMetricValues, ReportSource, Section, ShareMetric,
-    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, pages, report,
+    AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, FileRow,
+    IgnoredSize, IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages, Query,
+    Report, ReportMetricValues, ReportSource, Section, ShareMetric, SummaryRow, TreeDisplayLimits,
+    TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder, TypeRow, ViewSpec, document_words,
+    pages, report,
 };
 pub(crate) use query_report::{report_in, report_summary};
 pub(crate) use query_request::Rejection;
@@ -29,8 +31,8 @@ pub use query_request::{
 };
 pub(crate) use query_selection::NameIdentity;
 pub use query_selection::{
-    Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, SizeMetric,
-    SortKey,
+    Bound, Candidate, EntrySelection, IgnoredEntries, ModifiedWindow, Selection, ShareThreshold,
+    SizeMetric, SortKey,
 };
 pub use query_status::{ReportProvenance, TierProvenance, TierState, TreeStatus};
 pub(crate) use query_values::format_rfc3339_nanos;

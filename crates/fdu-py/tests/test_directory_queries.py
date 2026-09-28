@@ -43,6 +43,13 @@ def inventory(format: fdu.Format = fdu.Format.LONG) -> fdu.Query:
     )
 
 
+def test_cache_directory_resolves_without_a_scan_root(tmp_path: Path) -> None:
+    destination = tmp_path / "snapshots"
+    assert fdu.cache_directory(cache_dir=destination) == destination
+    assert fdu.list_caches(cache_dir=destination) == ()
+    assert fdu.clear_all_caches(cache_dir=destination) == fdu.ClearSummary(0, 0)
+
+
 def test_retained_directory_metrics_and_formats_need_no_filesystem(builds: Path) -> None:
     index = fdu.scan(builds)
     shutil.rmtree(builds)
@@ -109,11 +116,11 @@ def test_a_directory_at_the_scan_depth_boundary_has_an_unknown_age(builds: Path)
 
 def test_cold_warm_and_cache_only_directory_membership_agree(builds: Path) -> None:
     query = inventory(fdu.Format.JSON)
-    cold = fdu.report(builds, query, cache=fdu.CachePolicy.REFRESH)
-    warm = fdu.open(builds, cache=fdu.CachePolicy.READ_ONLY).report(query)
+    cold = fdu.report(builds, query, cache=fdu.CachePolicy.ON)
+    warm = fdu.open(builds).report(query)
     # A new file would change an actual scan, but cannot change an unverified cache read.
     (builds / "a/.venv/new").write_bytes(b"new")
-    cached = fdu.report(builds, query, cache=fdu.CachePolicy.ONLY)
+    cached = fdu.report(builds, query, stale_ok=True)
     assert cached.provenance.source is fdu.ReportSource.CACHE_ONLY
     for result in (cold, warm, cached):
         section = result.sections[0]

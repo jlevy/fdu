@@ -332,6 +332,67 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertIn("8,192", note)
         self.assertIn("not an assertion", note)
 
+    def test_render_reports_absolute_file_and_allocated_byte_rates(self) -> None:
+        wall = {"median": 2_000_000_000}
+        rss = {"median": 8 * 1024 * 1024}
+        comparison = {
+            "median_change_pct": 50.0,
+            "ci95_change_pct": [40.0, 60.0],
+        }
+        document = {
+            "anchor": "fdu",
+            "baseline_drift": [],
+            "competitor_order": ["du"],
+            "conditions": {"storage": "internal APFS SSD"},
+            "host": {"cpu_model": "Fixture CPU"},
+            "invalid_samples": 0,
+            "overall": {"fdu": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
+            "semantic_mismatches": [],
+            "statistics": {
+                "du": {
+                    "competitor_vs_fdu": {"wall_ns": comparison},
+                    "fdu_vs_competitor": {
+                        "policy_stability": {"stable": False},
+                        "qualification": {
+                            "classification": "inconclusive",
+                            "confirmable": False,
+                            "reasons": [],
+                        },
+                    },
+                    "tools": {"du": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
+                }
+            },
+            "summary_oracle_mismatches": [],
+            "tools": {
+                "fdu": {"work_class": "indexed-tree"},
+                "du": {"work_class": "total-only"},
+            },
+            "tree": {
+                "counts": {"files": 500_000, "total": 600_001},
+                "hardlinks": {"duplicate_allocated_bytes": 0, "duplicate_file_entries": 0},
+                "sizes": {"allocated_bytes": 3_000_000_000},
+            },
+            "tree_mutated_during_run": [],
+        }
+
+        rendered = compare_tools.render(document)
+
+        self.assertIn(
+            "| Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |",
+            rendered,
+        )
+        self.assertIn("| fdu | indexed-tree | 2.0 s | baseline | 250k | 1.5 |", rendered)
+        self.assertIn("| du | total-only | 2.0 s | +50% | 250k | 1.5 |", rendered)
+        self.assertIn("Rates divide the subject's 500,000 regular files", rendered)
+        self.assertIn("3,000,000,000 allocated bytes", rendered)
+
+    def test_compact_rates_preserve_small_measurements(self) -> None:
+        wall = {"median": 36_000_000}
+        tree = {"counts": {"files": 9}, "sizes": {"allocated_bytes": 4096}}
+
+        self.assertEqual(compare_tools._seconds(wall), "0.036 s")
+        self.assertEqual(compare_tools._throughput(tree, wall), ("250", "0.00011"))
+
     def test_dumac_is_explicitly_total_only(self) -> None:
         contract = compare_tools.CONTRACTS["dumac"]
 
@@ -352,6 +413,44 @@ class ToolComparisonTests(unittest.TestCase):
 
         self.assertEqual(observed, 8_192)
         self.assertIsNone(error)
+
+    def test_dust_adapter_counts_directory_blocks_where_the_filesystem_has_them(self) -> None:
+        # ext4 gives every directory a block; dust sums it and fdu does not.
+        oracle = {
+            "counts": {"symlinks": 0},
+            "hardlinks": {"duplicate_allocated_bytes": 0},
+            "sizes": {"allocated_bytes": 8_192, "directory_allocated_bytes": 8_192},
+        }
+
+        observed, error = compare_tools._dust_semantics(b"16384B corpus\n", "", oracle)
+        self.assertEqual(observed, 16_384)
+        self.assertIsNone(error)
+
+        _observed, error = compare_tools._dust_semantics(b"8192B corpus\n", "", oracle)
+        self.assertIn("disagrees with independent oracle", error or "")
+
+    def test_a_censored_peak_rss_renders_as_a_bound(self) -> None:
+        censored = [
+            {"metrics": {"peak_rss_bytes": None}, "peak_rss_floor_bytes": 50 * 1024 * 1024},
+            {"metrics": {"peak_rss_bytes": None}, "peak_rss_floor_bytes": 60 * 1024 * 1024},
+        ]
+        mixed = [*censored, {"metrics": {"peak_rss_bytes": 70 * 1024 * 1024}}]
+
+        self.assertEqual(compare_tools._censored_peak_rss(censored), 60 * 1024 * 1024)
+        self.assertIsNone(compare_tools._censored_peak_rss(mixed))
+        self.assertEqual(
+            compare_tools._rss_cell(None, {"peak_rss_at_most_bytes": 60 * 1024 * 1024}),
+            "≤ 60.0 MiB",
+        )
+        self.assertEqual(compare_tools._rss_cell(None, {}), "—")
+        self.assertEqual(
+            compare_tools._rss_cell({"median": 3 * 1024 * 1024}, {}), "3.0 MiB"
+        )
+
+    def test_throughput_renders_a_tool_with_no_valid_sample(self) -> None:
+        tree = {"counts": {"files": 9}, "sizes": {"allocated_bytes": 4096}}
+
+        self.assertEqual(compare_tools._throughput(tree, None), ("—", "—"))
 
     def test_dust_adapter_fails_closed_on_every_invalid_output_class(self) -> None:
         oracle = {
@@ -508,6 +607,43 @@ class ToolComparisonTests(unittest.TestCase):
             )
             self.assertIsNotNone(error)
 
+    def test_current_report_layout_is_read_from_provenance_and_status(self) -> None:
+        """`fdu.report/7` nests the run facts; a flat reader rejected every sample."""
+        base = {
+            "schema": "fdu.report/7",
+            "root": "/private/one",
+            "status": {"complete": True, "coverage": {"kind": "complete"}, "errors": []},
+            "provenance": {
+                "source": "cold_scan",
+                "freshness": "fresh",
+                "generated_at": "2026-01-01T00:00:01Z",
+            },
+            "reports": [{"view": "summary", "summary": {"files": 3}}],
+        }
+        later = {
+            **base,
+            "root": "/private/two",
+            "provenance": {**base["provenance"], "generated_at": "2027-01-01T00:00:01Z"},
+        }
+
+        first, first_error = compare_tools._summary_semantic_digest(json.dumps(base).encode())
+        second, second_error = compare_tools._summary_semantic_digest(json.dumps(later).encode())
+        self.assertIsNone(first_error)
+        self.assertIsNone(second_error)
+        self.assertEqual(first, second)
+
+        for key, change in (
+            ("provenance", {"source": "snapshot", "freshness": "fresh"}),
+            ("provenance", {"source": "cold_scan", "freshness": "stale"}),
+            ("status", {"complete": False, "errors": []}),
+            ("status", {"complete": True, "errors": [{"message": "unreadable"}]}),
+        ):
+            with self.subTest(key=key, change=change):
+                _digest, error = compare_tools._summary_semantic_digest(
+                    json.dumps({**base, key: change}).encode()
+                )
+                self.assertIsNotNone(error)
+
     def test_summary_oracle_checks_counts_and_both_byte_totals(self) -> None:
         oracle = {
             "counts": {"directories": 5, "files": 9},
@@ -604,9 +740,10 @@ class DefaultTreeContractTests(unittest.TestCase):
     """The contract for what users actually type, and its one dangerous requirement.
 
     Every other fdu contract passes `--cache off`, so the harness never had to care
-    where a tool keeps state. This one measures the default invocation, which writes a
-    snapshot, and measuring that against the operator's real cache directory would let
-    an unrelated earlier run decide this run's starting state.
+    where a tool keeps state. This one measures the default invocation, which may write a
+    snapshot (every binary before `--cache auto` stopped writing one did), and measuring
+    that against the operator's real cache directory would let an unrelated earlier run
+    decide this run's starting state.
     """
 
     def test_the_contract_is_the_bare_default_invocation(self) -> None:
@@ -618,7 +755,7 @@ class DefaultTreeContractTests(unittest.TestCase):
         self.assertNotIn("--view", contract.argv)
         self.assertNotIn("--depth", contract.argv)
         self.assertEqual(contract.argv, ("{binary}", "--color", "never", "{root}"))
-        self.assertIn("persisted snapshot written on every run", contract.description)
+        self.assertIn("writes it inside the timed run", contract.description)
 
     def test_it_is_the_only_contract_declaring_a_cache_write(self) -> None:
         writers = {

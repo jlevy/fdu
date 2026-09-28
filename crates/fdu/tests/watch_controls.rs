@@ -11,6 +11,7 @@
 //! command line builds, not about what the engine can be configured to do.
 #![cfg(all(feature = "watch", unix))]
 
+use std::collections::VecDeque;
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
@@ -53,6 +54,8 @@ impl Watching {
             .args(selection)
             .arg(tree)
             .env("XDG_CACHE_HOME", cache)
+            // FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+            .env_remove("FDU_CACHE_DIR")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -82,12 +85,18 @@ impl Watching {
     /// it exits or stalls first.
     fn wait_for(&mut self, description: &str, wanted: impl Fn(&str) -> bool) -> String {
         let started = Instant::now();
+        let mut recent = VecDeque::new();
         loop {
             match self.lines.recv_timeout(DEADLINE.saturating_sub(started.elapsed())) {
                 Ok(line) if wanted(&line) => return line,
-                Ok(_) => {}
+                Ok(line) => {
+                    if recent.len() == 12 {
+                        recent.pop_front();
+                    }
+                    recent.push_back(line);
+                }
                 Err(RecvTimeoutError::Timeout) => {
-                    self.fail(&format!("timed out after {DEADLINE:?} waiting for {description}"));
+                    self.fail(&format!("timed out after {DEADLINE:?} waiting for {description}; recent lines: {recent:?}"));
                 }
                 Err(RecvTimeoutError::Disconnected) => {
                     self.fail(&format!("the watch exited before {description}"));
@@ -147,6 +156,7 @@ fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
         .args(args)
         .arg(tree)
         .env("XDG_CACHE_HOME", cache)
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu");
     assert!(
@@ -181,7 +191,7 @@ fn a_watch_serves_a_tree_whose_ignore_rule_exceeds_the_control_bound() {
         "a watch over an oversized ignore rule answered only partially: {envelope}",
     );
     assert!(
-        envelope.contains("\"applied\": 0, \"refused\": 1"),
+        envelope.contains("\"applied\": 0, \"rules\": 0, \"refused\": 1"),
         "the watch read the control file and named its refusal: {envelope}",
     );
 }
@@ -224,7 +234,7 @@ fn a_control_file_edited_past_the_bound_does_not_end_a_watch() {
     // And it persisted them under its own scope: once its snapshot holds the later file,
     // the next watch starts warm from it and answers completely.
     let started = Instant::now();
-    while !report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--cache", "only"])
+    while !report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--stale-ok"])
         .contains("\"path\": \"after.txt\"")
     {
         assert!(started.elapsed() < DEADLINE, "the watch never persisted the later change");
@@ -265,8 +275,9 @@ fn a_watch_and_a_one_shot_report_start_warm_from_each_others_snapshot() {
         "a report after a watch rescanned instead of reusing the watch's snapshot: {analyzed}",
     );
 
-    // And the other order: a one-shot report's snapshot starts the next watch warm.
-    report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "refresh"]);
+    // And the other order: a one-shot report that keeps its snapshot starts the next watch
+    // warm.
+    report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "on"]);
     let mut watch = Watching::spawn(&tree, cache.path());
     let envelope = watch.initial_report();
     assert!(
@@ -288,7 +299,7 @@ fn a_rule_edit_moves_a_streamed_entry_out_of_and_back_into_excluded_ignored() {
     ]);
     let cache = tempfile::tempdir().expect("cache tempdir");
 
-    let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--exclude-ignored"]);
+    let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--ignored=exclude"]);
     // The initial listing contains the file, and its row says no rule ignores it.
     let row = watch
         .wait_for("the initial row for debug.log", |line| line.contains("\"path\": \"debug.log\""));
@@ -315,7 +326,7 @@ fn a_rule_edit_moves_a_streamed_entry_out_of_and_back_into_excluded_ignored() {
     );
 }
 
-/// The mirror: under `--only-ignored` an entry appears when a rule starts ignoring it and
+/// The mirror: under `--ignored=only` an entry appears when a rule starts ignoring it and
 /// leaves when the rule is lifted.
 #[test]
 fn a_rule_edit_moves_a_streamed_entry_into_and_out_of_only_ignored() {
@@ -326,7 +337,7 @@ fn a_rule_edit_moves_a_streamed_entry_into_and_out_of_only_ignored() {
     ]);
     let cache = tempfile::tempdir().expect("cache tempdir");
 
-    let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--only-ignored"]);
+    let mut watch = Watching::spawn_selecting(&tree, cache.path(), "files", &["--ignored=only"]);
     let section =
         watch.wait_for("the initial files section", |line| line.contains("\"view\": \"files\""));
     assert!(

@@ -62,10 +62,24 @@ def parse_analysis(value: str) -> str:
     return value
 
 
+# The values earlier releases accepted, each refused with its replacement as the command
+# line refuses it.
+RETIRED_CACHE_POLICIES = {
+    "only": "answering from the snapshot alone is now --stale-ok",
+    "refresh": "removed; use on, which also writes after a one-shot report",
+    "read-only": (
+        "removed; auto no longer writes after a one-shot metadata report, and off reads nothing"
+    ),
+}
+
+
 def parse_cache(value: str) -> fdu.CachePolicy:
     try:
         return fdu.CachePolicy(value)
     except ValueError:
+        retired = RETIRED_CACHE_POLICIES.get(value.strip().lower())
+        if retired is not None:
+            raise UsageError(f'invalid --cache "{value}": {retired}') from None
         known = ", ".join(p.value for p in fdu.CachePolicy)
         raise UsageError(f'invalid --cache "{value}": expected one of {known}') from None
 
@@ -131,8 +145,7 @@ class Args:
         self.gitignore_budget: str | None = None
         self.gitignore_line_limit: str | None = None
         self.no_gitignore = False
-        self.exclude_ignored = False
-        self.only_ignored = False
+        self.ignored = fdu.IgnoredEntries.INCLUDE
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -141,6 +154,9 @@ class Args:
         self.kinds: list[fdu.EntryKind] = []
         self.depth: fdu.Bound | int | None = None
         self.limit: fdu.Bound | int | None = None
+        self.breadth: fdu.Bound | int | None = None
+        self.min_share: str | None = None
+        self.full = False
         self.sort: fdu.SortKey | None = None
         self.reverse = False
         self.size = fdu.SizeMetric.ALLOCATED
@@ -153,7 +169,11 @@ class Args:
         # Accepted for grammar parity only: the shim never draws, and neither does the
         # binary anywhere the parity harness runs it.
         self.progress = "auto"
+        self.bar_size = 10
+        self.quiet = False
         self.cache = fdu.CachePolicy.AUTO
+        self.stale_ok = False
+        self.cache_dir: str | None = None
         self.allow_partial = False
         self.watch = False
         self.interval = 2.0
@@ -203,10 +223,8 @@ def parse_args(argv: list[str]) -> Args:
             args.gitignore_line_limit = take()
         elif flag == "--no-gitignore":
             args.no_gitignore = True
-        elif flag == "--exclude-ignored":
-            args.exclude_ignored = True
-        elif flag == "--only-ignored":
-            args.only_ignored = True
+        elif flag == "--ignored":
+            args.ignored = fdu.IgnoredEntries(take())
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -235,7 +253,7 @@ def parse_args(argv: list[str]) -> Args:
             args.words_per_page = int(take())
         elif flag == "--analyze":
             args.analyze = parse_analysis(take())
-        elif flag == "--analysis-workers":
+        elif flag == "--workers":
             args.analysis_workers = int(take())
         elif flag == "--format":
             args.format = parse_format(take())
@@ -247,8 +265,22 @@ def parse_args(argv: list[str]) -> Args:
             args.color = take()
         elif flag == "--progress":
             args.progress = take()
+        elif flag == "--bar-size":
+            args.bar_size = max(0, int(take()))
+        elif flag in ("--quiet", "-q"):
+            args.quiet = True
+        elif flag == "--breadth":
+            args.breadth = parse_bound(take())
+        elif flag == "--min-share":
+            args.min_share = take()
+        elif flag == "--full":
+            args.full = True
+        elif flag == "--cache-dir":
+            args.cache_dir = take()
         elif flag == "--cache":
             args.cache = parse_cache(take())
+        elif flag == "--stale-ok":
+            args.stale_ok = True
         elif flag == "--allow-partial":
             args.allow_partial = True
         elif flag == "--watch":
@@ -286,20 +318,6 @@ def _decline(flag: str) -> int:
     return 2
 
 
-def parse_ignored(args: Args) -> fdu.IgnoredEntries:
-    """Two flags on the command line, one field in the API, so only the CLI can pass both."""
-
-    if args.exclude_ignored and args.only_ignored:
-        raise UsageError(
-            "--exclude-ignored and --only-ignored select opposite entries; use one of them"
-        )
-    if args.exclude_ignored:
-        return fdu.IgnoredEntries.EXCLUDE
-    if args.only_ignored:
-        return fdu.IgnoredEntries.ONLY
-    return fdu.IgnoredEntries.INCLUDE
-
-
 def scan_options(args: Args) -> fdu.ScanOptions:
     return fdu.ScanOptions(
         max_depth=args.scan_depth,
@@ -318,12 +336,16 @@ def build_query(args: Args) -> fdu.Query:
         modified_since=args.modified_since,
         modified_before=args.modified_before,
         kinds=tuple(args.kinds),
-        depth=args.depth,
-        limit=args.limit,
+        depth=args.depth if args.depth is not None else (fdu.Bound.ALL if args.full else None),
+        limit=args.limit if args.limit is not None else (fdu.Bound.ALL if args.full else None),
+        breadth=args.breadth
+        if args.breadth is not None
+        else (fdu.Bound.ALL if args.full else None),
+        min_share=args.min_share if args.min_share is not None else ("0%" if args.full else None),
         sort=args.sort,
         reverse=args.reverse,
         size=args.size,
-        ignored=parse_ignored(args),
+        ignored=args.ignored,
     )
     # An empty view tuple means "let the requested analyzers choose", which is the
     # library's own default derivation rather than a default spelled out here.
@@ -340,13 +362,13 @@ def run_cache_lifecycle(args: Args) -> int:
 
     if args.cache_clear is not None:
         if args.cache_clear == "all":
-            directory = _cache_directory(root)
+            directory = fdu.cache_directory(cache_dir=args.cache_dir)
             if directory is None:
                 print("Cache already empty.")
             else:
                 # Echoed before acting, so a destructive flag always says where it points.
                 print(f"Cache directory: {directory}")
-                removed = fdu.clear_all_caches(directory)
+                removed = fdu.clear_all_caches(cache_dir=directory)
                 if removed.snapshots == 0 and removed.leftovers == 0:
                     print("Cache already empty.")
                 if removed.snapshots > 0:
@@ -355,7 +377,7 @@ def run_cache_lifecycle(args: Args) -> int:
                 if removed.leftovers > 0:
                     noun = "file" if removed.leftovers == 1 else "files"
                     print(f"Also reclaimed: {removed.leftovers} {noun} fdu left behind.")
-                remaining = fdu.list_caches(directory)
+                remaining = fdu.list_caches(cache_dir=directory)
                 left = sum(status.state is fdu.CacheState.UNRECOGNIZED for status in remaining)
                 if left == 1:
                     print(
@@ -374,17 +396,17 @@ def run_cache_lifecycle(args: Args) -> int:
                         f"Left in place: {staging} staging {noun} another fdu may still be writing."
                     )
         else:
-            path = fdu.cache_path(root)
-            removed = fdu.clear_cache(root)
+            path = fdu.cache_path(root, cache_dir=args.cache_dir)
+            removed = fdu.clear_cache(root, cache_dir=args.cache_dir)
             if path is not None:
                 print(f"Cache file: {path}")
             print("Cache cleared." if removed else "Cache already empty.")
-            status = fdu.cache_status(root)
+            status = fdu.cache_status(root, cache_dir=args.cache_dir)
             if status is not None and status.state is fdu.CacheState.UNRECOGNIZED:
                 print("Left in place: the file is not an fdu snapshot.")
 
     if args.cache_status is not None:
-        statuses = _statuses(root, args.cache_status)
+        statuses = _statuses(root, args.cache_status, args.cache_dir)
         # The one renderer, in every format. A shim formatting these itself would be
         # testing its own layout rather than the API's.
         print(
@@ -394,16 +416,11 @@ def run_cache_lifecycle(args: Args) -> int:
     return 0
 
 
-def _cache_directory(root: Path) -> Path | None:
-    path = fdu.cache_path(root)
-    return path.parent if path is not None else None
-
-
-def _statuses(root: Path, scope: str) -> tuple[fdu.CacheStatus, ...]:
+def _statuses(root: Path, scope: str, cache_dir: str | None = None) -> tuple[fdu.CacheStatus, ...]:
     if scope == "all":
-        directory = _cache_directory(root)
-        return fdu.list_caches(directory) if directory is not None else ()
-    status = fdu.cache_status(root)
+        directory = fdu.cache_directory(cache_dir=cache_dir)
+        return fdu.list_caches(cache_dir=directory) if directory is not None else ()
+    status = fdu.cache_status(root, cache_dir=cache_dir)
     return (status,) if status is not None else ()
 
 
@@ -468,17 +485,26 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
 
 def _open(args: Args) -> fdu.Index:
     analysis = fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers)
-    return fdu.open(args.root or ".", cache=args.cache, scan=scan_options(args), analysis=analysis)
+    return fdu.open(
+        args.root or ".",
+        cache=args.cache,
+        stale_ok=args.stale_ok,
+        cache_dir=args.cache_dir,
+        scan=scan_options(args),
+        analysis=analysis,
+    )
 
 
 def render(args: Args, report: fdu.Report) -> str:
     # The one renderer, reached through the API rather than reimplemented. A shim that
     # drew its own bars and padding would be testing the reimplementation.
     color = args.color == "always"
-    if args.format in (fdu.Format.PATHS, fdu.Format.LONG):
+    if not args.quiet:
         for note in report.notes:
             print(note, file=sys.stderr)
-    return report.render(args.format, color=color)
+        for tip in report.tips:
+            print(tip, file=sys.stderr)
+    return report.render(args.format, color=color, bar_size=args.bar_size)
 
 
 def exit_code(args: Args, status: fdu.Status) -> int:
@@ -519,6 +545,8 @@ def main(argv: list[str] | None = None) -> int:
         args.root or ".",
         build_query(args),
         cache=args.cache,
+        stale_ok=args.stale_ok,
+        cache_dir=args.cache_dir,
         scan=scan_options(args),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )

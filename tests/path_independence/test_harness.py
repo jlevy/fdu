@@ -24,7 +24,7 @@ from runner import Invocation, _read_jsonl_report, case_key, compare, normalize
 
 def answer(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "schema": "fdu.report/7",
+        "schema": "fdu.report/10",
         "request": {
             "scope": {"read_controls": True},
             "analyze": [],
@@ -52,11 +52,11 @@ class WatchEligibilityTests(unittest.TestCase):
         import matrix
         from runner import watch_can_serve
 
-        for policy in ("off", "auto", "read-only"):
+        for policy in ("off", "auto", "on"):
             self.assertTrue(watch_can_serve(matrix.spec(no_gitignore=True), policy))
             self.assertTrue(watch_can_serve(matrix.spec(analyze="none"), policy))
         for request, policy in (
-            (matrix.spec(), "only"),
+            (matrix.spec(), matrix.STALE_OK),
             (matrix.spec(analyze="lines"), "auto"),
             (matrix.spec(scan_depth=1), "auto"),
             (matrix.spec(one_fs=True), "auto"),
@@ -210,10 +210,10 @@ class CompareTests(unittest.TestCase):
 
     def test_a_cache_only_failure_is_a_named_refusal(self) -> None:
         miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
-        self.assertEqual(compare(cli(answer()), miss, policy="only").kind, "refused")
+        self.assertEqual(compare(cli(answer()), miss, policy="stale-ok").kind, "refused")
         self.assertEqual(compare(cli(answer()), miss, policy="auto").kind, "outcome_class")
         py_miss = Invocation("py-open", "py-open", 1, "FduError: snapshot is not usable: x", None)
-        self.assertEqual(compare(cli(answer()), py_miss, policy="only").kind, "refused")
+        self.assertEqual(compare(cli(answer()), py_miss, policy="stale-ok").kind, "refused")
 
     def test_a_crash_under_cache_only_is_not_a_refusal(self) -> None:
         crashes = [
@@ -224,7 +224,7 @@ class CompareTests(unittest.TestCase):
         ]
         for crash in crashes:
             with self.subTest(crash.stderr):
-                verdict = compare(cli(answer()), crash, policy="only")
+                verdict = compare(cli(answer()), crash, policy="stale-ok")
                 self.assertEqual(verdict.kind, "outcome_class")
 
     def test_an_exact_seed_must_serve_instead_of_refusing_or_scanning(self) -> None:
@@ -232,10 +232,10 @@ class CompareTests(unittest.TestCase):
         miss = cli(None, exit=1, stderr="fdu: snapshot is not usable: no usable snapshot")
         cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
         fresh = cli(answer(provenance={"source": "cache_only", "freshness": "fresh"}))
-        self.assertFalse(compare(oracle, miss, policy="only", must_serve=True).allowed)
-        self.assertFalse(compare(oracle, oracle, policy="only", must_serve=True).allowed)
-        self.assertFalse(compare(oracle, fresh, policy="only", must_serve=True).allowed)
-        self.assertEqual(compare(oracle, cached, policy="only", must_serve=True).kind, "same")
+        self.assertFalse(compare(oracle, miss, policy="stale-ok", must_serve=True).allowed)
+        self.assertFalse(compare(oracle, oracle, policy="stale-ok", must_serve=True).allowed)
+        self.assertFalse(compare(oracle, fresh, policy="stale-ok", must_serve=True).allowed)
+        self.assertEqual(compare(oracle, cached, policy="stale-ok", must_serve=True).kind, "same")
 
     def test_a_serving_control_fails_when_both_runs_fail_identically(self) -> None:
         # Two identical failures are `same` for ordinary cases, but a serving control
@@ -245,10 +245,12 @@ class CompareTests(unittest.TestCase):
         cached = cli(answer(provenance={"source": "cache_only", "freshness": "stale"}))
         for failure in (crash, miss):
             with self.subTest(failure.stderr):
-                self.assertEqual(compare(failure, failure, policy="only").kind, "same")
-                verdict = compare(failure, failure, policy="only", must_serve=True)
+                self.assertEqual(compare(failure, failure, policy="stale-ok").kind, "same")
+                verdict = compare(failure, failure, policy="stale-ok", must_serve=True)
                 self.assertEqual(verdict.kind, "outcome_class")
-                self.assertFalse(compare(failure, cached, policy="only", must_serve=True).allowed)
+                self.assertFalse(
+                    compare(failure, cached, policy="stale-ok", must_serve=True).allowed
+                )
 
     def test_cache_contract_phase_catches_a_cache_that_never_serves(self) -> None:
         import matrix
@@ -283,7 +285,7 @@ class CompareTests(unittest.TestCase):
 
     def test_an_answer_where_cold_refused_is_an_outcome_difference(self) -> None:
         refused = cli(None, exit=2, stderr="fdu: requires content analysis")
-        verdict = compare(refused, cli(answer()), policy="only")
+        verdict = compare(refused, cli(answer()), policy="stale-ok")
         self.assertEqual(verdict.kind, "outcome_class")
 
     def test_refusals_compare_wording_only_on_the_same_surface(self) -> None:
@@ -304,8 +306,10 @@ class CompareTests(unittest.TestCase):
         after_change = cli(answer(reports=[]))
         stale = cli(answer(provenance={"freshness": "stale"}))
         unlabelled = cli(answer(provenance={"freshness": "fresh"}))
-        self.assertEqual(compare(after_change, stale, policy="only", earlier=earlier).kind, "stale")
-        verdict = compare(after_change, unlabelled, policy="only", earlier=earlier)
+        self.assertEqual(
+            compare(after_change, stale, policy="stale-ok", earlier=earlier).kind, "stale"
+        )
+        verdict = compare(after_change, unlabelled, policy="stale-ok", earlier=earlier)
         self.assertEqual((verdict.kind, verdict.paths), ("differs", ("provenance.freshness",)))
         self.assertEqual(
             compare(after_change, stale, policy="auto", earlier=earlier).kind, "differs"

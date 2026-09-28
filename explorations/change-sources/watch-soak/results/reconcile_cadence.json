@@ -1,0 +1,13 @@
+{
+ "dirty_directory_footprint": {
+  "change_records": 5995,
+  "distinct_changed_paths": 3372,
+  "distinct_parent_dirs_touched": 530
+ },
+ "root_reconcile_cadence": {
+  "count": 172,
+  "seconds_between": 20.1,
+  "cpu_seconds_each": 9.9,
+  "cpu_us_per_entry_per_pass": 20.9
+ }
+}

@@ -1272,7 +1272,7 @@ mod tests {
         let json =
             crate::report_format::render(&summary, crate::report_format::Format::Json, false)
                 .expect("compatible report format");
-        assert!(json.contains("\"schema\": \"fdu.report/7\""), "{json}");
+        assert!(json.contains("\"schema\": \"fdu.report/10\""), "{json}");
         assert!(json.contains("\"analyze\": [\"lines\"]"), "{json}");
 
         let unsupported = tempfile::tempdir().expect("unsupported tempdir");

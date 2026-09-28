@@ -1,92 +1,156 @@
 # fdu
 
-**Fast, incremental file roll-up engine:** `fd` and `du`, read as “fast du”.
+**Fastest du replacement and file tree analysis for 100+GB, million-file worktrees**
 
-One walk over a directory tree answers, for every directory at once, how big it is, how
-many files it holds, what changed most recently, and what kinds of files it contains.
-The index is cached between runs and can be kept live as the tree changes.
+Use fdu to find what takes up space, locate old build directories, or summarize a tree
+without writing a filesystem walker.
 
-The same engine ships three ways:
+Key features:
 
-- **Command line:** `fdu PATH` prints a size-sorted tree; `--watch` keeps it current
-- **Rust library:** `fdu` / `fdu-core` (a retained index, a change feed, and a
-  long-lived opened root)
-- **Python package:** typed, immutable values plus the native `fdu` command
+- **Speed:** Native Rust and native filesystem APIs make fdu fast.
+  On a one-million-file macOS benchmark, fdu ran at over 8× the speed of standard `du`,
+  about 60% faster than [dust](https://github.com/bootandy/dust), and about 8% faster
+  than [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool,
+  which returns only a total.
+  On Linux, fdu’s summary mode is the fastest tool measured, while building its full
+  index takes about 20% longer than the fastest peers.
+  See [Speed](#speed) for the measurements and limits.
+- **Text, file, and code analysis:** Rolls up content metrics, including lines, source
+  code lines by language, and words, paragraphs, and pages for Markdown and text.
+- **Cached statistics:** Content metrics require reading files, so fdu caches them
+  between runs and reads again only the files that changed.
+- **Watch and stream events:** Unlike `du` or dust, fdu can keep a result current and
+  stream its changes, using each platform’s native file watching (FSEvents, inotify,
+  `ReadDirectoryChangesW`).
+- **Rust and Python APIs:** Every capability is available directly from Rust and Python:
+  typed results, a retained index, a change feed, and a long-lived opened root, all
+  backed by the same native engine as the command line.
+- **Easy use as a skill or from the command line:** Nothing needs to be built from
+  source. Prebuilt binaries install from PyPI on macOS, Linux, and Windows, and the Rust
+  crates (`fdu` and `fdu-core`) are on crates.io.
+  Run `uvx fdu@latest` anywhere [uv](https://docs.astral.sh/uv/) is available, or
+  install a skill for coding agents as described below.
 
-On a 2026-09-16 macOS calibration, fdu built a reusable exact index and a ten-row tree
-over 1,000,001 generated entries in a **5.206-second median**. The same paired run:
-dumac **+11.3%**, diskus **+34.7%**, dust **+60.6%**, dua **+63.1%**, BSD `du`
-**+898%**. The host was loaded; pairing is what makes those comparisons fair.
-See [Speed](#speed).
+## Set Up with Any Coding Agent
 
-**0.x:** A minor release may change the command line or either API;
-[the release process](docs/project/guides/release-process.md) states the rules.
+Hand any coding agent this one instruction:
 
-## Install
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
 
-Once `0.1.0` is on the registries:
+The command writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under
+the project root. The skill needs no prior session context and uses `fdu` on `PATH` or a
+wheel-only `uvx` fallback; no installed command or Rust toolchain is required.
+
+Use `--agent-base DIR` to write `DIR/skills/fdu/SKILL.md` for one agent’s user scope,
+such as `~/.claude`. Re-run the installer after upgrading to refresh the skill;
+`fdu --skill` prints it, and deleting the generated skill directories removes it.
+See the [skill usage guide](docs/usage.md#agent-skill).
+
+## Install the Command Line
+
+fdu is published as a Python wheel, so [uv](https://docs.astral.sh/uv/) is all you need.
+No Rust toolchain is required.
+
+**Try it without installing:**
 
 ```shell
-uvx fdu@latest --help               # run the latest release without installing
-uv tool install fdu                 # command line, prebuilt wheel; uv tool upgrade fdu
-cargo install --locked fdu          # command line from source; Rust 1.85 or newer
-uv add fdu                          # Python library in a uv project
-pip install fdu                     # Python library in the current environment
-cargo add fdu                       # Rust library (re-exports the engine)
-cargo add fdu-core --features watch # engine only, with the watch layer
+uvx --no-build fdu@latest .
 ```
 
-`--locked` keeps the reviewed dependency set; see
-[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
-
-For coding agents, `fdu --install-skill` writes the agent skill to
-`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root,
-or to `DIR/skills/fdu/SKILL.md` with `--agent-base DIR` for one agent’s user scope, such
-as `~/.claude`. Re-run it after upgrading; it replaces only files it generated and
-reports each as installed, updated, or unchanged.
-`fdu --skill` prints the same document, and deleting those two directories uninstalls
-it. The skill prefers an `fdu` on `PATH` and otherwise runs `uvx fdu@latest`.
-
-Wheels are `abi3` for GIL-enabled CPython 3.12 and newer.
-Free-threaded CPython cannot load them; pass a standard interpreter (`--python 3.12` or
-`--python 3.14`).
-
-From a source checkout:
+**Install it as a command:**
 
 ```shell
-git clone https://github.com/jlevy/fdu.git
-cd fdu
-cargo install --locked --path crates/fdu
+uv tool install --no-build fdu
 ```
 
-## Command Line
+Then run it on any directory:
 
-fdu requires a path.
-Use `.` for the current directory:
+```shell
+fdu .
+```
+
+**Upgrade later:**
+
+```shell
+uv tool upgrade --no-build fdu
+```
+
+Wheels cover Linux, macOS, and Windows.
+For other platforms, pinned versions, and building from source, see
+[Other Ways to Install](#other-ways-to-install).
+
+## Quick Start
+
+A one-level summary of this repository’s files:
 
 ```console
-$ fdu .
-     2.6 MiB  ██████████   100%  . (144 files)
-     1.5 MiB  ██████░░░░    58%    crates (116 files)
-     827 KiB  ███░░░░░░░    31%    tests (18 files)
+$ fdu . --depth=1
+██████████   100%      23 MiB  . 872 files (4.0 KiB gitignored)
+█████░░░░░    55%      12 MiB    docs/ 315 files
+██░░░░░░░░    21%     4.7 MiB    crates/ 122 files
+██░░░░░░░░    17%     3.9 MiB    explorations/ 268 files
+░░░░░░░░░░     4%     932 KiB    tests/ 100 files (4.0 KiB gitignored)
+░░░░░░░░░░     1%     352 KiB    scripts/ 29 files
+░░░░░░░░░░     2%     440 KiB    … and 38 more files
 ```
 
-That is the default `list` view in `tree` format: allocated sizes, largest first, two
-directory levels, up to ten children per directory.
-It reads metadata and `.gitignore` files; it does not open regular files for content.
-Hidden and ignored entries are included; ignored byte shares are annotated when present.
+Add `--analyze` to read file contents, here for lines of code and words in documents:
+
+```console
+$ fdu . --analyze=code,words
+CODE
+Code lines   Share  Comments   Blank  Analyzed files  Language
+    79,748   61.5%    12,801   6,720         101/101  Rust       (0 gitignored)
+    42,714   32.9%     1,697   5,218         133/133  Python     (0 gitignored)
+     3,988    3.1%       526     358           25/25  JavaScript (0 gitignored)
+     2,518    1.9%       229     145           19/19  C          (0 gitignored)
+       648    0.5%       124      64           18/18  Shell      (0 gitignored)
+        13   <0.1%         4       1             2/2  Swift      (0 gitignored)
+         6   <0.1%         4       1             2/2  C++        (0 gitignored)
+         3   <0.1%         3       1             1/1  C#         (0 gitignored)
+         3   <0.1%         4       0             1/1  Go         (0 gitignored)
+         3   <0.1%         4       0             1/1  PHP        (0 gitignored)
+         2   <0.1%         4       1             1/1  Java       (0 gitignored)
+         2   <0.1%         4       1             1/1  Kotlin     (0 gitignored)
+         2   <0.1%         4       1             1/1  Ruby       (0 gitignored)
+         2   <0.1%         4       1             1/1  SQL        (0 gitignored)
+         2   <0.1%         4       1             1/1  TypeScript (0 gitignored)
+         —       —         —       —             0/2  Make
+   129,654  100.0%    15,416  12,513         308/310  TOTAL      (0 gitignored)
+15 analyzed languages (include population)
+36 selected files with unclassified type
+2 unsupported
+
+DOCUMENTS
+Percentage column: document words
+   5.9 MiB   84.6%  markdown           317 files, 117,532 lines (104,000 nonblank, 13,532 blank), 507,111 words (2,028.4 pages), 4 generated, 288 documentation
+   748 KiB   13.4%  text               58 files, 5,455 lines (5,339 nonblank, 116 blank), 80,121 words (320.4 pages), 2 documentation
+   380 KiB    9.7%  html               1 file, 1,125 lines (1,110 nonblank, 15 blank), 58,222 words (232.8 pages), 1 documentation
+```
+
+The default `list` view in `tree` format shows allocated sizes, largest first, down to
+depth 5, including file leaves and subtrees contributing at least 1% of the root.
+Set `--depth`, `--min-share`, `--breadth`, and `--limit` to adjust independent display
+bounds. It reads metadata and `.gitignore` files; it does not open regular files for
+content. Hidden and ignored entries are included; ignored byte shares are annotated when
+present.
 
 | Question | Command |
 | --- | --- |
 | Which directories are large? | `fdu .` |
 | Old build directories with size and age | `fdu . --kind dir --include node_modules --modified-before 30d --long` |
 | Matching paths only | `fdu . --kind dir --include .venv --format paths` |
-| Totals, excluding ignored entries | `fdu . --exclude-ignored --view=summary` |
+| Totals, excluding ignored entries | `fdu . --ignored=exclude --view=summary` |
 | Languages by space | `fdu . --view=languages` |
 | Ten files that changed most recently | `fdu . --view=recent --limit=10` |
 | Standard lines of code | `fdu . --analyze=code` |
 | Keep the tree live | `fdu . --watch` |
 | Machine output | `fdu . --format=json` |
+| Complete recursive tree | `fdu . --view tree --full --format json` |
+| Every directory with recursive usage | `fdu . --kind dir --full --sort name --format json` |
+| Every regular file | `fdu . --view files --kind file --full --format json` |
+| Find Rust files | `fdu . --kind file --include '*.rs' --full --format paths` |
 
 `--view` chooses what is reported; several views share one walk.
 `--analyze` is the only switch that reads file bodies.
@@ -96,8 +160,101 @@ error.
 
 `fdu --docs` is the offline guide, `fdu --help` is every flag, and `fdu --install-skill`
 writes a portable skill for coding agents where they look for it (`fdu --skill` prints
-it); see [Install](#install).
+it); see [Set Up with Any Coding Agent](#set-up-with-any-coding-agent).
 The full grammar is in the [usage guide](docs/usage.md).
+
+`--full` is shorthand for `--depth=all --breadth=all --limit=all --min-share=0%`;
+explicit bounds override it.
+It expands the selected view without changing scan scope or analysis.
+Use path output for find/fd-style searches, or JSON for the same selection with exact
+usage fields. Directory rows contain recursive totals and can overlap; regular-file rows
+contain each file’s own size.
+See
+[complete inventories and find/fd examples](docs/usage.md#find-files-and-export-complete-inventories).
+
+## Understand a Codebase
+
+```shell
+fdu . --analyze=code --ignored=exclude --limit=5
+```
+
+For example, the implementation at repository revision `7a499493` produced this stdout:
+
+```text
+(5 of 16)
+Code lines   Share  Comments   Blank  Analyzed files  Language
+    79,330   65.1%    12,681   6,700         101/101  Rust
+    37,861   31.1%     1,513   4,696           95/95  Python
+     3,988    3.3%       526     358           25/25  JavaScript
+       403    0.3%        65      33             3/3  C
+       249    0.2%        57      45             7/7  Shell
+   121,858  100.0%    14,881  11,840         242/244  TOTAL
+15 analyzed languages (exclude population)
+22 selected files with unclassified type
+2 unsupported
+```
+
+The note and suggestion appear once on stderr, followed by the run’s `perf:` summary:
+
+```text
+note: code totals include languages hidden by display limits
+tip: show more rows: --limit=all
+```
+
+The percentages and bold TOTAL row cover all measured code lines, including languages
+outside the five displayed rows.
+Analyzed-file counts show measured files over selected source files; unavailable SLOC
+uses a dash, distinct from a measured zero.
+Counts include tests and fixtures in the selected repository, and change as the checkout
+changes. Coverage makes unsupported and unclassified files visible instead of treating
+them as zero lines.
+
+`--ignored=exclude` avoids traversing and reading ignored trees such as local builds and
+environments. Omit it to analyze both populations and show their contributions.
+`--limit=all` shows every language; `--format=json` gives structured counts and
+coverage. See [content analysis](docs/usage.md#analyze-file-contents) for the counting
+convention and supported languages.
+
+## Tally Environments and Build Outputs
+
+Find every `.venv`, `node_modules`, and Cargo `target` directory under a work directory,
+largest first, then get their combined usage from the same cached scan:
+
+```shell
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --full --long --cache on
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view summary --stale-ok
+```
+
+The first command lists each matching directory’s allocated size, modification age, and
+path. `--cache on` makes it leave a snapshot, which a one-shot report does not do by
+default. The second answers from that snapshot without another walk; it describes that
+recorded scan, not changes made afterward.
+Ignored directories are included by default, which is useful for environments and build
+outputs.
+
+Nested matches appear individually in the list, so adding those rows can double-count
+contents. Summary counts their covered paths once.
+For example, a nested `node_modules` contributes to both its own row and its parent’s
+row, but only once to Summary.
+The names are conventions: `target` is Cargo’s default build directory, and custom build
+locations require another include pattern.
+Symlinks are not followed.
+
+For detailed rows and the total in one structured report:
+
+```shell
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view files,summary --full --sort size --format json
+```
+
+These are per-path sizes, not estimates of space freed by deletion.
+Hard links can share one file, and copy-on-write clones can share physical blocks while
+retaining separate file identities.
+Multiple uv environments may therefore have overlapping physical storage even when their
+paths are distinct. See
+[allocation and shared files](docs/usage.md#allocation-and-shared-files).
 
 ## Find Stale Build Directories
 
@@ -143,6 +300,62 @@ Library callers get the same feed without parsing the command: Rust `Session` (b
 the `watch` build feature) and Python `Index.watch()`. Long-lived interactive clients
 use `OpenedIndex` / `fdu.opened` for progressive discovery, paged reads, and a resumable
 journal.
+
+## As a Python Module
+
+Add the package to a uv project, or install it in the current Python environment:
+
+```shell
+uv add fdu
+pip install fdu
+```
+
+The same wheel installs the native `fdu` command; there is no Python reimplementation of
+the CLI.
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+print(index.status.complete)
+print(index.total().files)
+print(index.children("src"))
+
+report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
+print(report.provenance.freshness)
+print(report.as_dict())  # same JSON the command line emits
+
+mark = index.clock
+index.refresh()
+print(index.since(mark).changes)
+```
+
+The watch feed is a live iterator; it does not return:
+
+```python
+from pathlib import Path
+
+import fdu
+
+index = fdu.open(Path("/path/to/tree"))
+with index.watch() as stream:
+    for batch in stream:
+        for change in batch:
+            print(change.kind, change.path)
+```
+
+Values are frozen dataclasses and enums.
+Every method is bulk: it returns a whole structured result in one call.
+Open, scan, and the native reconciliation phase of refresh run with the GIL released;
+building the Python dicts and lists holds it.
+Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
+directory can hold cached descendants.
+Whether a whole answer is complete and current comes from `index.status.complete` and
+`report.provenance.freshness`, which the example prints.
+`fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
+continuations, and a resumable change journal.
 
 ## As a Rust Library
 
@@ -198,119 +411,80 @@ assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
 ```
 
-## As a Python Module
-
-```python
-from pathlib import Path
-
-import fdu
-
-index = fdu.open(Path("/path/to/tree"))
-print(index.status.complete)
-print(index.total().files)
-print(index.children("src"))
-
-report = index.report(fdu.Query(views=(fdu.View.LANGUAGES,)))
-print(report.provenance.freshness)
-print(report.as_dict())  # same JSON the command line emits
-
-mark = index.clock
-index.refresh()
-print(index.since(mark).changes)
-```
-
-The watch feed is a live iterator; it does not return:
-
-```python
-from pathlib import Path
-
-import fdu
-
-index = fdu.open(Path("/path/to/tree"))
-with index.watch() as stream:
-    for batch in stream:
-        for change in batch:
-            print(change.kind, change.path)
-```
-
-Values are frozen dataclasses and enums.
-Every method is bulk: it returns a whole structured result in one call.
-Open, scan, and the native reconciliation phase of refresh run with the GIL released;
-building the Python dicts and lists holds it.
-Provenance on a roll-up is the entry’s own source, not its subtree: a revalidated
-directory can hold cached descendants.
-Whether a whole answer is complete and current comes from `index.status.complete` and
-`report.provenance.freshness`, which the example prints.
-`fdu.opened.OpenedIndex` is the typed long-lived root: coherent multi-projection reads,
-continuations, and a resumable change journal.
-
-The wheel also installs the native `fdu` command.
-There is no Python reimplementation of the CLI.
-
 ## Speed
 
-On an older MacBook, it can tally file sizes at roughly 200K files/sec and analyze lines
-of code at roughly 4M lines/sec after caching.
-[The 2026-09-18 installed-CLI QA](docs/project/reports/report-2026-09-18-cli-installed-qa.md)
-has the log.
+On a million-entry tree, fdu built a reusable index and rendered a ten-row tree in **6.0
+seconds**, covering **146k files/s** and **0.50 GB/s**. Measured on an M1 Pro’s internal
+APFS SSD with warm filesystem caches and fdu’s cache disabled, 2026-09-26. These are
+approximate local results under background load.
 
-**Exploratory macOS calibration, 2026-09-16, 0.1.0 release candidate.** A fresh process
-with its cache disabled built a reusable exact index and ten-row tree over a generated
-1,000,001-entry corpus in a **5.206-second median**. Twelve adjacent paired trials per
-tool on an M1 Pro with a local APFS SSD, warm filesystem cache, one independent
-full-tree fingerprint.
-The host was busy (load 7.7–9.9 on ten cores).
-The absolute seconds are a loaded-host number; the paired percentages are the
-comparison.
+| Tool | Work returned | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **fdu** | reusable exact index and ten-row tree | **6.0 s** | baseline | **146k** | **0.50** |
+| dumac | allocated-byte total only | 6.3 s | **+8%** | 138k | 0.47 |
+| diskus | scalar total only | 8.7 s | +45% | 101k | 0.35 |
+| pdu | rendered tree | 9.2 s | +53% | 95k | 0.32 |
+| dust | allocated-byte total only | 9.6 s | +59% | 91k | 0.31 |
+| dua | scalar total only | 9.7 s | +63% | 90k | 0.31 |
+| gdu | rendered tree | 10.4 s | +64% | 84k | 0.29 |
+| BSD `du` | one total, serial | 49.3 s | +717% | 18k | 0.061 |
+| ncdu | reusable index | 60.6 s | +910% | 14k | 0.049 |
+| GNU `du` | one total, serial | 62.1 s | +955% | 14k | 0.048 |
 
-| Tool | Work returned | Median | Versus paired fdu |
+Positive percentages mean extra elapsed time: +60% means 1.6× as long as the adjacent
+fdu run. Rates count regular files and their disk space, not file-content reads; `k`
+means thousands and GB is decimal.
+See the
+[full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+for methodology, memory use, confidence intervals, and exact results.
+
+On Linux the ranking depends on the job.
+The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 2026-09-28:
+
+| Tool | Work returned | Median wall-clock time | Wall time vs. fdu summary |
 | --- | --- | ---: | ---: |
-| **fdu** | reusable exact index and ten-row tree | **5.206 s** | baseline |
-| dumac | allocated-byte total only | 5.637 s | **+11.3%** |
-| diskus | scalar total only | 6.972 s | +34.7% |
-| dust | allocated-byte total only | 8.292 s | +60.6% |
-| dua | scalar total only | 8.744 s | +63.1% |
-| BSD `du` | one total, serial | 51.226 s | +898% |
-| GNU `du` | one total, serial | 65.775 s | +1177% |
+| **fdu `--no-gitignore --view summary`** | exact totals, no index | **0.94 s** | baseline |
+| pdu | rendered tree | 1.02 s | +8% |
+| diskus | scalar total only | 1.04 s | +12% |
+| fdu | reusable exact index and ten-row tree | 1.25 s | — |
+| dust | allocated-byte total only | 1.67 s | +76% |
+| gdu, GNU `du`, ncdu, dua | tree or total | 2.6–3.9 s | +162% to +303% |
 
-Each competitor was reduced to one number.
-fdu returned counts, apparent and allocated bytes, newest file time, per-directory and
-per-extension roll-ups, and kept the index that answers the next question without
-another walk. dumac’s 95% interval was +5.8% to +13.5%.
+fdu’s summary mode is the fastest tool measured, but building the reusable index takes
+about 23% longer than pdu and 21% longer than diskus there.
+A screen attributes that gap to glibc allocator contention between fdu’s walker threads
+and its index builder rather than to filesystem work; that hypothesis is still open.
+See the
+[Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
+for the evidence and the work under way.
+Both tables measure fdu with its cache disabled, which is also what the default `fdu .`
+now does for a one-shot report: it used to write a snapshot that no later `fdu .` reads,
+about a fifth of a repeated run on this Linux tree and two fifths of a first one.
+The summary still needs `--no-gitignore`, because reading ignore rules falls back to the
+full index. The
+[cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
+covers when the cache and the index pay on each platform.
+Windows builds and passes tests but has not been performance-benchmarked.
 
-The answers agree, too.
-On quiet trees, fdu’s allocated totals equal GNU du `--count-links` to the byte; on
-`~/Library`, which changes while it is measured, every tool lands within that movement,
-or short by what the folders it reported giving up on hold, except one dua reading that
-cannot be checked because dua does not name the folders it skips.
-The other differences have measured causes: fdu counts a hard-linked file once per path,
-and counts neither a symbolic link’s own size nor a directory’s.
-[The peer-agreement report](docs/project/reports/report-2026-09-25-peer-agreement.md)
-has the tables.
+### Multi-View Reports
 
-fdu’s peak RSS here was 285.4 MiB against dumac’s 29.4 MiB, because fdu retained a
-million-entry index and dumac retained one integer.
-`fdu --no-gitignore --view summary` keeps the aggregate-only tier, which returns the
-same tallies without retaining that index: **15.0 MiB** against 285.4 MiB for the tree
-view in a separate fdu-only round-robin.
-That tier buys memory, not time.
+Report construction has a separate result.
+In an exploratory, uncontrolled macOS benchmark on a 137,085-entry tree, a loop that
+constructed the unfiltered Types, Families, Languages, and Documents views 100 times
+from an already line-analyzed index took 12.0 seconds, down from 29.9 seconds—about
+**2.5× faster**, or roughly 120 ms instead of 299 ms per report.
+The code is retained provisionally; a quiet run must still resolve the inconclusive
+major-fault gate before the experiment is accepted.
+These timings predate the integration of the new Code overview, population controls, and
+tree accounting; the combined engine needs a fresh paired measurement.
 
-Linux evidence is real and improving, from virtualized hosts.
-The most recent campaign on a 450k-entry tree, measured against its own starting point:
-warm snapshot load **−31.4%**, warm revalidate **−25.3%**, cold indexed scan **−9.1%**.
-A warm open now runs about 23% faster than a cold scan, where that campaign began with
-it 69% *slower*. Windows builds and passes tests; no performance claim is made there.
-
-A second run on an unchanged tree is a different job.
-Metadata-only one-shots still revalidate; `--analyze` reuses unchanged file-body results
-from a content sidecar.
-The trustworthy floor for a warm metadata run is still one stat per entry: directory
-mtimes do not record in-place edits.
-
-[The full comparison](docs/project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
-has the method and the limits.
-[The performance campaign status](docs/project/reports/report-2026-08-14-performance-campaign-status.md)
-is the place to start on the evidence as a whole.
+This is not a scan or end-to-end full-analysis speedup.
+It applies only to unfiltered requests with multiple metric views; the default
+disk-usage command and single-view analysis are unchanged.
+The implementation is platform-neutral Rust, but its Linux magnitude has not yet been
+measured. See
+[the experiment](docs/project/experiments/exp-159-share-content-metric-resolution-across-views.md)
+for the paired interval, host regime, and resource qualification.
 
 ## Why
 
@@ -324,10 +498,46 @@ Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreu
 exactly one persists anything, exactly one carries multiple metrics per pass, **none**
 does per-directory type tallies, and **none** does mtime-based incremental revalidation.
 None of them is a native library with a live change feed that a Rust or Python program
-can hold. That combination is what a live file browser actually needs.
+can hold. That combination is what a live file browser needs.
 
 The survey is in
 [the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
+
+## Other Ways to Install
+
+**Platforms:** Wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
+and arm64), macOS (x86-64 and arm64), and Windows x86-64. `--no-build` requires one of
+those wheels rather than compiling from source.
+You don’t need to pick a Python version: uv selects a matching interpreter.
+If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`; fdu
+does not publish free-threaded wheels yet.
+
+**Pinned versions:** For a repeatable run, replace `latest` with a release number, such
+as `uvx --no-build fdu@0.1.0 .`.
+
+**uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
+fdu release may be filtered.
+Review and allow the first-party `fdu` package in that policy, or wait for the cool-off
+to expire.
+`--no-config` is a one-off override that skips all uv configuration, including
+that policy.
+
+**From crates.io (Rust 1.85 or newer):**
+
+```shell
+cargo install --locked fdu
+```
+
+`--locked` keeps the reviewed dependency set; see
+[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+**From a source checkout:**
+
+```shell
+git clone https://github.com/jlevy/fdu.git
+cd fdu
+cargo install --locked --path crates/fdu
+```
 
 ## Documentation
 
@@ -339,6 +549,9 @@ The survey is in
 - [Changelog](CHANGELOG.md)
 
 ## Development
+
+During 0.x, a minor release may change the command line or either API. See the
+[release process](docs/project/guides/release-process.md).
 
 ```shell
 make check    # handoff gate: fmt, clippy, tests, docs, lib-only build
@@ -353,6 +566,9 @@ A deliberately unsupported local host may set `FDU_TEST_ALLOW_NO_PERMISSION_BITS
 CI must leave both variables unset so a passing test proves its assertions ran.
 
 [AGENTS.md](AGENTS.md) is how to operate on the repository.
+The [output design system](docs/project/architecture/fdu-output-design.md) governs
+report layout, diagnostic categories, colors, and stdout/stderr separation; its
+implementation rules are documented beside the shared renderer and diagnostic collector.
 [The supply-chain policy](SUPPLY-CHAIN-SECURITY.md) applies before any dependency
 change. Performance work follows
 [the performance loop](docs/project/guides/performance-loop.md) and is deliberately

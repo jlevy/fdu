@@ -11,9 +11,9 @@ everything needed to pick the loop up mid-stream lives in the registry (what to 
 next), the record (what has been tried), and here (how to run one round).
 Every command below was run once while writing it.
 
-Start at [Current Standing](#current-standing-2026-09-18). That section is the pickup:
-standing best, host regime, Darwin subjects, and the next-up list with enough context to
-start each item. Do not reconstruct the queue from chat, from `macos-agenda` priority
+Start at [Current Pickup](#current-pickup-2026-09-27) for the action order, then use
+[Current Standing](#current-standing-2026-09-18) for standing best, host regime, and
+Darwin subjects. Do not reconstruct the queue from chat, from `macos-agenda` priority
 order, or from the 2026-08-23 Tier 1 list alone.
 
 ## Current Standing (2026-09-18)
@@ -24,12 +24,22 @@ serving, watch, `.gitignore` default-on, and a content sidecar.
 Campaign 1 and campaign 2 remain the history; this standing is a registry and
 measurement layer on top of them, not a rewrite of H86.
 
-This standing was measured on `perf/campaign-next-2026-09-19`, stacked on
+The historical Darwin stack was measured on `perf/campaign-next-2026-09-19`, stacked on
 [#91](https://github.com/jlevy/fdu/pull/91) (`perf/campaign-quiet-2026-09-18` at
 `e667b739`, which holds H115, H120, and the R1–R2 / S1–S3 review fixes).
 Both merged to `main` on 2026-09-20 (`6e3d2937` / `a290aedc`) and both branches were
 deleted, so a new Darwin round starts from `main`, not from either of them.
 Never force-push: the committed evidence cites SHAs.
+The 2026-09-27 H152–H153 round started from `origin/main` at `4c4917f4`; its
+provisionally retained engine increment is `d0902cfd`.
+
+**Tracking update (2026-09-27):** The
+[current work map](../../../TODO.md#performance-and-evidence) records open owners.
+Linux parallel, iteration and PGO-screen increments are recorded in `specs/done/`; PGO
+release adoption (`fdu-pdne`) and cold-regime tuning (`fdu-tk1b`) remain.
+The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains an open
+FSEvents probe/design increment.
+These status corrections do not alter the measured regimes or experiment verdicts below.
 
 ### Standing Best and Regime
 
@@ -40,6 +50,23 @@ accept (−13.11%). **H125 / exp-124** remains the restore-count completeness ac
 (−8.03%). **H115 / exp-112** remains the restore-rebuild accept (−9.69%). **H120 /
 exp-117** is the standing content-hit RSS best before H129 (peak RSS −10.13%; streaming
 restore kept); H129 also moved peak RSS −11.83% on its own pair.
+
+**H153 / exp-159** is the latest `content-query` increment.
+One streaming pass now resolves each file’s content record and current path
+classification for every requested unfiltered metric view.
+On the current 137,085-entry `metabrowser-clone`, wall fell 47.01% [45.23%, 47.49%] and
+component fell 59.94% over 12 uncontrolled pairs.
+Peak RSS and minor faults were non-inferior.
+Major-fault non-regression was inconclusive, so H153 remains in progress pending a quiet
+confirming run. The provisionally retained code is platform-neutral; Linux transfer is
+expected but unmeasured.
+H152 / exp-158 is the exact report oracle and current-path determination that preceded
+it. The probe performs one fresh scan and line-analysis setup, then constructs four
+unfiltered metric views 100 times.
+After the #136 integration, bare `--analyze all` defaults to Code and Documents.
+Only Documents participates in metric resolution, so that request does not exercise
+H153; `--analyze all --view full` can use it during report construction, but its
+end-to-end effect has not been measured.
 
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
 `os_cache: warm-steady`, **uncontrolled**.
@@ -440,6 +467,24 @@ Control leftover HEAD probe; candidate H138. Quiet this tick refused at 93.2%. P
 **uncontrolled**. Initial busy 69.09%; final 70.06%. Wall −18.76% [−22.86%, −13.69%].
 Component −24.61% [−29.82%, −20.56%]. Engine kept (`a5c98d59`).
 
+**exp-158 / H152** adds an outside-timer exact `content-query` report oracle and records
+the current baseline.
+The byte-identical attachment measured ~29.5–29.6 s component for 100 four-view reports
+(~295 ms/report); its +1.02% [0.05%, 15.62%] wall statistic is uncontrolled host noise.
+The 8 s whole-process sample was dominated by untimed analysis setup (`read` 62.97%,
+`open` 17.22%), so it is not a query-path percentage.
+Inspection named four repeated per-file content lookups and current path
+classifications.
+
+**exp-159 / H153** removes that repetition in one streaming pass.
+The first implementation retained one owned classification per file and was discarded
+because minor faults rose 29.58%. The kept form (`d0902cfd`) applies one resolution to
+all metric accumulators and drops it immediately: wall −47.01% [−47.49%, −45.23%],
+component −59.94%, user CPU −50.75%, peak RSS −0.17%, minor faults −0.05%. Exact
+combined-versus-independent reports matched, all 12 pairs were valid, and the tree
+stayed unchanged. Pair uncontrolled; initial/final instantaneous busy 17.58% / 17.11%,
+thermal normal.
+
 **exp-121 / H124** is the first-pass analyze I/O **profile** on the frozen
 `metabrowser-clone` (146,047 entries / 133,708 files; digest `dc0df263…`). Path-binary
 already skipped (8,022 files).
@@ -469,33 +514,34 @@ established. Re-run H151 on a quiet host before calling the attached handle free
 ### Darwin Subjects
 
 The 2026-08 nominated metabrowser corpus path is gone from disk.
-The rustup store is 77k entries, not the 175k recorded in exp-066. Re-observed shapes
-live in
+The rustup store is 77k entries, not the 175k recorded in exp-066. Re-observed
+2026-09-27 shapes live in
 [`nominated-subjects-darwin-arm64.json`](../reports/nominated-subjects-darwin-arm64.json).
 Absolute paths live only in the gitignored `explorations/benchmarks/subjects.local.json`
 (labels: `rustup-toolchains`, `metabrowser-clone`, `system-private-frameworks`,
 `cargo-registry-src`). Read them from there.
 Do not type a path into a commit.
 
-`cargo-registry-src` (~22k) screens; it cannot decide a 3% verdict.
+`cargo-registry-src` (23,985 entries) screens; it cannot decide a 3% verdict.
 `system-private-frameworks` was the H108 / H117 subject (exp-107, exp-116); digest
 unchanged from the nomination.
 `metabrowser-clone` was the H109 / H112 / H113 / H114 / H115 / H116 / H118 / H120 / H121
 / H124 / H125 / H126 / H127 / H128 / H129 / H130 / H131 / H132 / H133 / H134 / H135 /
-H136 / H137 / H138 subject (exp-108 through exp-112, exp-114, exp-115, exp-117, exp-120,
-exp-121, exp-123, exp-124, exp-125, exp-126, exp-128, exp-129, exp-130, exp-131,
-exp-132, exp-133, exp-134, exp-135, exp-136, exp-137); same shape as exp-106, engine
-digest unchanged (`3fbfed48…`). A 2026-09-19 re-observe drifted to 145,988 entries /
-133,654 files (digest `cc517e78…`); commit a fresh subjects document with the next
-metabrowser cell (`make perf-subjects`). The CLI QA medium tree was skipped:
-deciding-scale but mutating.
+H136 / H137 / H138 / H152 / H153 subject (exp-108 through exp-112, exp-114, exp-115,
+exp-117, exp-120, exp-121, exp-123, exp-124, exp-125, exp-126, exp-128, exp-129,
+exp-130, exp-131, exp-132, exp-133, exp-134, exp-135, exp-136, exp-137, exp-158,
+exp-159). The 2026-09-27 re-observe is 137,085 entries / 127,104 files, digest
+`0eed491e…`; exp-158 and exp-159 verified that shape unchanged and carry the fresh
+nominated-subject document.
+The CLI QA medium tree was skipped: deciding-scale but mutating.
 `system-private-frameworks` was also the H122 subject (exp-118); digest unchanged.
 
-### Next Up
+### Historical Darwin Queue (2026-09-19)
 
-Take these in order.
-Source of truth:
-[the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
+This section records the completed 2026-09-19 Darwin sequence, not the current action
+order. Start new work from [Current Pickup](#current-pickup-2026-09-27).
+[The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
+preserves the earlier queue and rejected attempts.
 The registry row in [the loop guide](performance-loop.md#current-engine-010) is the full
 statement. Overnight H116–H120 is done; do not retry those.
 H139 is recorded on stacked [#94](https://github.com/jlevy/fdu/pull/94) as exp-138. H140
@@ -504,11 +550,10 @@ as exp-141 (floor/RSS fail).
 H142 is recorded there as exp-143 (file I/O leftover).
 H143 is recorded there as exp-142 (walk floor + retained-index RSS). Do not mint those
 ids on this Darwin branch.
-The next free hypothesis and experiment ids have one home: the end of
-[the Linux standing](#linux-standing-2026-09-20), because both numberings are shared
-with Darwin and the Linux stack mints them.
-Do not mint an id from this section; do not take exp-138–155 or H144–H149 here.
-exp-113 remains reserved unused (H113 superseded).
+The next free hypothesis and experiment ids are in
+[Current Pickup](#current-pickup-2026-09-27), because both numberings are shared with
+Darwin and Linux. Do not mint an id from this section; do not take exp-138–155 or
+H144–H149 here. exp-113 remains reserved unused (H113 superseded).
 
 This stacked session skipped H113 (quiet gates including 45.48%, 53.86%, 31.53%, 34.97%,
 27.23%, a 24.38% pre-check that did not hold, and 28.07%), accepted H125 (exp-124,
@@ -618,7 +663,7 @@ Do not raise the README 200K files/s or 4M cached lines/s.
 7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Failed** on
    [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized).
    Recorded:
-   [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
+   [Linux parallel validation](../specs/done/plan-2026-09-19-linux-parallel-validation.md).
    Leftover is H143. Do not restart the rewrite.
    Do not treat a Darwin cell as this claim.
 
@@ -715,9 +760,10 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 
 | Document | Role |
 | --- | --- |
-| This standing section | Standing best, next-up order |
-| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Remaining Darwin queue: H107 (no subject) |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
+| [Current Pickup](#current-pickup-2026-09-27) | Current action order and next free ids |
+| This standing section | Standing best and host regime |
+| [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Historical Darwin H107–H138 queue and rejected attempts; not the current pickup |
+| [Linux parallel validation](../specs/done/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -753,8 +799,9 @@ Treat both cells as inherited across that engine bump until one quiet 12-pair
 That remeasure is open and needs a quiet Linux host (load/core ≤ 0.25); it was not run
 here because this host would not hold the gate.
 4-core KVM Intel Xeon, 16 GiB, Linux 6.12.94+, ext4, virtualized.
-Same host class as exp-103. Linux quiet uses load/core ≤ 0.25 (instantaneous busy% is
-Darwin-only).
+Same host class as exp-103. Linux quiet then used load/core ≤ 0.25; since 2026-09-27 it
+uses the same one-second CPU-busy ≤ 25% boundary as Darwin, read from `/proc/stat`,
+because load average counted the benchmark’s own previous samples.
 
 **H139 / exp-138** is the standing Linux cache-hit replication: **same**. Quiet 12-pair
 `content-cache-hit` of #91 `e667b739` (H115+H120) versus this engine on reconstructible
@@ -841,7 +888,7 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 
 [#94](https://github.com/jlevy/fdu/pull/94) is recorded and merges onto `main`, then
 #97. Further Linux cells are on
-[Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md)
+[Linux performance iteration](../specs/done/plan-2026-09-20-linux-performance-iteration.md)
 (`cursor/linux-perf-iterate-de1b`).
 
 1. **H144** — Linux cache-hit leftover after the landed stack.
@@ -877,8 +924,8 @@ shipped release profile.
 Quiet `linux-v6.12` `cold-scan-index` −8.35% [−10.35%, −6.92%] and `warm-revalidate`
 −8.15% [−8.64%, −7.07%]. Revalidate component is flat.
 `[profile.release]` unchanged.
-See [the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
-(recorded on [#97](https://github.com/jlevy/fdu/pull/97)).
+See [the Linux PGO screen](../specs/done/plan-2026-09-20-linux-pgo-screen.md) (recorded
+on [#97](https://github.com/jlevy/fdu/pull/97)).
 
 **H149 / exp-155** is the standing Linux cache-hit mix after leftover apply-timer
 expansion: **same** leftover identity.
@@ -889,7 +936,42 @@ Read ~8–9 ms. Digest identical.
 Load/core 0.059–0.102 held.
 Do not retry H116. H83 remains format.
 
-Next free experiment id is **exp-158** and next free unused hypothesis id is **H152**.
+**H156–H159** are the
+[2026-09-27 Linux tool comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md)
+on the balanced 1M-entry tree, 4-vCPU Firecracker KVM, quiet.
+The 2026-09-28 refresh on the integrated stack (`7acface5`): fdu’s summary mode leads;
+pdu takes 8% longer and diskus 12% longer.
+On the indexed tree fdu takes 23% longer than pdu and 21% longer than diskus.
+The first run on `4c4917f` ranked them the same way.
+**H156 accepted** (exp-160): a large one-shot index is released on a detached thread,
+`default-tree` −3.19% [−4.88%, −1.79%], product CLI `--cache off` −4.31%
+[−5.99%, −3.25%]; on the integrated stack a paired screen without and with it moved the
+indexed tree’s mean −6.9%. **H157 rejected** on its probe job (exp-161, −2.22%) but
+−3.71% on the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H158
+rejected** (exp-162): consumer `futex` wakes 106k → 18k, wall flat.
+**H159 open** (`fdu-578e`): the unchanged binary under `LD_PRELOAD` mimalloc closes the
+whole indexed gap, and the context-switch profile names the consumer’s frees of
+walker-allocated child lists and path keys.
+Start there; an allocator dependency comes only after a structural fix is measured (H74,
+H85).
+
+**H160 accepted** (exp-163): `--cache auto` no longer persists a one-shot metadata
+report, which no later one-shot report reads; `--cache on` keeps the write.
+`default-tree` −13.81% [−15.99%, −10.65%], `default-tree-first` −32.74%, placebo
+`cold-scan-index` includes zero.
+The `default-tree` job’s snapshot is now prepared by `cold-open-save`, since the default
+command writes none; compare `default-tree` runs across this change with that in mind.
+
+## Current Pickup (2026-09-27)
+
+**Run authorization is on hold:** finish selecting the integration stack before any new
+macOS timing run. The
+[macOS rerun plan](../specs/active/plan-2026-09-27-macos-performance-rerun.md) separates
+the required H153 confirmation from optional CLI and peer comparisons, and specifies
+external builds with internal-drive measurement.
+Preparation and smoke checks do not authorize starting the measurement cells below.
+
+Next free experiment id is **exp-164** and next free unused hypothesis id is **H161**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
@@ -897,6 +979,33 @@ keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150�
 (exp-156–157) the Darwin progress-handle cost on
 [#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
 exp-113 remains reserved unused.
+
+Next performance pickup:
+
+The integration of [#136](https://github.com/jlevy/fdu/pull/136) at `5365e5af` brings
+Code overview, population controls, metric sorting, share filtering, and tree accounting
+onto the H153 branch.
+exp-158 and exp-159 remain evidence about their recorded pre-integration revisions, not
+measurements of this combined engine.
+For the confirmation below, compare the integrated candidate with a baseline carrying
+the same feature stack but without H153; retain the exact report oracle on both sides.
+The new Code overview is outside H153’s shared metric-resolution pass because it uses
+admitted content detection rather than current path classification.
+Its default single-view command is not covered by the earlier speedup.
+
+1. **H153 confirmation** (`fdu-9e9d`) — repeat the `content-query` pair under the
+   predeclared quiet-host gate, preserve the raw run, and resolve major-fault
+   non-regression before accepting or rejecting the provisional candidate.
+2. **H154** (`fdu-wbhe`) — replicate H153 on a reconstructible Linux deciding subject
+   before claiming Linux magnitude.
+   The same pure-Rust mechanism should transfer, but that is not evidence.
+   Assign the next unused experiment ID when this cell runs.
+3. **H155** (`fdu-83wn`) — on the current engine, profile after setup before proposing
+   another `content-query` cut.
+   Direct metric reduction without materializing shared `FileRow`s is the next bounded
+   algorithmic candidate only if the post-H153 profile names at least 3% wall.
+4. Re-run H151 only when the quiet start gate holds.
+   Do not spend an uncontrolled cell on the progress handle again.
 
 ## Before the First Round
 
@@ -911,22 +1020,19 @@ Each one has caught a real mistake.
      ../fdu-perf-$(date +%Y%m%d) origin/main
    ```
 
-   If the next increment is stacked on an open performance PR, create that stacked
-   branch from the current #91 head and keep one PR whose base is
-   `perf/campaign-quiet-2026-09-18`, not `main`. Do not push further commits onto #91.
-   One stacked pull request, updated after every experiment, never merged unattended.
+   If the next increment is intentionally stacked on an open performance PR, branch from
+   that PR’s current head and set its base to that PR rather than `main`. Keep a
+   separate branch and PR for the increment; never merge unattended or force-push
+   committed evidence.
 
-2. **Find the queue.** Start from [Current Standing](#current-standing-2026-09-18), not
-   from the `macos-agenda` label in isolation.
-   Remaining order after the overnight is
-   [the remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
-   That label still holds older campaign-2 items; several have landed, and H86’s
-   remaining gap is still the Linux floor after H111 failed on #94 (not this host).
+2. **Find the queue.** Start from [Current Pickup](#current-pickup-2026-09-27), not from
+   the historical post-H115 plan or the `macos-agenda` label in isolation.
+   H86’s remaining gap is still the Linux floor after H111 failed on #94, not work for
+   this Darwin host.
 
    ```shell
-   tbd show fdu-8ya1 fdu-rfr6 fdu-ytg5 fdu-jcfn fdu-rum0 fdu-vf4b fdu-i39y fdu-jekg
-   tbd list --spec plan-2026-09-19-post-h115-remaining-headroom.md
-   tbd list --label macos-agenda
+   tbd show fdu-9e9d fdu-wbhe fdu-83wn
+   tbd ready
    ```
 
    Read the bead before starting: its notes hold the recorded attempts and the blocker
@@ -1143,9 +1249,10 @@ Update the registry row’s status, close or update the bead with the verdict an
 experiment id, and check whether the change moved the next item’s headroom: two
 hypotheses aimed at the same cost divide one budget, and this record has seen it three
 times. If it did, say so in that bead before starting it.
-Rewrite [Current Standing](#current-standing-2026-09-18) so the next-up table and
-standing-best numbers match the ledger; a stale standing is how the next agent repeats a
-finished experiment.
+Rewrite [Current Pickup](#current-pickup-2026-09-27) and
+[Current Standing](#current-standing-2026-09-18) so the action order and standing-best
+numbers match the ledger; stale pointers make the next agent repeat a finished
+experiment.
 
 ```shell
 tbd close fdu-XXXX --reason "exp-067: accepted, default-tree -18.2% [-21.0%, -15.1%]"
@@ -1208,8 +1315,9 @@ After every experiment it carries a table — experiment id, hypothesis, subject
 job, change with interval, verdict — and a line for anything skipped and why.
 A reader should learn the night’s result from the ledger diff and the PR body without
 opening the transcript.
-[Current Standing](#current-standing-2026-09-18) is the in-repo pickup for the next
-agent; the PR body is not a substitute for updating it.
+[Current Pickup](#current-pickup-2026-09-27) is the in-repo action order for the next
+agent; update [Current Standing](#current-standing-2026-09-18) for regime and subject
+context. The PR body is not a substitute for either.
 
 Before stopping:
 

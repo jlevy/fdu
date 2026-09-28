@@ -1,6 +1,6 @@
 # fdu
 
-**Fast, incremental file roll-up engine** — `fd` and `du`, read as “fast du”.
+**Fastest native du replacement and detailed file analytics for Python and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
@@ -16,9 +16,35 @@ command line;
 [the release process](https://github.com/jlevy/fdu/blob/main/docs/project/guides/release-process.md)
 states the compatibility rules.
 
-## Install
+## Set Up with Any Coding Agent
 
-Install the command line with Rust 1.85 or newer:
+Give the agent this instruction:
+
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
+
+The installer writes `.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md`.
+The skill needs no prior session context; `fdu --skill` prints it.
+
+## Install the Command Line
+
+With [uv](https://docs.astral.sh/uv/), run the prebuilt command without a Rust toolchain
+or a persistent install, or keep it on your `PATH`:
+
+```shell
+uvx --no-build fdu@latest .
+uv tool install --no-build fdu
+fdu .
+```
+
+`--no-build` requires a compatible wheel and fails instead of compiling from source.
+The [Python package](https://pypi.org/project/fdu/) publishes wheels for GIL-enabled
+CPython 3.12 and newer on Linux glibc (x86-64 and arm64), macOS (x86-64 and arm64), and
+Windows x86-64. No Python version is needed in normal use.
+If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`.
+`uv tool upgrade fdu` updates a persistent install.
+
+To install the Rust crate from source, use Rust 1.85 or newer:
 
 ```shell
 cargo install --locked fdu
@@ -31,16 +57,6 @@ bypasses the review and release cool-off
 [the supply-chain policy](https://github.com/jlevy/fdu/blob/main/SUPPLY-CHAIN-SECURITY.md)
 applies to the dependency set.
 
-The [`fdu` Python package](https://pypi.org/project/fdu/) carries the same command line
-in prebuilt wheels, so `uv tool install fdu` installs it without a Rust toolchain,
-`uv tool upgrade fdu` updates it, and `uvx fdu@latest` runs the latest release without
-installing anything.
-
-For coding agents, `fdu --install-skill` writes the agent skill to
-`.agents/skills/fdu/SKILL.md` and `.claude/skills/fdu/SKILL.md` under the project root
-(`--agent-base DIR` for one agent’s user scope, such as `~/.claude`), and `fdu --skill`
-prints it.
-
 ## Use
 
 fdu requires a path; bare `fdu` prints help and scans nothing.
@@ -50,7 +66,7 @@ fdu .                                     # directory tree: allocated sizes, lar
 fdu . --view=summary                      # one total for the tree
 fdu . --view=languages                    # which languages occupy space
 fdu . --view=recent --limit=10            # the ten most recently modified files
-fdu . --exclude-ignored                   # leave out entries .gitignore rules match
+fdu . --ignored=exclude                   # leave out entries .gitignore rules match
 fdu . --analyze=code                      # standard lines of code; reads file contents
 fdu . --view=summary,types --format=json  # versioned machine output
 fdu --docs                                # the offline usage guide

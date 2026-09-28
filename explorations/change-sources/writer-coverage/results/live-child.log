@@ -1,0 +1,6 @@
+child_sigkill r1: ok (18.085 s)
+child_exit r1: ok (18.094 s)
+child_sigkill r2: ok (18.134 s)
+child_exit r2: ok (18.067 s)
+child_sigkill r3: ok (18.107 s)
+child_exit r3: ok (18.073 s)

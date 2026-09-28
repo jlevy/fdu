@@ -187,8 +187,8 @@ fdu --help | sed -n '1,80p'
 fdu 0.1.0-dev+g<sha>
 ```
 
-Help must list `--view`, `--analyze`, `--cache` (`auto`, `refresh`, `read-only`, `only`,
-`off`), `--cache-status`, `--cache-clear`, `--scan-depth`, `--watch`, and `--interval`.
+Help must list `--view`, `--analyze`, `--cache` (`auto`, `on`, `off`), `--stale-ok`,
+`--cache-status`, `--cache-clear`, `--scan-depth`, `--watch`, and `--interval`.
 
 **Verify**:
 
@@ -235,7 +235,7 @@ The harness runs, in order:
 | recent / largest / files | `--limit=10` on files/recent |
 | full | `--view=full` |
 | combo-kinds | `--view=families,types,extensions` |
-| exclude-ignored-summary | `--exclude-ignored --view=summary` |
+| exclude-ignored-summary | `--ignored=exclude --view=summary` |
 | depth-limit-tree | `--depth=1 --limit=5` |
 | scan-depth-1-summary | `--scan-depth=1 --view=summary` |
 | json-summary / yaml-summary | `--format=json` and `--format=yaml` |
@@ -245,7 +245,7 @@ The harness runs, in order:
 - Exit 0
 - Tree and summary show a non-zero size and file count
 - Combined kinds print three breakdowns from one walk
-- `--exclude-ignored` totals are ≤ default totals
+- `--ignored=exclude` totals are ≤ default totals
 - `--scan-depth=1` is smaller than a full summary
 - JSON parses; YAML is non-empty and names the same totals
 - `--view=documents` without `--analyze` exits 2; stderr says views never enable

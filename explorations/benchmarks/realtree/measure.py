@@ -113,9 +113,9 @@ class Job:
     #: is the point: a tier with no digest still has an oracle, and which one it faces
     #: is a property of the tier rather than a concession made per run.
     oracle: str = "index-digest"
-    #: The job writes the snapshot itself, so it needs a path but not a prepared
+    #: The job may write the snapshot itself, so it needs a path but not a prepared
     #: file — and the path must be empty at the start of every trial, or the job
-    #: would be measured overwriting rather than creating.
+    #: would be measured overwriting rather than creating, or finding one to ignore.
     writes_snapshot: bool = False
     #: Probe mode used by untimed snapshot preparation. Content-cache jobs need both
     #: the metadata snapshot and its independently versioned content sidecar.
@@ -300,7 +300,11 @@ PROBE_JOBS: Dict[str, Job] = {
         id="content-query",
         argv=("{binary}", "content-query", "--root", "{root}", "--queries", "100"),
         start_state="warm",
-        description="Build type, family, language, and document summaries 100 times.",
+        description=(
+            "Construct four unfiltered metric views 100 times after a fresh scan and "
+            "line-analysis setup. Component time covers report construction; process "
+            "wall also includes setup and validation."
+        ),
         parallel_cpu=True,
     ),
     "content-disabled": Job(
@@ -364,9 +368,9 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description=(
             "The default command on a tree it has never seen: `fdu <dir>` with no "
-            "snapshot present -- scan, index, the rendered tree, and the snapshot write "
-            "the user's next run will find. Cache policy auto, tree view at its default "
-            "depth, the save joined before exit, exactly as the command line does."
+            "snapshot present -- scan, index, and the rendered tree. Cache policy auto, "
+            "which writes no snapshot for a one-shot metadata report, tree view at its "
+            "default depth, any save joined before exit, exactly as the command line does."
         ),
         oracle="tallies",
         writes_snapshot=True,
@@ -377,16 +381,15 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "default-tree", "--root", "{root}", "--snapshot", "{snapshot}"),
         start_state="warm",
         description=(
-            "The default command repeated over an unchanged tree with its own snapshot "
-            "present from the previous run. `prepare_report` does not read the snapshot "
-            "for a metadata query, so this is a cold scan plus whatever the run does "
-            "with the file it finds; `snapshot_written` in the probe summary says "
-            "whether it rewrote it. The shape of the second `fdu <dir>` a user types, "
-            "and the job the two default-path defects are judged on."
+            "The default command over an unchanged tree with a snapshot present, as a "
+            "session or `--cache on` leaves one. `prepare_report` does not read the "
+            "snapshot for a metadata query, so this is a cold scan plus whatever the run "
+            "does with the file it finds; `snapshot_written` in the probe summary says "
+            "whether it rewrote it. The job the two default-path defects are judged on."
         ),
         oracle="tallies",
         needs_snapshot=True,
-        snapshot_preparation_mode="default-tree",
+        snapshot_preparation_mode="cold-open-save",
         parallel_cpu=True,
     ),
     "cold-scan-index": Job(
@@ -585,7 +588,7 @@ PROBE_JOBS: Dict[str, Job] = {
         description=(
             "A cold scan that also writes its cache, through the real open path: "
             "index build, the writer hand-off, and the join a one-shot caller makes "
-            "before exiting. The shape of `fdu --cache refresh`."
+            "before exiting. The shape of `fdu --cache on` with no snapshot present."
         ),
         writes_snapshot=True,
         parallel_cpu=True,
@@ -638,11 +641,12 @@ REFERENCE_ARGV: Dict[str, Sequence[str]] = {
 def _host_regime(name: str, load_workers: int):
     initial = _host_pressure_snapshot(None)
     if name in {"quiet", "controlled-interactive"}:
-        if initial.get("system") == "Darwin":
+        if _gates_on_cpu_busy(initial):
             cpu_busy = initial.get("cpu_busy_pct")
             if not isinstance(cpu_busy, (int, float)):
                 raise MeasureError(
-                    "instantaneous CPU pressure is unavailable for a controlled macOS regime"
+                    "instantaneous CPU pressure is unavailable for a controlled "
+                    f"{initial.get('system')} regime"
                 )
             if cpu_busy > QUIET_MAX_CPU_BUSY_PCT:
                 raise MeasureError(
@@ -725,7 +729,7 @@ def _host_pressure_snapshot(regime: Optional[HostRegime]) -> Dict[str, Any]:
     except (AttributeError, OSError):
         load_1m = load_5m = load_15m = None
         load_unavailable_reason = "load average is unavailable on this platform"
-    cpu_busy_pct, cpu_busy_unavailable_reason = _darwin_cpu_busy_pct()
+    cpu_busy_pct, cpu_busy_unavailable_reason = _cpu_busy_pct()
     unavailable = [
         reason
         for reason in (load_unavailable_reason, cpu_busy_unavailable_reason)
@@ -745,6 +749,81 @@ def _host_pressure_snapshot(regime: Optional[HostRegime]) -> Dict[str, Any]:
         "thermal_pressure": _darwin_thermal_pressure(),
         "unavailable_reason": "; ".join(unavailable) if unavailable else None,
     }
+
+
+#: Systems whose sample boundaries are judged by instantaneous CPU occupancy rather than
+#: by load average. Both have a counter source below; any other system keeps load.
+_CPU_BUSY_SYSTEMS = frozenset({"Darwin", "Linux"})
+
+
+def _gates_on_cpu_busy(snapshot: Mapping[str, Any]) -> bool:
+    """Whether a pressure snapshot is judged by CPU occupancy instead of load average."""
+    return snapshot.get("system") in _CPU_BUSY_SYSTEMS
+
+
+def _gating_pressure(snapshot: Mapping[str, Any]) -> Optional[float]:
+    """The one value a quiet or controlled cell judges this snapshot by, if readable."""
+    key = "cpu_busy_pct" if _gates_on_cpu_busy(snapshot) else "load_1m_per_cpu"
+    value = snapshot.get(key)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
+    """Measure current CPU occupancy on whichever system has a counter source."""
+    if sys.platform == "darwin":
+        return _darwin_cpu_busy_pct()
+    if sys.platform.startswith("linux"):
+        return _linux_cpu_busy_pct()
+    return None, "instantaneous CPU occupancy is collected only on macOS and Linux"
+
+
+def _linux_cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
+    """Measure current CPU occupancy from a short ``/proc/stat`` delta.
+
+    Linux's load average has the same minute-long memory as Darwin's, and it also counts
+    tasks in uninterruptible sleep, so a fixed-N benchmark's own previous samples keep it
+    above any quiet threshold for the whole run. The aggregate ``cpu`` line gives the
+    same boundary-interval measurement the Mach counters give on macOS.
+
+    ``iowait`` and ``steal`` count as busy. Neither is this benchmark's work once its
+    child has exited: outstanding device waits are other I/O pressure, and steal is a
+    neighbour on the hypervisor taking the CPU, which is exactly the contention a quiet
+    cell must exclude.
+    """
+    first, reason = _linux_cpu_ticks()
+    if first is None:
+        return None, reason
+    time.sleep(HOST_CPU_BOUNDARY_INTERVAL_SECONDS)
+    second, reason = _linux_cpu_ticks()
+    if second is None:
+        return None, reason
+    deltas = [max(after - before, 0) for before, after in zip(first, second, strict=True)]
+    total = sum(deltas)
+    if total == 0:
+        return None, "/proc/stat CPU counters did not advance during the boundary interval"
+    idle = deltas[3]
+    busy = (total - idle) / total * 100.0
+    return round(busy, 2), None
+
+
+def _linux_cpu_ticks() -> tuple[Optional[tuple[int, ...]], Optional[str]]:
+    """Read the aggregate user..steal tick counters from ``/proc/stat``.
+
+    The first eight fields are user, nice, system, idle, iowait, irq, softirq, and
+    steal. Guest time is already included in user and nice, so it is not added again.
+    """
+    try:
+        with open("/proc/stat", encoding="ascii") as stat_file:
+            first_line = stat_file.readline()
+    except OSError as error:
+        return None, f"/proc/stat is unavailable: {type(error).__name__}"
+    fields = first_line.split()
+    if len(fields) < 9 or fields[0] != "cpu":
+        return None, "/proc/stat did not begin with an aggregate cpu line"
+    try:
+        return tuple(int(value) for value in fields[1:9]), None
+    except ValueError:
+        return None, "/proc/stat aggregate cpu line was not numeric"
 
 
 def _darwin_cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
@@ -835,7 +914,7 @@ def _host_pressure_reasons(
             reasons.append("controlled background load was not alive for the whole sample")
         for boundary, snapshot in (("before", before), ("after", after)):
             cpu_count = snapshot.get("logical_cpu_count")
-            if snapshot.get("system") == "Darwin":
+            if _gates_on_cpu_busy(snapshot):
                 value = snapshot.get("cpu_busy_pct")
                 if not isinstance(value, (int, float)) or not isinstance(cpu_count, int):
                     reasons.append(
@@ -862,7 +941,7 @@ def _host_pressure_reasons(
         return reasons
     reasons = list(environmental_reasons)
     for boundary, snapshot in (("before", before), ("after", after)):
-        if snapshot.get("system") == "Darwin":
+        if _gates_on_cpu_busy(snapshot):
             value = snapshot.get("cpu_busy_pct")
             if not isinstance(value, (int, float)):
                 reasons.append(f"quiet-host CPU occupancy was unavailable {boundary} the sample")
@@ -1700,13 +1779,19 @@ def _spawn(
                     _kill_group(process)
                     exit_code = process.wait()
             wall_ns = time.perf_counter_ns() - start
+            # Read after the child is reaped, outside the timed window. The child inherits
+            # this process's high-water mark as its starting peak at the fork, and Popen
+            # still runs Python before forking, so a read taken before Popen can miss that
+            # growth. The mark never falls, so this read bounds the inherited value.
+            rss_floor = _inherited_rss_floor_bytes()
         stdout = out_path.read_bytes()
         stderr = err_path.read_bytes().decode("utf-8", errors="replace")
 
     return {
         "argv": list(argv),
         "exit_code": exit_code,
-        "resources": _resources_from_wait4(usage),
+        "resources": _resources_from_wait4(usage, rss_floor=rss_floor),
+        "peak_rss_floor_bytes": rss_floor,
         "stderr": stderr,
         "stdout": stdout,
         "timed_out": timed_out,
@@ -1745,13 +1830,45 @@ _RESOURCE_FIELDS = (
 )
 
 
-def _resources_from_wait4(usage: Any) -> Dict[str, Optional[int]]:
+def _inherited_rss_floor_bytes() -> Optional[int]:
+    """The lowest peak RSS a child of this process can report on Linux.
+
+    Linux keeps a process's ``maxrss`` across ``execve`` and seeds it from the address
+    space being replaced, which for a spawned child is this harness's own. A tool whose
+    real peak is 4 MiB therefore reports this interpreter's tens of MiB, and every small
+    tool reports the same number. The high-water mark bounds that inheritance whether
+    the child was forked or vforked. Other systems do not carry the value over.
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        with open("/proc/self/status", encoding="ascii", errors="replace") as status:
+            for line in status:
+                if line.startswith("VmHWM:"):
+                    fields = line.split()
+                    return int(fields[1]) * 1024 if len(fields) >= 2 else None
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _resources_from_wait4(
+    usage: Any, *, rss_floor: Optional[int] = None
+) -> Dict[str, Optional[int]]:
+    """Convert one child's rusage, withholding a peak RSS the kernel inherited.
+
+    A peak at or below ``rss_floor`` cannot be told apart from the harness's own memory,
+    so it is recorded as unknown rather than as a measurement; callers keep the floor
+    beside it and can say the true peak was at most that.
+    """
     if usage is None:
         return {field_name: None for field_name in _RESOURCE_FIELDS}
-    peak = int(usage.ru_maxrss)
+    peak: Optional[int] = int(usage.ru_maxrss)
     if sys.platform != "darwin":
         # Linux reports ru_maxrss in kilobytes; Darwin already reports bytes.
         peak *= 1024
+    if rss_floor is not None and peak <= rss_floor:
+        peak = None
     return {
         "user_cpu_ns": round(float(usage.ru_utime) * 1e9),
         "system_cpu_ns": round(float(usage.ru_stime) * 1e9),

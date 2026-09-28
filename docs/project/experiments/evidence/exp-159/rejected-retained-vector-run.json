@@ -1,0 +1,3698 @@
+{
+  "baseline_drift": [],
+  "conditions": {
+    "campaign_stage": "exploratory",
+    "confidence_interval": "paired-bootstrap-median-95-v1",
+    "host_acceptance": {
+      "controlled_load_workers": 0,
+      "controlled_max_excess_cpu_busy_pct": 25.0,
+      "controlled_max_excess_load_per_cpu": 0.25,
+      "final": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 35.22,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 6.041,
+        "load_1m": 5.601,
+        "load_1m_per_cpu": 0.5601,
+        "load_5m": 5.076,
+        "logical_cpu_count": 10,
+        "power_source": "AC",
+        "system": "Darwin",
+        "thermal_pressure": "normal",
+        "unavailable_reason": null
+      },
+      "initial": {
+        "controlled_load_alive": null,
+        "cpu_busy_pct": 16.4,
+        "cpu_busy_unavailable_reason": null,
+        "load_15m": 7.387,
+        "load_1m": 5.833,
+        "load_1m_per_cpu": 0.5833,
+        "load_5m": 6.536,
+        "logical_cpu_count": 10,
+        "power_source": "AC",
+        "system": "Darwin",
+        "thermal_pressure": "normal",
+        "unavailable_reason": null
+      },
+      "quiet_max_cpu_busy_pct": 25.0,
+      "quiet_max_load_per_cpu": 0.25
+    },
+    "host_regime": "quiet",
+    "interleaved": true,
+    "os_cache": "warm-steady",
+    "schedule": "round-robin-by-ordinal-v1",
+    "stopping_rule": "fixed-N-no-optional-stopping-v1",
+    "trials": 12,
+    "warmups": 3
+  },
+  "duration_seconds": 985.509,
+  "host": {
+    "arch": "arm64",
+    "cpu_count": 10,
+    "cpu_model": "Apple M1 Pro",
+    "efficiency_cores": 2,
+    "filesystem": "apfs",
+    "max_vnodes": 263168,
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.7",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "virtualization": "bare-metal"
+  },
+  "invalid_samples": 14,
+  "jobs": {
+    "content-query": {
+      "argv": [
+        "{binary}",
+        "content-query",
+        "--root",
+        "{root}",
+        "--queries",
+        "100"
+      ],
+      "description": "Build type, family, language, and document summaries 100 times.",
+      "require_macos_backend": false,
+      "require_scan_diagnostics": false,
+      "start_state": "warm"
+    }
+  },
+  "note": "",
+  "samples": [
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 21.8,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.334,
+          "load_1m": 5.746,
+          "load_1m_per_cpu": 0.5746,
+          "load_5m": 6.459,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 21.0,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.387,
+          "load_1m": 5.833,
+          "load_1m_per_cpu": 0.5833,
+          "load_5m": 6.536,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13055786083,
+        "cpu_ns": 34987703000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 248072,
+        "major_faults": 0,
+        "minor_faults": 198772,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1306378240,
+        "system_cpu_ns": 16925643000,
+        "user_cpu_ns": 18062060000,
+        "voluntary_context_switches": 120256,
+        "wall_ns": 22255141083
+      },
+      "ordinal": -3,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13055786083,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "candidate",
+      "warmup": true
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 25.38,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.098,
+          "load_1m": 4.05,
+          "load_1m_per_cpu": 0.405,
+          "load_5m": 5.93,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 18.94,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.334,
+          "load_1m": 5.746,
+          "load_1m_per_cpu": 0.5746,
+          "load_5m": 6.459,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 30337491167,
+        "cpu_ns": 53110509000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 253595,
+        "major_faults": 0,
+        "minor_faults": 153627,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1322467328,
+        "system_cpu_ns": 18076361000,
+        "user_cpu_ns": 35034148000,
+        "voluntary_context_switches": 120222,
+        "wall_ns": 39401556666
+      },
+      "ordinal": -3,
+      "probe": {
+        "attribution": null,
+        "component_ns": 30337491167,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": true
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 19.0,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.988,
+          "load_1m": 4.642,
+          "load_1m_per_cpu": 0.4642,
+          "load_5m": 5.802,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 25.55,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.085,
+          "load_1m": 4.125,
+          "load_1m_per_cpu": 0.4125,
+          "load_5m": 5.915,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29912574583,
+        "cpu_ns": 52234482000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 254140,
+        "major_faults": 0,
+        "minor_faults": 164476,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1317158912,
+        "system_cpu_ns": 17312743000,
+        "user_cpu_ns": 34921739000,
+        "voluntary_context_switches": 120239,
+        "wall_ns": 38919300375
+      },
+      "ordinal": -2,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29912574583,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": true
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 28.7,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.958,
+          "load_1m": 4.854,
+          "load_1m_per_cpu": 0.4854,
+          "load_5m": 5.793,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 28.0,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.988,
+          "load_1m": 4.642,
+          "load_1m_per_cpu": 0.4642,
+          "load_5m": 5.802,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13243328625,
+        "cpu_ns": 36224109000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 247469,
+        "major_faults": 105,
+        "minor_faults": 198497,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1305296896,
+        "system_cpu_ns": 18114636000,
+        "user_cpu_ns": 18109473000,
+        "voluntary_context_switches": 120129,
+        "wall_ns": 21587540125
+      },
+      "ordinal": -2,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13243328625,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": true
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 20.3,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.889,
+          "load_1m": 4.807,
+          "load_1m_per_cpu": 0.4807,
+          "load_5m": 5.698,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 45.59,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.958,
+          "load_1m": 4.854,
+          "load_1m_per_cpu": 0.4854,
+          "load_5m": 5.793,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13149469708,
+        "cpu_ns": 35980936000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 265984,
+        "major_faults": 0,
+        "minor_faults": 198672,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1306001408,
+        "system_cpu_ns": 17896625000,
+        "user_cpu_ns": 18084311000,
+        "voluntary_context_switches": 120225,
+        "wall_ns": 21548858375
+      },
+      "ordinal": -1,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13149469708,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": true
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 21.36,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.811,
+          "load_1m": 4.893,
+          "load_1m_per_cpu": 0.4893,
+          "load_5m": 5.634,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 32.73,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.889,
+          "load_1m": 4.807,
+          "load_1m_per_cpu": 0.4807,
+          "load_5m": 5.698,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 30781290500,
+        "cpu_ns": 53655259000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 291821,
+        "major_faults": 0,
+        "minor_faults": 153239,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1315225600,
+        "system_cpu_ns": 18118795000,
+        "user_cpu_ns": 35536464000,
+        "voluntary_context_switches": 122133,
+        "wall_ns": 39878431584
+      },
+      "ordinal": -1,
+      "probe": {
+        "attribution": null,
+        "component_ns": 30781290500,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": true
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 48.61,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.721,
+          "load_1m": 4.972,
+          "load_1m_per_cpu": 0.4972,
+          "load_5m": 5.559,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 26.59,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.777,
+          "load_1m": 4.581,
+          "load_1m_per_cpu": 0.4581,
+          "load_5m": 5.557,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 30305652917,
+        "cpu_ns": 53264412000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 253611,
+        "major_faults": 0,
+        "minor_faults": 153540,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1320960000,
+        "system_cpu_ns": 18091610000,
+        "user_cpu_ns": 35172802000,
+        "voluntary_context_switches": 120252,
+        "wall_ns": 38987486625
+      },
+      "ordinal": 0,
+      "probe": {
+        "attribution": null,
+        "component_ns": 30305652917,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 45.75,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.716,
+          "load_1m": 5.611,
+          "load_1m_per_cpu": 0.5611,
+          "load_5m": 5.646,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 23.45,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.721,
+          "load_1m": 4.972,
+          "load_1m_per_cpu": 0.4972,
+          "load_5m": 5.559,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13418828333,
+        "cpu_ns": 35455279000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 252017,
+        "major_faults": 105,
+        "minor_faults": 198361,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1304264704,
+        "system_cpu_ns": 17279583000,
+        "user_cpu_ns": 18175696000,
+        "voluntary_context_switches": 120249,
+        "wall_ns": 21901237167
+      },
+      "ordinal": 0,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13418828333,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 56.64,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.937,
+          "load_1m": 8.442,
+          "load_1m_per_cpu": 0.8442,
+          "load_5m": 6.34,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 77.11,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.716,
+          "load_1m": 5.611,
+          "load_1m_per_cpu": 0.5611,
+          "load_5m": 5.646,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 15086799917,
+        "cpu_ns": 34725301000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 246016,
+        "major_faults": 0,
+        "minor_faults": 199030,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1301741568,
+        "system_cpu_ns": 16270658000,
+        "user_cpu_ns": 18454643000,
+        "voluntary_context_switches": 120241,
+        "wall_ns": 24187885333
+      },
+      "ordinal": 1,
+      "probe": {
+        "attribution": null,
+        "component_ns": 15086799917,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 42.77,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.074,
+          "load_1m": 8.991,
+          "load_1m_per_cpu": 0.8991,
+          "load_5m": 6.799,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 30.54,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.937,
+          "load_1m": 8.442,
+          "load_1m_per_cpu": 0.8442,
+          "load_5m": 6.34,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 35006846875,
+        "cpu_ns": 53488644000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 265072,
+        "major_faults": 103,
+        "minor_faults": 153800,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1321451520,
+        "system_cpu_ns": 17530770000,
+        "user_cpu_ns": 35957874000,
+        "voluntary_context_switches": 120165,
+        "wall_ns": 44292542166
+      },
+      "ordinal": 1,
+      "probe": {
+        "attribution": null,
+        "component_ns": 35006846875,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 39.8,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.085,
+          "load_1m": 8.066,
+          "load_1m_per_cpu": 0.8066,
+          "load_5m": 6.862,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 22.88,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.074,
+          "load_1m": 8.991,
+          "load_1m_per_cpu": 0.8991,
+          "load_5m": 6.799,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 30138932708,
+        "cpu_ns": 52782346000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 250601,
+        "major_faults": 0,
+        "minor_faults": 153535,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1321140224,
+        "system_cpu_ns": 17708132000,
+        "user_cpu_ns": 35074214000,
+        "voluntary_context_switches": 120214,
+        "wall_ns": 38863444542
+      },
+      "ordinal": 2,
+      "probe": {
+        "attribution": null,
+        "component_ns": 30138932708,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 65.76,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.152,
+          "load_1m": 8.543,
+          "load_1m_per_cpu": 0.8543,
+          "load_5m": 7.066,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 50.3,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.079,
+          "load_1m": 7.901,
+          "load_1m_per_cpu": 0.7901,
+          "load_5m": 6.847,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13974053125,
+        "cpu_ns": 34372197000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 260991,
+        "major_faults": 105,
+        "minor_faults": 199183,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1277296640,
+        "system_cpu_ns": 15745648000,
+        "user_cpu_ns": 18626549000,
+        "voluntary_context_switches": 120172,
+        "wall_ns": 22775609417
+      },
+      "ordinal": 2,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13974053125,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 31.11,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.17,
+          "load_1m": 8.349,
+          "load_1m_per_cpu": 0.8349,
+          "load_5m": 7.126,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 62.44,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.152,
+          "load_1m": 8.543,
+          "load_1m_per_cpu": 0.8543,
+          "load_5m": 7.066,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13080602792,
+        "cpu_ns": 34607049000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 233899,
+        "major_faults": 0,
+        "minor_faults": 198838,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1309458432,
+        "system_cpu_ns": 16516129000,
+        "user_cpu_ns": 18090920000,
+        "voluntary_context_switches": 120213,
+        "wall_ns": 21663010792
+      },
+      "ordinal": 3,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13080602792,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 21.16,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.124,
+          "load_1m": 6.975,
+          "load_1m_per_cpu": 0.6975,
+          "load_5m": 6.996,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 56.12,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.17,
+          "load_1m": 8.349,
+          "load_1m_per_cpu": 0.8349,
+          "load_5m": 7.126,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29625871750,
+        "cpu_ns": 53019832000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 227119,
+        "major_faults": 103,
+        "minor_faults": 152767,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1321910272,
+        "system_cpu_ns": 18062125000,
+        "user_cpu_ns": 34957707000,
+        "voluntary_context_switches": 120107,
+        "wall_ns": 38163273208
+      },
+      "ordinal": 3,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29625871750,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 44.54,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.037,
+          "load_1m": 6.384,
+          "load_1m_per_cpu": 0.6384,
+          "load_5m": 6.788,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 20.1,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.124,
+          "load_1m": 6.975,
+          "load_1m_per_cpu": 0.6975,
+          "load_5m": 6.996,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29955504000,
+        "cpu_ns": 53315552000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 220821,
+        "major_faults": 0,
+        "minor_faults": 153949,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1314340864,
+        "system_cpu_ns": 18392586000,
+        "user_cpu_ns": 34922966000,
+        "voluntary_context_switches": 120228,
+        "wall_ns": 38473583875
+      },
+      "ordinal": 4,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29955504000,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 47.76,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.028,
+          "load_1m": 6.521,
+          "load_1m_per_cpu": 0.6521,
+          "load_5m": 6.788,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 25.63,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.037,
+          "load_1m": 6.384,
+          "load_1m_per_cpu": 0.6384,
+          "load_5m": 6.788,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13152832875,
+        "cpu_ns": 35889840000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 221636,
+        "major_faults": 105,
+        "minor_faults": 198288,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1303281664,
+        "system_cpu_ns": 17767384000,
+        "user_cpu_ns": 18122456000,
+        "voluntary_context_switches": 120215,
+        "wall_ns": 21803225667
+      },
+      "ordinal": 4,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13152832875,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample",
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 21.44,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.997,
+          "load_1m": 6.3,
+          "load_1m_per_cpu": 0.63,
+          "load_5m": 6.722,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 64.34,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.028,
+          "load_1m": 6.521,
+          "load_1m_per_cpu": 0.6521,
+          "load_5m": 6.788,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 13249333750,
+        "cpu_ns": 35145899000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 223324,
+        "major_faults": 0,
+        "minor_faults": 198441,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1304248320,
+        "system_cpu_ns": 17079736000,
+        "user_cpu_ns": 18066163000,
+        "voluntary_context_switches": 120198,
+        "wall_ns": 21667733084
+      },
+      "ordinal": 5,
+      "probe": {
+        "attribution": null,
+        "component_ns": 13249333750,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% before the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 19.86,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.108,
+          "load_1m": 7.582,
+          "load_1m_per_cpu": 0.7582,
+          "load_5m": 7.053,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 19.74,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.997,
+          "load_1m": 6.3,
+          "load_1m_per_cpu": 0.63,
+          "load_5m": 6.722,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 30330094708,
+        "cpu_ns": 53109504000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 227346,
+        "major_faults": 103,
+        "minor_faults": 139789,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1313931264,
+        "system_cpu_ns": 17654738000,
+        "user_cpu_ns": 35454766000,
+        "voluntary_context_switches": 120163,
+        "wall_ns": 39182303833
+      },
+      "ordinal": 5,
+      "probe": {
+        "attribution": null,
+        "component_ns": 30330094708,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 52.45,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.048,
+          "load_1m": 6.57,
+          "load_1m_per_cpu": 0.657,
+          "load_5m": 6.893,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 23.45,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.108,
+          "load_1m": 7.582,
+          "load_1m_per_cpu": 0.7582,
+          "load_5m": 7.053,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 30173469541,
+        "cpu_ns": 53809012000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 233910,
+        "major_faults": 0,
+        "minor_faults": 153474,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1320550400,
+        "system_cpu_ns": 18882700000,
+        "user_cpu_ns": 34926312000,
+        "voluntary_context_switches": 120128,
+        "wall_ns": 38820855084
+      },
+      "ordinal": 6,
+      "probe": {
+        "attribution": null,
+        "component_ns": 30173469541,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 8.12,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.924,
+          "load_1m": 5.247,
+          "load_1m_per_cpu": 0.5247,
+          "load_5m": 6.562,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 18.75,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 7.048,
+          "load_1m": 6.57,
+          "load_1m_per_cpu": 0.657,
+          "load_5m": 6.893,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 12952184041,
+        "cpu_ns": 38064731000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 236194,
+        "major_faults": 104,
+        "minor_faults": 198464,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1306394624,
+        "system_cpu_ns": 20130352000,
+        "user_cpu_ns": 17934379000,
+        "voluntary_context_switches": 123842,
+        "wall_ns": 21631714542
+      },
+      "ordinal": 6,
+      "probe": {
+        "attribution": null,
+        "component_ns": 12952184041,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 13.62,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.866,
+          "load_1m": 5.094,
+          "load_1m_per_cpu": 0.5094,
+          "load_5m": 6.431,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 12.86,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.924,
+          "load_1m": 5.247,
+          "load_1m_per_cpu": 0.5247,
+          "load_5m": 6.562,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 12672479041,
+        "cpu_ns": 37763071000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 217907,
+        "major_faults": 0,
+        "minor_faults": 198841,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1309425664,
+        "system_cpu_ns": 20049355000,
+        "user_cpu_ns": 17713716000,
+        "voluntary_context_switches": 120209,
+        "wall_ns": 21043427750
+      },
+      "ordinal": 7,
+      "probe": {
+        "attribution": null,
+        "component_ns": 12672479041,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 13.29,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.681,
+          "load_1m": 3.979,
+          "load_1m_per_cpu": 0.3979,
+          "load_5m": 5.981,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 17.5,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.866,
+          "load_1m": 5.094,
+          "load_1m_per_cpu": 0.5094,
+          "load_5m": 6.431,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29463888333,
+        "cpu_ns": 54382629000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 221073,
+        "major_faults": 0,
+        "minor_faults": 153114,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1316175872,
+        "system_cpu_ns": 19644695000,
+        "user_cpu_ns": 34737934000,
+        "voluntary_context_switches": 120184,
+        "wall_ns": 38049008791
+      },
+      "ordinal": 7,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29463888333,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 21.53,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.502,
+          "load_1m": 3.263,
+          "load_1m_per_cpu": 0.3263,
+          "load_5m": 5.58,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 13.6,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.681,
+          "load_1m": 3.979,
+          "load_1m_per_cpu": 0.3979,
+          "load_5m": 5.981,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29298814667,
+        "cpu_ns": 54254205000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 221559,
+        "major_faults": 0,
+        "minor_faults": 153103,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1314570240,
+        "system_cpu_ns": 19621543000,
+        "user_cpu_ns": 34632662000,
+        "voluntary_context_switches": 120193,
+        "wall_ns": 37987671500
+      },
+      "ordinal": 8,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29298814667,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 31.01,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.478,
+          "load_1m": 3.85,
+          "load_1m_per_cpu": 0.385,
+          "load_5m": 5.572,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 17.15,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.502,
+          "load_1m": 3.263,
+          "load_1m_per_cpu": 0.3263,
+          "load_5m": 5.58,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 12704906208,
+        "cpu_ns": 38839277000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 252362,
+        "major_faults": 105,
+        "minor_faults": 198376,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1303117824,
+        "system_cpu_ns": 21033096000,
+        "user_cpu_ns": 17806181000,
+        "voluntary_context_switches": 135585,
+        "wall_ns": 21651582792
+      },
+      "ordinal": 8,
+      "probe": {
+        "attribution": null,
+        "component_ns": 12704906208,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 13.21,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.404,
+          "load_1m": 3.858,
+          "load_1m_per_cpu": 0.3858,
+          "load_5m": 5.442,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 23.51,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.445,
+          "load_1m": 3.621,
+          "load_1m_per_cpu": 0.3621,
+          "load_5m": 5.496,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 12579554917,
+        "cpu_ns": 37962691000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 295938,
+        "major_faults": 0,
+        "minor_faults": 198343,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1302708224,
+        "system_cpu_ns": 20142971000,
+        "user_cpu_ns": 17819720000,
+        "voluntary_context_switches": 137239,
+        "wall_ns": 21509547125
+      },
+      "ordinal": 9,
+      "probe": {
+        "attribution": null,
+        "component_ns": 12579554917,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 8.63,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.229,
+          "load_1m": 3.193,
+          "load_1m_per_cpu": 0.3193,
+          "load_5m": 5.084,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 14.29,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.404,
+          "load_1m": 3.858,
+          "load_1m_per_cpu": 0.3858,
+          "load_5m": 5.442,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29795002708,
+        "cpu_ns": 55146096000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 231738,
+        "major_faults": 103,
+        "minor_faults": 153061,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1315618816,
+        "system_cpu_ns": 20154563000,
+        "user_cpu_ns": 34991533000,
+        "voluntary_context_switches": 127182,
+        "wall_ns": 38534136334
+      },
+      "ordinal": 9,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29795002708,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 9.92,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.089,
+          "load_1m": 3.152,
+          "load_1m_per_cpu": 0.3152,
+          "load_5m": 4.849,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 9.02,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.229,
+          "load_1m": 3.193,
+          "load_1m_per_cpu": 0.3193,
+          "load_5m": 5.084,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29825091958,
+        "cpu_ns": 55836151000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 245502,
+        "major_faults": 0,
+        "minor_faults": 153603,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1322467328,
+        "system_cpu_ns": 20722176000,
+        "user_cpu_ns": 35113975000,
+        "voluntary_context_switches": 120191,
+        "wall_ns": 38533554166
+      },
+      "ordinal": 10,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29825091958,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "control",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 9.64,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.016,
+          "load_1m": 3.245,
+          "load_1m_per_cpu": 0.3245,
+          "load_5m": 4.745,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 12.57,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.065,
+          "load_1m": 3.06,
+          "load_1m_per_cpu": 0.306,
+          "load_5m": 4.802,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 12539933458,
+        "cpu_ns": 38270464000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 219957,
+        "major_faults": 105,
+        "minor_faults": 198419,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1303199744,
+        "system_cpu_ns": 20541944000,
+        "user_cpu_ns": 17728520000,
+        "voluntary_context_switches": 120420,
+        "wall_ns": 20982438250
+      },
+      "ordinal": 10,
+      "probe": {
+        "attribution": null,
+        "component_ns": 12539933458,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 8.35,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 5.984,
+          "load_1m": 3.733,
+          "load_1m_per_cpu": 0.3733,
+          "load_5m": 4.759,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 8.79,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.016,
+          "load_1m": 3.245,
+          "load_1m_per_cpu": 0.3245,
+          "load_5m": 4.745,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 12684577875,
+        "cpu_ns": 38249847000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 217220,
+        "major_faults": 0,
+        "minor_faults": 198813,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1309491200,
+        "system_cpu_ns": 20443367000,
+        "user_cpu_ns": 17806480000,
+        "voluntary_context_switches": 120222,
+        "wall_ns": 21212196500
+      },
+      "ordinal": 11,
+      "probe": {
+        "attribution": null,
+        "component_ns": 12684577875,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [],
+      "valid": true,
+      "variant": "candidate",
+      "warmup": false
+    },
+    {
+      "host_pressure": {
+        "after": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 30.85,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 6.041,
+          "load_1m": 5.601,
+          "load_1m_per_cpu": 0.5601,
+          "load_5m": 5.076,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        },
+        "before": {
+          "controlled_load_alive": null,
+          "cpu_busy_pct": 9.54,
+          "cpu_busy_unavailable_reason": null,
+          "load_15m": 5.984,
+          "load_1m": 3.733,
+          "load_1m_per_cpu": 0.3733,
+          "load_5m": 4.759,
+          "logical_cpu_count": 10,
+          "power_source": "AC",
+          "system": "Darwin",
+          "thermal_pressure": "normal",
+          "unavailable_reason": null
+        }
+      },
+      "job": "content-query",
+      "metrics": {
+        "blocked_ns": null,
+        "component_ns": 29541079666,
+        "cpu_ns": 54645221000,
+        "input_blocks": 0,
+        "involuntary_context_switches": 226197,
+        "major_faults": 103,
+        "minor_faults": 153337,
+        "output_blocks": 0,
+        "peak_rss_bytes": 1320435712,
+        "system_cpu_ns": 19993471000,
+        "user_cpu_ns": 34651750000,
+        "voluntary_context_switches": 120233,
+        "wall_ns": 38395200125
+      },
+      "ordinal": 11,
+      "probe": {
+        "attribution": null,
+        "component_ns": 29541079666,
+        "mode": "content-query",
+        "scan_diagnostics": null,
+        "source": "scan",
+        "summary": {
+          "allocated_bytes": 1954811904,
+          "apparent_bytes": 1643250814,
+          "apply": {
+            "inserted": 0,
+            "invalidated": 0,
+            "removed": 0,
+            "stale": 0,
+            "unchanged": 0,
+            "updated": 0
+          },
+          "commit": null,
+          "complete": true,
+          "content": {
+            "analyzed": 113757,
+            "applied": 127104,
+            "binary": 13133,
+            "cache_hits": 0,
+            "candidates": 127104,
+            "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+            "invalid_utf8": 214,
+            "records": 127104
+          },
+          "counters": null,
+          "dirs": 9936,
+          "dirs_read": 0,
+          "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+          "entries": 137085,
+          "errors": 0,
+          "files": 127104,
+          "index_len": 137085,
+          "newest_file_mtime_ns": 1790296776860556574,
+          "other": 0,
+          "query_iterations": 100,
+          "query_observations": 0,
+          "snapshot_bytes": null,
+          "snapshot_written": null,
+          "symlinks": 45
+        }
+      },
+      "reasons": [
+        "quiet-host CPU busy exceeded 25.0% after the sample"
+      ],
+      "valid": false,
+      "variant": "control",
+      "warmup": false
+    }
+  ],
+  "schema": "fdu-realtree-run-v1",
+  "started_utc": "2026-09-27T07:48:55Z",
+  "statistics": {
+    "content-query": {
+      "comparisons": {
+        "candidate_vs_control": {
+          "candidate": "candidate",
+          "control": "control",
+          "metrics": {
+            "blocked_ns": null,
+            "component_ns": {
+              "ci95_change_pct": [
+                -57.955,
+                -56.99
+              ],
+              "ci95_delta": [
+                -17285158500,
+                -16791409292
+              ],
+              "ci_excludes_zero": true,
+              "direction": "improved",
+              "improved": true,
+              "median_change_pct": -57.78,
+              "median_delta": -17215447791,
+              "noninferiority": "superior",
+              "pairs": 3,
+              "passes_acceptance": true,
+              "significant": true
+            },
+            "cpu_ns": {
+              "ci95_change_pct": [
+                -31.459,
+                -30.56
+              ],
+              "ci95_delta": [
+                -17565687000,
+                -16619558000
+              ],
+              "ci_excludes_zero": true,
+              "direction": "improved",
+              "improved": true,
+              "median_change_pct": -31.16,
+              "median_delta": -17183405000,
+              "noninferiority": "superior",
+              "pairs": 3,
+              "passes_acceptance": true,
+              "significant": true
+            },
+            "involuntary_context_switches": {
+              "ci95_change_pct": [
+                -10.405,
+                27.704
+              ],
+              "ci95_delta": [
+                -25545,
+                64200
+              ],
+              "ci_excludes_zero": false,
+              "direction": "unclear",
+              "improved": true,
+              "median_change_pct": -1.432,
+              "median_delta": -3166,
+              "noninferiority": "inconclusive",
+              "pairs": 3,
+              "passes_acceptance": false,
+              "significant": false
+            },
+            "major_faults": {
+              "ci95_change_pct": [
+                -100.0,
+                -100.0
+              ],
+              "ci95_delta": [
+                -103,
+                105
+              ],
+              "ci_excludes_zero": true,
+              "direction": "improved",
+              "improved": true,
+              "median_change_pct": -100.0,
+              "median_delta": 0,
+              "noninferiority": "superior",
+              "pairs": 3,
+              "passes_acceptance": true,
+              "significant": true
+            },
+            "minor_faults": {
+              "ci95_change_pct": [
+                29.177,
+                29.865
+              ],
+              "ci95_delta": [
+                44816,
+                45727
+              ],
+              "ci_excludes_zero": true,
+              "direction": "regressed",
+              "improved": false,
+              "median_change_pct": 29.584,
+              "median_delta": 45282,
+              "noninferiority": "inferior",
+              "pairs": 3,
+              "passes_acceptance": false,
+              "significant": false
+            },
+            "peak_rss_bytes": {
+              "ci95_change_pct": [
+                -1.457,
+                -0.513
+              ],
+              "ci95_delta": [
+                -19267584,
+                -6750208
+              ],
+              "ci_excludes_zero": true,
+              "direction": "improved",
+              "improved": true,
+              "median_change_pct": -0.981,
+              "median_delta": -12910592,
+              "noninferiority": "noninferior",
+              "pairs": 3,
+              "passes_acceptance": true,
+              "significant": true
+            },
+            "system_cpu_ns": {
+              "ci95_change_pct": [
+                -0.87,
+                2.06
+              ],
+              "ci95_delta": [
+                -180232000,
+                404660000
+              ],
+              "ci_excludes_zero": false,
+              "direction": "unclear",
+              "improved": true,
+              "median_change_pct": -0.058,
+              "median_delta": -11592000,
+              "noninferiority": "noninferior",
+              "pairs": 3,
+              "passes_acceptance": false,
+              "significant": false
+            },
+            "user_cpu_ns": {
+              "ci95_change_pct": [
+                -49.511,
+                -49.008
+              ],
+              "ci95_delta": [
+                -17385455000,
+                -17024218000
+              ],
+              "ci_excludes_zero": true,
+              "direction": "improved",
+              "improved": true,
+              "median_change_pct": -49.074,
+              "median_delta": -17171813000,
+              "noninferiority": "superior",
+              "pairs": 3,
+              "passes_acceptance": true,
+              "significant": true
+            },
+            "voluntary_context_switches": {
+              "ci95_change_pct": [
+                0.021,
+                7.908
+              ],
+              "ci95_delta": [
+                25,
+                10057
+              ],
+              "ci_excludes_zero": true,
+              "direction": "regressed",
+              "improved": false,
+              "median_change_pct": 0.191,
+              "median_delta": 229,
+              "noninferiority": "inconclusive",
+              "pairs": 3,
+              "passes_acceptance": false,
+              "significant": false
+            },
+            "wall_ns": {
+              "ci95_change_pct": [
+                -45.548,
+                -44.181
+              ],
+              "ci95_delta": [
+                -17551115916,
+                -17005581041
+              ],
+              "ci_excludes_zero": true,
+              "direction": "improved",
+              "improved": true,
+              "median_change_pct": -44.694,
+              "median_delta": -17024589209,
+              "noninferiority": "superior",
+              "pairs": 3,
+              "passes_acceptance": true,
+              "significant": true
+            }
+          },
+          "policy_stability": null,
+          "qualification": {
+            "campaign_stage": "exploratory",
+            "classification": "inferior",
+            "confirmable": false,
+            "major_fault_delta_limit": 0.0,
+            "noninferiority_margin_pct": 3.0,
+            "reasons": [
+              "minor_faults exceeds its +10% regression limit",
+              "major_faults does not establish non-regression"
+            ],
+            "resource_limits_pct": {
+              "cpu_ns": 50.0,
+              "involuntary_context_switches": 50.0,
+              "minor_faults": 10.0,
+              "peak_rss_bytes": 5.0,
+              "system_cpu_ns": 75.0,
+              "voluntary_context_switches": 50.0
+            },
+            "resources": {
+              "cpu_ns": "within-limit",
+              "involuntary_context_switches": "within-limit",
+              "major_faults": "inconclusive",
+              "minor_faults": "rejected",
+              "peak_rss_bytes": "within-limit",
+              "system_cpu_ns": "within-limit",
+              "voluntary_context_switches": "within-limit"
+            }
+          }
+        }
+      },
+      "variants": {
+        "candidate": {
+          "invalid": 7,
+          "metrics": {
+            "blocked_ns": null,
+            "component_ns": {
+              "count": 5,
+              "mad": 92924124,
+              "max": 12952184041,
+              "mean": 12685745866.4,
+              "median": 12672479041,
+              "min": 12539933458,
+              "p90": 12952184041,
+              "p95": 12952184041,
+              "p95_over_median": 1.022,
+              "stdev": 161015876.5
+            },
+            "cpu_ns": {
+              "count": 5,
+              "mad": 185116000,
+              "max": 38270464000,
+              "mean": 38062160800.0,
+              "median": 38064731000,
+              "min": 37763071000,
+              "p90": 38270464000,
+              "p95": 38270464000,
+              "p95_over_median": 1.005,
+              "stdev": 210933572.7
+            },
+            "involuntary_context_switches": {
+              "count": 5,
+              "mad": 2737,
+              "max": 295938,
+              "mean": 237443.2,
+              "median": 219957,
+              "min": 217220,
+              "p90": 295938,
+              "p95": 295938,
+              "p95_over_median": 1.345,
+              "stdev": 33614.0
+            },
+            "major_faults": {
+              "count": 5,
+              "mad": 0,
+              "max": 105,
+              "mean": 41.8,
+              "median": 0,
+              "min": 0,
+              "p90": 105,
+              "p95": 105,
+              "p95_over_median": null,
+              "stdev": 57.2
+            },
+            "minor_faults": {
+              "count": 5,
+              "mad": 121,
+              "max": 198841,
+              "mean": 198576.0,
+              "median": 198464,
+              "min": 198343,
+              "p90": 198841,
+              "p95": 198841,
+              "p95_over_median": 1.002,
+              "stdev": 233.4
+            },
+            "peak_rss_bytes": {
+              "count": 5,
+              "mad": 3096576,
+              "max": 1309491200,
+              "mean": 1306243891.2,
+              "median": 1306394624,
+              "min": 1302708224,
+              "p90": 1309491200,
+              "p95": 1309491200,
+              "p95_over_median": 1.002,
+              "stdev": 3258035.7
+            },
+            "system_cpu_ns": {
+              "count": 5,
+              "mad": 93616000,
+              "max": 20541944000,
+              "mean": 20261597800.0,
+              "median": 20142971000,
+              "min": 20049355000,
+              "p90": 20541944000,
+              "p95": 20541944000,
+              "p95_over_median": 1.02,
+              "stdev": 216782620.3
+            },
+            "user_cpu_ns": {
+              "count": 5,
+              "mad": 77960000,
+              "max": 17934379000,
+              "mean": 17800563000.0,
+              "median": 17806480000,
+              "min": 17713716000,
+              "p90": 17934379000,
+              "p95": 17934379000,
+              "p95_over_median": 1.007,
+              "stdev": 88092733.3
+            },
+            "voluntary_context_switches": {
+              "count": 5,
+              "mad": 211,
+              "max": 137239,
+              "mean": 124386.4,
+              "median": 120420,
+              "min": 120209,
+              "p90": 137239,
+              "p95": 137239,
+              "p95_over_median": 1.14,
+              "stdev": 7348.7
+            },
+            "wall_ns": {
+              "count": 5,
+              "mad": 229758250,
+              "max": 21631714542,
+              "mean": 21275864833.4,
+              "median": 21212196500,
+              "min": 20982438250,
+              "p90": 21631714542,
+              "p95": 21631714542,
+              "p95_over_median": 1.02,
+              "stdev": 285226332.4
+            }
+          },
+          "samples": 5
+        },
+        "control": {
+          "invalid": 7,
+          "metrics": {
+            "blocked_ns": null,
+            "component_ns": {
+              "count": 5,
+              "mad": 331114375,
+              "max": 30330094708,
+              "mean": 29742578474.8,
+              "median": 29795002708,
+              "min": 29298814667,
+              "p90": 30330094708,
+              "p95": 30330094708,
+              "p95_over_median": 1.018,
+              "stdev": 396650542.6
+            },
+            "cpu_ns": {
+              "count": 5,
+              "mad": 763467000,
+              "max": 55836151000,
+              "mean": 54545717000.0,
+              "median": 54382629000,
+              "min": 53109504000,
+              "p90": 55836151000,
+              "p95": 55836151000,
+              "p95_over_median": 1.027,
+              "stdev": 1024690145.3
+            },
+            "involuntary_context_switches": {
+              "count": 5,
+              "mad": 5787,
+              "max": 245502,
+              "mean": 229443.6,
+              "median": 227346,
+              "min": 221073,
+              "p90": 245502,
+              "p95": 245502,
+              "p95_over_median": 1.08,
+              "stdev": 9997.1
+            },
+            "major_faults": {
+              "count": 5,
+              "mad": 0,
+              "max": 103,
+              "mean": 41.2,
+              "median": 0,
+              "min": 0,
+              "p90": 103,
+              "p95": 103,
+              "p95_over_median": null,
+              "stdev": 56.4
+            },
+            "minor_faults": {
+              "count": 5,
+              "mad": 42,
+              "max": 153603,
+              "mean": 150534.0,
+              "median": 153103,
+              "min": 139789,
+              "p90": 153603,
+              "p95": 153603,
+              "p95_over_median": 1.003,
+              "stdev": 6010.7
+            },
+            "peak_rss_bytes": {
+              "count": 5,
+              "mad": 1048576,
+              "max": 1322467328,
+              "mean": 1316552704.0,
+              "median": 1315618816,
+              "min": 1313931264,
+              "p90": 1322467328,
+              "p95": 1322467328,
+              "p95_over_median": 1.005,
+              "stdev": 3420491.1
+            },
+            "system_cpu_ns": {
+              "count": 5,
+              "mad": 509868000,
+              "max": 20722176000,
+              "mean": 19559543000.0,
+              "median": 19644695000,
+              "min": 17654738000,
+              "p90": 20722176000,
+              "p95": 20722176000,
+              "p95_over_median": 1.055,
+              "stdev": 1155978075.5
+            },
+            "user_cpu_ns": {
+              "count": 5,
+              "mad": 253599000,
+              "max": 35454766000,
+              "mean": 34986174000.0,
+              "median": 34991533000,
+              "min": 34632662000,
+              "p90": 35454766000,
+              "p95": 35454766000,
+              "p95_over_median": 1.013,
+              "stdev": 325013118.5
+            },
+            "voluntary_context_switches": {
+              "count": 5,
+              "mad": 7,
+              "max": 127182,
+              "mean": 121582.6,
+              "median": 120191,
+              "min": 120163,
+              "p90": 127182,
+              "p95": 127182,
+              "p95_over_median": 1.058,
+              "stdev": 3130.2
+            },
+            "wall_ns": {
+              "count": 5,
+              "mad": 484545375,
+              "max": 39182303833,
+              "mean": 38457334924.8,
+              "median": 38533554166,
+              "min": 37987671500,
+              "p90": 39182303833,
+              "p95": 39182303833,
+              "p95_over_median": 1.017,
+              "stdev": 480781060.1
+            }
+          },
+          "samples": 5
+        }
+      }
+    }
+  },
+  "tree": {
+    "counts": {
+      "directories": 9936,
+      "files": 127104,
+      "other": 0,
+      "symlinks": 45,
+      "total": 137085
+    },
+    "depth_histogram": {
+      "0": 1,
+      "1": 52,
+      "10": 3737,
+      "11": 4324,
+      "12": 4301,
+      "13": 3246,
+      "14": 4838,
+      "15": 2977,
+      "16": 2331,
+      "17": 2224,
+      "18": 97,
+      "19": 521,
+      "2": 436,
+      "3": 2418,
+      "4": 9259,
+      "5": 5481,
+      "6": 68287,
+      "7": 8951,
+      "8": 4759,
+      "9": 8845
+    },
+    "engine_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+    "engine_digest_algorithm": "fdu-index-record-v1/sha256-multiset-v1",
+    "engine_digest_components": {
+      "count": 137085,
+      "sum": "5384369c72902af17c2775dbda6c4e2785c1d9834768cc3fb031117b4df23333",
+      "xor": "692b7f6f3d26ab0450b2a34d1a39b435c7888bbe42245bb3c33cf27a4b093b89"
+    },
+    "extensions": {
+      "distinct": 142,
+      "remaining_files": 5405,
+      "top": {
+        "": 7041,
+        "bin": 2993,
+        "c": 3051,
+        "cjs": 2670,
+        "css": 4157,
+        "csv": 2999,
+        "go": 2955,
+        "h": 8392,
+        "html": 3186,
+        "java": 3051,
+        "js": 10836,
+        "json": 4358,
+        "log": 3051,
+        "md": 9603,
+        "png": 3126,
+        "py": 8409,
+        "pyc": 5156,
+        "pyi": 10450,
+        "rs": 3053,
+        "sh": 3077,
+        "toml": 3529,
+        "ts": 10213,
+        "txt": 3359,
+        "yaml": 2984
+      }
+    },
+    "hardlinks": {
+      "duplicate_allocated_bytes": 0,
+      "duplicate_apparent_bytes": 0,
+      "duplicate_file_entries": 0,
+      "groups": 0,
+      "linked_file_entries": 0
+    },
+    "label": "metabrowser-clone",
+    "max_depth": 19,
+    "newest_file_mtime_ns": 1790296776860556574,
+    "root_id": "a319238d9c29b19d6efb12266d9b77eecbcbc85f3eaf7949da346f79098ca7ba",
+    "schema": "fdu-reference-tree-v3",
+    "sizes": {
+      "allocated_bytes": 1954811904,
+      "apparent_bytes": 1643250814
+    }
+  },
+  "tree_after_digest": "0eed491edf9b68dce5e8660d49692971e3f11bc5710312fab4806433ddacbe42",
+  "tree_mutated_during_run": [],
+  "variant_order": [
+    "control",
+    "candidate"
+  ],
+  "variants": {
+    "candidate": {
+      "args": [],
+      "kind": "fdu-probe",
+      "name": "candidate",
+      "notes": "",
+      "sha256": "cab921151815175bc5b7ba8578c74de5bb48292bbff12ebd982f37d399119abd",
+      "size_bytes": 2900928
+    },
+    "control": {
+      "args": [],
+      "kind": "fdu-probe",
+      "name": "control",
+      "notes": "",
+      "sha256": "069e3423c0b6ea6a45f87d5da6338e2ec53080c10351ad29468624f3ef63d316",
+      "size_bytes": 2900928
+    }
+  }
+}

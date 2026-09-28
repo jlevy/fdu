@@ -27,13 +27,31 @@ live change feed, and the Rust and Python libraries.
   verification costs, and cache policies
 - [Architecture index](project/architecture/README.md)
 
+## Research
+
+- [Cache economics and default plans](project/research/research-2026-09-27-cache-economics-and-default-plans.md)
+- [Codebase analysis: accuracy and incremental improvements](project/research/research-2026-09-26-codebase-analysis.md)
+- [Presentation design and composable display limits](project/research/research-2026-09-26-presentation-design.md)
+- [File-type and content metrics](project/research/research-2026-08-12-fast-file-content-metrics.md)
+
+## Work Status
+
+- [Current workstreams and tracking](../TODO.md)
+- [Completed work](../TODO.archive.md)
+- [Tracking consistency review](project/reviews/review-2026-09-27-tracking-consistency.md)
+
+## Completed Implementation Plans
+
+- [Codebase analysis and consistent presentation](project/specs/done/plan-2026-09-26-code-analysis-presentation.md)
+
 ## Performance Evidence
 
 - [Current performance status](project/reports/report-2026-08-14-performance-campaign-status.md)
 - [Performance evidence report](project/reports/report-2026-08-20-fdu-performance-evidence.md)
 - [Experiment ledger](project/reports/report-2026-08-10-fdu-performance-experiments.md)
 - [Performance loop](project/guides/performance-loop.md)
-- [Latest tool comparison](project/reports/report-2026-09-16-fdu-live-tool-comparison.md)
+- [macOS tool comparison](project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
+- [Linux tool comparison](project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 
 ## Build, Test, and Release
 

@@ -1,0 +1,23 @@
+rusage_sampler: uid=502 euid=502 flavor=RUSAGE_INFO_V6 interval=60s
+warmup sample 1: 266 pids in 6.9 ms
+warmup sample 2: 265 pids in 6.2 ms
+warmup sample 3: 265 pids in 4.3 ms
+sample 1: listed=265 rows=265 ok=182 ESRCH=0 EPERM=83 other=0 wall=2.8 ms (10.7 us/pid)
+  same-uid: 182 procs, rusage ok=182 EPERM=0 | other-uid: 83 procs, ok=0 EPERM=83
+sample 2: listed=259 rows=259 ok=185 ESRCH=0 EPERM=74 other=0 wall=5.2 ms (20.0 us/pid)
+  same-uid: 185 procs, rusage ok=185 EPERM=0 | other-uid: 74 procs, ok=0 EPERM=74
+elapsed between samples: 60.0 s
+
+processes: matched=170 new-since-sample-1=15 gone-since-sample-1=12
+  lifetime bytes-written of new procs (counted in deltas): 0.0 B; of gone procs (their post-sample-1 writes are unobservable): 7.6 MiB
+totals over 60 s: diskio_byteswritten +22.0 MiB, diskio_bytesread +110.9 MiB, logical_writes +28.0 MiB
+lifetime totals of live procs at sample 2: diskio_byteswritten 2.1 GiB, logical_writes 2.8 GiB
+
+top categories by diskio_byteswritten delta:
+  category                                      procs     written+        read+     logical+   new  gone
+  agent CLI (claude/codex/cursor-agent)            16     18.6 MiB     50.0 MiB     24.1 MiB     0     1
+  other                                           106      2.7 MiB     56.6 MiB      3.7 MiB    14     9
+  python tooling (python/uv/ruff)                  25    708.0 KiB      4.3 MiB    212.0 KiB     0     0
+  node.js                                          36        0.0 B     68.0 KiB        0.0 B     1     2
+  this sampler                                      1        0.0 B        0.0 B        0.0 B     0     0
+  browser                                           1        0.0 B        0.0 B        0.0 B     0     0

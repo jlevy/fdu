@@ -1,0 +1,7 @@
+label	round	policy	rc	real_s	user_s	sys_s	max_rss_bytes	wall_ms_incl_lockwait	load1	files_walked	files_per_s	tier	summary
+dryrun-crates	0	auto	0	0.10	0.06	0.01	25378816	491	14.04	149	22988	cold scan	8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+dryrun-crates	1	off-nogitignore	0	0.06	0.05	0.01	25214976	130	14.04	149	131344	cold scan	8.3 MiB  149 files, 36 directories
+dryrun-crates	1	off	0	0.06	0.05	0.01	25477120	125	14.04	149	103257	cold scan	8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+dryrun-crates	1	auto	0	0.06	0.05	0.01	25575424	121	14.04	149	107406	cold scan	8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+dryrun-crates	1	only	0	0.06	0.05	0.00	25493504	124	14.04	0	0	cache only	8.3 MiB  149 files, 36 directories (84 KiB gitignored)
+dryrun-crates	1	refresh	0	0.06	0.05	0.01	25526272	123	14.04	149	108749	cold scan	8.3 MiB  149 files, 36 directories (84 KiB gitignored)

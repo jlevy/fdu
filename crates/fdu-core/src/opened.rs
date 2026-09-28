@@ -182,6 +182,7 @@ impl OpenOptions {
             // Never optional here: the basis an opened root holds says control state is
             // always observed, and this scan is what makes that true.
             read_controls: OpenedIndex::basis().scope.read_controls,
+            population: crate::query::IgnoredEntries::Include,
             control_limits: self.control_limits,
             // An opened root reports through its own `DiscoveryProgress`, which is
             // state the lifecycle publishes rather than a count of work done.
@@ -5825,14 +5826,15 @@ mod tests {
                 .expect("snapshot")
                 .is_ignored(Path::new("a/zzz.txt"))
                 .expect("observed"),
-            Some(false),
-            "no rule of the refused file applies"
+            None,
+            "the refused file could have governed this entry"
         );
         assert_eq!(
             diagnostics(&opened).controls,
             crate::control::ControlObservation {
                 limits: crate::control::ControlLimits::default(),
                 applied: 0,
+                rules: 0,
                 refused: 1,
                 refusals: vec![crate::control::RefusedControl {
                     path: PathBuf::from("a/.gitignore"),

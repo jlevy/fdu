@@ -1,0 +1,26 @@
+[
+ {
+  "dirs": 775,
+  "getattrlist_per_dir_ms": 7.2,
+  "fsctl_per_dir_ms": 25.8,
+  "walk_base_ms": 54.4,
+  "walk_gen_only_ms": 56.0,
+  "walk_full_ext_ms": 267.3
+ },
+ {
+  "dirs": 775,
+  "getattrlist_per_dir_ms": 11.4,
+  "fsctl_per_dir_ms": 23.3,
+  "walk_base_ms": 88.0,
+  "walk_gen_only_ms": 178.3,
+  "walk_full_ext_ms": 235.2
+ },
+ {
+  "dirs": 775,
+  "getattrlist_per_dir_ms": 10.2,
+  "fsctl_per_dir_ms": 22.9,
+  "walk_base_ms": 62.6,
+  "walk_gen_only_ms": 65.8,
+  "walk_full_ext_ms": 921.8
+ }
+]

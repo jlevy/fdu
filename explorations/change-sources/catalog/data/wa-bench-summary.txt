@@ -1,0 +1,5 @@
+create_2000          maintained median=   232.3 ms  min=   226.9   plain median=   225.4 ms  min=   219.3   ratio(median)=1.03
+append_2000          maintained median=   232.5 ms  min=   211.4   plain median=   209.1 ms  min=   202.2   ratio(median)=1.11
+deep12_create_200    maintained median=    24.5 ms  min=    23.0   plain median=    23.5 ms  min=    21.9   ratio(median)=1.04
+delete_1000          maintained median=    53.4 ms  min=    50.9   plain median=    50.2 ms  min=    47.3   ratio(median)=1.06
+sync                 maintained median=    76.5 ms  min=    74.2   plain median=    76.6 ms  min=    73.3   ratio(median)=1.00

@@ -15,6 +15,18 @@ discovery, refresh, journals, observers, continuations, or engine test seams.
 This file covers how to operate on the repository; that one covers what the code must be
 true to.
 
+## Output Design System
+
+Read [the output design](docs/project/architecture/fdu-output-design.md) before changing
+report layout, omissions, diagnostics, colors, or stream routing.
+The rules live beside their implementation in
+[report_format.rs](crates/fdu-core/src/report_format.rs) and
+[report_epilogue.rs](crates/fdu-core/src/report_format/report_epilogue.rs); CLI stream
+and color handling is documented at `write_report_diagnostics`. Keep these comments and
+the guide consistent, and verify changes with the shared golden corpus, Python parity,
+and terminal tests. Review stdout and stderr separately and retain portable golden
+patterns.
+
 ## Three Surfaces, One Engine
 
 fdu ships the same capability three ways: the `fdu-core` engine, the `fdu` command line,
@@ -55,7 +67,10 @@ actions rather than telling them to run commands.
 - Run `tbd prime` to load current project state and the full tbd workflow.
 - Run `tbd skill` for the complete reusable tbd skill instructions.
 - Run `tbd shortcut --list` and `tbd guidelines --list` for on-demand resources.
-- Track all work as beads: `tbd create`, `tbd ready`, `tbd close`, and `tbd sync`.
+- Track all work as beads: `tbd create`, `tbd ready`, `tbd start`, `tbd close`, and
+  `tbd sync`.
+- Before editing a bead, pull and re-read it, run `tbd start <id>`, then run `tbd sync`
+  so other replicas can see the claim.
 
 <!-- END TBD INTEGRATION -->
 
@@ -192,7 +207,7 @@ is a lost event and fails regardless.
 ## Performance Work
 
 To run one more iteration, start at
-[the runbook’s current standing](docs/project/guides/performance-loop-runbook.md#current-standing-2026-09-18).
+[the runbook’s Current Pickup](docs/project/guides/performance-loop-runbook.md#current-pickup-2026-09-27).
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
 current strategy — what to work on next, with floor-anchored priorities and per-tier

@@ -1,0 +1,443 @@
+[
+  {
+    "binary": "perf_probe",
+    "binary_sha256": "6fa78657116b568591dde65dcb71905b87d701a8036a26f61be86e7c92a49baf",
+    "binary_size_bytes": 3429528,
+    "by_layer": [
+      {
+        "layer": "other",
+        "percent": 75.15,
+        "samples": 41592
+      },
+      {
+        "layer": "kernel/syscall",
+        "percent": 18.34,
+        "samples": 10151
+      },
+      {
+        "layer": "fdu::content",
+        "percent": 5.11,
+        "samples": 2830
+      },
+      {
+        "layer": "allocator",
+        "percent": 0.87,
+        "samples": 483
+      },
+      {
+        "layer": "collections",
+        "percent": 0.21,
+        "samples": 115
+      },
+      {
+        "layer": "path",
+        "percent": 0.18,
+        "samples": 98
+      },
+      {
+        "layer": "std::fs",
+        "percent": 0.08,
+        "samples": 45
+      },
+      {
+        "layer": "fdu::index",
+        "percent": 0.04,
+        "samples": 24
+      },
+      {
+        "layer": "fdu::scan",
+        "percent": 0.01,
+        "samples": 4
+      }
+    ],
+    "command": [
+      "{binary}",
+      "content-query",
+      "--root",
+      "{root}",
+      "--queries",
+      "100",
+      "--no-oracle",
+      "--repeat",
+      "1"
+    ],
+    "counter_report_bytes": 3461,
+    "counter_report_sha256": "6cf7d00060ed4f028e2e0eb8ca9869710c5ccd3c38e891a32fd63c47b4163858",
+    "counters": {
+      "groups": {
+        "adaptive scan policy": {
+          "calibration chunks": 357,
+          "calibration entries": 16454,
+          "calibration worker microseconds": 191626,
+          "reserve expansions": 0,
+          "walks left undecided": 0
+        },
+        "content sidecar timing": {
+          "sidecar apply microseconds": 0,
+          "sidecar candidate-map microseconds": 0,
+          "sidecar image read microseconds": 0,
+          "sidecar parse microseconds": 0
+        },
+        "control state": {
+          "control files read": 59,
+          "control sources refused": 0,
+          "control sources shared": 34
+        },
+        "detached builder": {
+          "builds": 1,
+          "entries": 137084,
+          "finish microseconds": 1568,
+          "walk microseconds": 258015
+        },
+        "filesystem operations": {
+          "bytes read from files": 889030322,
+          "directory entries enumerated": 137084,
+          "directory enumeration calls": 19308,
+          "directory opens": 9936,
+          "file opens": 118641,
+          "file read calls": 236026,
+          "metadata stats": 137085
+        },
+        "index": {
+          "index entries allocated": 137084,
+          "parent memo hits": 0,
+          "parent path resolutions": 0,
+          "roll-up merges": 147019,
+          "upserts applied": 137084
+        },
+        "memory": {
+          "allocations": 158138769,
+          "bytes allocated": 17665273439,
+          "frees": 158138765,
+          "reallocations": 15917606
+        },
+        "mutation consequences": {
+          "effective path bytes": 0,
+          "effective paths retained": 0,
+          "impact all-dirty transitions": 0,
+          "impact ancestor visits": 0,
+          "impact candidates": 0,
+          "impact dirty paths retained": 0
+        },
+        "mutation journal": {
+          "commits cloned": 0,
+          "commits retained": 0,
+          "older commits dropped": 0,
+          "oversized commits": 0
+        },
+        "mutation preflight": {
+          "ancestry overlay inserts": 0,
+          "parent chains proved": 0,
+          "same-parent path comparisons": 0
+        },
+        "mutation provenance": {
+          "baseline accepted ops": 137143,
+          "baseline batches": 1,
+          "opened accepted ops": 0,
+          "opened batches": 0,
+          "public accepted ops": 0,
+          "public batches": 0
+        },
+        "mutation timing": {
+          "scanner control projection microseconds": 0,
+          "scanner preparation microseconds": 0,
+          "scanner reduction microseconds": 0
+        },
+        "process (macOS proc_taskinfo)": {
+          "page faults": 152936,
+          "page-ins": 0,
+          "syscalls (total)": 1061654
+        }
+      },
+      "schema": "fdu-counter-report-v1",
+      "unavailable_reason": null
+    },
+    "counters_enabled": true,
+    "label": "exp-158-h152-current-content-query / content-query",
+    "oracle_enabled": false,
+    "probe": {
+      "attribution": null,
+      "component_ns": 31125465791,
+      "mode": "content-query",
+      "oracle_enabled": false,
+      "scan_diagnostics": null,
+      "schema": "fdu-perf-probe-v1",
+      "source": "scan",
+      "summary": {
+        "allocated_bytes": 1954811904,
+        "apparent_bytes": 1643250814,
+        "apply": {
+          "inserted": 0,
+          "invalidated": 0,
+          "removed": 0,
+          "stale": 0,
+          "unchanged": 0,
+          "updated": 0
+        },
+        "commit": null,
+        "complete": true,
+        "content": {
+          "analyzed": 113757,
+          "applied": 127104,
+          "binary": 13133,
+          "cache_hits": 0,
+          "candidates": 127104,
+          "digest": "5480cb69b73c2e1e36eb30badf6fec7d4942527eafa6f1731a3c09e7c46854b7",
+          "invalid_utf8": 214,
+          "records": 127104
+        },
+        "counters": null,
+        "dirs": 9936,
+        "dirs_read": 0,
+        "engine_digest": null,
+        "entries": 137085,
+        "errors": 0,
+        "files": 127104,
+        "index_len": 137085,
+        "newest_file_mtime_ns": 1790296776860556574,
+        "other": 45,
+        "query_iterations": 100,
+        "query_observations": 0,
+        "snapshot_bytes": null,
+        "snapshot_written": null,
+        "symlinks": 0
+      }
+    },
+    "repeat": 1,
+    "schema": "fdu-realtree-profile-v1",
+    "seconds": 8,
+    "self_time": [
+      {
+        "percent": 62.97,
+        "samples": 34850,
+        "symbol": "read"
+      },
+      {
+        "percent": 17.22,
+        "samples": 9530,
+        "symbol": "__open"
+      },
+      {
+        "percent": 8.24,
+        "samples": 4562,
+        "symbol": "semaphore_wait_trap"
+      },
+      {
+        "percent": 4.39,
+        "samples": 2428,
+        "symbol": "_RNvMNtNtCsgVVJve55dvX_8fdu_core7content21content_basic_metricsNtB2_16BasicAccumulator9push_text"
+      },
+      {
+        "percent": 0.88,
+        "samples": 486,
+        "symbol": "_RNvNtCsgVVJve55dvX_8fdu_core8classify10with_flags"
+      },
+      {
+        "percent": 0.61,
+        "samples": 338,
+        "symbol": "_RNvNtCsgVVJve55dvX_8fdu_core8classify13classify_with"
+      },
+      {
+        "percent": 0.4,
+        "samples": 222,
+        "symbol": "_RINvNtNtCsa9BKTri5B3M_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvNtNtCsgVVJve55dvX_8fdu_core7content16content_analysis22analyze_index_observed00uEB1h_"
+      },
+      {
+        "percent": 0.39,
+        "samples": 214,
+        "symbol": "fstat"
+      },
+      {
+        "percent": 0.38,
+        "samples": 208,
+        "symbol": "__psynch_mutexwait"
+      },
+      {
+        "percent": 0.36,
+        "samples": 197,
+        "symbol": "madvise"
+      },
+      {
+        "percent": 0.28,
+        "samples": 155,
+        "symbol": "close"
+      },
+      {
+        "percent": 0.23,
+        "samples": 125,
+        "symbol": "_platform_memmove"
+      },
+      {
+        "percent": 0.21,
+        "samples": 118,
+        "symbol": "semaphore_signal_trap"
+      },
+      {
+        "percent": 0.2,
+        "samples": 109,
+        "symbol": "mach_absolute_time"
+      },
+      {
+        "percent": 0.19,
+        "samples": 104,
+        "symbol": "_RNvNtNtCsgtPOCBgevO_4core3str8converts9from_utf8"
+      },
+      {
+        "percent": 0.13,
+        "samples": 72,
+        "symbol": "__ulock_wait2"
+      },
+      {
+        "percent": 0.13,
+        "samples": 71,
+        "symbol": "_xzm_xzone_malloc_tiny"
+      },
+      {
+        "percent": 0.12,
+        "samples": 64,
+        "symbol": "_RNvMNtNtCsgVVJve55dvX_8fdu_core7content21content_basic_metricsNtB2_16BasicAccumulator4push"
+      },
+      {
+        "percent": 0.08,
+        "samples": 46,
+        "symbol": "_RNvXs3_NtNtCsgtPOCBgevO_4core4hash3sipINtB5_6HasherNtB5_11Sip13RoundsENtB7_6Hasher5writeCsgVVJve55dvX_8fdu_core"
+      },
+      {
+        "percent": 0.08,
+        "samples": 45,
+        "symbol": "_RNvMs8_NtCsa9BKTri5B3M_3std4pathNtB5_10Components25parse_next_component_back"
+      },
+      {
+        "percent": 0.08,
+        "samples": 44,
+        "symbol": "_RNvXst_NtNtCsgtPOCBgevO_4core3str7patternReNtB5_7Pattern15is_contained_in"
+      },
+      {
+        "percent": 0.07,
+        "samples": 41,
+        "symbol": "_RNvNvNtCslJsSqIQKwiA_5alloc3fmt6format12format_inner"
+      },
+      {
+        "percent": 0.07,
+        "samples": 40,
+        "symbol": "_xzm_xzone_malloc"
+      },
+      {
+        "percent": 0.07,
+        "samples": 40,
+        "symbol": "xzm_segment_group_alloc_chunk"
+      },
+      {
+        "percent": 0.07,
+        "samples": 39,
+        "symbol": "_RINvXs1h_NtCsa9BKTri5B3M_3std4pathNtB7_4PathNtNtCsgtPOCBgevO_4core4hash4Hash4hashNtNtNtB9_4hash6random13DefaultHasherECsgVVJve55dvX_8fdu_core"
+      },
+      {
+        "percent": 0.06,
+        "samples": 33,
+        "symbol": "_platform_memcmp"
+      },
+      {
+        "percent": 0.06,
+        "samples": 33,
+        "symbol": "_RNvNtNtCsgVVJve55dvX_8fdu_core7content16content_analysis22analyze_index_observed"
+      },
+      {
+        "percent": 0.06,
+        "samples": 32,
+        "symbol": "xzm_segment_group_free_chunk"
+      },
+      {
+        "percent": 0.05,
+        "samples": 30,
+        "symbol": "__psynch_mutexdrop"
+      },
+      {
+        "percent": 0.05,
+        "samples": 28,
+        "symbol": "_RNvMs0_NtNtNtCsa9BKTri5B3M_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify"
+      },
+      {
+        "percent": 0.05,
+        "samples": 27,
+        "symbol": "_RNvNtCsgtPOCBgevO_4core3fmt5write"
+      },
+      {
+        "percent": 0.05,
+        "samples": 27,
+        "symbol": "_os_unfair_lock_lock_slow"
+      },
+      {
+        "percent": 0.05,
+        "samples": 26,
+        "symbol": "_RNvXsj_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits12double_ended19DoubleEndedIterator9next_back"
+      },
+      {
+        "percent": 0.05,
+        "samples": 25,
+        "symbol": "_RINvMs1_NtCs9nAj5kJTqSU_9hashbrown3mapINtB6_7HashMapINtNtCslJsSqIQKwiA_5alloc6borrow3CoweEmNtNtNtCsa9BKTri5B3M_3std4hash6random11RandomStateE3geteECsgVVJve55dvX_8fdu_core"
+      },
+      {
+        "percent": 0.05,
+        "samples": 25,
+        "symbol": "_RNvXsZ_NtCslJsSqIQKwiA_5alloc6stringNtB5_6StringNtNtCsgtPOCBgevO_4core3fmt5Write9write_str.554"
+      },
+      {
+        "percent": 0.04,
+        "samples": 24,
+        "symbol": "_xzm_segment_group_find_and_allocate_chunk"
+      },
+      {
+        "percent": 0.04,
+        "samples": 24,
+        "symbol": "_RNvXsi_NtCsa9BKTri5B3M_3std4pathNtB5_10ComponentsNtNtNtNtCsgtPOCBgevO_4core4iter6traits8iterator8Iterator4next"
+      },
+      {
+        "percent": 0.04,
+        "samples": 24,
+        "symbol": "<deduplicated_symbol>"
+      },
+      {
+        "percent": 0.04,
+        "samples": 24,
+        "symbol": "_xzm_free"
+      },
+      {
+        "percent": 0.04,
+        "samples": 24,
+        "symbol": "_pthread_mutex_firstfit_lock_wait"
+      }
+    ],
+    "threads": [
+      [
+        "libsystem_kernel.dylib",
+        50103
+      ],
+      [
+        "perf_probe",
+        4372
+      ],
+      [
+        "libsystem_malloc.dylib",
+        505
+      ],
+      [
+        "libsystem_platform.dylib",
+        194
+      ],
+      [
+        "libsystem_pthread.dylib",
+        94
+      ],
+      [
+        "libdispatch.dylib",
+        53
+      ],
+      [
+        "libdyld.dylib",
+        21
+      ]
+    ],
+    "total_samples": 55342
+  }
+]

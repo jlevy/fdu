@@ -1,0 +1,33 @@
+# lstat-observed APFS timestamp behavior per operation, fixture f1, t0=1790570734
+op                             ctime_new mtime_new expect_c  note
+create                         True      True      True     
+mkdir                          True      True      True     
+mkdir_child                    True      True      True     
+overwrite_inplace              True      True      True     same length, bytes changed
+append_close                   True      True      True     
+truncate                       True      True      True     
+rename_same_dir                True      False     None     does the moved object's ctime move? recorded, not asserted
+rename_across_dirs             True      False     None     
+rename_across_src_parent       True      True      True     
+rename_across_dst_parent       True      True      True     
+rename_dir                     True      False     None     renamed directory itself
+rename_dir_child               False     False     False    descendant of renamed dir: expect unchanged
+rename_dir_inner               False     False     False    
+delete                         absent
+delete_parent                  True      True      True     
+hardlink_add_target            True      False     None     link count changed on target
+hardlink_remove_survivor       True      False     None     
+write_via_hardlink_alias       True      True      True     same inode as alias
+chmod                          True      False     True     
+xattr_set                      True      False     None     xattr set: does ctime move?
+clone_cp_c                     True      False     None     new clone object: cp -c may preserve nothing or mtime
+clone_src_after                False     False     False    
+touch_old_mtime                True      False     True     mtime set to 2020; ctime should be now
+utime_old                      True      False     True     
+cp_p_preserved_mtime           True      False     True     new object with old mtime; ctime should be now
+tar_extract_old_mtime          True      False     True     
+tar_extract_old_dir            True      False     True     
+symlink_create                 True      True      True     
+untouched                      False     False     False    
+untouched_base_dir             False     False     False    
+untouched_base_file            False     False     False    

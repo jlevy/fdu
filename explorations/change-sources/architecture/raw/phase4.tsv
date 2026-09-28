@@ -1,0 +1,13 @@
+label	rep	policy	rc	real_s	user_s	sys_s	max_rss_bytes	load1	perf
+codex	1	off-nogitignore-tree	0	4.65	0.87	10.15	199180288	14.56	took 4.54 s to walk 374,309 files (37 GiB) at 82,435 files/s (8.315 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+codex	1	off-nogitignore-summary	0	3.26	0.66	15.59	42369024	14.20	took 3.17 s to walk 374,309 files (37 GiB) at 118,097 files/s (11.912 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+claude	1	off-nogitignore-tree	0	0.34	0.09	0.48	31997952	14.98	took 244.3 ms to walk 9,027 files (4.0 GiB) at 36,945 files/s (16.769 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+claude	1	off-nogitignore-summary	0	0.17	0.07	0.35	27492352	14.98	took 88.8 ms to walk 9,027 files (4.0 GiB) at 101,654 files/s (46.140 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+project	1	off-nogitignore-tree	0	13.34	2.81	59.56	609271808	14.98	took 13.25 s to walk 1,193,853 files (38 GiB) at 90,110 files/s (2.929 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+project	1	off-nogitignore-summary	0	15.33	1.77	40.31	70582272	17.94	took 15.15 s to walk 1,193,853 files (38 GiB) at 78,776 files/s (2.560 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+codex	2	off-nogitignore-tree	0	3.75	0.85	15.96	202489856	21.01	took 3.62 s to walk 374,400 files (37 GiB) at 103,476 files/s (10.436 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+codex	2	off-nogitignore-summary	0	3.29	0.68	13.89	45056000	21.89	took 3.20 s to walk 374,400 files (37 GiB) at 117,004 files/s (11.800 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+claude	2	off-nogitignore-tree	0	0.40	0.10	0.48	31752192	21.89	took 264.5 ms to walk 9,027 files (4.0 GiB) at 34,131 files/s (15.488 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+claude	2	off-nogitignore-summary	0	0.19	0.09	0.20	27901952	21.10	took 66.0 ms to walk 9,027 files (4.0 GiB) at 136,717 files/s (62.040 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+project	2	off-nogitignore-tree	0	14.14	2.80	53.41	606076928	21.10	took 14.01 s to walk 1,193,853 files (38 GiB) at 85,233 files/s (2.770 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan
+project	2	off-nogitignore-summary	0	12.10	2.02	66.32	55558144	22.21	took 12.00 s to walk 1,193,853 files (38 GiB) at 99,472 files/s (3.233 GiB/s); gitignore not read; content read 0 B; analysis 0 fresh, 0 cached; cold scan

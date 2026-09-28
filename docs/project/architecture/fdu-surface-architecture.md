@@ -127,7 +127,7 @@ still match, so it would silently absorb the next real regression.
   `Report` cannot reproduce the performance footer or a note quoting bytes read.
 - **The same rule in each surface’s knob names.** `--scan-depth` against `max_depth`,
   from one constant with the names substituted; `--gitignore-budget` against
-  `control_budget`, `--only-ignored` and `--no-gitignore` against `ignored=only` and
+  `control_budget`, `--ignored=only` and `--no-gitignore` against `ignored=only` and
   `read_controls`, and the other pairs `KNOBS` in `parity-classes.mjs` elides, from
   `AxisNames`.
 - **Discovery surfaces.** `--docs` and `--skill` are static documents, and
@@ -141,12 +141,14 @@ observable.
 
 `open` retains an index and writes a snapshot: right for a caller asking many questions.
 `report` runs the command line’s one-shot contract, retaining the least state the
-request needs. An unfiltered summary that turns `.gitignore` observation off is answered
-by a transient tier that retains nothing and therefore writes no snapshot; the default
-summary reports its ignored share, which needs the index.
+request needs.
+Under the default `CachePolicy.AUTO` a metadata report writes no snapshot,
+and an unfiltered summary that turns `.gitignore` observation off is answered by a
+transient tier that retains nothing; the default summary reports its ignored share,
+which needs the index.
 
 Using `open` for a single question caches state the walk never saved, which a later
-cache-only read can see.
+`stale_ok` read can see.
 That was a real defect: a Python run left cache state on a tree that the same command
 would not have.
 
@@ -170,9 +172,9 @@ surface emits the same string.
 
 | Schema | Document | Constant |
 | --- | --- | --- |
-| `fdu.report/7` | A report, including its request, status, per-tier provenance, and any requested metric units | `REPORT_SCHEMA` |
+| `fdu.report/10` | A report, including its request, status, per-tier provenance, and any requested metric units | `REPORT_SCHEMA` |
 | `fdu.stream/2` | A watch run’s `change` record, with `op` of `upsert`, `remove`, or `invalidate`: one per applied change under the `files` view, and every invalidation | `STREAM_SCHEMA` |
-| `fdu.cache/2` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
+| `fdu.cache/3` | Cache status, a fact about the cache directory rather than about a tree, with the identity of every tier each store holds | `CACHE_SCHEMA` |
 
 The three families version independently, so a report change never bumps the stream or
 cache-status schema, or the reverse.

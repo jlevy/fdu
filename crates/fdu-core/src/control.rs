@@ -214,6 +214,8 @@ pub struct ControlObservation {
     pub limits: ControlLimits,
     /// Control files whose rules apply.
     pub applied: u64,
+    /// Accepted rules summed once per governing directory, including repeated sources.
+    pub rules: u64,
     /// Control files refused, counted exactly.
     pub refused: u64,
     /// Refused control files in path order, at most [`crate::MAX_RETAINED_ISSUES`] of
@@ -590,6 +592,18 @@ impl ControlTable {
         })
     }
 
+    /// Whether every control source that could govern `path` was admitted.
+    ///
+    /// A refused source may contain ignore or negation rules, so its descendants have
+    /// unknown classification even if the admitted rules currently say otherwise.
+    pub(crate) fn classification_known(&self, path: &Path) -> bool {
+        !path
+            .parent()
+            .into_iter()
+            .flat_map(Path::ancestors)
+            .any(|directory| self.refused.contains_key(directory))
+    }
+
     /// Number of refused control files.
     pub fn refused_len(&self) -> usize {
         self.refused.len()
@@ -605,6 +619,10 @@ impl ControlTable {
         ControlObservation {
             limits: self.limits,
             applied: u64::try_from(self.len()).unwrap_or(u64::MAX),
+            rules: self
+                .by_directory
+                .values()
+                .fold(0_u64, |total, content| total.saturating_add(content.matcher.rule_count())),
             refused: u64::try_from(self.refused_len()).unwrap_or(u64::MAX),
             refusals: self.refusals().take(crate::MAX_RETAINED_ISSUES).collect(),
         }
@@ -854,6 +872,21 @@ mod tests {
     /// leaves neither. Charges and holder counts are recomputed after every step, under
     /// each combination of a bounded or unbounded budget and line limit.
     #[test]
+    fn rule_totals_count_accepted_patterns_per_governing_location() {
+        let mut table = ControlTable::default();
+        let source = b"# comment\n\n*.log\n!important.log\n*.log\n[bad\n";
+        table.upsert(Path::new(".gitignore"), source.to_vec()).expect("root control");
+        table.upsert(Path::new("nested/.gitignore"), source.to_vec()).expect("nested control");
+        assert_eq!(table.observation().applied, 2);
+        assert_eq!(table.observation().rules, 6);
+        table
+            .upsert(Path::new("nested/.gitignore"), b"# empty\n".to_vec())
+            .expect("replacement control");
+        assert_eq!(table.observation().applied, 2);
+        assert_eq!(table.observation().rules, 3);
+    }
+
+    #[test]
     fn charges_and_refusals_stay_exact_through_random_upserts_and_removals() {
         const DIRECTORIES: [&str; 6] = ["", "a", "a/b", "b", "b/c/d", "c"];
         let long_line = [vec![b'x'; DEFAULT_CONTROL_LINE_LIMIT + 1], b"\n".to_vec()].concat();
@@ -1032,6 +1065,7 @@ mod tests {
                     line_limit: Some(DEFAULT_CONTROL_LINE_LIMIT),
                 },
                 applied: 0,
+                rules: 0,
                 refused: 1,
                 refusals: vec![RefusedControl {
                     path: PathBuf::from("a/.gitignore"),

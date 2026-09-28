@@ -1,29 +1,45 @@
 # fdu (Python)
 
-Python bindings for [fdu](https://github.com/jlevy/fdu), a fast, incremental file
-roll-up engine.
+**Fastest native du replacement and detailed file analytics for Python and Rust**
 
-## Install
+Python bindings for [fdu](https://github.com/jlevy/fdu).
+
+## Set Up with Any Coding Agent
+
+Give the agent this instruction:
+
+> Run `uvx --no-build fdu@latest --install-skill` from the project root to install fdu’s
+> self-contained skill for current and future agent sessions.
+
+The skill needs no prior session context or installed command; `fdu --skill` prints it.
+
+## Install the Command Line
 
 ```shell
-uvx fdu@latest .      # run the latest release once, without installing it
-uv tool install fdu   # put the fdu command on your PATH; uv tool upgrade fdu updates it
-uv add fdu            # use the library in a uv project
-pip install fdu       # or install the library with pip
+uvx --no-build fdu@latest .
+uv tool install --no-build fdu
 ```
 
-`uvx fdu@<version> --help` runs one exact release.
-For coding agents, `fdu --install-skill` writes the agent skill under the project root
-and `fdu --skill` prints it; the
-[repository README](https://github.com/jlevy/fdu#install) has the details.
-Prebuilt `abi3` wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc (x86-64
-and arm64), macOS (x86-64 and arm64), and Windows x86-64, so installing needs no Rust
-toolchain. Free-threaded CPython, such as `3.14t`, cannot install them and is not
-supported; an installer there falls back to building the source distribution.
-If uv selects a free-threaded interpreter, pass `--python 3.14` (or `--python 3.12`), as
-in `uv tool install --python 3.14 fdu`.
+The first command runs fdu once; the second keeps it on `PATH`.
+`uv tool upgrade --no-build fdu` updates that install;
+`uvx --no-build fdu@<version> --help` runs one exact release.
+The [repository README](https://github.com/jlevy/fdu#install-the-command-line) has the
+details. Prebuilt `abi3` wheels cover GIL-enabled CPython 3.12 and newer on Linux glibc
+(x86-64 and arm64), macOS (x86-64 and arm64), and Windows x86-64, so installing needs no
+Rust toolchain. Free-threaded CPython, such as `3.14t`, cannot install them and is not
+supported; an installer there may fall back to building the source distribution.
+`--no-build` makes uv fail instead of compiling when no compatible wheel exists.
+If uv selects a free-threaded interpreter, pass `--python 3.14`. An `exclude-newer`
+policy in uv can filter a newly published fdu release.
+Review and allow the first-party `fdu` package in that policy, or wait for its cool-off
+to expire.
 
-## Use
+## Use as a Python Library
+
+```shell
+uv add fdu
+pip install fdu
+```
 
 The public package is `fdu`; `fdu._native` is private build machinery.
 The supported API includes typed query and scan options, immutable report sections,
@@ -96,6 +112,44 @@ The original extension grouping remains available as the `extensions` view.
 The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
 than separate native payloads for every Python minor release.
 
+## Population, Code Overview, and Cache Destination
+
+`fdu.report()` derives discovery and content analysis from `Selection.ignored`:
+
+```python
+import fdu
+
+report = fdu.report(
+    ".",
+    fdu.Query(selection=fdu.Selection(ignored=fdu.IgnoredEntries.EXCLUDE)),
+    analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.CODE),
+    cache_dir="/path/to/cache",
+)
+```
+
+`include` is the default.
+`exclude` prunes safely ignored subtrees; `only` discovers ignored matches through
+ordinary ancestors and analyzes only ignored bodies.
+For retained work, `fdu.open(..., ignored=...)` and `fdu.scan(..., ignored=...)` choose
+the initial population.
+A default read inherits it.
+An Include index can answer a narrower selection; an index that never retained a
+population cannot widen its answer.
+
+Code analysis defaults to `CodeSection`, whose overview includes selected source lines,
+language shares, ignored/non-ignored contributions, and coverage.
+`SortKey.CODE_LINES` ranks files or directories when code analysis was requested.
+File rows carry nullable `sort_value` and `classification` evidence; unavailable counts
+remain distinct from zero.
+
+`cache_dir` on open/report and cache lifecycle calls names the exact destination and
+wins over `FDU_CACHE_DIR`. Otherwise `XDG_CACHE_HOME/fdu` wins over the platform
+default: `~/.cache/fdu` on macOS and Linux, `%LOCALAPPDATA%/fdu` on Windows.
+`list_caches` and `clear_all_caches` take a keyword cache directory, independently of a
+scan root. `cache_directory(cache_dir=...)` resolves that destination without a root.
+`cache_path(root, cache_dir=...)` identifies the root’s `.metadata.bin` file; a matching
+`.analysis.bin` stores derived metrics without source bodies.
+
 ## Directory Inventories and Formats
 
 A default `Query()` keeps the existing directory tree.
@@ -151,9 +205,25 @@ Re-render it to another serialization or between Paths and Long without querying
 request another report to change between a bounded tree and complete flat inventory.
 An incompatible conversion raises `InvalidArgumentError` rather than silently listing
 only visible tree rows.
-Tree limits remain per-directory, flat limits apply to the whole list, and machine List
-output is complete unless explicitly limited.
-Details and exact fields are in the
+`Selection(depth=5, min_share="1%", breadth=Bound.ALL, limit=Bound.ALL)` describes the
+ordinary tree defaults.
+Breadth bounds children per directory; limit bounds data rows per section.
+`TreeSection.limits` records the effective controls.
+Each `TreeOmission.entries` counts directly hidden children: an omitted directory is one
+entry, while its nullable `files` count covers regular files throughout that hidden
+subtree. The optional `TreeSection.remainder` combines hidden contents across one tree,
+with nullable `files`, `bytes`, and `allocated` totals and bound reasons in stable
+order. It is `None` when nothing is hidden.
+A displayed root-level directory represents all its descendants, including children
+hidden by display bounds.
+The remainder counts only usage outside those displayed root-level rows.
+Parent totals already include the remainder, so do not add it to them.
+The terminal gives that remainder one root-level line, such as
+`… and 12,345 more files`, with its combined size and root share in the usual columns.
+Use `report.render(bar_size=20)` for wider bars, or `bar_size=0` (also negative values)
+to hide them; the default is 10. Machine formats are unchanged.
+Machine reports use `fdu.report/10`. Machine List output is complete unless explicitly
+limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).
 
