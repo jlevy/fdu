@@ -6,8 +6,9 @@
 //! # Output design system
 //!
 //! Keep measured results and explanatory diagnostics separate. Renderers return only
-//! result data; frontends route the categorized messages from [`diagnostic_lines`] to
-//! their diagnostic stream. Machine formats must remain parseable and ANSI-free.
+//! result data; frontends route the categorized messages from [`diagnostic_lines`] and
+//! [`report_warnings`] to their diagnostic stream. Machine formats must remain parseable
+//! and ANSI-free.
 //!
 //! Human rows use bright bold cyan names, ordinary foreground file counts, and gray
 //! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
@@ -50,7 +51,7 @@
 mod report_epilogue;
 
 pub use report_epilogue::{
-    DiagnosticLines, diagnostic_lines, diagnostics, report_notes, report_tips,
+    DiagnosticLines, diagnostic_lines, diagnostics, report_notes, report_tips, report_warnings,
 };
 
 use std::fmt::Write as _;
@@ -276,17 +277,18 @@ fn human_age(age: Option<i128>) -> String {
     format!("{}{}{unit}", if age < 0 { "-" } else { "" }, human_count_u128(amount))
 }
 
-/// Notes excluded from flat stdout, for a frontend's diagnostic stream.
+/// Notes, the report's warnings, and tips excluded from flat stdout, for a frontend's
+/// diagnostic stream.
 pub fn flat_diagnostics(report: &Report) -> Vec<String> {
-    flat_diagnostic_lines(report).into_lines()
+    report_epilogue::with_warnings(report, flat_diagnostic_lines(report))
 }
 
 /// Categorized flat-output diagnostics; paths and long rows stay alone on stdout.
+///
+/// A cache-only answer is stated by [`report_warnings`], on every format, so it is not
+/// repeated here as a note.
 pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
     let DiagnosticLines { mut notes, tips } = diagnostic_lines(report);
-    if report.provenance.source == ReportSource::CacheOnly {
-        notes.push("note: cache-only result: retained contents have not been revalidated".into());
-    }
     if !report.status.complete || report.provenance.freshness != Freshness::Fresh {
         notes.push(format!(
             "note: result freshness: {}; complete: {}",
@@ -3632,10 +3634,51 @@ mod tests {
         stale.provenance.freshness = Freshness::Stale;
         stale.scope.max_depth = Some(2);
         let notes = flat_diagnostics(&stale).join("\n");
-        assert!(notes.contains("not been revalidated"));
+        assert!(notes.contains("warn: stale answer"), "{notes}");
+        assert!(!notes.contains("note: cache-only"), "the warning states it once: {notes}");
         assert!(notes.contains("freshness: stale"));
         assert!(notes.contains("scan scope limited to depth 2"));
         assert_eq!(super::render(&stale, Format::Paths, false).expect("paths"), "src\n");
+    }
+
+    /// Only an answer nothing verified carries the stale warning, it names the surface's
+    /// own option for a fresh answer, and it sits between the notes and the tips, where a
+    /// quiet frontend's filter keeps it (fdu-mdop).
+    #[test]
+    fn only_a_cache_only_answer_warns_that_it_is_stale_in_the_surface_vocabulary() {
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let mut verified = fixture_for(&tree);
+        for source in [ReportSource::ColdScan, ReportSource::WarmRevalidate] {
+            verified.provenance.source = source;
+            assert!(report_warnings(&verified).is_empty(), "{source:?} is verified");
+            assert!(!diagnostics(&verified).iter().any(|line| line.starts_with("warn:")));
+        }
+        for (axes, option) in [
+            (&crate::query::AxisNames::FLAGS, "--stale-ok"),
+            (&crate::query::AxisNames::FIELDS, "stale_ok"),
+        ] {
+            let mut stale = fixture_for(&Query {
+                axes,
+                selection: Selection { depth: Some(Bound::Limit(0)), ..Selection::default() },
+                ..tree.clone()
+            });
+            stale.provenance.source = ReportSource::CacheOnly;
+            stale.provenance.freshness = Freshness::Stale;
+            let warning = format!(
+                "warn: stale answer: served from the snapshot without filesystem verification; \
+                 drop {option} for a fresh answer"
+            );
+            assert_eq!(report_warnings(&stale), std::slice::from_ref(&warning));
+            assert!(!report_notes(&stale).contains(&warning), "a note would be quieted");
+            let lines = diagnostics(&stale);
+            let at = lines.iter().position(|line| *line == warning).expect("warning");
+            assert!(lines[..at].iter().all(|line| line.starts_with("note:")), "{lines:?}");
+            assert!(lines[at + 1..].iter().all(|line| line.starts_with("tip:")), "{lines:?}");
+            assert!(lines.first().is_some_and(|line| line.starts_with("note:")), "{lines:?}");
+            assert!(lines.last().is_some_and(|line| line.starts_with("tip:")), "{lines:?}");
+            let rendered = super::render(&stale, Format::Text, false).expect("text");
+            assert!(!rendered.contains("warn:"), "stdout carries only the answer: {rendered}");
+        }
     }
 
     #[test]

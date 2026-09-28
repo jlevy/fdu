@@ -367,9 +367,18 @@ analysis record cached, while metadata verification still occurs.
 | `on` | Read and write where `auto` does, and also write after one-shot metadata reports |
 | `off` | Neither read nor write fdu cache data |
 
-`--stale-ok` answers from the snapshot without touching the source tree: the answer is
-labelled stale, and the run fails on a miss rather than silently falling back to
-scanning. It also requires compatible content data when analysis is requested, and it
+`--stale-ok` answers from the snapshot without touching the source tree, and the run
+fails on a miss rather than silently falling back to scanning.
+The answer is labelled stale: machine formats report `provenance.source: cache_only` and
+`freshness: stale`, and every format, plain text included, adds one line to stderr that
+`--quiet` keeps:
+
+```text
+warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
+```
+
+A verified answer, cold or warm, never carries it.
+`--stale-ok` also requires compatible content data when analysis is requested, and it
 cannot be combined with `--cache=off` or `--watch`. Earlier releases accepted
 `--cache=only`, `refresh`, and `read-only`; each is refused with its replacement named.
 Use `fdu --cache-status=all` to inspect cache files and `fdu --cache-clear=all` to
@@ -487,8 +496,9 @@ The skill names the build that wrote it, so re-run the installer after upgrading
 
 Use `--quiet` (or `-q`) to suppress notes, tips, performance lines, and progress while
 keeping the same result output.
-Warnings and errors remain visible on stderr, and exit status still reports incomplete
-or failed results. Structured output retains its facts.
+Warnings and errors remain visible on stderr, including the one that marks a
+`--stale-ok` answer stale, and exit status still reports incomplete or failed results.
+Structured output retains its facts.
 
 ```shell
 fdu . --quiet

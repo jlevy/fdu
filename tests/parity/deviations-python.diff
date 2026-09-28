@@ -42,20 +42,21 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 57 sessions differ, and every one of them has a named cause.
+# 62 sessions differ, and every one of them has a named cause.
 #
-#  20  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#  22  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
 #      platform separator. The Python replay prints the sandbox root and a literal
 #      separator. Only the exact fixture root and otherwise identical lines match;
-#      exact bound and omitted-view tip translations can accompany those lines.
+#      exact bound and omitted-view tip translations, and the stale-answer warning
+#      naming each surface's option, can accompany those lines.
 #
 #  11  Bound suggestions name the same setter on each surface  [bound-tip-vocabulary]
 #      The command line names bound flags and Python names corresponding fields.
 #      Only the four exact action, setter, and value pairs emitted by the shared
 #      report renderer are accepted; every other line remains identical.
 #
-#  20  Each surface names its own parameter  [surface-label]
+#  23  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -190,7 +191,17 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +fdu: invalid depth "two": expected a whole number or `all`
   ✓ `--cache on` Scans Cold and Leaves a Snapshot
   ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
-  ✓ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
+  ✗ `--stale-ok` Answers Without Touching the Tree, and Says It Is Stale
+@@ -1,2 +1,2 @@
+-{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+-{"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "entry_ignored": false, "bytes": 269, "allocated": [ALLOCATED], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "entry_ignored": false, "bytes": 48, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "entry_ignored": false, "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src[JSON_SEP]alpha.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src[JSON_SEP]omega.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "entry_ignored": false, "bytes": 28, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs[JSON_SEP]FAQ.MD", "kind": "file", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "entry_ignored": false, "bytes": 6, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
++{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["tree"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
++{"view": "tree", "limits": {"depth": 5, "min_share": "1%", "breadth": null, "rows": null}, "tree": {"name": ".", "path": "", "kind": "dir", "entry_ignored": false, "bytes": 269, "allocated": [ALLOCATED_VALUE], "files": 7, "dirs": 3, "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "dist", "path": "dist", "kind": "dir", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "acorn-0.1.0.tar.gz", "path": "dist/acorn-0.1.0.tar.gz", "kind": "file", "entry_ignored": true, "bytes": 128, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "README.md", "path": "README.md", "kind": "file", "entry_ignored": false, "bytes": 48, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "src", "path": "src", "kind": "dir", "entry_ignored": false, "bytes": 36, "allocated": [ALLOCATED_VALUE], "files": 2, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "alpha.rs", "path": "src/alpha.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "omega.rs", "path": "src/omega.rs", "kind": "file", "entry_ignored": false, "bytes": 18, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": "Makefile", "path": "Makefile", "kind": "file", "entry_ignored": false, "bytes": 28, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}, {"name": "docs", "path": "docs", "kind": "dir", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": [{"name": "FAQ.MD", "path": "docs/FAQ.MD", "kind": "file", "entry_ignored": false, "bytes": 23, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, {"name": ".gitignore", "path": ".gitignore", "kind": "file", "entry_ignored": false, "bytes": 6, "allocated": [ALLOCATED_VALUE], "files": 1, "dirs": 0, "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0}, "newest_mtime_ns": [MTIME_NS], "truncated": false, "omissions": [], "children": []}]}, "omissions": [], "remainder": null}
+    stderr:
+@@ -1,2 +1,2 @@
+ note: gitignored sizes are included in row totals
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✓ Retired Policies Name Their Replacement
   ✓ Retired Policies Name Their Replacement
   ✓ Retired Policies Name Their Replacement
@@ -521,10 +532,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
      }
    ]
     stderr:
-@@ -1,3 +1,3 @@
+@@ -1,4 +1,4 @@
  note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 -tip: show more rows: --limit=all
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
 +tip: show more rows: limit=all
   ✗ Watching Rejects a Snapshot Nothing Verified
     stderr:
@@ -738,10 +751,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
      }
    ]
     stderr:
-@@ -1,3 +1,3 @@
+@@ -1,4 +1,4 @@
  note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 -tip: show more rows: --limit=all
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
 +tip: show more rows: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
@@ -806,8 +821,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    },
    "ignore_rules": {
     stderr:
-@@ -1,1 +1,1 @@
+@@ -1,2 +1,2 @@
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 -tip: show more rows: --limit=all
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
 +tip: show more rows: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
@@ -897,7 +914,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Cached Coverage Exclusions Preserve Evidence
   ✓ Cached Coverage Exclusions Preserve Evidence
-  ✓ Cached Coverage Exclusions Preserve Evidence
+  ✗ Cached Coverage Exclusions Preserve Evidence
+    stderr:
+@@ -1,1 +1,1 @@
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✓ Content Cache Hits Preserve the Same Tallies
   ✗ Content Cache Hits Preserve the Same Tallies
     stderr:
@@ -905,12 +926,23 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
  note: requested analysis is not displayed by the selected views
 -tip: show analysis: --view families, languages, or full
 +tip: show analysis: view families, languages, or full
-  ✓ Content Cache Hits Preserve the Same Tallies
+  ✗ Content Cache Hits Preserve the Same Tallies
+@@ -1,2 +1,2 @@
+-{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+-{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.2.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cache_only", "freshness": "stale", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "cached", "freshness": "stale", "observed_at_ns": null}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
++{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": null, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "raw_words": 4}, "coverage": {"lines": {"analyzed": 1, "binary": 1}}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+    stderr:
+@@ -1,1 +1,1 @@
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✗ Content Cache Hits Preserve the Same Tallies
     stderr:
-@@ -1,2 +1,2 @@
+@@ -1,3 +1,3 @@
  note: requested analysis is not displayed by the selected views
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 -tip: show analysis: --view families, languages, or full
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
 +tip: show analysis: view families, languages, or full
   ✓ Common-Language SLOC Is a Complete Partition
   ✗ Metric Order, Reverse, and Share Threshold Compose
@@ -1161,7 +1193,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
 +tip: show more rows: limit=all
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
-PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ All-Cache Actions Need No Scan Root
   ✓ All-Cache Actions Need No Scan Root
   ✓ Status Before Anything Is Cached
@@ -1173,6 +1205,17 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ A Stale Answer Needs a Snapshot Something Left
   ✓ A Stale Answer Needs a Snapshot Something Left
   ✓ A Stale Answer Needs a Snapshot Something Left
+  ✗ A Stale Answer Needs a Snapshot Something Left
+    stderr:
+@@ -1,2 +1,2 @@
+ note: gitignored sizes are included in row totals
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
+  ✗ A Stale Answer Needs a Snapshot Something Left
+    stderr:
+@@ -1,1 +1,1 @@
+-warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
++warn: stale answer: served from the snapshot without filesystem verification; drop stale_ok for a fresh answer
   ✓ A Stale Answer Needs a Snapshot Something Left
   ✓ Status Maps a Hash-Named File Back to Its Tree
   ✓ Status Renders Through the Format Axis
@@ -1218,7 +1261,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,215 +1,1 @@
+@@ -1,216 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -SET UP WITH ANY CODING AGENT
@@ -1385,7 +1428,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -  --stale-ok answers from the snapshot alone: it does no filesystem verification,
 -  requires a compatible snapshot and content sidecar for the requested analysis,
--  and labels its answer stale. --cache=off neither reads nor writes fdu's cache.
+-  and labels its answer stale with a warn: line on stderr that --quiet keeps.
+-  --cache=off neither reads nor writes fdu's cache.
 -
 -  macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
 -  --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.

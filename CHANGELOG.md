@@ -7,8 +7,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Python `Report.warnings` and Rust `report_format::report_warnings` carry what a reader
+  must not miss about an answer, between its notes and tips.
+  Today that is the stale-answer warning below; a verified answer carries none.
+
 ### Changed
 
+- A `--stale-ok` answer now says it is stale on every format, plain text included:
+  stderr carries a `warn: stale answer` line that names `--stale-ok` as the way to a
+  fresh answer, and `--quiet` keeps it.
+  Plain text used to mark it only with `cache only` at the end of the performance
+  footer, which `--quiet` removes.
+  Paths and long output no longer print a separate `note: cache-only result` line, which
+  the warning replaces.
+  Machine output is unchanged; `provenance.source` and `freshness` already said so.
 - The default `--view summary` no longer builds the full index to report its ignored
   share: it classifies each entry against `.gitignore` as it counts it, keeping only the
   rules and the heads of ignored subtrees.

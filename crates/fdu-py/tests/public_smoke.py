@@ -512,11 +512,27 @@ def check_an_index_can_opt_out_of_control_state() -> None:
     # entry tier into a blind index on every cache route.
     (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
     assert fdu.cache_path(root) is not None
+    # A stale answer says so in the one warning a quiet frontend still prints, naming this
+    # surface's parameter; a verified answer, cold or warm, carries none (fdu-mdop).
+    stale_warning = (
+        "warn: stale answer: served from the snapshot without filesystem verification; "
+        "drop stale_ok for a fresh answer"
+    )
     try:
-        fdu.report(root, fdu.Query(views=(fdu.View.TREE,)), cache=fdu.CachePolicy.ON)
-        assert fdu.open(root).report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
+        seeded = fdu.report(root, fdu.Query(views=(fdu.View.TREE,)), cache=fdu.CachePolicy.ON)
+        assert seeded.warnings == (), seeded.warnings
+        warm = fdu.open(root).report()
+        assert warm.provenance.source is fdu.ReportSource.WARM_REVALIDATE
+        assert warm.warnings == (), warm.warnings
         cached = fdu.open(root, stale_ok=True)
-        assert cached.report().provenance.source is fdu.ReportSource.CACHE_ONLY
+        cached_report = cached.report()
+        assert cached_report.provenance.source is fdu.ReportSource.CACHE_ONLY
+        assert cached_report.warnings == (stale_warning,), cached_report.warnings
+        assert stale_warning not in cached_report.notes, cached_report.notes
+        stale_once = fdu.report(root, fdu.Query(views=(fdu.View.TREE,)), stale_ok=True)
+        assert stale_once.provenance.source is fdu.ReportSource.CACHE_ONLY
+        assert stale_once.warnings == (stale_warning,), stale_once.warnings
+        assert "warn:" not in stale_once.render(fdu.Format.TEXT)
         projected = fdu.open(root, scan=opted_out)
         assert projected.report().provenance.source is fdu.ReportSource.WARM_REVALIDATE
         assert projected.status.ignore_rules is None

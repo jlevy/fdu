@@ -1106,6 +1106,9 @@ def _projection_result(value: object) -> ProjectionResult:
             replace(
                 report_from_dict(wire, notes),
                 tips=tuple(str(tip) for tip in _sequence(report["tips"], "report tips")),
+                warnings=tuple(
+                    str(warning) for warning in _sequence(report["warnings"], "report warnings")
+                ),
                 _renderer=renderer,
             ),
         )
