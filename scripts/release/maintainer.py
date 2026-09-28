@@ -469,8 +469,9 @@ def token_check(host: Host, release: Release) -> Check:
     """
     No long-lived registry token waits in a secret.
 
-    The publish job uses a `CARGO_REGISTRY_TOKEN` environment secret whenever one exists,
-    in place of trusted publishing; that path was for the first release only.
+    The publish job reads no registry secret: both registries publish through trusted
+    publishing, and 0.1.0's bootstrap `CARGO_REGISTRY_TOKEN` path is gone. A token stored
+    anyway is a standing credential that nothing needs, so it is deleted and revoked.
     """
     names: list[str] = []
     for path in (

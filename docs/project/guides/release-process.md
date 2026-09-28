@@ -274,11 +274,16 @@ The workflow’s `release-environment` job reads those three settings back throu
 GitHub API before the publish job can start, and stops the run if any is missing;
 `make release-preflight` makes the same check earlier.
 
-The publish job still accepts a `CARGO_REGISTRY_TOKEN` secret in the `release`
-environment, because that is how `0.1.0` created both crates before crates.io could hold
-a publisher. Such a secret takes precedence over OIDC, so none may exist:
-`make release-preflight` fails if the environment or the repository holds a secret whose
-name mentions Cargo or PyPI.
+The publish job reads no registry secret.
+`0.1.0` created both crates with a bootstrap `CARGO_REGISTRY_TOKEN` in the `release`
+environment, before crates.io could hold a publisher, and the job preferred that secret
+to OIDC for as long as it could exist.
+`0.2.0` published both crates and PyPI through OIDC alone, as its publishing run’s log
+shows (an empty bootstrap secret, then a token requested from crates.io’s
+trusted-publishing endpoint and revoked at the end), so the workflow now exchanges OIDC
+only. `make release-preflight` still fails if the environment or the repository holds a
+secret whose name mentions Cargo or PyPI: nothing reads one, so it could only be a
+standing credential nobody needs.
 
 ### Publication Invariants
 
@@ -925,7 +930,8 @@ PyPI’s record is on
 [the project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/);
 crates.io has one on each crate’s settings page, for `fdu-core` and for `fdu`.
 Registering a publisher publishes nothing.
-A publish job that finds neither a publisher nor a token fails before its first upload.
+A crate without a publisher fails the publish job at its crates.io OIDC exchange, before
+either crate is uploaded.
 0.2.0 was the first release both registries accepted through OIDC alone.
 
 ### How 0.1.0 Was Bootstrapped
@@ -944,8 +950,10 @@ created on publish day.
 It lived only as the `release` environment’s `CARGO_REGISTRY_TOKEN` secret for the one
 publishing run, to be deleted from the environment and revoked once the run had
 published both crates, after which each crate’s trusted publisher could be registered.
-That is why the publish job still reads the secret when it exists and exchanges OIDC
-otherwise, and why `make release-preflight` requires it to be absent.
+The publish job read that secret when it existed and exchanged OIDC otherwise until
+`0.2.0` had published through OIDC alone; it now has no secret path at all.
+A crate that ever had to be created again would take the same bootstrap, by hand, as
+[Publishing by Hand](#publishing-by-hand) describes, never through the workflow.
 
 ## Design Notes
 

@@ -53,7 +53,7 @@ class MetadataTests(unittest.TestCase):
         authority = (
             "id-token: write",
             "environment:",
-            "secrets.CARGO_REGISTRY_TOKEN",
+            "steps.crates-io-auth.outputs.token",
             "crates-io-auth-action",
             "cargo publish",
             "uv publish",
@@ -73,14 +73,21 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(re.findall(r"(?i)\bwrite(?:-all)?\b", code(workflow)), ["write"])
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("gh-action-pypi-publish", workflow)
-        # The bootstrap token is read by the step that reports which credential applies and
-        # by the two uploads, never in the job's `env`, where every action would see it.
+        # No registry secret exists: the only secret read is the workflow's own read-only
+        # GITHUB_TOKEN, for the supply-chain check. 0.1.0's bootstrap CARGO_REGISTRY_TOKEN
+        # outranked OIDC whenever it was set, so a stale one would have published in place
+        # of trusted publishing; 0.2.0 published through OIDC alone and the path is gone
+        # (fdu-brkf). The minted crates.io token is read by the two uploads alone, never in
+        # the job's `env`, where every action would see it.
+        self.assertEqual(re.findall(r"secrets\.(\w+)", code(workflow)), ["GITHUB_TOKEN"])
         steps = workflow_steps(jobs[PUBLISH_JOB])
-        holders = [name for name, text in steps.items() if "secrets.CARGO_REGISTRY_TOKEN" in text]
-        self.assertEqual(
-            holders, ["Choose the crates.io credential", "Publish fdu-core", "Publish fdu"]
-        )
-        self.assertEqual(workflow.count("secrets.CARGO_REGISTRY_TOKEN"), 3)
+        token = "steps.crates-io-auth.outputs.token"
+        holders = [name for name, text in steps.items() if token in text]
+        self.assertEqual(holders, ["Publish fdu-core", "Publish fdu"])
+        self.assertEqual(workflow.count(token), 2)
+        for holder in holders:
+            with self.subTest(step=holder):
+                self.assertIn(f"CARGO_REGISTRY_TOKEN: ${{{{ {token} }}}}\n", steps[holder])
 
     def test_the_publish_job_runs_only_on_the_planned_tag_after_the_rehearsal(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -368,7 +375,6 @@ PUBLISH_STEP_ORDER = [
     "Audit both registries before publishing",
     "dtolnay/rust-toolchain",
     "Reproduce both crates and compare them with the rehearsal",
-    "Choose the crates.io credential",
     "Exchange GitHub OIDC for a short-lived crates.io token",
     "Publish fdu-core",
     "Wait until crates.io serves the rehearsed fdu-core",
@@ -420,29 +426,14 @@ REVIEWED_PUBLISH_STEPS = """
             --version "${VERSION}" \\
             --package fdu-core \\
             --package fdu
-      - name: Choose the crates.io credential
-        id: credential
-        if: steps.audit.outputs.crates == 'true'
-        env:
-          BOOTSTRAP_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          if [ -n "${BOOTSTRAP_TOKEN}" ]; then
-            echo "source=bootstrap" >> "${GITHUB_OUTPUT}"
-            echo "::warning title=crates.io bootstrap token::Publishing with the \
-            CARGO_REGISTRY_TOKEN environment secret. Delete the secret and revoke the \
-            token once this release is published."
-          else
-            echo "source=oidc" >> "${GITHUB_OUTPUT}"
-          fi
       - name: Exchange GitHub OIDC for a short-lived crates.io token
         id: crates-io-auth
-        if: steps.credential.outputs.source == 'oidc'
+        if: steps.audit.outputs.crates == 'true'
         uses: rust-lang/crates-io-auth-action@<pinned>
       - name: Publish fdu-core
         if: steps.audit.outputs.fdu_core == 'missing' && steps.reproduce-both.outcome == 'success'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN
-            || steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
         run: cargo publish --locked --no-verify -p fdu-core
       - name: Wait until crates.io serves the rehearsed fdu-core
         run: >-
@@ -463,8 +454,7 @@ REVIEWED_PUBLISH_STEPS = """
       - name: Publish fdu
         if: steps.audit.outputs.fdu == 'missing' && steps.reproduce-fdu.outcome == 'success'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN
-            || steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
         run: cargo publish --locked --no-verify -p fdu
       - name: Wait until crates.io serves the rehearsed fdu
         run: >-
