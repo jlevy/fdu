@@ -3,9 +3,9 @@ type: is
 id: is-01m3h4ky0ecg7gpas4gssxhy4e
 title: Re-test H157 (direct file fold, owned names) with the product CLI job as primary
 kind: task
-status: open
+status: closed
 priority: 2
-version: 9
+version: 11
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -15,7 +15,11 @@ dependencies:
     target: is-01m3kkrj5f6n9b38g6d1w6mrew
 parent_id: is-01m3mcwynm1rkdjencnq5621mq
 created_at: 2026-09-27T09:54:53.582Z
-updated_at: 2026-09-28T16:17:24.109Z
+updated_at: 2026-09-28T23:43:54.984Z
+closed_at: 2026-09-28T23:43:54.983Z
+close_reason: "exp-191: rejected on the pre-registered product-contract primary after H159 (+3% [-1%, +10%] linux-v6.12; +1% [-3%, +6%] balanced); code 4c283de0 kept on branch worktree-agent-af5456d0dc26ad80d for a re-screen after H166/H167"
+resolution: null
+duplicate_of: null
 ---
 exp-161 rejected H157 on its pre-registered probe job: cold-scan-index wall -2.22% [-4.04%, +0.04%], component -4.12% [-7.40%, +1.25%]. The same change paired on the product CLI job (fdu --cache off --depth 1 --limit 10, tool harness, 12 pairs, quiet) measured -3.71% [-4.71%, -1.97%], and allocations fell 7.03M -> 4.28M. The change: DetachedIndexBuilder::push_directory folds a file child straight into its parent roll-up through InternedRollUp::add_file, and Index::contribution builds a file's contribution by applying add_file to an empty roll-up, so both paths share one definition; WalkEmission::record_entry takes the listing's owned OsString and record_detached_entry moves it into DetachedChild instead of to_os_string. Pre-register the product job as primary, measure on the balanced 1M tree and one reconstructible real subject (linux-v6.12), and keep only under the accept rule. See docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md.
 
@@ -53,3 +57,5 @@ Pre-registration for the rerun (unchanged from the bead, made explicit):
   subject, zero invalid samples, peak RSS non-inferior; allocation counters recorded.
 
 Status 2026-09-28: H159 is implemented on claude/perf-h159-recycle (b1f57ecd) and recorded on macOS as exp-167 (in progress, no regression); its Linux cell has not run, so this rerun stays blocked on it. Runbook Current Pickup item 6.
+
+2026-09-28, pre-registered before timing (exp-191): control a15b20f4 (H159 + H162 + H163) CLI and probe, candidate 4c283de0 (control + H157; reimplemented, independently reviewed: no divergence; allocations -40% on /usr). Primary: the product fdu indexed-tree contract (fdu --cache off --depth 1 --limit 10) paired in the tool harness, 12 quiet pairs, on linux-balanced-1m and reconstructible linux-v6.12; accept at -3% with the interval below zero on at least the real subject per the accept rule, peak RSS non-inferior. Secondary: probe cold-scan-index on both.

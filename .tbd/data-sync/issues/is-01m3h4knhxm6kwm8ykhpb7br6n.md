@@ -3,9 +3,9 @@ type: is
 id: is-01m3h4knhxm6kwm8ykhpb7br6n
 title: "Linux index tier: remove glibc cross-thread frees from the detached builder (H159)"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 12
+version: 14
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -15,7 +15,11 @@ dependencies:
     target: is-01m3kkrj5f6n9b38g6d1w6mrew
 parent_id: is-01m3mcwynm1rkdjencnq5621mq
 created_at: 2026-09-27T09:54:44.925Z
-updated_at: 2026-09-28T22:53:27.942Z
+updated_at: 2026-09-28T23:43:54.595Z
+closed_at: 2026-09-28T23:43:54.595Z
+close_reason: "exp-190: accepted on a real directory-dense tree (-8.61%); no effect on sparse linux-v6.12 (exp-188, exp-189). Merge of #150 is the maintainer's action."
+resolution: null
+duplicate_of: null
 ---
 The 2026-09-27 Linux comparison (docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md) found fdu's indexed tree 19% behind pdu and 18% behind diskus on a 1M-entry tree, while summary mode leads both. The unchanged binary under LD_PRELOAD mimalloc/jemalloc/tcmalloc closes the whole gap (1.39 -> 1.11-1.13 s; summary 0.98 -> 0.82 s); glibc.malloc.arena_max=1 makes it 3.3 s. A context-switch profile names the blocking sites: the consumer freeing walker-allocated Vec<DetachedChild> buffers and directory_ids PathBuf keys into walker-owned arenas, plus walker-side PathBuf/file_name allocations waiting on arenas that glibc's tcache has mixed across threads. Candidates, dependency-free first: return drained child buffers to the producing worker (per-worker pools, batched); replace the PathBuf-keyed directory map with walker-assigned directory tokens carried in the queue claim; move the claimed rel_dir into DetachedDirectory instead of copying. Measure each under the accept rule on cold-scan-index and the product CLI job. An allocator dependency stays out unless a structural change cannot reach it (H74, H85 history).
 
@@ -30,3 +34,5 @@ The 2026-09-27 Linux comparison (docs/project/reports/report-2026-09-27-fdu-linu
 2026-09-28 exp-189 (quiet): on the H162+H163 base H159 is again rejected on linux-v6.12: default-tree +2.26% [-5.33%, +12.96%], cold-scan-index +3.22% [+1.21%, +12.87%]. Recorded as exp-188 and exp-189 (rejected). Balanced-1m screening -10.63%. Merge decision for #150 left to the maintainer.
 
 2026-09-28, pre-registered before any timing (exp-190): the H159 mechanism saves per directory (~1.25 us each on balanced-1m), so a fair real deciding subject must be directory-dense. Subject node-modules-dense: react-scripts 5.0.1 + gatsby 5.13.7 installed with npm ci --ignore-scripts (node 22.22.2, npm 10.9.7), 79,953 entries, 9,438 directories (8.5 per directory), reconstructible from the package.json and package-lock.json to be committed as exp-190 evidence. Same binaries, jobs and rule as exp-189: control eb00edf8 (main + H162 + H163), candidate a15b20f4 (H159 + H162 + H163); default-tree primary, cold-scan-index; 12 quiet pairs; accept at -3% with the interval below zero, peak RSS upper bound <= +5%. Asked for by the maintainer's request for a first-principles decision.
+
+2026-09-28 exp-190 accepted (quiet, node-modules-dense): default-tree -8.61% [-19.47%, -5.04%], cold-scan-index -6.79% [-10.91%, -2.25%], peak RSS -6.89%. #150 is ready for the maintainer to merge.
