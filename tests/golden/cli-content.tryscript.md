@@ -673,15 +673,15 @@ The overview still counts every selected source file and all 40 code lines.
 ```console
 $ fdu --cache off --workers=1 --analyze code --view code --sort code_lines --reverse --min-share 7% --limit all --size apparent code-project
 Code lines   Share  Comments  Blank  Analyzed files  Language
-         3    7.5%         3      1             1/1  C++        (3 non-gitignored, 0 gitignored)
-         3    7.5%         3      1             1/1  C#         (3 non-gitignored, 0 gitignored)
-         3    7.5%         4      0             1/1  Go         (3 non-gitignored, 0 gitignored)
-         3    7.5%         4      0             1/1  JavaScript (3 non-gitignored, 0 gitignored)
-         3    7.5%         4      0             1/1  PHP        (3 non-gitignored, 0 gitignored)
-         4   10.0%         2      1             1/1  Shell      (4 non-gitignored, 0 gitignored)
-         5   12.5%         1      1             1/1  Python     (5 non-gitignored, 0 gitignored)
+         3    7.5%         3      1             1/1  C++        (0 gitignored)
+         3    7.5%         3      1             1/1  C#         (0 gitignored)
+         3    7.5%         4      0             1/1  Go         (0 gitignored)
+         3    7.5%         4      0             1/1  JavaScript (0 gitignored)
+         3    7.5%         4      0             1/1  PHP        (0 gitignored)
+         4   10.0%         2      1             1/1  Shell      (0 gitignored)
+         5   12.5%         1      1             1/1  Python     (0 gitignored)
 … 8 languages omitted (below share threshold)
-        40  100.0%        53     12           15/15  TOTAL      (40 non-gitignored, 0 gitignored)
+        40  100.0%        53     12           15/15  TOTAL      (0 gitignored)
 15 analyzed languages (include population)
 ! note: code totals include languages hidden by display limits
 ! tip: show smaller entries: --min-share=0%
@@ -700,9 +700,9 @@ The stderr note makes clear why visible language rows need not add up to TOTAL.
 $ fdu --cache off --analyze code --view code --limit 2 --size apparent code-project
 (2 of 15)
 Code lines   Share  Comments  Blank  Analyzed files  Language
-         5   12.5%         1      1             1/1  Python   (5 non-gitignored, 0 gitignored)
-         4   10.0%         2      1             1/1  Shell    (4 non-gitignored, 0 gitignored)
-        40  100.0%        53     12           15/15  TOTAL    (40 non-gitignored, 0 gitignored)
+         5   12.5%         1      1             1/1  Python   (0 gitignored)
+         4   10.0%         2      1             1/1  Shell    (0 gitignored)
+        40  100.0%        53     12           15/15  TOTAL    (0 gitignored)
 15 analyzed languages (include population)
 ! note: code totals include languages hidden by display limits
 ! tip: show more rows: --limit=all
@@ -714,7 +714,7 @@ Code lines   Share  Comments  Blank  Analyzed files  Language
 $ fdu --cache off --analyze code --view code --limit 0 --size apparent code-project
 (0 of 15)
 Code lines   Share  Comments  Blank  Analyzed files  Language
-        40  100.0%        53     12           15/15  TOTAL    (40 non-gitignored, 0 gitignored)
+        40  100.0%        53     12           15/15  TOTAL    (0 gitignored)
 15 analyzed languages (include population)
 ! note: code totals include languages hidden by display limits
 ! tip: show more rows: --limit=all
@@ -729,7 +729,7 @@ performance line from stderr.
 $ fdu --cache off --quiet --analyze code --view code --limit 0 --size apparent code-project
 (0 of 15)
 Code lines   Share  Comments  Blank  Analyzed files  Language
-        40  100.0%        53     12           15/15  TOTAL    (40 non-gitignored, 0 gitignored)
+        40  100.0%        53     12           15/15  TOTAL    (0 gitignored)
 15 analyzed languages (include population)
 ? 0
 ```
@@ -758,8 +758,8 @@ Python.
 $ fdu --cache off --analyze code --include src --include main.rs --exclude "*.py" --view code,languages,summary --size apparent content-project
 CODE
 Code lines   Share  Comments  Blank  Analyzed files  Language
-         3  100.0%         0      1             1/1  Rust     (3 non-gitignored, 0 gitignored)
-         3  100.0%         0      1             1/1  TOTAL    (3 non-gitignored, 0 gitignored)
+         3  100.0%         0      1             1/1  Rust     (0 gitignored)
+         3  100.0%         0      1             1/1  TOTAL    (0 gitignored)
 1 analyzed language (include population)
 
 LANGUAGES
@@ -817,9 +817,9 @@ $ fdu --cache off --color never --size apparent --analyze lines content-project
 ```console
 $ fdu --cache off --color never --size apparent --analyze code content-project
 Code lines   Share  Comments  Blank  Analyzed files  Language
-         3   75.0%         0      1             1/1  Rust     (3 non-gitignored, 0 gitignored)
-         1   25.0%         1      1             1/1  Python   (1 non-gitignored, 0 gitignored)
-         4  100.0%         1      2             2/2  TOTAL    (4 non-gitignored, 0 gitignored)
+         3   75.0%         0      1             1/1  Rust     (0 gitignored)
+         1   25.0%         1      1             1/1  Python   (0 gitignored)
+         4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
 2 analyzed languages (include population)
 ! perf: took [PERF_TIME] to walk 7 files (256 B) at [PERF_RATE]; 0 gitignore rules (0 files); content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan
 ? 0
@@ -838,9 +838,9 @@ Percentage column: document words
 $ fdu --cache off --color never --size apparent --analyze code,words content-project
 CODE
 Code lines   Share  Comments  Blank  Analyzed files  Language
-         3   75.0%         0      1             1/1  Rust     (3 non-gitignored, 0 gitignored)
-         1   25.0%         1      1             1/1  Python   (1 non-gitignored, 0 gitignored)
-         4  100.0%         1      2             2/2  TOTAL    (4 non-gitignored, 0 gitignored)
+         3   75.0%         0      1             1/1  Rust     (0 gitignored)
+         1   25.0%         1      1             1/1  Python   (0 gitignored)
+         4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
 2 analyzed languages (include population)
 
 DOCUMENTS
@@ -950,9 +950,9 @@ EXTENSIONS  (2 of 6)
 
 CODE
 Code lines   Share  Comments  Blank  Analyzed files  Language
-         3   75.0%         0      1             1/1  Rust     (3 non-gitignored, 0 gitignored)
-         1   25.0%         1      1             1/1  Python   (1 non-gitignored, 0 gitignored)
-         4  100.0%         1      2             2/2  TOTAL    (4 non-gitignored, 0 gitignored)
+         3   75.0%         0      1             1/1  Rust     (0 gitignored)
+         1   25.0%         1      1             1/1  Python   (0 gitignored)
+         4  100.0%         1      2             2/2  TOTAL    (0 gitignored)
 2 analyzed languages (include population)
 
 DOCUMENTS
