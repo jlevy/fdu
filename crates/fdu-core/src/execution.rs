@@ -1553,9 +1553,9 @@ mod tests {
     /// Which failure a run names, and what kind of failure it is, must not depend on how it
     /// was delivered.
     ///
-    /// A scope this build cannot honour is refused by every policy, including the one that
-    /// never scans: under `--cache only` the scan that would have refused it never runs, so
-    /// the run used to report a snapshot miss instead -- the same request naming two
+    /// A scope this build cannot honour is refused by every policy, and by a stale answer,
+    /// which never scans: under `--stale-ok` the scan that would have refused it never runs,
+    /// so the run used to report a snapshot miss instead -- the same request naming two
     /// different failures depending on its delivery, which the path-independence registry
     /// records as `refusal-order` for `--one-filesystem` on Windows. `follow_symlinks` is
     /// the same rule on every platform, so this test runs where the Windows case cannot.
@@ -1570,8 +1570,8 @@ mod tests {
         let cache = tempfile::tempdir().expect("cache dir");
         let cache_path = cache.path().join("cache.fdu");
 
-        // A usable snapshot exists, so a cache-only read of a scope this build supports
-        // answers from it.
+        // A usable snapshot exists, so a stale read of a scope this build supports answers
+        // from it.
         let warm = config(CachePolicy::On, Some(cache_path.clone()));
         let (_, pending, _) = prepared(root.path(), &warm, &summary_query()).expect("warm");
         pending.join().expect("save");
