@@ -15,7 +15,9 @@ current interface; this plan retains the design and acceptance criteria.
 
 **Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`;
 [senior review follow-up](https://github.com/jlevy/fdu/pull/133#issuecomment-5853335891)
-`fdu-khdv`.
+`fdu-khdv`. Code-table and vocabulary refinements are tracked as `fdu-2u22`, `fdu-xjn3`,
+and `fdu-k96q`; their implementation and validation are recorded in the
+[review](../../reviews/review-2026-09-27-tally-arithmetic.md#code-table-and-analysis-vocabulary).
 
 ## Overview
 
@@ -173,7 +175,8 @@ The code overview includes:
 
 1. Selected population and code-line total, analyzed source-file count, and analyzed
    language count, with comment/blank totals.
-2. All languages, ordered by code lines descending and stable language-name ties.
+2. Language rows ordered by code lines descending and stable language-name ties, subject
+   to explicit presentation bounds.
 3. With `include`, combined totals and non-ignored/ignored contributions for the
    overview and each language.
    Human output keeps the combined total primary and the breakdown in supplementary
@@ -181,6 +184,14 @@ The code overview includes:
    With `exclude` or `only`, show the selected population without a redundant breakdown.
 4. An explicit share denominator and coverage for unsupported, unreadable, changed, or
    unclassified files.
+
+The human overview is one aligned table with a bold TOTAL row covering the complete
+selected population, even when language rows are hidden by display bounds.
+Unmeasured metrics use dashes, distinct from measured zero.
+The
+[output design system](../../architecture/fdu-output-design.md#content-reports-and-names)
+aligns analyzer names, canonical view headers, and metric columns.
+`--workers` controls content-analysis concurrency.
 
 Tests and examples remain included.
 Documentation/configuration inventories retain existing views.
