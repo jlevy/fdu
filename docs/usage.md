@@ -69,8 +69,9 @@ scanned and therefore changes the cache scope.
 Numeric content sorts such as `--sort=code_lines` require their analyzer.
 Use `files`, `list`, `tree`, or a metric grouping such as `languages` or `code` for
 these rankings. `extensions` groups metadata only and rejects content-metric sorts.
-The Code overview shows combined language totals with non-gitignored and gitignored
-contributions in parentheses; unknown classification is separate.
+The Code overview shows combined language totals; each row’s gitignored contribution
+follows in gray parentheses, such as `(0 gitignored)`, with an unknown contribution
+added only when some `.gitignore` could not be read or applied.
 
 Sizes use allocated bytes by default.
 Add `--size=apparent` for logical file lengths.
