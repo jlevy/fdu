@@ -4755,6 +4755,7 @@ mod tests {
 
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
     const DEEP_RENDER_DEPTH: usize = 1_024;
+    const DEEP_REPORT_STACK_BYTES: usize = 128 * 1_024;
     const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
 
     // ---- renderer tests that lived in the command line -------------------------------
@@ -4799,8 +4800,11 @@ mod tests {
     const DEEP_RENDER_TEST_PATH: &str = "report_format::tests::deep_rendering_is_stack_safe";
 
     fn run_deep_render_child() {
-        // A deep tree must render, not abort: expansion and all three renderers use
-        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
+        // A deep tree must build and render without depth-recursive stack growth.
+        // Windows reserves 20 KiB of a spawned thread's stack for overflow handling;
+        // a 64 KiB reservation leaves too little dependable room for report setup in
+        // debug builds. Keep construction bounded at 128 KiB, then test rendering and
+        // release separately on the original 64 KiB stack.
         let mut index = crate::Index::new("/fixture");
         let mut path = PathBuf::new();
         for depth in 0..DEEP_RENDER_DEPTH {
@@ -4816,9 +4820,9 @@ mod tests {
         }
         index.set_initial_freshness(false);
 
-        std::thread::Builder::new()
-            .name("deep-render".to_string())
-            .stack_size(DEEP_RENDER_STACK_BYTES)
+        let report = std::thread::Builder::new()
+            .name("deep-report".to_string())
+            .stack_size(DEEP_REPORT_STACK_BYTES)
             .spawn(move || {
                 let query = Query {
                     selection: Selection {
@@ -4838,13 +4842,11 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
+                eprintln!("deep-render phase: request");
+                let request = crate::test_support::read_of(&index, query);
                 eprintln!("deep-render phase: report");
-                let report = report(
-                    &index,
-                    &crate::test_support::read_of(&index, query.clone()),
-                    &provenance,
-                )
-                .expect("report");
+                let report = report(&index, &request, &provenance).expect("report");
+                eprintln!("deep-render phase: verify tree");
                 let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
                     panic!("expected a tree section with a root")
                 };
@@ -4857,6 +4859,16 @@ mod tests {
                     pending.extend(node.children.iter());
                 }
                 assert_eq!(nodes, DEEP_RENDER_DEPTH + 1, "the test must reach every directory");
+                report
+            })
+            .expect("spawn deep-report thread")
+            .join()
+            .expect("deep-report thread");
+
+        std::thread::Builder::new()
+            .name("deep-render".to_string())
+            .stack_size(DEEP_RENDER_STACK_BYTES)
+            .spawn(move || {
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     eprintln!("deep-render phase: render {format:?}");
                     let rendered = render(&report, format, false);
@@ -4869,6 +4881,8 @@ mod tests {
                     }
                 }
                 eprintln!("deep-render phase: drop");
+                drop(report);
+                eprintln!("deep-render phase: complete");
             })
             .expect("spawn deep-render thread")
             .join()
