@@ -1207,8 +1207,14 @@ pub enum InvalidateReason {
     /// as `Flag::Rescan`, and swallowing that flag silently corrupts any index built on
     /// events.
     WatchOverflow,
-    /// A rename whose two sides could not be paired: `FSEvents` reports one path with no
-    /// mechanism to associate old and new, and file-id stitching did not resolve it.
+    /// A rename left entries no event describes. Renames arrive one side at a time
+    /// (`FSEvents` reports each path with no mechanism to associate old and new), and
+    /// each side is verified as its own path, so this is raised only where a side's own
+    /// path does not settle it: a directory that arrived by rename is relisted, because
+    /// no backend reports a moved tree's contents; a renamed name its parent does not
+    /// list exactly (a case-only rename on an insensitive filesystem) reconciles the
+    /// parent; and a rename of the root itself, or from a backend that may never name
+    /// the new side (kqueue), reconciles the whole root.
     UnpairedRename,
     /// A directory was created and its watch registered a moment later; anything created
     /// inside that window produced no event at all.

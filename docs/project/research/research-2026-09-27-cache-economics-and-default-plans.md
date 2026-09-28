@@ -48,6 +48,8 @@ macOS figures are not re-measured here: they come from the
 [2026-09-26 macOS result](../reports/fdu-live-tool-comparison-result-2026-09-26.json),
 [the platform tuning guide](../guides/platform-tuning.md#snapshot-participation-is-a-cost-decision-and-apfs-reverses-its-conclusion),
 and the recorded experiments cited inline.
+The adopted default was measured on macOS afterwards, on 2026-09-28; those results are
+under [Measured on macOS](#measured-on-macos-2026-09-28).
 
 The use-case table and the figures derived from it were measured on this branch after
 merging the code-analysis work ([#133](https://github.com/jlevy/fdu/pull/133), whose
@@ -106,6 +108,28 @@ The first-run rows are the regime the next section describes: the kernel must al
 every page of a fresh 79 MB file.
 The refreshed tool matrices put pdu at 1.02 s and diskus at 1.04 s on the same host.
 
+### Measured on macOS, 2026-09-28
+
+After Option A shipped as `--cache auto`, the stack that carries it was measured on the
+M1 Pro’s internal APFS SSD, on a new copy of the same generated tree
+([report](../reports/report-2026-09-26-fdu-live-tool-comparison.md#what-the-default-fdu--costs)).
+Unrelated work kept that host busy, the quiet gate refused every start, and every figure
+below is uncontrolled.
+
+| Measurement | Before (`ea786683`, encodes a snapshot every run) | After (`a5c0ab46`, `auto`) |
+| --- | ---: | ---: |
+| `fdu PATH` against `--cache off`, paired in the tool harness (snapshot present) | +1.5% [−2.0%, +3.8%] | +0.1% [−4.5%, +1.9%] |
+| Probe `default-tree`, paired before → after (snapshot present) | baseline | −3.09% [−6.75%, +2.00%] |
+| Probe `default-tree-first`, paired before → after (empty cache directory) | baseline | −2.98% [−7.12%, +5.12%] |
+| Peak RSS of the default tree | 381–386 MiB | 281–286 MiB |
+
+On macOS the default one-shot command now costs what `--cache off` costs, and the
+snapshot it no longer writes was about 0.2 s of a 7-second, kernel-bound run: a wall
+difference this host could not resolve, and about 100 MiB of peak memory.
+The macOS gain from Option A is memory; on Linux it was a fifth of the run.
+The probe pairs are
+[exp-165](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md).
+
 ### Anatomy of the snapshot write
 
 The snapshot is the whole per-entry inventory: per entry, a parent slot (4 bytes), a
@@ -146,13 +170,18 @@ tuning guide) and 45.3 ms over 158,705
 ([exp-135](../experiments/exp-135-post-h128-first-run-default-tree-leftover.md)), 11–16%
 of a first run. Extrapolated to a million entries that is 0.3–0.5 s of the 6.0-second
 macOS figure; it was not measured, because that figure was taken with the cache off.
+Measured on 2026-09-28, removing the write changed a million-entry default tree by
+−3.09% [−6.75%, +2.00%] with a snapshot present and −2.98% [−7.12%, +5.12%] from an
+empty cache directory, about 0.2 s of 7.2–7.5 s on a loaded host, and cut peak RSS from
+381 to 281 MiB
+([exp-165](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)).
 
 ### Who reads the snapshot, and what each read saves
 
 | Reader | Linux saving per read | macOS saving per read |
 | --- | --- | --- |
 | A later `fdu .` or any metadata one-shot under `auto` | none: it never loads the snapshot (H108) | none: same rule |
-| `--cache only` (answer labelled stale) | 1.26 s → 1.04 s, **0.22 s** (screen) | 521 ms → 146 ms at 175k entries, **3.6×** |
+| `--cache only` (answer labelled stale) | 1.26 s → 1.04 s, **0.22 s** (screen) | 521 ms → 146 ms at 175k entries, **3.6×**; `--stale-ok` at 1M, 0.69 s against 6.4–9.5 s walks, **9× or more** (screen, loaded host) |
 | `open`, watch startup: load and revalidate | cold 1.22 s → warm 1.00 s, **0.22 s** (probe) | not re-measured since H75 |
 | `--analyze` repeated | none from the metadata snapshot: see below | none from the metadata snapshot, by the same mechanism |
 
@@ -426,6 +455,9 @@ again, 1.73 s, and `--stale-ok` answers in 0.94 s. The samples are in
 [the screen results](../reports/fdu-linux-screens-result-2026-09-28.json).
 Afterwards a one-shot tree or summary under `auto` has left no cache file, and
 `--cache on` has left one.
+On macOS (2026-09-28, uncontrolled) the same pair measured −3.09% [−6.75%, +2.00%] on
+`default-tree` and cut peak RSS 26%, and a million-entry `--stale-ok` read answered in
+0.69 s against 6.4–9.5 s walks; see [Measured on macOS](#measured-on-macos-2026-09-28).
 
 ## Next Steps
 
@@ -435,7 +467,9 @@ Afterwards a one-shot tree or summary under `auto` has left no cache file, and
   implemented as H161; accepted on macOS on peak RSS (exp-170, exp-171), Linux wall cell
   pending
 - [ ] Re-prioritize H66 (`fdu-sk7v`) and H159 (`fdu-578e`)
-- [ ] Measure default-invocation contracts on Linux and macOS through the harness
+- [ ] Measure default-invocation contracts on Linux and macOS through the harness: macOS
+  done on 2026-09-28 (uncontrolled, `fdu-default-tree` paired with `--cache off`); Linux
+  has probe and screen figures only
 - [ ] Decide the snapshot durability policy (`fdu-n75m` part 3) and hardware CRC-32C
 
 ## Methodology
@@ -453,14 +487,19 @@ isolated probe save, and a separate write-and-`fsync` test of the same 79 MB siz
 The CPU split is read from the per-sample `wait4` accounting in the two committed
 tool-comparison results.
 
-Not established here: macOS default-invocation timings at a million entries, the macOS
-allocator’s behavior under the same cross-thread pattern, and any cold-cache figure on
-Linux hardware.
+macOS default-invocation timings at a million entries were measured afterwards, on
+2026-09-28, on a loaded host: see [Measured on macOS](#measured-on-macos-2026-09-28).
+
+Not established here: a quiet-host macOS figure for the default invocation, the macOS
+allocator’s behavior under the same cross-thread pattern (on macOS, H156’s detached
+index release saved 2.4% user CPU with no measurable wall change,
+[exp-164](../experiments/exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md),
+which does not test arena contention), and any cold-cache figure on Linux hardware.
 
 ## References
 
 - [Linux tool comparison, 2026-09-27](../reports/report-2026-09-27-fdu-linux-tool-comparison.md)
-- [macOS tool comparison, 2026-09-26](../reports/report-2026-09-26-fdu-live-tool-comparison.md)
+- [macOS tool comparison, 2026-09-26, refreshed 2026-09-28](../reports/report-2026-09-26-fdu-live-tool-comparison.md)
 - [The fdu cache: two layers, and what verification costs](../guides/cache-design.md)
 - [Platform tuning: snapshot participation](../guides/platform-tuning.md#snapshot-participation-is-a-cost-decision-and-apfs-reverses-its-conclusion)
 - [Cache layers and defaults plan](../specs/done/plan-2026-08-15-fdu-cache-layers-and-defaults.md)
@@ -468,7 +507,7 @@ Linux hardware.
 - [Hypothesis registry](../guides/performance-loop.md#hypotheses): H9, H66, H74, H85,
   H108, H156–H159
 - [Experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md):
-  exp-066, exp-067, exp-135, exp-147, exp-160
+  exp-066, exp-067, exp-135, exp-147, exp-160, exp-163, exp-164, exp-165
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
