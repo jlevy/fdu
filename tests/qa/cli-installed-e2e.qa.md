@@ -176,9 +176,11 @@ digits); it must be the candidate’s, with no `.dirty` suffix.
 Keep the worktree and its build on a volume with room: a release build takes a few
 gigabytes.
 The wheel the release rehearsal built for this platform is an alternative that
-is closer to what users install; download it as
-[the release process](../../docs/project/guides/release-process.md) describes, and
-install it the same way.
+is closer to what users install: `make release-candidate` downloads it into
+`$RELEASE/rehearsal/files`, and
+[the release process](../../docs/project/guides/release-process.md#stability-pass) gives
+the command that installs it.
+It reports the bare release version, `fdu X.Y.Z`.
 
 ### 1.2 Identify the Binary
 
