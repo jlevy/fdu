@@ -41,14 +41,6 @@ The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains
 FSEvents probe/design increment.
 These status corrections do not alter the measured regimes or experiment verdicts below.
 
-**Tracking update (2026-09-27):** The
-[current work map](../../../TODO.md#performance-and-evidence) records open owners.
-Linux parallel, iteration and PGO-screen increments are recorded in `specs/done/`; PGO
-release adoption (`fdu-pdne`) and cold-regime tuning (`fdu-tk1b`) remain.
-The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains an open
-FSEvents probe/design increment.
-These status corrections do not alter the measured regimes or experiment verdicts below.
-
 ### Standing Best and Regime
 
 **H133 / exp-132** is the latest wall-speed increment on deciding-scale
@@ -71,8 +63,9 @@ expected but unmeasured.
 H152 / exp-158 is the exact report oracle and current-path determination that preceded
 it. The probe performs one fresh scan and line-analysis setup, then constructs four
 unfiltered metric views 100 times.
-Bare `--analyze all` defaults to one Families view and does not exercise this
-optimization; `--analyze all --view full` can use it during report construction, but its
+After the #136 integration, bare `--analyze all` defaults to Code and Documents.
+Only Documents participates in metric resolution, so that request does not exercise
+H153; `--analyze all --view full` can use it during report construction, but its
 end-to-end effect has not been measured.
 
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
@@ -970,6 +963,17 @@ keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150�
 exp-113 remains reserved unused.
 
 Next performance pickup:
+
+The integration of [#136](https://github.com/jlevy/fdu/pull/136) at `5365e5af` brings
+Code overview, population controls, metric sorting, share filtering, and tree accounting
+onto the H153 branch.
+exp-158 and exp-159 remain evidence about their recorded pre-integration revisions, not
+measurements of this combined engine.
+For the confirmation below, compare the integrated candidate with a baseline carrying
+the same feature stack but without H153; retain the exact report oracle on both sides.
+The new Code overview is outside H153’s shared metric-resolution pass because it uses
+admitted content detection rather than current path classification.
+Its default single-view command is not covered by the earlier speedup.
 
 1. **H153 confirmation** (`fdu-9e9d`) — repeat the `content-query` pair under the
    predeclared quiet-host gate, preserve the raw run, and resolve major-fault

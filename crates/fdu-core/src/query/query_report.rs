@@ -1500,25 +1500,27 @@ pub(crate) fn report_in(
         )
     });
 
-    // A plain loop, not an iterator chain: this is the deepest path a report takes, and
-    // in a debug build each adapter between here and `build_section` is a frame of its
-    // own, which is what put a deep tree past the stack `deep_rendering_is_stack_safe`
-    // allows on Windows.
-    let mut sections: Vec<Section> = Vec::with_capacity(query.views.len());
-    for (position, view) in query.views.iter().copied().enumerate() {
-        let shared_metric_summary =
-            shared_metric_summaries.as_mut().and_then(|summaries| summaries[position].take());
-        sections.push(build_section(
-            view,
-            index,
-            query,
-            content,
-            walked.as_ref(),
-            unfiltered_rows.as_deref(),
-            tree_measurements,
-            shared_metric_summary,
-        ));
-    }
+    let mut sections: Vec<Section> = query
+        .views
+        .iter()
+        .enumerate()
+        .map(|(position, view)| {
+            let shared_metric_summary =
+                shared_metric_summaries.as_mut().and_then(|summaries| summaries[position].take());
+            if let Some(summary) = shared_metric_summary {
+                return Section::Metrics { view: *view, summary: Box::new(summary) };
+            }
+            build_section(
+                *view,
+                index,
+                query,
+                content,
+                walked.as_ref(),
+                unfiltered_rows.as_deref(),
+                tree_measurements,
+            )
+        })
+        .collect();
 
     let age_reference_ns = crate::query::system_time_to_nanos(request.now);
     for section in &mut sections {
@@ -1921,7 +1923,6 @@ fn entry_rows<'a>(
 }
 
 /// Build one view's section, using the pre-computed tier when the selection allows.
-#[allow(clippy::too_many_arguments)] // Each shared input is computed once per request.
 fn build_section(
     view: ViewSpec,
     index: &Index,
@@ -1930,7 +1931,6 @@ fn build_section(
     walked: Option<&Walked>,
     unfiltered_rows: Option<&[FileRow]>,
     tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
-    shared_metric_summary: Option<Box<MetricSummary>>,
 ) -> Section {
     if query.tree_for(view) {
         let (root, omissions) = tree_node(index, query, content, walked, tree_measurements);
@@ -1957,9 +1957,14 @@ fn build_section(
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics {
                 view,
-                summary: shared_metric_summary.unwrap_or_else(|| {
-                    Box::new(metric_summary(view, index, query, content, walked, unfiltered_rows))
-                }),
+                summary: Box::new(metric_summary(
+                    view,
+                    index,
+                    query,
+                    content,
+                    walked,
+                    unfiltered_rows,
+                )),
             }
         }
         ViewSpec::List
@@ -2121,7 +2126,7 @@ fn metric_summaries(
     query: &Query,
     content: AnalysisSet,
     rows: &[FileRow],
-) -> Vec<Option<Box<MetricSummary>>> {
+) -> Vec<Option<MetricSummary>> {
     let mut accumulators = views
         .iter()
         .copied()
@@ -2138,12 +2143,8 @@ fn metric_summaries(
         }
     }
 
-    // Boxed where each is finished: a summary is a few hundred bytes, and carrying it by
-    // value through the per-view closure and `build_section` put those bytes in every
-    // frame on the path a deep tree renders on, which on a Windows debug build was enough
-    // to overflow the 64 KiB stack `deep_rendering_is_stack_safe` allows.
     let mut finished =
-        accumulators.into_iter().map(|accumulator| Box::new(accumulator.finish(query, content)));
+        accumulators.into_iter().map(|accumulator| accumulator.finish(query, content));
     let summaries = views
         .iter()
         .map(|view| needs_metric_resolution(*view).then(|| finished.next().expect("metric view")))
@@ -4815,6 +4816,81 @@ mod tests {
     }
 
     #[test]
+    fn one_pass_metric_summaries_match_independent_views() {
+        let root = tempfile::tempdir().expect("root");
+        fs::write(root.path().join("main.rs"), "fn main() {}\n").expect("rust");
+        fs::write(root.path().join("guide.md"), "# Guide\n\nWords.\n").expect("markdown");
+        fs::write(root.path().join(".gitignore"), "generated/\n").expect("ignore rules");
+        fs::create_dir(root.path().join("generated")).expect("generated directory");
+        fs::write(root.path().join("generated/app.js"), "const a = 1;\nconst b = 2;\n")
+            .expect("ignored code");
+        fs::write(root.path().join("script"), "#!/bin/sh\necho hello\n").expect("detected code");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default()).expect("scan");
+        crate::content::analyze_index(
+            &mut index,
+            crate::content::AnalysisRequest {
+                profile: AnalysisSet::ALL,
+                ..crate::content::AnalysisRequest::default()
+            },
+        );
+
+        let views = [
+            ViewSpec::Types,
+            ViewSpec::Summary,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+            ViewSpec::Code,
+        ];
+        let request = query(&views, Selection::default());
+        let rows = every_entry(&index);
+        let summaries = metric_summaries(&views, &index, &request, AnalysisSet::ALL, &rows);
+
+        assert!(summaries[1].is_none(), "non-metric views keep their own projection");
+        assert!(summaries[5].is_none(), "Code keeps its admitted-content classification");
+        for (position, view) in
+            views.iter().copied().enumerate().filter(|(_, view)| needs_metric_resolution(*view))
+        {
+            let independent =
+                metric_summary(view, &index, &request, AnalysisSet::ALL, None, Some(&rows));
+            assert_eq!(
+                format!("{:?}", summaries[position].as_ref().expect("metric summary")),
+                format!("{independent:?}"),
+                "{view:?} changed in the one-pass multi-view aggregation"
+            );
+        }
+
+        // Exercise the integrated population and presentation controls through the report
+        // boundary. Include uses the shared pass; Exclude and Only use the filtered path.
+        // Content-detected extensionless code also keeps Code's classification distinct.
+        // Summary alone does not accept a share threshold, so compare additive views here.
+        let views = views.into_iter().filter(|view| *view != ViewSpec::Summary).collect::<Vec<_>>();
+        for ignored in [IgnoredEntries::Include, IgnoredEntries::Exclude, IgnoredEntries::Only] {
+            for sort in [None, Some(SortKey::Metric("code_lines")), Some(SortKey::Name)] {
+                for min_share in [None, Some(ShareThreshold::parse("50%").expect("share"))] {
+                    let selection = Selection {
+                        ignored,
+                        sort,
+                        min_share,
+                        limit: Some(Bound::Limit(1)),
+                        ..Selection::default()
+                    };
+                    let together = run(&index, &query(&views, selection.clone()));
+                    for (position, view) in views.iter().enumerate() {
+                        let alone = run(&index, &query(&[*view], selection.clone()));
+                        assert_eq!(
+                            format!("{:?}", together.sections[position]),
+                            format!("{:?}", alone.sections[0]),
+                            "{view:?} differs for {selection:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn code_overview_keeps_a_complete_language_table_and_population_contributions() {
         let root = tempfile::tempdir().expect("root");
         fs::create_dir_all(root.path().join("generated")).expect("generated");
@@ -5125,49 +5201,6 @@ mod tests {
             assert_eq!(
                 rows.iter().any(|row| row.path == Path::new("known.rs")),
                 population == IgnoredEntries::Exclude
-            );
-        }
-    }
-
-    #[test]
-    fn one_pass_metric_summaries_match_independent_views() {
-        let root = tempfile::tempdir().expect("root");
-        fs::write(root.path().join("main.rs"), "fn main() {}\n").expect("rust");
-        fs::write(root.path().join("guide.md"), "# Guide\n\nWords.\n").expect("markdown");
-        let (mut index, _) = crate::scan::scan_into_index(
-            root.path(),
-            &crate::ScanConfig { read_controls: false, ..crate::ScanConfig::default() },
-        )
-        .expect("scan");
-        crate::content::analyze_index(
-            &mut index,
-            crate::content::AnalysisRequest {
-                profile: AnalysisSet::ALL,
-                ..crate::content::AnalysisRequest::default()
-            },
-        );
-
-        let views = [
-            ViewSpec::Types,
-            ViewSpec::Summary,
-            ViewSpec::Families,
-            ViewSpec::Languages,
-            ViewSpec::Documents,
-        ];
-        let query = query(&views, Selection::default());
-        let rows = every_entry(&index);
-        let summaries = metric_summaries(&views, &index, &query, AnalysisSet::ALL, &rows);
-
-        assert!(summaries[1].is_none(), "non-metric views keep their own projection");
-        for (position, view) in
-            views.iter().copied().enumerate().filter(|(_, view)| needs_metric_resolution(*view))
-        {
-            let independent =
-                metric_summary(view, &index, &query, AnalysisSet::ALL, None, Some(&rows));
-            assert_eq!(
-                format!("{:?}", summaries[position].as_ref().expect("metric summary")),
-                format!("{independent:?}"),
-                "{view:?} changed in the one-pass multi-view aggregation"
             );
         }
     }
