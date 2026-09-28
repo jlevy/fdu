@@ -3046,20 +3046,23 @@ impl WalkEmission for StreamingEmission {
     }
 }
 
-/// Emptied listings one detached worker keeps for reuse.
+/// Emptied listings one detached worker keeps for reuse: one chunk's worth.
 ///
-/// A bound on retention, not a tuned value: a chunk claims at most [`DIR_CLAIM`]
-/// directories, so four chunks' worth covers a consumer running a few chunks behind.
-/// A listing returned past this bound is freed at once, still on its own thread.
-const DETACHED_SPARE_LISTINGS: usize = 4 * DIR_CLAIM;
+/// A bound on retention, not a tuned speed value. A chunk claims at most [`DIR_CLAIM`]
+/// directories, and the worker takes returned listings back once per chunk, so this
+/// covers the next chunk; a listing returned past it is freed at once, still on its own
+/// thread, which is the property H159 needs. Retained listings are memory the consumer
+/// can no longer reuse for the index: four chunks' worth of listings up to 256 children
+/// each cost 1.0 MiB (+1.4%) of peak RSS on a 158,705-entry macOS subject and 2.3 MiB
+/// (+5.0%) on a 77,159-entry one.
+const DETACHED_SPARE_LISTINGS: usize = DIR_CLAIM;
 
 /// The largest child buffer, in children, a spare listing may keep.
 ///
-/// Also a bound on retention rather than a tuned value. Without it, one very large
-/// directory would pin its buffer, about 80 bytes per child, for the rest of the walk,
-/// where the consumer used to free it as soon as the listing was applied; a larger
-/// buffer is freed when it comes back, on its own thread.
-const DETACHED_SPARE_CHILD_CAPACITY: usize = 256;
+/// Also a bound on retention rather than a tuned value: most directories are small, and
+/// a listing whose buffer grew past this, at about 80 bytes per child, is freed when it
+/// comes back, on its own thread, instead of being pinned for the rest of the walk.
+const DETACHED_SPARE_CHILD_CAPACITY: usize = 64;
 
 /// One worker's detached emission: listings built here and published to the consumer.
 ///
