@@ -1082,10 +1082,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
      }
    },
    "ignore_rules": {
-@@ -50,31 +50,31 @@
-         "name": ".",
+@@ -51,32 +51,32 @@
          "path": "",
          "kind": "dir",
+         "entry_ignored": false,
          "bytes": 269,
 -        "allocated": [ALLOCATED],
 +        "allocated": [ALLOCATED_VALUE],
@@ -1105,6 +1105,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
              "name": "dist",
              "path": "dist",
              "kind": "dir",
+             "entry_ignored": true,
              "bytes": 128,
 -            "allocated": [ALLOCATED],
 +            "allocated": [ALLOCATED_VALUE],
@@ -1122,7 +1123,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
              "children": []
            }
          ]
-@@ -82,9 +82,9 @@
+@@ -84,9 +84,9 @@
        "omissions": [],
        "remainder": {
          "files": 6,

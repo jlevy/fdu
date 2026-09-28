@@ -85,7 +85,11 @@ The report notes this condition; null never means zero ignored entries.
 Each tree section states `limits`: `depth`, `min_share`, `breadth`, and `rows`. A null
 integer bound means unlimited; `min_share` is an exact percentage string.
 The default is depth 5, share `1%`, and unlimited breadth and rows.
-`tree` is null when no data row is admitted, including `--limit=0`.
+`tree` is null when no data row is admitted, including `--limit=0`. Each tree node has
+`entry_ignored`: `true` or `false` for that entry’s own `.gitignore` classification, or
+null when the governing controls were not observed or could not be verified.
+This remains independent of the node’s selected-subtree `ignored` tally, including for
+empty directories and zero-byte files.
 
 Sections and nodes carry `omissions`. Each item names `reason` (`share`, `breadth`,
 `depth`, or `rows`), the number of direct child roots omitted in `entries`, the

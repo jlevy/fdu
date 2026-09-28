@@ -16,10 +16,12 @@ Keep those comments and this guide consistent.
 
 ## Row Styling
 
-Names that use cyan are bright cyan and bold; names shown in white or gray retain those
-colors.
-Directory names have a gray trailing `/`, except `.` and `..`; regular file names
-do not. Path and structured formats keep their original path values.
+Names that use cyan are bright cyan and bold, except directories whose own path is
+gitignored directly or through an ignored ancestor: those use regular cyan without bold.
+Containing ignored files alone does not change a directory name; file-name colors are
+unchanged. Names shown in white or gray retain those colors.
+Directory names have a gray trailing `/`, except `.` and `..`; regular file names do
+not. Path and structured formats keep their original path values.
 Sizes of at least 1 GiB are bold, including gray parenthetical sizes and performance
 details. The threshold uses exact bytes, before rounding.
 Zero sizes such as `0 B` are gray.
@@ -92,9 +94,8 @@ Machine data never contains ANSI escapes.
 ## Omitted Rows
 
 Colored tree bars use green solid blocks (`█`) for non-gitignored usage, green
-dark-shade blocks (`▓`) for gitignored usage, and faint gray light-shade blocks (`░`)
-for the unused width.
-Bars default to ten cells; `--bar-size` sets the width.
+dark-shade blocks (`▓`) for gitignored usage, and dim green light-shade blocks (`░`) for
+the unused width. Bars default to ten cells; `--bar-size` sets the width.
 Zero or negative values hide the bar and its following gutter.
 The filled width is rounded against the selected root, then its cells are divided by the
 row’s gitignored proportion.
@@ -111,10 +112,11 @@ claiming either population.
 Uncolored bars retain their plain block glyphs.
 
 Each tree has at most one remainder line below its selected root.
-Its annotation and values are gray, with the shared size emphasis and bar population
-colors. It uses the same bar, percentage, and size columns as tree rows; its name column
-reads `… and N more files`. The bar and percentage show the combined hidden share of the
-selected root.
+Only its `… and` prefix is gray; the file count uses normal foreground, and percentages
+and sizes use the same styling as ordinary rows, including gray shares below 1%, gray
+zero sizes, and bold sizes of at least 1 GiB. It uses the same bar, percentage, and size
+columns as tree rows; its name column reads `… and N more files`. The bar and percentage
+show the combined hidden share of the selected root.
 
 ```text
 █░░░░░░░░░    12%     1.2 MiB  … and 12,345 more files
@@ -175,6 +177,15 @@ regular file, keeps the same aggregate measurements, returns `remainder: null`, 
 emits no omission notes or tips.
 Display bounds do not control scan completeness: `--scan-depth`, unreadable directories,
 and other discovery restrictions still apply.
+
+## Progress Timer
+
+Transient progress and `perf:` use the same elapsed-time formatter.
+A gray `·` separates progress facts from elapsed time, including between the total size
+and the timer. Durations of one second or more stay in seconds with two decimal places,
+such as `151.33 s`; there is no separate minute or hour notation.
+Subsecond durations use the same nanosecond, microsecond, or millisecond formatting on
+both surfaces.
 
 ## Performance Summary
 

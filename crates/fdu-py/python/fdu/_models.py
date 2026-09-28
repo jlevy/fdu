@@ -758,6 +758,8 @@ class TreeNode:
     omissions: tuple[TreeOmission, ...] = ()
     #: The ignored share of this subtree, or ``None`` when no ``.gitignore`` was read.
     ignored: IgnoredTally | None = None
+    #: Whether this entry itself is gitignored, or ``None`` when classification is unknown.
+    entry_ignored: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1586,6 +1588,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             name=str(raw["name"]),
             path=_wire_path(raw),
             kind=EntryKind(str(raw["kind"])),
+            entry_ignored=_optional_bool(raw["entry_ignored"]),
             bytes=int(raw["bytes"]),
             allocated=int(raw["allocated"]),
             files=int(raw["files"]),

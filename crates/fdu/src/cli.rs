@@ -1627,7 +1627,9 @@ fn human_rate(units: u64, elapsed_ns: u64) -> String {
     report_format::human_count_u128(u128::from(units) * 1_000_000_000 / u128::from(elapsed_ns))
 }
 
-fn human_duration(duration: Duration) -> String {
+/// Shared progress and perf duration: seconds keep two decimals above one second,
+/// without switching to minute or hour notation.
+pub(crate) fn human_duration(duration: Duration) -> String {
     let nanos = duration.as_nanos();
     if nanos < 1_000 {
         format!("{nanos} ns")
