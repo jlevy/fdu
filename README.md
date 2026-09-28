@@ -80,7 +80,7 @@ Wheels cover Linux, macOS, and Windows.
 For other platforms, pinned versions, and building from source, see
 [Other Ways to Install](#other-ways-to-install).
 
-## Command Line
+## Quick Start (and drop-in `du` replacement)
 
 For example, on the current directory:
 
