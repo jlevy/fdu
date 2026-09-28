@@ -34,6 +34,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Performance includes ignore-file and rule counts plus total files/s and represented
   GiB/s.
 - `--workers` sets content-analysis concurrency (zero selects available parallelism).
+- The default `--view summary` no longer builds the full index to report its ignored
+  share: it classifies each entry against `.gitignore` as it counts it, keeping only the
+  rules and the heads of ignored subtrees.
+  The answer is unchanged, on every surface.
+  On macOS peak memory fell 69% on a 137k-entry source checkout and 58% on a 77k-entry
+  tree with no `.gitignore`, with wall time no worse; the Linux timing is not yet
+  measured.
 - Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and Linux default
   to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
 - Report schema is `fdu.report/10`; cache status is `fdu.cache/3`. Python exposes

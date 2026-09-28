@@ -431,7 +431,9 @@ Afterwards a one-shot tree or summary under `auto` has left no cache file, and
 
 - [x] Decide Option A, including whether it applies to Python `open` defaults
   (`fdu-0t1v`): adopted as above; `open` keeps writing
-- [ ] Measure the ignore-aware summary reducer (C.1, `fdu-1ovb`) under the accept rule
+- [ ] Measure the ignore-aware summary reducer (C.1, `fdu-1ovb`) under the accept rule:
+  implemented as H161; accepted on macOS on peak RSS (exp-170, exp-171), Linux wall cell
+  pending
 - [ ] Re-prioritize H66 (`fdu-sk7v`) and H159 (`fdu-578e`)
 - [ ] Measure default-invocation contracts on Linux and macOS through the harness
 - [ ] Decide the snapshot durability policy (`fdu-n75m` part 3) and hardware CRC-32C

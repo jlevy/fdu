@@ -971,7 +971,9 @@ the required H153 confirmation from optional CLI and peer comparisons, and speci
 external builds with internal-drive measurement.
 Preparation and smoke checks do not authorize starting the measurement cells below.
 
-Next free experiment id is **exp-164** and next free unused hypothesis id is **H161**.
+Next free experiment id is **exp-173** and next free unused hypothesis id is **H162**.
+exp-170–172 record H161, the ignore-aware transient summary; exp-164–169 were claimed by
+the other layers of stack 141 on the same night.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
