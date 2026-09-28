@@ -70,8 +70,12 @@ this plan inherits: Watchman’s `fsevents_try_resync` proves the *mechanics* (r
 a recorded event ID, UUID-guarded, wrap-vetoed) but uses them only for in-process
 recovery, off by default — and across restarts both Watchman and git’s fsmonitor daemon
 start at `SinceNow` and re-crawl.
-Cross-restart replay is Apple-documented and API-supported but unproven in major
-production tools; fdu would be pioneering it.
+These reviewed restart paths do not demonstrate one-shot inventory resume.
+The
+[September prior-art update](../../research/research-2026-09-27-persistent-change-prior-art.md)
+adds CCC Quick Update and SuperDuper Turbo: production FSEvents-guided enumeration
+between backup jobs, but without published cursor/barrier implementations.
+fdu must still establish its own correctness and cost.
 That is why the validation spike is Phase 0 rather than an afterthought, why the gate
 fails closed on every row, and why the full sweep remains the backstop on every platform
 — the route required when the caller requests full verification.
@@ -98,9 +102,10 @@ fails closed on every row, and why the full sweep remains the backstop on every 
 
 ## Non-Goals
 
-- Windows (USN journal) and Linux: Windows is deferred with the format leaving room for
-  it; Linux has no persistent journal, which is exactly why the parallel sweep must stay
-  fast there. The two investments are complements, not alternatives.
+- Windows (USN journal) and Linux adapters: this plan implements the macOS adapter.
+  Ordinary Linux inotify/fanotify queues cannot replay an offline gap; optional resident
+  observers and filesystem-specific change sources are separate work.
+  Portable full scans preserve the same checkpoint workflow on every platform.
 - Changing what is cached or where.
   This feature accelerates revalidation.
   The cursor rides in the existing snapshot, and the typed-gap rule that lets a
@@ -227,14 +232,14 @@ Binding options, evaluated against this repository’s supply-chain policy:
 | `fsevent-sys 4.1.0` (already present via `notify`) + own declarations | **0** | Ships `FSEventStreamCreate`, start/stop/invalidate/release, `FSEventsGetCurrentEventId`, and every event flag. Leaves `FSEventStreamCreateRelativeToDevice`, `FSEventStreamSetDispatchQueue`, and `FSEventsCopyUUIDForDevice` commented out; all three are declared in our FFI module, alongside `dispatch_queue_create`/`dispatch_release` (libdispatch is part of libSystem, linked on every macOS binary — no crate needed). |
 | `objc2-core-services` + `objc2-core-foundation` + `dispatch2` | ~4–5 | The modern generated bindings (verified: all four needed functions exist, including `FSEventStreamSetDispatchQueue` and `FSEventsCopyUUIDForDevice`). Signatures machine-derived from Apple headers. |
 
-**Decision: option 1.** The deciding fact is that `fsevent-sys` is *already in
-`Cargo.lock`*, so the entire feature adds zero new crates and nothing to the cool-off,
-while still using the non-deprecated dispatch-queue API — the handful of extern
-declarations we add are exactly the ones the objc2 crates would generate, and they are
-covered by the same integration tests either way.
-The objc2 route is the documented fallback if the hand-declared surface grows past a
-dozen functions; it is a maintained, widely-used ecosystem (winit), just not worth four
-new supply-chain entries for ~6 declarations today.
+**August preference: option 1; September decision reopened.** Reusing the locked binding
+avoids new packages, but the newer `fsevent-sys 5.2.0` is deprecated in favor of
+`objc2-core-services`, and notify’s 9.0 RC line has moved to objc2. Before engine
+integration, compare the maintained generated route against the locked binding plus
+reviewed declarations, including API coverage, unsafe ownership, MSRV, build-feature
+isolation, and supply-chain review.
+The table records the earlier dependency estimate, not a newly resolved lockfile.
+The standalone SDK probe settles API behavior without deciding Rust dependencies.
 
 The workspace denies `unsafe_code`; this FFI module carries a scoped
 `#[allow(unsafe_code)]` with every call site documented.
@@ -529,6 +534,10 @@ incomplete directory is recorded as a gap, and still refuses any other partial i
   completed boundary or the G6 deadline, then stop/invalidate/release).
   `HistoryDone` alone is not yet established as that boundary: the probe also flushes
   buffered contemporary events, but does not prove that protocol sufficient.
+  Watchman reports earlier changes arriving after both a cookie notification and
+  `FSEventStreamFlushSync` under load; see its
+  [synchronization limitation](https://facebook.github.io/watchman/docs/cookies#limitation-macos-fsevents).
+  Quiescence and matching finite oracles do not establish a universal barrier.
   Specify the completion and queue-drain protocol only after testing changes pending at
   invocation and racing the history/live transition; a deadline without a proven
   boundary takes the conservative fallback.
@@ -544,8 +553,8 @@ incomplete directory is recorded as a gap, and still refuses any other partial i
   is the default). `--cache off` remains the explicit full-scan, no-snapshot policy and
   bypasses the history-replay path unchanged.
 - Existing build feature `watch` in `crates/fdu-core/Cargo.toml`: also gates the macOS
-  replay FFI and a direct, target-conditional optional `fsevent-sys` dependency.
-  Reusing the locked dependency still requires normal dependency review.
+  replay FFI and the selected target-conditional optional native bindings.
+  Even reusing a locked dependency requires normal dependency review.
   The optional native-observation capability remains removable under
   `--no-default-features`.
 
@@ -569,8 +578,9 @@ only a temporary stream and stops it before returning.
 
 - Without `watch`, or on unsupported platforms, the gate chooses the portable sweep.
   Enabling `watch` does not opt a request into journal-scoped trust.
-- The dependency is target-conditional:
-  `[target.'cfg(target_os = "macos")'.dependencies] fsevent-sys = { version = "4.1", optional = true }`.
+- Native replay dependencies are optional and target-conditional under
+  `[target.'cfg(target_os = "macos")'.dependencies]`; select their exact versions after
+  the binding review above.
   Linux and Windows acquire no replay-specific native dependency.
 - **Cargo consumers**: `default-features = false` builds keep the sweep path; consumers
   needing historical replay enable `watch` and explicitly request journal verification.
@@ -600,10 +610,9 @@ Commit the probe and its invocation to the repository’s exploration tooling be
 making new claims. Record source revision, OS and filesystem, flags, stream kind,
 latency, saved fences, event IDs, mutations, and full-scan comparisons.
 It remains outside the shipped API. The standalone instrument uses the installed Apple
-SDK directly, without changing fdu dependencies; the Rust integration will use locked
-bindings plus reviewed declarations.
-The earlier scratch spike is historical evidence, not a reproducible acceptance run.
-On a real volume, establish:
+SDK directly, without changing fdu dependencies; Rust integration follows the binding
+review above. The earlier scratch spike is historical evidence, not a reproducible
+acceptance run. On a real volume, establish:
 
 - [ ] Dispatch-queue delivery works as designed: stream created with `sinceWhen`,
   `FSEventStreamSetDispatchQueue` onto a private queue, events arrive, the `HistoryDone`
@@ -875,6 +884,29 @@ controlled loss, and publication failures remain pending.
 Proceed with the private gate and deterministic transaction design, not a public replay
 release or a whole-command speed claim.
 
+### Real-root and next-day findings (2026-09-27)
+
+The
+[extended probe and sanitized evidence](../../../../explorations/fsevents-replay/README.md#real-roots-and-next-day-replay-2026-09-27)
+test existing roots without writing into them.
+A quiet 12,280-entry root matched both full oracles with no candidate entry
+observations. On a live 441,777-entry root, replay took about 181 ms, but the
+conservative subtree normalizer rescanned the whole root.
+Stable observations matched; concurrent mutations made overall validation inconclusive.
+This is not yet evidence for the large-tree latency target.
+
+The normalizer proposed above must implement immediate relists separately from recursive
+invalidation; the prototype’s recursive parent scans are not acceptable as the
+production fast path.
+Whole-image persistence costs remain independently visible.
+
+Replaying the preserved external APFS fixtures after about 26 hours produced events but
+no `HistoryDone` before the ten-second deadline in all sixteen attempts.
+These are recorded failures, not successful day-gap acceptance or proof of retention
+loss.
+Investigate bounded completion and volume-history cost before setting G5/G6 policy.
+Phase 2 remains gated on this and the rest of the acceptance matrix.
+
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
 - [ ] Next available snapshot format version: cursor section, encode-side cursor field
@@ -984,7 +1016,9 @@ no-unmeasured-claims convention.
   — the non-deprecated scheduling API;
   [`ScheduleWithRunLoop` deprecation reports](https://github.com/fsnotify/fsevents/issues/59)
 - [objc2-core-services](https://crates.io/crates/objc2-core-services) — the generated
-  modern bindings, evaluated and documented as the fallback route
+  modern bindings, reconsidered as the preferred candidate for dependency review
+- [Persistent-change prior art](../../research/research-2026-09-27-persistent-change-prior-art.md)
+  — backup-product precedents, current Rust bindings, and platform limitations
 - [Watchman fsevents resync](https://facebook.github.io/watchman/docs/troubleshooting.html)
 - [End-to-end performance testing plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md)
 

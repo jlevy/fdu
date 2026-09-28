@@ -722,9 +722,13 @@ ID guarded by a `FSEventsCopyUUIDForDevice` equality check and an `EventIdsWrapp
 (briefly defaulted on, then reverted in December 2021 “due to possible correctness
 issues”); across restarts both Watchman and git’s fsmonitor daemon start at `SinceNow`
 and force a fresh crawl through their own logical clocks.
-Cross-restart replay is therefore Apple-documented and API-supported but unproven in
-major production tools — fdu would be pioneering it, which makes the backstop
-non-negotiable rather than merely prudent.
+Those reviewed restart paths do not demonstrate one-shot inventory resume.
+However, the
+[September prior-art update](research-2026-09-27-persistent-change-prior-art.md)
+identifies CCC Quick Update and SuperDuper Turbo as production examples of
+FSEvents-guided enumeration between backup jobs.
+Their private implementations do not establish fdu’s cursor or synchronization rules;
+the full-scan backstop and independent validation remain necessary.
 
 Implementation findings from the follow-up spec work (2026-08-10), recorded here so the
 platform picture stays in one place: the run-loop scheduling every older example uses
@@ -743,10 +747,12 @@ escalation shape: UUID mismatch, event ID regression,
 `kFSEventStreamEventFlagEventIdsWrapped`, or `MustScanSubDirs`/dropped-event flags each
 map to `InvalidateSubtree` (scoped or root) and the sweep runs as the backstop; Apple
 documents the journal as advisory, so a periodic paranoia sweep remains.
-Nothing in the du-tool space does this; it converts fdu’s warm-open story on macOS from
-“fast sweep” to “no sweep,” and it reuses the delta contract unchanged.
-Linux has no equivalent (confirmed below), which means the sweep must be fast there
-regardless — the two investments are complements, not alternatives.
+This could replace a full warm sweep with scoped observations on eligible macOS roots,
+reusing the delta contract.
+The reviewed tools do not establish fdu’s end-to-end speed.
+Ordinary Linux inotify/fanotify queues provide no offline replay equivalent; specialized
+filesystem adapters are discussed below.
+The portable sweep must remain fast.
 
 **Scheduling and measurement details:** Rust threads get `QOS_CLASS_DEFAULT` (P-core
 eligible — fine), but a CLI wanting max throughput should set worker QoS to
@@ -779,8 +785,7 @@ settles how the journal-resume module should be built:
   `EventIdsWrapped` is declared but never checked; scheduling still uses the deprecated
   `FSEventStreamScheduleWithRunLoop` (with an open initialization-deadlock report,
   notify #942). The 9.0 RC line migrates to objc2 bindings (PR #726) but changes none of
-  this, and upstream has *never discussed* exposing event IDs or `sinceWhen` — no
-  rejected proposal, no in-flight work.
+  this. No supported replay contract was found in those reviewed versions.
   What notify does surface — `MustScanSubDirs`+dropped flags as `Flag::Rescan` — is
   exactly what fdu’s watch layer already consumes, so notify remains the right live
   backend; resume is simply outside its model.
@@ -793,11 +798,14 @@ settles how the journal-resume module should be built:
   Persisting a token before shutdown cannot protect it from a later purge.
   Test the stop/restart lifecycle and treat lost history as a sweep fallback; token
   ordering alone does not establish replay continuity.
-- **Binding decision:** follow the FSEvents plan’s narrow module using already-locked
-  `fsevent-sys` plus reviewed missing declarations.
-  Generated `objc2-core-services`, `objc2-core-foundation`, and `dispatch2` bindings are
-  the fallback if that surface becomes harder to maintain.
-  Recheck available bindings and the supply-chain policy at implementation time.
+  The notify 9.0 RC line removed this purge call; upgrading requires a separate MSRV and
+  dependency review, not a research-only lockfile change.
+- **Binding decision remains open:** the locked `fsevent-sys` plus narrow declarations
+  was the August low-dependency option.
+  The newer `fsevent-sys 5.2.0` deprecation now favors evaluating generated
+  `objc2-core-services`, `objc2-core-foundation`, and dispatch bindings before extending
+  it. See the September update for primary sources.
+  Recheck API coverage, MSRV, and the supply-chain policy at implementation time.
   Extended-data inode values may help attribution, but cannot alone prove a rename or
   replace fresh metadata observations.
 - **Reference configurations from production:** Watchman and git both run
@@ -911,11 +919,10 @@ its costs at scale are now quantified: ~1 KB kernel memory per watch, a default
 `max_user_watches` ceiling of ~1M that a 10M-file tree’s ~700k directories approaches,
 and a reported ~35 s recursive arming crawl at that size.
 Overflow in either backend maps to the existing `InvalidateSubtree` escalation.
-And the structural fact, now confirmed: **Linux has no persistent change journal** — no
-USN, no fseventsd; fanotify is live-only, and the only changed-since query anywhere is
-btrfs’s root-only `find-new` (generation numbers), which misses deletions.
-fdu’s snapshot + revalidation design is therefore not a workaround on Linux; it is the
-only possible architecture, and the parallel sweep is its hot path.
+Neither inotify nor fanotify supplies persistent offline replay for ordinary ext4/XFS
+roots.
+Without a continuously running observer, those roots require revalidation by scan.
+Specialized filesystem sources below are exceptions, not portable replacements.
 
 **Why no Linux journal exists, and the partial analogs that do.** The absence is policy,
 not oversight: a persistent change journal taxes every write so occasional readers can
@@ -946,9 +953,12 @@ precisely an ext4/XFS statement, and four analogs deserve the record:
   changelog forever, which is fdu’s architecture at HPC scale — and NetApp SnapDiff /
   OneFS changelists are the NAS equivalents.
   Useful precedent; none of it reaches local ext4.
-- **`STATX_CHANGE_COOKIE` (kernel ≥ 6.6)** is a per-inode change counter: it cannot beat
-  the sweep (still one statx per entry) but hardens fingerprints against timestamp
-  forgery and granularity races at zero cost inside the existing mask.
+- **Do not rely on `STATX_CHANGE_COOKIE`.** The earlier claim that Linux 6.6 exposed
+  this through statx was unsupported: the reviewed upstream
+  [UAPI header](https://github.com/torvalds/linux/blob/master/include/uapi/linux/stat.h)
+  and [statx manual](https://man7.org/linux/man-pages/man2/statx.2.html) do not expose
+  it. Per-inode version ideas would still require visiting entries and are not a
+  directory change feed; a future adapter needs a concrete, versioned API and tests.
 
 Rejected for the record: dm-era/LVM thin-snapshot deltas (block-level; mapping blocks to
 files requires parsing the filesystem), auditd or eBPF write-logging (a resident
@@ -1150,10 +1160,10 @@ fast-but-wrong is a non-goal; fast-and-labeled is a feature).
    structure already matches).
    Requires findings 1–2 fixed (allocation-free expectations, parallel sweep) to reach
    the floor.
-2. **Journal-assisted revalidation (macOS today; Windows later; never Linux).** FSEvents
-   `sinceWhen` resume reduces the sweep to changed directories plus the validation
-   ladder. Quiet-tree whole-command latency still includes replay and snapshot access; it
-   has not been measured as size-independent.
+2. **Journal-assisted revalidation (macOS first; other native adapters separately).**
+   FSEvents `sinceWhen` resume reduces the sweep to changed directories plus the
+   validation ladder. Quiet-tree whole-command latency still includes replay and snapshot
+   access; it has not been measured as size-independent.
    The snapshot format needs two new fields (event ID, volume UUID) reserved now so the
    format does not break when this lands.
    A timestamp query alone is insufficient: `find -mmin` is itself a full N-stat walk,
@@ -1959,7 +1969,7 @@ Linux and cloud:
 - [zfs diff](https://openzfs.github.io/openzfs-docs/man/master/8/zfs-diff.8.html) ·
   [btrfs send](https://btrfs.readthedocs.io/en/latest/btrfs-send.html) ·
   [Robinhood Policy Engine (Lustre changelog consumer)](https://github.com/cea-hpc/robinhood)
-  · [statx STATX_CHANGE_COOKIE](https://man7.org/linux/man-pages/man2/statx.2.html)
+  · [statx API](https://man7.org/linux/man-pages/man2/statx.2.html)
 - [btrfs find-new](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html) ·
   [dentry cache sizing incident](https://access.redhat.com/solutions/55818)
 

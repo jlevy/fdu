@@ -89,6 +89,34 @@ The operations below define behavior, not committed command syntax.
    the same answer. A separate refresh creates C; comparing A→C leaves A unchanged.
    Moving a label, for example `yesterday` from A to C, is an explicit operation.
 
+### Scope Defaults Belong in a Brief Skill
+
+The engine accepts explicit roots and coverage rules; it does not embed a list of
+folders to monitor.
+A brief disk-history skill should suggest a scope, resolve it for the
+host, show the selected roots, and save the user’s choice as profile data.
+These are workflow defaults, not automatic scanning or scheduling:
+
+| User’s question | Suggested scope |
+| --- | --- |
+| What grew in this project? | The selected project; offer associated external build/cache locations separately |
+| What grew in my home folder? | The user’s home, including hidden application and agent directories |
+| What used my development disk space? | Home plus the host’s actual temporary locations, deduplicated |
+| What else explains the volume’s space drop? | Offer additional explicit roots, such as applications or external build storage, with coverage gaps visible |
+
+Resolve aliases before recording scope: on macOS `/tmp` and `/private/tmp` normally name
+one location, while the per-user temporary directory may be elsewhere.
+Do not count overlapping roots twice or follow symlinks into unselected storage.
+For disk-pressure attribution, explain that excluding ignored build outputs can hide the
+cause; any choice to include them is explicit scan scope, not a global change to
+ordinary fdu defaults.
+Persist roots, exclusions, volume boundaries, retention, and any opted-in schedule so
+subsequent runs are reproducible without reinterpreting prose.
+The skill supplies suggestions and best practices; the engine owns validation,
+accounting, identity, and trust on every surface.
+Until the checkpoint API ships, the skill must describe this as proposed behavior and
+use only the documented interim report workflow, not invent checkpoint commands.
+
 ### Disk-pressure workflow: where did the space go?
 
 The motivating question is: **“Available space is falling; which directories grew or
