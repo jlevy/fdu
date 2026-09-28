@@ -501,6 +501,26 @@ impl ControlTable {
         ControlMatcher { table: self, path }
     }
 
+    /// The controls governing every child of `directory`, resolved once for all of them.
+    ///
+    /// [`ControlMatcher::is_ignored`] looks each ancestor up in the table for every entry
+    /// it classifies. A listing's children share those ancestors, so a caller classifying
+    /// a whole listing resolves them here once and matches each child against the chain
+    /// (H163). The chain owns its sources, so the table may change while it is held; it
+    /// then answers for the table as it was when resolved.
+    pub(crate) fn chain_for(&self, directory: &Path) -> ControlChain {
+        let mut governing = Vec::new();
+        if !self.by_directory.is_empty() {
+            let depth = gitignore::with_components(directory, None, |components| components.len());
+            for (up, ancestor) in directory.ancestors().enumerate() {
+                if let Some(source) = self.by_directory.get(ancestor) {
+                    governing.push((depth.saturating_sub(up), Arc::clone(source)));
+                }
+            }
+        }
+        ControlChain { governing }
+    }
+
     /// Evaluate complete ignore semantics without relying on retained parent facts.
     ///
     /// The index hot path uses [`ControlMatcher::is_ignored`] with the parent's stored
@@ -705,6 +725,35 @@ impl ControlMatcher<'_> {
             }
         }
         false
+    }
+}
+
+/// The controls that govern one directory's children, deepest first, with how many of the
+/// directory's path components lead to each one's own directory.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ControlChain {
+    governing: Vec<(usize, Arc<SharedContent>)>,
+}
+
+impl ControlChain {
+    /// Decide the child `name` of `directory`, the directory this chain was resolved for,
+    /// assuming that directory is not ignored.
+    ///
+    /// The answer is [`ControlMatcher::is_ignored`]'s for `directory/name`: the deepest
+    /// control with an opinion wins, each matching the path relative to its own directory.
+    pub(crate) fn is_ignored(&self, directory: &Path, name: &[u8], is_dir: bool) -> bool {
+        if self.governing.is_empty() {
+            return false;
+        }
+        gitignore::with_components(directory, Some(name), |components| {
+            self.governing
+                .iter()
+                .find_map(|(leading, source)| {
+                    let relative = components.get(*leading..).unwrap_or_default();
+                    source.matcher.matches_components(relative, is_dir)
+                })
+                .unwrap_or(false)
+        })
     }
 }
 
@@ -968,6 +1017,41 @@ mod tests {
             assert!(table.shared.is_empty(), "seed {seed}");
             assert!(table.is_vacant(), "seed {seed}");
         }
+    }
+
+    #[test]
+    fn a_resolved_chain_answers_as_the_per_entry_matcher_does() {
+        let mut table = ControlTable::default();
+        for (path, source) in [
+            (".gitignore", &b"*.log\n/build/\n!keep.log\nsub/*.tmp\n"[..]),
+            ("a/.gitignore", b"!*.log\n*.o\n/deep/**\n"),
+            ("a/b/.gitignore", b"*.log\n!x.o\n"),
+            ("c/.gitignore", b"# comment only\n"),
+        ] {
+            table.upsert(Path::new(path), source.to_vec()).expect("fixture control");
+        }
+        let directories =
+            ["", "a", "a/b", "a/b/c", "a/deep", "a/deep/er", "build", "c", "c/sub", "sub", "x/y"];
+        let names = ["x.log", "keep.log", "x.o", "y.o", "build", "deep", "t.tmp", "plain"];
+        for directory in directories {
+            let chain = table.chain_for(Path::new(directory));
+            for name in names {
+                for is_dir in [false, true] {
+                    let path = Path::new(directory).join(name);
+                    assert_eq!(
+                        chain.is_ignored(Path::new(directory), name.as_bytes(), is_dir),
+                        table.matcher_for(&path).is_ignored(is_dir),
+                        "{} (dir {is_dir})",
+                        path.display()
+                    );
+                }
+            }
+        }
+        assert!(!ControlTable::default().chain_for(Path::new("a")).is_ignored(
+            Path::new("a"),
+            b"x.log",
+            false
+        ));
     }
 
     #[test]

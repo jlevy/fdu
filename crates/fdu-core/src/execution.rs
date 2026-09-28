@@ -660,6 +660,9 @@ struct SummaryControls {
     /// The parent last looked up, and whether it is ignored. A listing's entries mostly
     /// arrive together, so this answers nearly all of them.
     parent: Option<(std::path::PathBuf, bool)>,
+    /// The controls governing the parent last classified under, resolved once for its
+    /// listing (H163) and dropped whenever the table changes.
+    chain: Option<(std::path::PathBuf, crate::control::ControlChain)>,
     /// Every entry no rule ignores, as the index's `unignored` partition.
     unignored: crate::index::RollUpScalars,
     /// The first control observation the table rejected, which fails the report as it
@@ -675,6 +678,7 @@ impl SummaryFold {
                 table: crate::control::ControlTable::with_limits(config.control_limits),
                 ignored_heads: std::collections::HashSet::new(),
                 parent: None,
+                chain: None,
                 unignored: crate::index::RollUpScalars::default(),
                 rejected: None,
             }),
@@ -716,12 +720,14 @@ impl SummaryFold {
             }
             crate::Op::ControlUpsert { path, source } => {
                 if let Some(controls) = &mut self.controls {
+                    controls.chain = None;
                     let admitted = controls.table.upsert(path, source.clone()).map(drop);
                     controls.record(admitted);
                 }
             }
             crate::Op::ControlRemove { path } => {
                 if let Some(controls) = &mut self.controls {
+                    controls.chain = None;
                     let removed = controls.table.remove(path).map(drop);
                     controls.record(removed);
                 }
@@ -787,6 +793,12 @@ impl SummaryControls {
         let parent_ignored = self.parent_ignored(parent);
         let ignored = if parent_ignored || self.table.is_empty() {
             parent_ignored
+        } else if let Some(name) = path.file_name() {
+            if !matches!(&self.chain, Some((cached, _)) if cached == parent) {
+                self.chain = Some((parent.to_path_buf(), self.table.chain_for(parent)));
+            }
+            let (_, chain) = self.chain.as_ref().expect("the chain was just resolved");
+            chain.is_ignored(parent, name.as_encoded_bytes(), kind.is_dir())
         } else {
             self.table.matcher_for(path).is_ignored(kind.is_dir())
         };

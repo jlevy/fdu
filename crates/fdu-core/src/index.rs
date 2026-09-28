@@ -1679,24 +1679,21 @@ impl DetachedIndexBuilder {
         });
 
         let parent_ignored = self.index.entry(parent).ignored;
-        let mut match_path =
-            (!parent_ignored && !self.index.controls.is_empty()).then(|| path.clone());
+        // Every child shares this directory's governing controls, so they are resolved
+        // once here rather than looked up per child (H163).
+        let chain = (!parent_ignored && !self.index.controls.is_empty())
+            .then(|| self.index.controls.chain_for(path));
         self.index.reserve_detached_children(parent, children.len());
         for child in children.drain(..) {
             let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
             crate::counters::bump(|counts| counts.upserts += 1);
             let ext_id = (kind == EntryKind::File)
                 .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
-            let (ignored, child_path) = if let Some(scratch) = &mut match_path {
-                scratch.push(&name);
-                let ignored = self.index.controls.matcher_for(scratch).is_ignored(kind.is_dir());
-                let child_path = kind.is_dir().then(|| scratch.clone());
-                let popped = scratch.pop();
-                debug_assert!(popped);
-                (ignored, child_path)
-            } else {
-                (parent_ignored, kind.is_dir().then(|| path.join(&name)))
+            let ignored = match &chain {
+                Some(chain) => chain.is_ignored(path, name.as_encoded_bytes(), kind.is_dir()),
+                None => parent_ignored,
             };
+            let child_path = kind.is_dir().then(|| path.join(&name));
             let child_id = self.index.alloc(Entry::new_detached(
                 NewEntry {
                     parent: Some(parent),
