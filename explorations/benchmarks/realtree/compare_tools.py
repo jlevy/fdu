@@ -197,14 +197,19 @@ CONTRACTS: Dict[str, ToolContract] = {
         ),
         version_argv=("{binary}", "--version"),
     ),
+    # pdu counts the root as depth 1, so `--max-depth 1` prints the root's total and
+    # nothing else. Depth 2 is the root and its children, the tree fdu's `--depth 1`
+    # renders. Results recorded before 2026-09-28 used depth 1 and so measured a total.
     "pdu": ToolContract(
         name="pdu",
         work_class="rendered-tree",
-        description="complete parallel scan, size roll-ups, and depth-one chart",
+        description=(
+            "complete parallel scan, size roll-ups, and a chart of the root's children"
+        ),
         argv=(
             "{binary}",
             "--max-depth",
-            "1",
+            "2",
             "--silent-errors",
             "{root}",
         ),

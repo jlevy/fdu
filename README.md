@@ -9,12 +9,15 @@ Key features:
 
 - **Speed:** Native Rust and native filesystem APIs make fdu fast.
   On a one-million-file macOS benchmark, fdu ran at about 9× the speed of standard `du`,
-  over 50% faster than [dust](https://github.com/bootandy/dust), and about 9% faster
-  than [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool,
-  which returns only a total.
-  On Linux, fdu’s summary mode is the fastest tool measured, while building its full
-  index takes about 20% longer than the fastest peers.
-  See [Speed](#speed) for the measurements and limits.
+  over 50% faster than [dust](https://github.com/bootandy/dust), 49% faster than
+  [pdu](https://github.com/KSXGitHub/parallel-disk-usage), and about 9% faster than
+  [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool, which
+  returns only a total.
+  On Linux, fdu’s summary mode beats pdu and
+  [diskus](https://github.com/sharkdp/diskus), the fastest peers there, but building its
+  full index takes about 20% longer than they do, and on source trees with many
+  `.gitignore` files its default command is still several times slower than pdu.
+  See [Speed](#speed) for the measurements, the limits, and the work under way.
 - **Text, file, and code analysis:** Rolls up content metrics, including lines, source
   code lines by language, and words, paragraphs, and pages for Markdown and text.
 - **Cached statistics:** Content metrics require reading files, so fdu caches them
@@ -427,7 +430,7 @@ snapshot on a one-shot run.
 | --- | --- | ---: | ---: | ---: | ---: |
 | **fdu** | reusable exact index and ten-row tree | **6.4 s** | baseline | **137k** | **0.47** |
 | dumac | allocated-byte total only | 6.9 s | **+9%** | 127k | 0.43 |
-| pdu | rendered tree | 9.2 s | +49% | 96k | 0.33 |
+| pdu | block total only (`--max-depth 1`)¹ | 9.2 s | +49% | 96k | 0.33 |
 | diskus | scalar total only | 9.3 s | +42% | 94k | 0.32 |
 | dua | scalar total only | 10.4 s | +61% | 84k | 0.29 |
 | gdu | rendered tree | 10.5 s | +67% | 83k | 0.28 |
@@ -439,7 +442,9 @@ snapshot on a one-shot run.
 Positive percentages mean extra elapsed time: +60% means 1.6× as long as the adjacent
 fdu run. Rates count regular files and their disk space, not file-content reads; `k`
 means thousands and GB is decimal.
-See the
+¹ pdu counts the root as depth 1, so `--max-depth 1` prints only the root’s total; these
+runs were recorded as a rendered tree before that was noticed.
+On a real source tree, pdu’s default depth took 6% longer than `--max-depth 1`. See the
 [full comparison](docs/project/reports/report-2026-09-26-fdu-live-tool-comparison.md)
 for methodology, memory use, confidence intervals, and exact results.
 
@@ -449,7 +454,7 @@ The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 202
 | Tool | Work returned | Median wall-clock time | Wall time vs. fdu summary |
 | --- | --- | ---: | ---: |
 | **fdu `--no-gitignore --view summary`** | exact totals, no index | **0.94 s** | baseline |
-| pdu | rendered tree | 1.02 s | +8% |
+| pdu | block total only (`--max-depth 1`)¹ | 1.02 s | +8% |
 | diskus | scalar total only | 1.04 s | +12% |
 | fdu | reusable exact index and ten-row tree | 1.25 s | — |
 | dust | allocated-byte total only | 1.67 s | +76% |
@@ -457,11 +462,31 @@ The same million-entry tree on a 4-vCPU virtualized ext4 host, same harness, 202
 
 fdu’s summary mode is the fastest tool measured, but building the reusable index takes
 about 23% longer than pdu and 21% longer than diskus there.
-A screen attributes that gap to glibc allocator contention between fdu’s walker threads
-and its index builder rather than to filesystem work; that hypothesis is still open.
+The gap is in user space, not the filesystem: all three issue the same system calls, and
+fdu spends less kernel time per entry.
+Under a preloaded jemalloc, fdu’s indexed tree ran level with pdu, so most of the gap is
+allocator traffic between fdu’s walker threads and its index builder; the rest is
+walkers waiting on a shared queue where pdu’s rayon workers steal work.
+Returning the builder’s buffers to the walkers that allocated them
+([#150](https://github.com/jlevy/fdu/pull/150)) cut this indexed tree by 10.6% but did
+not help on a real source tree, so it is not yet adopted.
 See the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
-for the evidence and the work under way.
+and
+[the pdu brief](docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
+
+This generated tree holds no `.gitignore` files, and that hid the larger cost on real
+repositories. On the Linux v6.12 source tree (92,474 entries, 358 `.gitignore` files),
+the default `fdu .` took 564 ms against 70 ms for pdu, while `fdu . --no-gitignore` took
+76 ms (screens): classifying entries against ignore rules ran on one thread and
+allocated 78 times per entry.
+Two changes since 0.2.0 cut that job to 211 ms and the default summary from 505 to 167
+ms (quiet paired probe runs,
+[exp-173](docs/project/experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md)
+and
+[exp-174](docs/project/experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md)).
+That is still three times pdu; the remainder is classification on one thread, and moving
+it onto the walker threads is the next change.
 Both tables measure fdu with its cache disabled, which is also what the default `fdu .`
 now does for a one-shot report: it used to write a snapshot that no later `fdu .` reads,
 about a fifth of a repeated run on this Linux tree and two fifths of a first one.
@@ -469,7 +494,10 @@ On macOS the saving is memory rather than time: about 100 MiB of peak RSS, with 
 change the benchmark could resolve.
 The default summary, which reads ignore rules, no longer falls back to the full index:
 it classifies each entry as it counts it.
-Its Linux time is not yet measured, so the table keeps the `--no-gitignore` figure.
+On this tree that made it 19% faster and cut its peak memory from 314 to 8.6 MiB, within
+2% of `--no-gitignore`
+([exp-187](docs/project/experiments/exp-187-linux-h161-ignore-aware-transient-summary-clears-wall-rss-ba.md));
+the table keeps the `--no-gitignore` figure the harness measured.
 The
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
 covers when the cache and the index pay on each platform.
@@ -497,8 +525,11 @@ for the paired interval, host regime, and resource qualification.
 
 ## Why
 
-Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
+Of fifteen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
 [ncdu](https://dev.yorhel.nl/ncdu), [dust](https://github.com/bootandy/dust),
+[pdu](https://github.com/KSXGitHub/parallel-disk-usage),
+[diskus](https://github.com/sharkdp/diskus),
+[dumac](https://github.com/healeycodes/dumac#readme),
 [dua](https://github.com/Byron/dua-cli), [gdu](https://github.com/dundee/gdu),
 [dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
 [fsearch](https://github.com/cboxdoerfer/fsearch),
@@ -510,7 +541,9 @@ None of them is a native library with a live change feed that a Rust or Python p
 can hold. That combination is what a live file browser needs.
 
 The survey is in
-[the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
+[the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md);
+[the pdu brief](docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)
+reads pdu, diskus, and dumac at source level and maps pdu’s options to fdu’s.
 
 ## Other Ways to Install
 
