@@ -3,13 +3,17 @@ type: is
 id: is-01m3js06hdg5pgnqabfsfsnv6d
 title: Enforce shared human size formatting across CLI outputs
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-09-28T01:10:21.472Z
-updated_at: 2026-09-28T01:12:28.641Z
+updated_at: 2026-09-28T01:50:05.372Z
+closed_at: 2026-09-28T01:50:05.371Z
+close_reason: Shared size formatter and color roles applied to cache/progress/CLI/Python; exact structured bytes preserved;111 installed checks passed.
+resolution: null
+duplicate_of: null
 ---
 
 ## Notes

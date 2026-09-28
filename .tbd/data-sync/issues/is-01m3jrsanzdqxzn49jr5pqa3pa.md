@@ -3,13 +3,17 @@ type: is
 id: is-01m3jrsanzdqxzn49jr5pqa3pa
 title: Show delayed low-overhead throughput in progress
 kind: task
-status: in_progress
+status: closed
 priority: 2
-version: 3
+version: 4
 labels: []
 dependencies: []
 created_at: 2026-09-28T01:06:36.350Z
-updated_at: 2026-09-28T01:32:02.574Z
+updated_at: 2026-09-28T01:50:04.810Z
+closed_at: 2026-09-28T01:50:04.809Z
+close_reason: Implemented in0433bcc0;100CLI,198goldens,111 installed checks and6 livePTY checks passed;100ms redraw and >5s binaryGiB/s rates verified.
+resolution: null
+duplicate_of: null
 ---
 
 ## Notes
