@@ -3,13 +3,17 @@ type: is
 id: is-01m3mcx3b2zhmeyf7cs036w8hk
 title: Scrub host names from tbd bead records and stop recording them
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-09-28T16:17:25.857Z
-updated_at: 2026-09-28T16:21:20.228Z
+updated_at: 2026-09-28T19:57:58.021Z
+closed_at: 2026-09-28T19:57:58.019Z
+close_reason: "Not needed: the user considers tbd's <harness>@<host> claimer names normal functionality (2026-09-28). Local session names restored to their defaults; the 243 already-scrubbed delegate values are left as they are; the AGENTS.md note is being dropped from #153."
+resolution: null
+duplicate_of: null
 ---
 tbd start records delegate as <agent>@<host>; ~230 records on the public tbd-sync branch carry this machine's host name. User approved removal 2026-09-28. Stop new ones (claim with tbd start --as <name> / configure identity), scrub current records with a forward commit, and decide separately on rewriting tbd-sync history (other replicas would re-push old history).
 
