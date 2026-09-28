@@ -112,11 +112,11 @@ claiming either population.
 Uncolored bars retain their plain block glyphs.
 
 Each tree has at most one remainder line below its selected root.
-Its annotation is gray; percentages and sizes use the same styling as ordinary rows,
-including gray shares below 1%, gray zero sizes, and bold sizes of at least 1 GiB. It
-uses the same bar, percentage, and size columns as tree rows; its name column reads
-`… and N more files`. The bar and percentage show the combined hidden share of the
-selected root.
+Only its `… and` prefix is gray; the file count uses normal foreground, and percentages
+and sizes use the same styling as ordinary rows, including gray shares below 1%, gray
+zero sizes, and bold sizes of at least 1 GiB. It uses the same bar, percentage, and size
+columns as tree rows; its name column reads `… and N more files`. The bar and percentage
+show the combined hidden share of the selected root.
 
 ```text
 █░░░░░░░░░    12%     1.2 MiB  … and 12,345 more files
@@ -181,8 +181,9 @@ and other discovery restrictions still apply.
 ## Progress Timer
 
 Transient progress and `perf:` use the same elapsed-time formatter.
-Durations of one second or more stay in seconds with two decimal places, such as
-`151.33 s`; there is no separate minute or hour notation.
+A gray `·` separates progress facts from elapsed time, including between the total size
+and the timer. Durations of one second or more stay in seconds with two decimal places,
+such as `151.33 s`; there is no separate minute or hour notation.
 Subsecond durations use the same nanosecond, microsecond, or millisecond formatting on
 both surfaces.
 

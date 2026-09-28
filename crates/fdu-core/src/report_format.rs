@@ -25,8 +25,8 @@
 //!
 //! Tree columns are bar, root percentage, size, then indented name. One remainder
 //! row per tree uses those same columns and quantity styles for unlisted root branches.
-//! Its gray annotation names the recursive hidden file count. That usage is already
-//! included in directory totals.
+//! Its `… and` prefix is gray; the recursive hidden file count uses normal foreground.
+//! That usage is already included in directory totals.
 //! Unknown coverage must show unknown size and no fabricated bar or percentage.
 //! Keep rerun flags out of rows: collect applicable remedies once per report in
 //! `report_epilogue`.
@@ -1905,11 +1905,11 @@ fn render_tree_remainder(
         None => (" ".repeat(bar_size), detail(&format!("{:>5}", "—"), color)),
     };
     let files = remainder.files.map_or_else(
-        || "more files (count unknown)".to_owned(),
+        || format!("more files {}", detail("(count unknown)", color)),
         |files| format!("{} more {}", human_count(files), plural(files, "file", "files")),
     );
     let indent = "  ".repeat(depth);
-    let note = detail(&format!("{indent}… and {files}"), color);
+    let note = format!("{} {files}", detail(&format!("{indent}… and"), color));
     let bar_prefix = if bar_size == 0 { String::new() } else { format!("{usage_bar}  ") };
     let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {note}");
 }

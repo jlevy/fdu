@@ -506,7 +506,7 @@ mod tests {
         assert_eq!(frames[0], "", "the first bytes are the erase sequence");
         assert!(
             frames[1].starts_with(&format!(
-                "⠋ {ROOT}  Summarizing           0 files ·         1 dirs ·      0 B  "
+                "⠋ {ROOT}  Summarizing           0 files ·         1 dirs ·      0 B · "
             )),
             "{:?}",
             frames[1]
