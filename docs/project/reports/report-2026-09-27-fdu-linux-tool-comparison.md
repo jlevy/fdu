@@ -1,6 +1,6 @@
 # fdu Live Uncached Tool Comparison on Linux
 
-**Date:** 2026-09-27
+**Date:** 2026-09-27, refreshed 2026-09-28 on the integrated stack
 
 **Status:** Exploratory local performance evidence from a quiet virtualized host
 
@@ -12,14 +12,22 @@ the same generated 1,000,001-entry tree, the same harness, and the same adjacent
 schedule. Every Linux peer the harness has an adapter for was measured.
 Unlike the macOS run, both matrices held the quiet regime for every sample.
 
-The two fdu jobs rank differently here, which is the main finding.
+The tables below are the 2026-09-28 refresh, which measured the integrated stack:
+[#137](https://github.com/jlevy/fdu/pull/137)’s multi-view reuse on top of the merged
+code analysis and presentation work, plus this branch’s H156, built at `7acface5`. The
+first run on 2026-09-27 measured `main` at `4c4917f`; its figures are kept under
+[First Run](#first-run) for comparison.
+
+The two fdu jobs rank differently here, which is the main finding, and the refresh did
+not change it.
 
 - **Summary mode is the fastest tool measured.** `fdu --no-gitignore --view summary`
-  answered in a **0.97-second median** (907k files/s), 11% ahead of pdu and 16% ahead of
-  diskus.
+  answered in a **0.94-second median** (926k files/s). pdu took 8% longer and diskus 12%
+  longer.
 - **The indexed tree is not.** A fresh process building the reusable exact index and a
-  ten-row tree took **1.38 seconds** (635k files/s). pdu and diskus were 19% and 18%
-  faster. Every other peer was slower, from dust at +25% to dua at +190%.
+  ten-row tree took **1.25 seconds** (699k files/s). pdu and diskus took 21% and 17%
+  less time, so fdu takes about 23% longer than pdu.
+  Every other peer was slower, from dust at +32% to dua at +212%.
 
 The indexed-tree gap is in user space, not the filesystem.
 fdu, pdu, and diskus issue the same system calls: one `statx` per entry, two
@@ -32,27 +40,27 @@ two that were not.
 
 | Tool | Work class | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **fdu** | indexed tree | **1.38 s** | baseline | **635k** | **2.2** | — | 318.6 MiB |
-| pdu | rendered tree | 1.12 s | −19% | 783k | 2.7 | −24% to −17% | 3.8 MiB |
-| diskus | total only | 1.12 s | −18% | 780k | 2.7 | −20% to −17% | 6.0 MiB |
-| dust | allocated total | 1.69 s | +25% | 517k | 1.8 | +23% to +27% | 446.1 MiB |
-| gdu | rendered tree | 2.67 s | +92% | 328k | 1.1 | +85% to +94% | 565.8 MiB |
-| GNU `du` | total only | 2.67 s | +98% | 328k | 1.1 | +95% to +101% | 1.9 MiB |
-| ncdu | indexed tree | 2.92 s | +109% | 300k | 1.0 | +105% to +115% | 2.0 MiB |
-| dua | total only | 3.95 s | +190% | 221k | 0.76 | +185% to +196% | 14.1 MiB |
+| **fdu** | indexed tree | **1.25 s** | baseline | **699k** | **2.4** | — | 322.0 MiB |
+| pdu | rendered tree | 1.02 s | −21% | 860k | 2.9 | −23% to −19% | 3.8 MiB |
+| diskus | total only | 1.03 s | −17% | 846k | 2.9 | −20% to −16% | 6.0 MiB |
+| dust | allocated total | 1.63 s | +32% | 537k | 1.8 | +27% to +34% | 446.1 MiB |
+| GNU `du` | total only | 2.53 s | +105% | 346k | 1.2 | +100% to +107% | 1.9 MiB |
+| gdu | rendered tree | 2.57 s | +110% | 341k | 1.2 | +103% to +118% | 565.1 MiB |
+| ncdu | indexed tree | 2.72 s | +120% | 321k | 1.1 | +112% to +123% | 2.0 MiB |
+| dua | total only | 3.82 s | +212% | 229k | 0.78 | +195% to +220% | 14.1 MiB |
 
 ### Summary mode
 
 | Tool | Work class | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **fdu** | transient summary | **0.97 s** | baseline | **907k** | **3.1** | — | 9.7 MiB |
-| pdu | rendered tree | 1.09 s | +11% | 803k | 2.7 | +8% to +13% | 3.8 MiB |
-| diskus | total only | 1.10 s | +16% | 795k | 2.7 | +13% to +17% | 6.0 MiB |
-| dust | allocated total | 1.70 s | +77% | 516k | 1.8 | +71% to +81% | 446.2 MiB |
-| gdu | rendered tree | 2.62 s | +166% | 334k | 1.1 | +166% to +175% | 573.2 MiB |
-| GNU `du` | total only | 2.67 s | +174% | 328k | 1.1 | +157% to +186% | 1.9 MiB |
-| ncdu | indexed tree | 2.85 s | +200% | 307k | 1.0 | +194% to +203% | 2.0 MiB |
-| dua | total only | 3.96 s | +299% | 221k | 0.75 | +290% to +319% | 14.1 MiB |
+| **fdu** | transient summary | **0.94 s** | baseline | **926k** | **3.2** | — | 9.7 MiB |
+| pdu | rendered tree | 1.02 s | +8% | 860k | 2.9 | +5% to +14% | 3.8 MiB |
+| diskus | total only | 1.04 s | +12% | 840k | 2.9 | +6% to +13% | 6.0 MiB |
+| dust | allocated total | 1.67 s | +76% | 523k | 1.8 | +67% to +81% | 446.2 MiB |
+| GNU `du` | total only | 2.56 s | +162% | 342k | 1.2 | +160% to +172% | 1.9 MiB |
+| gdu | rendered tree | 2.66 s | +185% | 329k | 1.1 | +179% to +187% | 550.1 MiB |
+| ncdu | indexed tree | 2.75 s | +183% | 318k | 1.1 | +180% to +206% | 2.0 MiB |
+| dua | total only | 3.85 s | +303% | 227k | 0.78 | +281% to +324% | 14.1 MiB |
 
 Positive percentages mean the peer took more wall time than its immediately adjacent fdu
 run. Files/s divides the subject’s 875,000 regular files by median wall time; GB/s
@@ -77,20 +85,22 @@ summary mode were instead measured separately by GNU `time`, a small C launcher 
 own floor is under 2 MiB, as the median of three runs each.
 Values above the floor (fdu’s index, dust, gdu) come from the harness.
 
-fdu’s indexed run holds 319 MiB for a million entries: the retained index is the
-product. Summary mode retains nothing and stays under 10 MiB.
+fdu’s indexed run holds 322 MiB for a million entries: the retained index is the
+product. Summary mode retains nothing and stays under 10 MiB (9.7 MiB, by GNU `time`, on
+the refreshed build).
 
 ## Where the Indexed Gap Comes From
 
+This analysis was made on the first run’s binary; the refresh did not repeat it.
 Summary mode and the indexed tree walk the same tree with the same walker, so their
 difference is the index.
 The indexed run spends 0.4 to 0.5 CPU-seconds more in user time and keeps its four cores
 less busy: 3.3 cores on average against 3.8.
 
-**The allocator is most of it.** Running the unchanged release binary under `LD_PRELOAD`
-with mimalloc, jemalloc, or tcmalloc closed the whole gap: the indexed tree went from
-1.39 to 1.11–1.13 seconds, level with pdu’s 1.10 in the same `hyperfine` session, and
-summary mode went from 0.98 to 0.82 seconds.
+**A screen puts most of it in the allocator.** Running the unchanged release binary
+under `LD_PRELOAD` with mimalloc, jemalloc, or tcmalloc closed the whole gap: the
+indexed tree went from 1.39 to 1.11–1.13 seconds, level with pdu’s 1.10 in the same
+`hyperfine` session, and summary mode went from 0.98 to 0.82 seconds.
 Forcing glibc onto a single arena (`glibc.malloc.arena_max=1`) made the indexed run 3.3
 seconds, so the cost is contention between arenas, not allocation volume alone.
 
@@ -128,6 +138,10 @@ least 3% better *and* a 95% interval entirely below zero.
 The kept change removes the 95 ms teardown from every large one-shot report and from the
 join a default `fdu PATH` waits on; `cold-scan-index`, which frees its index inside the
 timed region, was the placebo and did not move.
+On the integrated stack, a paired screen of the builds with and without H156 (#137 at
+`326b014b` against `7acface5`, ten runs per arm in both orders) moved the indexed tree
+−7.3% and the default `fdu . --cache off` −7.0%; summary mode, which builds no index,
+moved +0.5%.
 
 H157 cut allocations from 7.0 million to 4.3 million and cleared the rule on the product
 job, but not on the probe job it named beforehand, so it is not kept; a rerun with the
@@ -145,8 +159,8 @@ freeing walker-allocated child lists and path keys.
 
 ## Measurement Protocol
 
-1. Build one release binary from the merged `main` at `4c4917f`, and copy it outside the
-   measured tree.
+1. Build one release binary, and copy it outside the measured tree: the merged `main` at
+   `4c4917f` for the first run, and the integrated stack at `7acface5` for the refresh.
 2. Generate the committed `balanced` recipe at its 1,000,000-entry scale point, seed
    `fdu-balanced-v1`, and verify it against its manifest.
 3. Run two matrices, one anchored on fdu’s indexed-tree contract and one on its
@@ -164,7 +178,9 @@ Builds used a separate target directory, and nothing else ran during measurement
 - **Subject.** The committed `balanced` recipe, seed `fdu-balanced-v1`: 875,000 regular
   files and 125,001 directories, semantic digest `4bbd97c0d3d4e2ad` — the same digest as
   the macOS subject.
-- **Binary.** `fdu 0.1.0-dev+g4c4917f4f.dirty`, SHA-256
+- **Binary.** Refresh: `fdu 0.1.0-dev+g7acface52`, SHA-256
+  `9e0e140ed6b7f63a00929723ab6777791093192c0d22653d92cf829904c98cf2`. First run:
+  `fdu 0.1.0-dev+g4c4917f4f.dirty`, SHA-256
   `22572dd84b850ce17bb89c4f48a91a36b9dcc31e76b60891a2afbfdfe6ad45af`. The `.dirty`
   suffix comes from `.tbd/config.yml`, which `tbd` rewrote before the build; no source
   file differed from `4c4917f`.
@@ -174,7 +190,7 @@ Builds used a separate target directory, and nothing else ran during measurement
 - **Schedule.** Seven peers per matrix, 3 warm-ups per tool, 12 timed adjacent pairs per
   peer: 210 tool processes per matrix under a fixed-N stopping rule.
 - **Correctness.** Zero invalid timed samples, semantic mismatches, or summary-oracle
-  mismatches in either matrix; no baseline drift and no tree mutation.
+  mismatches in any of the four matrices; no baseline drift and no tree mutation.
 - **Host.** 4-vCPU Intel Xeon at 2.1 GHz, 15.7 GiB, Linux 6.18.44 in a Firecracker KVM
   guest, ext4 on a virtio block device.
 - **Regime.** Quiet: every sample was taken with the host under 25% CPU busy, measured
@@ -183,35 +199,44 @@ Builds used a separate target directory, and nothing else ran during measurement
   three full-tree warm-ups per tool.
 
 The exact commands, versions, hashes, host facts, raw paired samples, and confidence
-intervals are in the
-[indexed-tree result](fdu-linux-tool-comparison-result-2026-09-27-indexed.json) and the
+intervals are in the refresh’s
+[indexed-tree result](fdu-linux-tool-comparison-result-2026-09-28-indexed.json) and
 compressed
-[summary-mode result](fdu-linux-tool-comparison-result-2026-09-27-summary.json.gz),
-whose per-sample scan-policy traces make it 4.5 MB uncompressed.
+[summary-mode result](fdu-linux-tool-comparison-result-2026-09-28-summary.json.gz), and
+the first run’s
+[indexed-tree result](fdu-linux-tool-comparison-result-2026-09-27-indexed.json) and
+[summary-mode result](fdu-linux-tool-comparison-result-2026-09-27-summary.json.gz).
+The summary results carry per-sample scan-policy traces, 4.5 MB uncompressed.
+
+### First Run
+
+The 2026-09-27 run measured `main` at `4c4917f` under the same protocol.
+Its peers ran slower than in the refresh, pdu at 1.12 s against 1.02 s, so host state
+moved between the two runs as well as fdu’s code; the rankings are the same.
+
+| Job | fdu | pdu | diskus | dust | Slowest peer |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Indexed tree | 1.38 s | −19% | −18% | +25% | dua +190% |
+| Summary mode | 0.97 s | +11% | +16% | +77% | dua +299% |
 
 ## Interpretation and Limits
 
 Both matrices ran fdu with `--cache off`, as the macOS comparison did.
-The default `fdu .` then also wrote a metadata snapshot, which added about 0.26 s at
-this size (a later change stopped that write for one-shot reports: H160, exp-163); the
+The default `fdu .` on this build then also wrote a metadata snapshot.
+On the refreshed build that added 0.24 s when an earlier run’s snapshot already existed
+(1.51 against 1.27 s) and about 0.5 s on a first run into an empty cache directory,
+where the kernel must allocate the pages.
+A later change stopped that write for one-shot reports (H160, exp-163). The
 [cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
 measures that cost, explains the macOS and Linux rankings from their CPU split, and
 proposes defaults. Summary mode ran with `--no-gitignore` because reading ignore rules
 makes the planner keep the full index; without the flag, a screen of the same tree took
 1.25 s with the cache off.
 
-The matrices measured the release built from `main` at `4c4917f`. The code-analysis,
-presentation, and tree-accounting work (#133, #136) and the multi-view report reuse
-(#137) landed on this branch afterwards.
-A later screen compared that binary with the integrated build (`096e9cd6`) on the same
-tree. It used ten runs per arm in both orders, with the cache off and identical totals.
-Summary mode moved −0.4% (935 to 931 ms), inside its noise.
-The indexed tree moved −8.4% (1.37 to 1.26 s). H156 accounts for about four points of
-that
-([exp-160](../experiments/exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)),
-and the rest is unattributed.
-That puts the indexed-tree gap to pdu and diskus nearer 12% than 19% on the current
-build. The matrices were not re-run, so the tables keep their measured figures.
+A screen made before the refresh compared the first run’s binary with an integrated
+build and suggested the indexed-tree gap to pdu and diskus had narrowed to about 12%.
+The refresh measured every peer again in the same matrices and found them faster too, so
+the gap held at 21% and 17%.
 
 A virtualized host is the common deployment case for Linux and a valid regime for warm
 measurements; it cannot say anything about device latency, so no cold claim is made

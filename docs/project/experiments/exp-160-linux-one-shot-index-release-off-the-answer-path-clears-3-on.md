@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /opt/fdu-bench/results/perf/run-linux-release-index.json
+    run_artifact: docs/project/experiments/evidence/exp-160/run.json
   results:
     - job: cold-scan-index
       start_state: cold
@@ -435,7 +435,8 @@ Quiet 12-pair probe run on the generated `balanced` 1,000,001-entry tree.
 The product job the headline comparison measures,
 `fdu --cache off --depth 1 --limit 10`, has no probe job.
 The live tool harness paired the two CLI builds on the same tree, quiet, 12 adjacent
-pairs: −4.31% [−5.99%, −3.25%], peak RSS within 1%.
+pairs: −4.31% [−5.99%, −3.25%], peak RSS within 1%. That run is committed as
+[evidence/exp-160/cli-run.json](evidence/exp-160/cli-run.json), beside the probe run.
 
 ## Decision
 

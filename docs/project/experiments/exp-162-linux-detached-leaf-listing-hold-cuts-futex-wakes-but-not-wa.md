@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /opt/fdu-bench/results/perf/run-linux-detached-hold.json
+    run_artifact: docs/project/experiments/evidence/exp-162/run.json
   results:
     - job: cold-scan-index
       start_state: cold
@@ -318,6 +318,12 @@ the H156 + H157 build:
 
 - `cold-scan-index`: +0.88% [−0.17%, +1.94%].
 - `default-tree-first`: +1.05% [−5.92%, +12.68%].
+
+The product CLI job, `fdu --cache off --depth 1 --limit 10`, paired the H156 + H157 +
+H158 build against the H156 build in the live tool harness, quiet, 12 adjacent pairs:
+−4.30% [−5.52%, −1.38%], against −3.71% for H157 alone, so H158 adds nothing
+distinguishable on the product job either.
+The run is [evidence/exp-161/cli-run.json](evidence/exp-161/cli-run.json).
 
 ## Decision
 

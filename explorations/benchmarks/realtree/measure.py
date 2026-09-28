@@ -1737,12 +1737,15 @@ def _spawn(
     timed_out = False
     exit_code: Optional[int] = None
     usage = None
-    rss_floor = _inherited_rss_floor_bytes()
 
     with tempfile.TemporaryDirectory(prefix="fdu-realtree-") as scratch:
         out_path = Path(scratch) / "stdout"
         err_path = Path(scratch) / "stderr"
         with out_path.open("xb") as out, err_path.open("xb") as err:
+            # Read last, just before the fork: the child inherits this process's high-water
+            # mark as its own starting peak, so growth between an earlier read and the
+            # fork would slip past the floor.
+            rss_floor = _inherited_rss_floor_bytes()
             start = time.perf_counter_ns()
             process = subprocess.Popen(
                 list(argv),
