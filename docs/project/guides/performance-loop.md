@@ -772,8 +772,9 @@ cost on [#120](https://github.com/jlevy/fdu/pull/120); H152 and H153 are the exa
 `content-query` oracle and shared-resolution keep; H154 and H155 are the Linux
 replication and post-H153 profile follow-ups; H156–H159 are the Linux tool comparison of
 [2026-09-27](../reports/report-2026-09-27-fdu-linux-tool-comparison.md); H160 is the
-cache-policy default that followed it; next free unused id is H161) so no id ever means
-two things. Each is stated so it can be wrong, with the metric that would show it.
+cache-policy default that followed it; H161 is the ignore-aware transient summary; next
+free unused id is H162) so no id ever means two things.
+Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
 The 2026-09-18 honesty pass (`fdu-p0nc`) reconciled this table with the engine that
@@ -870,6 +871,7 @@ engine. Revisit a prior result only when that difference touches its mechanism.
 | H158 | The detached walker publishes after every chunk, even one that makes nothing claimable, so the parked consumer is woken on nearly every send (105,732 `futex` calls per million entries). Holding leaf-only chunks until a batch fills keeps parent-first causality and removes the wakes. | `cold-scan-index` wall down at least 3% with the interval below zero | **Rejected** (exp-162, quiet). +0.88% [−0.17%, +1.94%] with `futex` calls down to 17,938. The wakes are real but off the critical path on four cores. |
 | H159 | On Linux the remaining index-tier gap to pdu and diskus is glibc arena contention from cross-thread frees in the detached builder, not allocation volume. A different allocator, or a builder whose buffers are freed on the thread that allocated them, closes it. Not H74’s index result, which predates the detached builder. | Screen: CLI indexed tree and transient summary under `LD_PRELOAD` mimalloc, jemalloc, tcmalloc. Keep only a dependency-free structural change measured under the accept rule | **Open** (screen, 2026-09-27). Unchanged binary under `LD_PRELOAD`: indexed 1.39 → 1.11–1.13 s, summary 0.98 → 0.82 s; `glibc.malloc.arena_max=1` 3.3 s. Context-switch profile names consumer frees of walker-owned child lists and directory path keys. `fdu-578e`. |
 | H160 | A one-shot metadata report never reads the snapshot (H108), and no later one-shot report reads what it writes, yet under `auto` it encodes, checksums, writes, and syncs a full image every run. Letting `auto` decide per analysis, and skip persistence for one-shot metadata reports, removes that work without changing any answer; `--cache on` keeps it for callers who want a snapshot. | `default-tree` wall down at least 3% with the interval below zero; `cold-scan-index`, which writes nothing on either arm, includes zero | **Accepted** (exp-163, quiet). `default-tree` −13.81% [−15.99%, −10.65%]; `default-tree-first` −32.74% [−33.57%, −24.41%]; placebo `cold-scan-index` −1.32% [−3.54%, +1.25%]. CLI screen: `fdu .` 1.51 → 1.25 s, equal to `--cache off`. Unmeasured on macOS, where the brief estimates 0.3–0.5 s. |
+| H161 | The default `--view summary` retains the full index only because the transient reducer kept no control table and so could not classify the ignored share (fdu-elnn): 0.32 s and 309 MiB on the million-entry Linux tree, which holds no `.gitignore`. Classifying each entry on the reducer’s one consumer as the detached builder does — every listing delivered whole with its control first, and only the heads of ignored subtrees kept — answers exactly what the index answers while retaining none of it. | Pre-registered 2026-09-28, before any timing. **macOS**: `aggregate-summary`, bare (controls on), against `a5c0ab46`, 12 interleaved pairs on `metabrowser-clone` (59 `.gitignore`) and `rustup-toolchains` (none): primary peak RSS down at least 50% with the interval below zero; wall non-inferior, the interval’s upper bound under +3%; placebo, both arms `--no-controls`, includes zero. **Linux** (deciding for wall): the same job, quiet, `linux-v6.12` deciding and balanced-1M screening; wall −3% with the interval below zero and peak RSS down at least 50%; placebos both arms `--no-controls` and `default-tree` | **Open**: macOS pending, Linux pending (no host). The differential test compares the whole transient report with the indexed one over negation, nesting, self-ignoring and non-file control files, rules below ignored directories, line-limit and budget refusals, and an unreadable control file, across worker counts, batch sizes, and orders. `fdu-1ovb`. |
 
 The ordered pickup — metric, subject, what would falsify, what not to retry — is
 [the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18). Quiet
@@ -1021,11 +1023,15 @@ reasoning.
 ### The aggregate tier
 
 `--job aggregate-summary` measures `fdu --view summary` as shipped: five exact tallies
-and no snapshot. By default that request observes `.gitignore`, so it retains the index
-to classify entries and is *not* the transient aggregate plan.
-The transient plan — no retained index, and the tier the floor report puts closest to
-the machine floor at 1.20× synthetic and 1.59× on `/usr` — is reached with the probe’s
-`--no-controls`, its spelling of `--no-gitignore`, passed in the variant:
+and no snapshot. By default that request observes `.gitignore`. Since `fdu-1ovb` the
+transient aggregate plan answers it anyway: the reducer keeps the control table and
+classifies each entry as it folds it, so a bare run of a revision with that change
+measures the transient plan with classification, and a bare run of an earlier revision
+measures the index it used to retain for the ignored share.
+The transient plan without classification — no retained index, no control file read, and
+the tier the floor report puts closest to the machine floor at 1.20× synthetic and 1.59×
+on `/usr` — is reached with the probe’s `--no-controls`, its spelling of
+`--no-gitignore`, passed in the variant:
 
 ```shell
 PYTHONPATH=explorations uv run --project explorations/benchmarks --frozen \
@@ -1038,7 +1044,8 @@ PYTHONPATH=explorations uv run --project explorations/benchmarks --frozen \
 
 `make perf-compare` cannot express that: `CONTROL` can carry the flag, but the candidate
 variant is fixed to the bare probe, so a Make-driven `aggregate-summary` round measures
-the indexed plan for the candidate.
+the observing plan for the candidate, which is the index before `fdu-1ovb` and the
+classifying transient plan after it.
 The floor scoreboard’s `aggregate` instrument passes `--no-controls` itself, so a floor
 round measures the transient plan.
 An aggregate-tier experiment recorded before `.gitignore` became the default measured

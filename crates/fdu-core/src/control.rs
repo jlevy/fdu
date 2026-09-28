@@ -725,6 +725,18 @@ pub fn is_control_file(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == CONTROL_FILE_NAME)
 }
 
+/// The control file a walk error under `root` names, relative to it, when there is one.
+///
+/// A control file the walk could not read leaves the rules it holds unknown, so the
+/// ignored split it governs cannot be verified. The index and the transient summary both
+/// ask this of the same normalized walk errors, so they withhold the same shares.
+pub(crate) fn unreadable_control(root: &Path, error: &crate::Error) -> Option<PathBuf> {
+    let crate::Error::Io { .. } = error else {
+        return None;
+    };
+    crate::Issue::from_error_under(root, error).path.filter(|path| is_control_file(path))
+}
+
 fn control_directory(path: &Path) -> crate::Result<&Path> {
     if !is_control_file(path) {
         return Err(crate::Error::InvalidControlPath(path.to_path_buf()));

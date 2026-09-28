@@ -454,10 +454,11 @@ Views are projections over one consistent scanned state.
 The reusable form of that state is the in-memory index: requesting more views never adds
 filesystem work, and two reports over the same index cannot disagree about when the tree
 was observed. For a one-shot request that proves no snapshot read or rewrite, live
-session, second view, filter, ignore classification, or later query can consume
-hierarchy, an internal execution planner may retain an exact aggregate instead.
-Today that is an unfiltered `--no-gitignore --view summary`; a default summary reports
-its ignored share, which needs the index, so it retains the full index.
+session, second view, filter, or later query can consume hierarchy, an internal
+execution planner may retain an exact aggregate instead.
+Today that is an unfiltered `--view summary`, with or without `--no-gitignore`: its
+ignored share needs each entry classified as it is counted, which takes the rules and
+the heads of ignored subtrees rather than the index.
 It derives that decision from the complete request, exposes no fast-mode flag, and falls
 closed to the full index when any requirement is unproved.
 
