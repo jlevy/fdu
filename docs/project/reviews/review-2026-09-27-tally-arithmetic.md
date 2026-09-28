@@ -220,7 +220,7 @@ The focused macOS test passes; final Windows results and the disposition of `fdu
 are recorded in the
 [PR review](https://github.com/jlevy/fdu/pull/136#issuecomment-5860865321).
 
-## Presentation Follow-Up
+## Earlier Presentation Follow-Up
 
 The subsequent presentation pass (`593cea57`) keeps remainder quantities in the same
 numeric roles as ordinary rows; only the “more files” annotation is gray.
@@ -246,7 +246,7 @@ Minimum-Rust, wheel and source-package installation, concurrency, documentation,
 2,267 path-independence cases, and 72 release tests passed.
 CLI/Python parity matched all 53 classified differences.
 
-The current parity record comes from
+That presentation pass used the parity record from
 [Linux CI run 36361381366](https://github.com/jlevy/fdu/actions/runs/36361381366),
 producer `345278eb4cde8b3ac03850bab240eae96ea0c036`, with SHA-256
 `1b02283b9e1eadcbfd142ad1345f0f7ef38609273f6a2bb65d9a8436d98b9a6f`. Its changes add the
@@ -254,6 +254,50 @@ exact entry-classification facts and corresponding hunk offsets.
 The later commit corrects a test assertion and adopts this artifact; it does not change
 the report facts. Final installed-candidate acceptance and platform CI results are
 recorded in [PR #136](https://github.com/jlevy/fdu/pull/136).
+
+## Shared Formatting and Live Rates
+
+The final presentation follow-up (`0433bcc0`) supersedes the timer and remainder-label
+styling above. Only `… and` is gray; the following file count uses the ordinary
+foreground. Progress uses seconds with one decimal, while final performance retains its
+more precise duration.
+A middle dot separates the size and timer.
+
+Live rates appear only after five seconds and only when walk facts exist.
+Progress redraws at most every 100 ms and drops the optional rates first on narrow
+terminals. Progress and final performance share integer throughput arithmetic,
+comma-grouped files per second, and binary GiB per second.
+Human classification labels consistently say `gitignored` and `non-gitignored`. Cache
+status and cleanup summaries use the shared binary size formatter and color roles;
+structured formats preserve exact numeric bytes.
+Python cache rendering exposes the same optional color setting as the core renderer.
+These rules are documented beside the shared helpers and in the
+[output design system](../architecture/fdu-output-design.md).
+
+Validation passed 100 CLI tests, 912 core tests (one intentional skip), 198 CLI goldens,
+Python checks and packaging, library build configurations, minimum-Rust checks, audits,
+2,267 path-independence cases, 72 release tests, and three terminal tests.
+The handoff gate stopped at the expected stale parity recording; after adopting the
+Linux-produced record, parity passed with all 53 classified differences matched, and all
+remaining handoff targets passed separately.
+
+The new parity recording comes from
+[Linux CI run 36366851633](https://github.com/jlevy/fdu/actions/runs/36366851633),
+producer `0433bcc090ca484309f9f9673faff317b2bee5e9`, artifact `10946909301`, SHA-256
+`fbbf7e43484a9e13b508a204dfa0e50273dcd36e4e06e3b27b156dd49cd3df9e`. Its diff changes
+only the expected human wording and throughput-unit help text.
+That run also reproduced the existing native-watch setup race tracked as `fdu-21ns`: one
+report acquired a `WatchSetupRace` diagnostic during the equality assertion.
+This remains a separate open issue; no test assertion was weakened to hide it.
+
+The freshly installed `fdu 0.1.0-dev+g0433bcc09` passed 111 checks across 27
+invocations, including colored cache sizes and exact structured values.
+A live terminal audit passed six checks over 64 frames: no rates before five seconds,
+gray rates afterward, one-decimal seconds, and the 10 Hz redraw bound.
+The installed skill matches this build.
+The wheel SHA-256 is `f08a19f403b29a699d9af30bd1ee2df195c74631f6e57c83afa0fd12f62667de`.
+Final PR heads and CI disposition are recorded in the
+[PR review](https://github.com/jlevy/fdu/pull/136#issuecomment-5860865321).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
