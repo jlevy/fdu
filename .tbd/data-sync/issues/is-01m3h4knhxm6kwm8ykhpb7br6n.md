@@ -5,7 +5,7 @@ title: "Linux index tier: remove glibc cross-thread frees from the detached buil
 kind: task
 status: in_progress
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -15,10 +15,12 @@ dependencies:
     target: is-01m3kkrj5f6n9b38g6d1w6mrew
 parent_id: is-01m3mcwynm1rkdjencnq5621mq
 created_at: 2026-09-27T09:54:44.925Z
-updated_at: 2026-09-28T16:17:23.302Z
+updated_at: 2026-09-28T20:54:41.242Z
 ---
 The 2026-09-27 Linux comparison (docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md) found fdu's indexed tree 19% behind pdu and 18% behind diskus on a 1M-entry tree, while summary mode leads both. The unchanged binary under LD_PRELOAD mimalloc/jemalloc/tcmalloc closes the whole gap (1.39 -> 1.11-1.13 s; summary 0.98 -> 0.82 s); glibc.malloc.arena_max=1 makes it 3.3 s. A context-switch profile names the blocking sites: the consumer freeing walker-allocated Vec<DetachedChild> buffers and directory_ids PathBuf keys into walker-owned arenas, plus walker-side PathBuf/file_name allocations waiting on arenas that glibc's tcache has mixed across threads. Candidates, dependency-free first: return drained child buffers to the producing worker (per-worker pools, batched); replace the PathBuf-keyed directory map with walker-assigned directory tokens carried in the queue claim; move the claimed rel_dir into DetachedDirectory instead of copying. Measure each under the accept rule on cold-scan-index and the product CLI job. An allocator dependency stays out unless a structural change cannot reach it (H74, H85 history).
 
 ## Notes
 
 2026-09-28 review of #150 (https://github.com/jlevy/fdu/pull/150#issuecomment-5871425959): no blockers; merge when Linux accepts. Doc nits to land with the Linux result: (1) retained listings also keep their largest path capacity (bounded by the OS path limit, ~16 KiB/worker worst case on Linux) — document as a third retention dimension; (2) diagnostic send_ns now includes take-back work.
+
+2026-09-28 (Linux session, epic fdu-92hp + fdu-k1n8): running the deciding Linux cell here. Host: 4-vCPU Firecracker KVM guest, ext4, Linux 6.18.44 (same class as the 2026-09-27 comparison). Probes: control main 0d73ed54 (engine identical to 45c7c577), candidate aa58a6b1 (branch claude/fdu-alternatives-research-qx0xn0 merges main into it; no crates/ change from main). Pre-registered as in exp-167: default-tree primary, cold-scan-index, 12 quiet pairs, linux-v6.12 deciding (reconstructed at adc21867, 92,474 entries), linux-balanced-1m screening, fdu-default-tree product contract in the tool harness, peak RSS non-inferior (upper bound <= +5%). Id: exp-188. Pre-cell screen (hyperfine, sequential, not a verdict) on balanced-1M: indexed tree main 1.61/1.55 s vs H159 1.39/1.34 s over two passes.
