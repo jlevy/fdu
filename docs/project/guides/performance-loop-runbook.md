@@ -995,11 +995,13 @@ Unrelated work kept the host above the quiet gate all night, so every cell ran d
 Next free experiment id is **exp-173** and next free unused hypothesis id is **H162**.
 exp-170–172 record H161, the ignore-aware transient summary.
 exp-166–167 are claimed by H159’s branch, and exp-168–169 are unused.
-This is the one statement of the next free ids for Darwin and Linux alike; the
-[registry header](performance-loop.md#hypotheses) agrees.
-H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
-keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
-(exp-156–157) the Darwin progress-handle cost on
+This is the one statement of the next free ids for Darwin and Linux alike.
+Agents recording on different platforms at the same time take disjoint blocks, named
+here, so no id is claimed twice: the Linux work for 0.2.1 (`fdu-k1n8`) and the peer-tool
+research (`fdu-92hp`) record within exp-173–199 and H162–H179, and other work starts at
+exp-200 and H180. H144–H146 are reserved on the Linux iteration stack, H147 is the Linux
+transient recycle keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix,
+and H150–H151 (exp-156–157) the Darwin progress-handle cost on
 [#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
 exp-113 remains reserved unused.
 

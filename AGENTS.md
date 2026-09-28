@@ -304,6 +304,18 @@ dependency list short.
 
 Keep changes focused and preserve unrelated work.
 
+**Stacked pull requests:** stack dependent work with gh-stack as
+`tbd shortcut stacked-prs` describes, with one exception: bring changes from `main` or a
+lower layer into a branch by merging them, never by rebasing or force-pushing.
+Reviews, gate results, and other agents’ worktrees refer to branch commits, and
+rewriting a branch invalidates them.
+Pass `make check` on each layer before pushing it.
+GitHub can rewrite a branch when the layer below it merges, so show that what landed is
+what was gated by comparing trees (`git rev-parse <commit>^{tree}`), not commit IDs.
+
+**Reviews:** before a pull request is marked ready, it gets an independent review with
+`tbd shortcut review-github-pr`, posted as a comment on the pull request.
+
 Before handoff: review the diff, run `make check`, update and close the relevant tbd
 issues, run `tbd sync`, commit, push, open or update the pull request, and watch CI to
 completion.
