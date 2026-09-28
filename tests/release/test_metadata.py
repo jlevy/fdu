@@ -236,10 +236,57 @@ class MetadataTests(unittest.TestCase):
         self.assertIn("uv publish\n          --trusted-publishing always\n", publish)
         self.assertIn("--check-url https://pypi.org/simple/", publish)
         # An allow-list rather than a deny-list: any build or test step would run dependency
-        # code in a job whose OIDC token the pending PyPI publisher trusts.
+        # code in a job whose OIDC token the pending PyPI publisher trusts. `uv run` is
+        # allowed only as the exact no-project form that runs a release script on the
+        # standard library, so a `--with`, a project, or a tool cannot ride in on it.
         self.assertEqual(set(re.findall(r"\bcargo\s+([a-z-]+)", publish)), {"package", "publish"})
-        self.assertEqual(set(re.findall(r"\buvx?\s+([a-z-]+)", publish)), {"publish"})
+        self.assertEqual(set(re.findall(r"\buvx?\s+([a-z-]+)", publish)), {"publish", "run"})
+        runs = re.findall(r"\buv run\b[^\n]*", publish)
+        self.assertTrue(runs)
+        for run in runs:
+            with self.subTest(run=run):
+                self.assertRegex(run, rf"^{re.escape(UV_PYTHON)} scripts/release/[a-z_]+\.py\b")
         self.assertNotRegex(publish, r"\b(?:uvx|pip|pip3|npm|npx|make|rustc|maturin)\b")
+
+    def test_every_release_script_runs_on_the_pinned_uv_python(self) -> None:
+        # The runner image's `python3` is one image update from a different interpreter,
+        # at the least recoverable moment; `make release-test` and `release-rehearse` use
+        # uv's 3.12, so the workflow does too. A job that runs uv installs the pinned one
+        # before its first use.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertNotIn("python3", code(workflow))
+        for line in code(workflow).splitlines():
+            if "scripts/release/" in line or "tests/release" in line:
+                with self.subTest(line=line.strip()):
+                    self.assertIn(f"{UV_PYTHON} ", line)
+        for name, job in workflow_jobs(workflow).items():
+            steps = list(workflow_steps(job).values())
+            first_run = next((i for i, step in enumerate(steps) if "uv run" in step), None)
+            if first_run is None:
+                continue
+            with self.subTest(job=name):
+                setup = next((i for i, s in enumerate(steps) if "astral-sh/setup-uv@" in s), None)
+                self.assertIsNotNone(setup)
+                assert setup is not None
+                self.assertLess(setup, first_run)
+        scripts = re.findall(r"\buv run --no-project --python 3\.12 python (\S+)", workflow)
+        self.assertEqual(
+            sorted(set(scripts)),
+            [
+                "-m",
+                "scripts/release/inspect_artifacts.py",
+                "scripts/release/publish_gate.py",
+                "scripts/release/registry_state.py",
+                "scripts/release/resolve_plan.py",
+                "scripts/release/semver_check.py",
+                "scripts/release/smoke_crate.py",
+            ],
+        )
+        # The same suite, the same way, as `make release-test`.
+        suite = "-m unittest discover -s tests/release -p 'test_*.py'"
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn(f"$(UV) {UV_PYTHON.removeprefix('uv ')} {suite}", makefile)
+        self.assertIn(f"{UV_PYTHON} {suite}", workflow)
 
     def test_every_release_checkout_drops_its_credentials(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -278,10 +325,14 @@ class MetadataTests(unittest.TestCase):
 
 PUBLISH_JOB = "publish"
 
+# How every release script runs, in the workflow as in the Makefile's release targets.
+UV_PYTHON = "uv run --no-project --python 3.12 python"
+
 # The publish job's steps in order, an action named without its pinned revision so that a
 # reviewed action update does not read as a reordering.
 PUBLISH_STEP_ORDER = [
     "actions/checkout",
+    "astral-sh/setup-uv",
     "Confirm the checkout is the planned release tag",
     "Locate the rehearsal's files",
     "actions/download-artifact",
@@ -291,7 +342,6 @@ PUBLISH_STEP_ORDER = [
     "Verify the downloaded files against the manifest and SHA256SUMS",
     "Audit both registries before publishing",
     "dtolnay/rust-toolchain",
-    "astral-sh/setup-uv",
     "Reproduce both crates and compare them with the rehearsal",
     "Choose the crates.io credential",
     "Exchange GitHub OIDC for a short-lived crates.io token",
@@ -314,7 +364,7 @@ REVIEWED_PUBLISH_STEPS = """
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          python3 scripts/release/resolve_plan.py
+          uv run --no-project --python 3.12 python scripts/release/resolve_plan.py
           --root .
           --mode release
           --ref "${GITHUB_REF}"
@@ -323,14 +373,14 @@ REVIEWED_PUBLISH_STEPS = """
           --validate-checkout
       - name: Verify the downloaded files against the manifest and SHA256SUMS
         run: >-
-          python3 scripts/release/publish_gate.py verify-files "${FILES}"
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py verify-files "${FILES}"
           --manifest "${MANIFEST}"
           --checksums "${EVIDENCE}/SHA256SUMS"
           --version "${VERSION}"
       - name: Audit both registries before publishing
         id: audit
         run: >-
-          python3 scripts/release/publish_gate.py audit
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py audit
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --github-output "${GITHUB_OUTPUT}"
@@ -339,7 +389,7 @@ REVIEWED_PUBLISH_STEPS = """
         if: steps.audit.outputs.crates == 'true'
         run: |
           cargo package --locked --no-verify -p fdu-core -p fdu
-          python3 scripts/release/publish_gate.py compare-crates \\
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py compare-crates \\
             --package-dir target/package \\
             --manifest "${MANIFEST}" \\
             --version "${VERSION}" \\
@@ -371,7 +421,7 @@ REVIEWED_PUBLISH_STEPS = """
         run: cargo publish --locked --no-verify -p fdu-core
       - name: Wait until crates.io serves the rehearsed fdu-core
         run: >-
-          python3 scripts/release/publish_gate.py wait-crate
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py wait-crate
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --package fdu-core
@@ -380,7 +430,7 @@ REVIEWED_PUBLISH_STEPS = """
         if: steps.audit.outputs.fdu == 'missing'
         run: |
           cargo package --locked --no-verify -p fdu
-          python3 scripts/release/publish_gate.py compare-crates \\
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py compare-crates \\
             --package-dir target/package \\
             --manifest "${MANIFEST}" \\
             --version "${VERSION}" \\
@@ -393,14 +443,14 @@ REVIEWED_PUBLISH_STEPS = """
         run: cargo publish --locked --no-verify -p fdu
       - name: Wait until crates.io serves the rehearsed fdu
         run: >-
-          python3 scripts/release/publish_gate.py wait-crate
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py wait-crate
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --package fdu
       - name: Audit PyPI before uploading
         id: pypi
         run: >-
-          python3 scripts/release/publish_gate.py audit
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py audit
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --github-output "${GITHUB_OUTPUT}"
@@ -414,12 +464,12 @@ REVIEWED_PUBLISH_STEPS = """
           "${FILES}"/fdu-${VERSION}-*.whl
       - name: Wait until PyPI serves exactly the rehearsed files
         run: >-
-          python3 scripts/release/publish_gate.py wait-pypi
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py wait-pypi
           --manifest "${MANIFEST}"
           --version "${VERSION}"
       - name: Audit every registry against the manifest
         run: >-
-          python3 scripts/release/registry_state.py
+          uv run --no-project --python 3.12 python scripts/release/registry_state.py
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --require-identical
@@ -439,7 +489,7 @@ REVIEWED_PLAN_STEPS = """
           if [ "${PUBLISH}" = "true" ]; then
             mode=release
           fi
-          python3 scripts/release/resolve_plan.py \\
+          uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \\
             --root . \\
             --mode "${mode}" \\
             --ref "${GITHUB_REF}" \\
@@ -462,9 +512,13 @@ REVIEWED_ENVIRONMENT_JOB = """
       - uses: actions/checkout@<pinned>
         with:
           persist-credentials: false
+      - uses: astral-sh/setup-uv@<pinned>
+        with:
+          version: "0.12.1"
+          enable-cache: false
       - name: Require a reviewer, v* tag deployments only, and no administrator bypass
         run: >-
-          python3 scripts/release/publish_gate.py check-environment
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py check-environment
           --repository "${GITHUB_REPOSITORY}"
           --environment release
         env:
@@ -485,10 +539,14 @@ REVIEWED_SEMVER_JOB = """
       - uses: dtolnay/rust-toolchain@<pinned>
         with:
           toolchain: 1.97.1
+      - uses: astral-sh/setup-uv@<pinned>
+        with:
+          version: "0.12.1"
+          enable-cache: false
       - name: Install the reviewed cargo-semver-checks
         run: cargo install --locked cargo-semver-checks --version <version>
       - name: Compare fdu-core and fdu with the release they must stay compatible with
-        run: python3 scripts/release/semver_check.py --root .
+        run: uv run --no-project --python 3.12 python scripts/release/semver_check.py --root .
 """
 
 
