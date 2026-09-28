@@ -41,14 +41,6 @@ The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains
 FSEvents probe/design increment.
 These status corrections do not alter the measured regimes or experiment verdicts below.
 
-**Tracking update (2026-09-27):** The
-[current work map](../../../TODO.md#performance-and-evidence) records open owners.
-Linux parallel, iteration and PGO-screen increments are recorded in `specs/done/`; PGO
-release adoption (`fdu-pdne`) and cold-regime tuning (`fdu-tk1b`) remain.
-The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains an open
-FSEvents probe/design increment.
-These status corrections do not alter the measured regimes or experiment verdicts below.
-
 ### Standing Best and Regime
 
 **H133 / exp-132** is the latest wall-speed increment on deciding-scale
@@ -960,6 +952,13 @@ Start there; an allocator dependency comes only after a structural fix is measur
 H85).
 
 ## Current Pickup (2026-09-27)
+
+**Run authorization is on hold:** finish selecting the integration stack before any new
+macOS timing run. The
+[macOS rerun plan](../specs/active/plan-2026-09-27-macos-performance-rerun.md) separates
+the required H153 confirmation from optional CLI and peer comparisons, and specifies
+external builds with internal-drive measurement.
+Preparation and smoke checks do not authorize starting the measurement cells below.
 
 Next free experiment id is **exp-163** and next free unused hypothesis id is **H160**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
