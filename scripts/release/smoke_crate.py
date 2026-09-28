@@ -31,8 +31,9 @@ CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 GIT = "git"
 
 # `tarfile`'s "data" extraction filter, which refuses the escaping paths and links an
-# untrusted archive can carry, is standard from 3.12. The release workflow runs this on
-# the runner's python3, so an older image fails here rather than inside extraction.
+# untrusted archive can carry, is standard from 3.12. The release workflow and the
+# Makefile run this on uv's 3.12; anything older that runs it fails here rather than
+# inside extraction.
 MINIMUM_PYTHON = (3, 12)
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]

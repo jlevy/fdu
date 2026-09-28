@@ -14,6 +14,7 @@ import {
   parseUvLock,
   selectGithubToken,
   validateBootstrapPin,
+  validateCargoToolPins,
   validateDownloadScripts,
   validateExceptions,
   validateFirstParty,
@@ -399,6 +400,77 @@ test("a Rust version present only outside the toolchain keys is not a pin", () =
     // check can see.
     assert(Object.values(texts).every((text) => text.includes("1.97.1")), label);
     assert.throws(() => validateRustToolchainPins(RUST_TOOLCHAINS, texts), /pins Rust 1\.98\.0/, label);
+  }
+});
+
+const CARGO_TOOLS = [{ name: "cargo-semver-checks", version: "0.50.0", files: ["release.yml"] }];
+
+function installStep(command) {
+  return `      - name: Install\n        run: ${command}\n`;
+}
+
+test("a cargo tool is installed locked at exactly its reviewed version", () => {
+  validateCargoToolPins(CARGO_TOOLS, {
+    "release.yml": installStep("cargo install --locked cargo-semver-checks --version 0.50.0"),
+    "ci.yml": "      - run: cargo test --locked\n",
+  });
+  validateCargoToolPins(CARGO_TOOLS, {
+    "release.yml": installStep("cargo +1.97.1 install cargo-semver-checks --locked --version=0.50.0"),
+  });
+});
+
+test("an unpinned, unlocked, or uninventoried cargo install fails closed", () => {
+  const refused = {
+    "no version resolves the newest release": [
+      { "release.yml": installStep("cargo install --locked cargo-semver-checks") },
+      /--locked --version 0\.50\.0/,
+    ],
+    "another version": [
+      { "release.yml": installStep("cargo install --locked cargo-semver-checks --version 0.50.1") },
+      /--locked --version 0\.50\.0/,
+    ],
+    "a version prefix is not the version": [
+      { "release.yml": installStep("cargo install --locked cargo-semver-checks --version 0.5") },
+      /--locked --version 0\.50\.0/,
+    ],
+    "two versions on one line": [
+      {
+        "release.yml": installStep(
+          "cargo install --locked cargo-semver-checks --version 0.50.0 --version 0.51.0",
+        ),
+      },
+      /--locked --version 0\.50\.0/,
+    ],
+    "without the tool's own lockfile": [
+      { "release.yml": installStep("cargo install cargo-semver-checks --version 0.50.0") },
+      /--locked --version 0\.50\.0/,
+    ],
+    "a tool nobody inventoried": [
+      {
+        "release.yml":
+          installStep("cargo install --locked cargo-semver-checks --version 0.50.0") +
+          installStep("cargo install --locked cargo-deny --version 0.20.2"),
+      },
+      /uninventoried cargo install: run: cargo install --locked cargo-deny/,
+    ],
+    "the reviewed tool in a file it is not inventoried for": [
+      {
+        "release.yml": installStep("cargo install --locked cargo-semver-checks --version 0.50.0"),
+        "ci.yml": installStep("cargo install --locked cargo-semver-checks --version 0.50.0"),
+      },
+      /ci\.yml runs an uninventoried cargo install/,
+    ],
+    "a name that only starts like the tool": [
+      { "release.yml": installStep("cargo install --locked cargo-semver-checks-fork --version 0.50.0") },
+      /uninventoried cargo install/,
+    ],
+    "an inventoried file that no longer installs it": [
+      { "release.yml": "      - run: cargo semver-checks\n" },
+      /does not install cargo tool cargo-semver-checks@0\.50\.0/,
+    ],
+  };
+  for (const [label, [texts, message]] of Object.entries(refused)) {
+    assert.throws(() => validateCargoToolPins(CARGO_TOOLS, texts), message, label);
   }
 });
 

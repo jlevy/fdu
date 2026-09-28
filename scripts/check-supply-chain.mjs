@@ -673,6 +673,76 @@ export function validateRustToolchainPins(rustToolchains, texts) {
   }
 }
 
+/**
+ * Require every `cargo install` to be an inventoried tool at its reviewed version.
+ *
+ * `cargo install <tool>` resolves the newest release, which bypasses the cool-off the
+ * way an unpinned `npx` does, and nothing in a lockfile records what it chose. So every
+ * `cargo install` line in `texts`, which maps each inventoried file and every workflow
+ * to its contents, must name a tool inventoried for that file, with `--locked` so its
+ * own lockfile decides its dependencies, and exactly the reviewed `--version`. Each
+ * inventoried file must also install its tool at least once, so the pin cannot rot in a
+ * file that stopped using it.
+ */
+export function validateCargoToolPins(cargoTools, texts) {
+  const inventoried = new Map();
+  for (const tool of cargoTools) {
+    requiredString(tool?.name, "cargo tool name");
+    requiredString(tool?.version, `cargo tool ${tool.name} version`);
+    for (const file of tool.files ?? []) {
+      inventoried.set(file, [...(inventoried.get(file) ?? []), tool]);
+    }
+  }
+  for (const [file, text] of Object.entries(texts)) {
+    const tools = inventoried.get(file) ?? [];
+    const installed = new Set();
+    for (const [line] of text.matchAll(/^.*\bcargo(?:\s+\+\S+)?\s+install\b.*$/gm)) {
+      const tool = tools.find((candidate) =>
+        new RegExp(`(?:^|\\s)${escapeRegExp(candidate.name)}(?:\\s|$)`).test(line),
+      );
+      if (!tool) {
+        fail(`${file} runs an uninventoried cargo install: ${line.trim()}`);
+      }
+      const versions = [...line.matchAll(/--version(?:\s+|=)["']?([^\s"']+)/g)].map((match) => match[1]);
+      if (!/(?:^|\s)--locked(?:\s|$)/.test(line) || versions.length !== 1 || versions[0] !== tool.version) {
+        fail(`${file} must install ${tool.name} with --locked --version ${tool.version}: ${line.trim()}`);
+      }
+      installed.add(tool.name);
+    }
+    for (const tool of tools) {
+      if (!installed.has(tool.name)) {
+        fail(`${file} does not install cargo tool ${tool.name}@${tool.version}`);
+      }
+    }
+  }
+}
+
+async function verifyCargoTools(policy, root, workflows, context) {
+  const tools = policy.bootstrap.cargoTools;
+  await mapLimit(tools, 4, async (item) => {
+    const metadata = await fetchJson(
+      `https://crates.io/api/v1/crates/${encodeURIComponent(item.name)}/${encodeURIComponent(item.version)}`,
+    );
+    const version = metadata.version;
+    if (!version || version.num !== item.version || version.yanked) {
+      fail(`cargo tool ${item.name}@${item.version} is absent or yanked`);
+    }
+    assertEqualProvenance(`cargo tool ${item.name}@${item.version} checksum`, item.checksum, version.checksum);
+    assertAged(
+      { ecosystem: "cargo", name: item.name, version: item.version, publishedAt: version.created_at },
+      context.now,
+      context.minimumAgeDays,
+      context.exceptions,
+      context.firstParty,
+    );
+  });
+  const texts = Object.fromEntries(workflows.map((workflow) => [workflow.path, workflow.text]));
+  for (const file of new Set(tools.flatMap((item) => item.files))) {
+    texts[file] ??= await readFile(path.join(root, file), "utf8");
+  }
+  validateCargoToolPins(tools, texts);
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -857,6 +927,7 @@ function validatePolicy(policy) {
     !Array.isArray(policy.bootstrap?.githubReleases) ||
     !Array.isArray(policy.bootstrap?.rustToolchains) ||
     !Array.isArray(policy.bootstrap?.nodeRuntimes) ||
+    !Array.isArray(policy.bootstrap?.cargoTools) ||
     !Array.isArray(policy.bootstrap?.identicalFileGroups)
   ) {
     fail("supply-chain policy is missing bootstrap inventories");
@@ -890,6 +961,7 @@ async function main() {
     verifyPython(python, context),
     verifyActions(actions, context),
     verifyBootstrap(policy, ROOT, context),
+    verifyCargoTools(policy, ROOT, workflows, context),
   ]);
   console.log(
     `supply-chain: verified ${cargo.length} Cargo packages, ${npm.length} npm packages, ` +

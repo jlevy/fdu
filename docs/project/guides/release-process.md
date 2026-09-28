@@ -49,8 +49,8 @@ If the release commit changes, start again with a new directory.
    [Prepare the Release Commit](#prepare-the-release-commit) lists.
    Its merge commit is `COMMIT`; later merges to `main` do not change it.
 
-2. **Stability pass.** On `COMMIT`, run `make check`, `make cross-lint`, and
-   `make release-rehearse`; install the candidate and run the
+2. **Stability pass.** On `COMMIT`, run `make check`, `make cross-lint`,
+   `make semver-check`, and `make release-rehearse`; install the candidate and run the
    [installed-CLI QA playbook](../../../tests/qa/cli-installed-e2e.qa.md), peer
    agreement included, and the [correctness runbook](correctness-runbook.md); record
    both results beside those procedures.
@@ -199,6 +199,18 @@ The GitHub release attaches those and three evidence files, `release-manifest.js
 fdu is pre-1.0, so compatibility follows the `0.x` minor rule: a minor release (`0.1` to
 `0.2`) may change the Rust or Python API incompatibly, and its CHANGELOG entry names
 each such change; a patch release (`0.2.0` to `0.2.1`) never does.
+For the Rust API that rule is checked, not only reviewed: the release workflow’s
+`semver` job runs `cargo-semver-checks` on `fdu-core` and `fdu` against the highest
+unyanked release on crates.io at or below the new version in the same series, with no
+build features and with all of them, and the publish job needs it.
+A version that starts a new series, such as `0.3.0`, has nothing to stay compatible with
+and passes with a note.
+`make semver-check` runs the same comparison locally; before the version is bumped it
+compares the tree with the release it carries, which asks whether it could still ship as
+a patch. The tool version is inventoried in
+[supply-chain-policy.json](../../../supply-chain-policy.json) and held to the cool-off
+like any executable dependency.
+The Python API has no such check, so review still holds it.
 A machine-output field change requires a version bump of the schema that carries it: the
 report (`fdu.report/10`), the watch stream (`fdu.stream/2`), and cache status
 (`fdu.cache/3`) each version independently, as
@@ -262,11 +274,16 @@ The workflow’s `release-environment` job reads those three settings back throu
 GitHub API before the publish job can start, and stops the run if any is missing;
 `make release-preflight` makes the same check earlier.
 
-The publish job still accepts a `CARGO_REGISTRY_TOKEN` secret in the `release`
-environment, because that is how `0.1.0` created both crates before crates.io could hold
-a publisher. Such a secret takes precedence over OIDC, so none may exist:
-`make release-preflight` fails if the environment or the repository holds a secret whose
-name mentions Cargo or PyPI.
+The publish job reads no registry secret.
+`0.1.0` created both crates with a bootstrap `CARGO_REGISTRY_TOKEN` in the `release`
+environment, before crates.io could hold a publisher, and the job preferred that secret
+to OIDC for as long as it could exist.
+`0.2.0` published both crates and PyPI through OIDC alone, as its publishing run’s log
+shows (an empty bootstrap secret, then a token requested from crates.io’s
+trusted-publishing endpoint and revoked at the end), so the workflow now exchanges OIDC
+only. `make release-preflight` still fails if the environment or the repository holds a
+secret whose name mentions Cargo or PyPI: nothing reads one, so it could only be a
+standing credential nobody needs.
 
 ### Publication Invariants
 
@@ -323,7 +340,9 @@ One pull request prepares the release, and its merge commit is the release commi
 
 The gates run on the release commit itself, in a clean worktree with its own Cargo
 target directory, as [AGENTS.md](../../../AGENTS.md#build-and-test) requires:
-`make check`, `make cross-lint`, and `make release-rehearse`.
+`make check`, `make cross-lint`, `make semver-check`, and `make release-rehearse`.
+`make semver-check` reads crates.io and needs the reviewed `cargo-semver-checks`; when
+that is missing or another version, it prints the one install command to use.
 
 Then install the candidate as a user would, and run the two manual procedures on it:
 
@@ -509,10 +528,22 @@ it, as step 5 of
 
 The publishing run rebuilds, smoke-tests, and inspects every artifact from the tag, then
 uploads exactly those files from one job once you approve the `release` environment.
-The plan job fails at once unless the ref is `refs/tags/v$VERSION`, that tag names the
-checked-out commit, and the Cargo version is `$VERSION`. When the publish job is
-*Waiting*, the builds, smoke tests, inspection, and the `release-environment` check have
-passed; nothing has been uploaded, and the one approval covers both registries.
+The plan job fails at once, before anything is built, unless all of these hold:
+
+- the ref is `refs/tags/v$VERSION`, and the Cargo version is `$VERSION`;
+- that tag is an annotated tag object naming the checked-out commit, so a lightweight
+  tag is refused;
+- origin holds the same tag object, and GitHub reports its signature verified;
+- the commit is an ancestor of origin’s `main`.
+
+The workflow has no copy of the signing key, so GitHub’s verdict stands in for
+`make release-verify-tag`, and GitHub’s compare API for the preflight’s
+`COMMIT on origin/main` line.
+The publish job checks all of it again against its own checkout, since the approval can
+come long after the plan job ran.
+When the publish job is *Waiting*, the builds, smoke tests, inspection, and the
+`release-environment` check have passed; nothing has been uploaded, and the one approval
+covers both registries.
 
 The approval is a person’s act, taken in either of two ways.
 In the browser, choose Review deployments on the run’s page, select `release`, and
@@ -534,7 +565,7 @@ Before each upload the job proves what it is about to send:
 
 | Before | The job checks |
 | --- | --- |
-| Anything | Its own checkout is the tag and the commit the plan resolved, the environment check passed, and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
+| Anything | Its own checkout is the tag and the commit the plan resolved, and GitHub still reports that tag annotated, verified, and on `main`; the environment check passed; and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
 | The first write | Both registries are audited. An `identical` version is skipped, a `missing` one is published, and any conflict on either registry stops the job, so a PyPI conflict stops crates.io from being written first. |
 | Each crate | `cargo package --locked --no-verify` reproduces it from the tag, and its digest must equal the manifest’s. `fdu` is reproduced again against the published `fdu-core`. |
 | `fdu` and PyPI | For up to ten minutes, the job waits for crates.io to serve the manifest’s digest for the crate just published, in both the API record and the sparse index Cargo resolves from. Another digest in either stops the job. |
@@ -706,7 +737,9 @@ Otherwise they are the rehearsal’s:
 The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the token
 prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 Every command runs in a fresh clone of the tag, whose `rust-toolchain.toml` selects the
-pinned Rust, after confirming it names the rehearsed commit and the Cargo version:
+pinned Rust, after confirming it names the rehearsed commit and the Cargo version, and,
+as the workflow does, that the tag is annotated, GitHub reports it verified, and the
+commit is on `main`:
 
 ```shell
 git clone --branch "v$VERSION" https://github.com/jlevy/fdu "$RELEASE/fdu"
@@ -897,7 +930,8 @@ PyPI’s record is on
 [the project’s publishing page](https://pypi.org/manage/project/fdu/settings/publishing/);
 crates.io has one on each crate’s settings page, for `fdu-core` and for `fdu`.
 Registering a publisher publishes nothing.
-A publish job that finds neither a publisher nor a token fails before its first upload.
+A crate without a publisher fails the publish job at its crates.io OIDC exchange, before
+either crate is uploaded.
 0.2.0 was the first release both registries accepted through OIDC alone.
 
 ### How 0.1.0 Was Bootstrapped
@@ -916,8 +950,10 @@ created on publish day.
 It lived only as the `release` environment’s `CARGO_REGISTRY_TOKEN` secret for the one
 publishing run, to be deleted from the environment and revoked once the run had
 published both crates, after which each crate’s trusted publisher could be registered.
-That is why the publish job still reads the secret when it exists and exchanges OIDC
-otherwise, and why `make release-preflight` requires it to be absent.
+The publish job read that secret when it existed and exchanged OIDC otherwise until
+`0.2.0` had published through OIDC alone; it now has no secret path at all.
+A crate that ever had to be created again would take the same bootstrap, by hand, as
+[Publishing by Hand](#publishing-by-hand) describes, never through the workflow.
 
 ## Design Notes
 
@@ -935,7 +971,7 @@ The earlier workflow-level comparison, which shaped `release.yml`, is in the
 | Registries | Separate crate and PyPI workflows | One job, one approval, audited before the first write | A conflict on either registry stops both before anything is written. |
 | GitHub release | Created by a job with `contents: write`, generated notes | Maintainer command; body derived from checked-in notes | No job can write the repository, and the notes describe the release delta rather than a commit list. |
 | Post-publish verification | Version-specific registry checks and `uvx` smoke | The same, plus asset digests, docs.rs, and `--require-identical` | Borrowed and extended. |
-| Semver checks (`rust-release-rules`) | Run in CI | Not yet run | A patch release relies on review until `cargo-semver-checks` is adopted (`fdu-bxra`). |
+| Semver checks (`rust-release-rules`) | Run in CI | The release workflow’s `semver` job, which the publish job needs, and `make semver-check` | Checked where publishing happens, on the version being released; a new `0.x` series is not checked, since it may break. |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

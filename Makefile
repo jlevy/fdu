@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
+.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -39,6 +39,7 @@ help:
 	@echo "make python-concurrency  Prove Python GIL release and runtime borrow exclusion"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make release-rehearse  Build and inspect this host's release artifacts locally"
+	@echo "make semver-check  Check the Rust API against the last compatible release (needs cargo-semver-checks)"
 	@echo "make release-preflight  First maintainer release step (docs/project/guides/release-process.md)"
 	@echo "make cli        Build and run the CLI against this repo"
 	@echo "make docs-format  Auto-format all Markdown with flowmark"
@@ -199,7 +200,7 @@ uv-version:
 
 # Standalone entry points must fail before any recipe asks uv to parse repository
 # configuration. Keep this list aligned with the recipe-coverage test.
-UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse docs-format docs-format-check \
+UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse semver-check docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
@@ -492,6 +493,14 @@ release-rehearse: release-test
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
 			--manifest "$$artifact_dir/manifest.json" --checksums "$$artifact_dir/SHA256SUMS"
+
+# Compare fdu-core and fdu with the published release they must stay compatible with, as
+# the release workflow's semver job does: a patch release never breaks the Rust API.
+# Before the version bump it asks whether this tree could still ship as a patch. It
+# reads crates.io, so it is outside `check`, and it needs the reviewed cargo-semver-checks,
+# whose install command it prints when that is missing or another version.
+semver-check:
+	$(UV) run --no-project --python 3.12 python scripts/release/semver_check.py $(ARGS)
 
 # The maintainer's release checklist, one step per target in order, then the recovery
 # audit; see docs/project/guides/release-process.md. Each reads VERSION, COMMIT, RELEASE,
