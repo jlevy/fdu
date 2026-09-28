@@ -1134,10 +1134,34 @@ fn verify_intent(
                             });
                         }
                     }
-                    Err(error) => ops.push(op_for_stat_error(rel.clone(), &error)),
+                    Err(error) => {
+                        ops.push(op_for_stat_error(rel.clone(), &error));
+                        // The exact name's removal drops its rules in the index. A case
+                        // variant's says nothing by itself: another spelling may still
+                        // resolve, or it was never the control, so the canonical path is
+                        // looked up and answers, a miss removing the rules.
+                        if error.kind() == std::io::ErrorKind::NotFound
+                            && crate::control::path_control_spelling(rel)
+                                == Some(crate::control::ControlSpelling::Variant)
+                        {
+                            let control = crate::control::sibling_control_path(rel);
+                            match scan::read_directory_control_or_removal(
+                                scan_config,
+                                root,
+                                &control,
+                            ) {
+                                Ok(Some(observed)) => ops.push(observed),
+                                Ok(None) => {}
+                                Err(_) => ops.push(Op::InvalidateSubtree {
+                                    path: parent_of(rel),
+                                    reason: InvalidateReason::VerificationFailed,
+                                }),
+                            }
+                        }
+                    }
                 }
                 if scan_config.population != crate::query::IgnoredEntries::Include
-                    && crate::control::is_control_file(rel)
+                    && crate::control::path_control_spelling(rel).is_some()
                 {
                     ops.push(Op::InvalidateSubtree {
                         path: rel.parent().map_or_else(PathBuf::new, Path::to_path_buf),
@@ -2565,6 +2589,88 @@ mod tests {
         out
     }
 
+    /// Every entry's ignored classification, and every retained control source by its
+    /// canonical path.
+    type Classified = (BTreeMap<PathBuf, Option<bool>>, Vec<(PathBuf, Vec<u8>)>);
+
+    fn classified(index: &crate::Index) -> Classified {
+        let ignored = entries(index)
+            .into_keys()
+            .map(|path| {
+                let ignored = index.is_ignored(&path).expect("observed");
+                (path, ignored)
+            })
+            .collect();
+        let sources = index
+            .controls()
+            .expect("observed")
+            .sources()
+            .map(|(path, source)| (path, source.to_vec()))
+            .collect();
+        (ignored, sources)
+    }
+
+    impl RenameFixture {
+        /// The watched index classifies every entry as a cold scan of the tree does now, from
+        /// the same control sources.
+        fn assert_classified_as_cold(&self, label: &str) -> Classified {
+            let (cold, _) =
+                crate::scan::scan_into_index(&self.root, &ScanConfig::default()).expect("cold");
+            let watched = self.handle.read_with(classified).expect("read the watched index");
+            assert_eq!(watched, classified(&cold), "{label}: the watch diverged from a cold scan");
+            watched
+        }
+    }
+
+    /// A watch follows a control file spelled `.GITIGNORE` through its creation, an edit,
+    /// and its removal, classifying as a cold scan does after each: its rules govern
+    /// exactly where a lookup of `.gitignore` resolves to it (fdu-0w1b). Its removal is
+    /// the case that cannot be verified by a stat, so the watch looks the directory's
+    /// control up instead. A case-only rename in either direction converges too, under
+    /// the host's own name resolution (folded lookups change only the control lookup, and
+    /// a rename's old spelling must stat as the host resolves it).
+    #[test]
+    fn a_watch_follows_a_case_variant_control_file() {
+        use crate::test_support::CaseLookups;
+
+        let probe = tempfile::tempdir().expect("tempdir");
+        for (lookups, governs) in CaseLookups::on_this_host(probe.path()) {
+            let tree = RenameFixture::new(&["up/x.tmp", "up/notes.txt"]);
+            let _lookups = lookups.install(&tree.root);
+            let variant = tree.path("up/.GITIGNORE");
+            let x_ignored = |classified: &Classified| classified.0[Path::new("up/x.tmp")];
+
+            fs::write(&variant, b"*.tmp\n").expect("create the variant");
+            tree.apply(&[created(variant.clone())]);
+            let appeared = tree.assert_classified_as_cold(&format!("{lookups:?}: created"));
+            assert_eq!(x_ignored(&appeared), Some(governs), "{lookups:?}");
+
+            fs::write(&variant, b"*.txt\n").expect("edit the variant");
+            tree.apply(&[modified(variant.clone())]);
+            let edited = tree.assert_classified_as_cold(&format!("{lookups:?}: edited"));
+            assert_eq!(x_ignored(&edited), Some(false), "{lookups:?}");
+            assert_eq!(edited.0[Path::new("up/notes.txt")], Some(governs), "{lookups:?}");
+
+            fs::remove_file(&variant).expect("remove the variant");
+            tree.apply(&[notify::Event::new(EventKind::Remove(notify::event::RemoveKind::File))
+                .add_path(variant.clone())]);
+            let removed = tree.assert_classified_as_cold(&format!("{lookups:?}: removed"));
+            assert_eq!(removed.1, Vec::new(), "{lookups:?}: no rules remain");
+
+            if lookups == CaseLookups::Host {
+                let exact = tree.path("up/.gitignore");
+                fs::write(&exact, b"*.tmp\n").expect("create the exact name");
+                tree.apply(&[created(exact.clone())]);
+                for (from, to) in [(&exact, &variant), (&variant, &exact)] {
+                    fs::rename(from, to).expect("case-only rename");
+                    tree.apply(&[fsevents_rename(from.clone()), fsevents_rename(to.clone())]);
+                    tree.assert_converged();
+                    tree.assert_classified_as_cold(&format!("{lookups:?}: renamed to {to:?}"));
+                }
+            }
+        }
+    }
+
     fn created(path: PathBuf) -> notify::Event {
         notify::Event::new(EventKind::Create(CreateKind::Any)).add_path(path)
     }
@@ -2695,22 +2801,13 @@ mod tests {
         tree.assert_converged();
     }
 
-    /// Whether this filesystem resolves a name in another case to the stored entry.
-    fn case_insensitive(dir: &Path) -> bool {
-        let probe = dir.join("CaseProbe");
-        fs::write(&probe, b"probe").expect("case probe");
-        let insensitive = dir.join("caseprobe").exists();
-        fs::remove_file(probe).expect("remove case probe");
-        insensitive
-    }
-
     /// A rename that changes only case leaves the old spelling resolvable on an insensitive
     /// filesystem, so a stat alone would keep both names. The parent listing is the
     /// arbiter, and a stale spelling costs a reconcile of its parent, not of the root.
     #[test]
     fn a_case_only_rename_keeps_one_spelling() {
         let tree = RenameFixture::new(&["docs/Readme.md", "docs/Guide/intro.md"]);
-        let insensitive = case_insensitive(&tree.root);
+        let insensitive = crate::test_support::resolves_case_insensitively(&tree.root);
         fs::rename(tree.path("docs/Readme.md"), tree.path("docs/README.md")).expect("recase");
         fs::rename(tree.path("docs/Guide"), tree.path("docs/guide")).expect("recase directory");
 

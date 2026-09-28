@@ -21,7 +21,12 @@ use crate::query::IgnoredEntries;
 
 /// Version of the fixed `.gitignore` control semantics, the first thing
 /// [`ControlTierIdentity::ignore_rules_fingerprint`] hashes.
-const IGNORE_RULES_VERSION: u64 = 2;
+///
+/// 3: a directory's control is what a lookup of `<dir>/.gitignore` resolves to, so a
+/// `.GITIGNORE` governs on a case-insensitive volume (fdu-0w1b). A snapshot taken under 2
+/// recorded no rules for such a directory, and serving it would answer as the old rule
+/// did, so it is not served.
+const IGNORE_RULES_VERSION: u64 = 3;
 
 /// Which entries a scan retains: its depth, symlink, filesystem-boundary, hidden-entry,
 /// and special-object settings.

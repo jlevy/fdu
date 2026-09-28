@@ -72,13 +72,18 @@ impl HiddenPolicy {
 pub(crate) enum Disposition {
     /// Retain the ordinary row and any control signal it carries.
     Retain,
-    /// Retain only the exact `.gitignore` signal.
+    /// Retain only the `.gitignore` signal: the entry spells the control name, in any
+    /// case, and the directory's control is read as a visible one would be.
     ControlOnly,
     /// Retain neither the row nor a control signal.
     Reject,
 }
 
 /// Decide one direct child after its native kind has been observed.
+///
+/// A hidden-pruned `.GITIGNORE` stays a control signal like `.gitignore`: on a
+/// case-insensitive volume it is the directory's control file, and whether it is one is
+/// the control read's question, not admission's (`crate::control::ControlSpelling`).
 pub(crate) fn decide(
     name: &OsStr,
     kind: EntryKind,
@@ -86,7 +91,7 @@ pub(crate) fn decide(
     exclude_special: bool,
 ) -> Disposition {
     if !hidden.admits(name) {
-        return if name == crate::control::CONTROL_FILE_NAME {
+        return if crate::control::control_spelling(name).is_some() {
             Disposition::ControlOnly
         } else {
             Disposition::Reject

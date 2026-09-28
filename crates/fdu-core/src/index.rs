@@ -3172,19 +3172,20 @@ impl Index {
         }
         let still_owned =
             |candidate: &Path| !superseded.iter().any(|newer| candidate.starts_with(newer));
+        // A pass over one spelling of a directory's control file, `.GITIGNORE` included,
+        // verified that directory's control, which is recorded under its canonical path.
+        let verified_control = crate::control::governing_control(&path);
+        let in_scope = |control: &Path| {
+            control.starts_with(&path) || verified_control.as_deref() == Some(control)
+        };
         if errors.disproves_old {
             self.unreadable_control_paths
-                .retain(|control| !control.starts_with(&path) || !still_owned(control));
+                .retain(|control| !in_scope(control) || !still_owned(control));
         }
         for error in errors.errors.iter().chain(errors.terminal) {
-            if let crate::Error::Io { .. } = error {
-                if let Some(control) = Issue::from_error_under(&self.root_path, error).path {
-                    if control.starts_with(&path)
-                        && still_owned(&control)
-                        && crate::control::is_control_file(&control)
-                    {
-                        self.unreadable_control_paths.insert(control);
-                    }
+            if let Some(control) = crate::control::unreadable_control(&self.root_path, error) {
+                if in_scope(&control) && still_owned(&control) {
+                    self.unreadable_control_paths.insert(control);
                 }
             }
         }
