@@ -42,7 +42,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 55 sessions differ, and every one of them has a named cause.
+# 57 sessions differ, and every one of them has a named cause.
 #
 #  20  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
@@ -50,7 +50,7 @@
 #      separator. Only the exact fixture root and otherwise identical lines match;
 #      exact bound and omitted-view tip translations can accompany those lines.
 #
-#   9  Bound suggestions name the same setter on each surface  [bound-tip-vocabulary]
+#  11  Bound suggestions name the same setter on each surface  [bound-tip-vocabulary]
 #      The command line names bound flags and Python names corresponding fields.
 #      Only the four exact action, setter, and value pairs emitted by the shared
 #      report renderer are accepted; every other line remains identical.
@@ -914,9 +914,24 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Common-Language SLOC Is a Complete Partition
   ✗ Metric Order, Reverse, and Share Threshold Compose
     stderr:
-@@ -1,1 +1,1 @@
+@@ -1,2 +1,2 @@
+ note: code totals include languages hidden by display limits
 -tip: show smaller entries: --min-share=0%
 +tip: show smaller entries: min_share=0%
+  ✗ Code Totals Survive Bounds and Unsupported Languages
+    stderr:
+@@ -1,2 +1,2 @@
+ note: code totals include languages hidden by display limits
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Code Totals Survive Bounds and Unsupported Languages
+    stderr:
+@@ -1,2 +1,2 @@
+ note: code totals include languages hidden by display limits
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✓ Code Totals Survive Bounds and Unsupported Languages
+  ✓ Code Totals Survive Bounds and Unsupported Languages
   ✓ Directory Selection Shares One Population Across Code Views
   ✗ Unsupported Metric Sorts Fail Before Filesystem Access
 @@ -1,1 +1,1 @@
@@ -957,7 +972,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +tip: show more rows: limit=all
 +tip: include omitted views: add analyze code
   ✗ Every View One Walk Can Answer
-@@ -31,10 +31,10 @@
+@@ -30,10 +30,10 @@
        42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
        35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
  LARGEST  (2 of 7)
@@ -1202,7 +1217,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,211 +1,1 @@
+@@ -1,215 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -SET UP WITH ANY CODING AGENT
@@ -1255,7 +1270,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -  Naming analyzers selects a view that displays them: code selects code, words
 -  selects documents, code,words selects both, and lines selects families.
--  Name --view for a different projection; it always wins.
+-  Name --view for a different projection; it always wins. Headers name views;
+-  columns name measurements. words is an analyzer; documents selects prose/markup.
+-  Use --analyze words for that report, or add --view types for all text types.
 -
 -  A view never turns on an analyzer, because choosing how to look at a result
 -  should not quietly authorize reading every file in the tree. If a selected
@@ -1330,7 +1347,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -             largest,recent,files,full
 -  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
 -             --color, --progress
--  Mode       --cache, --watch, --analysis-workers
+-  Mode       --cache, --watch, --workers
 -
 -CONTENT ANALYSIS
 -  none       metadata only; source files are never opened (default)
@@ -1340,12 +1357,14 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  all        every shipped analyzer
 -
 -  A comma-separated set: code,words runs both. none and all name the whole
--  axis and cannot be combined. lines comes with any analyzer, free.
+-  axis and cannot be combined. code and words already include lines; adding lines
+-  explicitly changes neither measurements nor work. lines alone measures physical
+-  text volume without language-specific code counting or word normalization.
 -  languages is metadata-only by default; --view code requires --analyze code.
 -  Code reports show source lines, language shares, population columns, and coverage.
 -  documents requires any enabled analyzer.
 -  Analysis streams every eligible file through EOF; files are never size-truncated.
--  --analysis-workers bounds concurrency.
+-  --workers bounds content-analysis concurrency; directory scanning uses its own pool.
 -  --words-per-page changes only report-time page derivation.
 -  Unchanged results are restored from a separate sidecar written by the same
 -  analyzer set; any other set, wider or narrower, reads the files again.

@@ -186,7 +186,9 @@ VIEWS AND ANALYSIS
 
   Naming analyzers selects a view that displays them: code selects code, words
   selects documents, code,words selects both, and lines selects families.
-  Name --view for a different projection; it always wins.
+  Name --view for a different projection; it always wins. Headers name views;
+  columns name measurements. words is an analyzer; documents selects prose/markup.
+  Use --analyze words for that report, or add --view types for all text types.
 
   A view never turns on an analyzer, because choosing how to look at a result
   should not quietly authorize reading every file in the tree. If a selected
@@ -270,12 +272,14 @@ CONTENT ANALYSIS
   all        every shipped analyzer
 
   A comma-separated set: code,words runs both. none and all name the whole
-  axis and cannot be combined. lines comes with any analyzer, free.
+  axis and cannot be combined. code and words already include lines; adding lines
+  explicitly changes neither measurements nor work. lines alone measures physical
+  text volume without language-specific code counting or word normalization.
   languages is metadata-only by default; --view code requires --analyze code.
   Code reports show source lines, language shares, population columns, and coverage.
   documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
-  --analysis-workers bounds concurrency.
+  --workers bounds content-analysis concurrency; directory scanning uses its own pool.
   --words-per-page changes only report-time page derivation.
   Unchanged results are restored from a separate sidecar written by the same
   analyzer set; any other set, wider or narrower, reads the files again.
@@ -358,11 +362,11 @@ const DOCS: &str = docs_guide!(
   unaffected by it, so an idle tree costs nothing between changes.
   The duration uses the age grammar: `2s`, `200ms`, `1h30m`.
 ",
-    "--cache, --watch, --analysis-workers"
+    "--cache, --watch, --workers"
 );
 /// The guide for a command line built without `watch`, which names neither of its flags.
 #[cfg(not(feature = "watch"))]
-const DOCS: &str = docs_guide!("", "--cache, --analysis-workers");
+const DOCS: &str = docs_guide!("", "--cache, --workers");
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -588,8 +592,13 @@ pub struct Cli {
     )]
     pub analyze: String,
 
-    /// Content reader workers; zero selects available parallelism.
-    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "CONTENT ANALYSIS")]
+    /// Content-analysis workers; zero selects available parallelism.
+    #[arg(
+        long = "workers",
+        value_name = "N",
+        default_value_t = 0,
+        help_heading = "CONTENT ANALYSIS"
+    )]
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
@@ -2987,6 +2996,8 @@ mod tests {
 
     #[test]
     fn analysis_profile_workers_and_page_denominator_parse_before_io() {
+        let parsed_cli = Cli::try_parse_from(["fdu", ".", "--workers=3"]).expect("worker flag");
+        assert_eq!(parsed_cli.analysis_workers, 3);
         let parsed = Cli {
             analyze: "lines".to_string(),
             analysis_workers: 3,

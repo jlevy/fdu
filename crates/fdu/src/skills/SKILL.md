@@ -142,7 +142,7 @@ There are no subcommands: the grammar is always “report on a path”.
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--min-share`, `--breadth`, `-n/--limit`, `--full`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files`, or `--view full` |
 | Format | How is it serialized? | `--format text\|tree\|paths\|long\|json\|jsonl\|yaml`, `--color`, `--progress` |
-| Mode | How is work performed? | `--cache auto\|on\|off`, `--stale-ok`, `--cache-dir DIR`, `--watch`, `--analysis-workers N` |
+| Mode | How is work performed? | `--cache auto\|on\|off`, `--stale-ok`, `--cache-dir DIR`, `--watch`, `--workers N` |
 
 Scope determines what is scanned and cached.
 In a one-shot report, the ignored population also determines which subtrees and file
@@ -177,7 +177,8 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
-- `--view code` for source-line totals, coverage, and a complete language breakdown.
+- `--view code` for source-line totals, coverage, and a language breakdown with complete
+  totals and explicit display omissions.
   It requires `--analyze=code` and is the default view for that analyzer.
 - `--view documents` for prose metrics; it requires any enabled analyzer.
 - `--view largest` for the 20 largest regular files, and `--view recent` for the 20 most
@@ -201,23 +202,34 @@ walk. Compatible cached results prevent unchanged bodies from being reread.
 Add `--analyze lines` to stream physical, blank, and nonblank lines and raw word counts.
 Add `--analyze code` for standard LOC, comment, and code-blank partitions across
 supported common languages.
-The Code overview leads with code-line counts, language shares, coverage, and available
-non-ignored/ignored contributions.
+The Code table aligns code, comment, and blank lines with analyzed-file coverage for
+each language and a bold TOTAL row.
+Totals include languages hidden by display bounds.
+Non-gitignored/gitignored contributions remain gray parenthetical details.
 Languages retains byte sizes and labels code-line shares when code analysis is enabled.
 Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived pages,
 and reader-visible Markdown that excludes destinations and code.
 The `documents` percentage column is document-word share and is also labeled in text.
 `--analyze code,words` — or `all` — computes both in one streaming pass.
+Both include `lines`, so adding it explicitly changes neither the metrics nor the work.
+`lines` alone measures physical text volume without code counting or word normalization.
+Unsupported code languages still have physical-line metrics; their SLOC is unavailable.
 
 Requesting analysis without naming a view selects one that displays it: `code` selects
 `code`, `words` selects `documents`, and `lines` selects `families`. `code,words` or
 `all` selects both `code` and `documents`. Naming `--view` overrides that; a view never
 enables an analyzer.
+Headers name views; columns name metrics.
+`words` is an analyzer, while `documents` is the prose/markup population.
+Use `--analyze=words --view=types` to include word metrics for other text types.
+Use `--analyze=lines --view=languages` for physical line counts across code languages.
+A view never authorizes body reads.
+
 A view that displays no requested content metric prints a note about the unused
 analysis. `--view full` includes Code only with code analysis and Documents with any
 analyzer, naming inapplicable views as skipped.
-Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
-page derivation. Analysis never truncates a file or excludes it because of size.
+Use `--workers` to bound concurrent reads and `--words-per-page` to control page
+derivation. Analysis never truncates a file or excludes it because of size.
 Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.

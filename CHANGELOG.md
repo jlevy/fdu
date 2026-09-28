@@ -26,11 +26,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file leaves. `--breadth` bounds children; `--limit` bounds rows per section.
 - Code analysis defaults to a source-line overview with language and population totals,
   coverage, and metric sorting.
+  The code table aligns per-language counts and a bold TOTAL row; display limits
+  preserve complete totals.
   Correct multiline literals, heredocs, Rust lifetimes, and JavaScript regex handling;
   invalidate prior code-analysis records.
 - Human output uses consistent names, primary totals, and gray parenthetical details.
   Performance includes ignore-file and rule counts plus total files/s and represented
-  GB/s.
+  GiB/s.
+- `--workers` sets content-analysis concurrency (zero selects available parallelism).
 - Cache data uses `<key>.metadata.bin` and `<key>.analysis.bin`. macOS and Linux default
   to `~/.cache/fdu`; `--cache-dir` and `FDU_CACHE_DIR` select an exact destination.
 - Report schema is `fdu.report/10`; cache status is `fdu.cache/3`. Python exposes

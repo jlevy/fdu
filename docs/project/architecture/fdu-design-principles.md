@@ -414,9 +414,9 @@ Every option belongs to exactly one axis:
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth`, `--one-filesystem`, `--no-gitignore`, `--gitignore-budget`, `--gitignore-line-limit` |
 | Content | Which file bodies are read, and which metrics are measured? | `--analyze` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--ignored=exclude`, `--ignored=only`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,largest,recent,files,summary` or `--view full`, `--words-per-page` |
+| View | Which roll-up is reported? | `--view list,summary,tree,families,types,extensions,languages,code,documents,largest,recent,files` or `--view full`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color`, `--progress` |
-| Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--analysis-workers`, `--allow-partial` |
+| Mode | One answer or a live feed, and how is the work performed? | `--watch`, `--interval`, `--cache`, `--workers`, `--allow-partial` |
 
 A proposed flag that fits no axis is a design smell: either it generalizes into an axis
 value, or it does not ship.

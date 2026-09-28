@@ -253,7 +253,7 @@ def parse_args(argv: list[str]) -> Args:
             args.words_per_page = int(take())
         elif flag == "--analyze":
             args.analyze = parse_analysis(take())
-        elif flag == "--analysis-workers":
+        elif flag == "--workers":
             args.analysis_workers = int(take())
         elif flag == "--format":
             args.format = parse_format(take())

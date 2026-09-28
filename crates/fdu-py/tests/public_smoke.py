@@ -367,6 +367,56 @@ def check_every_view(root: Path) -> None:
     assert fdu.View.FILES not in produced, "an unbounded enumeration is not a summary"
 
 
+def check_content_axes_agree_on_overlaps() -> None:
+    """Analyzer overlap keeps its metrics, while views choose a population."""
+
+    with tempfile.TemporaryDirectory(prefix="fdu-content-axes-") as directory:
+        root = Path(directory)
+        (root / "Main.hs").write_text("main = pure ()\n", encoding="utf-8")
+        (root / "main.rs").write_text("fn main() {}\n", encoding="utf-8")
+        (root / "notes.md").write_text("two prose words\n", encoding="utf-8")
+        (root / "data.json").write_text('{"word": "value"}\n', encoding="utf-8")
+
+        def answer(analyze: str, *views: fdu.View) -> fdu.Report:
+            return fdu.report(
+                root,
+                fdu.Query(views=views),
+                analysis=fdu.AnalysisOptions(analyze=analyze),
+                cache=fdu.CachePolicy.OFF,
+            )
+
+        code = answer("code", fdu.View.LANGUAGES)
+        assert code.sections == answer("lines,code", fdu.View.LANGUAGES).sections
+        languages = code.sections[0]
+        assert isinstance(languages, fdu.MetricsSection)
+        haskell = next(row for row in languages.rows if row.id == "haskell")
+        assert haskell.metrics.physical_lines == 1
+        assert haskell.metrics.code_lines == 0
+        assert haskell.code_coverage == {"unsupported": 1}
+
+        words = answer("words", fdu.View.TYPES, fdu.View.DOCUMENTS)
+        assert words.sections == answer("lines,words", fdu.View.TYPES, fdu.View.DOCUMENTS).sections
+        types, documents = words.sections
+        assert isinstance(types, fdu.MetricsSection)
+        assert isinstance(documents, fdu.MetricsSection)
+        type_ids = {row.id for row in types.rows}
+        document_ids = {row.id for row in documents.rows}
+        assert {"haskell", "rust", "markdown", "json"} <= type_ids, type_ids
+        assert document_ids == {"markdown"}, document_ids
+        assert next(row for row in types.rows if row.id == "json").metrics.raw_words is not None
+
+        for token, suggested in (("lines", "families"), ("words", "documents")):
+            try:
+                fdu.report(root, fdu.Query(views=token), cache=fdu.CachePolicy.OFF)
+            except fdu.InvalidArgumentError as error:
+                assert f'invalid view "{token}"' in str(error), error
+                assert f"analyze={token}" in str(error), error
+                assert f"view={suggested}" in str(error), error
+                assert "--" not in str(error), error
+            else:
+                raise AssertionError(f"{token!r} is an analyzer, not a view")
+
+
 def check_an_index_can_opt_out_of_control_state() -> None:
     """A default open, scan, or report reads control files; one that opts out reads none.
 
@@ -699,6 +749,7 @@ def main() -> None:
 
     check_refresh_and_watch_persist()
     check_every_view(root)
+    check_content_axes_agree_on_overlaps()
     check_a_report_is_a_snapshot(root)
     check_a_report_states_its_own_omissions(root)
     check_every_failure_is_an_fdu_error(root)
