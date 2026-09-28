@@ -53,7 +53,7 @@ references.
 | Remaining hypotheses | `fdu-8ya1`, `fdu-4sg3` | [Post-H115 headroom](docs/project/specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) and Linux handoff. `fdu-4sg3` is an undecomposed handoff referencing existing tasks, not a completed empty epic. |
 | Performance record | `fdu-j5k6` | [Record/report plan](docs/project/specs/active/plan-2026-08-15-fdu-performance-record-and-report.md): artifact backfill (`fdu-1dtd`), cross-platform matrix (`fdu-uxl0`), per-platform report sections (`fdu-72bn`), harness lint (`fdu-tt49`). |
 | Evidence scope | `fdu-ug4y` | [Scope enforcement](docs/project/specs/active/plan-2026-08-23-experiment-evidence-scope.md): partially implemented, with transfer/provenance enforcement outstanding. |
-| FSEvents scoped revalidation | `fdu-7w9a` | [Replay/revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md): #131 is an open probe/design PR, not production journal serving. |
+| FSEvents scoped revalidation | `fdu-7w9a` | [Replay/revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md): the #131 probe and the change-source review (#142) record the evidence; production replay is not implemented, and the review recommends fixing the watcher first (epic `fdu-tawn`). |
 | Reusable experiment framework | `fdu-7yx4` | [Framework extraction](docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md): reusable skill landed; remaining framework scope stays open. |
 
 The merged #132 comparisons are qualified exploratory measurements on an uncontrolled

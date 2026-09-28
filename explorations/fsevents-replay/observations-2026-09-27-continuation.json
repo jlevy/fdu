@@ -1,0 +1,5267 @@
+{
+  "schema": "fdu-replay-continuation-observations-v1",
+  "date": "2026-09-27",
+  "notes": [
+    "Standalone C/Python mechanism experiments, not shipped engine performance.",
+    "All synthetic mutations and private state were on external APFS storage; real roots were read-only.",
+    "Original baselines and cursors were preserved.",
+    "Historical completion diagnostics use a changed replay helper; capture and replay provenance are distinct.",
+    "Source tests passing does not turn failed native experiments into accepted refreshes."
+  ],
+  "native_regressions": [
+    {
+      "architecture": "arm64",
+      "baseline_drain_summary": {
+        "async_id": 0,
+        "callbacks": 2,
+        "create_flags": 128,
+        "cursor": 4786685116,
+        "deadline_seconds": 10,
+        "elapsed_ms": 6.016,
+        "events": 20,
+        "first_callback_ms": 5.716,
+        "flush_ms": 0.028,
+        "history_done": true,
+        "history_id": 4786692719,
+        "history_ms": 5.908,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.465,
+        "last_callback_ms": 5.898,
+        "latest_id": 4786692719,
+        "pid": 23849,
+        "started": true,
+        "timeout": false,
+        "truncated": false,
+        "type": "summary"
+      },
+      "capture_pid": 23680,
+      "changed_paths": [],
+      "cursor": 4786692719,
+      "cursor_age_seconds": 98.44873118400574,
+      "device_time_fence": 4786685116,
+      "failures": [],
+      "filesystem": "apfs",
+      "limitations": [
+        "No reboot or journal-loss injection",
+        "Finite synthetic fixture",
+        "No journal completeness proof",
+        "No fdu engine integration or speed claim"
+      ],
+      "mutation_age_seconds": null,
+      "mutation_pid": null,
+      "negative_control_mismatch_paths": [],
+      "oracle_fields": [
+        "mode",
+        "size",
+        "blocks",
+        "mtime_ns",
+        "inode",
+        "nlink",
+        "ctime_ns",
+        "device"
+      ],
+      "platform": "26.5.2",
+      "provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "scenario": "quiet",
+      "schema": "fdu-fsevents-probe-v2",
+      "trials": [
+        {
+          "dirty_scopes": [],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": false,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 1,
+            "create_flags": 0,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 3068.472,
+            "events": 1,
+            "first_callback_ms": 3068.209,
+            "flush_ms": 0.077,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 3068.243,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.475,
+            "last_callback_ms": 3068.209,
+            "latest_id": 4786692719,
+            "pid": 28393,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": true,
+              "flags": 0,
+              "id": 4786692592,
+              "inside": false,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 128,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 212.815,
+            "events": 20,
+            "first_callback_ms": 9.98,
+            "flush_ms": 0.083,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 212.643,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.399,
+            "last_callback_ms": 212.623,
+            "latest_id": 4786692719,
+            "pid": 28434,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": false,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 1,
+            "create_flags": 16,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 84.154,
+            "events": 1,
+            "first_callback_ms": 83.928,
+            "flush_ms": 0.037,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 83.951,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.423,
+            "last_callback_ms": 83.928,
+            "latest_id": 4786692719,
+            "pid": 28435,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692592,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "64656570",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f61",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f62",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f63",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f64",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f66",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f67",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f68",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "64656c657465",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "65646974",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 144,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 80.909,
+            "events": 20,
+            "first_callback_ms": 4.781,
+            "flush_ms": 0.049,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 80.794,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.422,
+            "last_callback_ms": 80.761,
+            "latest_id": 4786692719,
+            "pid": 28436,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692592,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "64656570",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f61",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f62",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f63",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f64",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f66",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f67",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f68",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "64656c657465",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "65646974",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 144,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 82.131,
+            "events": 20,
+            "first_callback_ms": 5.219,
+            "flush_ms": 0.043,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 81.964,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.479,
+            "last_callback_ms": 81.936,
+            "latest_id": 4786692719,
+            "pid": 28437,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": false,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 1,
+            "create_flags": 16,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 251.776,
+            "events": 1,
+            "first_callback_ms": 251.642,
+            "flush_ms": 0.032,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 251.683,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.449,
+            "last_callback_ms": 251.642,
+            "latest_id": 4786692719,
+            "pid": 28438,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": true,
+              "flags": 0,
+              "id": 4786692592,
+              "inside": false,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 128,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 100.135,
+            "events": 20,
+            "first_callback_ms": 15.338,
+            "flush_ms": 0.033,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 100.031,
+            "initial_flush": "wait",
+            "initial_flush_ms": 10.474,
+            "last_callback_ms": 100.001,
+            "latest_id": 4786692719,
+            "pid": 28439,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": false,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 1,
+            "create_flags": 0,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 250.631,
+            "events": 1,
+            "first_callback_ms": 250.454,
+            "flush_ms": 0.048,
+            "history_done": true,
+            "history_id": 4786692719,
+            "history_ms": 250.485,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.365,
+            "last_callback_ms": 250.454,
+            "latest_id": 4786692719,
+            "pid": 28440,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        }
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "baseline_drain_summary": {
+        "async_id": 0,
+        "callbacks": 2,
+        "create_flags": 128,
+        "cursor": 4786685116,
+        "deadline_seconds": 10,
+        "elapsed_ms": 6.016,
+        "events": 20,
+        "first_callback_ms": 5.716,
+        "flush_ms": 0.028,
+        "history_done": true,
+        "history_id": 4786692719,
+        "history_ms": 5.908,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.465,
+        "last_callback_ms": 5.898,
+        "latest_id": 4786692719,
+        "pid": 23849,
+        "started": true,
+        "timeout": false,
+        "truncated": false,
+        "type": "summary"
+      },
+      "capture_pid": 23680,
+      "changed_paths": [
+        ".",
+        "deep/a/b/c/d/e/f/g/h/i/j/data",
+        "delete",
+        "delete/data",
+        "edit/data",
+        "new",
+        "new/subdir",
+        "new/subdir/data",
+        "rename",
+        "rename/data",
+        "renamed",
+        "renamed/data"
+      ],
+      "cursor": 4786692719,
+      "cursor_age_seconds": 99.9519579410553,
+      "device_time_fence": 4786685116,
+      "failures": [],
+      "filesystem": "apfs",
+      "limitations": [
+        "No reboot or journal-loss injection",
+        "Finite synthetic fixture",
+        "No journal completeness proof",
+        "No fdu engine integration or speed claim"
+      ],
+      "mutation_age_seconds": 1.281869888305664,
+      "mutation_pid": 28443,
+      "negative_control_mismatch_paths": [
+        ".",
+        "deep/a/b/c/d/e/f/g/h/i/j/data",
+        "delete",
+        "delete/data",
+        "edit/data",
+        "new",
+        "new/subdir",
+        "new/subdir/data",
+        "rename",
+        "rename/data",
+        "renamed",
+        "renamed/data"
+      ],
+      "oracle_fields": [
+        "mode",
+        "size",
+        "blocks",
+        "mtime_ns",
+        "inode",
+        "nlink",
+        "ctime_ns",
+        "device"
+      ],
+      "platform": "26.5.2",
+      "provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "scenario": "mixed",
+      "schema": "fdu-fsevents-probe-v2",
+      "trials": [
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 0,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 117.579,
+            "events": 8,
+            "first_callback_ms": 117.242,
+            "flush_ms": 0.042,
+            "history_done": true,
+            "history_id": 4787592388,
+            "history_ms": 117.376,
+            "initial_flush": "wait",
+            "initial_flush_ms": 12.171,
+            "last_callback_ms": 117.322,
+            "latest_id": 4787592388,
+            "pid": 28447,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": true,
+              "flags": 0,
+              "id": 4786692592,
+              "inside": false,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 3,
+            "create_flags": 128,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 94.857,
+            "events": 27,
+            "first_callback_ms": 5.879,
+            "flush_ms": 0.027,
+            "history_done": true,
+            "history_id": 4787592328,
+            "history_ms": 94.767,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.441,
+            "last_callback_ms": 94.76,
+            "latest_id": 4787592388,
+            "pid": 28448,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "delete",
+            "edit",
+            "new",
+            "rename",
+            "renamed",
+            "deep/a/b/c/d/e/f/g/h/i/j"
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 69632,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 66048,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 70656,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "6e6577",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f737562646972",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592327,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "72656e616d6564",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": false,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 16,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 97.196,
+            "events": 9,
+            "first_callback_ms": 96.936,
+            "flush_ms": 0.033,
+            "history_done": true,
+            "history_id": 4787592388,
+            "history_ms": 97.086,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.321,
+            "last_callback_ms": 97.009,
+            "latest_id": 4787592388,
+            "pid": 28451,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692592,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "64656570",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f61",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f62",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f63",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f64",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f66",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f67",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f68",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "64656c657465",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "65646974",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 69632,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 66048,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 70656,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "6e6577",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f737562646972",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592327,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "72656e616d6564",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 3,
+            "create_flags": 144,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 228.221,
+            "events": 28,
+            "first_callback_ms": 7.918,
+            "flush_ms": 0.049,
+            "history_done": true,
+            "history_id": 4787592328,
+            "history_ms": 228.037,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.426,
+            "last_callback_ms": 228.022,
+            "latest_id": 4787592388,
+            "pid": 28474,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692592,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "64656570",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f61",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f62",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f63",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f64",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f66",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f67",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f68",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "64656c657465",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "65646974",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 69632,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 66048,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 70656,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "6e6577",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f737562646972",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592327,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "72656e616d6564",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 3,
+            "create_flags": 144,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 86.706,
+            "events": 28,
+            "first_callback_ms": 5.124,
+            "flush_ms": 0.034,
+            "history_done": true,
+            "history_id": 4787592328,
+            "history_ms": 86.6,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.362,
+            "last_callback_ms": 86.579,
+            "latest_id": 4787592388,
+            "pid": 28478,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "delete",
+            "edit",
+            "new",
+            "rename",
+            "renamed",
+            "deep/a/b/c/d/e/f/g/h/i/j"
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 69632,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 66048,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 70656,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "6e6577",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 164096,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f737562646972",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 102656,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f64617461",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592327,
+              "inside": true,
+              "path_hex": "72656e616d65",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 133120,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "72656e616d6564",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": false,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 16,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 91.129,
+            "events": 9,
+            "first_callback_ms": 89.664,
+            "flush_ms": 0.035,
+            "history_done": true,
+            "history_id": 4787592388,
+            "history_ms": 90.943,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.437,
+            "last_callback_ms": 90.908,
+            "latest_id": 4787592388,
+            "pid": 28479,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": true,
+              "flags": 0,
+              "id": 4786692592,
+              "inside": false,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692601,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692611,
+              "inside": true,
+              "path_hex": "646565702f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692617,
+              "inside": true,
+              "path_hex": "646565702f612f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692623,
+              "inside": true,
+              "path_hex": "646565702f612f622f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692629,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692635,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692641,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692647,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692653,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692659,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692665,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692674,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692695,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692704,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692680,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692689,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692710,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4786692719,
+              "inside": true,
+              "path_hex": "72656e616d652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 19,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 3,
+            "create_flags": 128,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 86.046,
+            "events": 27,
+            "first_callback_ms": 5.05,
+            "flush_ms": 0.036,
+            "history_done": true,
+            "history_id": 4787592328,
+            "history_ms": 85.913,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.379,
+            "last_callback_ms": 85.903,
+            "latest_id": 4787592388,
+            "pid": 28480,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        },
+        {
+          "dirty_scopes": [
+            "."
+          ],
+          "events": [
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592279,
+              "inside": true,
+              "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592312,
+              "inside": true,
+              "path_hex": "64656c6574652f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592306,
+              "inside": true,
+              "path_hex": "656469742f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592340,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592352,
+              "inside": true,
+              "path_hex": "6e65772f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "6e65772f7375626469722f",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 0,
+              "id": 4787592328,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            },
+            {
+              "after_history_done": false,
+              "ancestor": false,
+              "flags": 16,
+              "id": 4787592388,
+              "inside": true,
+              "path_hex": "",
+              "type": "event"
+            }
+          ],
+          "history_only_mismatch_paths": [],
+          "mismatch_paths": [],
+          "overlap_event_count": 0,
+          "refused": [],
+          "root_scope": true,
+          "summary": {
+            "async_id": 0,
+            "callbacks": 2,
+            "create_flags": 0,
+            "cursor": 4786692719,
+            "deadline_seconds": 10,
+            "elapsed_ms": 92.949,
+            "events": 8,
+            "first_callback_ms": 91.481,
+            "flush_ms": 0.028,
+            "history_done": true,
+            "history_id": 4787592388,
+            "history_ms": 92.832,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.465,
+            "last_callback_ms": 92.812,
+            "latest_id": 4787592388,
+            "pid": 28485,
+            "started": true,
+            "timeout": false,
+            "truncated": false,
+            "type": "summary"
+          }
+        }
+      ]
+    }
+  ],
+  "historical_completion": [
+    {
+      "accepted": false,
+      "architecture": "arm64",
+      "capture_provenance": {
+        "binary_sha256": "a26ace596fe19670a3d64f6a32c64d5760c4d6da120afc3db20ecd8adea54f4a",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "c7b767fe29f001621ecfc95c6779b088faf3935ba14dfccf1752f71f0d84d39f",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "changed_during_trial": [],
+      "create_flags": 144,
+      "cursor": 4488649707,
+      "cursor_age_seconds": 96623.1891450882,
+      "deadline_seconds": 60,
+      "dirty_scopes": [
+        "."
+      ],
+      "events": [
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649587,
+          "inside": true,
+          "path_hex": "",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649593,
+          "inside": true,
+          "path_hex": "64656570",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649599,
+          "inside": true,
+          "path_hex": "646565702f61",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649605,
+          "inside": true,
+          "path_hex": "646565702f612f62",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649611,
+          "inside": true,
+          "path_hex": "646565702f612f622f63",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649617,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f64",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649623,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649629,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f66",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649635,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f67",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649641,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f68",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649647,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649653,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649773,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649683,
+          "inside": true,
+          "path_hex": "64656c657465",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649692,
+          "inside": true,
+          "path_hex": "64656c6574652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649668,
+          "inside": true,
+          "path_hex": "65646974",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649677,
+          "inside": true,
+          "path_hex": "656469742f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649698,
+          "inside": true,
+          "path_hex": "72656e616d65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649707,
+          "inside": true,
+          "path_hex": "72656e616d652f64617461",
+          "type": "event"
+        }
+      ],
+      "identity_matches": true,
+      "initial_flush": "wait",
+      "limitations": [
+        "Synthetic fixture only",
+        "No reboot or loss injection",
+        "Matching oracle is not universal completeness proof"
+      ],
+      "mismatch_paths": [],
+      "mutation_age_seconds": 96623.08809018135,
+      "negative_control_mismatch_paths": [
+        "deep/a/b/c/d/e/f/g/h/i/j/data"
+      ],
+      "parent_killed": false,
+      "parse_errors": [],
+      "platform": "26.5.2",
+      "refused": [],
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "diagnostic_sha256": "9dc92dd0c423ba19aaeeefa6638386392057343b48bb7dacf008735d4fc3f324",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "returncode": 1,
+      "scenario": "deep",
+      "schema": "fdu-history-completion-diagnostic-v1",
+      "source_unchanged": true,
+      "started_at": 1790564789.460374,
+      "stderr": "",
+      "summary": {
+        "async_id": 0,
+        "callbacks": 1,
+        "create_flags": 144,
+        "cursor": 4488649707,
+        "deadline_seconds": 60,
+        "elapsed_ms": 60004.029,
+        "events": 19,
+        "first_callback_ms": 15.875,
+        "flush_ms": 0,
+        "history_done": false,
+        "history_id": 0,
+        "history_ms": 60003.68,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.34,
+        "last_callback_ms": 15.875,
+        "latest_id": 4488649773,
+        "pid": 47938,
+        "started": true,
+        "timeout": true,
+        "truncated": false,
+        "type": "summary"
+      },
+      "wall_seconds": 60.31015968322754
+    },
+    {
+      "accepted": false,
+      "architecture": "arm64",
+      "capture_provenance": {
+        "binary_sha256": "a26ace596fe19670a3d64f6a32c64d5760c4d6da120afc3db20ecd8adea54f4a",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "c7b767fe29f001621ecfc95c6779b088faf3935ba14dfccf1752f71f0d84d39f",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "changed_during_trial": [],
+      "create_flags": 144,
+      "cursor": 4488647563,
+      "cursor_age_seconds": 96686.40405607224,
+      "deadline_seconds": 60,
+      "dirty_scopes": [
+        "."
+      ],
+      "events": [
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647443,
+          "inside": true,
+          "path_hex": "",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647449,
+          "inside": true,
+          "path_hex": "64656570",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647455,
+          "inside": true,
+          "path_hex": "646565702f61",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647461,
+          "inside": true,
+          "path_hex": "646565702f612f62",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647467,
+          "inside": true,
+          "path_hex": "646565702f612f622f63",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647473,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f64",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647479,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647485,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f66",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647491,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f67",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647497,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f68",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647503,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647509,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649514,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647539,
+          "inside": true,
+          "path_hex": "64656c657465",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 103168,
+          "id": 4488649523,
+          "inside": true,
+          "path_hex": "64656c6574652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488647524,
+          "inside": true,
+          "path_hex": "65646974",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 103680,
+          "id": 4488649520,
+          "inside": true,
+          "path_hex": "656469742f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649533,
+          "inside": true,
+          "path_hex": "6e6577",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649539,
+          "inside": true,
+          "path_hex": "6e65772f737562646972",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649548,
+          "inside": true,
+          "path_hex": "6e65772f7375626469722f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 166144,
+          "id": 4488649526,
+          "inside": true,
+          "path_hex": "72656e616d65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488647563,
+          "inside": true,
+          "path_hex": "72656e616d652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 133120,
+          "id": 4488649527,
+          "inside": true,
+          "path_hex": "72656e616d6564",
+          "type": "event"
+        }
+      ],
+      "identity_matches": true,
+      "initial_flush": "wait",
+      "limitations": [
+        "Synthetic fixture only",
+        "No reboot or loss injection",
+        "Matching oracle is not universal completeness proof"
+      ],
+      "mismatch_paths": [],
+      "mutation_age_seconds": 96685.91226816177,
+      "negative_control_mismatch_paths": [
+        ".",
+        "deep/a/b/c/d/e/f/g/h/i/j/data",
+        "delete",
+        "delete/data",
+        "edit/data",
+        "new",
+        "new/subdir",
+        "new/subdir/data",
+        "rename",
+        "rename/data",
+        "renamed",
+        "renamed/data"
+      ],
+      "parent_killed": false,
+      "parse_errors": [],
+      "platform": "26.5.2",
+      "refused": [],
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "diagnostic_sha256": "9dc92dd0c423ba19aaeeefa6638386392057343b48bb7dacf008735d4fc3f324",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "returncode": 1,
+      "scenario": "mixed",
+      "schema": "fdu-history-completion-diagnostic-v1",
+      "source_unchanged": true,
+      "started_at": 1790564851.28044,
+      "stderr": "",
+      "summary": {
+        "async_id": 0,
+        "callbacks": 1,
+        "create_flags": 144,
+        "cursor": 4488647563,
+        "deadline_seconds": 60,
+        "elapsed_ms": 60005.357,
+        "events": 23,
+        "first_callback_ms": 12.062,
+        "flush_ms": 0,
+        "history_done": false,
+        "history_id": 0,
+        "history_ms": 60005.253,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.685,
+        "last_callback_ms": 12.062,
+        "latest_id": 4488649548,
+        "pid": 52458,
+        "started": true,
+        "timeout": true,
+        "truncated": false,
+        "type": "summary"
+      },
+      "wall_seconds": 62.10275101661682
+    },
+    {
+      "accepted": false,
+      "architecture": "arm64",
+      "capture_provenance": {
+        "binary_sha256": "a26ace596fe19670a3d64f6a32c64d5760c4d6da120afc3db20ecd8adea54f4a",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "c7b767fe29f001621ecfc95c6779b088faf3935ba14dfccf1752f71f0d84d39f",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "changed_during_trial": [],
+      "create_flags": 144,
+      "cursor": 4488649707,
+      "cursor_age_seconds": 96747.67658782005,
+      "deadline_seconds": 10,
+      "dirty_scopes": [
+        "."
+      ],
+      "events": [
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649587,
+          "inside": true,
+          "path_hex": "",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649593,
+          "inside": true,
+          "path_hex": "64656570",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649599,
+          "inside": true,
+          "path_hex": "646565702f61",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649605,
+          "inside": true,
+          "path_hex": "646565702f612f62",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649611,
+          "inside": true,
+          "path_hex": "646565702f612f622f63",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649617,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f64",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649623,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649629,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f66",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649635,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f67",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649641,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f68",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649647,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649653,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649773,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649683,
+          "inside": true,
+          "path_hex": "64656c657465",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649692,
+          "inside": true,
+          "path_hex": "64656c6574652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649668,
+          "inside": true,
+          "path_hex": "65646974",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649677,
+          "inside": true,
+          "path_hex": "656469742f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649698,
+          "inside": true,
+          "path_hex": "72656e616d65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649707,
+          "inside": true,
+          "path_hex": "72656e616d652f64617461",
+          "type": "event"
+        }
+      ],
+      "identity_matches": true,
+      "initial_flush": "async",
+      "limitations": [
+        "Synthetic fixture only",
+        "No reboot or loss injection",
+        "Matching oracle is not universal completeness proof"
+      ],
+      "mismatch_paths": [],
+      "mutation_age_seconds": 96747.57553291321,
+      "negative_control_mismatch_paths": [
+        "deep/a/b/c/d/e/f/g/h/i/j/data"
+      ],
+      "parent_killed": false,
+      "parse_errors": [],
+      "platform": "26.5.2",
+      "refused": [],
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "diagnostic_sha256": "9dc92dd0c423ba19aaeeefa6638386392057343b48bb7dacf008735d4fc3f324",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "returncode": 1,
+      "scenario": "deep",
+      "schema": "fdu-history-completion-diagnostic-v1",
+      "source_unchanged": true,
+      "started_at": 1790564913.9478168,
+      "stderr": "",
+      "summary": {
+        "async_id": 0,
+        "callbacks": 1,
+        "create_flags": 144,
+        "cursor": 4488649707,
+        "deadline_seconds": 10,
+        "elapsed_ms": 10005.488,
+        "events": 19,
+        "first_callback_ms": 13.943,
+        "flush_ms": 0,
+        "history_done": false,
+        "history_id": 0,
+        "history_ms": 10005.319,
+        "initial_flush": "async",
+        "initial_flush_ms": 0.369,
+        "last_callback_ms": 13.943,
+        "latest_id": 4488649773,
+        "pid": 63241,
+        "started": true,
+        "timeout": true,
+        "truncated": false,
+        "type": "summary"
+      },
+      "wall_seconds": 11.245673179626465
+    },
+    {
+      "accepted": false,
+      "architecture": "arm64",
+      "capture_provenance": {
+        "binary_sha256": "a26ace596fe19670a3d64f6a32c64d5760c4d6da120afc3db20ecd8adea54f4a",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "c7b767fe29f001621ecfc95c6779b088faf3935ba14dfccf1752f71f0d84d39f",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "changed_during_trial": [],
+      "create_flags": 144,
+      "cursor": 4488649707,
+      "cursor_age_seconds": 96759.38000702858,
+      "deadline_seconds": 10,
+      "dirty_scopes": [
+        "."
+      ],
+      "events": [
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649587,
+          "inside": true,
+          "path_hex": "",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649593,
+          "inside": true,
+          "path_hex": "64656570",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649599,
+          "inside": true,
+          "path_hex": "646565702f61",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649605,
+          "inside": true,
+          "path_hex": "646565702f612f62",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649611,
+          "inside": true,
+          "path_hex": "646565702f612f622f63",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649617,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f64",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649623,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649629,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f66",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649635,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f67",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649641,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f68",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649647,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649653,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649773,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649683,
+          "inside": true,
+          "path_hex": "64656c657465",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649692,
+          "inside": true,
+          "path_hex": "64656c6574652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649668,
+          "inside": true,
+          "path_hex": "65646974",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649677,
+          "inside": true,
+          "path_hex": "656469742f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649698,
+          "inside": true,
+          "path_hex": "72656e616d65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649707,
+          "inside": true,
+          "path_hex": "72656e616d652f64617461",
+          "type": "event"
+        }
+      ],
+      "identity_matches": true,
+      "initial_flush": "sync",
+      "limitations": [
+        "Synthetic fixture only",
+        "No reboot or loss injection",
+        "Matching oracle is not universal completeness proof"
+      ],
+      "mismatch_paths": [],
+      "mutation_age_seconds": 96759.27895212173,
+      "negative_control_mismatch_paths": [
+        "deep/a/b/c/d/e/f/g/h/i/j/data"
+      ],
+      "parent_killed": true,
+      "parse_errors": [],
+      "platform": "26.5.2",
+      "refused": [],
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "diagnostic_sha256": "9dc92dd0c423ba19aaeeefa6638386392057343b48bb7dacf008735d4fc3f324",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "returncode": null,
+      "scenario": "deep",
+      "schema": "fdu-history-completion-diagnostic-v1",
+      "source_unchanged": true,
+      "started_at": 1790564925.651236,
+      "stderr": "",
+      "summary": null,
+      "wall_seconds": 20.004535913467407
+    },
+    {
+      "accepted": true,
+      "architecture": "arm64",
+      "capture_provenance": {
+        "binary_sha256": "a26ace596fe19670a3d64f6a32c64d5760c4d6da120afc3db20ecd8adea54f4a",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "c7b767fe29f001621ecfc95c6779b088faf3935ba14dfccf1752f71f0d84d39f",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "changed_during_trial": [],
+      "create_flags": 144,
+      "cursor": 4488649707,
+      "cursor_age_seconds": 96809.26823997498,
+      "deadline_seconds": 120,
+      "dirty_scopes": [
+        "."
+      ],
+      "events": [
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649587,
+          "inside": true,
+          "path_hex": "",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649593,
+          "inside": true,
+          "path_hex": "64656570",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649599,
+          "inside": true,
+          "path_hex": "646565702f61",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649605,
+          "inside": true,
+          "path_hex": "646565702f612f62",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649611,
+          "inside": true,
+          "path_hex": "646565702f612f622f63",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649617,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f64",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649623,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649629,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f66",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649635,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f67",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649641,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f68",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649647,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f69",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649653,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649773,
+          "inside": true,
+          "path_hex": "646565702f612f622f632f642f652f662f672f682f692f6a2f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649683,
+          "inside": true,
+          "path_hex": "64656c657465",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649692,
+          "inside": true,
+          "path_hex": "64656c6574652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649668,
+          "inside": true,
+          "path_hex": "65646974",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649677,
+          "inside": true,
+          "path_hex": "656469742f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 164096,
+          "id": 4488649698,
+          "inside": true,
+          "path_hex": "72656e616d65",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 102656,
+          "id": 4488649707,
+          "inside": true,
+          "path_hex": "72656e616d652f64617461",
+          "type": "event"
+        },
+        {
+          "after_history_done": false,
+          "ancestor": false,
+          "flags": 16,
+          "id": 4488649707,
+          "inside": true,
+          "path_hex": "",
+          "type": "event"
+        }
+      ],
+      "identity_matches": true,
+      "initial_flush": "wait",
+      "limitations": [
+        "Synthetic fixture only",
+        "No reboot or loss injection",
+        "Matching oracle is not universal completeness proof"
+      ],
+      "mismatch_paths": [],
+      "mutation_age_seconds": 96809.16718506813,
+      "negative_control_mismatch_paths": [
+        "deep/a/b/c/d/e/f/g/h/i/j/data"
+      ],
+      "parent_killed": false,
+      "parse_errors": [],
+      "platform": "26.5.2",
+      "refused": [],
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "diagnostic_sha256": "9dc92dd0c423ba19aaeeefa6638386392057343b48bb7dacf008735d4fc3f324",
+        "sdk_version": "26.5",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "returncode": 0,
+      "scenario": "deep",
+      "schema": "fdu-history-completion-diagnostic-v1",
+      "source_unchanged": true,
+      "started_at": 1790564975.539469,
+      "stderr": "",
+      "summary": {
+        "async_id": 0,
+        "callbacks": 2,
+        "create_flags": 144,
+        "cursor": 4488649707,
+        "deadline_seconds": 120,
+        "elapsed_ms": 92496.879,
+        "events": 20,
+        "first_callback_ms": 8.84,
+        "flush_ms": 0.088,
+        "history_done": true,
+        "history_id": 4488649707,
+        "history_ms": 92496.659,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.488,
+        "last_callback_ms": 92496.608,
+        "latest_id": 4488649773,
+        "pid": 67779,
+        "started": true,
+        "timeout": false,
+        "truncated": false,
+        "type": "summary"
+      },
+      "wall_seconds": 92.77674913406372
+    }
+  ],
+  "baselines": [
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "controlled-growth",
+      "operation": "baseline",
+      "root_totals": {
+        "entries": 20204,
+        "directories": 201,
+        "regular_files": 20003,
+        "symlinks": 0,
+        "apparent_bytes": 180069,
+        "allocated_bytes": 81932288
+      },
+      "scan_seconds": 0.5848957910202444,
+      "rollup_seconds": 0.1431410419754684,
+      "save_seconds": 0.44699270895216614,
+      "status": "captured",
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "capture_started_at": 1790564475.961146,
+      "capture_completed_at": 1790564476.714405,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      }
+    },
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "agent-state-B",
+      "operation": "baseline",
+      "root_totals": {
+        "entries": 454775,
+        "directories": 95510,
+        "regular_files": 356404,
+        "symlinks": 2858,
+        "apparent_bytes": 38405432527,
+        "allocated_bytes": 39335297024
+      },
+      "scan_seconds": 51.83103450003546,
+      "rollup_seconds": 9.818769874982536,
+      "save_seconds": 7.553592334035784,
+      "status": "captured",
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "capture_started_at": 1790564447.503762,
+      "capture_completed_at": 1790564509.1745589,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      }
+    },
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "agent-state-A",
+      "operation": "baseline",
+      "root_totals": {
+        "entries": 12293,
+        "directories": 3175,
+        "regular_files": 9114,
+        "symlinks": 4,
+        "apparent_bytes": 4356804197,
+        "allocated_bytes": 4377583616
+      },
+      "scan_seconds": 2.75158729206305,
+      "rollup_seconds": 0.1766160000115633,
+      "save_seconds": 0.24847533402498811,
+      "status": "captured",
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "capture_started_at": 1790564517.1183412,
+      "capture_completed_at": 1790564520.082583,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      }
+    }
+  ],
+  "refreshes": [
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "controlled-growth",
+      "operation": "refresh",
+      "status": "equal",
+      "create_flags": 144,
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "filesystem": "apfs",
+      "platform": "26.5.2",
+      "architecture": "arm64",
+      "timings_seconds": {
+        "preflight": 0.02868504193611443,
+        "load": 0.15307529200799763,
+        "replay": 0.05968020798172802,
+        "normalization": 0.00022950000129640102,
+        "scoped_scan": 0.21039966691751033,
+        "rollup_and_diff": 0.2155995420180261,
+        "candidate_save": 0.3952335830545053,
+        "instrumented_refresh_segment": 1.0344276670366526
+      },
+      "oracle_before_seconds": 0.36246141709852964,
+      "oracle_after_seconds": 0.5342684999341145,
+      "full_control_seconds": 1.2920840830774978,
+      "full_control_rollup_seconds": 0.19181774999015033,
+      "full_control_save_seconds": 0.5659853329416364,
+      "oracle_totals_before": {
+        "entries": 20206,
+        "directories": 203,
+        "regular_files": 20003,
+        "symlinks": 0,
+        "apparent_bytes": 246585,
+        "allocated_bytes": 81993728
+      },
+      "oracle_totals_after": {
+        "entries": 20206,
+        "directories": 203,
+        "regular_files": 20003,
+        "symlinks": 0,
+        "apparent_bytes": 246585,
+        "allocated_bytes": 81993728
+      },
+      "oracle_before_observed_entries": 20206,
+      "oracle_after_observed_entries": 20206,
+      "baseline_capture_started_at": 1790564475.961146,
+      "baseline_capture_completed_at": 1790564476.714405,
+      "refresh_started_at": 1790564478.234784,
+      "refresh_completed_at": 1790564481.856554,
+      "gap_since_baseline_completion_seconds": 1.520378828048706,
+      "root_totals_before": {
+        "entries": 20204,
+        "directories": 201,
+        "regular_files": 20003,
+        "symlinks": 0,
+        "apparent_bytes": 180069,
+        "allocated_bytes": 81932288
+      },
+      "root_totals_candidate": {
+        "entries": 20206,
+        "directories": 203,
+        "regular_files": 20003,
+        "symlinks": 0,
+        "apparent_bytes": 246585,
+        "allocated_bytes": 81993728
+      },
+      "changed_entry_count": 213,
+      "dirty_scope_count": 8,
+      "planned_relist_scope_count": 5,
+      "planned_recursive_scope_count": 3,
+      "fallback_reasons": [],
+      "effective_scope_count": 5,
+      "relisted_scope_count": 5,
+      "recursive_scope_count": 2,
+      "hardlink_alias_scope_count": 0,
+      "candidate_observed_entries": 712,
+      "candidate_ancestor_observations": 9,
+      "candidate_directory_lists": 8,
+      "candidate_removed_entries": 102,
+      "parent_index_seconds": 0.08999954198952764,
+      "hardlink_index_seconds": 0.08734295808244497,
+      "root_fallback": false,
+      "root_relisted": true,
+      "error_count": 0,
+      "mismatch_counts": {
+        "raw_before_mismatches": 0,
+        "raw_after_mismatches": 0,
+        "concurrent_paths": 0,
+        "stable_mismatches": 0,
+        "unresolved_concurrent_mismatches": 0
+      },
+      "stable_equal_count": 20206,
+      "event_count": 12,
+      "overlap_event_count": 0,
+      "cursor_advanced": false,
+      "oracle_before_warms_metadata_cache": true,
+      "preflight_warms_baseline_load": true,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      },
+      "state_bytes_before_summary": 7682281,
+      "limits": [
+        "Python prototype; full-image loading, copying, rollups, and saving",
+        "Regular-file bytes per path; no hard-link or clone deduplication",
+        "Concurrent paths are unverified; two matching observations are not atomicity proof",
+        "Helper timings and filesystem scans are not fdu end-to-end performance",
+        "Timed refresh segment excludes preflight, both oracles, and validation/reporting",
+        "Full control is scan plus rollups plus save; ordered after candidate, not paired/interleaved"
+      ]
+    },
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "agent-state-B",
+      "operation": "refresh",
+      "status": "mismatch",
+      "create_flags": 144,
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "filesystem": "apfs",
+      "platform": "26.5.2",
+      "architecture": "arm64",
+      "timings_seconds": {
+        "preflight": 1.9942350420169532,
+        "load": 2.7930085419211537,
+        "replay": 0.053649374982342124,
+        "normalization": 0.002624124987050891,
+        "scoped_scan": 1.7689726249082014,
+        "rollup_and_diff": 3.2722442080266774,
+        "candidate_save": 3.0854965000180528,
+        "instrumented_refresh_segment": 10.976175124989823
+      },
+      "oracle_before_seconds": 41.04561429203022,
+      "oracle_after_seconds": 17.629270041012205,
+      "full_control_seconds": 23.819983332999982,
+      "full_control_rollup_seconds": 2.929833750007674,
+      "full_control_save_seconds": 3.260869540972635,
+      "oracle_totals_before": {
+        "entries": 454775,
+        "directories": 95510,
+        "regular_files": 356404,
+        "symlinks": 2858,
+        "apparent_bytes": 38406892735,
+        "allocated_bytes": 39336755200
+      },
+      "oracle_totals_after": {
+        "entries": 454776,
+        "directories": 95510,
+        "regular_files": 356405,
+        "symlinks": 2858,
+        "apparent_bytes": 38407317318,
+        "allocated_bytes": 39337185280
+      },
+      "oracle_before_observed_entries": 454775,
+      "oracle_after_observed_entries": 454776,
+      "baseline_capture_started_at": 1790564447.503762,
+      "baseline_capture_completed_at": 1790564509.1745589,
+      "refresh_started_at": 1790564538.2331939,
+      "refresh_completed_at": 1790564630.532137,
+      "gap_since_baseline_completion_seconds": 29.058634996414185,
+      "root_totals_before": {
+        "entries": 454775,
+        "directories": 95510,
+        "regular_files": 356404,
+        "symlinks": 2858,
+        "apparent_bytes": 38405432527,
+        "allocated_bytes": 39335297024
+      },
+      "root_totals_candidate": {
+        "entries": 454776,
+        "directories": 95510,
+        "regular_files": 356405,
+        "symlinks": 2858,
+        "apparent_bytes": 38406823097,
+        "allocated_bytes": 39336693760
+      },
+      "changed_entry_count": 67,
+      "dirty_scope_count": 8,
+      "planned_relist_scope_count": 8,
+      "planned_recursive_scope_count": 0,
+      "fallback_reasons": [],
+      "effective_scope_count": 8,
+      "relisted_scope_count": 8,
+      "recursive_scope_count": 0,
+      "hardlink_alias_scope_count": 0,
+      "candidate_observed_entries": 848,
+      "candidate_ancestor_observations": 44,
+      "candidate_directory_lists": 8,
+      "candidate_removed_entries": 2,
+      "parent_index_seconds": 1.4710239169653505,
+      "hardlink_index_seconds": 0,
+      "root_fallback": false,
+      "root_relisted": true,
+      "error_count": 0,
+      "mismatch_counts": {
+        "raw_before_mismatches": 20,
+        "raw_after_mismatches": 12,
+        "concurrent_paths": 19,
+        "stable_mismatches": 1,
+        "unresolved_concurrent_mismatches": 11
+      },
+      "stable_equal_count": 454756,
+      "event_count": 347,
+      "overlap_event_count": 0,
+      "cursor_advanced": false,
+      "oracle_before_warms_metadata_cache": true,
+      "preflight_warms_baseline_load": true,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      },
+      "state_bytes_before_summary": 418744763,
+      "limits": [
+        "Python prototype; full-image loading, copying, rollups, and saving",
+        "Regular-file bytes per path; no hard-link or clone deduplication",
+        "Concurrent paths are unverified; two matching observations are not atomicity proof",
+        "Helper timings and filesystem scans are not fdu end-to-end performance",
+        "Timed refresh segment excludes preflight, both oracles, and validation/reporting",
+        "Full control is scan plus rollups plus save; ordered after candidate, not paired/interleaved"
+      ]
+    },
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "agent-state-B",
+      "operation": "refresh",
+      "status": "mismatch",
+      "create_flags": 144,
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "filesystem": "apfs",
+      "platform": "26.5.2",
+      "architecture": "arm64",
+      "timings_seconds": {
+        "preflight": 0.9044042909517884,
+        "load": 2.6447312079835683,
+        "replay": 0.05922175000887364,
+        "normalization": 0.003868666011840105,
+        "scoped_scan": 2.155493666068651,
+        "rollup_and_diff": 3.346354791894555,
+        "candidate_save": 3.3410370000638068,
+        "instrumented_refresh_segment": 11.550939708016813
+      },
+      "oracle_before_seconds": 19.496263792039827,
+      "oracle_after_seconds": 19.205141250044107,
+      "full_control_seconds": 39.42618966603186,
+      "full_control_rollup_seconds": 2.9469074169173837,
+      "full_control_save_seconds": 17.27412962494418,
+      "oracle_totals_before": {
+        "entries": 454777,
+        "directories": 95510,
+        "regular_files": 356406,
+        "symlinks": 2858,
+        "apparent_bytes": 38410833403,
+        "allocated_bytes": 39340687360
+      },
+      "oracle_totals_after": {
+        "entries": 454777,
+        "directories": 95510,
+        "regular_files": 356406,
+        "symlinks": 2858,
+        "apparent_bytes": 38412214492,
+        "allocated_bytes": 39342018560
+      },
+      "oracle_before_observed_entries": 454777,
+      "oracle_after_observed_entries": 454777,
+      "baseline_capture_started_at": 1790564447.503762,
+      "baseline_capture_completed_at": 1790564509.1745589,
+      "refresh_started_at": 1790564741.223767,
+      "refresh_completed_at": 1790564820.6650538,
+      "gap_since_baseline_completion_seconds": 232.0492081642151,
+      "root_totals_before": {
+        "entries": 454775,
+        "directories": 95510,
+        "regular_files": 356404,
+        "symlinks": 2858,
+        "apparent_bytes": 38405432527,
+        "allocated_bytes": 39335297024
+      },
+      "root_totals_candidate": {
+        "entries": 454777,
+        "directories": 95510,
+        "regular_files": 356406,
+        "symlinks": 2858,
+        "apparent_bytes": 38409046266,
+        "allocated_bytes": 39338876928
+      },
+      "changed_entry_count": 111,
+      "dirty_scope_count": 10,
+      "planned_relist_scope_count": 10,
+      "planned_recursive_scope_count": 0,
+      "fallback_reasons": [],
+      "effective_scope_count": 10,
+      "relisted_scope_count": 10,
+      "recursive_scope_count": 0,
+      "hardlink_alias_scope_count": 0,
+      "candidate_observed_entries": 900,
+      "candidate_ancestor_observations": 60,
+      "candidate_directory_lists": 10,
+      "candidate_removed_entries": 3,
+      "parent_index_seconds": 1.771870750002563,
+      "hardlink_index_seconds": 0,
+      "root_fallback": false,
+      "root_relisted": true,
+      "error_count": 0,
+      "mismatch_counts": {
+        "raw_before_mismatches": 17,
+        "raw_after_mismatches": 31,
+        "concurrent_paths": 34,
+        "stable_mismatches": 2,
+        "unresolved_concurrent_mismatches": 10
+      },
+      "stable_equal_count": 454746,
+      "event_count": 527,
+      "overlap_event_count": 0,
+      "cursor_advanced": false,
+      "oracle_before_warms_metadata_cache": true,
+      "preflight_warms_baseline_load": true,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      },
+      "state_bytes_before_summary": 727492181,
+      "limits": [
+        "Python prototype; full-image loading, copying, rollups, and saving",
+        "Regular-file bytes per path; no hard-link or clone deduplication",
+        "Concurrent paths are unverified; two matching observations are not atomicity proof",
+        "Helper timings and filesystem scans are not fdu end-to-end performance",
+        "Timed refresh segment excludes preflight, both oracles, and validation/reporting",
+        "Full control is scan plus rollups plus save; ordered after candidate, not paired/interleaved"
+      ]
+    },
+    {
+      "schema": "fdu-real-tree-replay-v1",
+      "alias": "agent-state-A",
+      "operation": "refresh",
+      "status": "equal",
+      "create_flags": 144,
+      "provenance": {
+        "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+        "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+        "sdk_version": "26.5"
+      },
+      "filesystem": "apfs",
+      "platform": "26.5.2",
+      "architecture": "arm64",
+      "timings_seconds": {
+        "preflight": 0.45566600002348423,
+        "load": 0.1174473330611363,
+        "replay": 0.08945358404889703,
+        "normalization": 0.000049167079851031303,
+        "scoped_scan": 0.09215391695033759,
+        "rollup_and_diff": 0.12002908298745751,
+        "candidate_save": 0.527270624996163,
+        "instrumented_refresh_segment": 0.9466450830223039
+      },
+      "oracle_before_seconds": 4.010518749943003,
+      "oracle_after_seconds": 0.5809678330551833,
+      "full_control_seconds": 1.2553300829604268,
+      "full_control_rollup_seconds": 0.16402183298487216,
+      "full_control_save_seconds": 0.510327750002034,
+      "oracle_totals_before": {
+        "entries": 12293,
+        "directories": 3175,
+        "regular_files": 9114,
+        "symlinks": 4,
+        "apparent_bytes": 4356804197,
+        "allocated_bytes": 4377583616
+      },
+      "oracle_totals_after": {
+        "entries": 12293,
+        "directories": 3175,
+        "regular_files": 9114,
+        "symlinks": 4,
+        "apparent_bytes": 4356804197,
+        "allocated_bytes": 4377583616
+      },
+      "oracle_before_observed_entries": 12293,
+      "oracle_after_observed_entries": 12293,
+      "baseline_capture_started_at": 1790564517.1183412,
+      "baseline_capture_completed_at": 1790564520.082583,
+      "refresh_started_at": 1790564562.388553,
+      "refresh_completed_at": 1790564569.6644301,
+      "gap_since_baseline_completion_seconds": 42.30596995353699,
+      "root_totals_before": {
+        "entries": 12293,
+        "directories": 3175,
+        "regular_files": 9114,
+        "symlinks": 4,
+        "apparent_bytes": 4356804197,
+        "allocated_bytes": 4377583616
+      },
+      "root_totals_candidate": {
+        "entries": 12293,
+        "directories": 3175,
+        "regular_files": 9114,
+        "symlinks": 4,
+        "apparent_bytes": 4356804197,
+        "allocated_bytes": 4377583616
+      },
+      "changed_entry_count": 0,
+      "dirty_scope_count": 0,
+      "planned_relist_scope_count": 0,
+      "planned_recursive_scope_count": 0,
+      "fallback_reasons": [],
+      "effective_scope_count": 0,
+      "relisted_scope_count": 0,
+      "recursive_scope_count": 0,
+      "hardlink_alias_scope_count": 0,
+      "candidate_observed_entries": 0,
+      "candidate_ancestor_observations": 0,
+      "candidate_directory_lists": 0,
+      "candidate_removed_entries": 0,
+      "parent_index_seconds": 0.09111358399968594,
+      "hardlink_index_seconds": 0,
+      "root_fallback": false,
+      "root_relisted": false,
+      "error_count": 0,
+      "mismatch_counts": {
+        "raw_before_mismatches": 0,
+        "raw_after_mismatches": 0,
+        "concurrent_paths": 0,
+        "stable_mismatches": 0,
+        "unresolved_concurrent_mismatches": 0
+      },
+      "stable_equal_count": 12293,
+      "event_count": 1,
+      "overlap_event_count": 0,
+      "cursor_advanced": false,
+      "oracle_before_warms_metadata_cache": true,
+      "preflight_warms_baseline_load": true,
+      "resource_limits": {
+        "max_entries": 1000000,
+        "max_state_bytes": 2147483648,
+        "reserve_free_bytes": 2147483648
+      },
+      "state_bytes_before_summary": 11459735,
+      "limits": [
+        "Python prototype; full-image loading, copying, rollups, and saving",
+        "Regular-file bytes per path; no hard-link or clone deduplication",
+        "Concurrent paths are unverified; two matching observations are not atomicity proof",
+        "Helper timings and filesystem scans are not fdu end-to-end performance",
+        "Timed refresh segment excludes preflight, both oracles, and validation/reporting",
+        "Full control is scan plus rollups plus save; ordered after candidate, not paired/interleaved"
+      ]
+    }
+  ],
+  "stable_miss_investigation": {
+    "first_trial_stable_misses": 1,
+    "second_trial_stable_misses": 2,
+    "first_miss_persisted": true,
+    "first_file_apparent_growth_bytes": 23948,
+    "first_file_allocated_growth_bytes": 24576,
+    "first_file_candidate_equal_to_baseline": true,
+    "first_file_oracles_equal": true,
+    "first_file_parent_absent_from_scope_plan": true,
+    "targeted_open_descriptor_check": {
+      "file_count": 1,
+      "access": "read_write"
+    },
+    "application_cause": "Not established by descriptor observation alone; see controlled open-writer test.",
+    "private_paths_omitted": true
+  },
+  "open_writer": [
+    {
+      "label": "open-writer-aged-02",
+      "summary": {
+        "schema": "fdu-open-writer-diagnostic-v1",
+        "sources": {
+          "open_writer.py": "62cd0c48e2eca10e0d81ad5a19a5ff8033143edcc97668715f38918a6ea7ee26",
+          "real_tree.py": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+          "fixture_workload.py": "bdbb14027357c4e3943872e340af7f17ec137a5a28c297a346abda3b4dffeb8b",
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c"
+        },
+        "provenance": {
+          "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+          "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+          "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+          "sdk_version": "26.5"
+        },
+        "platform": "26.5.2",
+        "architecture": "arm64",
+        "filesystem": "apfs",
+        "cursor": 4795002049,
+        "captured_device_fence": 4795002049,
+        "cursor_protocol": "current device-time fence before append",
+        "existing_owned_fixture": true,
+        "create_flags": 144,
+        "deadline_seconds": 10,
+        "diagnostic_valid": true,
+        "open_omission_reproduced": true,
+        "closed_stage_equal": true,
+        "overlap_masks_open_stage": false,
+        "stages": {
+          "open": {
+            "writer_open": true,
+            "completed": true,
+            "identity_matches": true,
+            "observation_error_count": 0,
+            "degradation_reason_count": 0,
+            "diagnostic_valid": true,
+            "event_count": 0,
+            "overlap_event_count": 0,
+            "fresh_log_nominations": 0,
+            "overlap_alone_observes_changed_log": false,
+            "log_omission": true,
+            "comparison": {
+              "raw_before_mismatches": [
+                "file-000"
+              ],
+              "raw_after_mismatches": [
+                "file-000"
+              ],
+              "concurrent_paths": [],
+              "stable_mismatches": [
+                "file-000"
+              ],
+              "unresolved_concurrent_mismatches": [],
+              "stable_equal_count": 100,
+              "status": "mismatch"
+            }
+          },
+          "closed": {
+            "writer_open": false,
+            "completed": true,
+            "identity_matches": true,
+            "observation_error_count": 0,
+            "degradation_reason_count": 0,
+            "diagnostic_valid": true,
+            "event_count": 1,
+            "overlap_event_count": 0,
+            "fresh_log_nominations": 1,
+            "overlap_alone_observes_changed_log": false,
+            "log_omission": false,
+            "comparison": {
+              "raw_before_mismatches": [],
+              "raw_after_mismatches": [],
+              "concurrent_paths": [],
+              "stable_mismatches": [],
+              "unresolved_concurrent_mismatches": [],
+              "stable_equal_count": 101,
+              "status": "equal"
+            }
+          }
+        },
+        "limitations": [
+          "Synthetic external fixture, not application attribution",
+          "Overlap coverage can mask a missing fresh notification",
+          "HistoryDone is not a production safe cursor advancement proof"
+        ]
+      },
+      "native_stages": [
+        {
+          "writer_open": true,
+          "summary": {
+            "type": "summary",
+            "pid": 91050,
+            "cursor": 4795002049,
+            "create_flags": 144,
+            "started": true,
+            "history_done": true,
+            "timeout": false,
+            "truncated": false,
+            "latest_id": 4795002049,
+            "history_id": 4795002049,
+            "history_ms": 26.987,
+            "flush_ms": 0.028,
+            "elapsed_ms": 27.078,
+            "deadline_seconds": 10,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.409,
+            "async_id": 0,
+            "callbacks": 1,
+            "events": 1,
+            "first_callback_ms": 26.961,
+            "last_callback_ms": 26.961
+          },
+          "events": [
+            {
+              "type": "event",
+              "id": 4795002049,
+              "flags": 16,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            }
+          ]
+        },
+        {
+          "writer_open": false,
+          "summary": {
+            "type": "summary",
+            "pid": 91051,
+            "cursor": 4795002049,
+            "create_flags": 144,
+            "started": true,
+            "history_done": true,
+            "timeout": false,
+            "truncated": false,
+            "latest_id": 4795026372,
+            "history_id": 4795026372,
+            "history_ms": 6.219,
+            "flush_ms": 0.026,
+            "elapsed_ms": 6.305,
+            "deadline_seconds": 10,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.433,
+            "async_id": 0,
+            "callbacks": 2,
+            "events": 2,
+            "first_callback_ms": 6.178,
+            "last_callback_ms": 6.206
+          },
+          "events": [
+            {
+              "type": "event",
+              "id": 4795026372,
+              "flags": 69632,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": "66696c652d303030"
+            },
+            {
+              "type": "event",
+              "id": 4795026372,
+              "flags": 16,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "open-writer-parent",
+      "summary": {
+        "schema": "fdu-open-writer-diagnostic-v1",
+        "sources": {
+          "open_writer.py": "62cd0c48e2eca10e0d81ad5a19a5ff8033143edcc97668715f38918a6ea7ee26",
+          "real_tree.py": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+          "fixture_workload.py": "bdbb14027357c4e3943872e340af7f17ec137a5a28c297a346abda3b4dffeb8b",
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c"
+        },
+        "provenance": {
+          "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+          "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+          "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+          "sdk_version": "26.5"
+        },
+        "platform": "26.5.2",
+        "architecture": "arm64",
+        "filesystem": "apfs",
+        "cursor": 4795045451,
+        "captured_device_fence": 4795045451,
+        "cursor_protocol": "current device-time fence before append",
+        "existing_owned_fixture": true,
+        "create_flags": 144,
+        "deadline_seconds": 10,
+        "diagnostic_valid": true,
+        "open_omission_reproduced": true,
+        "closed_stage_equal": true,
+        "overlap_masks_open_stage": false,
+        "stages": {
+          "open": {
+            "writer_open": true,
+            "completed": true,
+            "identity_matches": true,
+            "observation_error_count": 0,
+            "degradation_reason_count": 0,
+            "diagnostic_valid": true,
+            "event_count": 0,
+            "overlap_event_count": 0,
+            "fresh_log_nominations": 0,
+            "overlap_alone_observes_changed_log": false,
+            "log_omission": true,
+            "comparison": {
+              "raw_before_mismatches": [
+                "file-000"
+              ],
+              "raw_after_mismatches": [
+                "file-000"
+              ],
+              "concurrent_paths": [],
+              "stable_mismatches": [
+                "file-000"
+              ],
+              "unresolved_concurrent_mismatches": [],
+              "stable_equal_count": 100,
+              "status": "mismatch"
+            }
+          },
+          "closed": {
+            "writer_open": false,
+            "completed": true,
+            "identity_matches": true,
+            "observation_error_count": 0,
+            "degradation_reason_count": 0,
+            "diagnostic_valid": true,
+            "event_count": 1,
+            "overlap_event_count": 0,
+            "fresh_log_nominations": 1,
+            "overlap_alone_observes_changed_log": false,
+            "log_omission": false,
+            "comparison": {
+              "raw_before_mismatches": [],
+              "raw_after_mismatches": [],
+              "concurrent_paths": [],
+              "stable_mismatches": [],
+              "unresolved_concurrent_mismatches": [],
+              "stable_equal_count": 101,
+              "status": "equal"
+            }
+          }
+        },
+        "limitations": [
+          "Synthetic external fixture, not application attribution",
+          "Overlap coverage can mask a missing fresh notification",
+          "HistoryDone is not a production safe cursor advancement proof"
+        ]
+      },
+      "native_stages": [
+        {
+          "writer_open": true,
+          "summary": {
+            "type": "summary",
+            "pid": 92916,
+            "cursor": 4795045451,
+            "create_flags": 144,
+            "started": true,
+            "history_done": true,
+            "timeout": false,
+            "truncated": false,
+            "latest_id": 4795045451,
+            "history_id": 4795045451,
+            "history_ms": 142.831,
+            "flush_ms": 0.038,
+            "elapsed_ms": 142.941,
+            "deadline_seconds": 10,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.371,
+            "async_id": 0,
+            "callbacks": 1,
+            "events": 1,
+            "first_callback_ms": 142.801,
+            "last_callback_ms": 142.801
+          },
+          "events": [
+            {
+              "type": "event",
+              "id": 4795045451,
+              "flags": 16,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            }
+          ]
+        },
+        {
+          "writer_open": false,
+          "summary": {
+            "type": "summary",
+            "pid": 92927,
+            "cursor": 4795045451,
+            "create_flags": 144,
+            "started": true,
+            "history_done": true,
+            "timeout": false,
+            "truncated": false,
+            "latest_id": 4795082357,
+            "history_id": 4795082357,
+            "history_ms": 11.342,
+            "flush_ms": 0.037,
+            "elapsed_ms": 11.455,
+            "deadline_seconds": 10,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.344,
+            "async_id": 0,
+            "callbacks": 2,
+            "events": 2,
+            "first_callback_ms": 11.209,
+            "last_callback_ms": 11.319
+          },
+          "events": [
+            {
+              "type": "event",
+              "id": 4795082357,
+              "flags": 69632,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": "66696c652d303030"
+            },
+            {
+              "type": "event",
+              "id": 4795082357,
+              "flags": 16,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "open-writer-fresh-final",
+      "summary": {
+        "schema": "fdu-open-writer-diagnostic-v1",
+        "sources": {
+          "open_writer.py": "62cd0c48e2eca10e0d81ad5a19a5ff8033143edcc97668715f38918a6ea7ee26",
+          "real_tree.py": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+          "fixture_workload.py": "bdbb14027357c4e3943872e340af7f17ec137a5a28c297a346abda3b4dffeb8b",
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c"
+        },
+        "provenance": {
+          "harness_sha256": "572065c04456338a1fd1c0801bd73d5d7fdb8263ee89ae30498206dd9a52e4a9",
+          "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+          "native_source_sha256": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "compiler": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+          "sdk_version": "26.5"
+        },
+        "platform": "26.5.2",
+        "architecture": "arm64",
+        "filesystem": "apfs",
+        "cursor": 4795082416,
+        "captured_device_fence": 4795080795,
+        "cursor_protocol": "creation drain latest ID; both stages reuse unchanged cursor",
+        "existing_owned_fixture": false,
+        "create_flags": 144,
+        "deadline_seconds": 10,
+        "diagnostic_valid": true,
+        "open_omission_reproduced": false,
+        "closed_stage_equal": true,
+        "overlap_masks_open_stage": true,
+        "stages": {
+          "open": {
+            "writer_open": true,
+            "completed": true,
+            "identity_matches": true,
+            "observation_error_count": 0,
+            "degradation_reason_count": 0,
+            "diagnostic_valid": true,
+            "event_count": 2,
+            "overlap_event_count": 2,
+            "fresh_log_nominations": 0,
+            "overlap_alone_observes_changed_log": true,
+            "log_omission": false,
+            "comparison": {
+              "raw_before_mismatches": [],
+              "raw_after_mismatches": [],
+              "concurrent_paths": [],
+              "stable_mismatches": [],
+              "unresolved_concurrent_mismatches": [],
+              "stable_equal_count": 2,
+              "status": "equal"
+            }
+          },
+          "closed": {
+            "writer_open": false,
+            "completed": true,
+            "identity_matches": true,
+            "observation_error_count": 0,
+            "degradation_reason_count": 0,
+            "diagnostic_valid": true,
+            "event_count": 2,
+            "overlap_event_count": 2,
+            "fresh_log_nominations": 0,
+            "overlap_alone_observes_changed_log": true,
+            "log_omission": false,
+            "comparison": {
+              "raw_before_mismatches": [],
+              "raw_after_mismatches": [],
+              "concurrent_paths": [],
+              "stable_mismatches": [],
+              "unresolved_concurrent_mismatches": [],
+              "stable_equal_count": 2,
+              "status": "equal"
+            }
+          }
+        },
+        "limitations": [
+          "Synthetic external fixture, not application attribution",
+          "Overlap coverage can mask a missing fresh notification",
+          "HistoryDone is not a production safe cursor advancement proof"
+        ]
+      },
+      "native_stages": [
+        {
+          "writer_open": true,
+          "summary": {
+            "type": "summary",
+            "pid": 92933,
+            "cursor": 4795082416,
+            "create_flags": 144,
+            "started": true,
+            "history_done": true,
+            "timeout": false,
+            "truncated": false,
+            "latest_id": 4795082416,
+            "history_id": 4795082416,
+            "history_ms": 12.273,
+            "flush_ms": 0.032,
+            "elapsed_ms": 12.381,
+            "deadline_seconds": 10,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.487,
+            "async_id": 0,
+            "callbacks": 2,
+            "events": 3,
+            "first_callback_ms": 12.139,
+            "last_callback_ms": 12.26
+          },
+          "events": [
+            {
+              "type": "event",
+              "id": 4795082404,
+              "flags": 164096,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            },
+            {
+              "type": "event",
+              "id": 4795082416,
+              "flags": 103680,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": "6c6f67"
+            },
+            {
+              "type": "event",
+              "id": 4795082416,
+              "flags": 16,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            }
+          ]
+        },
+        {
+          "writer_open": false,
+          "summary": {
+            "type": "summary",
+            "pid": 92934,
+            "cursor": 4795082416,
+            "create_flags": 144,
+            "started": true,
+            "history_done": true,
+            "timeout": false,
+            "truncated": false,
+            "latest_id": 4795082416,
+            "history_id": 4795082416,
+            "history_ms": 9.237,
+            "flush_ms": 0.028,
+            "elapsed_ms": 9.336,
+            "deadline_seconds": 10,
+            "initial_flush": "wait",
+            "initial_flush_ms": 0.314,
+            "async_id": 0,
+            "callbacks": 2,
+            "events": 3,
+            "first_callback_ms": 9.08,
+            "last_callback_ms": 9.227
+          },
+          "events": [
+            {
+              "type": "event",
+              "id": 4795082404,
+              "flags": 164096,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            },
+            {
+              "type": "event",
+              "id": 4795082416,
+              "flags": 103680,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": "6c6f67"
+            },
+            {
+              "type": "event",
+              "id": 4795082416,
+              "flags": 16,
+              "inside": true,
+              "ancestor": false,
+              "after_history_done": false,
+              "path_hex": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "preliminary_native_completion": [
+    {
+      "scenario": "deep",
+      "create_flags": 144,
+      "cursor_age_seconds": 95944.18521094322,
+      "summary": {
+        "async_id": 0,
+        "callbacks": 2,
+        "create_flags": 144,
+        "cursor": 4488649707,
+        "deadline_seconds": 60,
+        "elapsed_ms": 32385.738,
+        "events": 20,
+        "first_callback_ms": 7.755,
+        "flush_ms": 0.03,
+        "history_done": true,
+        "history_id": 4488649707,
+        "history_ms": 32385.627,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.369,
+        "last_callback_ms": 32385.613,
+        "latest_id": 4488649773,
+        "pid": 20921,
+        "started": true,
+        "timeout": false,
+        "truncated": false,
+        "type": "summary"
+      },
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "note": "Native timing evidence only; diagnostic driver later hardened. Native source and binary provenance retained; final-driver acceptance records are in historical_completion."
+    },
+    {
+      "scenario": "mixed",
+      "create_flags": 144,
+      "cursor_age_seconds": 95978.55969882011,
+      "summary": {
+        "async_id": 0,
+        "callbacks": 2,
+        "create_flags": 144,
+        "cursor": 4488647563,
+        "deadline_seconds": 60,
+        "elapsed_ms": 33301.584,
+        "events": 24,
+        "first_callback_ms": 6.354,
+        "flush_ms": 0.056,
+        "history_done": true,
+        "history_id": 4488649527,
+        "history_ms": 33301.452,
+        "initial_flush": "wait",
+        "initial_flush_ms": 0.353,
+        "last_callback_ms": 33301.435,
+        "latest_id": 4488649548,
+        "pid": 21245,
+        "started": true,
+        "timeout": false,
+        "truncated": false,
+        "type": "summary"
+      },
+      "replay_provenance": {
+        "binary_sha256": "411d7015cc615182b90eba88b1f6e1c24b311baff46cacb2e01882797b2dc876",
+        "source_sha256": {
+          "probe.c": "373408ca57bcf968aac93520b4ed4340cc5d2992b80a403f15c15ed134a05d1c",
+          "run.py": "f0a76e38a27449b09edf7ee30c06d40060a09cf5983689f1afd168309cf8c821"
+        }
+      },
+      "note": "Native timing evidence only; diagnostic driver later hardened. Native source and binary provenance retained; final-driver acceptance records are in historical_completion."
+    }
+  ]
+}

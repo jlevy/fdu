@@ -1,0 +1,30 @@
+diff --git a/explorations/fsevents-replay/real_tree.py b/explorations/fsevents-replay/real_tree.py
+index 4721a8f4..697b39d2 100644
+--- a/explorations/fsevents-replay/real_tree.py
++++ b/explorations/fsevents-replay/real_tree.py
+@@ -20,6 +20,6 @@ import time
+ import unittest
+-from collections.abc import Iterator
++from collections.abc import Generator
+ from dataclasses import asdict, dataclass
+ from pathlib import Path, PurePosixPath
+-from typing import Any, NamedTuple
++from typing import Any, NamedTuple, cast
+ from unittest.mock import patch
+@@ -99,3 +99,3 @@ def normalized_parts(path: str) -> tuple[str, ...]:
+ @contextlib.contextmanager
+-def directory_fd(path: Path) -> Iterator[int]:
++def directory_fd(path: Path) -> Generator[int]:
+     """Open every ancestor without following symlinks, including the root itself."""
+@@ -218,3 +218,3 @@ def contains(parent: str, path: str) -> bool:
+ @contextlib.contextmanager
+-def scope_fd(root_fd: int, scope: str, device: int) -> Iterator[tuple[int, str, Inventory]]:
++def scope_fd(root_fd: int, scope: str, device: int) -> Generator[tuple[int, str, Inventory]]:
+     """Widen missing scopes to their nearest extant parent; never traverse a symlink."""
+@@ -721,3 +721,5 @@ def refresh(root: Path, state: Path, label: str, flags: int) -> int:
+             "mismatch_counts": {
+-                key: len(value) for key, value in comparison.items() if isinstance(value, list)
++                key: len(cast(list[object], value))
++                for key, value in comparison.items()
++                if isinstance(value, list)
+             },

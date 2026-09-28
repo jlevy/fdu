@@ -77,7 +77,7 @@ rust-test:
 permission-bits:
 	@case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*|Windows_NT) exit 0;; esac; \
 	if [ "$${FDU_TEST_ALLOW_NO_PERMISSION_BITS:-}" = 1 ]; then exit 0; fi; \
-	probe="$$(mktemp)" || exit 1; \
+	probe="$$(mktemp "$${TMPDIR:-/tmp}/fdu-permission.XXXXXX")" || exit 1; \
 	chmod 000 "$$probe"; \
 	if cat "$$probe" >/dev/null 2>&1; then \
 		rm -f "$$probe"; \
@@ -752,7 +752,7 @@ perf-report-check:
 # promised the ledger was covered too. It is generated and *then* formatted, so the check
 # has to reproduce both steps rather than compare against raw output.
 perf-ledger-check:
-	@scratch=$$(mktemp -d) && trap 'rm -rf "$$scratch"' EXIT && \
+	@scratch=$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-ledger.XXXXXX") && trap 'rm -rf "$$scratch"' EXIT && \
 		$(PERF_UV) --group dev python -m benchmarks.realtree.summary \
 			--out "$$scratch/ledger.md" && \
 		$(FLOWMARK) --auto "$$scratch/ledger.md" >/dev/null && \

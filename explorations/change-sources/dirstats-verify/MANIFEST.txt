@@ -43,3 +43,4 @@
 ./src/semantics.py	unchanged	3de12a963aca298576fbe38a1865fd84114816a812d1a805f9dd9b12edcb5c00
 ./src/summarize.py	unchanged	8c52846cd853531b09bddf3805073e0ef8e07092b5532c00773b1e1901323be0
 # Not ported: results/summary.json (1 MB digest duplicating the files above), results/smoke/probe-lat.json (541 KB raw latency array), data/ (raw walks with absolute paths), fixtures/, attic/ (disk image).
+# Note: results/dmg-tests.json has persistence.survived = false, but its before/after values are identical (gencount 129, totals [129, 1051, 4222976]); the flag is a script error and the marks did survive.
