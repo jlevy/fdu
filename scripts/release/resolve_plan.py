@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -35,6 +36,10 @@ from scripts.release.publish_gate import github_get
 
 REPOSITORY = "jlevy/fdu"
 MAIN = "main"
+# A plain `X.Y.Z` release, the shape maintainer.py and semver_check.py also require. The
+# plan's version reaches release.yml's `run:` lines through `${{ }}`, so it is held to
+# that shape in either mode rather than trusted as whatever the manifest says.
+VERSION_PATTERN = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 Read = Callable[[str], Any]
 
@@ -63,6 +68,8 @@ def resolve(version: str, mode: str, ref: str, commit: str) -> ReleasePlan:
     """Resolve a plan, rejecting identities that could build the wrong version."""
     if mode not in {"rehearsal", "release"}:
         raise ValueError("mode must be rehearsal or release")
+    if VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError(f"version must be X.Y.Z, got {version!r}")
     if len(commit) < 7 or any(character not in "0123456789abcdef" for character in commit.lower()):
         raise ValueError("commit must be a hexadecimal Git object ID")
     release_tag = f"v{version}"
@@ -101,6 +108,13 @@ def validate_checkout(root: Path, plan: ReleasePlan) -> str | None:
     if plan.release_tag not in tags:
         raise ValueError(f"release tag {plan.release_tag} does not identify HEAD")
     ref = f"refs/tags/{plan.release_tag}"
+    # In a workflow run, this check depends on how actions/checkout fetches the tag. The
+    # pinned v6 fetches a run's tag by name, `+refs/tags/vX:refs/tags/vX`, which keeps
+    # the annotated tag object. v4 fetched `+<sha>:refs/tags/vX`, which writes a
+    # lightweight tag straight to the commit, and under such a refspec every publishing
+    # run stops here, at the plan job. If a checkout bump starts failing here, that is
+    # the refspec change failing closed, not a bug in this check: restore a fetch of the
+    # tag by name rather than accept a commit where the tag object should be.
     tag_object = git_output(root, "rev-parse", "--verify", ref)
     kind = git_output(root, "cat-file", "-t", tag_object)
     if kind != "tag":

