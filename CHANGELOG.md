@@ -47,6 +47,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gone. Under `auto`, a failed snapshot write is reported as a warning, so a read-only
   cache directory still answers; `--cache off` reads nothing.
 
+### Fixed
+
+- A rename no longer makes `--watch` or an opened root reconcile the whole tree.
+  The event backends report each side of a rename as its own event, and every one of
+  them re-walked the root: on a busy 476k-entry agent-state tree on macOS, where atomic
+  temp-file writes rename constantly, that was a full walk every 20 s, 48% of a core,
+  and 6.9 GB of snapshot rewrites an hour.
+  Each side is now verified as its own path, like a create or a remove: a vanished name
+  is removed with its subtree, a present file is updated, and only a directory that
+  arrives by rename is relisted, bounded by that directory.
+  A rename that changes only case reconciles its parent.
+  Kernel event loss, a rename of the root itself, and kqueue renames still reconcile the
+  root. The removed root walks also happened to re-read files held open for writing,
+  whose writes macOS reports only when they close; on macOS such a file is now current
+  as of its last close.
+
 ## [0.1.0] - 2026-09-25
 
 The first release. fdu walks a directory tree once and answers, for every directory at

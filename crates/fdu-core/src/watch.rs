@@ -7,7 +7,9 @@
 //!   what an entry now looks like.
 //! - Only inotify pairs the two sides of a rename (via a kernel cookie). `FSEvents` emits
 //!   one path with no mechanism to associate old and new; Windows delivers both sides
-//!   with no cookie; poll-based watching cannot see renames at all.
+//!   with no cookie; poll-based watching cannot see renames at all. This layer never
+//!   needs the pairing: each named side is verified as its own path, like a create or a
+//!   remove of that name (see `RenameReporting` for what each backend promises).
 //! - When a directory is created, backends that watch per directory register the new
 //!   watch *after* the fact — anything created inside that window produces no event.
 //! - Kernel queues overflow. inotify's `Q_OVERFLOW`, `FSEvents`' `MustScanSubDirs`, and
@@ -125,9 +127,60 @@ enum Pending {
         /// Preserve whether a create event occurred while this path was coalesced. Only
         /// a newly created directory has the watch-registration race that needs a relist.
         relist_if_dir: bool,
+        /// Preserve whether a rename named this path while it was coalesced.
+        ///
+        /// A rename is a removal at one name and an arrival at another, so each side is
+        /// verified exactly like a remove or a create of its own path. Two things differ
+        /// from a create: a directory that arrives by rename brings contents that no
+        /// backend reports, so it is always relisted; and a rename is how a name changes
+        /// only in case or Unicode normalization, which a lookup on an insensitive
+        /// filesystem cannot tell apart, so the name is checked against its parent's
+        /// listing before it is trusted (see [`verify_intent`]).
+        renamed: bool,
     },
     /// The producer already knows it cannot describe this precisely.
     Escalate(InvalidateReason),
+}
+
+/// What a backend's rename events promise about the rename's other side.
+///
+/// Scoping a rename to the paths it names is sound only when every side of it that lies
+/// inside the watched tree is named by some event. That is a property of the backend,
+/// established from notify 8.2's sources rather than assumed:
+///
+/// - `FSEvents` reports each side as its own `ItemRenamed` record naming that side's
+///   path (notify: one `Modify(Name(Any))` per record), and delivers every record under
+///   the watched root; loss is signalled by `MustScanSubDirs`, which arrives here as
+///   `Flag::Rescan`.
+/// - inotify reports `IN_MOVED_FROM` and `IN_MOVED_TO` for each side inside a watched
+///   directory (notify: `From`, `To`, and a cookie-paired `Both`); queue loss is
+///   `IN_Q_OVERFLOW`, again `Flag::Rescan`.
+/// - `ReadDirectoryChangesW` reports the old and new names inside the tree (notify:
+///   `From` and `To`, never paired), and a move across the tree's boundary as a plain
+///   removal or addition.
+/// - kqueue reports only the renamed vnode's old path; the new name surfaces at most as
+///   a write on its new parent directory, which this layer cannot turn into the entry.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RenameReporting {
+    /// Every in-root side of a rename arrives as an event naming it.
+    EachSide,
+    /// A rename may name only one side; the other can be anywhere in the tree.
+    OldSideOnly,
+}
+
+impl RenameReporting {
+    /// The promise of the backend this build's [`RecommendedWatcher`] uses.
+    ///
+    /// Asked at run time rather than decided by `cfg`, because a dependent crate can turn
+    /// on notify's `macos_kqueue` build feature and change the macOS backend under us.
+    fn of_recommended_backend() -> Self {
+        match <RecommendedWatcher as NotifyWatcher>::kind() {
+            notify::WatcherKind::Fsevent
+            | notify::WatcherKind::Inotify
+            | notify::WatcherKind::ReadDirectoryChangesWatcher => Self::EachSide,
+            _ => Self::OldSideOnly,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -211,6 +264,7 @@ impl Watcher {
         let worker_overflowed = Arc::clone(&overflowed);
         let worker_status = Arc::new(AtomicU8::new(WORKER_RUNNING));
         let tracked_status = Arc::clone(&worker_status);
+        let renames = RenameReporting::of_recommended_backend();
         let worker = std::thread::Builder::new()
             .name("fdu-watch".into())
             .spawn(move || {
@@ -219,6 +273,7 @@ impl Watcher {
                     run_worker(
                         &worker_root,
                         config,
+                        renames,
                         &raw_rx,
                         &intent_tx,
                         &worker_overflowed,
@@ -263,6 +318,9 @@ impl Watcher {
         let worker_overflowed = Arc::clone(&overflowed);
         let worker_status = Arc::new(AtomicU8::new(WORKER_RUNNING));
         let tracked_status = Arc::clone(&worker_status);
+        // A script replaces the event source only, so it runs under this platform's
+        // production rename policy.
+        let renames = RenameReporting::of_recommended_backend();
         let worker = std::thread::Builder::new()
             .name("fdu-scripted-watch".into())
             .spawn(move || {
@@ -271,6 +329,7 @@ impl Watcher {
                     run_worker(
                         &worker_root,
                         config,
+                        renames,
                         &raw_rx,
                         &intent_tx,
                         &worker_overflowed,
@@ -698,6 +757,7 @@ fn run_tracked_worker(status: &AtomicU8, worker: impl FnOnce()) {
 fn run_worker(
     root: &Path,
     config: WatchConfig,
+    renames: RenameReporting,
     raw: &Receiver<RawMessage>,
     out: &SyncSender<CoalescedIntent>,
     overflowed: &AtomicBool,
@@ -725,7 +785,7 @@ fn run_worker(
 
         match raw.recv_timeout(config.settle) {
             Ok(RawMessage::Event(Ok(event))) => {
-                record(root, &event, &mut pending, config.batch_path_capacity);
+                record(root, &event, &mut pending, config.batch_path_capacity, renames);
                 batch_started.get_or_insert_with(Instant::now);
             }
             Ok(RawMessage::Event(Err(err))) => {
@@ -796,6 +856,7 @@ fn record(
     event: &notify::Event,
     pending: &mut BTreeMap<PathBuf, Pending>,
     capacity: usize,
+    reporting: RenameReporting,
 ) {
     if event.need_rescan() {
         // The kernel dropped events. Escalate the narrowest subtree the event names, or
@@ -814,17 +875,32 @@ fn record(
         return;
     }
 
-    let rename_mode = match event.kind {
-        EventKind::Modify(notify::event::ModifyKind::Name(mode)) => Some(mode),
-        _ => None,
-    };
-    let paired_rename = matches!(rename_mode, Some(notify::event::RenameMode::Both))
-        && event.paths.len() == 2
-        && event.paths.iter().all(|path| relative_to(root, path).is_some());
-    if rename_mode.is_some() && !paired_rename {
-        // A one-sided rename gives no safe bound on where its counterpart lives. A full
-        // reconciliation is more expensive than guessing a parent, but it cannot leave
-        // the old name behind or miss a moved-in subtree.
+    // Every rename shape is handled one named path at a time. Events are hints, not
+    // facts: a rename says only that the name it carries may have gained or lost an
+    // entry, which is exactly what a create or a remove of that name says. So each named
+    // path inside the root is verified like one, and nothing is inferred about where its
+    // counterpart went. That needs no pairing and no guess at a parent:
+    //
+    // - an old name that is gone verifies as a removal of it and its subtree;
+    // - a new name verifies as an upsert, and a directory there is relisted because its
+    //   contents arrived without events (see `verify_intent`);
+    // - a counterpart inside the root is named by its own event on every backend that
+    //   promises `RenameReporting::EachSide`, and is verified the same way;
+    // - a counterpart outside the root changes nothing inside it.
+    //
+    // Scoping to the named path adds no trust in the backend beyond what create and
+    // remove verification already needs: that every name whose entry changed is named
+    // by some event, or else covered by a loss signal, which escalates above.
+    let renamed = matches!(event.kind, EventKind::Modify(notify::event::ModifyKind::Name(_)));
+    if renamed
+        && (reporting == RenameReporting::OldSideOnly
+            || !event.paths.iter().any(|path| relative_to(root, path).is_some()))
+    {
+        // Two renames this layer cannot bound. A backend that may never name the new
+        // side (kqueue) leaves the moved entry anywhere in the tree. A rename naming no
+        // path this root can place is a hint about somewhere the engine cannot locate.
+        // Both reconcile the whole root, which cannot leave an old name behind or miss a
+        // moved-in subtree.
         queue_pending(
             pending,
             PathBuf::new(),
@@ -833,17 +909,27 @@ fn record(
         );
     }
 
-    for (position, path) in event.paths.iter().enumerate() {
+    for path in &event.paths {
         let Some(rel) = relative_to(root, path) else {
-            continue;
+            continue; // Outside the root: nothing inside it changed at this name.
         };
         if matches!(event.kind, EventKind::Access(_)) {
             continue; // Reads change nothing this engine records.
         }
-        let relist_if_dir = matches!(event.kind, EventKind::Create(_))
-            || matches!(rename_mode, Some(notify::event::RenameMode::To))
-            || (paired_rename && position == 1);
-        queue_pending(pending, rel, Pending::Verify { relist_if_dir }, capacity);
+        if renamed && rel.as_os_str().is_empty() {
+            // The root itself moved (inotify reports its own move as `From`). What now
+            // sits at the root path, if anything, is unrelated to the index, so the
+            // bound is the whole root.
+            queue_pending(
+                pending,
+                PathBuf::new(),
+                Pending::Escalate(InvalidateReason::UnpairedRename),
+                capacity,
+            );
+            continue;
+        }
+        let relist_if_dir = matches!(event.kind, EventKind::Create(_));
+        queue_pending(pending, rel, Pending::Verify { relist_if_dir, renamed }, capacity);
     }
 }
 
@@ -864,8 +950,12 @@ fn queue_pending(
     if let Some(existing) = pending.get_mut(&path) {
         match (existing, state) {
             (Pending::Escalate(_), _) => {}
-            (Pending::Verify { relist_if_dir }, Pending::Verify { relist_if_dir: additional }) => {
-                *relist_if_dir |= additional;
+            (
+                Pending::Verify { relist_if_dir, renamed },
+                Pending::Verify { relist_if_dir: relist, renamed: rename },
+            ) => {
+                *relist_if_dir |= relist;
+                *renamed |= rename;
             }
             (slot @ Pending::Verify { .. }, Pending::Escalate(reason)) => {
                 *slot = Pending::Escalate(reason);
@@ -922,15 +1012,59 @@ fn verify_intent(
     scan_config: &ScanConfig,
 ) -> Observation {
     let mut ops = Vec::with_capacity(intent.pending.len());
+    let mut listings = ParentListings::default();
+    // Renamed names whose exact spelling their parent does not list. Nothing exists at
+    // any path below such a name either, and its parent's reconciliation covers the
+    // subtree, so their pending descendants are not verified through it. The pending map
+    // is ordered by component, so a name is always settled before its descendants.
+    let mut unlisted: Vec<PathBuf> = Vec::new();
 
     for (rel, state) in &intent.pending {
         match state {
             Pending::Escalate(reason) => {
                 ops.push(Op::InvalidateSubtree { path: rel.clone(), reason: *reason });
             }
-            Pending::Verify { relist_if_dir } => {
+            Pending::Verify { relist_if_dir, renamed } => {
+                if unlisted.iter().any(|name| rel.starts_with(name)) {
+                    continue;
+                }
                 let absolute = root.join(rel);
-                match std::fs::symlink_metadata(&absolute) {
+                let mut stat = std::fs::symlink_metadata(&absolute);
+                if *renamed && !rel.as_os_str().is_empty() && stat.is_ok() {
+                    // A lookup on a case- or normalization-insensitive filesystem (APFS
+                    // and HFS+ by default, NTFS, casefolded ext4) resolves `Readme` to a
+                    // stored `README`. The old side of a rename that changed only case
+                    // therefore stats as present, and upserting it would keep both
+                    // spellings. The parent's listing holds the stored names, so an exact
+                    // match proves membership.
+                    let unlisted_reason = match listings.lists(root, rel) {
+                        Some(true) => None,
+                        Some(false) => {
+                            // The listing was read after the first stat, so a miss is
+                            // either a stale spelling or a name renamed away since. A
+                            // second stat tells them apart: a name that is now gone is an
+                            // ordinary removal, verified below like any other.
+                            stat = std::fs::symlink_metadata(&absolute);
+                            stat.is_ok().then_some(InvalidateReason::UnpairedRename)
+                        }
+                        // An unlistable parent cannot prove membership either way; its
+                        // reconciliation retries and reports why.
+                        None => Some(InvalidateReason::VerificationFailed),
+                    };
+                    if let Some(reason) = unlisted_reason {
+                        // This name is not an entry, and which stored name the index holds
+                        // for it is unknown, so its parent reconciles.
+                        let parent = parent_of(rel);
+                        if !ops.iter().any(
+                            |op| matches!(op, Op::InvalidateSubtree { path, .. } if *path == parent),
+                        ) {
+                            ops.push(Op::InvalidateSubtree { path: parent, reason });
+                        }
+                        unlisted.push(rel.clone());
+                        continue;
+                    }
+                }
+                match stat {
                     Ok(meta) => {
                         let Ok((kind, attrs)) = scan::observe(&absolute, &meta) else {
                             ops.push(Op::InvalidateSubtree {
@@ -978,11 +1112,19 @@ fn verify_intent(
                                 ops.push(Op::Remove { path: rel.clone() });
                             }
                         }
-                        if disposition == crate::admission::Disposition::Retain
-                            && kind.is_dir()
-                            && *relist_if_dir
-                            && config.relist_new_dirs
-                        {
+                        let retained_dir =
+                            disposition == crate::admission::Disposition::Retain && kind.is_dir();
+                        if retained_dir && *renamed {
+                            // A directory that arrived by rename brought its contents
+                            // with it, and no backend reports a moved tree's contents.
+                            // This is not the registration race below, so it does not
+                            // depend on `relist_new_dirs`: nothing else will ever report
+                            // these entries. The bound is this directory's subtree.
+                            ops.push(Op::InvalidateSubtree {
+                                path: rel.clone(),
+                                reason: InvalidateReason::UnpairedRename,
+                            });
+                        } else if retained_dir && *relist_if_dir && config.relist_new_dirs {
                             // The watch for this directory was installed after it was
                             // created, so anything already inside produced no event.
                             ops.push(Op::InvalidateSubtree {
@@ -1005,6 +1147,43 @@ fn verify_intent(
         }
     }
     Observation::new(ops)
+}
+
+/// The relative parent of a non-root path; the root for a top-level name.
+fn parent_of(rel: &Path) -> PathBuf {
+    rel.parent().map_or_else(PathBuf::new, Path::to_path_buf)
+}
+
+/// Stored names of the parent directories one intent's renamed paths live in.
+///
+/// Only a renamed name that stats as present is looked up, and a parent is listed once
+/// per verified intent unless a lookup misses, so the cost is bounded by the directories
+/// renames touched in the batch rather than by the tree.
+#[derive(Default)]
+struct ParentListings(BTreeMap<PathBuf, Option<std::collections::HashSet<std::ffi::OsString>>>);
+
+impl ParentListings {
+    /// Whether the parent of `rel` lists its final component byte for byte, or `None`
+    /// when the parent cannot be listed completely.
+    ///
+    /// A miss against a listing read earlier in this intent is re-read before it is
+    /// answered: on a busy directory the name may have been created since, and a stale
+    /// listing must not turn a new entry into a parent reconcile.
+    fn lists(&mut self, root: &Path, rel: &Path) -> Option<bool> {
+        let name = rel.file_name()?;
+        let parent = parent_of(rel);
+        if let Some(Some(names)) = self.0.get(&parent) {
+            if names.contains(name) {
+                return Some(true);
+            }
+        }
+        let names: Option<std::collections::HashSet<_>> = std::fs::read_dir(root.join(&parent))
+            .and_then(|entries| entries.map(|entry| entry.map(|entry| entry.file_name())).collect())
+            .ok();
+        let listed = names.as_ref().map(|names| names.contains(name));
+        self.0.insert(parent, names);
+        listed
+    }
 }
 
 fn op_for_stat_error(path: PathBuf, error: &std::io::Error) -> Op {
@@ -1406,6 +1585,7 @@ mod tests {
             &notify::Event::new(EventKind::Create(CreateKind::Folder)).add_path(path.clone()),
             &mut pending,
             16,
+            RenameReporting::EachSide,
         );
         record(
             root,
@@ -1413,10 +1593,11 @@ mod tests {
                 .add_path(path),
             &mut pending,
             16,
+            RenameReporting::EachSide,
         );
         assert_eq!(
             pending.get(Path::new("directory")),
-            Some(&Pending::Verify { relist_if_dir: true })
+            Some(&Pending::Verify { relist_if_dir: true, renamed: false })
         );
 
         let mut metadata_only = BTreeMap::new();
@@ -1426,64 +1607,154 @@ mod tests {
                 .add_path(root.join("existing")),
             &mut metadata_only,
             16,
+            RenameReporting::EachSide,
         );
         assert_eq!(
             metadata_only.get(Path::new("existing")),
-            Some(&Pending::Verify { relist_if_dir: false })
+            Some(&Pending::Verify { relist_if_dir: false, renamed: false })
         );
     }
 
+    /// Record `events` into a fresh pending set under one backend rename policy.
+    fn recorded(
+        root: &Path,
+        renames: RenameReporting,
+        events: &[notify::Event],
+    ) -> BTreeMap<PathBuf, Pending> {
+        let mut pending = BTreeMap::new();
+        for event in events {
+            record(root, event, &mut pending, 16, renames);
+        }
+        pending
+    }
+
+    fn rename_event(mode: RenameMode, paths: &[PathBuf]) -> notify::Event {
+        let mut event = notify::Event::new(EventKind::Modify(ModifyKind::Name(mode)));
+        event.paths = paths.to_vec();
+        event
+    }
+
+    /// One `FSEvents` `ItemRenamed` record, as notify 8.2 translates it.
+    fn fsevents_rename(path: PathBuf) -> notify::Event {
+        rename_event(RenameMode::Any, &[path])
+    }
+
+    const RENAMED: Pending = Pending::Verify { relist_if_dir: false, renamed: true };
+
+    /// Every rename shape a reporting backend delivers verifies its own in-root paths and
+    /// nothing else: `FSEvents` one side per event, inotify `From`/`To` plus the paired
+    /// `Both`, and Windows `From`/`To`. A side outside the root contributes nothing.
     #[test]
-    fn unpaired_renames_and_ambiguous_rescans_escalate_the_root() {
+    fn each_rename_shape_verifies_its_named_paths_without_escalating() {
         let root = Path::new("/watch-root");
-        let mut rename_pending = BTreeMap::new();
-        record(
+        let (old, new) = (root.join("dir/old"), root.join("other/new"));
+        for (backend, events) in [
+            ("FSEvents", vec![fsevents_rename(old.clone()), fsevents_rename(new.clone())]),
+            (
+                "inotify",
+                vec![
+                    rename_event(RenameMode::From, std::slice::from_ref(&old)),
+                    rename_event(RenameMode::To, std::slice::from_ref(&new)),
+                    rename_event(RenameMode::Both, &[old.clone(), new.clone()]),
+                ],
+            ),
+            (
+                "Windows",
+                vec![
+                    rename_event(RenameMode::From, std::slice::from_ref(&old)),
+                    rename_event(RenameMode::To, std::slice::from_ref(&new)),
+                ],
+            ),
+        ] {
+            let pending = recorded(root, RenameReporting::EachSide, &events);
+            assert_eq!(
+                pending,
+                BTreeMap::from([
+                    (PathBuf::from("dir/old"), RENAMED),
+                    (PathBuf::from("other/new"), RENAMED),
+                ]),
+                "{backend}"
+            );
+        }
+
+        let outside = Path::new("/elsewhere/file");
+        for (direction, event) in [
+            ("move in", rename_event(RenameMode::Both, &[outside.to_path_buf(), new.clone()])),
+            ("move out", rename_event(RenameMode::Both, &[old.clone(), outside.to_path_buf()])),
+        ] {
+            let pending = recorded(root, RenameReporting::EachSide, &[event]);
+            assert_eq!(pending.len(), 1, "{direction}: {pending:?}");
+            assert!(!pending.contains_key(Path::new("")), "{direction}: {pending:?}");
+        }
+    }
+
+    /// `FSEvents` keeps `ItemRenamed` on a path's later records, and notify splits one
+    /// record into an event per flag. The rename fact merges into the path's pending
+    /// verification with whatever else arrived, and still costs no root reconcile.
+    #[test]
+    fn a_sticky_rename_flag_merges_with_the_same_paths_other_events() {
+        let root = Path::new("/watch-root");
+        let path = root.join("state.json");
+        let pending = recorded(
             root,
-            &notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::From)))
-                .add_path(root.join("old")),
-            &mut rename_pending,
-            16,
-        );
-        assert_eq!(
-            rename_pending.get(Path::new("")),
-            Some(&Pending::Escalate(InvalidateReason::UnpairedRename))
+            RenameReporting::EachSide,
+            &[
+                notify::Event::new(EventKind::Create(CreateKind::File)).add_path(path.clone()),
+                fsevents_rename(path.clone()),
+                notify::Event::new(EventKind::Modify(ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )))
+                .add_path(path),
+            ],
         );
 
-        let mut rescan_pending = BTreeMap::new();
-        record(
+        assert_eq!(
+            pending,
+            BTreeMap::from([(
+                PathBuf::from("state.json"),
+                Pending::Verify { relist_if_dir: true, renamed: true }
+            )])
+        );
+    }
+
+    /// The cases a rename's own path cannot bound keep the whole-root reconcile: a backend
+    /// that may never name the new side, a rename of the root itself, and a rename that
+    /// names nowhere this root can place. Loss signals escalate exactly as before.
+    #[test]
+    fn unboundable_renames_and_ambiguous_rescans_escalate_the_root() {
+        let root = Path::new("/watch-root");
+        let escalated = Some(&Pending::Escalate(InvalidateReason::UnpairedRename));
+
+        let kqueue =
+            recorded(root, RenameReporting::OldSideOnly, &[fsevents_rename(root.join("old"))]);
+        assert_eq!(kqueue.get(Path::new("")), escalated);
+
+        let root_moved = recorded(
             root,
-            &notify::Event::new(EventKind::Any)
+            RenameReporting::EachSide,
+            &[rename_event(RenameMode::From, &[root.to_path_buf()])],
+        );
+        assert_eq!(root_moved.get(Path::new("")), escalated);
+        assert_eq!(root_moved.len(), 1, "the root is escalated, never verified: {root_moved:?}");
+
+        for paths in [vec![], vec![PathBuf::from("/elsewhere/file")]] {
+            let unplaced =
+                recorded(root, RenameReporting::EachSide, &[rename_event(RenameMode::Any, &paths)]);
+            assert_eq!(unplaced.get(Path::new("")), escalated, "{paths:?}");
+        }
+
+        let rescan = recorded(
+            root,
+            RenameReporting::EachSide,
+            &[notify::Event::new(EventKind::Any)
                 .add_path(root.join("a"))
                 .add_path(root.join("b"))
-                .set_flag(Flag::Rescan),
-            &mut rescan_pending,
-            16,
+                .set_flag(Flag::Rescan)],
         );
         assert_eq!(
-            rescan_pending.get(Path::new("")),
+            rescan.get(Path::new("")),
             Some(&Pending::Escalate(InvalidateReason::WatchOverflow))
         );
-    }
-
-    #[test]
-    fn paired_rename_preserves_the_new_directory_relist_intent() {
-        let root = Path::new("/watch-root");
-        let mut pending = BTreeMap::new();
-        record(
-            root,
-            &notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
-                .add_path(root.join("old"))
-                .add_path(root.join("new")),
-            &mut pending,
-            16,
-        );
-
-        assert!(!matches!(
-            pending.get(Path::new("")),
-            Some(Pending::Escalate(InvalidateReason::UnpairedRename))
-        ));
-        assert_eq!(pending.get(Path::new("old")), Some(&Pending::Verify { relist_if_dir: false }));
-        assert_eq!(pending.get(Path::new("new")), Some(&Pending::Verify { relist_if_dir: true }));
     }
 
     #[test]
@@ -1496,6 +1767,7 @@ mod tests {
                 &notify::Event::new(EventKind::Any).add_path(root.join(name)),
                 &mut pending,
                 2,
+                RenameReporting::EachSide,
             );
         }
 
@@ -1530,8 +1802,10 @@ mod tests {
     fn full_intent_queue_retains_a_sticky_root_invalidation() {
         let (sender, receiver) = sync_channel(1);
         sender.try_send(CoalescedIntent::default()).expect("fill output");
-        let mut pending =
-            BTreeMap::from([(PathBuf::from("lost.txt"), Pending::Verify { relist_if_dir: false })]);
+        let mut pending = BTreeMap::from([(
+            PathBuf::from("lost.txt"),
+            Pending::Verify { relist_if_dir: false, renamed: false },
+        )]);
         let mut sticky_overflow = false;
 
         try_deliver_pending(&mut pending, &sender, &mut sticky_overflow).expect("connected");
@@ -1583,6 +1857,7 @@ mod tests {
                 run_worker(
                     &worker_root,
                     config,
+                    RenameReporting::EachSide,
                     &raw,
                     &output,
                     &worker_overflowed,
@@ -1617,7 +1892,10 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let relative = PathBuf::from("appeared.txt");
         let intent = CoalescedIntent {
-            pending: BTreeMap::from([(relative.clone(), Pending::Verify { relist_if_dir: false })]),
+            pending: BTreeMap::from([(
+                relative.clone(),
+                Pending::Verify { relist_if_dir: false, renamed: false },
+            )]),
         };
 
         fs::write(dir.path().join(&relative), b"current").expect("create after coalescing");
@@ -1636,7 +1914,10 @@ mod tests {
         let relative = PathBuf::from(".gitignore");
         fs::write(dir.path().join(&relative), b"*.log\n").expect("write control");
         let intent = CoalescedIntent {
-            pending: BTreeMap::from([(relative.clone(), Pending::Verify { relist_if_dir: false })]),
+            pending: BTreeMap::from([(
+                relative.clone(),
+                Pending::Verify { relist_if_dir: false, renamed: false },
+            )]),
         };
 
         let config = ScanConfig { read_controls: true, ..ScanConfig::default() };
@@ -1667,7 +1948,7 @@ mod tests {
         let intent = CoalescedIntent {
             pending: BTreeMap::from([(
                 PathBuf::from(".gitignore"),
-                Pending::Verify { relist_if_dir: false },
+                Pending::Verify { relist_if_dir: false, renamed: false },
             )]),
         };
         let report =
@@ -1695,7 +1976,10 @@ mod tests {
         assert!(matches!(index.controls(), Err(crate::Error::ControlStateNotObserved)));
         let control = PathBuf::from(".gitignore");
         let intent = CoalescedIntent {
-            pending: BTreeMap::from([(control.clone(), Pending::Verify { relist_if_dir: false })]),
+            pending: BTreeMap::from([(
+                control.clone(),
+                Pending::Verify { relist_if_dir: false, renamed: false },
+            )]),
         };
 
         let observation = verify_intent(dir.path(), WatchConfig::default(), &intent, &config);
@@ -1733,7 +2017,9 @@ mod tests {
         let intent = CoalescedIntent {
             pending: [".gitignore", ".secret", "service.sock"]
                 .into_iter()
-                .map(|path| (PathBuf::from(path), Pending::Verify { relist_if_dir: false }))
+                .map(|path| {
+                    (PathBuf::from(path), Pending::Verify { relist_if_dir: false, renamed: false })
+                })
                 .collect(),
         };
         let config = ScanConfig {
@@ -2153,7 +2439,10 @@ mod tests {
         for name in ["live.txt", "marker.txt"] {
             fs::write(root.join(name), name).expect("unrelated mutation");
             let mut event = CoalescedIntent::default();
-            event.pending.insert(PathBuf::from(name), Pending::Verify { relist_if_dir: false });
+            event.pending.insert(
+                PathBuf::from(name),
+                Pending::Verify { relist_if_dir: false, renamed: false },
+            );
             sender.try_send(event).expect("queue the event");
             watcher
                 .apply_next(&handle, &config, Duration::ZERO, &mut |commit| {
@@ -2182,6 +2471,336 @@ mod tests {
                 && issue.path.as_deref() == Some(Path::new("blocked"))),
             "{issues:?}"
         );
+    }
+
+    /// A watched tree whose rename events are applied as the production driver would.
+    struct RenameFixture {
+        _dir: tempfile::TempDir,
+        root: PathBuf,
+        handle: IndexHandle,
+    }
+
+    impl RenameFixture {
+        /// Build `files` (with their parent directories), then index the tree cold.
+        fn new(files: &[&str]) -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let root = dir.path().canonicalize().expect("canonical root");
+            for file in files {
+                let path = root.join(file);
+                fs::create_dir_all(path.parent().expect("parent")).expect("parents");
+                fs::write(&path, file.as_bytes()).expect("fixture file");
+            }
+            let (index, _) =
+                crate::scan::scan_into_index(&root, &ScanConfig::default()).expect("cold scan");
+            Self { _dir: dir, root, handle: IndexHandle::new(index) }
+        }
+
+        fn path(&self, rel: &str) -> PathBuf {
+            self.root.join(rel)
+        }
+
+        /// Apply `events` as one coalesced intent from a backend that reports each side,
+        /// returning every invalidation the intent and its reconciliation committed.
+        fn apply(&self, events: &[notify::Event]) -> Vec<(PathBuf, InvalidateReason)> {
+            let intent = CoalescedIntent {
+                pending: recorded(&self.root, RenameReporting::EachSide, events),
+            };
+            let mut commits = Vec::new();
+            let report = apply_intent(
+                &self.handle,
+                &self.root,
+                WatchConfig::default(),
+                &intent,
+                &ScanConfig::default(),
+                &mut |commit| commits.push(commit.clone()),
+            )
+            .expect("apply the intent");
+            assert!(report.reconciliation.is_complete(), "reconciliation must settle");
+            commits
+                .iter()
+                .flat_map(|commit| commit.changes.iter())
+                .filter_map(|change| match change {
+                    crate::EffectiveChange::Invalidated { path, reason } => {
+                        Some((path.clone(), *reason))
+                    }
+                    _ => None,
+                })
+                .collect()
+        }
+
+        /// The watched index holds exactly what a cold scan of the tree finds now.
+        fn assert_converged(&self) {
+            let (cold, _) =
+                crate::scan::scan_into_index(&self.root, &ScanConfig::default()).expect("cold");
+            let watched = self.handle.read_with(entries).expect("read the watched index");
+            assert_eq!(watched, entries(&cold), "watched index diverged from a cold scan");
+            assert_eq!(self.handle.freshness().expect("freshness"), crate::Freshness::Fresh);
+        }
+    }
+
+    /// Every entry with its kind and, for a non-directory, its size. Directory metadata
+    /// is left out: a directory's own stat changes with its listing, and no backend
+    /// reports that change for the directory itself.
+    fn entries(index: &crate::Index) -> BTreeMap<PathBuf, (crate::EntryKind, Option<u64>)> {
+        fn walk(
+            index: &crate::Index,
+            dir: &Path,
+            out: &mut BTreeMap<PathBuf, (crate::EntryKind, Option<u64>)>,
+        ) {
+            let Some(children) = index.children(dir) else {
+                return;
+            };
+            let children: Vec<_> =
+                children.map(|(name, id)| (dir.join(name), id)).collect::<Vec<_>>();
+            for (path, id) in children {
+                let kind = index.kind_of(id).expect("live child");
+                let size = (!kind.is_dir()).then(|| index.attrs_of(id).expect("attrs").size);
+                out.insert(path.clone(), (kind, size));
+                walk(index, &path, out);
+            }
+        }
+        let mut out = BTreeMap::new();
+        walk(index, Path::new(""), &mut out);
+        out
+    }
+
+    fn created(path: PathBuf) -> notify::Event {
+        notify::Event::new(EventKind::Create(CreateKind::Any)).add_path(path)
+    }
+
+    fn modified(path: PathBuf) -> notify::Event {
+        notify::Event::new(EventKind::Modify(ModifyKind::Data(notify::event::DataChange::Content)))
+            .add_path(path)
+    }
+
+    /// The atomic-save pattern behind fdu-822y: write a temporary name, rename it over the
+    /// real one. `FSEvents` names both paths with sticky create and modify flags.
+    #[test]
+    fn a_file_renamed_within_its_directory_needs_no_invalidation() {
+        let tree = RenameFixture::new(&["state/config.json", "state/other.txt"]);
+        fs::write(tree.path("state/config.json.tmp"), b"new configuration").expect("temp");
+        fs::rename(tree.path("state/config.json.tmp"), tree.path("state/config.json"))
+            .expect("rename over");
+
+        let invalidations = tree.apply(&[
+            created(tree.path("state/config.json.tmp")),
+            modified(tree.path("state/config.json.tmp")),
+            fsevents_rename(tree.path("state/config.json.tmp")),
+            fsevents_rename(tree.path("state/config.json")),
+        ]);
+
+        assert_eq!(invalidations, vec![], "a file rename is settled by its own paths");
+        tree.assert_converged();
+    }
+
+    /// A move between directories arrives as two one-sided events, which may land in
+    /// different batches. Each side settles on its own, in either order.
+    #[test]
+    fn a_file_moved_across_directories_settles_one_side_per_event() {
+        let tree = RenameFixture::new(&["from/moved.txt", "to/resident.txt"]);
+        fs::rename(tree.path("from/moved.txt"), tree.path("to/moved.txt")).expect("move");
+
+        assert_eq!(tree.apply(&[fsevents_rename(tree.path("to/moved.txt"))]), vec![]);
+        assert_eq!(tree.apply(&[fsevents_rename(tree.path("from/moved.txt"))]), vec![]);
+        tree.assert_converged();
+    }
+
+    /// A renamed directory's contents produce no events, so the new name is relisted; the
+    /// old name's subtree is removed. The reconcile is bounded by the moved directory.
+    #[test]
+    fn a_renamed_directory_relists_only_its_own_subtree() {
+        let tree = RenameFixture::new(&[
+            "project/old/one.txt",
+            "project/old/nested/two.txt",
+            "project/untouched/three.txt",
+        ]);
+        fs::rename(tree.path("project/old"), tree.path("project/new")).expect("rename directory");
+
+        let invalidations = tree.apply(&[
+            fsevents_rename(tree.path("project/old")),
+            fsevents_rename(tree.path("project/new")),
+        ]);
+
+        assert_eq!(
+            invalidations,
+            vec![(PathBuf::from("project/new"), InvalidateReason::UnpairedRename)]
+        );
+        tree.assert_converged();
+    }
+
+    /// Moves across the watch boundary name one side only, and that side is enough: an
+    /// arriving tree is relisted, a departing one is removed with its subtree.
+    #[test]
+    fn moves_across_the_root_boundary_settle_from_the_inside_side() {
+        let tree = RenameFixture::new(&["resident.txt", "leaving/a.txt", "leaving/deep/b.txt"]);
+        let outside = tempfile::tempdir().expect("outside the root");
+        fs::create_dir_all(outside.path().join("arriving/deep")).expect("outside tree");
+        fs::write(outside.path().join("arriving/deep/c.txt"), b"arrived").expect("outside file");
+
+        fs::rename(outside.path().join("arriving"), tree.path("arrived")).expect("move in");
+        let invalidations = tree.apply(&[fsevents_rename(tree.path("arrived"))]);
+        assert_eq!(
+            invalidations,
+            vec![(PathBuf::from("arrived"), InvalidateReason::UnpairedRename)]
+        );
+        tree.assert_converged();
+
+        fs::rename(tree.path("leaving"), outside.path().join("left")).expect("move out");
+        assert_eq!(tree.apply(&[fsevents_rename(tree.path("leaving"))]), vec![]);
+        tree.assert_converged();
+    }
+
+    /// A name reused after its entry was renamed away is verified as whatever now sits
+    /// there. A reused directory name is relisted, which drops the departed children.
+    #[test]
+    fn a_name_reused_after_a_rename_verifies_as_its_new_entry() {
+        let tree = RenameFixture::new(&["log.txt", "cache/entry.bin"]);
+        fs::rename(tree.path("log.txt"), tree.path("log.1.txt")).expect("rotate");
+        fs::write(tree.path("log.txt"), b"fresh log, longer than the old one").expect("reuse");
+        fs::rename(tree.path("cache"), tree.path("cache.old")).expect("retire directory");
+        fs::create_dir(tree.path("cache")).expect("reuse directory name");
+
+        let invalidations = tree.apply(&[
+            fsevents_rename(tree.path("log.txt")),
+            created(tree.path("log.txt")),
+            fsevents_rename(tree.path("log.1.txt")),
+            fsevents_rename(tree.path("cache")),
+            created(tree.path("cache")),
+            fsevents_rename(tree.path("cache.old")),
+        ]);
+
+        assert!(
+            invalidations.iter().all(|(path, _)| !path.as_os_str().is_empty()),
+            "no root reconcile: {invalidations:?}"
+        );
+        tree.assert_converged();
+        assert_eq!(tree.handle.kind(Path::new("cache/entry.bin")).expect("lookup"), None);
+    }
+
+    /// `FSEvents` keeps `ItemRenamed` on a file's later records. A plain in-place write
+    /// then arrives flagged as a rename, and it must cost what a write costs.
+    #[test]
+    fn a_sticky_rename_flag_on_a_later_write_is_just_a_write() {
+        let tree = RenameFixture::new(&["sessions/today.jsonl"]);
+        fs::write(tree.path("sessions/today.jsonl"), b"appended record after the rename")
+            .expect("write in place");
+
+        let invalidations = tree.apply(&[
+            fsevents_rename(tree.path("sessions/today.jsonl")),
+            modified(tree.path("sessions/today.jsonl")),
+        ]);
+
+        assert_eq!(invalidations, vec![]);
+        tree.assert_converged();
+    }
+
+    /// Whether this filesystem resolves a name in another case to the stored entry.
+    fn case_insensitive(dir: &Path) -> bool {
+        let probe = dir.join("CaseProbe");
+        fs::write(&probe, b"probe").expect("case probe");
+        let insensitive = dir.join("caseprobe").exists();
+        fs::remove_file(probe).expect("remove case probe");
+        insensitive
+    }
+
+    /// A rename that changes only case leaves the old spelling resolvable on an insensitive
+    /// filesystem, so a stat alone would keep both names. The parent listing is the
+    /// arbiter, and a stale spelling costs a reconcile of its parent, not of the root.
+    #[test]
+    fn a_case_only_rename_keeps_one_spelling() {
+        let tree = RenameFixture::new(&["docs/Readme.md", "docs/Guide/intro.md"]);
+        let insensitive = case_insensitive(&tree.root);
+        fs::rename(tree.path("docs/Readme.md"), tree.path("docs/README.md")).expect("recase");
+        fs::rename(tree.path("docs/Guide"), tree.path("docs/guide")).expect("recase directory");
+
+        let invalidations = tree.apply(&[
+            fsevents_rename(tree.path("docs/Readme.md")),
+            fsevents_rename(tree.path("docs/README.md")),
+            fsevents_rename(tree.path("docs/Guide")),
+            fsevents_rename(tree.path("docs/guide")),
+            // A hint queued under the old spelling before the rename.
+            modified(tree.path("docs/Guide/intro.md")),
+        ]);
+
+        tree.assert_converged();
+        assert!(
+            invalidations.iter().all(|(path, _)| !path.as_os_str().is_empty()),
+            "no root reconcile: {invalidations:?}"
+        );
+        if insensitive {
+            assert!(
+                invalidations.contains(&(PathBuf::from("docs"), InvalidateReason::UnpairedRename)),
+                "the stale spelling reconciles its parent: {invalidations:?}"
+            );
+        }
+    }
+
+    /// A listing read earlier in the batch is not the arbiter of a name created since: a
+    /// miss re-reads the parent, so churn cannot pass for a stale spelling.
+    #[test]
+    fn a_listing_miss_rereads_the_parent_before_answering() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::write(root.join("first"), b"1").expect("first");
+        let mut listings = ParentListings::default();
+
+        assert_eq!(listings.lists(root, Path::new("first")), Some(true));
+        fs::write(root.join("created-after-the-listing"), b"2").expect("later entry");
+        assert_eq!(listings.lists(root, Path::new("created-after-the-listing")), Some(true));
+        assert_eq!(listings.lists(root, Path::new("never-created")), Some(false));
+        assert_eq!(listings.lists(root, Path::new("missing-directory/child")), None);
+    }
+
+    /// The real backend on this platform: renames inside the root converge on the tree
+    /// without ever reconciling the whole root.
+    #[test]
+    fn native_renames_converge_without_reconciling_the_root() {
+        let _serialized = real_watcher_guard();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        for file in ["from/moved.txt", "tree/sub/leaf.txt", "to/resident.txt"] {
+            fs::create_dir_all(root.join(file).parent().expect("parent")).expect("parents");
+            fs::write(root.join(file), file.as_bytes()).expect("fixture file");
+        }
+        let watcher = Watcher::new(&root, WatchConfig::default()).expect("watcher");
+        if !establish_watch(&watcher, &root) {
+            return;
+        }
+        let config = ScanConfig::default();
+        let (index, _) = crate::scan::scan_into_index(&root, &config).expect("scan");
+        let handle = IndexHandle::new(index);
+
+        fs::rename(root.join("from/moved.txt"), root.join("to/moved.txt")).expect("move file");
+        fs::rename(root.join("tree"), root.join("renamed-tree")).expect("rename directory");
+
+        let converged = || {
+            handle.kind(Path::new("to/moved.txt")).expect("lookup").is_some()
+                && handle.kind(Path::new("from/moved.txt")).expect("lookup").is_none()
+                && handle.kind(Path::new("renamed-tree/sub/leaf.txt")).expect("lookup").is_some()
+                && handle.kind(Path::new("tree")).expect("lookup").is_none()
+        };
+        let mut commits = Vec::new();
+        let start = Instant::now();
+        while !converged() && start.elapsed() < REAL_BACKEND_DELIVERY {
+            watcher
+                .apply_next(&handle, &config, Duration::from_millis(200), &mut |commit| {
+                    commits.push(commit.clone());
+                })
+                .expect("apply");
+        }
+
+        assert!(converged(), "the renames never converged: {commits:?}");
+        let root_reconciles = commits
+            .iter()
+            .flat_map(|commit| commit.changes.iter())
+            .filter(|change| {
+                matches!(change, crate::EffectiveChange::Invalidated { path, .. }
+                    if path.as_os_str().is_empty())
+            })
+            .count();
+        assert_eq!(root_reconciles, 0, "a rename reconciled the whole root: {commits:?}");
+        let (cold, _) = crate::scan::scan_into_index(&root, &config).expect("cold");
+        assert_eq!(handle.read_with(entries).expect("read"), entries(&cold));
     }
 
     #[test]
