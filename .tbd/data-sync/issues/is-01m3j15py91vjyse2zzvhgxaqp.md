@@ -3,9 +3,9 @@ type: is
 id: is-01m3j15py91vjyse2zzvhgxaqp
 title: "Ignore-aware transient summary: fold the ignored share without retaining an index"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 10
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 delegate: claude-code
 labels:
@@ -17,8 +17,12 @@ parent_id: is-01m3mcwynm1rkdjencnq5621mq
 hold: null
 hold_until: null
 created_at: 2026-09-27T18:13:56.296Z
-updated_at: 2026-09-28T20:54:41.961Z
+updated_at: 2026-09-28T22:24:34.076Z
 started_at: 2026-09-28T14:30:07.463Z
+closed_at: 2026-09-28T22:24:34.076Z
+close_reason: "exp-187: Linux wall accepted (-6.93% [-11.29%, -0.17%] on linux-v6.12, -19.27% on balanced-1m); RSS bar met on balanced (-97%), missed on linux-v6.12 (-22.86%), follow-up fdu-nyj8"
+resolution: null
+duplicate_of: null
 ---
 Default fdu --view summary reads .gitignore, and the summary reducer keeps no control table, so the planner falls closed to a full retained index plus a snapshot write. On the 1M balanced Linux tree (no .gitignore files at all) that costs 1.52 s against 0.92 s for --no-gitignore (screen), and 319 MiB against 10 MiB. The ignored share is a per-entry predicate over the matcher stack the walker already builds; classify in the workers and fold an ignored partition in the streaming reducer. Must match the indexed answer exactly (golden and parity corpora, including negation and nested .gitignore). Option C.1 in docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md.
 
@@ -27,3 +31,5 @@ Default fdu --view summary reads .gitignore, and the summary reducer keeps no co
 2026-09-28: #149 merged on the macOS evidence (exp-170/171) before its Linux cell, at the user's direction; the H161 row in performance-loop.md stays the authority. Since the macOS runs, eeb257c9 added an exact-name confirmation on probe hits (a partial listing up to the .gitignore entry) and a single read of a probed .gitignore; count probe hits with FDU_COUNTERS=1 on linux-v6.12. If Linux misses wall while keeping the RSS win, bring the trade-off to the maintainer rather than reverting silently.
 
 2026-09-28 (Linux session): running the H161 Linux cell here as pre-registered in the H161 row: aggregate-summary bare (controls on), control a5c0ab46 probe vs candidate main 0d73ed54 probe (includes eeb257c9), placebos both arms --no-controls and default-tree, 12 quiet pairs, linux-v6.12 deciding and linux-balanced-1m screening; wall -3% CI<0 and peak RSS down >= 50%. Id: exp-187. FDU_COUNTERS=1 probe-hit count on linux-v6.12 recorded with it.
+
+2026-09-28 exp-187 (quiet): Linux wall accepted, linux-v6.12 aggregate-summary -6.93% [-11.29%, -0.17%], placebos include zero; peak RSS -22.86% (misses 50%); balanced-1m wall -19.27%, RSS 314 -> 8.6 MiB. RSS residue follow-up: fdu-nyj8.
