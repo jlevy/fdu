@@ -2014,7 +2014,8 @@ mod tests {
         /// Walk errors the case induces.
         errors: bool,
         /// A file the case made unreadable, readable again when the case is dropped so its
-        /// tree can be removed even after a failed assertion.
+        /// tree can be removed even after a failed assertion. Only Unix can make one.
+        #[cfg(unix)]
         denied: Option<PathBuf>,
     }
 
@@ -2086,6 +2087,7 @@ mod tests {
             refused,
             order_dependent: false,
             errors: false,
+            #[cfg(unix)]
             denied: None,
         };
         let mut cases = vec![
