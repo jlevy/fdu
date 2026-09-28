@@ -27,7 +27,7 @@ patterns:
 ```console
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -87,7 +87,7 @@ $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -112,7 +112,7 @@ one.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -172,7 +172,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -203,7 +203,7 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -263,7 +263,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -286,7 +286,7 @@ Under `auto` the report scans fresh and leaves the snapshot as it found it.
 ```console
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -346,7 +346,7 @@ $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -369,7 +369,7 @@ fixture expanded
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -429,7 +429,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -443,7 +443,7 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -503,7 +503,7 @@ $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -526,7 +526,7 @@ $ fdu --watch --stale-ok project
 ```console
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -586,7 +586,7 @@ $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! note: incomplete subtrees remain visible below the size threshold
 ! tip: show more rows: --limit=all
@@ -610,7 +610,7 @@ A run that writes replaces the corrupt file.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -670,7 +670,7 @@ $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --dept
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! note: incomplete subtrees remain visible below the size threshold
 ! tip: show more rows: --limit=all
@@ -694,7 +694,7 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 ```console
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -754,7 +754,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -763,7 +763,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
 ```console
 $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -817,7 +817,7 @@ $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --dept
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0
@@ -829,7 +829,7 @@ stronger snapshot usable by a subsequent default `--stale-ok` request.
 ```console
 $ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -881,7 +881,7 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
 ```console
 $ fdu --stale-ok --format json --size apparent --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -943,7 +943,7 @@ way out.
 ```console
 $ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/9",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -997,7 +997,7 @@ $ fdu --no-gitignore --cache on --view tree --format json --size apparent --dept
     }
   ]
 }
-! note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+! note: more covers unlisted root branches; listed directory totals already include their descendants
 ! note: display limits: row limit 0
 ! tip: show more rows: --limit=all
 ? 0

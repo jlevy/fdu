@@ -17,8 +17,8 @@ mod query_values;
 pub use query_glob::Pattern;
 pub use query_report::{
     AxisNames, CodeLanguageRow, CodeOverview, CodeTally, ContentReportMetadata, FileRow,
-    IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages, Query, Report,
-    ReportMetricValues, ReportSource, Section, ShareMetric, SummaryRow, TreeDisplayLimits,
+    IgnoredSize, IgnoredTally, MetricGroup, MetricRow, MetricShare, MetricSummary, Pages, Query,
+    Report, ReportMetricValues, ReportSource, Section, ShareMetric, SummaryRow, TreeDisplayLimits,
     TreeNode, TreeOmission, TreeOmissionReason, TreeRemainder, TypeRow, ViewSpec, document_words,
     pages, report,
 };

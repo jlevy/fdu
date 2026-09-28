@@ -993,14 +993,18 @@ class Report:
     #: Actionable suggestions, separate from facts and formatted data.
     tips: tuple[str, ...] = ()
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
-    _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
+    _renderer: Callable[[str, bool, int], str] | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
 
         return cast(dict[str, JsonValue], _copy_json(self._wire))
 
-    def render(self, format: Format = Format.TEXT, *, color: bool = False) -> str:
+    def render(
+        self, format: Format = Format.TEXT, *, color: bool = False, bar_size: int = 10
+    ) -> str:
         """Serialize this report the way the command line does.
 
         Beside `as_dict` because both are serializations of the same value -- the one this
@@ -1010,7 +1014,9 @@ class Report:
 
         `color` is a plain bool rather than the CLI's `auto | always | never`: resolving
         `auto` means asking whether stdout is a terminal, and a library does not own
-        stdout. The caller decides and passes the answer in.
+        stdout. The caller decides and passes the answer in. ``bar_size`` controls
+        tree bar width (default 10); zero or negative values hide the bar column.
+        This changes presentation only, not the report or machine output.
 
         The report only. The command line appends a performance footer, which is transient
         telemetry the schema excludes and whose counts are not on a `Report`.
@@ -1030,7 +1036,7 @@ class Report:
                 "this report carries no renderer; only a report from Index.report, "
                 "fdu.report, or Watch.report can be rendered"
             )
-        return self._renderer(str(format), color)
+        return self._renderer(str(format), color, bar_size)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,6 +1,6 @@
 # Machine Output and Directory Inventories
 
-All reports use `fdu.report/9`, including metadata-only and content-analyzed reports.
+All reports use `fdu.report/10`, including metadata-only and content-analyzed reports.
 Cache status uses `fdu.cache/3`, and raw watch changes use `fdu.stream/2`. Check the
 schema before decoding.
 The [schema rule](project/guides/release-process.md) requires a new version when a
@@ -15,12 +15,16 @@ Check `status.complete` independently: unrestricted display cannot repair an unr
 directory or incomplete discovery.
 
 Each bounded tree section includes a shared `remainder`: recursive `files`, apparent
-`bytes`, `allocated` bytes, and applicable `reasons`. Unknown totals are `null`, never
-zero. These are the same values rendered as `… and SIZE (N files) more` in text.
-The section’s `limits` give exact bound values.
+`bytes`, `allocated` bytes, and applicable `reasons` for usage outside the displayed
+root-level rows. A displayed directory represents its whole subtree, even when its
+children are hidden by a display bound; those children do not enter the section
+remainder again. Unknown totals are `null`, never zero.
+Text prints the same size and root share in the remainder row’s columns, followed by
+`… and N more files`. The section’s `limits` give exact bound values.
 Per-node `omissions` retain detailed first-exclusion boundaries: `entries` counts direct
 hidden roots, while `files` counts regular files throughout those hidden subtrees.
-Sum disjoint boundaries, never parent and child directory totals.
+The root’s direct rows and section remainder partition its selected usage; never sum
+parent and child directory totals.
 See the [output design system](project/architecture/fdu-output-design.md).
 
 ## List Rows

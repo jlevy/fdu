@@ -1,5 +1,5 @@
-   9.7 KiB  ██████████   100%  . 5 files
-   9.6 KiB  ██████████    99%    large
-     100 B  ░░░░░░░░░░     1%    one-percent
-       0 B  ░░░░░░░░░░     0%    denied 0 files
-                                 … and 2 B (3 files) more
+██████████   100%     9.7 KiB  . 5 files
+██████████    99%     9.6 KiB    large
+░░░░░░░░░░     1%       100 B    one-percent
+░░░░░░░░░░     0%         0 B    denied/ 0 files
+░░░░░░░░░░    <1%         2 B    … and 3 more files

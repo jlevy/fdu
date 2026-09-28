@@ -42,7 +42,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 54 sessions differ, and every one of them has a named cause.
+# 55 sessions differ, and every one of them has a named cause.
 #
 #  20  Portable golden spelling of the same fixture path  [portable-golden-pattern]
 #      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
@@ -55,7 +55,7 @@
 #      Only the four exact action, setter, and value pairs emitted by the shared
 #      report renderer are accepted; every other line remains identical.
 #
-#  19  Each surface names its own parameter  [surface-label]
+#  20  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -94,7 +94,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Tree Reports Every Directory’s Roll-Up
   ✗ Several Views Come Back in Request Order, From One Scan
     stderr:
-@@ -1,1 +1,1 @@
+@@ -1,2 +1,2 @@
+ note: gitignored sizes are included in row totals
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✓ Include Narrows by Glob
@@ -126,8 +127,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 +tip: show more rows: limit=all
   ✗ Depth Bounds the Rendered Tree, Not the Scan
     stderr:
-@@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: depth 0
 -tip: expand deeper: --depth=all
 +tip: expand deeper: depth=all
@@ -151,9 +153,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ JSON Carries the Versioned Envelope
   ✗ JSONL Is One Document per Line
 @@ -1,2 +1,2 @@
--{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+-{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 -{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
-+{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
++{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
 +{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
     stderr:
 @@ -1,1 +1,1 @@
@@ -209,7 +211,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Scan Without a Cache
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -254,7 +256,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -262,7 +264,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Report Under the Default Policy
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -307,7 +309,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -316,7 +318,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Create the Snapshot
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -361,7 +363,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -369,7 +371,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ A Second One-Shot Report Scans Cold Again
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -414,7 +416,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -422,7 +424,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Report the Changed Tree
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -467,14 +469,14 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✗ The Rewrite Kept the Snapshot Current for a Stale Answer
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -519,7 +521,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -531,7 +533,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ A Different Semantic Scan Scope Misses the Snapshot
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -576,7 +578,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
  note: incomplete subtrees remain visible below the size threshold
 -tip: show more rows: --limit=all
@@ -585,7 +587,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Recover with a Cold Scan
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -630,7 +632,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,4 +1,4 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
  note: incomplete subtrees remain visible below the size threshold
 -tip: show more rows: --limit=all
@@ -639,7 +641,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -684,14 +686,14 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -736,14 +738,14 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -776,7 +778,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -809,7 +811,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✗ Reading No .gitignore Is a Separate Scope
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -854,7 +856,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
    ]
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -881,9 +883,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ JSON Exposes Provenance, Exact Shares, Metrics, and Coverage
   ✗ JSONL Keeps the Envelope and Section Independently Parseable
 @@ -1,2 +1,2 @@
--{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+-{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 -{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
-+{"schema": "fdu.report/9", "generator": "fdu 0.1.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
 +{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
     stderr:
 @@ -1,1 +1,1 @@
@@ -947,7 +949,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  docs/notes.txt
     stderr:
 @@ -1,5 +1,5 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 2
  note: omitted code, documents: content analysis required
 -tip: show more rows: --limit=all
@@ -970,7 +972,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 +[RFC3339]  docs/notes.txt
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 2
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -998,11 +1000,19 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "full": expected one of none, lines, code, words, all
 +fdu: invalid analyze "full": expected one of none, lines, code, words, all
+  ✗ Quiet Keeps Results and Errors
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
+  ✓ Quiet Keeps Results and Errors
 FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
     stderr:
-@@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 10
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
@@ -1013,14 +1023,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ Zero Rows Still Account for Every Hidden File
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: row limit 0
 -tip: show more rows: --limit=all
 +tip: show more rows: limit=all
   ✗ Depth and Number Limit Only the Rendered View
     stderr:
-@@ -1,4 +1,4 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+@@ -1,5 +1,5 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: depth 1, row limit 2
 -tip: expand deeper: --depth=all
 -tip: show more rows: --limit=all
@@ -1030,19 +1041,22 @@ FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✗ Several Views Are Labelled; One View Is Left Bare
     stderr:
 @@ -1,3 +1,3 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: gitignored sizes are included in row totals
  note: display limits: depth 1
 -tip: expand deeper: --depth=all
 +tip: expand deeper: depth=all
   ✓ A Lone View Keeps the Bare Layout
   ✓ A View That Matched Nothing Still Says So
   ✓ Asking for a Second View Labels the Paths Too
+  ✓ Tree Bar Width
+  ✓ Tree Bar Width
+  ✓ Tree Bar Width
 FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
   ✓ Full Output Exposes Scan and Projection Completeness Separately
   ✗ Render Limits Mark the Projection as Truncated
 @@ -1,9 +1,9 @@
  {
-   "schema": "fdu.report/9",
+   "schema": "fdu.report/10",
    "generator": "fdu 0.1.0",
 -  "root": "[SCAN_PATH]",
 -  "age_reference_ns": [AGE_NS],
@@ -1111,17 +1125,18 @@ FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
 @@ -82,9 +82,9 @@
        "omissions": [],
        "remainder": {
-         "files": 7,
-         "bytes": 269,
+         "files": 6,
+         "bytes": 141,
 -        "allocated": [ALLOCATED],
 +        "allocated": [ALLOCATED_VALUE],
-         "reasons": ["depth", "rows"]
+         "reasons": ["rows"]
        }
      }
    ]
     stderr:
-@@ -1,4 +1,4 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+@@ -1,5 +1,5 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: depth 1, row limit 2
 -tip: expand deeper: --depth=all
 -tip: show more rows: --limit=all
@@ -1178,7 +1193,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✗ Unknown Branches Do Not Disable Filtering for Known Sizes
     stderr:
 @@ -1,4 +1,4 @@
- note: more includes hidden subtrees already counted in directory totals; files are counted recursively
+ note: more covers unlisted root branches; listed directory totals already include their descendants
  note: display limits: below 1% of selected root
  note: incomplete subtrees remain visible below the size threshold
 -tip: show smaller entries: --min-share=0%
@@ -1372,7 +1387,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  ignored shares under that directory do not.
 -
 -OUTPUT AND AUTOMATION
--  Every machine report uses fdu.report/9; watch changes use fdu.stream/2.
+-  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
 -  Cache status is its own document in every machine format: fdu.cache/3.
 -  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.

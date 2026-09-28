@@ -320,10 +320,10 @@ class Watch(Iterator[tuple[Change, ...]]):
         wire = _loads_object(_call(handle.render, "json", False))
         notes = tuple(_call(handle.notes))
 
-        def renderer(format: str, color: bool) -> str:
+        def renderer(format: str, color: bool, bar_size: int) -> str:
             # A snapshot: rendering twice gives the same answer, where re-reporting the
             # session would quietly give a newer one.
-            return cast(str, _call(handle.render, format, color))
+            return cast(str, _call(handle.render, format, color, bar_size))
 
         return replace(
             report_from_dict(wire, notes), tips=tuple(_call(handle.tips)), _renderer=renderer
@@ -384,8 +384,8 @@ class Index:
         # Bound to the finished report, not to the query: re-projecting the index per
         # format would let one `Report` answer differently each time it was rendered
         # (fdu-4gno).
-        def renderer(format: str, color: bool) -> str:
-            return cast(str, _call(handle.render, format, color))
+        def renderer(format: str, color: bool, bar_size: int) -> str:
+            return cast(str, _call(handle.render, format, color, bar_size))
 
         return replace(report, tips=tuple(_call(handle.tips)), _renderer=renderer)
 
@@ -610,11 +610,11 @@ def report(
     wire = _loads_object(_call(handle.render, "json", False))
     parsed = report_from_dict(wire, tuple(_call(handle.notes)))
 
-    def renderer(format: str, color: bool) -> str:
+    def renderer(format: str, color: bool, bar_size: int) -> str:
         # The handle owns the finished report, so a second format costs no second walk.
         # Rebuilding it from the query would mean rescanning, which is the cost a one-shot
         # exists to avoid.
-        return cast(str, _call(handle.render, format, color))
+        return cast(str, _call(handle.render, format, color, bar_size))
 
     return replace(parsed, tips=tuple(_call(handle.tips)), _renderer=renderer)
 

@@ -906,9 +906,17 @@ struct PyOneShot {
 
 #[pymethods]
 impl PyOneShot {
-    fn render(&self, format: &str, color: bool) -> PyResult<String> {
-        fdu_core::report_format::render(&self.report, parse_format(format)?, color)
-            .map_err(to_py_err)
+    #[pyo3(signature = (format, color, bar_size=10))]
+    fn render(&self, format: &str, color: bool, bar_size: i64) -> PyResult<String> {
+        let bar_size = usize::try_from(bar_size.max(0)).map_err(|_| {
+            PyValueError::new_err("bar_size exceeds this platform's supported width")
+        })?;
+        fdu_core::report_format::render_with_options(
+            &self.report,
+            parse_format(format)?,
+            fdu_core::report_format::RenderOptions { color, bar_size },
+        )
+        .map_err(to_py_err)
     }
 
     /// What the report says about itself, as values rather than as rendered text.

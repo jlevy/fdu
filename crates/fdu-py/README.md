@@ -214,11 +214,16 @@ entry, while its nullable `files` count covers regular files throughout that hid
 subtree. The optional `TreeSection.remainder` combines hidden contents across one tree,
 with nullable `files`, `bytes`, and `allocated` totals and bound reasons in stable
 order. It is `None` when nothing is hidden.
+A displayed root-level directory represents all its descendants, including children
+hidden by display bounds.
+The remainder counts only usage outside those displayed root-level rows.
 Parent totals already include the remainder, so do not add it to them.
 The terminal gives that remainder one root-level line, such as
-`… and 1.2 MiB (12,345 files) more`. Machine reports use `fdu.report/9`. Machine List
-output is complete unless explicitly limited.
-Details and exact fields are in the
+`… and 12,345 more files`, with its combined size and root share in the usual columns.
+Use `report.render(bar_size=20)` for wider bars, or `bar_size=0` (also negative values)
+to hide them; the default is 10. Machine formats are unchanged.
+Machine reports use `fdu.report/10`. Machine List output is complete unless explicitly
+limited. Details and exact fields are in the
 [usage guide](https://github.com/jlevy/fdu/blob/main/docs/usage.md) and
 [machine-output reference](https://github.com/jlevy/fdu/blob/main/docs/machine-output.md).
 
