@@ -225,7 +225,7 @@ Both matrices ran fdu with `--cache off`, as the macOS comparison did.
 The default `fdu .` on this build also writes a metadata snapshot.
 On the refreshed build that added 0.24 s when an earlier run’s snapshot already existed
 (1.51 against 1.27 s) and about 0.5 s on a first run into an empty cache directory,
-where the kernel must allocate the pages; the the
+where the kernel must allocate the pages; the
 [cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
 measures that cost, explains the macOS and Linux rankings from their CPU split, and
 proposes defaults. Summary mode ran with `--no-gitignore` because reading ignore rules
