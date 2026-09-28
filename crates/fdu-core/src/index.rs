@@ -1618,26 +1618,33 @@ impl DetachedIndexBuilder {
     /// below it: the first listing to arrive for each such directory builds it, and a
     /// repeat is accepted without being applied again. A filesystem race must not fail
     /// the scan.
+    ///
+    /// The listing is drained, not consumed: an applied listing is left with its path
+    /// and an empty child buffer, so the caller can hand both back to the worker that
+    /// allocated them (H159). A listing that is not applied keeps its children.
     pub(crate) fn push_directory(
         &mut self,
-        directory: crate::scan::DetachedDirectory,
+        directory: &mut crate::scan::DetachedDirectory,
     ) -> crate::Result<()> {
-        let crate::scan::DetachedDirectory { path, mut children, control } = directory;
+        let crate::scan::DetachedDirectory { path, children, control } = directory;
         // No descendant can become claimable until its parent's listing has been sent,
         // so the first listing of a directory finds its lookup entry. Retire the entry
         // now instead of retaining every walked directory path until the end of the scan.
-        let Some(parent) = self.directory_ids.remove(&path) else {
+        let Some(parent) = self.directory_ids.remove(path.as_path()) else {
             if self.repeated_directories.iter().any(|repeated| path.starts_with(repeated)) {
                 return Ok(());
             }
-            return Err(crate::Error::UnknownAncestry { path, reconcile_from: PathBuf::new() });
+            return Err(crate::Error::UnknownAncestry {
+                path: path.clone(),
+                reconcile_from: PathBuf::new(),
+            });
         };
 
         // The worker publishes this listing before descendants become claimable. Apply
         // its complete fixed-control state before classifying any sibling, and every
         // later child listing will therefore inherit all governing controls without a
         // post-build subtree reclassification pass.
-        if let Some(control) = control {
+        if let Some(control) = control.take() {
             match control {
                 Op::ControlUpsert { path, source } => {
                     self.index.controls.upsert(&path, source)?;
@@ -1675,7 +1682,7 @@ impl DetachedIndexBuilder {
         let mut match_path =
             (!parent_ignored && !self.index.controls.is_empty()).then(|| path.clone());
         self.index.reserve_detached_children(parent, children.len());
-        for child in children {
+        for child in children.drain(..) {
             let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
             crate::counters::bump(|counts| counts.upserts += 1);
             let ext_id = (kind == EntryKind::File)
@@ -5994,7 +6001,7 @@ mod tests {
             crate::classify::TypeRegistry::compiled_shared(),
         );
         builder
-            .push_directory(crate::scan::DetachedDirectory {
+            .push_directory(&mut crate::scan::DetachedDirectory {
                 path: PathBuf::new(),
                 children: vec![
                     crate::scan::DetachedChild {
@@ -6014,7 +6021,7 @@ mod tests {
             })
             .expect("detached root listing");
         builder
-            .push_directory(crate::scan::DetachedDirectory {
+            .push_directory(&mut crate::scan::DetachedDirectory {
                 path: PathBuf::from("dir"),
                 children: vec![
                     crate::scan::DetachedChild {
@@ -6078,7 +6085,7 @@ mod tests {
             attrs: file_attrs(1, mtime_ns),
             position,
         };
-        let result = builder.push_directory(crate::scan::DetachedDirectory {
+        let result = builder.push_directory(&mut crate::scan::DetachedDirectory {
             path: PathBuf::new(),
             children: vec![twice(0, 1), twice(1, 2)],
             control: None,
@@ -6121,7 +6128,7 @@ mod tests {
         // The enumerator returned `dir` twice, and `swapped` first as a directory and then
         // as the file that replaced it.
         builder
-            .push_directory(listing(
+            .push_directory(&mut listing(
                 "",
                 vec![
                     child("dir", EntryKind::Dir, file_attrs(0, 1), 0),
@@ -6134,13 +6141,13 @@ mod tests {
         // The walker lists `dir`, and everything below it, once per observation.
         for _ in 0..2 {
             builder
-                .push_directory(listing(
+                .push_directory(&mut listing(
                     "dir",
                     vec![child("nested", EntryKind::Dir, file_attrs(0, 3), 0)],
                 ))
                 .expect("each walk of the repeated directory");
             builder
-                .push_directory(listing(
+                .push_directory(&mut listing(
                     "dir/nested",
                     vec![child("file.txt", EntryKind::File, file_attrs(4, 4), 0)],
                 ))
@@ -6148,14 +6155,14 @@ mod tests {
         }
         // It also lists the directory observation that the file superseded.
         builder
-            .push_directory(listing(
+            .push_directory(&mut listing(
                 "swapped",
                 vec![child("stale.txt", EntryKind::File, file_attrs(6, 5), 0)],
             ))
             .expect("the superseded directory's walk");
         // A listing that no repeated name explains is still an ancestry failure.
         let error = builder
-            .push_directory(listing("elsewhere", Vec::new()))
+            .push_directory(&mut listing("elsewhere", Vec::new()))
             .expect_err("a listing whose parent was never listed");
         assert!(matches!(
             error,
@@ -6168,6 +6175,51 @@ mod tests {
         assert!(index.lookup(Path::new("swapped/stale.txt")).is_none());
         let total = index.total();
         assert_eq!((total.files, total.dirs, total.bytes), (2, 2, 9));
+    }
+
+    #[test]
+    fn detached_builder_drains_an_applied_listing_for_its_worker() {
+        // H159: the scan hands each listing back to the worker that allocated it, so the
+        // builder must leave an applied listing's buffers in place and empty.
+        let child = |name: &str, kind, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(1, 1),
+            position,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        );
+        let mut root = crate::scan::DetachedDirectory {
+            path: PathBuf::new(),
+            children: vec![child("z.txt", EntryKind::File, 0), child("dir", EntryKind::Dir, 1)],
+            control: Some(Op::ControlUpsert {
+                path: PathBuf::from(".gitignore"),
+                source: b"*.log\n".to_vec(),
+            }),
+        };
+        let (buffer, capacity) = (root.children.as_ptr(), root.children.capacity());
+        builder.push_directory(&mut root).expect("root listing");
+        assert_eq!(root.path, PathBuf::new());
+        assert!(root.children.is_empty());
+        assert_eq!((root.children.as_ptr(), root.children.capacity()), (buffer, capacity));
+        assert!(root.control.is_none(), "the control is applied, not left to be applied twice");
+
+        // A listing the builder does not apply keeps its children for the worker to drop.
+        let mut orphan = crate::scan::DetachedDirectory {
+            path: PathBuf::from("elsewhere"),
+            children: vec![child("kept.txt", EntryKind::File, 0)],
+            control: None,
+        };
+        builder.push_directory(&mut orphan).expect_err("a listing whose parent was never listed");
+        assert_eq!(orphan.children.len(), 1);
+
+        let index = builder.finish();
+        assert_eq!(index.kind(Path::new("dir")), Some(EntryKind::Dir));
+        assert_eq!(index.kind(Path::new("z.txt")), Some(EntryKind::File));
+        assert_eq!(index.total().files, 1);
     }
 
     fn file_attrs(size: u64, mtime_ns: i64) -> Attrs {

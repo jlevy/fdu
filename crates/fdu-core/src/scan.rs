@@ -2343,8 +2343,17 @@ fn atomic_update_max(target: &std::sync::atomic::AtomicUsize, value: usize) {
 
 enum WalkMessage {
     Batch(ScannerBatch),
-    DetachedDirectories(Vec<DetachedDirectory>),
-    ScaleUp { sender: std::sync::mpsc::Sender<Self>, target_workers: usize },
+    DetachedDirectories {
+        directories: Vec<DetachedDirectory>,
+        /// The worker that allocated `directories`. The consumer drains each listing
+        /// into the index and sends the emptied listings back here, so their path and
+        /// child buffers are freed or reused on that worker's thread (H159).
+        recycle: std::sync::mpsc::Sender<Vec<DetachedDirectory>>,
+    },
+    ScaleUp {
+        sender: std::sync::mpsc::Sender<Self>,
+        target_workers: usize,
+    },
 }
 
 impl WorkerPool {
@@ -2581,7 +2590,7 @@ fn scan_concurrent(
             }
             sink(batch);
         }
-        WalkMessage::DetachedDirectories(_) => {
+        WalkMessage::DetachedDirectories { .. } => {
             unreachable!("the streaming walker never publishes detached directories")
         }
         WalkMessage::ScaleUp { .. } => {
@@ -2625,18 +2634,21 @@ fn scan_concurrent_detached(
             WalkMessage::Batch(_) => {
                 unreachable!("the detached walker never publishes scanner batches")
             }
-            WalkMessage::DetachedDirectories(directories) => {
+            WalkMessage::DetachedDirectories { mut directories, recycle } => {
                 if let Some(diagnostics) = diagnostics {
                     diagnostics.handoff_received();
                 }
                 if build_error.is_none() {
-                    for directory in directories {
+                    for directory in &mut directories {
                         if let Err(error) = builder.push_directory(directory) {
                             build_error = Some(error);
                             break;
                         }
                     }
                 }
+                // A worker that has already left has dropped its receiver, and then the
+                // listings are freed here, as every listing was before H159.
+                let _ = recycle.send(directories);
             }
             WalkMessage::ScaleUp { .. } => {
                 unreachable!("the shared runner consumes scale-up messages")
@@ -3034,16 +3046,93 @@ impl WalkEmission for StreamingEmission {
     }
 }
 
-#[derive(Default)]
+/// Emptied listings one detached worker keeps for reuse.
+///
+/// A bound on retention, not a tuned value: a chunk claims at most [`DIR_CLAIM`]
+/// directories, so four chunks' worth covers a consumer running a few chunks behind.
+/// A listing returned past this bound is freed at once, still on its own thread.
+const DETACHED_SPARE_LISTINGS: usize = 4 * DIR_CLAIM;
+
+/// The largest child buffer, in children, a spare listing may keep.
+///
+/// Also a bound on retention rather than a tuned value. Without it, one very large
+/// directory would pin its buffer, about 80 bytes per child, for the rest of the walk,
+/// where the consumer used to free it as soon as the listing was applied; a larger
+/// buffer is freed when it comes back, on its own thread.
+const DETACHED_SPARE_CHILD_CAPACITY: usize = 256;
+
+/// One worker's detached emission: listings built here and published to the consumer.
+///
+/// Every path and child buffer in a listing is allocated on this worker's thread. The
+/// consumer drains each listing into the index and sends the emptied listings back
+/// (H159), and the worker reuses them or frees them itself. Under glibc a chunk freed on
+/// another thread goes back to the arena that allocated it, under that arena's lock,
+/// while this worker is allocating from it; the 2026-09-27 Linux comparison's allocator
+/// screen and context-switch profile point at that contention for the index tier's gap
+/// to its peers. A reused listing carries exactly the facts a fresh one would: the same
+/// path bytes, and children and control only from this directory's listing.
 struct DetachedEmission {
     directories: Vec<DetachedDirectory>,
+    /// Emptied listings ready to be reused by [`WalkEmission::begin_directory`].
+    spare: Vec<DetachedDirectory>,
+    /// An emptied list to publish the next chunk's listings in.
+    spare_list: Vec<DetachedDirectory>,
+    recycle_tx: std::sync::mpsc::Sender<Vec<DetachedDirectory>>,
+    recycle_rx: std::sync::mpsc::Receiver<Vec<DetachedDirectory>>,
+}
+
+impl DetachedEmission {
+    fn new() -> Self {
+        let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+        Self {
+            directories: Vec::new(),
+            spare: Vec::new(),
+            spare_list: Vec::new(),
+            recycle_tx,
+            recycle_rx,
+        }
+    }
+
+    /// Take back every list the consumer has returned since the last chunk.
+    ///
+    /// A listing the consumer skipped, after a build error or for a repeated directory,
+    /// comes back with its children and control still in it; they are dropped here, on
+    /// the thread that allocated them, before the listing can be reused.
+    fn collect_returned(&mut self) {
+        while let Ok(mut returned) = self.recycle_rx.try_recv() {
+            for mut directory in returned.drain(..) {
+                directory.children.clear();
+                directory.control = None;
+                if self.spare.len() < DETACHED_SPARE_LISTINGS
+                    && directory.children.capacity() <= DETACHED_SPARE_CHILD_CAPACITY
+                {
+                    self.spare.push(directory);
+                }
+            }
+            if self.spare_list.capacity() == 0 {
+                self.spare_list = returned;
+            }
+        }
+    }
 }
 
 impl WalkEmission for DetachedEmission {
     type Directory = DetachedDirectory;
 
     fn begin_directory(&mut self, path: &Path) -> Self::Directory {
-        DetachedDirectory { path: path.to_path_buf(), children: Vec::new(), control: None }
+        let Some(mut directory) = self.spare.pop() else {
+            return DetachedDirectory {
+                path: path.to_path_buf(),
+                children: Vec::new(),
+                control: None,
+            };
+        };
+        // The same bytes `to_path_buf` would copy, into a buffer this thread already owns.
+        let buffer = directory.path.as_mut_os_string();
+        buffer.clear();
+        buffer.push(path);
+        debug_assert!(directory.children.is_empty() && directory.control.is_none());
+        directory
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3097,9 +3186,14 @@ impl WalkEmission for DetachedEmission {
         if self.directories.is_empty() {
             return true;
         }
+        // Taking back returned listings is handoff work, timed with the send so the
+        // chunk's work time, which calibrates the worker pool, stays the walk's own.
         let send_started = std::time::Instant::now();
+        self.collect_returned();
+        let next = std::mem::take(&mut self.spare_list);
+        let directories = std::mem::replace(&mut self.directories, next);
         let sent =
-            send_detached_directories(sender, std::mem::take(&mut self.directories), diagnostics);
+            send_detached_directories(sender, directories, self.recycle_tx.clone(), diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         sent
     }
@@ -3128,7 +3222,7 @@ fn walk_detached_worker(
         queue,
         sender,
         diagnostics,
-        DetachedEmission::default(),
+        DetachedEmission::new(),
     );
     // A walker leaves only when the queue is empty with nothing in flight, or when its
     // consumer is gone, so the walk is over. The index may still be assembling the
@@ -3693,12 +3787,13 @@ fn send_scanner_batch(
 fn send_detached_directories(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     directories: Vec<DetachedDirectory>,
+    recycle: std::sync::mpsc::Sender<Vec<DetachedDirectory>>,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
     if let Some(diagnostics) = diagnostics {
         diagnostics.handoff_sent();
     }
-    let sent = sender.send(WalkMessage::DetachedDirectories(directories)).is_ok();
+    let sent = sender.send(WalkMessage::DetachedDirectories { directories, recycle }).is_ok();
     if !sent {
         if let Some(diagnostics) = diagnostics {
             diagnostics.handoff_received();
@@ -6655,6 +6750,64 @@ mod tests {
         assert_eq!(report.entries, expected_entries);
         assert_eq!(report.files_walked, expected_files);
         assert_eq!(report.bytes_walked, expected_bytes);
+    }
+
+    /// Publish one listing through `emission` and receive what the consumer would.
+    fn publish_detached(
+        emission: &mut DetachedEmission,
+        directory: DetachedDirectory,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        receiver: &std::sync::mpsc::Receiver<WalkMessage>,
+    ) -> (Vec<DetachedDirectory>, std::sync::mpsc::Sender<Vec<DetachedDirectory>>) {
+        emission.finish_directory(directory);
+        let mut send_ns = 0;
+        assert!(emission.publish_before_discovery(true, sender, &mut send_ns, None));
+        match receiver.try_recv().expect("a published chunk") {
+            WalkMessage::DetachedDirectories { directories, recycle } => (directories, recycle),
+            _ => panic!("the detached walker publishes only listings"),
+        }
+    }
+
+    #[test]
+    fn detached_emission_reuses_returned_listings_as_fresh_ones() {
+        // H159: the consumer hands drained listings back to the worker that allocated
+        // them. A reused listing must be indistinguishable from a fresh one, including
+        // after the consumer returned it unapplied, as it does after a build error.
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut emission = DetachedEmission::new();
+
+        let mut skipped = emission.begin_directory(Path::new("a/much/longer/relative/path"));
+        skipped.children.push(DetachedChild {
+            name: OsString::from("stale.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs::default(),
+            position: 0,
+        });
+        skipped.control = Some(Op::ControlRemove { path: PathBuf::from("a/.gitignore") });
+        let (directories, recycle) = publish_detached(&mut emission, skipped, &sender, &receiver);
+        let returned_list = directories.as_ptr();
+        let returned_children = directories[0].children.as_ptr();
+        recycle.send(directories).expect("the worker still listens");
+
+        // Returned listings are taken back at the next publish, so this one is fresh.
+        let mut large = emission.begin_directory(Path::new("large"));
+        assert_eq!(large.children.capacity(), 0);
+        large.children.reserve_exact(DETACHED_SPARE_CHILD_CAPACITY + 1);
+        let (directories, recycle) = publish_detached(&mut emission, large, &sender, &receiver);
+        recycle.send(directories).expect("the worker still listens");
+
+        let reused = emission.begin_directory(Path::new("b"));
+        assert_eq!(reused.path.as_os_str(), OsStr::new("b"));
+        assert!(reused.children.is_empty(), "a returned listing's children are dropped");
+        assert!(reused.control.is_none(), "a returned listing's control is dropped");
+        assert_eq!(reused.children.as_ptr(), returned_children, "the child buffer is reused");
+        let (directories, _recycle) = publish_detached(&mut emission, reused, &sender, &receiver);
+        assert_eq!(directories.as_ptr(), returned_list, "the published list is reused");
+
+        // The large listing came back past the retention bound and was freed instead.
+        let fresh = emission.begin_directory(Path::new("c"));
+        assert_eq!(fresh.path.as_os_str(), OsStr::new("c"));
+        assert_eq!(fresh.children.capacity(), 0);
     }
 
     /// An automatic walk too short to fill its calibration window must say so.
