@@ -42,9 +42,20 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 24 sessions differ, and every one of them has a named cause.
+# 55 sessions differ, and every one of them has a named cause.
 #
-#  14  Each surface names its own parameter  [surface-label]
+#  19  Portable golden spelling of the same fixture path  [portable-golden-pattern]
+#      The CLI golden uses [SCAN_PATH] for the known fixture root and [SEP] for a
+#      platform separator. The Python replay prints the sandbox root and a literal
+#      separator. Only the exact fixture root and otherwise identical lines match;
+#      exact bound and omitted-view tip translations can accompany those lines.
+#
+#  11  Bound suggestions name the same setter on each surface  [bound-tip-vocabulary]
+#      The command line names bound flags and Python names corresponding fields.
+#      Only the four exact action, setter, and value pairs emitted by the shared
+#      report renderer are accepted; every other line remains identical.
+#
+#  19  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -60,13 +71,6 @@
 #      library said "requires event-scope filtering", so a library caller got jargon and a
 #      CLI user got help. A unit test pins the substitution, because doing it sequentially
 #      produced `--scan---depth` the first time (the fdu-7j6z bug, again).
-#
-#   4  Output carrying walk telemetry the report schema excludes  [run-telemetry]
-#      A note quoting how many bytes analysis read, or the performance footer itself.
-#      Both are telemetry about the run rather than facts about the report, and the
-#      envelope deliberately carries none, so a Report cannot reproduce them. The omission
-#      note is NOT this: that one is a fact about the report, travels on it, and every
-#      surface states it in its own vocabulary.
 #
 #   2  A discovery surface the package does not carry  [discovery-surface]
 #      --docs is a static document that lives in the binary, so the package does not carry
@@ -88,7 +92,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Extensions Are Raw, Not File Rollup’s Logical Extensions
   ✓ Files Keep One Path per Row
   ✓ Tree Reports Every Directory’s Roll-Up
-  ✓ Several Views Come Back in Request Order, From One Scan
+  ✗ Several Views Come Back in Request Order, From One Scan
+    stderr:
+@@ -1,2 +1,2 @@
+ note: gitignored sizes are included in row totals
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Include Narrows by Glob
   ✓ Brace Globs Survive Because Pattern Flags Are Repeatable
   ✓ Exclude Beats Include
@@ -96,9 +105,34 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Every Tally Counts Only What the Selection Admits
   ✓ Every Tally Counts Only What the Selection Admits
   ✓ Min-Size Follows the Selected Metric
-  ✓ Sort and Limit Compose Into a Top-N, With No Dedicated View
-  ✓ Reverse Flips Whatever Order Is in Effect
-  ✓ Depth Bounds the Rendered Tree, Not the Scan
+  ✗ Sort and Limit Compose Into a Top-N, With No Dedicated View
+@@ -1,3 +1,3 @@
+ (2 of 7)
+-dist[SEP]acorn-0.1.0.tar.gz
++dist/acorn-0.1.0.tar.gz
+ README.md
+    stderr:
+@@ -1,1 +1,1 @@
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Reverse Flips Whatever Order Is in Effect
+@@ -1,3 +1,3 @@
+ (2 of 7)
+ .gitignore
+-src[SEP]omega.rs
++src/omega.rs
+    stderr:
+@@ -1,1 +1,1 @@
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Depth Bounds the Rendered Tree, Not the Scan
+    stderr:
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: depth 0
+-tip: expand deeper: --depth=all
++tip: expand deeper: depth=all
   ✓ Every Row Says How Much of It .gitignore Ignores
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
   ✓ Ignored Entries Are a Selection, and Sizes Follow It
@@ -106,25 +140,36 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Machine Rows Mark Each Entry, and Null Means No Rule Was Read
   ✗ A Selection by Ignored State Needs the Rules
 @@ -1,1 +1,1 @@
--fdu: --only-ignored needs .gitignore classification, and --no-gitignore turned it off; drop one of them
+-fdu: --ignored=only needs .gitignore classification, and --no-gitignore turned it off; drop one of them
 +fdu: ignored=only needs .gitignore classification, and read_controls turned it off; drop one of them
   ✓ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
   ✗ A Rule File the Budget Refuses Is Named, and Sizes Stay Exact
-@@ -1,2 +1,2 @@
-     16 KiB  2 files, 0 directories
--note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so ignored shares under . are not exact; sizes are. To apply them, raise --gitignore-line-limit above 16 KiB, or set it to all
-+note: 1 .gitignore file not applied (1 with a line over the 16 KiB line limit), so ignored shares under . are not exact; sizes are. To apply them, raise control_line_limit above 16 KiB, or set it to all
+    stderr:
+@@ -1,3 +1,3 @@
+ note: ignore classification incomplete: 1 ignore file not applied (1 with a line over the 16 KiB line limit); affected: .
+ note: gitignored subtotals are unavailable where governing rules could not be verified
+-tip: apply refused ignore files: raise --gitignore-line-limit above 16 KiB, or set it to all
++tip: apply refused ignore files: raise control_line_limit above 16 KiB, or set it to all
   ✓ JSON Carries the Versioned Envelope
-  ✓ JSONL Is One Document per Line
+  ✗ JSONL Is One Document per Line
+@@ -1,2 +1,2 @@
+-{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
+-{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SANDBOX]/project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": [], "size": "apparent", "sort_metric": null, "views": ["types"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": null}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 1, "rules": 1, "refused": 0, "refusals": []}, "analysis": null}
++{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "bound": {"shown": 1, "total": 5}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 269, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4, "unknown": 1}, "confidence": {"certain": 6, "heuristic": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 128, "denominator": 269}, "metrics": {}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}}]}}
+    stderr:
+@@ -1,1 +1,1 @@
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
--fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "bogus": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ The Unreleased View Alias Is Rejected
 @@ -1,1 +1,1 @@
--fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "docs": expected one of list, summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
++fdu: invalid view "docs": expected one of list, summary, tree, families, types, extensions, languages, code, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -158,28 +203,604 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
   ✓ A Directory at the Scan-Depth Boundary Has an Unknown Age
 FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
-  ✓ Scan Without a Cache
+  ✗ Scan Without a Cache
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 269,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Verify No Cache Was Created
-  ✓ Create the Snapshot
+  ✗ Create the Snapshot
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 269,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Verify Exactly One Snapshot Exists
-  ✓ A Second One-Shot Report Scans Cold Again
+  ✗ A Second One-Shot Report Scans Cold Again
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 269, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 269,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Expand the Fixture
-  ✓ Report the Changed Tree
-  ✓ The Rewrite Kept the Snapshot Current for Cache-Only
+  ✗ Report the Changed Tree
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 294,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ The Rewrite Kept the Snapshot Current for Cache-Only
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cache_only",
+     "freshness": "stale",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 294,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✗ Watching Rejects a Snapshot Nothing Verified
     stderr:
 @@ -1,1 +1,1 @@
 -fdu: --watch cannot start from --cache only: nothing verifies what changed between the snapshot and the start of the watch; use --cache auto or read-only
 +fdu: watch cannot start from cache policy only: nothing verifies what changed between the snapshot and the start of the watch; use cache policy auto or read-only
-  ✓ A Different Semantic Scan Scope Misses the Snapshot
+  ✗ A Different Semantic Scan Scope Misses the Snapshot
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": 1,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 3, "bytes": 82, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 3, "bytes": 82, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 3,
+         "bytes": 82,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,4 +1,4 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+ note: incomplete subtrees remain visible below the size threshold
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Corrupt the Snapshot
-  ✓ Recover with a Cold Scan
+  ✗ Recover with a Cold Scan
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": 1,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 3, "bytes": 82, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 3, "bytes": 82, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 3,
+         "bytes": 82,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,4 +1,4 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+ note: incomplete subtrees remain visible below the size threshold
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Verify the Corrupt File Was Replaced
-  ✓ Reading No .gitignore Is a Separate Scope
-  ✓ Reading No .gitignore Is a Separate Scope
-  ✓ Reading No .gitignore Is a Separate Scope
-  ✓ Reading No .gitignore Is a Separate Scope
-  ✓ Reading No .gitignore Is a Separate Scope
+  ✗ Reading No .gitignore Is a Separate Scope
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -47,14 +47,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 294,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Reading No .gitignore Is a Separate Scope
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cache_only",
+     "freshness": "stale",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": null,
+@@ -41,14 +41,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 294,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Reading No .gitignore Is a Separate Scope
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": null,
+    stderr:
+@@ -1,1 +1,1 @@
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Reading No .gitignore Is a Separate Scope
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cache_only",
+     "freshness": "stale",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "cached", "freshness": "stale", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+    stderr:
+@@ -1,1 +1,1 @@
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Reading No .gitignore Is a Separate Scope
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": null,
+@@ -41,14 +41,14 @@
+       "view": "tree",
+       "limits": {"depth": 0, "min_share": "1%", "breadth": null, "rows": 0},
+       "tree": null,
+       "omissions": [
+-        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED]}
++        {"reason": "rows", "entries": 1, "files": 7, "bytes": 294, "allocated": [ALLOCATED_VALUE]}
+       ],
+       "remainder": {
+         "files": 7,
+         "bytes": 294,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ Reading No .gitignore Is a Separate Scope
 FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
@@ -193,13 +814,24 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 -fdu: --view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly
 +fdu: view documents requires content analysis: add analyze lines, code, words, or all; views never enable content analysis implicitly
   ✗ Human Summaries Separate Code and Documents
-@@ -1,2 +1,1 @@
-        0 B  0 files, 0 directories
--note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
   ✓ Human Summaries Separate Code and Documents
   ✓ Human Summaries Separate Code and Documents
   ✓ JSON Exposes Provenance, Exact Shares, Metrics, and Coverage
-  ✓ JSONL Keeps the Envelope and Section Independently Parseable
+  ✗ JSONL Keeps the Envelope and Section Independently Parseable
+@@ -1,2 +1,2 @@
+-{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "age_reference_ns": [AGE_NS], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
+-{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
++{"schema": "fdu.report/10", "generator": "fdu 0.1.0", "root": "[SANDBOX]/content-project", "age_reference_ns": [AGE_NS_VALUE], "request": {"scope": {"max_depth": null, "follow_symlinks": false, "one_filesystem": false, "exclude_special": false, "read_controls": true, "population": "include"}, "analyze": ["lines"], "size": "apparent", "sort_metric": null, "views": ["documents"], "omitted_views": []}, "status": {"complete": true, "coverage": {"kind": "complete"}, "errors": [], "errors_omitted": 0}, "provenance": {"source": "cold_scan", "freshness": "fresh", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "tiers": {"entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}, "content": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]}}}, "ignore_rules": {"limits": {"budget": 4194304, "line_limit": 16384}, "applied": 0, "rules": 0, "refused": 0, "refusals": []}, "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 12438660251313372799, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
++{"view": "documents", "metrics": {"group": "type", "share_metric": "raw_words", "bound": {"shown": 1, "total": 2}, "share_omitted": 0, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "raw_words": 11}, "coverage": {"lines": {"analyzed": 2, "binary": 1}}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED_VALUE], "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "raw_words": 7}, "coverage": {"lines": {"analyzed": 1}}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}}]}}
+    stderr:
+@@ -1,1 +1,1 @@
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✓ YAML Derives Pages Only After Document Aggregation
   ✓ Analysis Reads Every Eligible File Completely
   ✓ Analysis Reads Every Eligible File Completely
@@ -208,44 +840,98 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Cached Coverage Exclusions Preserve Evidence
   ✓ Content Cache Hits Preserve the Same Tallies
   ✗ Content Cache Hits Preserve the Same Tallies
-@@ -1,2 +1,1 @@
-      256 B  7 files, 4 directories
--note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
   ✓ Content Cache Hits Preserve the Same Tallies
   ✗ Content Cache Hits Preserve the Same Tallies
-@@ -1,2 +1,1 @@
-      256 B  7 files, 4 directories
--note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or full
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
   ✓ Common-Language SLOC Is a Complete Partition
+  ✗ Metric Order, Reverse, and Share Threshold Compose
+    stderr:
+@@ -1,2 +1,2 @@
+ note: code totals include languages hidden by display limits
+-tip: show smaller entries: --min-share=0%
++tip: show smaller entries: min_share=0%
+  ✗ Code Totals Survive Bounds and Unsupported Languages
+    stderr:
+@@ -1,2 +1,2 @@
+ note: code totals include languages hidden by display limits
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Code Totals Survive Bounds and Unsupported Languages
+    stderr:
+@@ -1,2 +1,2 @@
+ note: code totals include languages hidden by display limits
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✓ Code Totals Survive Bounds and Unsupported Languages
+  ✓ Code Totals Survive Bounds and Unsupported Languages
+  ✓ Directory Selection Shares One Population Across Code Views
+  ✗ Unsupported Metric Sorts Fail Before Filesystem Access
+@@ -1,1 +1,1 @@
+-fdu: invalid --sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
++fdu: invalid sort "code_lines": extensions cannot sort by content metrics; use size, count, or name, or select files or another metric-capable view
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✓ The Analyzer Set Chooses the View
   ✗ The Analyzer Set Chooses the View
-@@ -2,5 +2,4 @@
-       98 B  ████░░░░░░    38%    assets (2 files)
-       77 B  ███░░░░░░░    30%    src (2 files)
-       59 B  ██░░░░░░░░    23%    docs (2 files)
-       22 B  █░░░░░░░░░     9%    data (1 file)
--note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or full
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
   ✗ Every View One Walk Can Answer
-@@ -23,11 +23,11 @@
+@@ -22,10 +22,10 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
- LARGEST  (2 of 7; --limit all for every one)
+ LARGEST  (2 of 7)
 -80 B  assets[SEP]logo.png
 -42 B  docs[SEP]guide.md
 +80 B  assets/logo.png
 +42 B  docs/guide.md
- RECENT  (2 of 7; --limit all for every one)
+ RECENT  (2 of 7)
 -[RFC3339]  assets[SEP]late.bin.txt
 -[RFC3339]  docs[SEP]notes.txt
--note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
 +[RFC3339]  assets/late.bin.txt
 +[RFC3339]  docs/notes.txt
-+note: omitted documents — requires content analysis: add analyze lines, code, words, or all
-  ✓ Every View One Walk Can Answer
+    stderr:
+@@ -1,5 +1,5 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 2
+ note: omitted code, documents: content analysis required
+-tip: show more rows: --limit=all
+-tip: include omitted views: add --analyze code
++tip: show more rows: limit=all
++tip: include omitted views: add analyze code
+  ✗ Every View One Walk Can Answer
+@@ -30,10 +30,10 @@
+       42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+ LARGEST  (2 of 7)
+-80 B  assets[SEP]logo.png
+-42 B  docs[SEP]guide.md
++80 B  assets/logo.png
++42 B  docs/guide.md
+ RECENT  (2 of 7)
+-[RFC3339]  assets[SEP]late.bin.txt
+-[RFC3339]  docs[SEP]notes.txt
++[RFC3339]  assets/late.bin.txt
++[RFC3339]  docs/notes.txt
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 2
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "none,code": "none" names the whole axis and cannot be combined
@@ -270,20 +956,154 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "full": expected one of none, lines, code, words, all
 +fdu: invalid analyze "full": expected one of none, lines, code, words, all
-PASS [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
-  ✓ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
-  ✓ Depth and Number Limit Only the Rendered View
+  ✗ Quiet Keeps Results and Errors
+    stderr:
+@@ -1,2 +1,2 @@
+ note: requested analysis is not displayed by the selected views
+-tip: show analysis: --view families, languages, or full
++tip: show analysis: view families, languages, or full
+  ✓ Quiet Keeps Results and Errors
+FAIL [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
+  ✗ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
+    stderr:
+@@ -1,4 +1,4 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 10
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✓ The Full Shorthand Shows the Complete Tree
+  ✓ The Full Shorthand Shows the Complete Tree
+  ✓ Full Flat File and Directory Listings
+  ✓ Full Flat File and Directory Listings
+  ✗ Zero Rows Still Account for Every Hidden File
+    stderr:
+@@ -1,3 +1,3 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: row limit 0
+-tip: show more rows: --limit=all
++tip: show more rows: limit=all
+  ✗ Depth and Number Limit Only the Rendered View
+    stderr:
+@@ -1,5 +1,5 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: depth 1, row limit 2
+-tip: expand deeper: --depth=all
+-tip: show more rows: --limit=all
++tip: expand deeper: depth=all
++tip: show more rows: limit=all
   ✓ Type View Honors the Selected Size Metric
-  ✓ Several Views Are Labelled; One View Is Left Bare
+  ✗ Several Views Are Labelled; One View Is Left Bare
+    stderr:
+@@ -1,3 +1,3 @@
+ note: gitignored sizes are included in row totals
+ note: display limits: depth 1
+-tip: expand deeper: --depth=all
++tip: expand deeper: depth=all
   ✓ A Lone View Keeps the Bare Layout
   ✓ A View That Matched Nothing Still Says So
   ✓ Asking for a Second View Labels the Paths Too
-PASS [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
+  ✓ Tree Bar Width
+  ✓ Tree Bar Width
+  ✓ Tree Bar Width
+FAIL [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
   ✓ Full Output Exposes Scan and Projection Completeness Separately
-  ✓ Render Limits Mark the Projection as Truncated
+  ✗ Render Limits Mark the Projection as Truncated
+@@ -1,9 +1,9 @@
+ {
+   "schema": "fdu.report/10",
+   "generator": "fdu 0.1.0",
+-  "root": "[SCAN_PATH]",
+-  "age_reference_ns": [AGE_NS],
++  "root": "[SANDBOX]/project",
++  "age_reference_ns": [AGE_NS_VALUE],
+   "request": {
+     "scope": {
+       "max_depth": null,
+       "follow_symlinks": false,
+@@ -26,12 +26,12 @@
+   },
+   "provenance": {
+     "source": "cold_scan",
+     "freshness": "fresh",
+-    "scan_started_at": "[RFC3339]",
+-    "generated_at": "[RFC3339]",
++    "scan_started_at": "[RFC3339]",
++    "generated_at": "[RFC3339]",
+     "tiers": {
+-      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS]},
++      "entries": {"source": "scanned", "freshness": "fresh", "observed_at_ns": [MTIME_NS_VALUE]},
+       "content": null
+     }
+   },
+   "ignore_rules": {
+@@ -51,32 +51,32 @@
+         "path": "",
+         "kind": "dir",
+         "entry_ignored": false,
+         "bytes": 269,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "files": 7,
+         "dirs": 3,
+-        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
+-        "newest_mtime_ns": [MTIME_NS],
++        "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE]},
++        "newest_mtime_ns": [MTIME_NS],
+         "truncated": true,
+         "omissions": [
+-          {"reason": "rows", "entries": 5, "files": 6, "bytes": 141, "allocated": [ALLOCATED]}
++          {"reason": "rows", "entries": 5, "files": 6, "bytes": 141, "allocated": [ALLOCATED_VALUE]}
+         ],
+         "children": [
+           {
+             "name": "dist",
+             "path": "dist",
+             "kind": "dir",
+             "entry_ignored": true,
+             "bytes": 128,
+-            "allocated": [ALLOCATED],
++            "allocated": [ALLOCATED_VALUE],
+             "files": 1,
+             "dirs": 0,
+-            "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]},
+-            "newest_mtime_ns": [MTIME_NS],
++            "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED_VALUE]},
++            "newest_mtime_ns": [MTIME_NS],
+             "truncated": true,
+             "omissions": [
+-              {"reason": "depth", "entries": 1, "files": 1, "bytes": 128, "allocated": [ALLOCATED]}
++              {"reason": "depth", "entries": 1, "files": 1, "bytes": 128, "allocated": [ALLOCATED_VALUE]}
+             ],
+             "children": []
+           }
+         ]
+@@ -84,9 +84,9 @@
+       "omissions": [],
+       "remainder": {
+         "files": 6,
+         "bytes": 141,
+-        "allocated": [ALLOCATED],
++        "allocated": [ALLOCATED_VALUE],
+         "reasons": ["rows"]
+       }
+     }
+   ]
+    stderr:
+@@ -1,5 +1,5 @@
+ note: gitignored sizes are included in row totals
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: depth 1, row limit 2
+-tip: expand deeper: --depth=all
+-tip: show more rows: --limit=all
++tip: expand deeper: depth=all
++tip: show more rows: limit=all
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
 PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
+  ✓ All-Cache Actions Need No Scan Root
+  ✓ All-Cache Actions Need No Scan Root
   ✓ Status Before Anything Is Cached
   ✓ A Report Leaves a Snapshot Behind
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
@@ -322,12 +1142,21 @@ PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
   ✓ fdu’s Own Leftovers Are Named as fdu’s, and Reclaimed on Its Own Terms
   ✓ An Unknown Scope Names Both Accepted Values
-PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✓ An Explicit Path Gives a Useful Project-Shaped Report
+  ✓ Unknown Branches Do Not Disable Filtering for Known Sizes
+  ✗ Unknown Branches Do Not Disable Filtering for Known Sizes
+    stderr:
+@@ -1,4 +1,4 @@
+ note: more covers unlisted root branches; listed directory totals already include their descendants
+ note: display limits: below 1% of selected root
+ note: incomplete subtrees remain visible below the size threshold
+-tip: show smaller entries: --min-share=0%
++tip: show smaller entries: min_share=0%
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
-@@ -1,187 +1,1 @@
+@@ -1,213 +1,1 @@
 -fdu — a fast, incremental file roll-up engine.
 -
 -SET UP WITH ANY CODING AGENT
@@ -357,7 +1186,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  A report requires a PATH. Use `.` for the current directory.
 -
 -    fdu .                                      directory sizes (the default)
--    fdu . --exclude-ignored                    omit entries covered by .gitignore
+-    fdu . --ignored=exclude                    omit entries covered by .gitignore
 -    fdu . --view=summary                       one total for the tree
 -    fdu . --view=languages                     languages by byte size
 -    fdu . --view=families,types,extensions     three file-kind breakdowns
@@ -368,8 +1197,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -    fdu . --analyze=words                      prose volume by document type
 -
 -  `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
--  to depth 2, with at most 10 children per directory. Hidden and ignored entries
--  are included; .gitignore is read to label ignored shares, not to exclude them.
+-  to depth 5, showing contents with at least 1% of the selected root size. Hidden
+-  and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 -
 -VIEWS AND ANALYSIS
 -  --view chooses the question the report answers. Several views share one scan
@@ -378,9 +1207,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -    contents are not opened. Compatible cached results avoid rereading unchanged
 -    bodies, so a repeated content analysis can be much cheaper.
 -
--  Naming analyzers selects a view that displays them: code selects languages,
--  words selects documents, and lines or a multi-analyzer set selects families.
--  Name --view for a different projection; it always wins.
+-  Naming analyzers selects a view that displays them: code selects code, words
+-  selects documents, code,words selects both, and lines selects families.
+-  Name --view for a different projection; it always wins. Headers name views;
+-  columns name measurements. words is an analyzer; documents selects prose/markup.
+-  Use --analyze words for that report, or add --view types for all text types.
 -
 -  A view never turns on an analyzer, because choosing how to look at a result
 -  should not quietly authorize reading every file in the tree. If a selected
@@ -391,9 +1222,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  fdu ~/Downloads --view=extensions
 -  fdu . --view=types,families --format=json
 -  fdu . --analyze=words --view=documents
+-  fdu PATH --view tree --full --format json                 complete recursive tree
+-  fdu PATH --kind dir --full --format json                  recursive directory totals
+-  fdu PATH --kind file --full --format paths                find/fd-style file inventory
 -  fdu PATH --view=largest --limit=100                        the 100 largest files
 -  fdu PATH --view=files --kind=file --modified-since=1h      files changed lately
--  fdu PATH --view=files --only-ignored --format=jsonl        what .gitignore covers
+-  fdu PATH --view=files --ignored=only --format=jsonl        what .gitignore covers
 -  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 -
 -  --interval throttles rendering only; change detection is event-driven and
@@ -403,16 +1237,21 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  largest and recent are presets over files, not more views to learn:
 -    largest = files --sort size --limit 20, regular files only
 -    recent  = files --sort mtime --limit 20, regular files only
+-  --full expands to --depth=all --breadth=all --limit=all --min-share=0%.
+-  Explicit bounds override it regardless of order. It leaves view, scan scope,
+-  population, and analysis unchanged. --view=full chooses views instead.
 -  --sort and --limit still override them. files alone is complete: every
--  matching entry, in name order. full keeps its bounded digest, without list/files.
+-  matching entry, in name order. full combines applicable views, without list/files.
 -
 -LIST FORMATS AND OLD BUILD DIRECTORIES
 -  The metadata default view is list; its default format is tree. These agree:
 -    fdu PATH
 -    fdu PATH --view list --format tree
--  Tree shows directory roll-ups, depth 2, ten children per directory.
--  Files contribute to totals without new leaf rows. --depth all expands levels;
--  --limit all removes row caps. Flat list limits apply to the whole result.
+-  Tree shows directories and significant files to depth 5. --min-share 1% compares
+-  every row to the selected root total. --min-share 0% shows even zero-size rows.
+-  --breadth caps children per directory; --limit caps data rows per section.
+-  Both default to all. --depth all expands levels. Omission notes name each bound.
+-  Display bounds never change totals or limit the filesystem scan.
 -
 -  --format paths gives matching paths only; --long adds size, age, and path.
 -  Flat lists are complete and size-ranked by default; --sort name lists by name.
@@ -439,15 +1278,15 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -
 -SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
 -  Scope      PATH, --scan-depth, --one-filesystem       what is scanned and cached
--             --gitignore-budget, --gitignore-line-limit, --no-gitignore
+-             --gitignore-budget, --gitignore-line-limit, --no-gitignore, --ignored
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
--             --exclude-ignored, --only-ignored
--  View       list,summary,tree,families,types,extensions,languages,documents,
+-             --breadth, --min-share
+-  View       list,summary,tree,families,types,extensions,languages,code,documents,
 -             largest,recent,files,full
 -  Format     --format text|tree|paths|long|json|jsonl|yaml, --tree, --long
 -             --color, --progress
--  Mode       --cache, --watch, --analysis-workers
+-  Mode       --cache, --watch, --workers
 -
 -CONTENT ANALYSIS
 -  none       metadata only; source files are never opened (default)
@@ -457,11 +1296,14 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  all        every shipped analyzer
 -
 -  A comma-separated set: code,words runs both. none and all name the whole
--  axis and cannot be combined. lines comes with any analyzer, free.
--  languages is metadata-only by default; code adds standard LOC.
+-  axis and cannot be combined. code and words already include lines; adding lines
+-  explicitly changes neither measurements nor work. lines alone measures physical
+-  text volume without language-specific code counting or word normalization.
+-  languages is metadata-only by default; --view code requires --analyze code.
+-  Code reports show source lines, language shares, population columns, and coverage.
 -  documents requires any enabled analyzer.
 -  Analysis streams every eligible file through EOF; files are never size-truncated.
--  --analysis-workers bounds concurrency.
+-  --workers bounds content-analysis concurrency; directory scanning uses its own pool.
 -  --words-per-page changes only report-time page derivation.
 -  Unchanged results are restored from a separate sidecar written by the same
 -  analyzer set; any other set, wider or narrower, reads the files again.
@@ -481,30 +1323,43 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  compatible snapshot and content sidecar for the requested analysis, and labels
 -  its answer stale. --cache=off neither reads nor writes fdu's cache.
 -
+-  macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
+-  --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
+-  Each root has <key>.metadata.bin and optional <key>.analysis.bin. The latter
+-  stores derived metrics, not source bodies. Status and clear use the same directory.
+-
 -IGNORE RULES
--  Every report reads each .gitignore in the tree, and summary, tree, and extension
--  rows end with how much of their size its rules ignore, as `(128 B ignored)`.
--  A directory a rule ignores is ignored with everything below it. Unignored is not
--  tracked: .git is unignored unless a rule names it. --exclude-ignored and
--  --only-ignored select one side after the scan; they do not prune metadata work
--  or content analysis. Sort and --min-size follow the size shown.
+-  Fresh scans read applicable .gitignore files by default; cache-only uses retained
+-  rules. Summary, tree, and extension rows show gitignored size as `(128 B gitignored)`.
+-  Ignoring a directory covers its descendants. Non-gitignored does not mean Git-tracked:
+-  .git is non-gitignored unless a rule names it. --ignored=include is default.
+-  --ignored=exclude prunes safely gitignored subtrees and skips gitignored body reads.
+-  --ignored=only discovers gitignored matches through ordinary ancestors, reading
+-  only gitignored bodies for analysis. Sort and --min-size follow the size shown.
 -  --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
 -  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
 -  and matching is case-sensitive on every platform. An unreadable .gitignore makes
 -  the result partial, like any unreadable path. A .gitignore past --gitignore-budget
 -  or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
--  ignored shares under that directory do not.
+-  gitignored shares under that directory do not.
 -
 -OUTPUT AND AUTOMATION
--  Every machine report uses fdu.report/7; watch changes use fdu.stream/2.
--  Cache status is its own document in every machine format: fdu.cache/2.
+-  Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
+-  Cache status is its own document in every machine format: fdu.cache/3.
 -  Summary, tree, extension, and file rows carry `ignored`: null under --no-gitignore.
 -  Text language rows use canonical names; machine formats retain lowercase IDs.
 -  Metric rows include detection source, confidence, origin flags, and coverage.
--  One-shot text reports end with a gray performance line; machine formats omit it.
+-  Tree remainder totals are shared by every format: recursive files, apparent and
+-  allocated bytes, and applicable reasons. Null means nothing hidden; unknown counts
+-  or sizes stay null. Text shows one root-level line: ... and SIZE (N files) more.
+-  Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
+-  One-shot text reports end with gray perf: on stderr; machine formats omit it.
+-  It counts ignore files and accepted rules, including repeated governing sources.
+-  Total files/s and binary GiB/s use the displayed elapsed duration. GiB/s represents
+-  walked file size; actual body-read throughput is reported separately.
 -  JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
 -  lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.
--  Results go to stdout; warnings and errors go to stderr.
+-  Results go to stdout; all diagnostics, including warnings and errors, go to stderr.
 -  The command never prompts or pages. A progress line is drawn on stderr only for a
 -  person at an interactive terminal; --progress never draws into a pipe, a file, or CI.
 -  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
@@ -520,7 +1375,12 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu 0.1.0[DEV_REVISION]
 +fdu 0.1.0 (python parity surface)
-  ✓ An Explicit Current Root Works for an Empty Sandbox
+  ✗ An Explicit Current Root Works for an Empty Sandbox
+    stderr:
+@@ -1,2 +1,2 @@
+ note: no size denominator: selected root size is zero
+-tip: show smaller entries: --min-share=0%
++tip: show smaller entries: min_share=0%
   ✗ A Time Bound the Index Cannot Represent Is Rejected
     stderr:
 @@ -1,1 +1,1 @@

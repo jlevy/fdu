@@ -976,7 +976,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         .sections
         .iter()
         .find_map(|section| match section {
-            fdu_core::query::Section::Tree { root: node, .. } => Some(node),
+            fdu_core::query::Section::Tree { root: node, .. } => node.as_deref(),
             _ => None,
         })
         .ok_or_else(|| ProbeError("default tree returned no tree section".to_string()))?;

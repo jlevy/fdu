@@ -928,6 +928,9 @@ pub struct Index {
     types: std::sync::Arc<crate::classify::TypeRegistry>,
     /// Exact fixed control sources and their derived matchers.
     controls: crate::control::ControlTable,
+    /// Control files whose text could not be read in the latest owning pass.
+    /// Their governing descendants have unknown ignore classification.
+    unreadable_control_paths: BTreeSet<PathBuf>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
     /// Coherent opened-root state. Detached indexes retain the settled default and do
@@ -1886,6 +1889,7 @@ impl Index {
             content: None,
             types,
             controls: crate::control::ControlTable::default(),
+            unreadable_control_paths: BTreeSet::new(),
         }
     }
 
@@ -2853,7 +2857,6 @@ impl Index {
     }
 
     /// Apply one owned filesystem-walker batch without constructing public history.
-    #[cfg(test)]
     pub(crate) fn apply_scanner_baseline(
         &mut self,
         batch: crate::scan::ScannerBatch,
@@ -3014,7 +3017,15 @@ impl Index {
         self.state.issues = crate::IssueSummary::default();
         let root = self.root_path.clone();
         crate::scan::normalize_walk_errors(&root, errors);
+        self.unreadable_control_paths.clear();
         for error in errors {
+            if let crate::Error::Io { .. } = error {
+                if let Some(path) = Issue::from_error_under(&root, error).path {
+                    if crate::control::is_control_file(&path) {
+                        self.unreadable_control_paths.insert(path);
+                    }
+                }
+            }
             self.retain_issue(Issue::from_error_under(&root, error));
         }
     }
@@ -3161,6 +3172,22 @@ impl Index {
         }
         let still_owned =
             |candidate: &Path| !superseded.iter().any(|newer| candidate.starts_with(newer));
+        if errors.disproves_old {
+            self.unreadable_control_paths
+                .retain(|control| !control.starts_with(&path) || !still_owned(control));
+        }
+        for error in errors.errors.iter().chain(errors.terminal) {
+            if let crate::Error::Io { .. } = error {
+                if let Some(control) = Issue::from_error_under(&self.root_path, error).path {
+                    if control.starts_with(&path)
+                        && still_owned(&control)
+                        && crate::control::is_control_file(&control)
+                    {
+                        self.unreadable_control_paths.insert(control);
+                    }
+                }
+            }
+        }
         // Each listed directory is recorded on its own listing, complete pass or not: the
         // walk names only those it listed in full with no error inside them, as discovery
         // decides per directory, and the caller passes none when a commit lost a race. A
@@ -3831,8 +3858,8 @@ impl Index {
 
     /// Effective fixed-control classification for one retained entry.
     ///
-    /// `Ok(Some(ignored))` for a retained entry and `Ok(None)` for a path the index does
-    /// not hold.
+    /// `Ok(Some(ignored))` when a retained entry's governing controls are known;
+    /// `Ok(None)` for a missing entry or one below a refused control source.
     ///
     /// # Errors
     ///
@@ -3842,7 +3869,56 @@ impl Index {
     /// wrong for a tree that has a `.gitignore`.
     pub fn is_ignored(&self, path: &Path) -> crate::Result<Option<bool>> {
         self.require_observed_controls()?;
-        Ok(self.lookup(path).map(|id| self.entry(id).ignored))
+        Ok(self.ignored_classification(path))
+    }
+
+    /// Known ignore classification of a retained path, or `None` when unavailable.
+    ///
+    /// A refusal may hide an ignore or a negation. Its descendants cannot be counted
+    /// as known members of either population.
+    pub fn ignored_classification(&self, path: &Path) -> Option<bool> {
+        let id = self.lookup(path)?;
+        self.ignored_classification_of(path, id)
+    }
+
+    /// Classification for a retained entry whose handle the caller already has.
+    pub(crate) fn ignored_classification_of(&self, path: &Path, id: EntryId) -> Option<bool> {
+        if !self.observes_controls() || !self.control_classification_known(path) {
+            return None;
+        }
+        self.try_entry(id).map(|entry| entry.ignored)
+    }
+
+    pub(crate) fn control_classification_known(&self, path: &Path) -> bool {
+        self.controls.classification_known(path)
+            && (self.unreadable_control_paths.is_empty()
+                || !path.parent().into_iter().flat_map(Path::ancestors).any(|directory| {
+                    self.unreadable_control_paths
+                        .iter()
+                        .any(|control| control.parent() == Some(directory))
+                }))
+    }
+
+    /// Whether ignored classification is known throughout this retained subtree.
+    pub fn ignored_classification_complete_below(&self, path: &Path) -> bool {
+        self.observes_controls()
+            && self.controls.classification_known(path)
+            && !self.unreadable_control_paths.iter().any(|control| {
+                control.starts_with(path)
+                    || path
+                        .parent()
+                        .into_iter()
+                        .flat_map(Path::ancestors)
+                        .any(|directory| control.parent() == Some(directory))
+            })
+            && !self.controls.refusals().any(|refusal| {
+                refusal.path.starts_with(path)
+                    || path
+                        .parent()
+                        .into_iter()
+                        .flat_map(Path::ancestors)
+                        .any(|directory| refusal.path.parent() == Some(directory))
+            })
     }
 
     /// Borrow direct children of a directory as `(name, id)` pairs in name order.
@@ -3905,15 +3981,6 @@ impl Index {
         })
     }
 
-    /// The retained ignore bit of a live entry, without the observation check
-    /// [`Self::is_ignored`] makes, or `None` for a stale handle.
-    ///
-    /// `false` throughout an index that observed no control state, for the reason
-    /// [`Self::partition_scalars_of`] gives.
-    pub(crate) fn ignored_bit_of(&self, id: EntryId) -> Option<bool> {
-        Some(self.try_entry(id)?.ignored)
-    }
-
     /// Whether a live directory's in-scope child set is authoritative: the id form of
     /// [`Self::directory_complete`], for a reader that already holds the id. `None` for a
     /// stale handle or an entry that is not a directory.
@@ -3953,7 +4020,7 @@ impl Index {
         self.content().and_then(ContentIndex::profile).unwrap_or(AnalysisSet::NONE)
     }
 
-    /// Whether the retained content tier lacks a record for any current regular file.
+    /// Whether the retained content tier lacks a record for any admitted regular file.
     ///
     /// Every requested analyzer records a coverage outcome, including binary, invalid
     /// UTF-8, and unsupported files. A count mismatch therefore means analysis is still
@@ -3966,7 +4033,20 @@ impl Index {
         let Some(content) = self.content().and_then(|content| content.admit(&wanted)) else {
             return true;
         };
-        u64::try_from(content.len()).unwrap_or(u64::MAX) < self.entry(EntryId::ROOT).rollup().files
+        if self.scope.population == crate::query::IgnoredEntries::Include {
+            return u64::try_from(content.len()).unwrap_or(u64::MAX)
+                < self.entry(EntryId::ROOT).rollup().files;
+        }
+        // Narrow populations retain control files for reconciliation and unknown
+        // files until their governing rules can be verified. Neither is an analysis
+        // candidate, so comparing against all retained regular files would make a
+        // complete analysis look perpetually partial.
+        let mut pending = false;
+        self.for_each_analysis_file(profile, |_, _, attrs, path| {
+            pending |=
+                content.file(&path).is_none_or(|record| record.fingerprint != attrs.fingerprint());
+        });
+        pending
     }
 
     /// The content tier identity this index gives records of `analysis`: its own entry tier,
@@ -4071,9 +4151,16 @@ impl Index {
                 if entry.kind != EntryKind::File {
                     continue;
                 }
+                let relative_path = parent_path.join(name);
+                if !self.scope.population.admits(entry.ignored)
+                    || (self.scope.population != crate::query::IgnoredEntries::Include
+                        && !self.control_classification_known(&relative_path))
+                {
+                    continue;
+                }
                 let revision = entry.revision;
                 let attrs = entry.attrs;
-                visit(id, revision, attrs, parent_path.join(name));
+                visit(id, revision, attrs, relative_path);
             }
         }
     }
@@ -7579,6 +7666,76 @@ mod tests {
     }
 
     #[test]
+    fn rollups_conserve_hand_counted_populations_through_updates_and_subtree_replacement() {
+        let mut index = Index::new_with_scope("/root", crate::test_support::observing_controls());
+        let attrs =
+            |size, allocated, inode| Attrs { size, allocated, inode, dev: 1, ..Attrs::default() };
+        index.apply_ok(&Observation::new(vec![
+            upsert(".gitignore", EntryKind::File, attrs(6, 512, 1)),
+            upsert("a", EntryKind::Dir, Attrs::default()),
+            upsert("a/keep.rs", EntryKind::File, attrs(7, 512, 99)),
+            upsert("a/drop.log", EntryKind::File, attrs(11, 1_024, 3)),
+            upsert("z.rs", EntryKind::File, attrs(5, 4_096, 99)),
+            Op::ControlUpsert { path: PathBuf::from(".gitignore"), source: b"*.log\n".to_vec() },
+        ]));
+
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!(
+            (total.all.files, total.all.dirs, total.all.bytes, total.all.allocated),
+            (4, 1, 29, 6_144)
+        );
+        assert_eq!(
+            (total.unignored.files, total.unignored.bytes, total.unignored.allocated),
+            (3, 18, 5_120)
+        );
+        assert_eq!(index.rollup(Path::new("a")).expect("directory").bytes, 18);
+        assert_eq!(
+            total.all.by_ext[".rs"].files, 2,
+            "two paths with one inode each contribute a file"
+        );
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "a/drop.log",
+            EntryKind::File,
+            attrs(13, 1_536, 3),
+        )]));
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!((total.all.files, total.all.bytes, total.all.allocated), (4, 31, 6_656));
+        assert_eq!(
+            (total.unignored.files, total.unignored.bytes, total.unignored.allocated),
+            (3, 18, 5_120)
+        );
+
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("a") }]));
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!(
+            (total.all.files, total.all.dirs, total.all.bytes, total.all.allocated),
+            (2, 0, 11, 4_608)
+        );
+        assert_eq!(total.all, total.unignored);
+
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::Dir, Attrs::default()),
+            upsert("a/final.log", EntryKind::File, attrs(17, 4_096, 4)),
+        ]));
+        let total = index.partition_total().expect("control state observed");
+        assert_eq!(
+            (total.all.files, total.all.dirs, total.all.bytes, total.all.allocated),
+            (3, 1, 28, 8_704)
+        );
+        assert_eq!(
+            (
+                total.unignored.files,
+                total.unignored.dirs,
+                total.unignored.bytes,
+                total.unignored.allocated
+            ),
+            (2, 1, 11, 4_608)
+        );
+        assert_eq!(index.rollup(Path::new("a")).expect("directory").bytes, 17);
+    }
+
+    #[test]
     fn symlinks_and_special_nodes_do_not_contribute_regular_file_tallies() {
         let mut index = Index::new("/root");
         index.apply_ok(&Observation::new(vec![
@@ -9310,8 +9467,8 @@ mod tests {
         assert_eq!(index.total().files, 2);
         assert_eq!(
             index.is_ignored(Path::new("debug.log")).expect("observed"),
-            Some(false),
-            "the rules the refused source replaced no longer apply"
+            None,
+            "the refused replacement leaves classification unknown"
         );
         let changes = &outcome.commit.as_ref().expect("one commit").changes;
         let refused = Some(crate::control::ControlRefusalReason::Budget);
@@ -9344,6 +9501,7 @@ mod tests {
             crate::control::ControlCoverage::Observed(crate::control::ControlObservation {
                 limits: crate::control::ControlLimits::default(),
                 applied: 0,
+                rules: 0,
                 refused: 0,
                 refusals: Vec::new(),
             })

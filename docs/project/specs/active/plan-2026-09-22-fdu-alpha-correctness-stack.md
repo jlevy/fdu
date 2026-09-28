@@ -1,8 +1,10 @@
 # Plan: Finish the Alpha Correctness Stack
 
-**Date:** 2026-09-22
+**Date:** 2026-09-22 (last updated 2026-09-27)
 
-**Status:** In Progress
+**Status:** The correctness stack merged and `0.1.0` shipped.
+Acceptance reconciliation remains in progress for final-commit evidence and the open
+follow-up beads below.
 
 **Tracking:** `fdu-yi1a`; core-model acceptance `fdu-xgjx` under `fdu-h7xy`.
 
@@ -18,6 +20,21 @@ own the behavioral contracts and implementation details.
 The work is complete when the remaining correctness contracts are implemented,
 independently reviewed, published as dependent PRs, and validated on their final
 commits. A passing gate with registered semantic violations does not close conformance.
+
+Pull requests #99, #98, #110, and #112–#117 merged on 2026-09-23; conformance cleanup
+`fdu-xgjx` merged in #124 on 2026-09-24. The signed `v0.1.0` candidate passed the
+five-platform rehearsal and installed-wheel checks recorded on `fdu-tyvq` and in the
+[final candidate QA report](../../reports/report-2026-09-25-release-candidate-qa.md).
+The checklist below still distinguishes those final results from the earlier pre-merge
+runs it originally cited.
+
+The spec-linked beads still open or in progress are `fdu-yi1a`, `fdu-j7go`, `fdu-laeo`,
+and `fdu-1zb6`. The positive cache-serving and empty-registry work on `fdu-j7go` and
+`fdu-laeo` shipped in #116; their notes need final-commit evidence before closure.
+The explicit native-watch precondition (`fdu-k3ca`) and raw-extension documentation
+correction (`fdu-tp2p`) are implemented and closed, with composed gate evidence on
+`fdu-n2ok` and current PR #133 CI. `fdu-1zb6` remains a separate exact long-line memory
+redesign; its open status does not imply released answers are wrong.
 
 ## Goals
 
@@ -175,8 +192,10 @@ with a claim of cross-set reuse.
   packaged-artifact acceptance.
 - [x] Correct cache-only directory completeness (`fdu-c22r`, `801bf7a7`) and qualify the
   machine-format depth exemption to flat projections (`fdu-93e8`, `ea7baf50`).
-- [ ] Run one uninterrupted `make check` and `make cross-lint` on the exact merge
-  candidate (`fdu-n2ok`). Earlier evidence below is partial and does not satisfy this.
+- [x] Run one uninterrupted `make check` and `make cross-lint` on the exact merge
+  candidate (`fdu-n2ok`). That bead records successful uninterrupted runs on composed
+  tree `52146761`, identical to final main tree `7e06e5a4`, and on correctness-stack top
+  `fbc6534a`. The earlier partial evidence remains below for context.
   On the composed candidate at `ff2b07da` the initial full run stopped when the
   opened-root golden fixture was integrated during the run; the fixture passed on rerun.
   The remaining targets then passed on the `ff2b07da` tracked tree, including
@@ -193,13 +212,17 @@ with a claim of cross-set reuse.
   violations on all three platforms.
   Metric independence and parser-backed equality for machine documents and public Python
   models are covered by `make check`, so they wait on the item above.
-- [ ] Repeat the packaged-artifact rehearsal on the final merge commit.
-  The earlier rehearsal on `ff2b07da`
-  [run 35815753312](https://github.com/jlevy/fdu/actions/runs/35815753312) passed all
-  nine jobs, including five wheels, source distribution, crate packaging, and artifact
-  inspection.
-- [ ] Complete release end-to-end verification required by `fdu-tyvq` on the final
-  commits. Depends on green CI at the final merge commit.
+- [x] Repeat the packaged-artifact rehearsal on the final merge commit.
+  The signed `v0.1.0` commit `7cf7f1b4b` passed the
+  [five-platform rehearsal](https://github.com/jlevy/fdu/actions/runs/36203963537); all
+  eight retained artifacts matched `SHA256SUMS` (`fdu-tyvq`). The earlier rehearsal on
+  `ff2b07da` [run 35815753312](https://github.com/jlevy/fdu/actions/runs/35815753312)
+  passed all nine jobs, including five wheels, source distribution, crate packaging, and
+  artifact inspection.
+- [x] Complete release end-to-end verification required by `fdu-tyvq` on the final
+  commits. Its close record and the final candidate QA report cover installed-wheel
+  checks, cache policies, watch and terminal behavior, and peer agreement at
+  `7cf7f1b4b`.
 
 The focused audit preceded the composed matrix finding `fdu-bwo2` above.
 Accepted scope deferrals and performance work remain separate; passing focused tests or
@@ -245,6 +268,8 @@ deferrals are recorded in `fdu-d237`.
   Main commit `11a6dc31` is an ancestor of the composed candidate.
 - [ ] Finish current-head CI and the final platform checks for every published layer at
   the final merge commits.
+  The PRs merged, and earlier exact-head matrix runs are recorded above; attach the
+  final merge-commit CI record before checking this wording.
 - [ ] Update the core-model specification, work index, and beads from actual evidence.
 
 The performance composition beads `fdu-qx0e` and `fdu-8fax` concern separate performance

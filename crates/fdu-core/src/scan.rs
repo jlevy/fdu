@@ -205,6 +205,8 @@ pub struct ScanConfig {
     /// An opened root ([`crate::OpenedIndex`]) always observes control state, because its
     /// ignored and unignored partitions are part of what it serves.
     pub read_controls: bool,
+    /// Which ignored population shapes retained entries and content candidates.
+    pub population: crate::query::IgnoredEntries,
     /// The budget and the line limit `.gitignore` files are applied under, each a size or
     /// unbounded. See [`crate::control::ControlLimits`].
     ///
@@ -246,13 +248,16 @@ impl Default for ScanConfig {
             order: ScanOrder::default(),
             types: None,
             read_controls: crate::query::Request::DEFAULTS.read_controls,
+            population: crate::query::IgnoredEntries::Include,
             control_limits: crate::query::Request::DEFAULTS.control_limits,
             progress: None,
         }
     }
 }
 
-/// Why watching cannot narrow its scan scope, said once for every surface.
+/// Why watching cannot narrow its structural scan boundary, said once for every surface.
+/// Ignored population is a supported retained-scope choice because control edits
+/// reconcile the governing directory and rebuild that population.
 ///
 /// The CLI used to carry this guidance and the library carried "requires event-scope
 /// filtering", which names the implementation rather than the caller's next move -- so a
@@ -319,6 +324,12 @@ impl ScanConfig {
             one_filesystem: self.one_filesystem,
             hidden_fingerprint: self.hidden().fingerprint(),
             exclude_special: self.exclude_special,
+            population: self.population,
+            control_fingerprint: if self.population == crate::query::IgnoredEntries::Include {
+                0
+            } else {
+                self.control_identity().ignore_rules_fingerprint()
+            },
         }
     }
 
@@ -397,6 +408,11 @@ impl ScanConfig {
     }
 
     pub(crate) fn validate(&self) -> Result<()> {
+        if !self.read_controls && self.population != crate::query::IgnoredEntries::Include {
+            return Err(Error::UnsupportedScanConfig(
+                "ignored population requires .gitignore observation",
+            ));
+        }
         if self.batch_size == 0 || self.batch_size > MAX_SCAN_BATCH_SIZE {
             return Err(Error::UnsupportedScanConfig(
                 "batch_size must be nonzero and no greater than MAX_SCAN_BATCH_SIZE",
@@ -1121,6 +1137,24 @@ impl ReconcileTarget<'_> {
         }
     }
 
+    fn control_table(&self) -> Result<crate::control::ControlTable> {
+        match self {
+            Self::Direct(index) => Ok(index.control_table().clone()),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.read_with(|index| index.control_table().clone())
+            }
+        }
+    }
+
+    fn control_classification_known(&self, path: &Path) -> Result<bool> {
+        match self {
+            Self::Direct(index) => Ok(index.control_classification_known(path)),
+            Self::Shared(handle) | Self::Controlled { handle, .. } => {
+                handle.read_with(|index| index.control_classification_known(path))
+            }
+        }
+    }
+
     fn apply(&mut self, started_at: u64, observation: &Observation) -> Result<crate::ApplyOutcome> {
         match self {
             Self::Direct(index) => index.apply(observation),
@@ -1672,7 +1706,14 @@ fn scan_internal(
     let root_dev = root_device(root, &root_meta).map_err(|error| Error::io(root, error))?;
     let available_parallelism =
         std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    let pool = config.worker_pool_for(available_parallelism);
+    // Narrow populations need control admission before child enumeration. Keep one ordered
+    // producer and control table so a bounded budget makes the same decisions as the
+    // index that consumes the observations.
+    let pool = if config.population == crate::query::IgnoredEntries::Include {
+        config.worker_pool_for(available_parallelism)
+    } else {
+        WorkerPool::fixed(1)
+    };
     let diagnostics = collect_diagnostics
         .then(|| ScanDiagnosticsRecorder::new(pool, available_parallelism, policy));
 
@@ -1702,6 +1743,9 @@ fn scan_internal(
     let walk_started = std::time::Instant::now();
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
+    let mut controls = (config.population != crate::query::IgnoredEntries::Include)
+        .then(|| crate::control::ControlTable::with_limits(config.control_limits));
+    let mut unreadable_controls = std::collections::BTreeSet::new();
     let mut tally = ProgressTally::new(config.progress.as_ref());
     // Every batch leaves through here, so the batch is where the serial walk reports
     // its progress: the handoff the consumer already pays for, never the entry.
@@ -1714,6 +1758,20 @@ fn scan_internal(
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
+        if let Some(controls) = controls.as_mut() {
+            let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
+            match read_directory_control(config, root, &control_path) {
+                Ok(Some(op)) => {
+                    apply_discovery_control(controls, &op)?;
+                    batch.push(ObservationOp::unconditional(op));
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    unreadable_controls.insert(rel_dir.clone());
+                    report.errors.push(error);
+                }
+            }
+        }
         crate::counters::bump(|c| c.dir_opens += 1);
         if let Some(diagnostics) = &diagnostics {
             diagnostics.portable_attempted();
@@ -1760,7 +1818,21 @@ fn scan_internal(
             if disposition == crate::admission::Disposition::Reject {
                 continue;
             }
-            let control = match read_control_op(config, root, &rel_path, kind) {
+            if population_prunes(
+                config.population,
+                &rel_path,
+                kind,
+                disposition,
+                controls.as_ref(),
+                &unreadable_controls,
+            ) {
+                continue;
+            }
+            let control = match if controls.is_some() && name == crate::control::CONTROL_FILE_NAME {
+                Ok(None)
+            } else {
+                read_control_op(config, root, &rel_path, kind)
+            } {
                 Ok(control) => control,
                 Err(error) => {
                     report.errors.push(error);
@@ -3476,6 +3548,84 @@ pub(crate) fn read_control_op(
     read_control_op_unconditional(root, path, kind, config.control_limits.budget)
 }
 
+/// Read a directory's fixed control before admitting any of its other children.
+///
+/// The extra metadata probe is paid only by an exclusion scan; it permits a streaming
+/// directory listing while preserving control-first ordering for safe pruning.
+fn read_directory_control(
+    config: &ScanConfig,
+    root: &Path,
+    control_path: &Path,
+) -> Result<Option<Op>> {
+    let absolute = root.join(control_path);
+    crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
+    let kind = match fs::symlink_metadata(&absolute) {
+        Ok(metadata) if metadata.file_type().is_file() => EntryKind::File,
+        Ok(_) => EntryKind::Other,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(&absolute, error)),
+    };
+    read_control_op(config, root, control_path, kind)
+}
+
+fn read_listed_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
+    if config.population != crate::query::IgnoredEntries::Include
+        && crate::control::is_control_file(path)
+    {
+        // The exclusion walk already read this source before any sibling.
+        Ok(None)
+    } else {
+        read_control_op(config, root, path, kind)
+    }
+}
+
+fn population_prunes(
+    population: crate::query::IgnoredEntries,
+    path: &Path,
+    kind: EntryKind,
+    disposition: crate::admission::Disposition,
+    controls: Option<&crate::control::ControlTable>,
+    unreadable_controls: &std::collections::BTreeSet<PathBuf>,
+) -> bool {
+    // The fixed control source stays in the entry tier even for `only`: removing its
+    // entry would also remove the retained rule source during a watch reconciliation.
+    if crate::control::is_control_file(path) {
+        return false;
+    }
+    let Some(table) = controls else { return false };
+    if !table.classification_known(path)
+        || path.ancestors().skip(1).any(|ancestor| unreadable_controls.contains(ancestor))
+    {
+        return false;
+    }
+    let ignored = table.is_ignored(path, kind.is_dir());
+    match population {
+        crate::query::IgnoredEntries::Include => false,
+        crate::query::IgnoredEntries::Exclude => ignored,
+        crate::query::IgnoredEntries::Only => {
+            !ignored && !kind.is_dir() && disposition != crate::admission::Disposition::ControlOnly
+        }
+    }
+}
+
+fn apply_discovery_control(table: &mut crate::control::ControlTable, op: &Op) -> Result<()> {
+    match op {
+        Op::ControlUpsert { path, source } => {
+            table.upsert(path, source.clone())?;
+        }
+        Op::ControlRemove { path } => {
+            table.remove(path)?;
+        }
+        _ => unreachable!("directory control probe emits only control operations"),
+    }
+    Ok(())
+}
+
 /// Read one fixed control source without allowing a raced or hostile file to allocate
 /// beyond the index-wide control budget.
 ///
@@ -4204,17 +4354,30 @@ fn consolidate_detached_index(
 pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
+    if config.population != crate::query::IgnoredEntries::Include {
+        let (index, report, _) = scan_into_index_with_scanner(
+            &root,
+            config,
+            false,
+            WorkerPolicyExperiment::ShippedOneShot,
+        )?;
+        return Ok((index, report));
+    }
     let (output, builder, _diagnostics) =
         scan_detached_directories(&root, config, false, WorkerPolicyExperiment::ShippedOneShot)?;
     Ok(consolidate_detached_index(output, builder))
 }
 
-#[cfg(test)]
-fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
+fn scan_into_index_with_scanner(
+    root: &Path,
+    config: &ScanConfig,
+    collect_diagnostics: bool,
+    policy: WorkerPolicyExperiment,
+) -> Result<(Index, ScanReport, Option<ScanDiagnostics>)> {
     let mut index = Index::new_with_scope_and_types(root, config.scope(), config.types_shared());
     index.set_control_limits(config.control_limits);
     let mut apply_error: Option<Error> = None;
-    let (mut report, _diagnostics) = scan_internal(
+    let (mut report, diagnostics) = scan_internal(
         root,
         config,
         &mut |batch| {
@@ -4224,8 +4387,8 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
                 }
             }
         },
-        false,
-        WorkerPolicyExperiment::ShippedOneShot,
+        collect_diagnostics,
+        policy,
         SinkMode::Retained,
     )?;
     if let Some(error) = apply_error {
@@ -4233,6 +4396,13 @@ fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Inde
     }
     index.record_walk_errors(&mut report.errors);
     index.set_initial_scan_freshness(&report.errors);
+    Ok((index, report, diagnostics))
+}
+
+#[cfg(test)]
+fn scan_into_index_via_scanner(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
+    let (index, report, _) =
+        scan_into_index_with_scanner(root, config, false, WorkerPolicyExperiment::ShippedOneShot)?;
     Ok((index, report))
 }
 
@@ -4257,6 +4427,11 @@ pub fn scan_into_index_with_policy_diagnostics(
 ) -> Result<(Index, ScanReport, ScanDiagnostics)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
+    if config.population != crate::query::IgnoredEntries::Include {
+        let (index, report, diagnostics) =
+            scan_into_index_with_scanner(&root, config, true, policy)?;
+        return Ok((index, report, diagnostics.expect("diagnostic scanner creates a recorder")));
+    }
     let (output, builder, diagnostics) = scan_detached_directories(&root, config, true, policy)?;
     let (index, report) = consolidate_detached_index(output, builder);
     Ok((index, report, diagnostics.expect("diagnostic detached scan creates a recorder")))
@@ -4325,9 +4500,40 @@ pub fn revalidate(
         return Ok(report);
     }
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
+    let mut controls = (config.population != crate::query::IgnoredEntries::Include)
+        .then(|| index.control_table().clone());
+    let mut unreadable_controls = std::collections::BTreeSet::new();
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
+        let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
+        let mut had_control = index.control_table().contains(&control_path);
+        let mut control_seen = false;
+        if let Some(table) = controls.as_mut() {
+            let baseline = index.relaxed_expectation(&control_path);
+            match read_directory_control(config, &root, &control_path) {
+                Ok(Some(op)) => {
+                    apply_discovery_control(table, &op)?;
+                    batch.push(ObservationOp::if_state(op, baseline));
+                    control_seen = true;
+                }
+                Ok(None) => {
+                    table.remove(&control_path)?;
+                    if had_control {
+                        batch.push(ObservationOp::if_state(
+                            Op::ControlRemove { path: control_path.clone() },
+                            baseline,
+                        ));
+                        had_control = false;
+                    }
+                }
+                Err(error) => {
+                    unreadable_controls.insert(rel_dir.clone());
+                    report.errors.push(error);
+                    control_seen = true;
+                }
+            }
+        }
         crate::counters::bump(|c| c.dir_opens += 1);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
@@ -4339,9 +4545,6 @@ pub fn revalidate(
         report.dirs_read += 1;
 
         let mut seen: BTreeSet<OsString> = BTreeSet::new();
-        let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-        let mut had_control = index.control_table().contains(&control_path);
-        let mut control_seen = false;
         let mut listing_complete = true;
         let listing = reconcile_listing(listing, &abs_dir);
         for item in listing {
@@ -4386,7 +4589,20 @@ pub fn revalidate(
             control_seen |= name == crate::control::CONTROL_FILE_NAME;
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
-            let control = match read_control_op(config, &root, &rel_path, kind) {
+            if population_prunes(
+                config.population,
+                &rel_path,
+                kind,
+                disposition,
+                controls.as_ref(),
+                &unreadable_controls,
+            ) {
+                if baseline.state != PathState::Absent {
+                    batch.push(ObservationOp::if_state(Op::Remove { path: rel_path }, baseline));
+                }
+                continue;
+            }
+            let control = match read_listed_control_op(config, &root, &rel_path, kind) {
                 Ok(control) => control,
                 Err(error) => {
                     report.errors.push(error);
@@ -4774,6 +4990,25 @@ fn reconcile_target(
     if config.max_depth.is_some_and(|maximum| subtree.components().count() > maximum) {
         return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
     }
+    let subtree = if config.population != crate::query::IgnoredEntries::Include
+        && !subtree.as_os_str().is_empty()
+    {
+        // A narrowed tier may have pruned the requested entry or an ancestor. Start
+        // from its nearest retained parent so the governing control is read before the
+        // directory listing decides whether the boundary itself belongs in the tier.
+        // A control-file edit also needs this parent listing to discover siblings that
+        // were absent under the previous rule.
+        let mut parent = subtree.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+        while !parent.as_os_str().is_empty()
+            && (target.expectation(&parent)?.state == PathState::Absent
+                || !target.control_classification_known(&parent)?)
+        {
+            parent = parent.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+        }
+        parent
+    } else {
+        subtree
+    };
     let subtree = resolve_subtree_root(target, &subtree, config)?;
     let (started_at, started) = target.begin_reconcile(&subtree)?;
     if let Some(commit) = started.as_ref() {
@@ -4966,7 +5201,10 @@ fn reconcile_target_inner(
         }
     }
 
-    if subtree.as_os_str().is_empty() && config.reconciliation_worker_threads() > 1 {
+    if subtree.as_os_str().is_empty()
+        && config.population == crate::query::IgnoredEntries::Include
+        && config.reconciliation_worker_threads() > 1
+    {
         if let ReconcileTarget::Direct(index) = target {
             match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
             {
@@ -4987,15 +5225,54 @@ fn reconcile_target_inner(
 
     let mut queue: VecDeque<(PathBuf, usize)> = retry_frontier
         .unwrap_or_else(|| VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]));
+    let mut controls = if config.population == crate::query::IgnoredEntries::Include {
+        None
+    } else {
+        Some(target.control_table()?)
+    };
+    let mut unreadable_controls = std::collections::BTreeSet::new();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
-        let (mut known, records_completeness) = target.listing_baseline(&rel_dir)?;
         let errors_before = report.scan.errors.len();
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let mut had_control = target.has_control(&control_path)?;
         let mut control_seen = false;
+        if let Some(table) = controls.as_mut() {
+            match read_directory_control(config, &root, &control_path) {
+                Ok(Some(op)) => {
+                    let baseline = target.expectation(&control_path)?;
+                    apply_discovery_control(table, &op)?;
+                    batch.push(ObservationOp::if_state(op, baseline));
+                    control_seen = true;
+                }
+                Ok(None) => {
+                    table.remove(&control_path)?;
+                    if had_control {
+                        let baseline = target.expectation(&control_path)?;
+                        batch.push(ObservationOp::if_state(
+                            Op::ControlRemove { path: control_path.clone() },
+                            baseline,
+                        ));
+                        had_control = false;
+                    }
+                }
+                Err(error) => {
+                    unreadable_controls.insert(rel_dir.clone());
+                    report.scan.errors.push(error);
+                }
+            }
+            flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
+            if report.apply.stale > 0 || report.apply.resource_refused > 0 {
+                // This directory's population decisions use the source just read.
+                // If its conditional control commit lost ownership, walking siblings
+                // against the local copy could prune under rules the index rejected.
+                report.retry_required = true;
+                return Ok(report);
+            }
+        }
+        let (mut known, records_completeness) = target.listing_baseline(&rel_dir)?;
         let mut listing_complete = true;
         let process_entry = |name: OsString,
                              kind: EntryKind,
@@ -5012,6 +5289,19 @@ fn reconcile_target_inner(
             *control_seen |= name == crate::control::CONTROL_FILE_NAME;
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
+            if population_prunes(
+                config.population,
+                &rel_path,
+                kind,
+                disposition,
+                controls.as_ref(),
+                &unreadable_controls,
+            ) {
+                if baseline.state != PathState::Absent {
+                    batch.push(ObservationOp::if_state(Op::Remove { path: rel_path }, baseline));
+                }
+                return Ok(());
+            }
             if disposition != crate::admission::Disposition::Retain {
                 if baseline.state != PathState::Absent {
                     batch.push(ObservationOp::if_state(
@@ -5020,7 +5310,7 @@ fn reconcile_target_inner(
                     ));
                 }
                 if disposition == crate::admission::Disposition::ControlOnly {
-                    match read_control_op(config, &root, &rel_path, kind) {
+                    match read_listed_control_op(config, &root, &rel_path, kind) {
                         Ok(Some(control)) => {
                             batch.push(ObservationOp::if_state(control, baseline));
                         }
@@ -5046,7 +5336,7 @@ fn reconcile_target_inner(
             if batch.len() >= config.batch_size.max(1) {
                 flush_reconcile_batch(target, batch, sink, report)?;
             }
-            match read_control_op(config, &root, &rel_path, kind) {
+            match read_listed_control_op(config, &root, &rel_path, kind) {
                 Ok(Some(control)) => {
                     batch.push(ObservationOp::if_state(control, baseline));
                     if batch.len() >= config.batch_size.max(1) {
@@ -6723,10 +7013,7 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(
-            detached.is_ignored(Path::new("guarded/kept.log")).expect("observed"),
-            Some(false)
-        );
+        assert_eq!(detached.is_ignored(Path::new("guarded/kept.log")).expect("observed"), None);
         assert_eq!(
             detached.is_ignored(Path::new("applied/dropped.log")).expect("observed"),
             Some(true)
@@ -6833,7 +7120,7 @@ mod tests {
         );
         assert_eq!(
             budget_lifted.is_ignored(Path::new("guarded/dropped.log")).expect("observed"),
-            Some(false)
+            None
         );
 
         let (line_limit_lifted, _) = detached_and_streaming_indexes(dir.path(), &no_line_limit);
@@ -8246,6 +8533,253 @@ mod tests {
         }
     }
 
+    #[test]
+    fn excluded_ignored_directory_is_not_enumerated_and_rule_edits_reconcile_it() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"target/\n");
+        write_file(&root.path().join("target/deep/file.rs"), b"code");
+        write_file(&root.path().join("keep.rs"), b"kept");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            threads: Some(4),
+            ..ScanConfig::default()
+        };
+
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(cold.is_complete(), "{:?}", cold.errors);
+        assert_eq!(cold.dirs_read, 1, "ignored target was not opened");
+        assert!(index.lookup(Path::new("target")).is_none());
+        assert!(index.lookup(Path::new("keep.rs")).is_some());
+
+        write_file(&root.path().join(".gitignore"), b"");
+        let exposed = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile exposure");
+        assert!(exposed.is_complete(), "{:?}", exposed.scan.errors);
+        assert!(index.lookup(Path::new("target/deep/file.rs")).is_some());
+        assert!(exposed.scan.dirs_read >= 3);
+
+        write_file(&root.path().join(".gitignore"), b"target/\n");
+        let excluded = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile exclusion");
+        assert!(excluded.is_complete(), "{:?}", excluded.scan.errors);
+        assert!(index.lookup(Path::new("target")).is_none());
+        assert_eq!(excluded.scan.dirs_read, 1, "ignored target was not reopened");
+    }
+
+    #[test]
+    fn excluded_subtree_refresh_keeps_ignored_file_and_directory_out_of_scope() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"target/\n*.log\n");
+        write_file(&root.path().join("target/deep/file.rs"), b"code");
+        write_file(&root.path().join("debug.log"), b"ignored");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            ..ScanConfig::default()
+        };
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(cold.is_complete());
+        assert!(index.lookup(Path::new("target")).is_none());
+        assert!(index.lookup(Path::new("debug.log")).is_none());
+
+        for path in ["target", "debug.log"] {
+            let refresh = reconcile_subtree(&mut index, Path::new(path), &config, &mut |_| {})
+                .expect("subtree refresh");
+            assert!(refresh.is_complete(), "{path}: {:?}", refresh.scan.errors);
+            assert!(index.lookup(Path::new(path)).is_none(), "{path} is outside scope");
+        }
+        assert_eq!(index.total().dirs, 0);
+    }
+
+    #[test]
+    fn handled_subtree_refresh_recovers_pruned_ancestry_after_control_edit() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"target/\n");
+        write_file(&root.path().join("target/deep/file.rs"), b"code");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            ..ScanConfig::default()
+        };
+        let (index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(cold.is_complete());
+        let handle = IndexHandle::new(index);
+
+        let hidden = reconcile_subtree_handle(
+            &handle,
+            Path::new("target/deep/file.rs"),
+            &config,
+            &mut |_| {},
+        )
+        .expect("refresh pruned descendant");
+        assert!(hidden.is_complete());
+        assert!(
+            !handle
+                .read_with(|index| index.lookup(Path::new("target")).is_some())
+                .expect("read after hidden refresh")
+        );
+
+        write_file(&root.path().join(".gitignore"), b"");
+        let exposed = reconcile_subtree_handle(&handle, Path::new("target"), &config, &mut |_| {})
+            .expect("refresh changed control");
+        assert!(exposed.is_complete());
+        assert!(
+            handle
+                .read_with(|index| index.lookup(Path::new("target/deep/file.rs")).is_some())
+                .expect("read after control recovery")
+        );
+
+        write_file(&root.path().join(".gitignore"), b"target/\n");
+        let hidden_again =
+            reconcile_subtree_handle(&handle, Path::new("target"), &config, &mut |_| {})
+                .expect("refresh restored control");
+        assert!(hidden_again.is_complete());
+        assert!(
+            !handle
+                .read_with(|index| index.lookup(Path::new("target")).is_some())
+                .expect("read after restored control")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn targeted_refresh_keeps_unknown_population_below_unreadable_ancestor_control() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let root = tempfile::tempdir().expect("root");
+        let control = root.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        write_file(&root.path().join("a/keep.rs"), b"unknown membership");
+        let config =
+            ScanConfig { population: crate::query::IgnoredEntries::Only, ..ScanConfig::default() };
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("unreadable");
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold scan");
+        assert!(!cold.is_complete());
+        assert!(index.lookup(Path::new("a/keep.rs")).is_some());
+        assert_eq!(index.ignored_classification(Path::new("a/keep.rs")), None);
+
+        let refreshed = reconcile_subtree(&mut index, Path::new("a/keep.rs"), &config, &mut |_| {});
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore control");
+        let refreshed = refreshed.expect("targeted refresh");
+        assert!(!refreshed.is_complete(), "unreadable governing control was not visited");
+        assert!(index.lookup(Path::new("a/keep.rs")).is_some(), "unknown must stay retained");
+        assert_eq!(index.ignored_classification(Path::new("a/keep.rs")), None);
+    }
+
+    #[test]
+    fn exclusion_honors_nested_negation_and_refused_rule_changes() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join("nested/.gitignore"), b"*.log\n!keep.log\n");
+        write_file(&root.path().join("nested/keep.log"), b"negated");
+        write_file(&root.path().join("nested/drop.log"), b"ignored");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            control_limits: crate::control::ControlLimits {
+                line_limit: Some(20),
+                ..crate::control::ControlLimits::default()
+            },
+            ..ScanConfig::default()
+        };
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold");
+        assert!(cold.is_complete(), "{:?}", cold.errors);
+        assert!(index.lookup(Path::new("nested/keep.log")).is_some());
+        assert!(index.lookup(Path::new("nested/drop.log")).is_none());
+
+        write_file(&root.path().join("nested/.gitignore"), b"this-line-is-over-the-limit\n");
+        let changed =
+            reconcile(&mut index, &config, &mut |_| {}).expect("reconcile refused source");
+        assert!(changed.is_complete(), "{:?}", changed.scan.errors);
+        assert!(index.lookup(Path::new("nested/drop.log")).is_some(), "unknown cannot be pruned");
+        assert_eq!(index.ignored_classification(Path::new("nested/drop.log")), None);
+    }
+
+    #[test]
+    fn only_population_skips_nonignored_content_candidates_and_refusals_are_unknown() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"*.log\n");
+        write_file(&root.path().join("keep.rs"), b"code");
+        write_file(&root.path().join("debug.log"), b"ignored");
+        write_file(&root.path().join("nested/keep.rs"), b"kept");
+        write_file(&root.path().join("nested/debug.log"), b"ignored below nonignored dir");
+        let only =
+            ScanConfig { population: crate::query::IgnoredEntries::Only, ..ScanConfig::default() };
+        let (index, report) = scan_into_index(root.path(), &only).expect("scan");
+        assert!(report.is_complete());
+        assert!(index.lookup(Path::new("keep.rs")).is_none());
+        assert!(index.lookup(Path::new("nested")).is_some());
+        assert!(index.lookup(Path::new("nested/keep.rs")).is_none());
+        assert!(index.lookup(Path::new("nested/debug.log")).is_some());
+        let candidates = index.analysis_candidates(crate::content::AnalysisSet::NONE.with_lines());
+        assert_eq!(candidates.len(), 2);
+        assert!(
+            candidates.iter().any(|candidate| candidate.relative_path == Path::new("debug.log"))
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.relative_path == Path::new("nested/debug.log"))
+        );
+
+        let refused = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            control_limits: crate::control::ControlLimits {
+                line_limit: Some(1),
+                ..crate::control::ControlLimits::default()
+            },
+            ..ScanConfig::default()
+        };
+        let (index, report) = scan_into_index(root.path(), &refused).expect("refused scan");
+        assert!(report.is_complete());
+        assert!(index.lookup(Path::new("debug.log")).is_some(), "unknown is not pruned");
+        assert_eq!(index.ignored_classification(Path::new("debug.log")), None);
+        assert!(
+            index.analysis_candidates(crate::content::AnalysisSet::NONE.with_lines()).is_empty()
+        );
+    }
+
+    #[test]
+    fn only_population_content_is_complete_with_retained_control_file() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join(".gitignore"), b"vendor/\n");
+        write_file(&root.path().join("main.rs"), b"fn main() {}\n");
+        write_file(&root.path().join("vendor/lib.rs"), b"fn lib() {}\n");
+        let config =
+            ScanConfig { population: crate::query::IgnoredEntries::Only, ..ScanConfig::default() };
+        let (mut index, scan) = scan_into_index(root.path(), &config).expect("scan");
+        assert!(scan.is_complete());
+        let profile = crate::content::AnalysisSet::NONE.with_lines().with_code();
+        let analyzed = crate::content::analyze_index(
+            &mut index,
+            crate::content::AnalysisRequest {
+                profile,
+                ..crate::content::AnalysisRequest::default()
+            },
+        );
+        assert!(analyzed.is_complete(), "{analyzed:?}");
+        assert_eq!(analyzed.candidates, 1);
+        assert!(!index.content_has_pending(profile));
+    }
+
+    #[test]
+    fn only_population_reconciles_rule_changes_without_losing_traversal() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join("nested/.gitignore"), b"*.log\n");
+        write_file(&root.path().join("nested/first.log"), b"first");
+        write_file(&root.path().join("nested/second.txt"), b"second");
+        let config =
+            ScanConfig { population: crate::query::IgnoredEntries::Only, ..ScanConfig::default() };
+        let (mut index, cold) = scan_into_index(root.path(), &config).expect("cold");
+        assert!(cold.is_complete());
+        assert!(index.lookup(Path::new("nested")).is_some());
+        assert!(index.lookup(Path::new("nested/first.log")).is_some());
+        assert!(index.lookup(Path::new("nested/second.txt")).is_none());
+
+        write_file(&root.path().join("nested/.gitignore"), b"*.txt\n");
+        let changed = reconcile(&mut index, &config, &mut |_| {}).expect("rule change");
+        assert!(changed.is_complete(), "{:?}", changed.scan.errors);
+        assert!(index.lookup(Path::new("nested/first.log")).is_none());
+        assert!(index.lookup(Path::new("nested/second.txt")).is_some());
+    }
+
     #[cfg(unix)]
     #[test]
     fn excluded_special_objects_never_enter_cold_or_reconciled_facts() {
@@ -9509,10 +10043,45 @@ mod tests {
         assert!(
             !index.controls().expect("control state observed").contains(Path::new(".gitignore"))
         );
-        assert_eq!(
-            index.is_ignored(Path::new("a.log")).expect("control state observed"),
-            Some(false)
+        assert_eq!(index.is_ignored(Path::new("a.log")).expect("control state observed"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_control_keeps_new_excluded_file_unknown_and_out_of_analysis() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        write_file(&dir.path().join("keep.rs"), b"code");
+        let config = ScanConfig {
+            population: crate::query::IgnoredEntries::Exclude,
+            ..ScanConfig::default()
+        };
+        let (mut index, cold) = scan_into_index(dir.path(), &config).expect("cold");
+        assert!(cold.is_complete());
+        write_file(&dir.path().join("debug.log"), b"must not analyze");
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("chmod");
+        let report = reconcile(&mut index, &config, &mut |_| {});
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o644)).expect("restore");
+        let report = report.expect("reconcile");
+        assert!(!report.is_complete());
+        assert!(index.lookup(Path::new("debug.log")).is_some(), "unknown is retained");
+        assert_eq!(index.ignored_classification(Path::new("debug.log")), None);
+        assert!(!index.ignored_classification_complete_below(Path::new("")));
+        let candidates = index.analysis_candidates(crate::content::AnalysisSet::NONE.with_lines());
+        assert!(
+            candidates.iter().all(|candidate| candidate.relative_path != Path::new("debug.log"))
         );
+        let repaired =
+            reconcile(&mut index, &config, &mut |_| {}).expect("reconcile repaired control");
+        assert!(repaired.is_complete(), "{:?}", repaired.scan.errors);
+        assert!(index.ignored_classification_complete_below(Path::new("")));
+        assert!(index.lookup(Path::new("debug.log")).is_none(), "known ignored file is pruned");
     }
 
     #[test]

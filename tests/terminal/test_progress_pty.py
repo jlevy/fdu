@@ -134,7 +134,7 @@ class ProgressInATerminal(unittest.TestCase):
         self.assertTrue(os.WIFEXITED(self.status), self.status)
         self.assertEqual(os.WEXITSTATUS(self.status), 0, self.output[-400:])
         first_frame = self.output.index(ERASE + SPINNER_LEAD)
-        report = self.output.index(b"Performance:")
+        report = self.output.index(b"perf:")
         last_erase = self.output.rindex(ERASE)
         self.assertLess(first_frame, last_erase)
         self.assertLess(last_erase, report, "the line is erased before the report")

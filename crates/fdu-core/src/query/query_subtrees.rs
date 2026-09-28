@@ -109,8 +109,11 @@ pub(super) fn measure(
         // descendant of an ignored directory is ignored today, so no admitted directory
         // sits under a rejected one and this changes no answer; it is here so a change
         // to negation handling cannot make the seed silently wrong.
-        let own_ignored = index.ignored_bit_of(id).unwrap_or(false);
-        let own_time = if selection.ignored.admits(own_ignored) {
+        let own_ignored = index.ignored_classification(&path);
+        let own_admitted = (own_ignored.is_some()
+            || selection.ignored == crate::query::IgnoredEntries::Include)
+            && selection.ignored.admits(own_ignored.unwrap_or(false));
+        let own_time = if own_admitted {
             index.attrs_of(id).map_or(i64::MIN, |attrs| attrs.mtime_ns)
         } else {
             i64::MIN
@@ -135,18 +138,22 @@ pub(super) fn measure(
                     continue;
                 };
                 let child_path = path.join(name);
-                let ignored = index.ignored_bit_of(child).unwrap_or(false);
+                let classification = index.ignored_classification(&child_path);
+                let ignored = classification.unwrap_or(false);
+                let admitted = (classification.is_some()
+                    || selection.ignored == crate::query::IgnoredEntries::Include)
+                    && selection.ignored.admits(ignored);
                 if with_candidate(&child_path, kind, *attrs, ignored, identity, |candidate| {
                     pruned(selection, &candidate)
                 }) {
                     continue;
                 }
                 if kind == EntryKind::Dir {
-                    if selection.ignored.admits(ignored) {
+                    if admitted {
                         total.dirs += 1;
                     }
                     stack.push((child, child_path, false));
-                } else if selection.ignored.admits(ignored) {
+                } else if admitted {
                     total.mtime_ns = total.mtime_ns.max(attrs.mtime_ns);
                     if kind == EntryKind::File {
                         total.files += 1;

@@ -184,15 +184,23 @@ def main() -> None:
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
-    assert cli_data["schema"] == "fdu.report/7", cli_data
+    assert cli_data["schema"] == "fdu.report/10", cli_data
     assert cli_data["status"]["complete"] is True, cli_data
     tree = cli_data["reports"][0]["tree"]
     assert tree["bytes"] == 17, cli_data
-    # Truncation describes omitted tree rows. A file is already represented in its
-    # directory's totals, so reaching the depth bound at a file-only leaf omits nothing.
+    # Significant files are tree rows: depth one shows a.txt and src, but src's
+    # file is omitted by depth even though its bytes still contribute to the rollup.
     assert tree["truncated"] is False, cli_data
-    assert tree["children"][0]["truncated"] is False, cli_data
-    assert cli_scan.stderr == "", cli_scan.stderr
+    assert [child["name"] for child in tree["children"]] == ["src", "a.txt"], cli_data
+    assert tree["children"][0]["truncated"] is True, cli_data
+    assert [item["reason"] for item in tree["children"][0]["omissions"]] == ["depth"], cli_data
+    # Both root branches are represented; a collapsed file below src is already
+    # included in its directory row and does not enter a second remainder.
+    assert cli_data["reports"][0]["remainder"] is None, cli_data
+    assert sum(child["bytes"] for child in tree["children"]) == tree["bytes"], cli_data
+    assert cli_scan.stderr == (
+        "note: display limits: depth 1\ntip: expand deeper: --depth=all\n"
+    ), cli_scan.stderr
 
     usage = subprocess.run(
         [entrypoint, "--definitely-not-an-option"],

@@ -17,6 +17,7 @@ use crate::content::{
 };
 use crate::control::ControlLimits;
 use crate::engine_contract::ScanScope;
+use crate::query::IgnoredEntries;
 
 /// Version of the fixed `.gitignore` control semantics, the first thing
 /// [`ControlTierIdentity::ignore_rules_fingerprint`] hashes.
@@ -43,15 +44,19 @@ pub struct EntryScope {
     pub hidden_fingerprint: u64,
     /// Whether filesystem objects outside files, directories, and symlinks are excluded.
     pub exclude_special: bool,
+    /// Ignored population that shaped retained entries and content candidates.
+    pub population: IgnoredEntries,
+    /// Governing control policy when population narrows retained facts; zero for Include.
+    pub control_fingerprint: u64,
 }
 
 /// Identity of an entry tier: the entries a store holds and the roll-ups derived from
 /// them.
 ///
-/// `.gitignore` observation is deliberately not part of it. Reading control files changes
-/// which entries are classified as ignored, never which entries exist or what they
-/// measure, so a store taken with observation on and one taken with it off hold equal
-/// entry tiers. That is what lets a later projection serve one from the other.
+/// Include populations have equal entry tiers with or without `.gitignore`
+/// observation, since classification alone does not change retained entries. Narrowed
+/// populations store the governing control policy in `scope`, because those rules
+/// determine which entries exist in this tier.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct EntryTierIdentity {
     /// The engine fingerprint of the build that produced the tier
@@ -150,6 +155,8 @@ impl SnapshotIdentity {
             one_filesystem,
             hidden_fingerprint,
             exclude_special,
+            population,
+            control_fingerprint: _,
         } = self.entries.scope;
         ScanScope {
             max_depth,
@@ -157,6 +164,7 @@ impl SnapshotIdentity {
             one_filesystem,
             hidden_fingerprint,
             exclude_special,
+            population,
             ignore_rules_fingerprint: self.controls.ignore_rules_fingerprint(),
             type_rules_fingerprint: self.entries.type_rules_fingerprint,
             reducers_fingerprint: self.entries.reducers_fingerprint,
@@ -166,10 +174,10 @@ impl SnapshotIdentity {
 
 /// Identity of a content tier: the per-file analysis records a sidecar holds.
 ///
-/// The entry tier's identity rather than the whole snapshot's, because no metric depends on
-/// `.gitignore` observation: every regular file in scope is an analysis candidate whether
-/// or not it is ignored. Then the analyzer set the records were produced for, and the
-/// analyzers' identities, versions, and options.
+/// The entry tier's identity rather than the whole snapshot's: Include observes
+/// controls only for selection, while narrowed entry tiers carry the governing
+/// control policy in their own identity. Then the analyzer set the records were
+/// produced for, and the analyzers' identities, versions, and options.
 ///
 /// The type rules the records were classified under are the entry tier's, and stated only
 /// there: a record's [`ContentProvenance`] is this identity's entry-tier type rules and its
@@ -457,9 +465,9 @@ pub(crate) fn content_tier_writable(
 pub(crate) const BOUND_BYTES: usize = 1 + 8;
 
 /// Encoded width of an [`EntryTierIdentity`] after its engine fingerprint: the maximum
-/// depth as a bound, the scope flags, and the hidden-entry, type-rules, and reducer-set
-/// fingerprints.
-pub(crate) const ENTRY_TIER_BYTES: usize = BOUND_BYTES + 1 + 8 + 8 + 8;
+/// depth as a bound, scope flags, and the hidden-entry, governing-control, type-rules,
+/// and reducer-set fingerprints.
+pub(crate) const ENTRY_TIER_BYTES: usize = BOUND_BYTES + 1 + 8 + 8 + 8 + 8;
 
 /// Encoded width of a [`ControlTierIdentity`]: the observation tag, then the budget and the
 /// line limit, each a bound.
@@ -474,8 +482,14 @@ const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
 const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
 /// Scope flag for excluding native special objects.
 const SCOPE_EXCLUDE_SPECIAL: u8 = 1 << 2;
+const SCOPE_POPULATION_EXCLUDE: u8 = 1 << 3;
+const SCOPE_POPULATION_ONLY: u8 = 1 << 4;
 /// Every scope flag this encoding defines.
-const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM | SCOPE_EXCLUDE_SPECIAL;
+const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS
+    | SCOPE_ONE_FILESYSTEM
+    | SCOPE_EXCLUDE_SPECIAL
+    | SCOPE_POPULATION_EXCLUDE
+    | SCOPE_POPULATION_ONLY;
 
 /// Control tier tag for a tier that observed nothing, whose limit fields are all zero.
 const CONTROLS_NOT_OBSERVED: u8 = 0;
@@ -575,10 +589,16 @@ impl EntryTierIdentity {
         if scope.exclude_special {
             flags |= SCOPE_EXCLUDE_SPECIAL;
         }
+        flags |= match scope.population {
+            IgnoredEntries::Include => 0,
+            IgnoredEntries::Exclude => SCOPE_POPULATION_EXCLUDE,
+            IgnoredEntries::Only => SCOPE_POPULATION_ONLY,
+        };
         let mut out = FixedWriter::new();
         out.put_bound(scope.max_depth);
         out.put(&[flags]);
         out.put(&scope.hidden_fingerprint.to_le_bytes());
+        out.put(&scope.control_fingerprint.to_le_bytes());
         out.put(&self.type_rules_fingerprint.to_le_bytes());
         out.put(&self.reducers_fingerprint.to_le_bytes());
         out.finish()
@@ -593,12 +613,27 @@ impl EntryTierIdentity {
         if flags & !SCOPE_KNOWN_FLAGS != 0 {
             return None;
         }
+        let population = match flags & (SCOPE_POPULATION_EXCLUDE | SCOPE_POPULATION_ONLY) {
+            0 => IgnoredEntries::Include,
+            SCOPE_POPULATION_EXCLUDE => IgnoredEntries::Exclude,
+            SCOPE_POPULATION_ONLY => IgnoredEntries::Only,
+            _ => return None,
+        };
+        let hidden_fingerprint = fields.u64();
+        let control_fingerprint = fields.u64();
+        if (population == IgnoredEntries::Include && control_fingerprint != 0)
+            || (population != IgnoredEntries::Include && control_fingerprint == 0)
+        {
+            return None;
+        }
         let scope = EntryScope {
             max_depth,
             follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
             one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
-            hidden_fingerprint: fields.u64(),
+            hidden_fingerprint,
             exclude_special: flags & SCOPE_EXCLUDE_SPECIAL != 0,
+            population,
+            control_fingerprint,
         };
         Some(Self {
             engine,
@@ -653,10 +688,14 @@ impl SnapshotIdentity {
     /// Decode [`Self::encode`] under the engine fingerprint of the snapshot that holds it.
     pub(crate) fn decode(engine: u64, bytes: &[u8; SNAPSHOT_IDENTITY_BYTES]) -> Option<Self> {
         let mut fields = FixedReader { rest: bytes };
-        Some(Self {
-            entries: EntryTierIdentity::decode(engine, &fields.take())?,
-            controls: ControlTierIdentity::decode(&fields.take())?,
-        })
+        let entries = EntryTierIdentity::decode(engine, &fields.take())?;
+        let controls = ControlTierIdentity::decode(&fields.take())?;
+        if entries.scope.population != IgnoredEntries::Include
+            && entries.scope.control_fingerprint != controls.ignore_rules_fingerprint()
+        {
+            return None;
+        }
+        Some(Self { entries, controls })
     }
 }
 
@@ -703,6 +742,8 @@ mod tests {
             ScanConfig { max_depth: Some(1), ..ScanConfig::default() },
             ScanConfig { one_filesystem: true, ..ScanConfig::default() },
             ScanConfig { exclude_special: true, ..ScanConfig::default() },
+            ScanConfig { population: IgnoredEntries::Exclude, ..ScanConfig::default() },
+            ScanConfig { population: IgnoredEntries::Only, ..ScanConfig::default() },
             ScanConfig {
                 hidden: Some(std::sync::Arc::new(crate::HiddenPolicy::prune_hidden(
                     std::iter::empty::<std::ffi::OsString>(),
@@ -769,6 +810,8 @@ mod tests {
             ScanConfig { read_controls: false, ..ScanConfig::default() },
             ScanConfig { control_limits: limits(None, None), ..ScanConfig::default() },
             ScanConfig { max_depth: Some(3), exclude_special: true, ..ScanConfig::default() },
+            ScanConfig { population: IgnoredEntries::Exclude, ..ScanConfig::default() },
+            ScanConfig { population: IgnoredEntries::Only, ..ScanConfig::default() },
         ] {
             let identity = config.snapshot_identity();
             let scope = identity.scan_scope();
@@ -820,7 +863,19 @@ mod tests {
         let defaults = ControlLimits::default();
         assert_eq!(entries.scope.max_depth, None);
         assert!(defaults.budget.is_some() && defaults.line_limit.is_some());
-        let mut all = vec![base];
+        let mut all = vec![
+            base,
+            ScanConfig { population: IgnoredEntries::Exclude, ..ScanConfig::default() }
+                .snapshot_identity(),
+            ScanConfig { population: IgnoredEntries::Only, ..ScanConfig::default() }
+                .snapshot_identity(),
+            ScanConfig {
+                population: IgnoredEntries::Exclude,
+                control_limits: limits(None, None),
+                ..ScanConfig::default()
+            }
+            .snapshot_identity(),
+        ];
         for scope in [
             EntryScope { max_depth: Some(0), ..entries.scope },
             // The largest bound is a bound, never the unbounded depth.
@@ -886,6 +941,15 @@ mod tests {
         let mut unknown_flag = base.entries.encode();
         unknown_flag[flags_at] |= 1 << 7;
         forged_entries.push(unknown_flag);
+        let mut incompatible_population = base.entries.encode();
+        incompatible_population[flags_at] |= SCOPE_POPULATION_EXCLUDE | SCOPE_POPULATION_ONLY;
+        forged_entries.push(incompatible_population);
+        let mut missing_control_fingerprint = base.entries.encode();
+        missing_control_fingerprint[flags_at] |= SCOPE_POPULATION_EXCLUDE;
+        forged_entries.push(missing_control_fingerprint);
+        let mut unexplained_control_fingerprint = base.entries.encode();
+        unexplained_control_fingerprint[BOUND_BYTES + 1 + 8] = 1;
+        forged_entries.push(unexplained_control_fingerprint);
         let mut unknown_depth_tag = bounded.encode();
         assert_eq!(unknown_depth_tag[depth_tag_at], BOUNDED);
         unknown_depth_tag[depth_tag_at] = 2;

@@ -17,7 +17,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
-  mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -26,7 +26,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { CLASSES, classify, parseSessions } from './parity-classes.mjs';
+import { tmpdir } from 'node:os';
+import { CLASSES, classify, normalisePortableValues, parseSessions } from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -46,6 +47,10 @@ const DECLINED = [
   'The Skill Installs Where Agents Look, and a Rerun Changes Nothing',
   'A Skill fdu Did Not Generate Is Refused, Not Overwritten',
   'Unknown Options Are Usage Errors on Stderr',
+  // The CLI validates a human-only bar width before touching the root. Python's
+  // Report.render validates it after report creation; parity cannot replay the CLI's
+  // pre-scan timing through the public Report API. public_smoke pins the API guard.
+  'Oversized Human Tree Bars Fail Before Scanning',
 ];
 
 // The surface must be the built wheel, never python/fdu/ in the working tree: a shim
@@ -82,15 +87,15 @@ const filter = `^(?!(${DECLINED.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$
 // of an artifact a reviewer can read top to bottom. So the parity corpus is the same
 // sessions with that one line dropped from the expectations, generated per run and
 // never committed. Everything else is compared exactly.
-const corpus = join(root, 'tests', 'parity', '.corpus');
-rmSync(corpus, { recursive: true, force: true });
-mkdirSync(corpus, { recursive: true });
+// Disposable corpus follows TMPDIR, including external build storage.
+const corpus = mkdtempSync(join(tmpdir(), 'fdu-parity-corpus-'));
+process.on('exit', () => rmSync(corpus, { recursive: true, force: true }));
 for (const entry of readdirSync(golden)) {
   const from = join(golden, entry);
   if (entry.endsWith('.tryscript.md')) {
     const text = readFileSync(from, 'utf8')
       .split('\n')
-      .filter((line) => !line.startsWith('Performance: '))
+      .filter((line) => !line.startsWith('! perf: '))
       .join('\n');
     writeFileSync(join(corpus, entry), text);
   } else if (statSync(from).isDirectory()) {
@@ -203,7 +208,9 @@ const summary = [
   '',
 ].join('\n');
 
-const observed = HEADER + summary + body;
+// Classify concrete output first. The artifact masks only observed numeric values
+// already checked against the golden's typed patterns, so recordings stay stable.
+const observed = HEADER + summary + normalisePortableValues(body);
 
 if (observed.slice(HEADER.length).trim().length === 0) {
   console.error('run-parity: the corpus produced no differences at all.');
@@ -246,11 +253,12 @@ process.exit(1);
 function normalise(text) {
   return text
     .replace(/\u001b\[[0-9;]*m/g, '')
+    .replaceAll(corpus, join(root, 'tests', 'parity', '.corpus'))
     .replace(/\\/g, '/')
     // The checkout path differs on every machine and in CI; the artifact must not.
     .replace(new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[ROOT]')
     .replace(/[^\s'"]*\/(tryscript|fdu)-[A-Za-z0-9._-]+/g, '[SANDBOX]')
-    .replace(/[0-9a-f]{16}\.fdu/g, '[HASH].fdu')
+    .replace(/[0-9a-f]{16}\.(metadata|analysis)\.bin/g, '[HASH].$1.bin')
     // A cache snapshot's encoded size depends on the platform that wrote it (797 bytes
     // on macOS, 745 on Linux for the same tree), so it cannot be a recorded constant.
     // Only the surfaces' agreement is under test here, not the snapshot's size. Matched

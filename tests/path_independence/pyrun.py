@@ -35,7 +35,7 @@ def _build(spec: dict[str, Any]) -> tuple[Any, Any, Any]:
     for name in ("include", "exclude"):
         if name in selection:
             fields[name] = tuple(selection[name])
-    for name in ("min_size", "modified_since", "depth", "limit", "reverse"):
+    for name in ("min_size", "modified_since", "depth", "limit", "breadth", "min_share", "reverse"):
         if name in selection:
             fields[name] = selection[name]
     if "kind" in selection:
@@ -68,9 +68,20 @@ def main() -> None:
         if mode == "report":
             report = fdu.report(job["root"], query, cache=cache, scan=scan, analysis=analysis)
         elif mode == "open":
-            report = fdu.open(job["root"], cache=cache, scan=scan, analysis=analysis).report(query)
+            report = fdu.open(
+                job["root"],
+                cache=cache,
+                scan=scan,
+                analysis=analysis,
+                ignored=query.selection.ignored or fdu.IgnoredEntries.INCLUDE,
+            ).report(query)
         elif mode == "scan":
-            report = fdu.scan(job["root"], scan=scan, analysis=analysis).report(query)
+            report = fdu.scan(
+                job["root"],
+                scan=scan,
+                analysis=analysis,
+                ignored=query.selection.ignored or fdu.IgnoredEntries.INCLUDE,
+            ).report(query)
         else:
             raise RuntimeError(f"unknown mode {mode!r}")
         envelope: dict[str, Any] = {"ok": True, "answer": report.as_dict()}

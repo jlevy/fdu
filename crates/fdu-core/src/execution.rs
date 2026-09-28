@@ -256,6 +256,23 @@ impl Default for PerformanceSummary {
 }
 
 impl PerformanceSummary {
+    /// Total metadata throughput over the same elapsed sample as the report duration.
+    /// GiB/s represents walked size, not storage read bandwidth.
+    pub fn total_throughput(
+        self,
+        elapsed: std::time::Duration,
+        size: crate::query::SizeMetric,
+    ) -> String {
+        let bytes = match size {
+            crate::query::SizeMetric::Apparent => self.walked_bytes,
+            crate::query::SizeMetric::Allocated => self.walked_allocated,
+        };
+        throughput_rates(self.walked_files, bytes, elapsed).map_or_else(
+            || "throughput unavailable".to_owned(),
+            |(files, gib)| format!("{files} files/s ({gib} GiB/s)"),
+        )
+    }
+
     fn from_open_report(report: &crate::OpenReport) -> Self {
         let analysis = report.analysis.unwrap_or_default();
         Self {
@@ -274,6 +291,29 @@ impl PerformanceSummary {
             },
         }
     }
+}
+
+/// Cumulative walk rates over one actual elapsed sample. The byte rate is binary GiB/s,
+/// rounded to three decimals; the grouped file rate counts complete files per second.
+/// Returns `(files_per_second, gib_per_second)` without unit labels, or `None` when
+/// elapsed time is zero. Neither rate estimates storage read bandwidth.
+pub fn throughput_rates(
+    files: u64,
+    bytes: u64,
+    elapsed: std::time::Duration,
+) -> Option<(String, String)> {
+    let ns = elapsed.as_nanos();
+    if ns == 0 {
+        return None;
+    }
+    let files_per_second = u128::from(files) * 1_000_000_000 / ns;
+    let gib_denominator = ns * (1_u128 << 30);
+    let gib_thousandths =
+        (u128::from(bytes) * 1_000_000_000 * 1_000 + gib_denominator / 2) / gib_denominator;
+    Some((
+        crate::report_format::human_count_u128(files_per_second),
+        format!("{}.{:03}", gib_thousandths / 1_000, gib_thousandths % 1_000),
+    ))
 }
 
 /// Validate a request and derive the least-retention plan for its delivery and route.
@@ -553,6 +593,38 @@ mod tests {
     use super::*;
     use crate::query::{IgnoredEntries, Pattern, Query, Section};
     use crate::{OpenFixture, ScanConfig};
+
+    #[test]
+    fn total_throughput_uses_one_elapsed_sample_and_selected_size() {
+        use crate::query::SizeMetric;
+        let work = PerformanceSummary {
+            walked_files: 200,
+            walked_bytes: 4_000_000_000,
+            walked_allocated: 1_000_000_000,
+            ..PerformanceSummary::default()
+        };
+        assert_eq!(
+            work.total_throughput(std::time::Duration::from_secs(2), SizeMetric::Apparent),
+            "100 files/s (1.863 GiB/s)"
+        );
+        assert_eq!(
+            work.total_throughput(std::time::Duration::from_secs(2), SizeMetric::Allocated),
+            "100 files/s (0.466 GiB/s)"
+        );
+        assert_eq!(
+            work.total_throughput(std::time::Duration::ZERO, SizeMetric::Apparent),
+            "throughput unavailable"
+        );
+        assert_eq!(
+            PerformanceSummary::default()
+                .total_throughput(std::time::Duration::from_secs(1), SizeMetric::Apparent),
+            "0 files/s (0.000 GiB/s)"
+        );
+        assert_eq!(
+            throughput_rates(12_345, 3 * (1_u64 << 30), std::time::Duration::from_secs(2)),
+            Some(("6,172".to_owned(), "1.500".to_owned()))
+        );
+    }
 
     #[test]
     #[cfg(unix)]
@@ -1369,7 +1441,16 @@ mod tests {
                     crate::control::ControlCoverage::Observed(coverage) => {
                         assert!(read_controls, "observed only when asked");
                         assert_eq!(coverage.refused, 2, "{coverage:?}");
-                        assert_eq!(report.notes.len(), 1, "{:?}", report.notes);
+                        assert_eq!(report.notes.len(), 2, "{:?}", report.notes);
+                        assert!(
+                            report.notes[0].contains("2 ignore files not applied"),
+                            "{:?}",
+                            report.notes
+                        );
+                        assert_eq!(
+                            report.notes[1],
+                            "note: gitignored subtotals are unavailable where governing rules could not be verified"
+                        );
                     }
                     crate::control::ControlCoverage::NotObserved => {
                         assert!(!read_controls, "unobserved only when turned off");

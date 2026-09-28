@@ -84,27 +84,33 @@ Use `.` for the current directory:
 
 ```console
 $ fdu .
-     2.6 MiB  ██████████   100%  . (144 files)
-     1.5 MiB  ██████░░░░    58%    crates (116 files)
-     827 KiB  ███░░░░░░░    31%    tests (18 files)
+     2.6 MiB  ██████████   100%  . 144 files
+     1.5 MiB  ██████░░░░    58%    crates 116 files
+     827 KiB  ███░░░░░░░    31%    tests 18 files
 ```
 
-That is the default `list` view in `tree` format: allocated sizes, largest first, two
-directory levels, up to ten children per directory.
-It reads metadata and `.gitignore` files; it does not open regular files for content.
-Hidden and ignored entries are included; ignored byte shares are annotated when present.
+The default `list` view in `tree` format shows allocated sizes, largest first, down to
+depth 5, including file leaves and subtrees contributing at least 1% of the root.
+Set `--depth`, `--min-share`, `--breadth`, and `--limit` to adjust independent display
+bounds. It reads metadata and `.gitignore` files; it does not open regular files for
+content. Hidden and ignored entries are included; ignored byte shares are annotated when
+present.
 
 | Question | Command |
 | --- | --- |
 | Which directories are large? | `fdu .` |
 | Old build directories with size and age | `fdu . --kind dir --include node_modules --modified-before 30d --long` |
 | Matching paths only | `fdu . --kind dir --include .venv --format paths` |
-| Totals, excluding ignored entries | `fdu . --exclude-ignored --view=summary` |
+| Totals, excluding ignored entries | `fdu . --ignored=exclude --view=summary` |
 | Languages by space | `fdu . --view=languages` |
 | Ten files that changed most recently | `fdu . --view=recent --limit=10` |
 | Standard lines of code | `fdu . --analyze=code` |
 | Keep the tree live | `fdu . --watch` |
 | Machine output | `fdu . --format=json` |
+| Complete recursive tree | `fdu . --view tree --full --format json` |
+| Every directory with recursive usage | `fdu . --kind dir --full --sort name --format json` |
+| Every regular file | `fdu . --view files --kind file --full --format json` |
+| Find Rust files | `fdu . --kind file --include '*.rs' --full --format paths` |
 
 `--view` chooses what is reported; several views share one walk.
 `--analyze` is the only switch that reads file bodies.
@@ -116,6 +122,97 @@ error.
 writes a portable skill for coding agents where they look for it (`fdu --skill` prints
 it); see [Set Up with Any Coding Agent](#set-up-with-any-coding-agent).
 The full grammar is in the [usage guide](docs/usage.md).
+
+`--full` is shorthand for `--depth=all --breadth=all --limit=all --min-share=0%`;
+explicit bounds override it.
+It expands the selected view without changing scan scope or analysis.
+Use path output for find/fd-style searches, or JSON for the same selection with exact
+usage fields. Directory rows contain recursive totals and can overlap; regular-file rows
+contain each file’s own size.
+See
+[complete inventories and find/fd examples](docs/usage.md#find-files-and-export-complete-inventories).
+
+## Understand a Codebase
+
+```shell
+fdu . --analyze=code --ignored=exclude --limit=5
+```
+
+For example, the implementation at repository revision `7a499493` produced this stdout:
+
+```text
+(5 of 16)
+Code lines   Share  Comments   Blank  Analyzed files  Language
+    79,330   65.1%    12,681   6,700         101/101  Rust
+    37,861   31.1%     1,513   4,696           95/95  Python
+     3,988    3.3%       526     358           25/25  JavaScript
+       403    0.3%        65      33             3/3  C
+       249    0.2%        57      45             7/7  Shell
+   121,858  100.0%    14,881  11,840         242/244  TOTAL
+15 analyzed languages (exclude population)
+22 selected files with unclassified type
+2 unsupported
+```
+
+The note and suggestion appear once on stderr, followed by the run’s `perf:` summary:
+
+```text
+note: code totals include languages hidden by display limits
+tip: show more rows: --limit=all
+```
+
+The percentages and bold TOTAL row cover all measured code lines, including languages
+outside the five displayed rows.
+Analyzed-file counts show measured files over selected source files; unavailable SLOC
+uses a dash, distinct from a measured zero.
+Counts include tests and fixtures in the selected repository, and change as the checkout
+changes. Coverage makes unsupported and unclassified files visible instead of treating
+them as zero lines.
+
+`--ignored=exclude` avoids traversing and reading ignored trees such as local builds and
+environments. Omit it to analyze both populations and show their contributions.
+`--limit=all` shows every language; `--format=json` gives structured counts and
+coverage. See [content analysis](docs/usage.md#analyze-file-contents) for the counting
+convention and supported languages.
+
+## Tally Environments and Build Outputs
+
+Find every `.venv`, `node_modules`, and Cargo `target` directory under a work directory,
+largest first, then get their combined usage from the same cached scan:
+
+```shell
+fdu ~/work --kind dir --include .venv --include node_modules --include target --full --long
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view summary --cache only
+```
+
+The first command lists each matching directory’s allocated size, modification age, and
+path. The second reads the snapshot without another walk; it describes that recorded
+scan, not changes made afterward.
+Ignored directories are included by default, which is useful for environments and build
+outputs.
+
+Nested matches appear individually in the list, so adding those rows can double-count
+contents. Summary counts their covered paths once.
+For example, a nested `node_modules` contributes to both its own row and its parent’s
+row, but only once to Summary.
+The names are conventions: `target` is Cargo’s default build directory, and custom build
+locations require another include pattern.
+Symlinks are not followed.
+
+For detailed rows and the total in one structured report:
+
+```shell
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view files,summary --full --sort size --format json
+```
+
+These are per-path sizes, not estimates of space freed by deletion.
+Hard links can share one file, and copy-on-write clones can share physical blocks while
+retaining separate file identities.
+Multiple uv environments may therefore have overlapping physical storage even when their
+paths are distinct. See
+[allocation and shared files](docs/usage.md#allocation-and-shared-files).
 
 ## Find Stale Build Directories
 
@@ -348,6 +445,9 @@ A deliberately unsupported local host may set `FDU_TEST_ALLOW_NO_PERMISSION_BITS
 CI must leave both variables unset so a passing test proves its assertions ran.
 
 [AGENTS.md](AGENTS.md) is how to operate on the repository.
+The [output design system](docs/project/architecture/fdu-output-design.md) governs
+report layout, diagnostic categories, colors, and stdout/stderr separation; its
+implementation rules are documented beside the shared renderer and diagnostic collector.
 [The supply-chain policy](SUPPLY-CHAIN-SECURITY.md) applies before any dependency
 change. Performance work follows
 [the performance loop](docs/project/guides/performance-loop.md) and is deliberately

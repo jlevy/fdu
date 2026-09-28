@@ -11,14 +11,16 @@ and folded its principles into the design doc that
 [PR #37](https://github.com/jlevy/fdu/pull/37) shipped this revision’s content axis and
 display contract (Phase 5). [PR #39](https://github.com/jlevy/fdu/pull/39) then reshaped
 the view vocabulary under
-[the view vocabulary plan](../active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md).
+[the view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md).
 Later work changed parts of the surface this plan specifies: `.gitignore` observation on
 by default with its scope and selection flags (PRs #63 and #65), report schemas
 `fdu.report/5` and `/6`, and cache states with stale-snapshot clearing (PR #67). Where a
 section below states the shipped behavior, it has been corrected to match `origin/main`
 on 2026-09-16; checked implementation items record what each PR did.
 `fdu --help` and `fdu --docs` are the live reference.
-Follow-ups remain open under the epics `fdu-pxeb` and `fdu-ktyl`.
+The implementation epic `fdu-ktyl` is closed.
+The remaining work under `fdu-pxeb` is tracked in the
+[active CLI and skill follow-up plan](../active/plan-2026-09-27-cli-and-skill-followups.md).
 
 ## Overview
 
@@ -332,7 +334,7 @@ A composition the caller must already know how to build is not a default, and th
 showed up in `files` itself: asked to serve as enumeration and top-N at once, it paired
 name order with a ten-row cap and printed the ten alphabetically first entries of a
 192,871-entry tree.
-[The view vocabulary plan](../active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
+[The view vocabulary plan](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
 reinstated them as presets and made `files` complete.
 The same composability makes `tree --sort mtime` an activity map of a project with no
 extra machinery. When the reducer registry (Goal 6) and type rules (`fdu-v4lc`) land,
@@ -1020,7 +1022,9 @@ No publishing; `fdu-9cf0` gates remain.
 
 ## Remaining work
 
-The four implementation phases are complete.
+The implementation phases are complete.
+The live residuals and their acceptance criteria are in the
+[active follow-up plan](../active/plan-2026-09-27-cli-and-skill-followups.md).
 Post-merge integration was reproduced against the performance branch rather than
 assumed: exp-033 exercised all five engine jobs with exact oracles, and exp-035 repeated
 the cold path on a heterogeneous 1M-entry workspace.

@@ -1,17 +1,16 @@
 # Feature: Release Packaging and Python API Polish
 
-**Date:** 2026-08-14 (last updated 2026-09-24)
+**Date:** 2026-08-14 (last updated 2026-09-27)
 
 **Author:** fdu project
 
-**Status:** Implemented, publication included (2026-09-24, pull request #123):
-`release.yml` publishes the rehearsed artifacts through one `publish` job behind the
-protected `release` environment, and
-[the release process](../../guides/release-process.md) publishes `0.1.0` that way from a
-signed tag, with the by-hand procedure as the fallback.
-That supersedes the 2026-09-15 decision to publish `0.1.0` by hand.
-The publication itself is tracked in `fdu-9cf0`; crates.io trusted publishers follow
-`0.1.0`.
+**Status:** The `0.1.0` crates, Python distribution, and GitHub Release are published.
+Pull request #123 added the protected `release.yml` publish job; the signed tag names
+`7cf7f1b4b`. Publication and registry audit are recorded on the closed `fdu-9cf0`. This
+plan remains active for the unchecked parity, release-hardening, and downstream items
+below. The
+[first-release verification plan](plan-2026-09-18-fdu-first-release-verification.md)
+tracks the still-unrecorded post-publish first-user checks.
 
 ## Overview
 
@@ -648,12 +647,14 @@ retag or overwrite the released version.
 
 ## Implementation Plan
 
-The implementation branch completes the package, API, artifact, test, read-only
-registry-audit, workflow-rehearsal, and runbook work authorized before publication.
-It deliberately contains no registry credentials, publisher configuration, release tag,
-upload, or GitHub Release operation.
-Those irreversible steps remain in `fdu-9cf0`. The progressive `IndexSession` and
-upstream-reference improvements also remain separate follow-up work.
+The package, API, artifact, registry-audit, workflow, and runbook work landed before
+publication.
+The protected workflow then published the signed `0.1.0` release; `fdu-9cf0`
+records its artifacts, registry audit, and installed smoke checks.
+The remaining checklist items below retain their own acceptance requirements.
+Progressive downstream work is governed by the
+[opened-root plan](plan-2026-08-25-fdu-opened-root-inventory-engine.md) and the
+[progressive-results plan](plan-2026-08-11-fdu-progressive-results.md).
 
 ### Tracked Work
 
@@ -724,9 +725,9 @@ upstream-reference improvements also remain separate follow-up work.
   #123: one `publish` job; PyPI through the pending publisher, crates.io through the
   environment’s bootstrap token and then OIDC)
 - [x] Emit checksums and SBOM evidence from the non-publishing workflow
-- [ ] Add attestations and a GitHub release only after registry state is verified
-  (post-`0.1.0` in the workflow; `0.1.0`’s GitHub release is created by hand after the
-  audit)
+- [ ] Add attestations and a GitHub release only after registry state is verified.
+  The `0.1.0` GitHub Release is live with 11 assets after the registry audit; the
+  attestation and workflow-automation portion remains unverified.
 
 ### Phase 4: First-Release Rehearsal and Publication
 
@@ -735,13 +736,20 @@ upstream-reference improvements also remain separate follow-up work.
   `release` environment (registered 2026-09-24 as a pending publisher; the environment
   must be protected before the first publishing run)
 - [ ] Rehearse the release commit on `main`, then tag that commit, and rehearse an
-  identical-channel retry and a simulated conflicting-channel stop
-- [ ] Inspect every archive and execute every supported install path
+  identical-channel retry and a simulated conflicting-channel stop.
+  The signed tag, five-platform rehearsal, and identical-channel retry are recorded on
+  `fdu-9cf0`; retain this box until the conflicting-channel simulation is cited.
+- [ ] Inspect every archive and execute every supported install path.
+  The eight release artifacts passed SHA-256 inspection and installed smoke checks; the
+  first-release verification plan retains the full post-publish install matrix.
 - [ ] Publish `0.1.0`, verify registry metadata and fresh-user installs, and retain
-  release evidence
-- [ ] Delete the `CARGO_REGISTRY_TOKEN` environment secret and revoke the token;
+  release evidence. Publication and identical registry hashes are recorded on `fdu-9cf0`;
+  the full fresh-user checklist remains open in the verification plan.
+- [x] Delete the `CARGO_REGISTRY_TOKEN` environment secret and revoke the token;
   configure crates.io trusted publishing for `jlevy/fdu`, `release.yml`, and the
-  `release` environment after `0.1.0`
+  `release` environment after `0.1.0`. Completed on `fdu-o5st`: both publisher bindings
+  verified, secret deleted, and token revocation confirmed by the maintainer.
+  Duplicate setup task `fdu-e6f8` is closed.
 
 ### Phase 5: Progressive Downstream Adapter
 

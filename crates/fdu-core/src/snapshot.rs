@@ -93,7 +93,10 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 /// section, so a section is re-admitted under the header's limits and one they would not
 /// admit is refused. The header also records `writing_pass_started_at_ns`, the start of the
 /// pass that last wrote the image.
-const FORMAT_VERSION: u32 = 5;
+///
+/// 6: the entry tier records ignored population and, when narrowed, the governing
+/// control policy. Narrowed scans cannot reuse broader metadata without projection.
+const FORMAT_VERSION: u32 = 6;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///
@@ -2780,6 +2783,8 @@ mod tests {
                 one_filesystem: true,
                 hidden_fingerprint: 5,
                 exclude_special: true,
+                population: crate::query::IgnoredEntries::Include,
+                control_fingerprint: 0,
             },
             type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: 33,

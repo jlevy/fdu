@@ -23,9 +23,9 @@ patterns:
 ## Full Output Exposes Scan and Projection Completeness Separately
 
 ```console
-$ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
+$ fdu --cache off --format json --size apparent --limit 10 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -35,10 +35,12 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["list"],
     "omitted_views": []
   },
@@ -61,6 +63,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -80,7 +83,9 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": 0,
           "complete": true,
           "age_ns": [AGE_NS],
-          "ignored": true
+          "ignored": true,
+          "sort_value": null,
+          "classification": null
         },
         {
           "path": "dist[JSON_SEP]acorn-0.1.0.tar.gz",
@@ -92,7 +97,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": true
+          "ignored": true,
+          "sort_value": null,
+          "classification": {
+            "file_type": "archive",
+            "family": "binary",
+            "source": "compound_extension",
+            "confidence": "certain",
+            "flags": {"generated": false, "vendored": false, "documentation": false}
+          }
         },
         {
           "path": "README.md",
@@ -104,7 +117,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": {
+            "file_type": "markdown",
+            "family": "prose",
+            "source": "extension",
+            "confidence": "certain",
+            "flags": {"generated": false, "vendored": false, "documentation": true}
+          }
         },
         {
           "path": "src",
@@ -116,7 +137,9 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": 0,
           "complete": true,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": null
         },
         {
           "path": "Makefile",
@@ -128,7 +151,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": {
+            "file_type": "make",
+            "family": "code",
+            "source": "exact_filename",
+            "confidence": "certain",
+            "flags": {"generated": false, "vendored": false, "documentation": false}
+          }
         },
         {
           "path": "docs",
@@ -140,7 +171,9 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": 0,
           "complete": true,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": null
         },
         {
           "path": "docs[JSON_SEP]FAQ.MD",
@@ -152,7 +185,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": {
+            "file_type": "markdown",
+            "family": "prose",
+            "source": "extension",
+            "confidence": "certain",
+            "flags": {"generated": false, "vendored": false, "documentation": true}
+          }
         },
         {
           "path": "src[JSON_SEP]alpha.rs",
@@ -164,7 +205,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": {
+            "file_type": "rust",
+            "family": "code",
+            "source": "extension",
+            "confidence": "certain",
+            "flags": {"generated": false, "vendored": false, "documentation": false}
+          }
         },
         {
           "path": "src[JSON_SEP]omega.rs",
@@ -176,7 +225,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": {
+            "file_type": "rust",
+            "family": "code",
+            "source": "extension",
+            "confidence": "certain",
+            "flags": {"generated": false, "vendored": false, "documentation": false}
+          }
         },
         {
           "path": ".gitignore",
@@ -188,7 +245,15 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
           "dirs": null,
           "complete": null,
           "age_ns": [AGE_NS],
-          "ignored": false
+          "ignored": false,
+          "sort_value": null,
+          "classification": {
+            "file_type": "unknown",
+            "family": "unknown",
+            "source": "unknown",
+            "confidence": "heuristic",
+            "flags": {"generated": false, "vendored": false, "documentation": false}
+          }
         }
       ]
     }
@@ -202,7 +267,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 ```console
 $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -212,10 +277,12 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -238,6 +305,7 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -245,10 +313,12 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
   "reports": [
     {
       "view": "tree",
+      "limits": {"depth": 1, "min_share": "1%", "breadth": null, "rows": 2},
       "tree": {
         "name": ".",
         "path": "",
         "kind": "dir",
+        "entry_ignored": false,
         "bytes": 269,
         "allocated": [ALLOCATED],
         "files": 7,
@@ -256,52 +326,60 @@ $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 
         "ignored": {"files": 1, "dirs": 1, "bytes": 128, "allocated": [ALLOCATED]},
         "newest_mtime_ns": [MTIME_NS],
         "truncated": true,
+        "omissions": [
+          {"reason": "rows", "entries": 5, "files": 6, "bytes": 141, "allocated": [ALLOCATED]}
+        ],
         "children": [
           {
             "name": "dist",
             "path": "dist",
             "kind": "dir",
+            "entry_ignored": true,
             "bytes": 128,
             "allocated": [ALLOCATED],
             "files": 1,
             "dirs": 0,
             "ignored": {"files": 1, "dirs": 0, "bytes": 128, "allocated": [ALLOCATED]},
             "newest_mtime_ns": [MTIME_NS],
-            "truncated": false,
-            "children": []
-          },
-          {
-            "name": "src",
-            "path": "src",
-            "kind": "dir",
-            "bytes": 36,
-            "allocated": [ALLOCATED],
-            "files": 2,
-            "dirs": 0,
-            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
-            "newest_mtime_ns": [MTIME_NS],
-            "truncated": false,
+            "truncated": true,
+            "omissions": [
+              {"reason": "depth", "entries": 1, "files": 1, "bytes": 128, "allocated": [ALLOCATED]}
+            ],
             "children": []
           }
         ]
+      },
+      "omissions": [],
+      "remainder": {
+        "files": 6,
+        "bytes": 141,
+        "allocated": [ALLOCATED],
+        "reasons": ["rows"]
       }
     }
   ]
 }
+! note: gitignored sizes are included in row totals
+! note: more covers unlisted root branches; listed directory totals already include their descendants
+! note: display limits: depth 1, row limit 2
+! tip: expand deeper: --depth=all
+! tip: show more rows: --limit=all
 ? 0
 ```
 
 ## Scan Depth Is an Explicit Complete Scope
 
 The report is complete for the scope it was asked for, and says so at the top.
-The directories retained at the depth limit were never listed, so each of their rows
-says `complete: false`: their sizes and counts are lower bounds and their age is null,
-where a lower-bound maximum would have read as an old directory.
+The directories retained at the depth limit were never listed.
+Keep these unknown branches despite their zero observed sizes; their unseen contents
+could exceed the share threshold.
+Their newest modification time is null because a lower-bound maximum cannot establish an
+age.
 
 ```console
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -311,10 +389,12 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["tree"],
     "omitted_views": []
   },
@@ -337,6 +417,7 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -344,10 +425,12 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
   "reports": [
     {
       "view": "tree",
+      "limits": {"depth": 2, "min_share": "1%", "breadth": null, "rows": 10},
       "tree": {
         "name": ".",
         "path": "",
         "kind": "dir",
+        "entry_ignored": false,
         "bytes": 82,
         "allocated": [ALLOCATED],
         "files": 3,
@@ -355,11 +438,58 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
         "ignored": {"files": 0, "dirs": 1, "bytes": 0, "allocated": 0},
         "newest_mtime_ns": [MTIME_NS],
         "truncated": false,
+        "omissions": [],
         "children": [
+          {
+            "name": "README.md",
+            "path": "README.md",
+            "kind": "file",
+            "entry_ignored": false,
+            "bytes": 48,
+            "allocated": [ALLOCATED],
+            "files": 1,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": [MTIME_NS],
+            "truncated": false,
+            "omissions": [],
+            "children": []
+          },
+          {
+            "name": "Makefile",
+            "path": "Makefile",
+            "kind": "file",
+            "entry_ignored": false,
+            "bytes": 28,
+            "allocated": [ALLOCATED],
+            "files": 1,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": [MTIME_NS],
+            "truncated": false,
+            "omissions": [],
+            "children": []
+          },
+          {
+            "name": ".gitignore",
+            "path": ".gitignore",
+            "kind": "file",
+            "entry_ignored": false,
+            "bytes": 6,
+            "allocated": [ALLOCATED],
+            "files": 1,
+            "dirs": 0,
+            "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
+            "newest_mtime_ns": [MTIME_NS],
+            "truncated": false,
+            "omissions": [],
+            "children": []
+          },
           {
             "name": "dist",
             "path": "dist",
             "kind": "dir",
+            "entry_ignored": true,
             "bytes": 0,
             "allocated": 0,
             "files": 0,
@@ -367,12 +497,14 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": null,
             "truncated": false,
+            "omissions": [],
             "children": []
           },
           {
             "name": "docs",
             "path": "docs",
             "kind": "dir",
+            "entry_ignored": false,
             "bytes": 0,
             "allocated": 0,
             "files": 0,
@@ -380,12 +512,14 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": null,
             "truncated": false,
+            "omissions": [],
             "children": []
           },
           {
             "name": "src",
             "path": "src",
             "kind": "dir",
+            "entry_ignored": false,
             "bytes": 0,
             "allocated": 0,
             "files": 0,
@@ -393,13 +527,17 @@ $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --dep
             "ignored": {"files": 0, "dirs": 0, "bytes": 0, "allocated": 0},
             "newest_mtime_ns": null,
             "truncated": false,
+            "omissions": [],
             "children": []
           }
         ]
-      }
+      },
+      "omissions": [],
+      "remainder": null
     }
   ]
 }
+! note: incomplete subtrees remain visible below the size threshold
 ? 0
 ```
 
@@ -413,7 +551,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/7",
+  "schema": "fdu.report/10",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
@@ -423,10 +561,12 @@ $ fdu --cache off --view types --format json --size apparent project
       "follow_symlinks": false,
       "one_filesystem": false,
       "exclude_special": false,
-      "read_controls": true
+      "read_controls": true,
+      "population": "include"
     },
     "analyze": [],
     "size": "apparent",
+    "sort_metric": null,
     "views": ["types"],
     "omitted_views": []
   },
@@ -449,6 +589,7 @@ $ fdu --cache off --view types --format json --size apparent project
   "ignore_rules": {
     "limits": {"budget": 4194304, "line_limit": 16384},
     "applied": 1,
+    "rules": 1,
     "refused": 0,
     "refusals": []
   },
@@ -460,6 +601,7 @@ $ fdu --cache off --view types --format json --size apparent project
         "group": "type",
         "share_metric": "apparent_bytes",
         "bound": null,
+        "share_omitted": 0,
         "total": {
           "id": "total",
           "family": "unknown",

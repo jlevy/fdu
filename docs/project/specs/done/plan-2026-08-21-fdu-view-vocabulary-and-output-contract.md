@@ -13,13 +13,14 @@ shipped text (`fdu-k4ad`). Two details shipped differently from the design below
 presets are resolved in `fdu-core` (`ViewSpec` in
 `crates/fdu-core/src/query/query_report.rs`) rather than at the CLI layer, and `--kind`
 narrows them but cannot widen them past regular files; `--sort` and `--limit` override
-them as designed.
-One residual stays open on `fdu-c2ml`: JSON and YAML output are read by
-real parsers, but JSONL report lines are checked only for balanced braces.
-The YAML parser check was also more lenient than it looked: it accepted YAML whose
-content-metric rows did not nest `share`, `metrics`, and `pages` as JSON does, left
-U+007F–U+009F unescaped, and omitted `root_raw` and `path_raw`. All three were fixed
-before `0.1.0`.
+them as designed. The remaining parser check was completed with the alpha correctness
+stack: `scripts/check-yaml.mjs` parses each JSONL report line as JSON across the view
+and analysis matrix, reconstructs the report, and compares it with the JSON form.
+It also parses YAML under strict 1.1 and 1.2 rules and compares its shape with JSON. The
+original YAML check had missed metric-row nesting, forbidden characters, and raw-path
+fields; those defects were fixed before `0.1.0`. `fdu-c2ml` is closed.
+The view epic `fdu-yov0` is closed; document reconciliation is complete under
+`fdu-747k`.
 
 ## Overview
 
@@ -134,8 +135,9 @@ machine shape and therefore bumps the report schema.
 ### Every view in every format
 
 Principle 9 says formats are serializations, not features, and that every view renders
-in every format. That is currently claimed rather than proven: `extensions` and `files`
-are exercised only in text, and several `yaml` combinations are untested.
+in every format. At the time of the proposal this was claimed rather than proven:
+`extensions` and `files` were exercised only in text, and several `yaml` combinations
+were untested.
 
 The matrix becomes a test rather than an assertion — every view crossed with `text`,
 `json`, `jsonl`, and `yaml`, so a view that renders in three formats and panics in the
@@ -145,9 +147,9 @@ Rendering is only half of it.
 A byte-stable golden proves the output has not *changed*, never that it is *valid*: a
 consistently malformed document passes forever, and these serializers are hand-written
 because the project avoids serde, so nothing else would notice.
-Audited today, `json` is parsed by the content self-check, `jsonl` is only ever
-substring-matched, and `yaml` has never been read by a YAML parser at all — which is the
-sharp end, since quoting is the fiddly part of that format.
+At the initial audit, `json` was parsed by the content self-check, `jsonl` was checked
+only for balanced braces, and `yaml` had never been read by a YAML parser.
+Those were gaps in the test contract, especially for YAML quoting.
 
 So each format is *consumed* in a golden rather than only compared: run the command,
 pipe it into a parser, print a field.
@@ -182,14 +184,14 @@ node ships no YAML support — so a pinned `yaml` devDependency goes through
   (`fdu-c1qh`)
 - [x] Cross every view with every format so the render matrix is tested rather than
   claimed, closing the `extensions`, `files`, and `yaml` gaps (`fdu-5akc`)
-- [ ] Consume each machine format with a parser rather than only comparing bytes; the
-  `yaml` dependency goes through the supply-chain policy first (`fdu-c2ml`). JSON is
-  parsed by `scripts/content-selfcheck.mjs` and the Python tests, and YAML by
-  `scripts/check-yaml.mjs` in `make test` using the already locked `yaml` package.
-  That YAML check parsed without comparing shape to JSON, so it missed the metric-row
-  nesting, C1-control escaping, and raw-path fields fixed before `0.1.0`. JSONL report
-  lines are still checked only by the brace-balancing `is_valid_json` in
-  `crates/fdu-core/src/report_format.rs`, which accepts `{"a": }`
+- [x] Consume each machine format with a parser and compare its report shape
+  (`fdu-c2ml`). JSON is parsed by `scripts/content-selfcheck.mjs` and the Python tests.
+  `scripts/check-yaml.mjs`, run by `make test`, parses strict YAML 1.1 and 1.2 and
+  compares it with JSON across views and analyzers.
+  The same check parses every JSONL report line with `JSON.parse`, reconstructs the
+  report, and compares it with JSON; malformed balanced text such as `{"a": }` fails.
+  The locked `yaml` dependency passed the supply-chain policy before the check was
+  added.
 - [x] Carry the vocabulary through `--docs`, README, SKILL.md, help, the `--view` error
   message, the composable CLI spec, and the goldens (`fdu-k4ad`)
 
@@ -241,16 +243,16 @@ every tree.
 
 ## Open Questions
 
-- None blocking. The `yaml` parser dependency is a supply-chain decision rather than a
-  design one, and is tracked on `fdu-c2ml`.
+- None blocking. The parser dependency and output conformance work were completed under
+  `fdu-c2ml`.
 
 ## References
 
 - [Design principles: First Principles](../../architecture/fdu-design-principles.md#first-principles)
-- [Composable CLI and query surface](../done/plan-2026-08-10-fdu-composable-cli-surface.md)
+- [Composable CLI and query surface](plan-2026-08-10-fdu-composable-cli-surface.md)
 - Beads: `fdu-qbwf`, `fdu-xc1v`, `fdu-j1dc`, `fdu-c1qh`, `fdu-5akc`, `fdu-k4ad`, and
-  `fdu-1lj3` (the original silent-truncation report) are closed; `fdu-c2ml` stays open
-  for the JSONL parser check, and the epic `fdu-yov0` with it
+  `fdu-1lj3` (the original silent-truncation report), and `fdu-c2ml` are closed.
+  The epic `fdu-yov0` and lifecycle task `fdu-747k` are closed
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

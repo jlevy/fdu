@@ -115,6 +115,8 @@ struct SelectionValues {
     ignored: Option<String>,
     depth: Option<String>,
     limit: Option<String>,
+    breadth: Option<String>,
+    min_share: Option<String>,
     sort: Option<String>,
     reverse: bool,
     size: Option<String>,
@@ -134,6 +136,8 @@ impl SelectionValues {
                 ignored: None,
                 depth: None,
                 limit: None,
+                breadth: None,
+                min_share: None,
                 sort: None,
                 reverse: false,
                 // Absent means the caller named no metric, so the request model's default
@@ -151,6 +155,8 @@ impl SelectionValues {
             ignored: optional_string(dict, "ignored")?,
             depth: optional_string(dict, "depth")?,
             limit: optional_string(dict, "limit")?,
+            breadth: optional_string(dict, "breadth")?,
+            min_share: optional_string(dict, "min_share")?,
             sort: optional_string(dict, "sort")?,
             reverse: dict
                 .get_item("reverse")?
@@ -179,7 +185,7 @@ fn opened_read(
     let values = SelectionValues::read(selection)?;
     Ok(super::build_request(
         now,
-        &fdu_core::OpenedIndex::basis(),
+        super::RequestBasis::Held(&fdu_core::OpenedIndex::basis()),
         views,
         format,
         values.include,
@@ -191,6 +197,8 @@ fn opened_read(
         values.ignored.as_deref(),
         values.depth.as_deref(),
         values.limit.as_deref(),
+        values.breadth.as_deref(),
+        values.min_share.as_deref(),
         values.sort.as_deref(),
         values.reverse,
         values.size.as_deref(),
@@ -251,6 +259,11 @@ fn parse_scope(dict: &Bound<'_, PyDict>) -> PyResult<EntryScope> {
         follow_symlinks: required(dict, "follow_symlinks")?.extract()?,
         one_filesystem: required(dict, "one_filesystem")?.extract()?,
         hidden_fingerprint: required(dict, "hidden_fingerprint")?.extract()?,
+        population: fdu_core::query::IgnoredEntries::parse(
+            &required(dict, "population")?.extract::<String>()?,
+        )
+        .map_err(PyValueError::new_err)?,
+        control_fingerprint: required(dict, "control_fingerprint")?.extract()?,
         exclude_special: required(dict, "exclude_special")?.extract()?,
     })
 }
@@ -500,6 +513,7 @@ fn invalidation_reason_label(value: fdu_core::InvalidateReason) -> &'static str 
         fdu_core::InvalidateReason::UnknownAncestry => "unknown_ancestry",
         fdu_core::InvalidateReason::WatchContention => "watch_contention",
         fdu_core::InvalidateReason::Requested => "requested",
+        fdu_core::InvalidateReason::ControlPopulationChanged => "control_population_changed",
     }
 }
 
@@ -522,6 +536,8 @@ fn scope_dict(py: Python<'_>, scope: EntryScope) -> PyResult<Bound<'_, PyDict>> 
     out.set_item("follow_symlinks", scope.follow_symlinks)?;
     out.set_item("one_filesystem", scope.one_filesystem)?;
     out.set_item("hidden_fingerprint", scope.hidden_fingerprint)?;
+    out.set_item("population", scope.population.label())?;
+    out.set_item("control_fingerprint", scope.control_fingerprint)?;
     out.set_item("exclude_special", scope.exclude_special)?;
     Ok(out)
 }
@@ -557,6 +573,7 @@ fn scan_scope_dict(py: Python<'_>, scope: fdu_core::ScanScope) -> PyResult<Bound
     out.set_item("follow_symlinks", scope.follow_symlinks)?;
     out.set_item("one_filesystem", scope.one_filesystem)?;
     out.set_item("hidden_fingerprint", scope.hidden_fingerprint)?;
+    out.set_item("population", scope.population.label())?;
     out.set_item("exclude_special", scope.exclude_special)?;
     out.set_item("ignore_rules_fingerprint", scope.ignore_rules_fingerprint)?;
     out.set_item("type_rules_fingerprint", scope.type_rules_fingerprint)?;
@@ -880,6 +897,7 @@ pub(crate) fn control_observation_dict<'py>(
     limits.set_item("line_limit", observation.limits.line_limit)?;
     out.set_item("limits", limits)?;
     out.set_item("applied", observation.applied)?;
+    out.set_item("rules", observation.rules)?;
     out.set_item("refused", observation.refused)?;
     let refusals = PyList::empty(py);
     for refusal in &observation.refusals {
@@ -1011,6 +1029,7 @@ fn projection_result_dict<'py>(
             report.set_item("wire", wire)?;
             let renderer = super::PyOneShot { report: value.clone() };
             report.set_item("notes", renderer.notes())?;
+            report.set_item("tips", renderer.tips())?;
             report.set_item("renderer", Py::new(py, renderer)?)?;
             out.set_item("value", report)?;
         }

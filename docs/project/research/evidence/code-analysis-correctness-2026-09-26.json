@@ -1,0 +1,71 @@
+{
+  "schema": "fdu.correctness-evidence/1",
+  "date": "2026-09-26",
+  "verification": "Repeated after the final share-omission and ignored-population content fixes, using a fresh debug build",
+  "regime": {
+    "platform": "macOS 26.5.2",
+    "kernel": "Darwin 25.5.0",
+    "architecture": "arm64",
+    "host": "bare metal",
+    "filesystem": "APFS external volume",
+    "build": "debug, code-analysis implementation working tree",
+    "privilege": "unprivileged, permission denial effective"
+  },
+  "fixtures": {
+    "present": 14,
+    "absent": [
+      "character devices",
+      "block devices",
+      "non-UTF-8 filename"
+    ],
+    "awkward_names_created": 17,
+    "socket": true
+  },
+  "refusal_cases": {
+    "cases": 23,
+    "withheld": 23,
+    "answer_mismatches": 0,
+    "mechanism_failures": 0,
+    "stale_reference_instants": 0
+  },
+  "serving_cases": {
+    "cases": 23,
+    "cache_served": 23,
+    "answer_mismatches": 0,
+    "mechanism_failures": 0,
+    "stale_reference_instants": 0
+  },
+  "cross_warm": {
+    "violations": 0
+  },
+  "final_checks": {
+    "cross_lint_targets": ["x86_64-apple-darwin", "x86_64-pc-windows-msvc"],
+    "only_ignored_code_analysis": {
+      "cache_policies": ["off", "auto", "only"],
+      "complete": 3,
+      "exit_zero": 3
+    }
+  },
+  "commands": [
+    "python3 tests/correctness/build_tree.py SCRATCH/tree",
+    "FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py --refusals-only SCRATCH/tree",
+    "python3 tests/correctness/build_tree.py --without-refusals SCRATCH/served",
+    "FDU_BIN=target/debug/fdu python3 tests/correctness/warm_cold.py SCRATCH/served",
+    "FDU_BIN=target/debug/fdu python3 tests/correctness/cross_warm.py SCRATCH/served"
+  ],
+  "limitations": [
+    "Runtime evidence is from macOS only; cross-lint is compilation evidence, not Windows or Linux runtime evidence.",
+    "Device nodes and non-UTF-8 filenames were unavailable on this fixture host."
+  ],
+  "harness_fault_proofs": {
+    "disabled_auto_writes": {
+      "exit": 1,
+      "cache_served": 0,
+      "no_snapshot_cases": 23
+    },
+    "falsely_served_partial_snapshot": {
+      "exit": 1,
+      "partial_stored_cases": 23
+    }
+  }
+}

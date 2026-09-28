@@ -48,6 +48,13 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     let denied = root.path().join("denied");
     fs::create_dir(&denied).expect("create denied directory");
     fs::write(denied.join("hidden.txt"), b"hidden").expect("write hidden file");
+    // Match the portable engine golden: an unreadable branch plus an exact 1%
+    // sibling, tiny verified entries, and a verified empty file.
+    for (name, size) in [("large", 9898), ("one-percent", 100), ("tiny", 1), ("zero", 0)] {
+        fs::write(root.path().join(name), vec![b'x'; size]).expect("write sized file");
+    }
+    fs::create_dir(root.path().join("small")).expect("create healthy directory");
+    fs::write(root.path().join("small/tiny"), b"x").expect("write small file");
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("deny reads");
 
     let run = |allow_partial: bool| {
@@ -70,7 +77,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
         .expect("run traced partial fdu");
 
     let human = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--cache", "off", "--color", "never"])
+        .args(["--cache", "off", "--color", "never", "--size", "apparent"])
         .arg(root.path())
         .output()
         .expect("run human fdu");
@@ -101,8 +108,15 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert_eq!(human.status.code(), Some(2));
     let human_stdout = String::from_utf8(human.stdout).expect("human stdout is UTF-8");
     let human_stderr = String::from_utf8(human.stderr).expect("human stderr is UTF-8");
-    assert!(!human_stdout.contains("warning:"), "diagnostic leaked to stdout: {human_stdout}");
-    assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
+    assert!(
+        human_stdout.starts_with(include_str!("../../fdu-core/tests/golden/partial-tree.txt")),
+        "partial CLI report differs from the engine golden: {human_stdout}"
+    );
+    assert!(!human_stdout.contains("warn:"), "diagnostic leaked to stdout: {human_stdout}");
+    assert!(
+        human_stderr.lines().any(|line| line.starts_with("warn:")),
+        "missing stderr warn: {human_stderr}"
+    );
 }
 
 /// Text mode prints one warning per retained issue, and the retention bound drops the
@@ -139,11 +153,11 @@ fn text_warnings_state_how_many_errors_were_omitted() {
     let json = String::from_utf8(json.stdout).expect("JSON is UTF-8");
     assert!(json.contains("\"errors_omitted\": 6"), "{json}");
     let stderr = String::from_utf8(text.stderr).expect("stderr is UTF-8");
-    let warnings: Vec<&str> = stderr.lines().filter(|line| line.starts_with("warning:")).collect();
+    let warnings: Vec<&str> = stderr.lines().filter(|line| line.starts_with("warn:")).collect();
     assert_eq!(warnings.len(), fdu_core::MAX_RETAINED_ISSUES + 1, "{stderr}");
     assert_eq!(
         warnings.last().copied(),
-        Some("warning: 6 more errors omitted; details are kept for the first 64"),
+        Some("warn: 6 more errors omitted; details are kept for the first 64"),
         "{stderr}"
     );
 }
@@ -277,4 +291,27 @@ fn installed_full_index_measurements_can_emit_the_versioned_scan_trace() {
     assert!(trace.contains("\"schema\":\"fdu-scan-diagnostics-v1\""), "{trace}");
     assert!(trace.contains("\"worker_policy\":"), "{trace}");
     assert!(trace.contains("\"backend\":"), "{trace}");
+}
+
+#[test]
+fn only_ignored_code_analysis_is_complete_across_cache_routes() {
+    let root = tempfile::tempdir().expect("root");
+    let cache = tempfile::tempdir().expect("cache");
+    fs::create_dir(root.path().join("vendor")).expect("vendor");
+    fs::write(root.path().join(".gitignore"), b"vendor/\n").expect("control");
+    fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("unignored code");
+    fs::write(root.path().join("vendor/lib.rs"), b"fn lib() {}\n").expect("ignored code");
+
+    for policy in ["off", "auto", "only"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--cache", policy, "--cache-dir"])
+            .arg(cache.path())
+            .args(["--ignored", "only", "--analyze", "code", "--format", "json"])
+            .arg(root.path())
+            .output()
+            .expect("run only-ignored report");
+        let stdout = String::from_utf8(output.stdout).expect("JSON output is UTF-8");
+        assert!(output.status.success(), "{policy}: {stdout}");
+        assert!(stdout.contains("\"complete\": true"), "{policy}: {stdout}");
+    }
 }
