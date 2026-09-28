@@ -75,6 +75,7 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
     let mut tree_omitted = false;
     let mut tree_remainder_shown = false;
     let mut ignored_subset_shown = false;
+    let mut code_rows_hidden = false;
     let mut tree_bounds = Vec::new();
     let mut zero = false;
     let mut reason = |why| {
@@ -145,14 +146,21 @@ fn collect(report: &Report) -> (Vec<String>, Vec<String>) {
             Section::Metrics { summary, .. } if summary.share_omitted > 0 => {
                 reason(TreeOmissionReason::Share);
             }
-            Section::Code(overview) if overview.share_omitted > 0 => {
-                reason(TreeOmissionReason::Share);
+            Section::Code(overview) => {
+                code_rows_hidden |= overview.share_omitted > 0
+                    || overview.languages.len() < overview.total_languages;
+                if overview.share_omitted > 0 {
+                    reason(TreeOmissionReason::Share);
+                }
             }
             _ => {}
         }
     }
     if report.ignored_entries == IgnoredEntries::Include && ignored_subset_shown {
         notes.push("note: gitignored sizes are included in row totals".to_owned());
+    }
+    if code_rows_hidden {
+        notes.push("note: code totals include languages hidden by display limits".to_owned());
     }
     if tree_remainder_shown {
         notes.push("note: more covers unlisted root branches; listed directory totals already include their descendants".to_owned());

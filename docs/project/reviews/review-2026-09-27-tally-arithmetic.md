@@ -299,6 +299,61 @@ The wheel SHA-256 is `f08a19f403b29a699d9af30bd1ee2df195c74631f6e57c83afa0fd12f6
 Final PR heads and CI disposition are recorded in the
 [PR review](https://github.com/jlevy/fdu/pull/136#issuecomment-5860865321).
 
+## Code Table and Analysis Vocabulary
+
+The follow-up at `7a499493` implements `fdu-2u22`, `fdu-xjn3`, and `fdu-k96q`. Code is
+one table with aligned code-line, share, comment, blank, analyzed-file, and language
+columns. Primary TOTAL cells are bold; population details remain gray.
+Totals and share denominators cover the complete selected population before row/share
+limits. Unmeasured values use a dash; measured zero stays numeric.
+A single stderr note explains totals that include hidden languages, and `--quiet`
+suppresses it.
+The existing Code overview model and `fdu.report/10` schema are unchanged.
+
+The vocabulary review keeps measurement and presentation separate: `lines` selects
+Families by default, `code` selects Code, and `words` selects Documents.
+Documents selects prose and markup; word analysis can also measure other accepted text,
+which is available through Types.
+Physical-line analysis remains useful alone and is already included by code/word
+analysis. Unsupported SLOC languages retain physical-line metrics.
+Analyzer names supplied as views produce actionable guidance using the caller’s CLI
+flags or Python fields.
+`--workers` replaces the longer CLI spelling and controls content-analysis concurrency;
+Rust/Python `analysis_workers` and the separate directory scan pool keep their
+semantics.
+
+Review found and corrected trailing padding on rows without population annotations and
+stale scope descriptions in the usage/design documents.
+A proposed ANSI wrapper golden was removed when the observability gate correctly
+rejected its abbreviated response; the existing focused renderer test checks all six
+bold TOTAL cells instead.
+Four direct golden sessions cover bounded rows, zero displayed rows, quiet output, and
+unsupported measurements.
+Existing full-output goldens cover the ordinary table.
+The README example was captured from the installed build against revision `7a499493`.
+
+The complete `make check` gate passed: 914 core tests (one intentional skip), 100 CLI
+unit tests, 202 portable CLI golden sessions, 70 Python tests, package/concurrency
+checks, build-feature configurations, minimum-Rust checks, documentation, audits, 2,267
+path-independence cases, 72 release tests, and three terminal tests.
+All 19 jobs passed in the
+[implementation CI run](https://github.com/jlevy/fdu/actions/runs/36371997439).
+
+The reviewed parity record was produced by
+[Linux CI run 36371830880](https://github.com/jlevy/fdu/actions/runs/36371830880),
+producer `d59f0a39063256bd66153a15e2a6126e06086e5f`, artifact `10949695745`, SHA-256
+`f26f1f8334052fce7d53a580df5b6b012c0e478e127bd685fda70c3e48a889ed`. Local replay matches
+all 55 classified differences; the two new ones are the expected CLI/Python bound-tip
+vocabulary in the bounded Code cases, with identical table output.
+
+Freshly installed `fdu 0.1.0-dev+g7a499493e` passed all 111 existing installed-binary
+checks, and its installed skill matches the bundle.
+A separate hand-counted fixture confirmed two code lines, two comments, one blank, and
+two analyzed files out of three source files even when only one language is displayed.
+The wheel SHA-256 is `3003c677e50d24fbb3219bea0118a0da54ed78b02f7f8d721359824280dd5e2b`.
+Final upper-stack heads and CI disposition are recorded in the
+[PR review](https://github.com/jlevy/fdu/pull/136#issuecomment-5860865321).
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->

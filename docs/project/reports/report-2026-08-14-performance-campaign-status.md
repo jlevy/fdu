@@ -13,6 +13,12 @@ The merged #132 benchmark refresh is qualified exploratory evidence; `fdu-ow8y` 
 owns the unresolved quiet native/wheel release cell, and `fdu-s234` owns the
 claim-policy reconciliation.
 
+The [current work map](../../../TODO.md#performance-and-evidence) records remaining
+owners after the 2026-09-27 tracking review.
+The merged #132 benchmark refresh is qualified exploratory evidence; `fdu-ow8y` still
+owns the unresolved quiet native/wheel release cell, and `fdu-s234` owns the
+claim-policy reconciliation.
+
 ## Who this is for
 
 You need no prior context.
