@@ -1,6 +1,6 @@
 [package]
 name = "fdu-py"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python bindings for fdu, the incremental file roll-up engine"
 publish = false
 edition.workspace = true
