@@ -5,7 +5,7 @@ title: "v0.2.1 patch release: Linux performance verdicts and case-variant .gitig
 kind: epic
 status: open
 priority: 1
-version: 11
+version: 12
 labels: []
 dependencies: []
 child_order_hints:
@@ -19,7 +19,8 @@ child_order_hints:
   - is-01m3mg15qh1hbb3g7nqbnc1k4n
   - is-01m3mg16529x3x0fn8qw190670
   - is-01m3mg16k7j7mtx4sn4wzqfqgt
+  - is-01m3msv53jeze9d48vt0kanz87
 created_at: 2026-09-28T16:17:21.075Z
-updated_at: 2026-09-28T17:12:05.989Z
+updated_at: 2026-09-28T20:03:33.605Z
 ---
 User decision 2026-09-28: v0.2.1 carries the Linux performance checks (H161 confirmation for merged #149, H159 decision for #150, H157 after it) and the case-variant .gitignore change (fdu-0w1b). Worked by the next agent on Linux from the handoff; released with the streamlined process.
