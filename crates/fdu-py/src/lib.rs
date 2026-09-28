@@ -1153,9 +1153,14 @@ fn render_change(
 /// is cheap, keeps one definition of what a status *is*, and means a caller cannot hand
 /// the renderer a status the engine never produced.
 #[pyfunction]
-#[pyo3(signature = (paths, scope, format = "text"))]
+#[pyo3(signature = (paths, scope, format = "text", color = false))]
 #[allow(clippy::needless_pass_by_value)]
-fn render_cache_status(paths: Vec<PathBuf>, scope: &str, format: &str) -> PyResult<String> {
+fn render_cache_status(
+    paths: Vec<PathBuf>,
+    scope: &str,
+    format: &str,
+    color: bool,
+) -> PyResult<String> {
     let scope = fdu_core::CacheScope::parse(scope).ok_or_else(|| {
         PyValueError::new_err(format!(
             "invalid cache scope {:?}: expected one of {}",
@@ -1168,7 +1173,12 @@ fn render_cache_status(paths: Vec<PathBuf>, scope: &str, format: &str) -> PyResu
         .iter()
         .map(|path| fdu_core::cache_status(path).map_err(to_py_err))
         .collect::<PyResult<Vec<_>>>()?;
-    Ok(fdu_core::report_format::render_cache_status(&statuses, scope, format))
+    Ok(fdu_core::report_format::render_cache_status_with_options(
+        &statuses,
+        scope,
+        format,
+        fdu_core::report_format::RenderOptions { color, ..Default::default() },
+    ))
 }
 
 /// Decode the authoritative cache wire row instead of maintaining a second schema.

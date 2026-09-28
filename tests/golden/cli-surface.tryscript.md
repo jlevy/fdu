@@ -16,7 +16,7 @@ patterns:
   # is still asserted exactly — only the build metadata varies.
   DEV_REVISION: '(-dev\+g[0-9a-f]{7,12}(\.dirty)?)?'
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
-  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GB/s\)'
+  PERF_RATE: '[0-9]{1,3}(?:,[0-9]{3})* files/s \(\d+\.\d{3} GiB/s\)'
 ---
 # CLI Surface
 
@@ -48,7 +48,7 @@ SCOPE
                                      .gitignore whole
       --gitignore-line-limit <SIZE>  Longest .gitignore line to apply before refusing its file
                                      [default: 16KiB]. Accepts `all`
-      --no-gitignore                 Read no .gitignore files: rows lose their ignored share, and
+      --no-gitignore                 Read no .gitignore files: rows lose their gitignored share, and
                                      the snapshot scope differs
       --ignored <MODE>               Ignored population: include, exclude, or only [default:
                                      include]
@@ -375,7 +375,7 @@ Content analysis is one-shot and cannot be combined with `--watch`.
 One-shot text reports end with a compact performance line.
 It reports regular files walked and their represented bytes, ignore files and accepted
 rules, actual content bytes read, fresh and cached analysis, the cache tier, and elapsed
-time. Total files/s and decimal GB/s use that elapsed time; represented GB/s is not
+time. Total files/s and binary GiB/s use that elapsed time; represented GiB/s is not
 content-read bandwidth.
 Content-read throughput uses the analysis duration.
 Known binary files can contribute walked bytes but zero read bytes.
@@ -673,7 +673,7 @@ START HERE
 
   `fdu .` is metadata-only. It prints a tree in allocated bytes, largest first,
   to depth 5, showing contents with at least 1% of the selected root size. Hidden
-  and ignored entries are included; .gitignore is read to label ignored shares, not to exclude them.
+  and gitignored entries are included; .gitignore is read to label gitignored shares, not to exclude them.
 
 VIEWS AND ANALYSIS
   --view chooses the question the report answers. Several views share one scan
@@ -801,18 +801,18 @@ CACHE BEHAVIOR
 
 IGNORE RULES
   Fresh scans read applicable .gitignore files by default; cache-only uses retained
-  rules. Summary, tree, and extension rows show ignored size as `(128 B ignored)`.
-  Ignoring a directory covers its descendants. Unignored does not mean Git-tracked:
-  .git is unignored unless a rule names it. --ignored=include is default.
-  --ignored=exclude prunes safely ignored subtrees and skips ignored body reads.
-  --ignored=only discovers ignored matches through ordinary ancestors, reading
-  only ignored bodies for analysis. Sort and --min-size follow the size shown.
+  rules. Summary, tree, and extension rows show gitignored size as `(128 B gitignored)`.
+  Ignoring a directory covers its descendants. Non-gitignored does not mean Git-tracked:
+  .git is non-gitignored unless a rule names it. --ignored=include is default.
+  --ignored=exclude prunes safely gitignored subtrees and skips gitignored body reads.
+  --ignored=only discovers gitignored matches through ordinary ancestors, reading
+  only gitignored bodies for analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
   files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
   and matching is case-sensitive on every platform. An unreadable .gitignore makes
   the result partial, like any unreadable path. A .gitignore past --gitignore-budget
   or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
-  ignored shares under that directory do not.
+  gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
   Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
@@ -826,7 +826,7 @@ OUTPUT AND AUTOMATION
   Human diagnostics use note:, warn:, tip:, and perf: on stderr, in that order.
   One-shot text reports end with gray perf: on stderr; machine formats omit it.
   It counts ignore files and accepted rules, including repeated governing sources.
-  Total files/s and decimal GB/s use the displayed elapsed duration. GB/s represents
+  Total files/s and binary GiB/s use the displayed elapsed duration. GiB/s represents
   walked file size; actual body-read throughput is reported separately.
   JSON numbers above 2^53 (fingerprints, option hashes, nanosecond timestamps)
   lose precision in IEEE 754 binary64 parsers such as JavaScript JSON.parse.

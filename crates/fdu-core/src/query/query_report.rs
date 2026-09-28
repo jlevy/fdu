@@ -1546,7 +1546,7 @@ pub(crate) fn report_in(
     }
     if index.observes_controls() && !index.ignored_classification_complete_below(Path::new("")) {
         notes.push(
-            "note: ignored subtotals are unavailable where governing rules could not be verified"
+            "note: gitignored subtotals are unavailable where governing rules could not be verified"
                 .to_owned(),
         );
     }
@@ -4996,7 +4996,10 @@ mod tests {
             );
             assert!(rows.iter().all(|row| row.ignored.is_none()));
             assert!(
-                report.notes.iter().any(|note| note.contains("ignored subtotals are unavailable"))
+                report
+                    .notes
+                    .iter()
+                    .any(|note| note.contains("gitignored subtotals are unavailable"))
             );
             assert!(
                 crate::report_format::report_notes(&report)
