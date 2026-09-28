@@ -76,10 +76,19 @@ pub(super) struct Gitignore {
 struct Pattern {
     ignored: bool,
     directory_only: bool,
-    matches_path: bool,
-    /// No segment is a `**`, so the pattern matches only paths of its own length.
-    glob_only: bool,
+    shape: Shape,
     segments: Vec<Segment>,
+}
+
+/// What a pattern is matched against, decided once when it is parsed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shape {
+    /// No `/`: one glob against the entry's own name.
+    Basename,
+    /// Anchored or holding a `/` but no `**`: only a path of the pattern's length.
+    Fixed,
+    /// Holding a `**`, which spans any number of components.
+    Spanning,
 }
 
 #[derive(Clone, Debug)]
@@ -188,22 +197,34 @@ impl Pattern {
         if segments.is_empty() {
             return None;
         }
-        let glob_only = segments.iter().all(|segment| matches!(segment, Segment::Glob(_)));
-        Some(Self { ignored, directory_only, matches_path, glob_only, segments })
+        let shape = if !matches_path {
+            Shape::Basename
+        } else if segments.iter().all(|segment| matches!(segment, Segment::Glob(_))) {
+            Shape::Fixed
+        } else {
+            Shape::Spanning
+        };
+        Some(Self { ignored, directory_only, shape, segments })
     }
 
     fn matches(&self, path: &[&[u8]], is_dir: bool) -> bool {
         if path.is_empty() {
             return false;
         }
-        if !self.matches_path {
+        if self.shape == Shape::Basename {
             let Some(Segment::Glob(pattern)) = self.segments.first() else {
                 return false;
             };
             return path.last().is_some_and(|component| glob_matches(pattern, component))
                 && (!self.directory_only || is_dir);
         }
-        segment_path_matches(&self.segments, self.glob_only, path, self.directory_only, is_dir)
+        segment_path_matches(
+            &self.segments,
+            self.shape == Shape::Fixed,
+            path,
+            self.directory_only,
+            is_dir,
+        )
     }
 }
 
@@ -714,15 +735,15 @@ mod tests {
                     let joined = names.join(&b'/');
                     let text = std::str::from_utf8(&joined).expect("fixture names are UTF-8");
                     for is_dir in [false, true] {
-                        let expected = if pattern.matches_path {
+                        let expected = if pattern.shape == Shape::Basename {
+                            pattern.matches(&path, is_dir)
+                        } else {
                             reference_segment_path_matches(
                                 &pattern.segments,
                                 &path,
                                 pattern.directory_only,
                                 is_dir,
                             )
-                        } else {
-                            pattern.matches(&path, is_dir)
                         };
                         assert_eq!(
                             pattern.matches(&path, is_dir),
