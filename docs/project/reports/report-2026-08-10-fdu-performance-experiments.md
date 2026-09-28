@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 73 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 75 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
@@ -245,6 +245,8 @@ dead end.
 | 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
 | 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
 | 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp163--linux-auto-cache-policy-stops-oneshot-snapshot-writes-clears-3-on-defaulttree) | H160 | `default-tree` | -13.8% | ✅ accepted |
+| 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp166--macos-h159-unbounded-listing-pool-costs-15-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
+| 167 | [macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending](#exp167--macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-linux-pending) | H159 | `default-tree` | -1.4% | ⏳ in progress |
 
 ## The experiments
 
@@ -5483,6 +5485,74 @@ zero.
 Full record:
 [`exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md`](../experiments/exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md)
 
+### exp-166 — macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat
+
+↩︎ superseded · 2026-09-28 · H159 · commit `666b51f0`
+
+Control: 56c506e1 probe (stack-141 top, engine a5c0ab46)
+
+Candidate: H159 first build 666b51f0: drained detached listings returned to their
+walker, up to 16 spare listings of up to 256 children per worker
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2862.5 | 2867.2 | +1.32% (n.s.) | [-5.10%, +5.20%] |
+| component (ms) | 2856.8 | 2861.1 | +1.30% (n.s.) | [-5.08%, +5.19%] |
+| cpu (ms) | 24070.7 | 23883.5 | +4.33% (n.s.) | [-8.31%, +8.26%] |
+| user (ms) | 349.1 | 350.7 | +2.82% (n.s.) | [-0.61%, +3.25%] |
+| system (ms) | 23715.5 | 23531.8 | +4.36% (n.s.) | [-8.45%, +8.35%] |
+| peak rss (MiB) | 70.1 | 71.1 | +1.43% (regression) | [+1.12%, +1.79%] |
+
+Other jobs, wall time: `cold-scan-index` +2.4% (n.s.).
+
+Cost to carry: 253 lines; no new dependencies.
+
+about 105 of the 253 diff lines are tests; no dependency, no unsafe, no platform gate
+
+**Superseded:** uncontrolled macOS frameworks default-tree wall +1.32% [-5.10%, +5.20%]
+with peak RSS +1.43% [+1.12%, +1.79%], and rustup default-tree peak RSS +5.04%
+[+2.89%, +11.52%] past the pre-registered 5% margin; superseded by the bounded pool of
+exp-167.
+
+Full record:
+[`exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md`](../experiments/exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md)
+
+### exp-167 — macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending
+
+⏳ in progress · 2026-09-28 · H159 · commit `b1f57ecd`
+
+Control: 56c506e1 probe (stack-141 top, engine a5c0ab46)
+
+Candidate: H159 b1f57ecd: drained detached listings returned to their walker, reuse
+bounded to DIR_CLAIM spare listings of up to 64 children per worker
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2855.3 | 2842.4 | -1.41% (n.s.) | [-5.32%, +4.41%] |
+| component (ms) | 2849.7 | 2836.5 | -1.41% (n.s.) | [-5.33%, +4.42%] |
+| cpu (ms) | 24173.9 | 23983.3 | -0.40% (n.s.) | [-8.46%, +5.76%] |
+| user (ms) | 346.4 | 351.8 | +1.80% (n.s.) | [-0.86%, +4.01%] |
+| system (ms) | 23826.0 | 23635.4 | -0.40% (n.s.) | [-8.62%, +5.82%] |
+| peak rss (MiB) | 69.5 | 69.4 | -0.06% (n.s.) | [-1.33%, +0.18%] |
+
+Other jobs, wall time: `cold-scan-index` +1.1% (n.s.).
+
+Cost to carry: 256 lines; no new dependencies.
+
+about 105 of the 256 diff lines are tests; no dependency, no unsafe, no platform gate
+
+**In-progress:** uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and
+cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no macOS
+regression and the exp-166 RSS cost is gone; the deciding Linux cell pre-registered in
+fdu-578e has not run.
+
+Full record:
+[`exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md`](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5577,18 +5647,6 @@ Baselines show one value because they measure a state rather than a change.
 | 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
 | 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
 
-### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
-| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
-| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
-| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
-| 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
-| 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
-| 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
-
 ### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5600,6 +5658,20 @@ Baselines show one value because they measure a state rather than a change.
 | 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
 | 156 | Progress indicator without a handle against main | `default-tree` | 2,469.4 | 2,457.6 | -1.8% | ✅ accepted |
 | 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
+| 166 | macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat | `default-tree` | 2,862.5 | 2,867.2 | +1.3% | ↩︎ superseded |
+| 167 | macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ⏳ in progress |
+
+### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 083 | Skip unignored roll-up maintenance in control-free scopes | `default-tree` | 366.7 | 363.9 | -1.6% | ❌ rejected |
+| 084 | Compact optional fixed-partition storage | `default-tree` | 358.5 | 350.0 | -2.6% | ❌ rejected |
+| 085 | Compact scanner batches and optional fixed partitions | `default-tree` | 356.2 | 346.5 | -2.6% | ❌ rejected |
+| 086 | Scanner phase counters expose preparation without observer cost | `default-tree` | 364.3 | — | — | 📏 baseline |
+| 087 | Fuse detached control-free scanner preparation and reduction | `default-tree` | 355.3 | 349.3 | -1.1% | ❌ rejected |
+| 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
+| 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
 
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

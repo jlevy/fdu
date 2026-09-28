@@ -971,9 +971,11 @@ the required H153 confirmation from optional CLI and peer comparisons, and speci
 external builds with internal-drive measurement.
 Preparation and smoke checks do not authorize starting the measurement cells below.
 
-Next free experiment id is **exp-164** and next free unused hypothesis id is **H161**.
+Next free experiment id is **exp-168** and next free unused hypothesis id is **H161**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
+exp-164–165 are the macOS stack-141 replications on the macOS rerun layer, and
+exp-166–167 are H159’s macOS screens on the H159 layer.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
 keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
 (exp-156–157) the Darwin progress-handle cost on
@@ -1006,6 +1008,14 @@ Its default single-view command is not covered by the earlier speedup.
    algorithmic candidate only if the post-H153 profile names at least 3% wall.
 4. Re-run H151 only when the quiet start gate holds.
    Do not spend an uncontrolled cell on the progress handle again.
+5. **H159 Linux decision** (`fdu-578e`) — run the pre-registered Linux cell in
+   [exp-167](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)
+   on a quiet Linux host: `default-tree` primary on `linux-v6.12`, `linux-balanced-1m`
+   screening, the `fdu-default-tree` product contract paired in the tool harness, and
+   peak RSS non-inferior.
+   macOS showed no regression and does not decide it.
+6. **H157 rerun** (`fdu-o6um`) — only after item 5, with its kept arm as the control and
+   the product `fdu` indexed-tree contract pre-registered as primary.
 
 ## Before the First Round
 
