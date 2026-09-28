@@ -3,9 +3,9 @@ type: is
 id: is-01m3mcwy5q1j1nab2srxz38ebb
 title: Streamline the release process end to end and document it
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 11
+version: 12
 delegate: claude-code
 labels: []
 dependencies: []
@@ -18,8 +18,12 @@ child_order_hints:
 hold: null
 hold_until: null
 created_at: 2026-09-28T16:17:20.566Z
-updated_at: 2026-09-28T20:04:21.568Z
+updated_at: 2026-09-28T20:25:06.799Z
 started_at: 2026-09-28T16:26:30.261Z
+closed_at: 2026-09-28T20:25:06.797Z
+close_reason: "Merged: #153 (45c7c577) rewrote the release guide as a version-parametric checklist with make release-* helpers (144 release tests), reviewed and fixed; dogfooded on 0.2.0. Machinery gaps remain as children: fdu-vkbq, fdu-808x, fdu-02dw, fdu-brkf, fdu-bxra."
+resolution: null
+duplicate_of: null
 ---
 User ask 2026-09-28: make the release process straightforward end to end and well documented going forward. The guide spells out 0.1.0 and asks the reader to substitute versions by hand; rewrite it version-parametric (VERSION, COMMIT variables), put a one-page checklist first, script the local maintainer steps where safe (rehearsal on a pinned commit, body check, tag verify, post-publish registry check), and fold in what cutting 0.2.0 taught. Keep irreversible writes behind the maintainer.
 
