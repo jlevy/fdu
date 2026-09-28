@@ -165,7 +165,10 @@ pub struct ScanConfig {
     /// A tree walk is a pile of independent, latency-bound directory reads, so it
     /// scales with threads far better than most work does. One means the serial
     /// walker, which stays the reference implementation and the thing every result is
-    /// checked against. [`None`] asks for a bounded default derived from the
+    /// checked against, with two exceptions that take the concurrent walker with one
+    /// worker instead: the detached index build, and a transient summary that reads
+    /// `.gitignore`, which must deliver each directory's control ahead of its entries
+    /// as that build consumes them. [`None`] asks for a bounded default derived from the
     /// machine's available parallelism. The automatic pool starts conservatively and
     /// unlocks more latency-hiding workers only when initial chunk timing identifies a
     /// slow filesystem path.
@@ -2957,8 +2960,14 @@ enum ListingControl {
     /// is among the held ones.
     Listed,
     /// The held observations filled the batch before any `.gitignore` entry came, so the
-    /// directory's control was read directly and stands for the whole listing, as the
-    /// narrowed-population walk reads it (`read_directory_control`).
+    /// directory's control was read directly (`probe_directory_control`) and stands for
+    /// the whole listing, as in the narrowed-population walk.
+    ///
+    /// A `.gitignore` entry listed afterwards is recorded as a row and not read again, so
+    /// the directory's control file is read once. On a tree nothing modifies during the
+    /// walk the probed file is the listed one; if the file changes between the two, the
+    /// listing keeps what the probe read, and an error the second read would have met is
+    /// never met.
     Probed,
 }
 
@@ -2994,8 +3003,9 @@ impl StreamingEmission {
     /// listing's end ([`WalkEmission::finish_directory`]), or here, when the batch fills
     /// first. So a batch never holds more than `batch_size` observations and one control,
     /// however long the listing, and a fill that finds the listing's `.gitignore` not yet
-    /// listed costs one metadata probe for it: at most one probe per batch sent. Returns
-    /// whether the consumer is still there.
+    /// listed probes for it once per listing: one metadata lookup, and on a hit one
+    /// confirming listing of the directory (`probe_directory_control`). Returns whether
+    /// the consumer is still there.
     #[allow(clippy::too_many_arguments)]
     fn send_if_full(
         &mut self,
@@ -3034,7 +3044,7 @@ impl StreamingEmission {
         }
         self.listing_control = ListingControl::Probed;
         let control = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-        match read_directory_control(config, root, &control) {
+        match probe_directory_control(config, root, &control) {
             Ok(Some(op)) => {
                 self.batch.insert(self.directory_start, ObservationOp::unconditional(op));
             }
@@ -3043,23 +3053,18 @@ impl StreamingEmission {
         }
     }
 
-    /// The control a listed entry carries, and its read error, as this listing takes them.
-    ///
-    /// A probed listing already read its directory's control, so a `.gitignore` entry met
-    /// later contributes its row and nothing else: one read stands for the listing, as in
+    /// Whether the entries this listing still lists must not read their control: its
+    /// directory's control was already probed, and one read stands for the listing, as in
     /// the narrowed-population walk (`read_listed_control_op`).
-    fn listed_control(
-        &mut self,
-        control: Option<Op>,
-        control_error: Option<Error>,
-    ) -> (Option<Op>, Option<Error>) {
-        if self.listing_control == ListingControl::Probed {
-            return (None, None);
-        }
+    fn control_probed(&self) -> bool {
+        self.group_directories && self.listing_control == ListingControl::Probed
+    }
+
+    /// Note that a listed entry read this listing's control, or failed to.
+    fn note_listed_control(&mut self, control: Option<&Op>, control_error: Option<&Error>) {
         if control.is_some() || control_error.is_some() {
             self.listing_control = ListingControl::Listed;
         }
-        (control, control_error)
     }
 
     fn wrap(&self, ops: Vec<ObservationOp>) -> ScannerBatch {
@@ -3676,14 +3681,38 @@ pub(crate) fn prepare_walk_entry(
     root_dev: u64,
     config: &ScanConfig,
 ) -> Option<PreparedWalkEntry> {
+    prepare_walk_entry_reading(root, rel_dir, depth, name, kind, attrs, root_dev, config, true)
+}
+
+/// [`prepare_walk_entry`], reading the entry's control only when `read_control` allows.
+///
+/// A grouping emission whose listing already probed its directory's control passes
+/// `false`, so a `.gitignore` listed afterwards is not read a second time
+/// (`StreamingEmission::control_probed`).
+#[allow(clippy::too_many_arguments)]
+fn prepare_walk_entry_reading(
+    root: &Path,
+    rel_dir: &Path,
+    depth: usize,
+    name: &OsStr,
+    kind: EntryKind,
+    attrs: Attrs,
+    root_dev: u64,
+    config: &ScanConfig,
+    read_control: bool,
+) -> Option<PreparedWalkEntry> {
     let disposition = crate::admission::decide(name, kind, config.hidden(), config.exclude_special);
     if disposition == crate::admission::Disposition::Reject {
         return None;
     }
     let path = rel_dir.join(name);
-    let (control, control_error) = match read_control_op(config, root, &path, kind) {
-        Ok(control) => (control, None),
-        Err(error) => (None, Some(error)),
+    let (control, control_error) = if read_control {
+        match read_control_op(config, root, &path, kind) {
+            Ok(control) => (control, None),
+            Err(error) => (None, Some(error)),
+        }
+    } else {
+        (None, None)
     };
     Some(PreparedWalkEntry {
         path,
@@ -3714,13 +3743,22 @@ fn record_walk_entry(
     chunk_send_ns: &mut u64,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
-    let Some(prepared) =
-        prepare_walk_entry(root, rel_dir, depth, name, kind, attrs, root_dev, config)
-    else {
+    let read_control = !emission.control_probed();
+    let Some(prepared) = prepare_walk_entry_reading(
+        root,
+        rel_dir,
+        depth,
+        name,
+        kind,
+        attrs,
+        root_dev,
+        config,
+        read_control,
+    ) else {
         return true;
     };
-    let (mut control, control_error) =
-        emission.listed_control(prepared.control, prepared.control_error);
+    emission.note_listed_control(prepared.control.as_ref(), prepared.control_error.as_ref());
+    let (mut control, control_error) = (prepared.control, prepared.control_error);
     if let Some(error) = control_error {
         report.errors.push(error);
     }
@@ -3825,6 +3863,55 @@ fn read_directory_control(
         Err(error) => return Err(Error::io(&absolute, error)),
     };
     read_control_op(config, root, control_path, kind)
+}
+
+/// Read a directory's control ahead of its listing, as its listing would take it.
+///
+/// A classifying transient fold probes when a batch fills before the listing reaches its
+/// `.gitignore` (`StreamingEmission::send_if_full`). The listing, and the index built from
+/// it, take a control only from an entry listed exactly as `.gitignore`
+/// ([`crate::control::is_control_file`]), but a lookup by path resolves the name through
+/// the filesystem, and on a case-insensitive volume (APFS by default, Windows, an ext4
+/// casefold directory) `.GITIGNORE` answers for it. Whether the probe fired depends on
+/// where the batch filled, so an unconfirmed hit would let the same tree's summary
+/// differ between runs and from the index's. So a hit is confirmed against the names
+/// the directory lists before its bytes are read: a streaming listing that stops at the
+/// first exact match and retains nothing, paid only when the lookup finds a file.
+fn probe_directory_control(
+    config: &ScanConfig,
+    root: &Path,
+    control_path: &Path,
+) -> Result<Option<Op>> {
+    let absolute = root.join(control_path);
+    crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
+    match fs::symlink_metadata(&absolute) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(&absolute, error)),
+    }
+    let directory = absolute.parent().unwrap_or(root);
+    if !lists_exact_control_name(directory)? {
+        return Ok(None);
+    }
+    read_directory_control(config, root, control_path)
+}
+
+/// Whether `directory` lists an entry named exactly [`crate::control::CONTROL_FILE_NAME`].
+///
+/// Stops at the first match and keeps no name, so its cost is the listing up to that
+/// entry. Not an inventory producer: nothing it lists is admitted.
+fn lists_exact_control_name(directory: &Path) -> Result<bool> {
+    crate::counters::bump(|counts| counts.dir_opens = counts.dir_opens.saturating_add(1));
+    let control = OsStr::new(crate::control::CONTROL_FILE_NAME);
+    let mut names = fs::read_dir(directory).map_err(|error| Error::io(directory, error))?;
+    names
+        .find_map(|item| match item {
+            Ok(entry) => (entry.file_name() == control).then_some(Ok(())),
+            Err(error) => Some(Err(error)),
+        })
+        .transpose()
+        .map(|found| found.is_some())
+        .map_err(|error| Error::io(directory, error))
 }
 
 fn read_listed_control_op(
@@ -7036,6 +7123,80 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A probe for a directory's control accepts only the name a listing accepts.
+    ///
+    /// On a case-insensitive volume a lookup of `.gitignore` finds `.GITIGNORE`, which no
+    /// listing and no index takes as a control, so the probe must not either; on a
+    /// case-sensitive volume the lookup already misses it.
+    #[test]
+    fn a_directory_control_probe_accepts_only_the_exact_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("exact/.gitignore"), b"*.log\n");
+        write_file(&dir.path().join("exact/kept.txt"), b"kept");
+        write_file(&dir.path().join("variant/.GITIGNORE"), b"*.log\n");
+        write_file(&dir.path().join("variant/kept.txt"), b"kept");
+        fs::create_dir(dir.path().join("absent")).expect("directory");
+        let config = ScanConfig::default();
+        let probe = |directory: &str| {
+            probe_directory_control(&config, dir.path(), &Path::new(directory).join(".gitignore"))
+                .expect("probe")
+        };
+
+        assert_eq!(
+            probe("exact"),
+            Some(Op::ControlUpsert {
+                path: PathBuf::from("exact/.gitignore"),
+                source: b"*.log\n".to_vec()
+            })
+        );
+        assert_eq!(probe("variant"), None, "a case variant is not a control file");
+        assert_eq!(probe("absent"), None);
+        if fs::symlink_metadata(dir.path().join("variant/.gitignore")).is_err() {
+            eprintln!(
+                "this volume is case-sensitive, so the lookup itself missed the variant and \
+                 the exact-name confirmation was not exercised"
+            );
+        }
+    }
+
+    /// A listing whose control was already probed does not read its `.gitignore` again:
+    /// the entry is prepared with no control and, here, no error from a file that cannot
+    /// be read, where reading it would have produced one.
+    #[test]
+    #[cfg(unix)]
+    fn a_probed_listing_prepares_its_control_entry_without_reading_it() {
+        use std::os::unix::fs::PermissionsExt;
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let control = dir.path().join(".gitignore");
+        write_file(&control, b"*.log\n");
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o000)).expect("deny");
+        let config = ScanConfig::default();
+        let prepare = |read_control| {
+            prepare_walk_entry_reading(
+                dir.path(),
+                Path::new(""),
+                0,
+                OsStr::new(".gitignore"),
+                EntryKind::File,
+                Attrs::default(),
+                0,
+                &config,
+                read_control,
+            )
+            .expect("admitted")
+        };
+        let read = prepare(true);
+        let skipped = prepare(false);
+        fs::set_permissions(&control, fs::Permissions::from_mode(0o600)).expect("restore");
+
+        assert!(read.control.is_none() && read.control_error.is_some(), "the read was made");
+        assert!(skipped.control.is_none() && skipped.control_error.is_none(), "no read");
+        assert!(skipped.retained, "the entry is still a row");
     }
 
     /// An automatic walk too short to fill its calibration window must say so.

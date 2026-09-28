@@ -621,8 +621,9 @@ fn prepare_report_internal(
 ///   (`SinkMode::groups_directories` in the scanner), so it is applied before any entry
 ///   in the directory is classified, as the builder applies a listing's control before
 ///   its children. A listing that fills a batch before its `.gitignore` is listed has
-///   that file read directly, and the read stands for the listing; on a tree nothing
-///   modifies during the walk it is the same file with the same bytes.
+///   that file read directly, only under the exact name a listing accepts, and the read
+///   stands for the listing; on a tree nothing modifies during the walk it is the same
+///   file with the same bytes.
 /// - One consumer applies every control in arrival order, as the builder's one consumer
 ///   does. Which files a budget refuses when several compete for it depends on that
 ///   order on both routes; with one worker the order is the same on both, and with
@@ -649,6 +650,12 @@ struct SummaryFold {
 struct SummaryControls {
     table: crate::control::ControlTable,
     /// Ignored directories whose parent is not ignored.
+    ///
+    /// Unbounded by design: no head lies below another, so the set holds one path per
+    /// separately ignored subtree, which is what classifying an entry needs. It grows with
+    /// such subtrees, not with the entries in them: a tree of many small ignored
+    /// directories, each under a directory that is not ignored, is the case that makes it
+    /// large. The RSS evidence so far (exp-170, exp-171) is on trees with few heads.
     ignored_heads: std::collections::HashSet<std::path::PathBuf>,
     /// The parent last looked up, and whether it is ignored. A listing's entries mostly
     /// arrive together, so this answers nearly all of them.
@@ -2078,6 +2085,9 @@ mod tests {
         root
     }
 
+    /// The control case whose only control-like file is `.GITIGNORE`.
+    const CASE_VARIANT: &str = "a case-variant control name";
+
     fn control_cases() -> Vec<ControlCase> {
         let case = |name, root, scan, share, refused| ControlCase {
             name,
@@ -2167,6 +2177,21 @@ mod tests {
         );
         competing.order_dependent = true;
         cases.push(competing);
+
+        // A case variant of the control name is no control file to a listing or the index.
+        // On a case-insensitive volume a lookup of `.gitignore` finds it, and enough
+        // entries fill a default batch before the listing reaches it, so the probe path
+        // must confirm the exact name for the transient summary to agree.
+        let variant = tempfile::tempdir().expect("tempdir");
+        put(variant.path(), ".GITIGNORE", b"*.log\n");
+        for file in 0..1_200 {
+            put(variant.path(), &format!("f{file:04}.log"), b"log");
+        }
+        if fs::symlink_metadata(variant.path().join(".gitignore")).is_ok() {
+            cases.push(case(CASE_VARIANT, variant, ScanConfig::default(), true, 0));
+        } else {
+            eprintln!("skipped {CASE_VARIANT:?}: the temporary directory is case-sensitive");
+        }
 
         #[cfg(unix)]
         {
@@ -2261,9 +2286,10 @@ mod tests {
     /// The transient summary is the indexed summary, whole, for every control case the
     /// index classifies: negations, nested and self-ignoring control files, rules below an
     /// ignored directory, control files that are not files, refusals by the line limit
-    /// and by the budget, an unreadable control file, and the notes and coverage each
-    /// produces. Across worker counts, batch sizes small enough to split every listing,
-    /// and both traversal orders (fdu-1ovb).
+    /// and by the budget, an unreadable control file, a case-variant control name where
+    /// the volume is case-insensitive, and the notes and coverage each produces. Across
+    /// worker counts, batch sizes small enough to split every listing, and both traversal
+    /// orders (fdu-1ovb).
     #[test]
     fn compact_summary_equals_the_indexed_summary_under_every_control_case() {
         use crate::report_format::{Format, render};
@@ -2311,6 +2337,14 @@ mod tests {
                             assert!(
                                 ignored.files > 0 && ignored.files < row.files && ignored.dirs > 0,
                                 "{label}: {ignored:?} of {row:?}"
+                            );
+                        }
+                        if case.name == CASE_VARIANT {
+                            assert_eq!(coverage.applied, 0, "{label}: no control file applies");
+                            assert_eq!(
+                                row.ignored.map(|ignored| ignored.files),
+                                Some(0),
+                                "{label}"
                             );
                         }
                         if !case.share {
