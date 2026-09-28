@@ -14,7 +14,9 @@ Every step takes the release identity from `VERSION`, `COMMIT`, and `RELEASE` in
 environment (or `--version`, `--commit`, and `--dir`), and records the run IDs it finds
 in `$RELEASE/state.json`, so a later step never needs one pasted in.
 
-Exit status: 0 when every check passes, 1 when any check fails or a step cannot finish.
+Exit status: 0 when every check passes, 1 when any check fails or a step cannot finish,
+and 3 when nothing failed but a check is still pending, such as a docs.rs build that has
+not run yet: rerun the step until it passes.
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ EVIDENCE_FILES = ("SHA256SUMS", "registry-state.json", "release-manifest.json")
 # Two crates, one source distribution, and five wheels.
 RELEASE_FILE_COUNT = 8
 INSTALL_PYTHON = "3.12"
+PENDING_STATUS = 3
 # In checklist order, then the recovery audit; each is also `make release-<step>`.
 STEPS = (
     "preflight",
@@ -86,12 +89,17 @@ class CommandError(RuntimeError):
 class Host:
     """Everything a step does outside this process, in one place a test can script."""
 
-    def run(self, argv: Sequence[str], *, cwd: Path | None = None) -> str:
-        """Run a command and return its stdout, raising `CommandError` on failure."""
+    def run(self, argv: Sequence[str], *, cwd: Path | None = None, stderr: bool = False) -> str:
+        """
+        Run a command and return its stdout, raising `CommandError` on failure.
+
+        With `stderr`, the command's stderr follows its stdout in the result, for tools
+        such as `git tag -v` that report on stderr.
+        """
         completed = subprocess.run(list(argv), cwd=cwd, capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             raise CommandError(argv, completed.returncode, completed.stderr)
-        return completed.stdout
+        return completed.stdout + completed.stderr if stderr else completed.stdout
 
     def attach(self, argv: Sequence[str], *, cwd: Path | None = None) -> int:
         """Run a command on the maintainer's terminal and return its exit status."""
@@ -108,11 +116,17 @@ class Host:
 
 @dataclass(frozen=True, slots=True)
 class Check:
-    """One named verdict, printed as a line of a step's checklist."""
+    """
+    One named verdict, printed as a line of a step's checklist.
+
+    A check that is not ok is a failure, unless it is `pending`: something outside fdu
+    has not happened yet, and running the step again later can pass it.
+    """
 
     name: str
     ok: bool
     detail: str
+    pending: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,11 +164,14 @@ def version_key(version: str) -> tuple[int, int, int] | None:
     return (int(match[1]), int(match[2]), int(match[3]))
 
 
-def report(checks: Sequence[Check]) -> bool:
-    """Print each check on its own line and say whether all passed."""
+def report(checks: Sequence[Check]) -> int:
+    """Print each check on its own line and return the step's exit status."""
     for check in checks:
-        print(f"{'ok  ' if check.ok else 'FAIL'}  {check.name}: {check.detail}")
-    return all(check.ok for check in checks)
+        label = "ok  " if check.ok else "wait" if check.pending else "FAIL"
+        print(f"{label}  {check.name}: {check.detail}")
+    if any(not check.ok and not check.pending for check in checks):
+        return 1
+    return PENDING_STATUS if any(not check.ok for check in checks) else 0
 
 
 # --- Release identity and state -------------------------------------------------------
@@ -780,12 +797,16 @@ def signature_check(host: Host, release: Release, key: Path | None) -> Check:
         allowed = Path(scratch) / "allowed_signers"
         allowed.write_text(f'{email} namespaces="git" {algorithm} {material}\n', encoding="utf-8")
         try:
-            host.run(
+            output = host.run(
                 ["git", "-c", f"gpg.ssh.allowedSignersFile={allowed}", "tag", "-v", release.tag],
                 cwd=release.root,
+                stderr=True,
             )
         except CommandError as error:
             return Check(name, False, f"does not verify against {key.name} for {email}: {error}")
+    # Both the exit status and git's own verdict line, so neither alone decides.
+    if f'Good "git" signature for {email}' not in output:
+        return Check(name, False, f"git exited 0 without a good signature for {email}")
     return Check(name, True, f"good SSH signature by {key.name} for {email}")
 
 
@@ -984,6 +1005,28 @@ def installed_version(host: Host, release: Release, argv: Sequence[str]) -> Chec
     return Check(name, first == f"fdu {release.version}", first or "no output")
 
 
+def docs_rs_check(host: Host, release: Release, package: str) -> Check:
+    """
+    docs.rs has built the crate: pending until it has a status, failed if its build did.
+
+    docs.rs builds from a queue, so a version published minutes ago has no status yet
+    (a 404); that is pending, not a failure, and the step exits 3 so it can be rerun.
+    """
+    name = f"docs.rs {package}"
+    builds = f"https://docs.rs/crate/{package}/{release.version}/builds"
+    try:
+        status = host.fetch(f"https://docs.rs/crate/{package}/{release.version}/status.json")
+    except RegistryError as error:
+        return Check(name, False, f"could not read: {error}")
+    if status is None:
+        return Check(name, False, "not built yet; rerun until docs.rs reports built", True)
+    try:
+        built = json.loads(status).get("doc_status") is True
+    except (AttributeError, ValueError):
+        return Check(name, False, f"unreadable status; see {builds}")
+    return Check(name, built, "built" if built else f"build failed; see {builds}")
+
+
 def announced(host: Host, release: Release, *, cargo: bool) -> list[Check]:
     """What users see after the announcement: release, docs.rs, and installs."""
     record = gh_json(host, f"repos/{release.repository}/releases/tags/{release.tag}")
@@ -1004,20 +1047,7 @@ def announced(host: Host, release: Release, *, cargo: bool) -> list[Check]:
         ),
         asset_check(release, record.get("assets") or []),
     ]
-    for package in CRATE_PACKAGES:
-        url = f"https://docs.rs/crate/{package}/{release.version}/status.json"
-        try:
-            status = host.fetch(url)
-        except RegistryError as error:
-            checks.append(Check(f"docs.rs {package}", False, str(error)))
-            continue
-        try:
-            built = status is not None and json.loads(status).get("doc_status") is True
-        except (AttributeError, ValueError):
-            built = False
-        checks.append(
-            Check(f"docs.rs {package}", built, "built" if built else "not built yet; rerun later")
-        )
+    checks.extend(docs_rs_check(host, release, package) for package in CRATE_PACKAGES)
     # `--no-config` sets aside a user-level `exclude-newer` cool-off, which would hide a
     # release published minutes ago; `--no-build` makes the check test a wheel, never
     # the source distribution a free-threaded interpreter would fall back to.
@@ -1116,21 +1146,21 @@ def main(
         )
         print(f"fdu {release.version} at {release.commit}, in {release.directory}")
         if args.step == "preflight":
-            return 0 if report(preflight(host, release, args.signing_key)) else 1
+            return report(preflight(host, release, args.signing_key))
         if args.step == "candidate":
             candidate(host, release, run_id=args.run, redispatch=args.redispatch)
         elif args.step == "body":
             body(host, release)
         elif args.step == "verify-tag":
-            return 0 if report(verify_tag(host, release, args.signing_key)) else 1
+            return report(verify_tag(host, release, args.signing_key))
         elif args.step == "published":
             published(host, release, run_id=args.run)
         elif args.step == "announced":
-            return 0 if report(announced(host, release, cargo=args.cargo)) else 1
+            return report(announced(host, release, cargo=args.cargo))
         elif args.step == "cleanup":
             cleanup(host, release, abandon=args.abandon)
         elif args.step == "audit":
-            return 0 if report(audit(host, release, run_id=args.run)) else 1
+            return report(audit(host, release, run_id=args.run))
     except (StepError, CommandError, RegistryError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

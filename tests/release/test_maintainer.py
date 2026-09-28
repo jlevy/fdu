@@ -85,7 +85,7 @@ class FakeHost(Host):
         """Answer every command starting with `prefix`; the latest registration wins."""
         self.handlers.append((tuple(prefix), response))
 
-    def run(self, argv: Sequence[str], *, cwd: Path | None = None) -> str:
+    def run(self, argv: Sequence[str], *, cwd: Path | None = None, stderr: bool = False) -> str:
         command = list(argv)
         reason = forbidden(command)
         if reason is not None:
@@ -590,7 +590,7 @@ class VerifyTagTests(ReleaseCase):
     def verify_signature(self, argv: list[str]) -> str:
         self.assertEqual(argv[3:], ["tag", "-v", TAG])
         self.allowed.append(Path(argv[2].split("=", 1)[1]).read_text(encoding="utf-8"))
-        return ""
+        return 'Good "git" signature for maintainer@example.com with ED25519 key SHA256:x\n'
 
     def verify(self) -> dict[str, Check]:
         return {
@@ -629,6 +629,12 @@ class VerifyTagTests(ReleaseCase):
         checks = self.verify()
         self.assertFalse(checks["tag signature"].ok)
         self.assertIn("No principal matched", checks["tag signature"].detail)
+
+    def test_a_zero_exit_without_git_s_good_line_fails(self) -> None:
+        self.host.on(["git", "-c"], "object 1111\ntype commit\n")
+        checks = self.verify()
+        self.assertFalse(checks["tag signature"].ok)
+        self.assertIn("without a good signature", checks["tag signature"].detail)
 
     def test_no_signing_key_fails_rather_than_skipping(self) -> None:
         checks = {
@@ -871,6 +877,8 @@ class AnnouncedTests(ReleaseCase):
     def test_a_complete_announcement_passes(self) -> None:
         checks = self.announced()
         self.assertEqual([name for name, check in checks.items() if not check.ok], [])
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(maintainer.report(list(checks.values())), 0)
         self.assertEqual(len(self.assets), 11)
         installs = self.host.commands("uv", "tool", "run")
         self.assertEqual([call[-2] for call in installs], [f"fdu@{VERSION}", "fdu@latest"])
@@ -883,12 +891,29 @@ class AnnouncedTests(ReleaseCase):
         self.assertIn(f"missing {dropped['name']}", detail)
         self.assertIn(f"{self.assets[0]['name']} digest differs", detail)
 
-    def test_an_unbuilt_docs_page_and_an_old_install_fail(self) -> None:
+    def test_a_docs_build_not_yet_run_is_pending_and_a_failed_one_fails(self) -> None:
+        self.host.urls[f"https://docs.rs/crate/fdu/{VERSION}/status.json"] = None
+        checks = self.announced()
+        self.assertTrue(checks["docs.rs fdu"].pending)
+        self.assertIn("rerun until docs.rs reports built", checks["docs.rs fdu"].detail)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(maintainer.report(list(checks.values())), maintainer.PENDING_STATUS)
+        self.host.urls[f"https://docs.rs/crate/fdu/{VERSION}/status.json"] = json.dumps(
+            {"doc_status": False, "version": VERSION}
+        ).encode()
+        checks = self.announced()
+        self.assertFalse(checks["docs.rs fdu"].ok or checks["docs.rs fdu"].pending)
+        self.assertIn("build failed", checks["docs.rs fdu"].detail)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(maintainer.report(list(checks.values())), 1)
+
+    def test_an_old_install_fails_even_while_docs_are_pending(self) -> None:
         self.host.urls[f"https://docs.rs/crate/fdu/{VERSION}/status.json"] = None
         self.host.on(["uv", "tool", "run"], f"fdu {PREVIOUS}\n")
         failed = self.failed()
-        self.assertIn("docs.rs fdu", failed)
         self.assertEqual(len([name for name in failed if name.startswith("uv tool run")]), 2)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(maintainer.report(list(self.announced().values())), 1)
 
     def test_a_draft_or_edited_release_fails(self) -> None:
         self.record.update(draft=True, body="Edited on GitHub.")
