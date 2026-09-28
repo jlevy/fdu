@@ -342,7 +342,8 @@ After the cache-on arm, the harness reuses that warm sidecar for `--analyze=word
 **Verify**:
 
 - [ ] `words` and `all` exit 0
-- [ ] JSON `analysis` is present and `physical_lines` is not 0 when lines ran
+- [ ] JSON `reports[0].metrics.total.metrics.physical_lines` is present and not 0 when
+  lines ran; the harness fails the row when it is missing and notes its value
 
 ### 3.4 Watch (SIGINT)
 
