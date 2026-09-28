@@ -200,6 +200,19 @@ proposes defaults. Summary mode ran with `--no-gitignore` because reading ignore
 makes the planner keep the full index; without the flag, a screen of the same tree took
 1.25 s with the cache off.
 
+The matrices measured the release built from `main` at `4c4917f`. The code-analysis,
+presentation, and tree-accounting work (#133, #136) and the multi-view report reuse
+(#137) landed on this branch afterwards.
+A later screen compared that binary with the integrated build (`096e9cd6`) on the same
+tree. It used ten runs per arm in both orders, with the cache off and identical totals.
+Summary mode moved −0.4% (935 to 931 ms), inside its noise.
+The indexed tree moved −8.4% (1.37 to 1.26 s). H156 accounts for about four points of
+that
+([exp-160](../experiments/exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)),
+and the rest is unattributed.
+That puts the indexed-tree gap to pdu and diskus nearer 12% than 19% on the current
+build. The matrices were not re-run, so the tables keep their measured figures.
+
 A virtualized host is the common deployment case for Linux and a valid regime for warm
 measurements; it cannot say anything about device latency, so no cold claim is made
 here. [The platform tuning guide](../guides/platform-tuning.md#host) explains the
