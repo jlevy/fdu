@@ -937,6 +937,13 @@ Do not retry H116. H83 remains format.
 
 ## Current Pickup (2026-09-27)
 
+**Run authorization is on hold:** finish selecting the integration stack before any new
+macOS timing run. The
+[macOS rerun plan](../specs/active/plan-2026-09-27-macos-performance-rerun.md) separates
+the required H153 confirmation from optional CLI and peer comparisons, and specifies
+external builds with internal-drive measurement.
+Preparation and smoke checks do not authorize starting the measurement cells below.
+
 Next free experiment id is **exp-160** and next free unused hypothesis id is **H156**.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
