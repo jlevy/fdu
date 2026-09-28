@@ -417,22 +417,25 @@ H160: under `--cache auto` a one-shot metadata report stops writing a snapshot t
 later one-shot report reads.
 On Linux that cut `default-tree` 13.81% and `default-tree-first` 32.74%
 ([exp-163](exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md)).
-The [cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
+The
+[cache economics brief](../research/research-2026-09-27-cache-economics-and-default-plans.md)
 extrapolated 0.3–0.5 s of snapshot write at a million entries on macOS, against a walk
 of about 6 s, but never measured it.
 
-Named before measuring, as on Linux: `default-tree` wall (an earlier snapshot exists)
-is the primary job; `default-tree-first` (empty cache directory) is the first-run
-regime; `cold-scan-index`, which writes nothing on either arm, is the placebo.
+Named before measuring, as on Linux: `default-tree` wall (an earlier snapshot exists) is
+the primary job; `default-tree-first` (empty cache directory) is the first-run regime;
+`cold-scan-index`, which writes nothing on either arm, is the placebo.
 
 ## What was measured
 
 The `pr139` (`a5c0ab46`) against `pr138` (`ea786683`) pair of the stacked probe run
-recorded as [exp-164](exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md):
-the freshly generated `balanced` 1,000,001-entry tree on the internal APFS SSD, 3 warmups
+recorded as
+[exp-164](exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md): the
+freshly generated `balanced` 1,000,001-entry tree on the internal APFS SSD, 3 warmups
 and 12 timed trials per variant, interleaved.
 The quiet start was refused (CPU busy 31.8% against the 25% gate), so the run was
-declared `uncontrolled`; unrelated workloads kept the host at roughly 30–100% CPU busy.
+declared `uncontrolled`; its sample boundaries read 17–100% CPU busy (median 46%),
+mostly from unrelated work.
 No sample was invalid and the tree was unchanged across the run.
 
 | Job | Wall | Peak RSS | User CPU |
@@ -442,7 +445,8 @@ No sample was invalid and the tree was unchanged across the run.
 | `cold-scan-index` (placebo) | −0.44% [−2.46%, +1.42%] | +0.02% | −0.96% |
 
 Peak RSS fell from 381 MiB to 281 MiB on both default-tree jobs, the size of the encoded
-79 MB image and its buffer growth, and matched `cold-scan-index`, which never encodes one.
+79 MB image and its buffer growth, and matched `cold-scan-index`, which never encodes
+one.
 The wall medians point the same way as Linux, at about 0.2 s of a 7.2–7.5 s run, but
 the intervals include zero on this host.
 

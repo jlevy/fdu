@@ -417,8 +417,8 @@ experiment:
 H156 hands the last reference of a large one-shot index to a detached release thread, so
 the answer no longer waits for a million-entry free.
 On Linux that cleared the accept rule on `default-tree` (−3.19%,
-[exp-160](exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)).
-The change is not platform-gated and was unmeasured on macOS, where the allocator and the
+[exp-160](exp-160-linux-one-shot-index-release-off-the-answer-path-clears-3-on.md)). The
+change is not platform-gated and was unmeasured on macOS, where the allocator and the
 exit path differ, so this experiment asks two questions of the same code: does it clear
 3% on macOS, and does it regress anything by more than 3%?
 
@@ -436,11 +436,11 @@ This record is the `pr138` against `pr137` pair, which isolates H156;
 [exp-165](exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md) reads
 the `pr139` against `pr138` pair from the same run.
 
-The quiet start was attempted first and refused (CPU busy 31.8% against the unchanged 25%
-gate), so the run was declared `uncontrolled`. Unrelated workloads kept the host at
-roughly 30–100% CPU busy and a load average of 13–40 throughout.
-No sample was invalid, the tree fingerprint was unchanged across the run, and no RAM disk
-was used.
+The quiet start was attempted first and refused (CPU busy 31.8% against the unchanged
+25% gate), so the run was declared `uncontrolled`. Its sample boundaries read 17–100%
+CPU busy (median 46%) with a 1-minute load average of 12.6–25.4, mostly from unrelated
+work. No sample was invalid, the tree fingerprint was unchanged across the run, and no
+RAM disk was used.
 
 - `default-tree`: −1.00% [−5.13%, +6.11%]; user CPU −2.43% [−4.41%, +0.01%].
 - `default-tree-first`: +0.16% [−5.12%, +4.01%]; user CPU −2.30% [−3.72%, −1.43%].
@@ -455,8 +455,8 @@ resolved under this load.
 ## Decision
 
 Rejected on macOS: no job cleared the accept rule, and every wall interval includes
-zero. No regression either: no median is worse than +2.1%, and the regression line was
-a median more than 3% worse.
+zero. No regression either: no median is worse than +2.1%, and the regression line was a
+median more than 3% worse.
 The placebo’s upper bound (+3.62%) leaves its non-inferiority at the 3% margin
 inconclusive on this host, not established.
 The code ships on the Linux accept, so the kept arm is the candidate.

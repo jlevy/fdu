@@ -1,5 +1,5 @@
 {
- "description": "Raw macOS screening data behind the stack 141 re-measurement (H156, --cache auto) in report-2026-09-28-fdu-macos-tool-comparison.md. Screens are orientation, not harness claims; the host was heavily loaded by unrelated work throughout.",
+ "description": "Raw macOS screening data behind the stack 141 re-measurement (H156, --cache auto) in the 2026-09-28 refresh of report-2026-09-26-fdu-live-tool-comparison.md. Screens are orientation, not harness claims; the host was heavily loaded by unrelated work throughout.",
  "date": "2026-09-28",
  "host": {
   "system": "Darwin 25.5.0",
