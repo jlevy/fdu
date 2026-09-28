@@ -772,10 +772,11 @@ cost on [#120](https://github.com/jlevy/fdu/pull/120); H152 and H153 are the exa
 `content-query` oracle and shared-resolution keep; H154 and H155 are the Linux
 replication and post-H153 profile follow-ups; H156–H159 are the Linux tool comparison of
 [2026-09-27](../reports/report-2026-09-27-fdu-linux-tool-comparison.md); H160 is the
-cache-policy default that followed it; H161 is the ignore-aware transient summary; the
-next free ids, and any blocks reserved for parallel work, are in
-[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27)) so no id ever
-means two things. Each is stated so it can be wrong, with the metric that would show it.
+cache-policy default that followed it; H161 is the ignore-aware transient summary) so no
+id ever means two things.
+The next free ids, and any blocks reserved for parallel work, are in
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27). Each hypothesis
+is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
 The 2026-09-18 honesty pass (`fdu-p0nc`) reconciled this table with the engine that
