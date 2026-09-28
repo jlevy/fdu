@@ -33,27 +33,30 @@ Library steps are time-boxed and must stay bounded.
 
 * * *
 
-## Current Status (Last Update 2026-09-25)
+## Current Status (Last Update 2026-09-28)
 
-This table records the 0.1.0 release candidate.
-The 0.2.0 candidate has not been run through this playbook yet; replace the table when
-it is.
+This table records the 0.2.0 release candidate, release commit `6ec77163a`. The
+installed command was that commit’s `cp312-abi3` macOS arm64 wheel, and `fdu --version`
+printed `fdu 0.2.0-dev+g6ec77163a`. The host was a bare-metal Apple silicon Mac on
+internal APFS, busy with other agents’ builds; heavy steps held a shared lock so none
+overlapped. Each timing is a single run.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 1: Setup | ✅ Passed | CI-built `fdu 0.1.0` wheel; `XDG_CACHE_HOME` isolation |
-| Phase 2: Small-tree views | ✅ Passed | All advertised views; `documents` without `--analyze` exits 2 |
-| Phase 3: Cache × analyze | ✅ Passed | `auto` reused all 21,280 records; `off` stayed `0 cached` |
-| Phase 4: Medium tree | ✅ Passed | Whole-tree metadata only; analyze on `docs/` |
-| Phase 5: Bounded Library | ✅ Passed | Depth 2 exit 2 (TCC); no SIGKILL |
-| Phase 6: Terminal Progress | ⏳ Pending | Installed-wheel pseudo-terminal tests passed; window-resize and color judgments remain |
-| Phase 7: Peer agreement | ✅ Passed | Final candidate, four trees including `~/Library`, all 52 readings explained; [release candidate report](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md) |
-| Phase 8: Results | ✅ Passed | [report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md) |
+| Phase 1: Setup | ✅ Passed | Wheel from the release commit, installed as a uv tool; `XDG_CACHE_HOME` per arm; user cache listing unchanged before and after |
+| Phase 2: Small-tree views | ✅ Passed | This repository’s checkout (11,280 files); all views exit 0; `documents` without `--analyze` exits 2 |
+| Phase 3: Cache × analyze | ✅ Passed | `auto` reused all 11,280 records (0.30 s to 0.12 s for `code`); `off` stayed `0 cached` and wrote nothing; a metadata-only `auto` run wrote no snapshot |
+| Phase 4: Medium tree | ✅ Passed | 730,288 files, about 14 s per metadata run; analysis on `docs/` only, reused on the second run. Warm matches cold because a one-shot metadata report neither writes nor reads a snapshot, as documented |
+| Phase 5: Bounded Library | ✅ Passed | Depth 1 exit 0; depth 2 exit 2 (TCC); no SIGKILL; peak 25 MiB |
+| Phase 6: Terminal Progress | ⏳ Pending | `make test-terminal` passed against the installed command; a pty probe passed each item it can observe (resize, `NO_COLOR`, `CI`, `TERM=dumb`, Ctrl-C). A person has not watched a window, and Windows has not run |
+| Phase 7: Peer agreement | ✅ Passed | Self-test 13 of 13 exact. With `--min-share 0%` and directory-only children added to the script’s fdu reading, 51 of 52 readings across four trees are explained; dua’s allocated `~/Library` reading is not verifiable, as in 0.1.0. The script as committed fails its top-level check, because the 0.2.0 tree hides rows under 1% |
+| Phase 8: Results | ✅ Passed | 51 harness checks: 50 ok, and 1 expected warning for `documents` exit 2. Same verdicts and exits as the 0.1.0 table. Full tables are in the verification pull request; the correctness record is in the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
 
-**Test Results (last update 2026-09-25):** see
+**Test Results:** the 0.1.0 numbers are in
 [report-2026-09-25-release-candidate-qa.md](../../docs/project/reports/report-2026-09-25-release-candidate-qa.md).
+The 0.2.0 tables are in the pull request that records this run.
 
 **Next Steps:**
 
