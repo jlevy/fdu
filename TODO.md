@@ -61,15 +61,16 @@ host. The quiet native/wheel release cell (`fdu-ow8y`) remains unresolved.
 `fdu-s234` owns reconciling the claim policy across these two evidence classes; the
 tracking cleanup does not waive a measurement gate.
 
-Three performance PRs are open on top of #133. #137 reuses per-file work across
-multi-view reports (H152–H155). #138 records the 2026-09-27
+Three performance PRs are open, stacked in merge order.
+#137 reuses per-file work across multi-view reports (H152–H155) and integrates #133 and
+#136. #138, on top of it, records the 2026-09-27
 [Linux tool comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md)
 and the
 [cache economics brief](docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md)
-(H156–H159). #139 stops one-shot metadata runs writing a snapshot (`fdu-0t1v`). The
-Linux comparison is a quiet cell on a virtualized host and advances `fdu-nffc`. It does
-not resolve `fdu-ow8y`, and `fdu-s234` covers its README table as well.
-Its follow-ups are `fdu-578e` (index-tier allocator contention), `fdu-o6um` (H157
+(H156–H159). #139, on top of #138, stops one-shot metadata runs writing a snapshot
+(`fdu-0t1v`). The Linux comparison is a quiet cell on a virtualized host and advances
+`fdu-nffc`. It does not resolve `fdu-ow8y`, and `fdu-s234` covers its README table as
+well. Its follow-ups are `fdu-578e` (index-tier allocator contention), `fdu-o6um` (H157
 rerun), and `fdu-1ovb` (ignore-aware summary), all under `fdu-0myw`.
 
 Other standalone findings remain discoverable through `tbd ready` and `tbd list`. They
