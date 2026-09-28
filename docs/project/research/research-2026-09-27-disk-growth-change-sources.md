@@ -4,6 +4,8 @@
 
 **Status:** Review of the FSEvents replay spike and its alternatives.
 Research only: no engine or command-line behavior changes.
+The spike README and the September 27 prior-art research it cites are on PR #131’s
+branch; links to them resolve once that PR merges.
 
 ## The Question
 
@@ -58,29 +60,33 @@ Instruments and sanitized results are in
     5.7 s at 452,000, and 18.6 s at 1.5 million.
   - At whole-home scale it is not.
 - **The flat snapshot is not a shortcut.** Loading it costs about as much as the
-  cheapest walk. Every incremental design first needs a delta-only checkpoint store, in
-  which a query costs O(changed directories).
-- **Asking the filesystem gave one strong candidate and one dead end.**
+  cheapest walk, so a refresh that starts from it cannot beat a walk.
+  A resident recorder avoids the load; otherwise the checkpoint plan’s bounded
+  persistent store (slice 4) is required.
+- **Asking the filesystem gave one promising signal and one dead end.**
   - `searchfs` by change time works, but costs 110–330 s per query regardless of scope.
   - APFS fast directory sizing keeps a per-tree generation count current on every write,
     including writes through descriptors held open.
     It can be enabled without privileges through a shipped tool, but that tool uses a
     private interface and leaves a persistent flag on the directory.
-    Verified at 225,653 entries: a pruned refresh took 1.04 s against a 9 s walk and
-    missed no size or membership change.
-    Marking a populated tree is a slow, synchronous kernel operation, and its totals are
-    not fdu’s accounting.
+    On one 225,653-entry fixture, a pruned refresh took 1.04 s against a 7.9–9.7 s walk
+    and missed no size or membership change (single runs on a loaded host).
+    But it cannot see mtime-only changes, marking a populated tree is a slow synchronous
+    kernel operation, and its totals are not fdu’s accounting, so it is parked as a
+    research result.
 - **Open writers can be listed directly.** Same-user processes’ open-for-write files
   enumerate through libproc in about 15 ms without root.
   A monitor or replay plus this list covers the macOS gap, except for writers owned by
   other users.
 - **fdu’s own watcher is exact today only by accident.** On the busy agent-state root,
-  every macOS rename escalated to a full-root reconcile, 174 times an hour.
-  That cost 48% of a core and 6.9 GB of snapshot rewrites per hour.
+  every macOS rename escalated to a full-root reconcile: 172 reconciles (174 root
+  invalidations) in about an hour, costing 48% of a core and 6.9 GB of snapshot
+  rewrites.
   - Without that polling, events alone would have missed 99.8% of in-place growth bytes,
     all of it in held-open files.
   - The writer list recovers all of it.
-  - With the rename fix, the event-driven cost is about 1% of a core.
+  - Windows without a root reconcile cost about 1% of a core.
+    That is an estimate the rename fix (`fdu-822y`) must confirm.
 - **Directory deltas do not explain free-space changes by themselves.** During the
   review, Time Machine local snapshots released about 6 GB with no tree change, and 931
   MiB was held by deleted-but-open files.
@@ -88,12 +94,17 @@ Instruments and sanitized results are in
 
 The [recommendation](#recommendation-and-the-case-against-it) is:
 
-1. Build the delta-only checkpoint store and the identity fixes first, captured by
-   walks. This is identical on Linux.
-2. Fix the watcher’s rename escalation and persistence cadence, and add the writer list.
-   Then choose the home-scale accelerator between a resident dirty-directory recorder
-   and APFS directory statistics, using the experiments ranked at the end.
-3. Keep one-shot replay only for bounded gaps, under an explicit cost budget.
+1. Fix the watcher first: scope one-sided renames (`fdu-822y`), decouple persistence
+   from the render interval (`fdu-88p7`), and add the writer-list re-stat (`fdu-vhrb`).
+   These are engine bugs under any plan.
+2. Ship the hour and day report for project, agent-state, and temporary scopes on
+   walk-captured checkpoints (the checkpoint plan’s slice 2), where walks cost 0.1–19 s.
+   This is identical on Linux.
+3. For home scale, prototype a resident dirty-directory recorder and measure it.
+   Build the plan’s bounded persistent store (slice 4) only if the flat load then
+   dominates.
+4. Keep one-shot replay for gap recovery only, under a cost budget computed at measured
+   walk rates, and park APFS directory statistics as a research result.
 
 ## How the Review Was Run
 
@@ -102,9 +113,12 @@ All measurements come from one host: macOS 26.5.2, arm64, 10 cores, 32 GiB.
 - **Volumes:** an internal APFS Data volume (8.6 million inodes, 98–99% full) and an
   external APFS USB SSD (14 million inodes).
   The external volume holds agent worktrees and Cargo targets, so it churns heavily.
-- **Load:** the host ran concurrent agents throughout, with load averages of 6–28.
-- **Timing isolation:** timed and volume-wide runs held one shared lock, so parallel
-  workstreams did not overlap them.
+- **Load:** the host ran concurrent agents throughout, with load averages of 6–28 and
+  spikes to 51 during the soak.
+- **Timing isolation:** most timed and volume-wide runs held one shared lock, so
+  parallel workstreams did not overlap them.
+  The soak’s startup did not hold it, and other agents’ replays ran during the soak, so
+  its startup and reconcile timings include contention.
 - **Absolute times:** treat them as exploratory; compare within a workstream.
 - **Mutation rules:** real trees were read metadata-only.
   Mutations touched only synthetic fixtures the review created.
@@ -148,8 +162,8 @@ volume made the difference: about 14 MB/h on average and 34 MB/h at peak.
 Across two days, that volume logged 42 million records.
 
 **Matching records cost more.** A matching record costs about 10 µs inside `fseventsd`,
-about 17 times a non-matching one.
-The same 2-hour cursor, with 2.8–3.8 million records behind it, cost:
+8 to 13 times a non-matching one (about 1.2 µs of wall time and 0.75 µs of CPU). The
+same 2-hour cursor, with 2.8–3.8 million records behind it, cost:
 
 | Filter | Wall time | Delivered events | `fseventsd` CPU |
 | --- | ---: | ---: | ---: |
@@ -159,9 +173,10 @@ The same 2-hour cursor, with 2.8–3.8 million records behind it, cost:
 | Volume root, `FileEvents` | 88.8 s | 2.91 M | 50 s |
 
 A root therefore pays for its own churn, even for a short window.
-Coalescing to directory events cut delivered events 4.5× but not `fseventsd` CPU.
+Coalescing to directory events cut delivered events 4.3× but not `fseventsd` CPU.
 
-**The spike’s variance came from contention, not history growth or the instrument.**
+**The spike’s variance is not history growth, the instrument, or abandoned replays.
+Its cause is unresolved.**
 
 - Two day-old replays of one cursor took 32 s and then 92.5 s, about 15 minutes apart.
 - The log behind that cursor grew only 1.6% in between.
@@ -172,18 +187,20 @@ Abandoning an 8-hour replay after one second leaves `fseventsd` idle within abou
 second, whether the client stops cleanly, calls `_exit`, or is killed.
 The next replay then runs at baseline speed.
 
-Contention does slow replays:
+Concurrent replays do slow each other:
 
-- The same 84 MB cursor took 6.2–7.0 s at one time and 10.0–11.0 s at another, with only
-  host state changing.
 - Two concurrent 4-hour replays on one volume took 10.7 s each, against 6.2–7.0 s alone.
 - A replay on the internal volume ran twice as slow while one ran on the external
   volume, so the scan capacity is shared across volumes and clients.
 - Cursor lookups normally take 1–30 ms.
   Behind other work, some took 0.1–1.8 s, and one took 13.3 s.
 
-One or two concurrent `fseventsd` clients plus a loaded host produce a slowdown of this
-size. Which client slowed the 92.5 s run is unknown.
+Host load alone did not explain the rest.
+A paired load-versus-no-load control showed no effect (10.6–10.8 s against 11.0 s). In
+one batch, the slower runs even had less journal behind the cursor (69.7 MB) than the
+faster ones (80.7 MB). A 1.6× spread at a fixed cursor and the 92.5 s run remain
+unexplained; concurrent `fseventsd` clients are one measured cause, not a proven one for
+that run.
 
 **Flush and lookup semantics:**
 
@@ -214,10 +231,14 @@ size. Which client slowed the 92.5 s run is unknown.
 and double it for contention.
 Walk instead if the estimate exceeds the walk.
 
-- **Break-even on the scratch volume (14 MB/h):** a 450,000-entry project breaks even at
-  40–70 minutes of cursor age.
-- **On the internal volume:** replay wins for a quiet folder above about 1 million
-  entries.
+- **Walk rates:** the measured full-index walk costs 12.7 µs per entry (5.72 s at
+  451,711 entries), and the summary-only walk 7.0 µs per entry.
+- **Scratch volume (14 MB/h):** a quiet-folder replay breaks even with a 450,000-entry
+  full-index walk at about 51 MB of journal: 3.7 hours of cursor age, or 1.8 hours with
+  the contention factor.
+  Against the summary-only walk it is 31 MB: 2.2 hours, or 1.1 hours.
+- **Internal volume:** a quiet folder’s day of history (1.8 s) beats a full-index walk
+  above about 140,000 entries.
 - **For home on the internal volume:** the matching-record term is unknown, because
   nearly all of that volume’s records fall under home.
 
@@ -311,7 +332,7 @@ descriptor.
 | Measure | Value |
 | --- | --- |
 | Same-user processes readable | 100% (~590) |
-| Processes denied (other users, root) | 22–27% (183–220 of ~800) |
+| Processes denied (other users, root) | 23–27% (183–225 of 779–834) |
 | Open-for-write regular files | ~2,000 files, ~2,500 descriptors, ~238 processes |
 | Descriptor walk | 14–15 ms (33 ms cold); `lsof` agrees at 0.31 s |
 | Deleted-but-open files | ~110 files, ~62 MB |
@@ -401,7 +422,8 @@ image.
   70 ms at p90. Marking the 8,049 directories at depth 3 or less took 46 s.
 - **Removing the flag.** The same `fsctl` with a different flag value clears an origin
   in 0.1 ms. It is undocumented, so it must be re-verified per release.
-- **Recovery.** Marks and counts survived detach and reattach.
+- **Recovery.** Marks and counts were identical before and after detach and reattach
+  (the published `survived: false` flag is a script error; the values match).
   After a forced detach in the middle of a write burst, totals were still exact.
   `fsck_apfs -n` reported the image clean at every stage.
 - **Drift on real volumes.** Apple’s discussion forums show First Aid reporting
@@ -448,12 +470,18 @@ subtrees. The workload was agent-like:
 
 The five mtime-only touches were missed in both layouts, by design.
 
+Every cell is a single run on a loaded host, and the walks around it varied widely.
+The first full walk after marking the root took 111 s. One warm walk that read only the
+generation count took 13.0 s, against 7.7–8.9 s without it.
+Both are open questions, so treat the 1.04 s against 7.9–9.7 s ratio as one sample.
+
 A totals-only diff, which reads each origin’s totals without listing anything, found the
 119–131 changed origins in 44–150 ms.
 It attributed bytes correctly except for the file hard-linked from outside the tree: a
 file counts under the origin holding its primary name.
 
-**Write overhead** (paired and interleaved, depth 12, noisy on the loaded host):
+**Write overhead** (seven paired, interleaved rounds at depth 12; per-round ratios
+ranged from 0.1× to 9.8×, so only the every-level row stands out from noise):
 
 | Layout | Create | Append | Delete |
 | --- | ---: | ---: | ---: |
@@ -468,19 +496,28 @@ primary link is inside the subtree:
 - no resource-fork or xattr bytes;
 - compressed files at their compressed allocation.
 
-An open writer’s bytes appear only at `fsync`, at close, or 4–11 s later when the syncer
-runs. That makes the totals a cross-check, not fdu’s authoritative allocated size.
+An open writer’s bytes appear only at `fsync`, at close, or 3.9–8.3 s later when the
+syncer runs.
+That makes the totals a cross-check, not fdu’s authoritative allocated size.
 
 **Verdicts:**
 
-- **As a skip-unchanged-subtree signal: go, with conditions.**
-  - Read only `ATTR_CMNEXT_RECURSIVE_GENCOUNT` in the existing bulk walk, and treat 0 as
-    “descend”.
-  - Mark only on explicit opt-in, and only user-owned directories.
-  - Warn before marking a large populated root, and prefer marking a directory before it
-    fills.
-  - Mark new directories as they are discovered, never issue the totals `fsctl` on a
-    non-origin, and accept blindness to mtime-only changes.
+- **As a skip-unchanged-subtree signal: promising, but parked.**
+  - It cannot see mtime-only, chmod, or xattr changes.
+    fdu serves recency as a first-class value, and its design principles let an
+    accelerator cost speed, never accuracy.
+    A pruned refresh could serve size and membership as verified only if recency is
+    labeled as unverified or swept separately.
+  - Its marking interface is reverse-engineered, and it leaves persistent flags on user
+    data.
+  - If it is revisited (`fdu-ns3n`), the conditions are:
+    - read only `ATTR_CMNEXT_RECURSIVE_GENCOUNT` in the existing bulk walk, and treat 0
+      as “descend”;
+    - mark only on explicit opt-in, and only user-owned directories;
+    - warn before marking a large populated root, and prefer marking a directory before
+      it fills;
+    - mark new directories as they are discovered, and never issue the totals `fsctl` on
+      a non-origin.
 - **As a totals source: no-go**, for the accounting rules and drift above.
 
 **A separate lead.** On an *unmarked* 225,000-entry root, the same `fsctl` returned
@@ -518,10 +555,11 @@ Retaining the link count (`ATTR_FILE_LINKCOUNT`) costs nothing measurable.
 ### Spotlight Is Not a Source
 
 - Indexing is disabled on this host’s Data volume.
-- On the external volume, fixture files were still unindexed after 15 minutes.
-- A 2-hour volume query returned 372 hits, against 65,706 ctime changes in 16 minutes.
-- Spotlight excludes hidden directories such as `~/.codex` by design, and it does not
-  report deletions.
+- On the external volume, where indexing is on, new fixture files were still not
+  queryable after about five to seven minutes.
+- Spotlight does not report deletions.
+  Apple documents that it skips hidden directories such as `~/.codex`; this host’s test
+  could not separate that exclusion from indexing backlog.
 
 ## What a Walk Costs, and Why the Snapshot Is Not a Shortcut
 
@@ -533,7 +571,7 @@ Its `--cache only` is today’s `--stale-ok`. At these sizes the regime is catal
 | Scope | Entries | Full-index walk | Summary only | Load snapshot (`--stale-ok`) |
 | --- | ---: | ---: | ---: | ---: |
 | Agent state A (`~/.claude`) | 11,899 | 0.14 s | 0.11 s | 0.08 s |
-| Agent state B (`~/.codex`) | 451,711 | 5.72 s (5.03–5.95), 220 MB | 3.14 s, 41 MB | 3.15 s, 315 MB, one thread |
+| Agent state B (`~/.codex`) | 451,711 | 5.72 s (5.03–5.95), 209 MB | 3.14 s, 39 MB | 3.15 s, 300 MB, one thread |
 | A project | 1,546,103 | 18.6 s (16.9–20.2) | 11.2 s | 10.0 s, 1.0 GB |
 | Home | ~6.7 M | > 200 s (a bounded attempt timed out under load) |  |  |
 
@@ -559,25 +597,33 @@ Evidence: [architecture](../../../explorations/change-sources/architecture/).
 
 Ranked by how much each changes the design:
 
-1. **The store comes before the change source.** A delta-only checkpoint store makes
-   “now vs T” cost O(records in the interval): a per-directory log that records only
-   directories whose totals changed, which is closed under ancestors.
-   It is sound for apparent and per-path allocated bytes.
+1. **A refresh that starts from the flat snapshot cannot beat a walk.** The checkpoint
+   plan already says the flat loader and writer cost O(N), and that bounded persistent
+   access (slice 4) is needed before fast whole-home refresh.
+   The measurements confirm it: loading costs 55% of a walk.
+   - There are two ways around it: a resident recorder that never reloads, or a store
+     whose reads are proportional to change.
+   - One candidate store is a per-directory roll-up log that records only directories
+     whose totals changed, which is closed under ancestors.
+     It would serve slice 4’s checkpoint reads, and it is sound for apparent and
+     per-path allocated bytes.
    - It is not sound for unique-allocated attribution, where adding a link elsewhere
      moves a file’s size without a local change.
      Keep per-path allocated as the default ranking.
-   - The plan sequences replay before bounded persistent access.
-     The measurements say the store is a prerequisite.
 2. **Root identity misses firmlinks.** Path canonicalization leaves `/Users/…` and
    `/System/Volumes/Data/Users/…` as two cache keys for one tree.
-   - `ATTR_CMNEXT_NOFIRMLINKPATH` plus the volume UUID is the right identity.
-   - A device-relative FSEvents filter must be the firmlink-free path minus the mount
-     point: `Users/<u>/…` matched events, while `System/Volumes/Data/Users/<u>/…`
-     matched nothing.
+   - The identity should be the volume UUID plus the path relative to that volume’s
+     mount point.
+   - `ATTR_CMNEXT_NOFIRMLINKPATH` gives that path for the Data volume, but not for other
+     volumes. `/Volumes` is itself a firmlink, so an external path comes back as
+     `/System/Volumes/Data/Volumes/<name>/…`, which embeds a mount name that can change.
+   - A device-relative FSEvents filter needs the same volume-relative path.
+     `Users/<u>/…` matched events, while `System/Volumes/Data/Users/<u>/…` matched only
+     the `HistoryDone` sentinel.
    - The spike strips the mount point from `realpath` output.
      That works for `/Users` paths by luck.
-3. **The device number sits in every entry fingerprint.** A remount or reboot that
-   renumbers `st_dev` therefore rewrites every entry.
+3. **Reconcile compares the device number.** `dev` is an entry attribute that reconcile
+   compares, so a remount or reboot that renumbers `st_dev` rewrites every entry.
    A delta store must treat a device-only change as a non-event.
 4. **Quiet-cursor advancement needs a pre-replay fence.** Store the ID read before the
    stream starts, or the `HistoryDone` ID. Re-observing the overlap next time is
@@ -643,10 +689,11 @@ entries and 40.4 GB. Settings:
 | --- | ---: |
 | Stable miss (both walks agree, watcher differs) | 0 |
 | False positive | 0 |
-| Changed between the two walks | 8, zero net allocated bytes |
+| Changed between the two walks | 8, +1 MiB net (one SQLite file) |
 
-The per-directory totals matched the second walk exactly, except one SQLite file that
-grew 1 MiB between the walks.
+Apart from that file, the per-directory totals matched the second walk exactly.
+The soak did not hold the shared lock at startup, and other agents’ replays ran during
+it, so its timings include contention.
 
 **Why it was exact: every macOS rename escalates to a full-root reconcile.**
 
@@ -655,8 +702,8 @@ grew 1 MiB between the walks.
 - FSEvents flags are sticky per path, so later events on the same path escalate too.
 - 61.5% of this root’s raw events carried `ItemRenamed`, mostly from atomic temp-file
   writes.
-- The watcher therefore reconciled the entire root 174 times in 61 minutes: once every
-  20 s, at 9.9 CPU s each.
+- The watcher therefore reconciled the entire root 172 times (174 root invalidations) in
+  about an hour: once every 20 s, at 9.9 CPU s each.
 - Those reconciles re-stat’ed the open writers and hid the gap.
 
 **What that cost:**
@@ -664,7 +711,7 @@ grew 1 MiB between the walks.
 | Measure | Value |
 | --- | --- |
 | Startup to first report | 60.5 s from a cold start: 7 s parallel scan, then a 37 s serial revalidation walk. From an existing snapshot, 33–73 s at 452k entries (518 MB) and 123–126 s at 1.5 M (1.6 GB) |
-| CPU | 47.8% of one core over the hour, mostly system time; about 1% in windows with no root reconcile |
+| CPU | 47.8% of one core over the hour, mostly system time; about 1% in the 5 of 114 30-second windows with no root reconcile |
 | Resident memory | median 442 MB, peak 906 MB |
 | Raw events | 326 per minute on average, bursts to 1,443 |
 | Snapshot writes | 187 full rewrites of 36.7 MB, which is 6.9 GB written per hour |
@@ -674,7 +721,8 @@ grew 1 MiB between the walks.
 - 26 files grew in place between the start and the end.
 - 11 of them were held open.
   Those 11 carry 99.8% of the in-place growth bytes.
-- Re-stat’ing the writer list, 45 ms per enumeration, recovers all of it.
+- Re-stat’ing the writer list recovers all of it.
+  Enumeration took 45 ms at the median and 7.3 s at worst under load (116 samples).
 - Everything else in the change set was visible to events: 1,578 new entries, 1,072
   removed, and 202 metadata-only changes.
 - Over the hour, 56% of gross growth, and nearly all in-place growth, was in files held
@@ -693,7 +741,8 @@ The resident index floor is about 190 B per entry, which is about 1.3 GB for thi
 | 1.5 M | ~285 MB | ~31 CPU s | ~116 MB |
 | 5 M | ~950 MB | ~104 CPU s | ~386 MB |
 
-At 5 M entries, one rename every 20 s would saturate a core.
+At 1.5 M entries, one rename every 20 s already needs more than a core (31 CPU s per 20
+s); at 5 M, about five cores.
 
 **The conclusion:** a resident fdu is viable only after three fixes, filed as beads:
 
@@ -701,7 +750,8 @@ At 5 M entries, one rename every 20 s would saturate a core.
 2. Persist deltas on their own cadence instead of full rewrites (`fdu-88p7`).
 3. Add the writer-list re-stat (`fdu-vhrb`).
 
-With those fixes, the measured event-driven cost is about 1% of a core.
+With those fixes, the event-driven cost should approach the 1% of a core seen in
+reconcile-free windows; the fix’s own re-soak must confirm it.
 For home-scale roots, a dirty-directory recorder (`fdu-d2iz`) should replace the full
 resident index. The 37 s startup revalidation is tracked separately (`fdu-eru0`).
 
@@ -747,8 +797,8 @@ Its close event’s `modified` flag is the same `FWASWRITTEN` bit that drives th
 content event. Its per-write event carries neither byte count nor offset.
 
 **Per-process counters, measured.** The unprivileged sampler covered 182–214 same-user
-processes per sample; 59–83 other-user processes returned `EPERM`. A sample cost 3–19
-ms.
+processes per sample; 59–83 other-user processes returned `EPERM`. A sample usually cost
+3–19 ms; one took 323 ms.
 
 Over 60 s, same-user processes wrote 22–66 MiB, and an agent command-line tool was the
 top writer both times.
@@ -767,7 +817,7 @@ So the counters answer “which process wrote a lot”, never “which directory
 - FSEvents, live while running and replayed otherwise;
 - `stat` for sizes;
 - the libproc open-writer list;
-- optionally, the directory-statistics generation count as a gate;
+- optionally, the directory-statistics generation count as a gate (parked; see above);
 - per-process counters for attribution;
 - the per-volume free-space delta as a bound, for example “volume grew 12 GB, attributed
   11.5 GB”.
@@ -800,6 +850,9 @@ The consumers of FSEvents split two ways:
 The tools that are correct about missed writers compare `stat` facts on every run:
 restic, Borg, Kopia, Backblaze.
 Arq instead reads from a snapshot.
+Sources for the rows below are listed in
+[prior-art-sources](../../../explorations/change-sources/architecture/raw/prior-art-sources.txt);
+Time Machine’s behavior comes from secondary sources, because Apple publishes none.
 
 | System | Change source | Lost or unavailable history | Problem solved |
 | --- | --- | --- | --- |
@@ -866,83 +919,98 @@ baseline, on this host.
 | Option | 450k entries, 1 h | 450k entries, 1 day | ~6.7 M (home), 1 h / 1 day | Correctness gaps |
 | --- | --- | --- | --- | --- |
 | (a) Full walk plus delta-store diff | ~6 s (measured walk) | ~6 s | minutes | None beyond `stat`’s view; needs a retained baseline |
-| (b) One-shot replay plus writer list plus scoped relist, delta store | replay (volume journal plus matching) + relist | scratch volume ~45 s; internal quiet ~2 s | unknown: home’s matching records dominate | Other users’ writers; journal completeness unproven |
+| (b) One-shot replay plus writer list plus scoped relist | replay (volume journal plus matching) + relist; breaks even with a full-index walk at 1.8–3.7 h of scratch-volume history | scratch volume ~45 s; internal quiet ~2 s | unknown: home’s matching records dominate | Other users’ writers; journal completeness unproven |
 | (b′) (b) with today’s flat snapshot | adds 3 s load plus save | same | adds ~45 s load | as (b) |
 | (c) Resident fdu monitor plus writer list, feeding the store | milliseconds | milliseconds | milliseconds while running; today’s watcher re-walks the root on every rename (48% of a core at 476k entries) and holds ~190 B per entry | Other users’ writers; downtime needs replay or reconcile; needs the rename, persistence, and recorder fixes |
-| (d) APFS directory-statistics pruned refresh | ~1 s at 225k entries (measured), plus relists | same | lists changed origins only, no daemon | Private marking interface; slow marking of populated trees; mtime-only changes; APFS only |
+| (d) APFS directory-statistics pruned refresh | 1.04 s at 225k entries (one run, relists included) | same | lists changed origins only, no daemon | Private marking interface; slow marking of populated trees; mtime-only changes; APFS only |
 | (e) `searchfs` by ctime | 115–330 s | same | same | Deletes and renamed-directory contents |
+| (f) Linux: resident inotify watcher plus walk-captured checkpoints | milliseconds while running | same | inotify needs one watch per directory; the limit at home scale is unquantified | Nothing persists without a listener; a walk after downtime |
 
 ## Recommendation and the Case Against It
 
-1. **Build the checkpoint store first, captured by walks.**
-   - A per-directory roll-up log with per-path allocated ranking.
-   - Keep the link count.
-   - Key identity by volume UUID plus firmlink-free path.
-   - Sample free space per volume, and report a labeled residual.
-   - This serves project, agent-state, and temporary scopes in seconds, is correct for
-     open writers, and runs the same code on Linux.
+1. **Fix the watcher first.** These are engine bugs under any plan:
+   - scope one-sided renames to their own path (`fdu-822y`);
+   - persist on a cadence decoupled from the render interval, or as deltas (`fdu-88p7`);
+   - re-stat the libproc writer list at each checkpoint (`fdu-vhrb`).
+
+   Then re-run the soak at 476k and 1.5 M entries.
+   The gate is exactness against two walks at under 2% of a core.
+
+2. **Ship the hour and day report for small scopes now.** Project, agent-state, and
+   temporary scopes can use walk-captured checkpoints (the checkpoint plan’s slice 2),
+   where walks cost 0.1–19 s. The same code runs on Linux.
+   - Key identity by volume UUID plus the path relative to the volume’s mount point.
+   - Keep the link count, rank by per-path allocated bytes, sample free space per
+     volume, and report a labeled residual.
    - Keep the low-space diagnostic’s writes off the volume being diagnosed.
 
-2. **For home scale, pick an accelerator by experiment, not by precedent.**
-   - A resident fdu monitor with the open-writer list is public-API, cross-platform
-     (complete on Linux), and reuses the opened-root contract.
-   - The soak shows it first needs three fixes:
-     - one-sided renames scoped to their parent (`fdu-822y`);
-     - persistence decoupled from the render interval (`fdu-88p7`);
-     - for home scale, a dirty-directory recorder (`fdu-d2iz`) instead of a 190
-       B-per-entry resident index.
-   - It also needs an explicit decision to allow background monitoring.
-   - After the rename fix, the measured event-driven cost is about 1% of a core.
-   - APFS directory statistics are daemonless and see open writers natively.
-     - Verified as a skip signal: 0 misses of size or membership changes, and a 1.04 s
-       refresh against a 9 s walk at 225k entries.
-     - They rest on a private marking interface and leave a persistent flag on user
-       data.
-     - Marking a populated tree is slow and disrupts other I/O.
-   - Both need a periodic full sweep as the safety net.
+3. **For home scale, prototype a resident dirty-directory recorder** (`fdu-d2iz`) in the
+   watch layer: a persisted set of dirty directories plus the writer list.
+   - Measure recorder, relist, and roll-up diff at home scale.
+   - Build the plan’s bounded persistent store (slice 4) only if the flat load then
+     dominates.
+   - The fixed watcher at one reconcile per change is the recorder’s core.
+     The soak showed that re-stat’ing open writers and relisting evented parents was
+     exact at 476k entries.
 
-3. **Demote one-shot replay** to bounded roles:
-   - recovering a monitor’s downtime;
-   - a no-daemon fallback when the budget rule predicts it beats the walk.
+4. **Keep one-shot replay for gap recovery only**, under the budget rule at measured
+   walk rates. Always pair it with the writer list, and never trust `HistoryDone` alone.
 
-   Always pair it with the writer list, and never trust `HistoryDone` alone.
+5. **Park APFS directory statistics as a research result.** Pursue in-kernel sizing of
+   unmarked directories (`fdu-22hd`) as the daemonless lead, because it has no side
+   effect.
+
+6. **Make background monitoring an explicit opt-in**, with an energy budget and a Linux
+   watch-limit check.
 
 **The case against this recommendation:**
 
-- Stage 1 does not meet “seconds” for the whole home folder.
-- “One hour ago” needs a baseline that exists only if something ran an hour ago.
-- A background job or monitor is therefore unavoidable for the headline workflow.
-- Deferring the accelerator defers that workflow.
-- Two persisted stores per root (the flat snapshot for opened roots and analysis, the
-  delta log for checkpoints) is a transitional duplication.
-  The design principles warn against it.
+- The recorder is unbuilt and unproven at home scale, and the whole-home answer in
+  seconds depends on it.
+- “One hour ago” needs a baseline captured an hour ago, so a scheduled capture or a
+  resident process is implied either way.
+  That is a consent decision.
+- If the recorder still has to load the flat snapshot for roll-ups, slice 4 is needed
+  anyway, and building the store first would have been faster.
+- Parking directory statistics gives up the only daemonless mechanism that sees open
+  writers natively.
+
+**Before acting, account for:**
+
+- energy and battery cost of a resident monitor on a laptop;
+- multi-user hosts, where other users’ writers stay invisible;
+- external-volume unmount and remount (device renumbering, cursor invalidation, changed
+  mount names);
+- SSD wear from persistence (6.9 GB per hour today);
+- privacy of a persistent log of what changed when;
+- OS-upgrade risk to FSEvents semantics and to any private interface.
 
 ## Ranked Next Experiments
 
-The beads sit under epic `fdu-tawn`. The abandoned-replay backlog test (`fdu-lwcz`) is
-done: there is no backlog.
-The epic also tracks two engine fixes the review found: firmlink-free root identity
-(`fdu-43bc`) and keeping low-space diagnostics from writing into the diagnosed volume
-(`fdu-hbjp`).
+The beads sit under epic `fdu-tawn`. It also tracks two engine fixes the review found:
+firmlink-free root identity (`fdu-43bc`) and keeping low-space diagnostics from writing
+into the diagnosed volume (`fdu-hbjp`).
 
 | Rank | Bead | Experiment | Discriminating outcome | Go if |
 | --- | --- | --- | --- | --- |
-| 1 | `fdu-gpqz` (done) | APFS directory statistics, adversarial verification | Privilege, persistence, `fsck`, unset, accounting, pruned refresh at 225k entries | Signal: go with conditions (0 misses; 1.04 s vs 9 s walk; undocumented unset). Totals: no-go |
-| 1a | `fdu-ns3n` | Opt-in gencount-gated walk in the engine | Pruning in the existing bulk walk; marking new directories on discovery; periodic full sweep | No oracle misses on the agent workload; refresh ≤ 20% of the walk at ≥ 1 M entries; a documented marking and unmarking contract |
-| 1b | `fdu-22hd` | In-kernel sizing of unmarked directories | Replicate 1.84 s vs 7.7–9.9 s at 225k; accounting against fdu’s totals | A faster exact summary path with a stated accounting rule |
-| 2 | `fdu-2o00` (done) | Resident soak of `fdu --watch` on agent state B | Resident memory and CPU; misses caught by the writer list vs unexplained | Exact view, but only through root re-walks on every rename (48% of a core); event-only would miss 99.8% of in-place growth, all recovered by the writer list |
-| 2a | `fdu-822y` | Scope one-sided macOS renames in `watch` | Root reconciles per hour and CPU on the same root after the fix, with the writer list added | CPU near 1% of a core; no stable misses against two walks |
-| 2b | `fdu-d2iz` | Resident dirty-directory recorder | Recorder state, CPU, and checkpoint cost on a home-scale root | Tens of KB of state; checkpoint ≤ relist of dirty directories |
-| 3 | `fdu-yj8z` | Home-filter replay cost on the internal volume (1 h, 24 h; directory events) | Size of the matching-record term for home | Replay plus relist ≤ 25% of a home walk |
-| 4 | `fdu-uq1y` | Delta-store prototype | Capture writes only changed roll-ups at 450k and 1.5 M; query time; daily state growth | Capture ≤ walk + 5%; query ≤ 0.2 s; growth bounded |
-| 5 | `fdu-cv15` | Writer list over three live refreshes | Share of changed files in the event set or the writer set | ≥ 99%, remainder attributed to other users |
-| 6 | `fdu-befp` | Multi-path device-relative stream | Why `FSEventStreamStart` fails with several paths | One log scan for several roots |
+| 1 | `fdu-822y` | Scope one-sided macOS renames in `watch`, then re-soak | Root reconciles per hour and CPU on the same root, with the writer list added | CPU under 2% of a core; no stable misses against two walks |
+| 2 | `fdu-88p7`, `fdu-vhrb` | Persistence cadence and writer-list re-stat | Bytes written per hour; per-file coverage | Persistence bounded by changes; every held-open change reflected |
+| 3 | `fdu-d2iz` | Resident dirty-directory recorder | Recorder state, CPU, and checkpoint cost at home scale | Tens of KB of state; checkpoint ≤ relist of dirty directories |
+| 4 | `fdu-cv15` | Writer list over three live refreshes | Share of changed files in the event set or the writer set | ≥ 99%, remainder attributed to other users |
+| 5 | `fdu-yj8z` | Home-filter replay cost on the internal volume (1 h, 24 h) | Size of the matching-record term for home | Replay plus relist ≤ 25% of a home walk |
+| 6 | `fdu-uq1y` | Bounded store (delta-only roll-up log) | Capture writes only changed roll-ups; query time; daily growth | Only if the recorder’s flat load dominates |
+| 7 | `fdu-22hd` | In-kernel sizing of unmarked directories | Replicate 1.84 s vs 7.7–9.9 s at 225k; accounting against fdu’s totals | A faster exact summary path with a stated accounting rule |
+| 8 | `fdu-befp` | Multi-path device-relative stream | Why `FSEventStreamStart` fails with several paths | One log scan for several roots |
+| Parked | `fdu-ns3n` | Opt-in gencount-gated walk | See the directory-statistics verdict | Only with a recency answer and a documented marking contract |
+
+Done: `fdu-gpqz` (directory-statistics verification), `fdu-2o00` (resident soak), and
+`fdu-lwcz` (no replay backlog).
 
 ## Corrections to Earlier Records
 
 The spike’s evidence stands, but several statements needed narrowing.
-These are now reflected in the
-[spike README](../../../explorations/fsevents-replay/README.md):
+They are reflected in the
+[spike README](../../../explorations/fsevents-replay/README.md) on PR #131’s branch:
 
 - **Miss counts.** The live-root runs had 13 and 14 files changed without an event, not
   one and two misses.
