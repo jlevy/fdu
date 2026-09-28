@@ -5,14 +5,14 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 labels:
   - docs
   - parity
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-28T23:57:29.414Z
+updated_at: 2026-09-28T23:57:45.488Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 
@@ -35,3 +35,7 @@ Requirements:
 - The speed row states measured results with their conditions and links the reports. Where fdu is not first (on Linux today: the indexed tree against pdu and diskus, and the default command on source trees with many .gitignore files, about 3x pdu after H162/H163), the cell says so, or the work that closes it (H164, H166, H167) lands first and a fresh quiet matrix supports the claim. The README must not claim fdu is fastest where the evidence does not show it.
 - Keep it scannable: at most about 10 rows and 10 columns; details in footnotes.
 - Run flowmark on README.md; keep the Why section consistent with the matrix (it lists fifteen surveyed tools).
+
+## Notes
+
+2026-09-28 maintainer: cells are a checkmark, an x, or concise text, whichever is clearer for that cell (e.g. '✅', '❌', 'total only', 'optional flag', 'Rust, Python').
