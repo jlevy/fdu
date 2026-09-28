@@ -5,7 +5,7 @@ title: "Ignore-aware transient summary: fold the ignored share without retaining
 kind: task
 status: in_progress
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 delegate: claude-code
 labels:
@@ -17,11 +17,11 @@ parent_id: is-01m3mcwynm1rkdjencnq5621mq
 hold: null
 hold_until: null
 created_at: 2026-09-27T18:13:56.296Z
-updated_at: 2026-09-28T16:20:51.317Z
+updated_at: 2026-09-28T20:31:51.126Z
 started_at: 2026-09-28T14:30:07.463Z
 ---
 Default fdu --view summary reads .gitignore, and the summary reducer keeps no control table, so the planner falls closed to a full retained index plus a snapshot write. On the 1M balanced Linux tree (no .gitignore files at all) that costs 1.52 s against 0.92 s for --no-gitignore (screen), and 319 MiB against 10 MiB. The ignored share is a per-entry predicate over the matcher stack the walker already builds; classify in the workers and fold an ignored partition in the streaming reducer. Must match the indexed answer exactly (golden and parity corpora, including negation and nested .gitignore). Option C.1 in docs/project/research/research-2026-09-27-cache-economics-and-default-plans.md.
 
 ## Notes
 
-2026-09-28: merged to main via #149 (0dec1d85) after review fixes (eeb257c9: exact-name probe, single read), full make check + cross-lint on aa58a6b1, CI green, and the user's go-ahead. The Linux cell (probe aggregate-summary, linux-v6.12 deciding, 12 quiet pairs) still confirms or reverts it; case-variant .gitignore semantics tracked in fdu-0w1b.
+2026-09-28: #149 merged on the macOS evidence (exp-170/171) before its Linux cell, at the user's direction; the H161 row in performance-loop.md stays the authority. Since the macOS runs, eeb257c9 added an exact-name confirmation on probe hits (a partial listing up to the .gitignore entry) and a single read of a probed .gitignore; count probe hits with FDU_COUNTERS=1 on linux-v6.12. If Linux misses wall while keeping the RSS win, bring the trade-off to the maintainer rather than reverting silently.
