@@ -346,7 +346,7 @@ pub fn throughput_rates(
 /// Revalidating a loaded snapshot stats every entry anyway, so the reusable index and its
 /// write are additive cost with nothing to amortise them: measured on Linux/ext4 over
 /// 84,539 entries, the compact tier answered in 71 ms against 161 ms for a warm
-/// revalidating `Auto` run, and even a no-scan `Only` read cost 81 ms because
+/// revalidating `Auto` run, and even a no-scan stale answer cost 81 ms because
 /// deserialisation is about as expensive per record as a warm walk.  A snapshot earns its
 /// keep when it avoids expensive work — re-reading file bodies for content analysis, or a
 /// cold filesystem walk — not when it merely mirrors a walk that still has to happen.

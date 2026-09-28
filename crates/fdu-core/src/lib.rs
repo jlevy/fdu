@@ -548,22 +548,20 @@ fn unusable_snapshot_message(refused: Option<SnapshotIdentity>, wanted: &ScanCon
     const PREFIX: &str = "no usable snapshot for this root and scan scope";
     const NEVER_SCANS: &str = "a stale answer never scans";
     const VERIFIED: &str = "ask for a verified answer, which scans when none serves";
+    const LEAVE_ONE: &str = "run the request once with the `on` cache policy to leave one";
     let wanted_scope = wanted.scope();
     let differs_only_in_ignore_rules = |stored: ScanScope| {
         ScanScope { ignore_rules_fingerprint: wanted_scope.ignore_rules_fingerprint, ..stored }
             == wanted_scope
     };
     let Some(refused) = refused else {
-        return format!(
-            "{PREFIX}; {NEVER_SCANS}, so run the request once with the `on` cache policy to \
-             leave one, or {VERIFIED}"
-        );
+        return format!("{PREFIX}; {NEVER_SCANS}, so {LEAVE_ONE}, or {VERIFIED}");
     };
     let stored = refused.scan_scope();
     if stored.type_rules_fingerprint != wanted_scope.type_rules_fingerprint {
         return format!(
             "{PREFIX}: the cached snapshot was taken under different file type rules; \
-             {NEVER_SCANS}, so use the snapshot's type registry or ask for a verified answer, which scans under this request's rules"
+             {NEVER_SCANS}, so use the snapshot's type registry, {LEAVE_ONE} under this request's rules, or {VERIFIED}"
         );
     }
     if differs_only_in_ignore_rules(stored) {
@@ -573,7 +571,8 @@ fn unusable_snapshot_message(refused: Option<SnapshotIdentity>, wanted: &ScanCon
             return format!(
                 "{PREFIX}: the cached snapshot has no .gitignore state, because the request \
                  that wrote it did not observe it, and this request does; {NEVER_SCANS}, so \
-                 {VERIFIED}, or turn .gitignore observation off as that request did"
+                 {LEAVE_ONE} for this scope, {VERIFIED}, or turn .gitignore observation off as \
+                 that request did"
             );
         }
         if wanted_scope.observes_controls() {
@@ -586,14 +585,14 @@ fn unusable_snapshot_message(refused: Option<SnapshotIdentity>, wanted: &ScanCon
                 return format!(
                     "{PREFIX}: the cached snapshot was taken under other .gitignore limits \
                      ({changed}); {NEVER_SCANS}, so repeat the request with the snapshot's \
-                     limits, or {VERIFIED}"
+                     limits, {LEAVE_ONE} for these limits, or {VERIFIED}"
                 );
             }
         }
     }
     format!(
         "{PREFIX}: the cached snapshot has a different scan scope; {NEVER_SCANS}, so \
-         {VERIFIED}"
+         {LEAVE_ONE} for this scope, or {VERIFIED}"
     )
 }
 
@@ -715,7 +714,7 @@ pub(crate) fn execute(
             }
             Admission::WrongRoot => {
                 return Err(Error::Snapshot(
-                    "the configured snapshot belongs to a different root; choose this root's cache location or use auto to replace the snapshot for this root".into(),
+                    "the configured snapshot belongs to a different root; choose this root's cache location, or run the request once with the `on` cache policy to replace it with this root's snapshot".into(),
                 ));
             }
             Admission::Missing => {

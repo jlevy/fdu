@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: /opt/fdu-bench/results/perf/run-linux-cache-auto-oneshot.json
+    run_artifact: docs/project/experiments/evidence/exp-163/run.json
   results:
     - job: cold-scan-index
       start_state: cold

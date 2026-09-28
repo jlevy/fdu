@@ -90,6 +90,20 @@ def check_the_one_shot_retains_nothing(root: Path) -> None:
     except fdu.FduError:
         pass
 
+    # A stale answer reads the snapshot, which `off` never does, so asking for both is the
+    # caller asking wrongly, on each entry point, before anything is scanned.
+    summary = fdu.Query(views=(fdu.View.SUMMARY,))
+    for ask in (
+        lambda: fdu.report(root, summary, stale_ok=True, cache=fdu.CachePolicy.OFF),
+        lambda: fdu.open(root, stale_ok=True, cache=fdu.CachePolicy.OFF),
+    ):
+        try:
+            ask()
+        except fdu.InvalidArgumentError as error:
+            assert "stale_ok" in str(error) and "off" in str(error), str(error)
+        else:
+            raise AssertionError("stale_ok with the off cache policy must be refused")
+
 
 def check_the_list_grammar_reaches_python(root: Path) -> None:
     """A view spec is parsed by the one grammar, not by whichever surface got it first.

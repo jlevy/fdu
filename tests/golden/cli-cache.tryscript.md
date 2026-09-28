@@ -1005,7 +1005,7 @@ $ fdu --no-gitignore --cache on --view tree --format json --size apparent --dept
 
 ```console
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
-fdu: snapshot is not usable: no usable snapshot for this root and scan scope: the cached snapshot has no .gitignore state, because the request that wrote it did not observe it, and this request does; a stale answer never scans, so ask for a verified answer, which scans when none serves, or turn .gitignore observation off as that request did
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope: the cached snapshot has no .gitignore state, because the request that wrote it did not observe it, and this request does; a stale answer never scans, so run the request once with the `on` cache policy to leave one for this scope, ask for a verified answer, which scans when none serves, or turn .gitignore observation off as that request did
 ? 1
 ```
 
