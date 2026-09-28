@@ -46,11 +46,14 @@ cache-only exited 1, the check was skipped, and seventeen of the twenty-three ca
 printed `ok` against a cache that never served.
 Verify each pass by breaking the thing it watches.
 Over the refusal-free tree, a wrapper that rewrites `--cache on` to `--cache off` must
-make every case report `NO-SNAPSHOT` and both scripts exit 1. Over the refusal tree, a
-wrapper that answers `--stale-ok` with the cold output relabeled `cache_only` must make
-every case report `PARTIAL-STORED` and `--refusals-only` exit 1. A partial answer exits
-2, so a check that trusted a zero exit would have called that stored snapshot
-`withheld`; the first version of this pass did.
+make both scripts exit 1. In `warm_cold.py` every case fails: each metadata case reports
+`NO-SNAPSHOT`, and each analysis case reports `NOT-WARM(scanned)`, because its `auto`
+run scans and then writes a snapshot, which the `--stale-ok` run finds.
+`cross_warm.py` holds only same-analyzer pairs to serving, and each of those reports
+`NOT-WARM(scanned)`. Over the refusal tree, a wrapper that answers `--stale-ok` with the
+cold output relabeled `cache_only` must make every case report `PARTIAL-STORED` and
+`--refusals-only` exit 1. A partial answer exits 2, so a check that trusted a zero exit
+would have called that stored snapshot `withheld`; the first version of this pass did.
 
 ## Running It
 

@@ -2959,8 +2959,8 @@ mod tests {
     use crate::query::{Bound, Query, Request, Selection, ShareThreshold};
     use std::ffi::OsStr;
     use std::path::PathBuf;
-    use std::process::Command;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     struct Provenance {
         scan_started_at: Option<SystemTime>,
@@ -5039,17 +5039,47 @@ mod tests {
             return;
         }
 
-        let output = Command::new(std::env::current_exe().expect("current test executable"))
+        let started = Instant::now();
+        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
             .args(["--exact", DEEP_RENDER_TEST_PATH, "--nocapture"])
             .env(DEEP_RENDER_CHILD_ENV, "1")
-            .output()
-            .expect("run deep-render child");
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn deep-render child");
+        let stdout = drain_pipe(child.stdout.take().expect("piped stdout"));
+        let stderr = drain_pipe(child.stderr.take().expect("piped stderr"));
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll deep-render child") {
+                break Some(status);
+            }
+            if started.elapsed() >= DEEP_RENDER_CHILD_TIMEOUT {
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let Some(status) = status else {
+            // `kill` is SIGKILL on Unix, which the child can neither catch nor ignore: the
+            // hang this bounds also ignored SIGTERM. Its result can be ignored because the
+            // child is not yet reaped, so even one that exited a moment ago is still there
+            // to signal, and `wait` returns once it is gone.
+            let _ = child.kill();
+            let reaped = child.wait().expect("reap the killed deep-render child");
+            panic!(
+                "deep-render child still running after {DEEP_RENDER_CHILD_TIMEOUT:?}; killed at \
+                 {:?} ({reaped}). The last `deep-render phase:` line is where it stalled.\n\
+                 stdout:\n{}\nstderr:\n{}",
+                started.elapsed(),
+                stdout.join().expect("stdout reader"),
+                stderr.join().expect("stderr reader")
+            );
+        };
+        let stdout = stdout.join().expect("stdout reader");
+        let stderr = stderr.join().expect("stderr reader");
         assert!(
-            output.status.success(),
-            "deep renderer failed in child process\nstdout:\n{stdout}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stderr)
+            status.success(),
+            "deep renderer failed in child process\nstdout:\n{stdout}\nstderr:\n{stderr}"
         );
 
         // The exit code alone cannot tell "the deep render survived" from "the filter
@@ -5067,12 +5097,37 @@ mod tests {
     /// where a move leaves it silently stale.
     const DEEP_RENDER_TEST_PATH: &str = "report_format::tests::deep_rendering_is_stack_safe";
 
+    /// How long the parent lets the deep-render child run before killing it.
+    ///
+    /// Without a bound a stuck child blocks the suite indefinitely: on 2026-09-28 one spun
+    /// for more than 85 minutes (fdu-xsg1). Measured on Linux x86-64 debug with four
+    /// cores, the child takes about 21 s alone and 28 s under the full parallel suite,
+    /// nearly all of it building the 1,024-level fixture one batch at a time. Five minutes
+    /// is ten times the loaded figure, room for a runner several times slower, and still
+    /// turns a hang into a failure well before anyone would notice a stalled gate.
+    const DEEP_RENDER_CHILD_TIMEOUT: Duration = Duration::from_secs(300);
+
+    /// Read a child's pipe to its end on a helper thread.
+    ///
+    /// One reader per pipe means a child that fills one pipe's buffer never blocks while
+    /// the parent waits on the other pipe or on its exit, and what the child wrote before
+    /// a hang is still there to report once it is killed.
+    fn drain_pipe(mut pipe: impl io::Read + Send + 'static) -> std::thread::JoinHandle<String> {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            // A read error ends the capture early; what arrived before it is still reported.
+            let _ = pipe.read_to_end(&mut bytes);
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    }
+
     fn run_deep_render_child() {
         // A deep tree must build and render without depth-recursive stack growth.
         // Windows reserves 20 KiB of a spawned thread's stack for overflow handling;
         // a 64 KiB reservation leaves too little dependable room for report setup in
         // debug builds. Keep construction bounded at 128 KiB, then test rendering and
         // release separately on the original 64 KiB stack.
+        eprintln!("deep-render phase: fixture");
         let mut index = crate::Index::new("/fixture");
         let mut path = PathBuf::new();
         for depth in 0..DEEP_RENDER_DEPTH {

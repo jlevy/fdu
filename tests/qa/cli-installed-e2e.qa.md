@@ -49,7 +49,7 @@ overlapped. Each timing is a single run.
 | Phase 4: Medium tree | ✅ Passed | 730,288 files, about 14 s per metadata run; analysis on `docs/` only, reused on the second run. Warm matches cold because a one-shot metadata report neither writes nor reads a snapshot, as documented |
 | Phase 5: Bounded Library | ✅ Passed | Depth 1 exit 0; depth 2 exit 2 (TCC); no SIGKILL; peak 25 MiB |
 | Phase 6: Terminal Progress | ⏳ Pending | `make test-terminal` passed against the installed command; a pty probe passed each item it can observe (resize, `NO_COLOR`, `CI`, `TERM=dumb`, Ctrl-C). A person has not watched a window, and Windows has not run |
-| Phase 7: Peer agreement | ✅ Passed | Self-test 13 of 13 exact. With `--min-share 0%` and directory-only children added to the script’s fdu reading, 51 of 52 readings across four trees are explained; dua’s allocated `~/Library` reading is not verifiable, as in 0.1.0. The script as committed fails its top-level check, because the 0.2.0 tree hides rows under 1% |
+| Phase 7: Peer agreement | ✅ Passed | Self-test 13 of 13 exact. With `--min-share 0%` and directory-only children added to the script’s fdu reading, 51 of 52 readings across four trees are explained; dua’s allocated `~/Library` reading is not verifiable, as in 0.1.0. The script as then committed failed its top-level check, because the 0.2.0 tree hides rows under 1%; it now reads fdu that way itself |
 | Phase 8: Results | ✅ Passed | 51 harness checks: 50 ok, and 1 expected warning for `documents` exit 2. Same verdicts and exits as the 0.1.0 table. Full tables are in the verification pull request; the correctness record is in the [correctness runbook](../../docs/project/guides/correctness-runbook.md#last-recorded-run) |
 
 **Status Legend**: ✅ Passed | ❌ Failed | ⏳ Pending | ⏸️ Blocked
@@ -145,9 +145,10 @@ python3 scripts/run_installed_cli_qa.py --phases sanity,views,cache-analyze,watc
 - **Issue**: `/usr/bin/time: illegal option` **Fix**: the wrapper must pass `--` before
   `fdu`. The harness does this; do not invoke `/usr/bin/time` with a flag-looking first
   operand.
-- **Issue**: First “cold” metadata run looks warm **Fix**: the harness sets
-  `XDG_CACHE_HOME` to a fresh temp dir per arm.
-  Do not export a leftover `XDG_CACHE_HOME` that already holds a snapshot for that tree.
+- **Issue**: First “cold” analysis run looks warm (a metadata run under `auto` never
+  reads a snapshot) **Fix**: the harness sets `XDG_CACHE_HOME` to a fresh temp dir per
+  arm. Do not export a leftover `XDG_CACHE_HOME` that already holds a snapshot for that
+  tree.
 - **Issue**: Numbers cannot be compared to the last report **Fix**: record host, OS,
   `fdu --version`, and whether the filesystem cache was already warm.
   This suite is directional, not a paired `make perf-compare` claim.
@@ -229,7 +230,9 @@ The harness sets `XDG_CACHE_HOME` to a new directory for:
 ## Phase 2: Small-Tree View Robustness
 
 Tree: `FDU_QA_SMALL`. First metadata command is a cold/warm pair of the default tree
-view. Remaining views reuse that isolated `auto` cache.
+view.
+Under the default `auto` policy a one-shot metadata report neither reads nor writes
+a snapshot, so both runs, and every view after them, report `cold scan`.
 
 ### 2.1 Views the CLI Advertises
 
@@ -342,7 +345,8 @@ After the cache-on arm, the harness reuses that warm sidecar for `--analyze=word
 **Verify**:
 
 - [ ] `words` and `all` exit 0
-- [ ] JSON `analysis` is present and `physical_lines` is not 0 when lines ran
+- [ ] JSON `reports[0].metrics.total.metrics.physical_lines` is present and not 0 when
+  lines ran; the harness fails the row when it is missing and notes its value
 
 ### 3.4 Watch (SIGINT)
 
@@ -371,7 +375,10 @@ bodies. The harness analyzes `FDU_QA_MEDIUM_ANALYZE` or `$FDU_QA_MEDIUM/docs` on
 
 **Verify**:
 
-- [ ] Warm tree is faster than cold, or the footer says `warm revalidation`
+- [ ] Both tree runs report `cold scan`: a one-shot metadata report re-walks by design,
+  so the warm run need not be faster.
+  Reuse shows on the second subdirectory analyze instead, as `warm revalidation` with
+  non-zero `cached`
 - [ ] Analyze stays on the subdirectory
 - [ ] Output is not a multi-megabyte `files` dump (`--limit=10` on list views)
 
@@ -426,7 +433,9 @@ Use a tree that takes several seconds, such as `$FDU_QA_MEDIUM`.
 - [ ] `fdu --analyze all` on a medium subdirectory shows `Analyzing` with a climbing
   percentage (the line is erased as soon as the work ends, so `100%` may never be seen)
 - [ ] A small tree (`fdu .` in this repository) shows no indicator at all
-- [ ] `fdu "$FDU_QA_MEDIUM" 2>/tmp/fdu-stderr` leaves `/tmp/fdu-stderr` empty
+- [ ] `fdu "$FDU_QA_MEDIUM" 2>/tmp/fdu-stderr` writes no progress to `/tmp/fdu-stderr`:
+  no carriage return or escape sequence, only the report’s `note:`, `warn:`, `tip:`, and
+  `perf:` lines, which go to stderr whether or not it is a terminal
 - [ ] `fdu --format json "$FDU_QA_MEDIUM" >/dev/null` shows nothing;
   `--progress always --format json` shows the indicator; `--progress never` shows
   nothing for any format
@@ -540,8 +549,9 @@ directory again, and a second failure would be reported.
 - [ ] The tables are recorded in a dated report under `docs/project/reports/`
 
 An `UNEXPLAINED` row is a finding: identify the files responsible (compare the top-level
-directories, then descend with `fdu --view tree --depth 1` and `du -d 1`), and either
-extend the model and the self-test with the new case or file a bead.
+directories, then descend with `fdu --view tree --depth 1 --min-share 0%` and `du -d 1`,
+since the tree’s default 1% floor hides small directories), and either extend the model
+and the self-test with the new case or file a bead.
 
 * * *
 
