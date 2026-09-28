@@ -40,7 +40,7 @@ engine, query, and command-line audits.
 | T3 | Medium | Synthetic aggregates beyond `u64` capacity can wrap or panic | Open boundary defect, `fdu-sqyk` |
 | T4 | Medium | Nested-only omissions emitted a note referring to an absent remainder | Note now requires an actual remainder; bounds and tips remain |
 | T5 | Low | Floating-point conversion could label an extreme value below 1% as 1% | Less-than threshold now uses exact integer arithmetic |
-| T6 | Medium | Deep-render test pruned zero-byte descendants before exercising them | Explicit unlimited selection and independent 1,025-node assertion; macOS and Windows pass |
+| T6 | Medium | Deep-render test pruned zero-byte descendants before exercising them | Explicit unlimited selection and independent 1,025-node assertion; separate bounded construction/render threads |
 
 The chosen design keeps one engine remainder model for every format.
 It changes the summary’s meaning rather than subtracting overlapping directory rows in
@@ -200,15 +200,25 @@ Final matrix status is recorded in the
 
 ### Deep-Tree Validation Gap
 
-One Windows CI run exhausted the deep-render test thread’s 64 KiB stack; a subsequent
-run of the same test body passed.
-The cause of that intermittent result is not yet established.
-Inspection found a separate definite gap: its zero-byte fixture used the default 1%
-filter, so it pruned the descendants before rendering.
-The corrected test explicitly removes every display bound, independently asserts all
-1,025 nodes and no omissions, and marks query, render, stream, and drop phases for
-failure diagnosis. It passes on macOS with the original 64 KiB stack.
-Windows validation remains pending under `fdu-4793`.
+The zero-byte fixture originally used the default 1% filter, pruning descendants before
+rendering. The corrected test removes every display bound and independently asserts all
+1,025 nodes and no omissions.
+
+A separate intermittent Windows failure recurred during report construction in
+[run 36362072990](https://github.com/jlevy/fdu/actions/runs/36362072990), while
+identical core source passed the implementation and top-layer runs.
+The pinned Rust 1.97.1 Windows runtime reserves 20 KiB of each spawned thread’s stack
+for overflow handling, leaving little margin inside the test’s 64 KiB reservation.
+Review found no depth-recursive call in this fixture’s report-construction path.
+
+The test now constructs and verifies the report on a bounded 128 KiB thread, then moves
+it to a separate 64 KiB thread for text, JSON, JSONL, YAML, streaming, and explicit
+drop. Phase markers distinguish request, report construction, verification, each
+renderer, and destruction.
+This preserves the narrow renderer check and bounds construction independently.
+The focused macOS test passes; final Windows results and the disposition of `fdu-4793`
+are recorded in the
+[PR review](https://github.com/jlevy/fdu/pull/136#issuecomment-5860865321).
 
 ## Presentation Follow-Up
 
