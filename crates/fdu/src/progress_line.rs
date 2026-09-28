@@ -22,7 +22,7 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 use fdu_core::query::SizeMetric;
 use fdu_core::report_format::{STYLE_NAME, human_bytes, human_count};
 
-use crate::cli::paint;
+use crate::cli::{human_duration, paint};
 
 /// When the indicator may be drawn, as `--progress` spells it.
 ///
@@ -264,25 +264,6 @@ const STYLE_ROOT: AnsiStyle = STYLE_NAME;
 const STYLE_PHASE: AnsiStyle = AnsiStyle::new().bold();
 const STYLE_DIM: AnsiStyle = AnsiColor::BrightBlack.on_default();
 
-/// Elapsed time as the frame shows it: one decimal under a minute (`3.1 s`), then
-/// `1 m 04 s`, then `1 h 02 m`.
-///
-/// Rounded at the unit shown and carried, so `59.96 s` is `1 m 00 s` rather than a
-/// `60.0 s` the next frame would contradict.
-pub(crate) fn human_elapsed(elapsed: Duration) -> String {
-    let millis = elapsed.as_millis();
-    let tenths = (millis + 50) / 100;
-    if tenths < 600 {
-        return format!("{}.{} s", tenths / 10, tenths % 10);
-    }
-    let seconds = (millis + 500) / 1000;
-    if seconds < 3600 {
-        return format!("{} m {:02} s", seconds / 60, seconds % 60);
-    }
-    let minutes = (millis + 30_000) / 60_000;
-    format!("{} h {:02} m", minutes / 60, minutes % 60)
-}
-
 /// A whole percentage that never reaches 100 before `done` equals `total`.
 ///
 /// Truncated rather than rounded, which is what keeps `99.9%` at `99%`. Nothing of
@@ -426,7 +407,7 @@ impl Slots {
             phase_padded: true,
             aligned: true,
             facts: facts_slot,
-            elapsed: Some(human_elapsed(elapsed)),
+            elapsed: Some(human_duration(elapsed)),
         }
     }
 
@@ -488,7 +469,12 @@ impl Slots {
             }
         }
         if let Some(elapsed) = &self.elapsed {
-            segments.push(("  ".to_string(), None));
+            let facts_present = !matches!(&self.facts, FactsSlot::None);
+            segments.push(if facts_present {
+                (" · ".to_string(), Some(STYLE_DIM))
+            } else {
+                ("  ".to_string(), None)
+            });
             segments.push((elapsed.clone(), Some(STYLE_DIM)));
         }
         segments
@@ -760,38 +746,38 @@ mod tests {
     fn every_phase_uses_the_same_slots_in_the_same_order() {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Loading), ms(600), 2, 100, false),
-            "⠹ ~/wrk/github  Loading       0.6 s"
+            "⠹ ~/wrk/github  Loading       600.0 ms"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),
-            "⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
+            "⠼ ~/wrk/github  Scanning        412,309 files ·    12,041 dirs ·   38 GiB · 3.10 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 100, false),
-            "⠼ ~/wrk/github  Revalidating    412,309 files ·    12,041 dirs ·   38 GiB  1.4 s"
+            "⠼ ~/wrk/github  Revalidating    412,309 files ·    12,041 dirs ·   38 GiB · 1.40 s"
         );
         assert_eq!(
             render_frame(ROOT, &analyzing(12_044, 50_110), ms(7_900), 7, 100, false),
-            "⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s"
+            "⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files · 7.90 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Saving), ms(8_100), 9, 100, false),
-            "⠏ ~/wrk/github  Saving        8.1 s"
+            "⠏ ~/wrk/github  Saving        8.10 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Indexing), ms(3_800), 3, 100, false),
-            "⠸ ~/wrk/github  Indexing        412,309 files ·    12,041 dirs ·   38 GiB  3.8 s"
+            "⠸ ~/wrk/github  Indexing        412,309 files ·    12,041 dirs ·   38 GiB · 3.80 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Summarizing), ms(8_600), 5, 100, false),
-            "⠴ ~/wrk/github  Summarizing     412,309 files ·    12,041 dirs ·   38 GiB  8.6 s"
+            "⠴ ~/wrk/github  Summarizing     412,309 files ·    12,041 dirs ·   38 GiB · 8.60 s"
         );
         // A cache-only run walked nothing: no zeros that read as an empty tree.
         let unwalked =
             FrameFacts { directories: 0, files: 0, bytes: 0, ..walk(Phase::Summarizing) };
         assert_eq!(
             render_frame(ROOT, &unwalked, ms(1_200), 5, 100, false),
-            "⠴ ~/wrk/github  Summarizing   1.2 s"
+            "⠴ ~/wrk/github  Summarizing   1.20 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, false),
@@ -813,40 +799,40 @@ mod tests {
             render_frame(ROOT, &walk(Phase::Loading), ms(600), 2, 100, true),
             format!(
                 "{CYAN}⠹{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Loading{RESET}       \
-                 {DIM}0.6 s{RESET}"
+                 {DIM}600.0 ms{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 100, true),
             format!(
                 "{CYAN}⠼{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Scanning{RESET}        412,309\
-                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}{BOLD}  38 GiB{RESET}  {DIM}3.1 s{RESET}"
+                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}{BOLD}  38 GiB{RESET}{DIM} · 3.10 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 100, true),
             format!(
                 "{CYAN}⠼{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Revalidating{RESET}    412,309\
-                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}{BOLD}  38 GiB{RESET}  {DIM}1.4 s{RESET}"
+                 {DIM} files · {RESET}   12,041{DIM} dirs · {RESET}{BOLD}  38 GiB{RESET}{DIM} · 1.40 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &analyzing(12_044, 50_110), ms(7_900), 7, 100, true),
             format!(
                 "{CYAN}⠧{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Analyzing{RESET}      24%  \
-                 12,044{DIM} / {RESET}50,110{DIM} files{RESET}  {DIM}7.9 s{RESET}"
+                 12,044{DIM} / {RESET}50,110{DIM} files · 7.90 s{RESET}"
             )
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Saving), ms(8_100), 9, 100, true),
             format!(
                 "{CYAN}⠏{RESET} {root_style}~/wrk/github{root_reset}  {BOLD}Saving{RESET}        \
-                 {DIM}8.1 s{RESET}"
+                 {DIM}8.10 s{RESET}"
             )
         );
     }
 
-    /// The full Scanning frame over this root is 112 columns; each width below takes
+    /// The full Scanning frame over this root is 114 columns; each width below takes
     /// exactly one more step of the shrink order.
     #[test]
     fn a_frame_shrinks_in_the_specified_order_until_it_fits() {
@@ -855,71 +841,70 @@ mod tests {
         let frame = |width| render_frame(root, &facts, ms(3_100), 4, width, false);
 
         let full = "⠼ /Volumes/archive/projects/example/repository  Scanning        \
-                    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s";
-        assert_eq!(full.chars().count(), 112);
-        assert_eq!(frame(113), full, "fits with the last column empty");
+                    412,309 files ·    12,041 dirs ·   38 GiB · 3.10 s";
+        assert_eq!(full.chars().count(), 114);
+        assert_eq!(frame(115), full, "fits with the last column empty");
         // 1. The phase padding goes; the counts keep their columns.
         let unpadded = "⠼ /Volumes/archive/projects/example/repository  Scanning    \
-                        412,309 files ·    12,041 dirs ·   38 GiB  3.1 s";
-        assert_eq!(frame(112), unpadded);
-        assert_eq!(frame(109), unpadded);
+                        412,309 files ·    12,041 dirs ·   38 GiB · 3.10 s";
+        assert_eq!(frame(114), unpadded);
+        assert_eq!(frame(111), unpadded);
         // 2. The root is elided in the middle, by exactly the excess...
         assert_eq!(
-            frame(103),
+            frame(105),
             "⠼ /Volumes/archive/pr…example/repository  Scanning    \
-             412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
+             412,309 files ·    12,041 dirs ·   38 GiB · 3.10 s"
         );
         // ...and no further than 12 columns.
         assert_eq!(
-            frame(77),
-            "⠼ /Volum…itory  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
+            frame(79),
+            "⠼ /Volum…itory  Scanning    412,309 files ·    12,041 dirs ·   38 GiB · 3.10 s"
         );
         // 3. The alignment goes. The root keeps its 12 columns rather than taking back
         // what that frees: refitted, it would be elided again whenever a count gained a
         // digit, and the start of the line would move.
         assert_eq!(
-            frame(76),
-            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+            frame(78),
+            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB · 3.10 s"
         );
         assert_eq!(
-            frame(70),
-            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB  3.1 s"
+            frame(72),
+            "⠼ /Volum…itory  Scanning  412,309 files · 12,041 dirs · 38 GiB · 3.10 s"
         );
         // 4. The dirs count goes.
-        assert_eq!(frame(69), "⠼ /Volum…itory  Scanning  412,309 files · 38 GiB  3.1 s");
-        assert_eq!(frame(56), "⠼ /Volum…itory  Scanning  412,309 files · 38 GiB  3.1 s");
+        assert_eq!(frame(71), "⠼ /Volum…itory  Scanning  412,309 files · 38 GiB · 3.10 s");
+        assert_eq!(frame(58), "⠼ /Volum…itory  Scanning  412,309 files · 38 GiB · 3.10 s");
         // 5. The bytes go.
-        assert_eq!(frame(55), "⠼ /Volum…itory  Scanning  412,309 files  3.1 s");
-        assert_eq!(frame(47), "⠼ /Volum…itory  Scanning  412,309 files  3.1 s");
+        assert_eq!(frame(57), "⠼ /Volum…itory  Scanning  412,309 files · 3.10 s");
+        assert_eq!(frame(49), "⠼ /Volum…itory  Scanning  412,309 files · 3.10 s");
         // 6. Nothing else can give way, so only the spinner and the phase word remain.
-        assert_eq!(frame(46), "⠼ Scanning");
+        assert_eq!(frame(48), "⠼ Scanning");
         assert_eq!(frame(20), "⠼ Scanning");
     }
 
     /// What an 80-column terminal keeps, with counts under ten million. `Scanning` keeps
-    /// its counts aligned whatever the root, since the phase padding goes first: it shows
-    /// up to 14 columns of the root in full for its first minute and elides a longer one.
-    /// `Revalidating` has no padding to give up, so over a root of 12 columns or more a
-    /// warm run drops the alignment instead, and keeps every fact.
+    /// its counts aligned as the root and duration grow: phase padding goes first, then
+    /// the root is elided to preserve the facts. `Revalidating` has no padding to give
+    /// up, so over a root of 12 columns or more a warm run drops the alignment instead.
     #[test]
     fn an_eighty_column_terminal_keeps_what_fits() {
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Scanning), ms(3_100), 4, 80, false),
-            "⠼ ~/wrk/github  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  3.1 s"
+            "⠼ ~/wrk/github  Scanning    412,309 files ·    12,041 dirs ·   38 GiB · 3.10 s"
         );
         assert_eq!(
             render_frame(ROOT, &walk(Phase::Revalidating), ms(1_400), 4, 80, false),
-            "⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB  1.4 s"
+            "⠼ ~/wrk/github  Revalidating  412,309 files · 12,041 dirs · 38 GiB · 1.40 s"
         );
-        // The bound: 14 columns shown in full for the first minute, then elided.
+        // Both two-decimal durations elide the same root span at this width.
         let root = "~/wrk/github12";
         assert_eq!(
             render_frame(root, &walk(Phase::Scanning), ms(59_900), 4, 80, false),
-            "⠼ ~/wrk/github12  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  59.9 s"
+            "⠼ ~/wrk/…hub12  Scanning    412,309 files ·    12,041 dirs ·   38 GiB · 59.90 s"
         );
         assert_eq!(
             render_frame(root, &walk(Phase::Scanning), ms(60_000), 4, 80, false),
-            "⠼ ~/wrk/…hub12  Scanning    412,309 files ·    12,041 dirs ·   38 GiB  1 m 00 s"
+            "⠼ ~/wrk/…hub12  Scanning    412,309 files ·    12,041 dirs ·   38 GiB · 60.00 s"
         );
     }
 
@@ -934,37 +919,38 @@ mod tests {
         };
         assert_eq!(
             frame(7, 1, 512),
-            "⠼ .  Scanning              7 files ·         1 dirs ·    512 B  3.1 s"
+            "⠼ .  Scanning              7 files ·         1 dirs ·    512 B · 3.10 s"
         );
         assert_eq!(
             frame(672_132, 111_897, 8_796_093_022_208),
-            "⠼ .  Scanning        672,132 files ·   111,897 dirs ·  8.0 TiB  3.1 s"
+            "⠼ .  Scanning        672,132 files ·   111,897 dirs ·  8.0 TiB · 3.10 s"
         );
         assert_eq!(
             frame(9_999_999, 9_999_999, 1_098_437_885_952),
-            "⠼ .  Scanning      9,999,999 files · 9,999,999 dirs · 1,023 GiB  3.1 s"
+            "⠼ .  Scanning      9,999,999 files · 9,999,999 dirs · 1,023 GiB · 3.10 s"
         );
         let widths: Vec<usize> = [(7, 1, 512), (672_132, 111_897, 41_070_624_768)]
             .into_iter()
             .map(|(files, dirs, bytes)| frame(files, dirs, bytes).chars().count())
             .collect();
-        assert_eq!(widths, [69, 69]);
+        assert_eq!(widths, [71, 71]);
         assert_eq!(
             frame(12_345_678, 1, 1),
-            "⠼ .  Scanning      12,345,678 files ·         1 dirs ·      1 B  3.1 s"
+            "⠼ .  Scanning      12,345,678 files ·         1 dirs ·      1 B · 3.10 s"
         );
         // An analyzed count is aligned to its total, which is fixed for the phase.
         assert_eq!(
             render_frame(".", &analyzing(3_508, 50_110), ms(3_100), 4, 200, false),
-            "⠼ .  Analyzing       7%   3,508 / 50,110 files  3.1 s"
+            "⠼ .  Analyzing       7%   3,508 / 50,110 files · 3.10 s"
         );
     }
 
     #[test]
     fn below_twenty_columns_only_the_spinner_and_phase_word_are_drawn() {
         let facts = walk(Phase::Saving);
-        assert_eq!(render_frame("~", &facts, ms(100), 0, 26, false), "⠋ ~  Saving        0.1 s");
-        assert_eq!(render_frame("~", &facts, ms(100), 0, 20, false), "⠋ ~  Saving  0.1 s");
+        assert_eq!(render_frame("~", &facts, ms(100), 0, 29, false), "⠋ ~  Saving        100.0 ms");
+        assert_eq!(render_frame("~", &facts, ms(100), 0, 26, false), "⠋ ~  Saving  100.0 ms");
+        assert_eq!(render_frame("~", &facts, ms(100), 0, 20, false), "⠋ Saving");
         assert_eq!(render_frame("~", &facts, ms(100), 0, 19, false), "⠋ Saving");
         assert_eq!(
             render_frame("~", &facts, ms(100), 0, 19, true),
@@ -980,10 +966,10 @@ mod tests {
     fn analysis_facts_give_way_only_as_a_whole() {
         let facts = analyzing(12_044, 50_110);
         let frame = |width| render_frame(ROOT, &facts, ms(7_900), 7, width, false);
-        assert_eq!(frame(65), "⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files  7.9 s");
-        assert_eq!(frame(64), "⠧ ~/wrk/github  Analyzing   24%  12,044 / 50,110 files  7.9 s");
-        assert_eq!(frame(62), "⠧ ~/wrk/github  Analyzing   24%  12,044 / 50,110 files  7.9 s");
-        assert_eq!(frame(61), "⠧ Analyzing");
+        assert_eq!(frame(67), "⠧ ~/wrk/github  Analyzing      24%  12,044 / 50,110 files · 7.90 s");
+        assert_eq!(frame(66), "⠧ ~/wrk/github  Analyzing   24%  12,044 / 50,110 files · 7.90 s");
+        assert_eq!(frame(64), "⠧ ~/wrk/github  Analyzing   24%  12,044 / 50,110 files · 7.90 s");
+        assert_eq!(frame(63), "⠧ Analyzing");
     }
 
     #[test]
@@ -1006,19 +992,18 @@ mod tests {
     }
 
     #[test]
-    fn elapsed_has_one_decimal_under_a_minute_then_minutes_then_hours() {
-        assert_eq!(human_elapsed(ms(0)), "0.0 s");
-        assert_eq!(human_elapsed(ms(500)), "0.5 s");
-        assert_eq!(human_elapsed(ms(3_100)), "3.1 s");
-        assert_eq!(human_elapsed(ms(3_149)), "3.1 s");
-        assert_eq!(human_elapsed(ms(3_150)), "3.2 s");
-        assert_eq!(human_elapsed(ms(59_940)), "59.9 s");
-        assert_eq!(human_elapsed(ms(59_960)), "1 m 00 s");
-        assert_eq!(human_elapsed(ms(64_000)), "1 m 04 s");
-        assert_eq!(human_elapsed(ms(3_599_400)), "59 m 59 s");
-        assert_eq!(human_elapsed(ms(3_599_600)), "1 h 00 m");
-        assert_eq!(human_elapsed(ms(3_725_000)), "1 h 02 m");
-        assert_eq!(human_elapsed(Duration::from_secs(10 * 3600 + 59 * 60 + 59)), "11 h 00 m");
+    fn elapsed_uses_the_same_duration_units_as_performance() {
+        assert_eq!(human_duration(Duration::from_nanos(999)), "999 ns");
+        assert_eq!(human_duration(Duration::from_micros(1)), "1.0 µs");
+        assert_eq!(human_duration(ms(100)), "100.0 ms");
+        assert_eq!(human_duration(ms(500)), "500.0 ms");
+        assert_eq!(human_duration(ms(3_100)), "3.10 s");
+        assert_eq!(human_duration(ms(3_149)), "3.15 s");
+        assert_eq!(human_duration(ms(59_940)), "59.94 s");
+        assert_eq!(human_duration(ms(64_000)), "64.00 s");
+        assert_eq!(human_duration(ms(129_400)), "129.40 s");
+        assert_eq!(human_duration(ms(151_330)), "151.33 s");
+        assert_eq!(human_duration(ms(3_725_000)), "3725.00 s");
     }
 
     #[test]
@@ -1026,16 +1011,16 @@ mod tests {
         let root = "~/Документы/проекты";
         let facts = walk(Phase::Saving);
         let frame = |width| render_frame(root, &facts, ms(8_100), 9, width, false);
-        let full = "⠏ ~/Документы/проекты  Saving        8.1 s";
-        // 42 characters, of which 16 in the root are wide: 58 columns.
-        assert_eq!(full.chars().count(), 42);
+        let full = "⠏ ~/Документы/проекты  Saving        8.10 s";
+        // 43 characters, of which 16 in the root are wide: 59 columns.
+        assert_eq!(full.chars().count(), 43);
         assert_eq!(path_columns(root), 35);
-        assert_eq!(frame(59), full);
-        assert_eq!(frame(58), "⠏ ~/Документы/проекты  Saving  8.1 s");
+        assert_eq!(frame(60), full);
+        assert_eq!(frame(59), "⠏ ~/Документы/проекты  Saving  8.10 s");
         // The elision keeps whole characters: a head budget of 6 columns holds `~/` and
         // two wide letters, a tail budget of 5 holds two wide letters, 11 columns in all.
-        assert_eq!(frame(30), "⠏ ~/До…ты  Saving  8.1 s");
-        assert_eq!(frame(29), "⠏ ~/До…ты  Saving  8.1 s");
+        assert_eq!(frame(30), "⠏ ~/До…ты  Saving  8.10 s");
+        assert_eq!(frame(29), "⠏ Saving");
         assert_eq!(frame(28), "⠏ Saving");
     }
 
@@ -1056,7 +1041,7 @@ mod tests {
         let facts = FrameFacts { analysis: None, ..analyzing(0, 0) };
         assert_eq!(
             render_frame(ROOT, &facts, ms(600), 2, 100, false),
-            "⠹ ~/wrk/github  Analyzing     0.6 s"
+            "⠹ ~/wrk/github  Analyzing     600.0 ms"
         );
     }
 

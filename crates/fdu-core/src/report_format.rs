@@ -13,17 +13,20 @@
 //! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
 //! file counts belong directly after the name, outside parentheses. Secondary breakdowns
 //! such as nonblank/blank counts use the same gray parenthetical role. Human directory
-//! names have a gray slash except `.` and `..`. Sizes >= 1 GiB are bold even in gray
+//! names have a gray slash except `.` and `..`. Directly or ancestrally gitignored
+//! directories use regular, nonbold cyan; merely containing ignored files does not
+//! change a directory name, and file-name styling is unchanged. Sizes >= 1 GiB are bold even in gray
 //! details; zero sizes and exact shares below 1% are gray. Pad cells before applying ANSI styles.
-//! Colored bars use green solid non-gitignored and shaded gitignored usage, with faint
+//! Colored bars use green solid non-gitignored and shaded gitignored usage, with dim green
 //! light-shade cells for unused width. Plain bars keep their original glyphs. Human tree bar width
 //! is caller-selectable, including zero to remove the bar and its gutter; machine
 //! formats and non-tree views ignore it. Human integer quantities share one grouping
 //! policy through [`human_count`] and [`human_count_u128`].
 //!
-//! Tree columns are bar, root percentage, size, then indented name. One gray remainder
-//! row per tree uses those same columns for its combined hidden usage and names the
-//! recursive hidden file count. That usage is already included in directory totals.
+//! Tree columns are bar, root percentage, size, then indented name. One remainder
+//! row per tree uses those same columns and quantity styles for unlisted root branches.
+//! Its `… and` prefix is gray; the recursive hidden file count uses normal foreground.
+//! That usage is already included in directory totals.
 //! Unknown coverage must show unknown size and no fabricated bar or percentage.
 //! Keep rerun flags out of rows: collect applicable remedies once per report in
 //! `report_epilogue`.
@@ -74,6 +77,9 @@ pub const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 
 /// Directory names in a tree, so structure reads at a glance.
 pub const STYLE_NAME: AnsiStyle = AnsiColor::BrightCyan.on_default().bold();
+
+/// A directory whose own path is gitignored, directly or by an ignored ancestor.
+const STYLE_IGNORED_NAME: AnsiStyle = AnsiColor::Cyan.on_default();
 
 const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 
@@ -1155,6 +1161,9 @@ fn emit_tree(sink: &mut impl Sink, root: &TreeNode) {
                 emit_str_field(sink, "name", &node.name);
                 emit_path_fields(sink, &node.path);
                 emit_str_field(sink, "kind", kind_label(node.kind));
+                emit_field(sink, Field::nullable("entry_ignored"), true, |sink| {
+                    emit_scalar(sink, node.entry_ignored.map_or(Scalar::Null, Scalar::Bool));
+                });
                 emit_u64_field(sink, "bytes", node.bytes);
                 emit_u64_field(sink, "allocated", node.allocated);
                 emit_u64_field(sink, "files", node.files);
@@ -1314,11 +1323,18 @@ fn percentage_cell(part: u64, whole: u64, decimals: usize, width: usize, color: 
 }
 
 /// Human directory markers are presentation only, never part of structured paths.
-fn human_name(name: &str, kind: EntryKind, color: bool) -> String {
+fn human_name(name: &str, kind: EntryKind, ignored: Option<bool>, color: bool) -> String {
+    // Own classification matters: a directory merely containing ignored files keeps
+    // the primary style, even if every selected descendant happens to be ignored.
+    let style = if kind == EntryKind::Dir && ignored == Some(true) {
+        STYLE_IGNORED_NAME
+    } else {
+        STYLE_NAME
+    };
     let slash = kind == EntryKind::Dir && !matches!(name, "." | "..") && !name.ends_with('/');
     format!(
         "{}{}",
-        paint(&escaped_human(name), STYLE_NAME, color),
+        paint(&escaped_human(name), style, color),
         if slash { detail("/", color) } else { String::new() }
     )
 }
@@ -1840,7 +1856,7 @@ fn render_text_tree(
                 "{bar_prefix}{}  {}  {indent}{}{}{}",
                 percentage_cell(bytes, grand, 0, 5, color),
                 styled_bytes(bytes, 10, color, false),
-                human_name(&node.name, node.kind, color),
+                human_name(&node.name, node.kind, node.entry_ignored, color),
                 count,
                 ignored_suffix(node.ignored, size, selected, color),
             );
@@ -1871,7 +1887,7 @@ fn render_tree_remainder(
     };
     let measure = bytes.map_or_else(
         || detail(&format!("{:>10}", "unknown"), color),
-        |bytes| styled_bytes(bytes, 10, color, true),
+        |bytes| styled_bytes(bytes, 10, color, false),
     );
     // With no visible root, a known remainder represents the whole selected root.
     // A missing measurement cannot honestly produce either a bar or a percentage.
@@ -1884,16 +1900,16 @@ fn render_tree_remainder(
                 color,
                 bar_size,
             ),
-            detail(&format!("{:>5}", human_percentage(bytes, grand, 0)), color),
+            percentage_cell(bytes, grand, 0, 5, color),
         ),
         None => (" ".repeat(bar_size), detail(&format!("{:>5}", "—"), color)),
     };
     let files = remainder.files.map_or_else(
-        || "more files (count unknown)".to_owned(),
+        || format!("more files {}", detail("(count unknown)", color)),
         |files| format!("{} more {}", human_count(files), plural(files, "file", "files")),
     );
     let indent = "  ".repeat(depth);
-    let note = detail(&format!("{indent}… and {files}"), color);
+    let note = format!("{} {files}", detail(&format!("{indent}… and"), color));
     let bar_prefix = if bar_size == 0 { String::new() } else { format!("{usage_bar}  ") };
     let _ = writeln!(out, "{bar_prefix}{percentage}  {measure}  {note}");
 }
@@ -1964,7 +1980,7 @@ fn render_text_ranked_files(
             out,
             "{}  {}",
             value,
-            human_name(&row.path.to_string_lossy(), row.kind, color)
+            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color)
         );
     }
 }
@@ -1996,7 +2012,7 @@ fn render_text_metric_files(out: &mut String, rows: &[FileRow], color: bool) {
             out,
             "{:>width$}  {}{}",
             value,
-            human_name(&row.path.to_string_lossy(), row.kind, color),
+            human_name(&row.path.to_string_lossy(), row.kind, row.ignored, color),
             classification
         );
     }
@@ -2207,7 +2223,7 @@ fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: u
         return format!(
             "{}{}",
             paint(&"▒".repeat(filled), STYLE_BAR, true),
-            paint(&"░".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
+            paint(&"░".repeat(width - filled), STYLE_BAR.dimmed(), true)
         );
     }
     let ignored = bar_cells(ignored.unwrap_or(0), bytes, filled);
@@ -2215,7 +2231,7 @@ fn usage_bar(bytes: u64, total: u64, ignored: Option<u64>, color: bool, width: u
         "{}{}{}",
         paint(&"█".repeat(filled - ignored), STYLE_BAR, true),
         paint(&"▓".repeat(ignored), STYLE_BAR, true),
-        paint(&"░".repeat(width - filled), STYLE_DETAIL.dimmed(), true)
+        paint(&"░".repeat(width - filled), STYLE_BAR.dimmed(), true)
     )
 }
 
@@ -4140,7 +4156,7 @@ mod tests {
         for expected in [
             "\"summary\": {\"files\": 2, \"dirs\": 2, \"bytes\": 164, \"allocated\": 1024, \
              \"ignored\": {\"files\": 1, \"dirs\": 1, \"bytes\": 128, \"allocated\": 512}, ",
-            "\"name\": \"src\", \"path\": \"src\", \"kind\": \"dir\", \"bytes\": 36, \
+            "\"name\": \"src\", \"path\": \"src\", \"kind\": \"dir\", \"entry_ignored\": false, \"bytes\": 36, \
              \"allocated\": 512, \"files\": 1, \"dirs\": 0, \"ignored\": {\"files\": 0, \
              \"dirs\": 0, \"bytes\": 0, \"allocated\": 0}, ",
             "{\"extension\": \".gz\", \"files\": 1, \"bytes\": 128, \"allocated\": 512, \
@@ -4374,7 +4390,7 @@ mod tests {
         assert!(
             colored.contains(&format!(
                 "{} 3,508 files {}",
-                human_name("a(b)\n界", EntryKind::Dir, true),
+                human_name("a(b)\n界", EntryKind::Dir, None, true),
                 detail("(43 B gitignored)", true)
             )),
             "{colored:?}"
@@ -4622,14 +4638,30 @@ mod tests {
         assert_eq!(human_percentage(u64::MAX / 100 + 1, u64::MAX, 0), "1%");
         assert_eq!(human_percentage(u64::MAX / 1_000, u64::MAX, 1), "<0.1%");
         for name in [".", ".."] {
-            assert_eq!(human_name(name, EntryKind::Dir, false), name);
+            assert_eq!(human_name(name, EntryKind::Dir, None, false), name);
         }
         assert_eq!(
-            human_name("build", EntryKind::Dir, true),
+            human_name("build", EntryKind::Dir, None, true),
             format!("{}{}", paint("build", STYLE_NAME, true), detail("/", true))
         );
-        assert_eq!(human_name("build", EntryKind::File, false), "build");
-        assert_eq!(human_name("build", EntryKind::Dir, false), "build/");
+        assert_eq!(human_name("build", EntryKind::File, None, false), "build");
+        assert_eq!(human_name("build", EntryKind::Dir, None, false), "build/");
+    }
+
+    #[test]
+    fn only_own_ignored_directories_lose_bold_name_styling() {
+        for ignored in [None, Some(false), Some(true)] {
+            let style = if ignored == Some(true) { STYLE_IGNORED_NAME } else { STYLE_NAME };
+            assert_eq!(
+                human_name("node_modules", EntryKind::Dir, ignored, true),
+                format!("{}{}", paint("node_modules", style, true), detail("/", true))
+            );
+            assert_eq!(
+                human_name("file.rs", EntryKind::File, ignored, true),
+                paint("file.rs", STYLE_NAME, true)
+            );
+            assert_eq!(human_name("node_modules", EntryKind::Dir, ignored, false), "node_modules/");
+        }
     }
 
     #[test]
@@ -4641,7 +4673,7 @@ mod tests {
                 "{}{}{}",
                 paint("████", STYLE_BAR, true),
                 paint("▓▓", STYLE_BAR, true),
-                paint("░░░░", STYLE_DETAIL.dimmed(), true)
+                paint("░░░░", STYLE_BAR.dimmed(), true)
             )
         );
         assert_eq!(strip_ansi(&split).chars().count(), 10);
@@ -4653,7 +4685,7 @@ mod tests {
                 "{}{}{}",
                 paint("", STYLE_BAR, true),
                 paint("▓▓▓▓▓▓▓▓▓▓", STYLE_BAR, true),
-                paint("", STYLE_DETAIL.dimmed(), true)
+                paint("", STYLE_BAR.dimmed(), true)
             )
         );
         assert_eq!(strip_ansi(&usage_bar(0, 0, None, true, 10)), "░░░░░░░░░░");
@@ -4723,6 +4755,7 @@ mod tests {
 
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
     const DEEP_RENDER_DEPTH: usize = 1_024;
+    const DEEP_REPORT_STACK_BYTES: usize = 128 * 1_024;
     const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
 
     // ---- renderer tests that lived in the command line -------------------------------
@@ -4767,8 +4800,11 @@ mod tests {
     const DEEP_RENDER_TEST_PATH: &str = "report_format::tests::deep_rendering_is_stack_safe";
 
     fn run_deep_render_child() {
-        // A deep tree must render, not abort: expansion and all three renderers use
-        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
+        // A deep tree must build and render without depth-recursive stack growth.
+        // Windows reserves 20 KiB of a spawned thread's stack for overflow handling;
+        // a 64 KiB reservation leaves too little dependable room for report setup in
+        // debug builds. Keep construction bounded at 128 KiB, then test rendering and
+        // release separately on the original 64 KiB stack.
         let mut index = crate::Index::new("/fixture");
         let mut path = PathBuf::new();
         for depth in 0..DEEP_RENDER_DEPTH {
@@ -4784,9 +4820,9 @@ mod tests {
         }
         index.set_initial_freshness(false);
 
-        std::thread::Builder::new()
-            .name("deep-render".to_string())
-            .stack_size(DEEP_RENDER_STACK_BYTES)
+        let report = std::thread::Builder::new()
+            .name("deep-report".to_string())
+            .stack_size(DEEP_REPORT_STACK_BYTES)
             .spawn(move || {
                 let query = Query {
                     selection: Selection {
@@ -4806,13 +4842,11 @@ mod tests {
                     complete: true,
                     errors: Vec::new(),
                 };
+                eprintln!("deep-render phase: request");
+                let request = crate::test_support::read_of(&index, query);
                 eprintln!("deep-render phase: report");
-                let report = report(
-                    &index,
-                    &crate::test_support::read_of(&index, query.clone()),
-                    &provenance,
-                )
-                .expect("report");
+                let report = report(&index, &request, &provenance).expect("report");
+                eprintln!("deep-render phase: verify tree");
                 let Section::Tree { root: Some(root), omissions, .. } = &report.sections[0] else {
                     panic!("expected a tree section with a root")
                 };
@@ -4825,6 +4859,16 @@ mod tests {
                     pending.extend(node.children.iter());
                 }
                 assert_eq!(nodes, DEEP_RENDER_DEPTH + 1, "the test must reach every directory");
+                report
+            })
+            .expect("spawn deep-report thread")
+            .join()
+            .expect("deep-report thread");
+
+        std::thread::Builder::new()
+            .name("deep-render".to_string())
+            .stack_size(DEEP_RENDER_STACK_BYTES)
+            .spawn(move || {
                 for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                     eprintln!("deep-render phase: render {format:?}");
                     let rendered = render(&report, format, false);
@@ -4837,6 +4881,8 @@ mod tests {
                     }
                 }
                 eprintln!("deep-render phase: drop");
+                drop(report);
+                eprintln!("deep-render phase: complete");
             })
             .expect("spawn deep-render thread")
             .join()

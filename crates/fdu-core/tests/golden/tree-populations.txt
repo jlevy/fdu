@@ -1,20 +1,31 @@
 INCLUDE
-<ESC>[32m████<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m   100%     1.5 KiB  <ESC>[1m<ESC>[96m.<ESC>[0m 5 files <ESC>[90m(1.0 KiB gitignored)<ESC>[0m
-<ESC>[32m████<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m  <ESC>[90m 100%<ESC>[0m  <ESC>[90m   1.5 KiB<ESC>[0m  <ESC>[90m  … and 5 more files<ESC>[0m
+<ESC>[32m████<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%     1.5 KiB  <ESC>[1m<ESC>[96m.<ESC>[0m 5 files <ESC>[90m(1.0 KiB gitignored)<ESC>[0m
+<ESC>[32m████<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%     1.5 KiB  <ESC>[90m  … and<ESC>[0m 5 more files
+
+INCLUDE EXPANDED
+<ESC>[32m████<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%     1.5 KiB  <ESC>[1m<ESC>[96m.<ESC>[0m 5 files <ESC>[90m(1.0 KiB gitignored)<ESC>[0m
+<ESC>[32m<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m░░░░<ESC>[0m    62%     1,000 B    <ESC>[36mbuild<ESC>[0m<ESC>[90m/<ESC>[0m 1 file <ESC>[90m(1,000 B gitignored)<ESC>[0m
+<ESC>[32m<ESC>[0m<ESC>[32m▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m░░░░<ESC>[0m    62%     1,000 B      <ESC>[36mcache<ESC>[0m<ESC>[90m/<ESC>[0m 1 file <ESC>[90m(1,000 B gitignored)<ESC>[0m
+<ESC>[32m██<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m░░░░░░░░<ESC>[0m    20%       325 B    <ESC>[1m<ESC>[96msrc<ESC>[0m<ESC>[90m/<ESC>[0m 3 files <ESC>[90m(25 B gitignored)<ESC>[0m
+<ESC>[32m█<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m░░░░░░░░░<ESC>[0m    12%       200 B      <ESC>[1m<ESC>[96mlib.rs<ESC>[0m
+<ESC>[32m█<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m░░░░░░░░░<ESC>[0m     6%       100 B      <ESC>[1m<ESC>[96mmain.rs<ESC>[0m
+<ESC>[32m<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m░░░░░░░░░░<ESC>[0m     2%        25 B      <ESC>[1m<ESC>[96mdebug.log<ESC>[0m <ESC>[90m(25 B gitignored)<ESC>[0m
+<ESC>[32m██<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m░░░░░░░░<ESC>[0m    18%       300 B    <ESC>[1m<ESC>[96mdocs<ESC>[0m<ESC>[90m/<ESC>[0m 1 file
+<ESC>[32m██<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m░░░░░░░░<ESC>[0m    18%       300 B      <ESC>[1m<ESC>[96mguide.md<ESC>[0m
 
 EXCLUDE
-<ESC>[32m██████████<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m   100%       600 B  <ESC>[1m<ESC>[96m.<ESC>[0m 3 files
-<ESC>[32m██████████<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m  <ESC>[90m 100%<ESC>[0m  <ESC>[90m     600 B<ESC>[0m  <ESC>[90m  … and 3 more files<ESC>[0m
+<ESC>[32m██████████<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%       600 B  <ESC>[1m<ESC>[96m.<ESC>[0m 3 files
+<ESC>[32m██████████<ESC>[0m<ESC>[32m<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%       600 B  <ESC>[90m  … and<ESC>[0m 3 more files
 
 ONLY
-<ESC>[32m<ESC>[0m<ESC>[32m▓▓▓▓▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m   100%     1.0 KiB  <ESC>[1m<ESC>[96m.<ESC>[0m 2 files
-<ESC>[32m<ESC>[0m<ESC>[32m▓▓▓▓▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m  <ESC>[90m 100%<ESC>[0m  <ESC>[90m   1.0 KiB<ESC>[0m  <ESC>[90m  … and 2 more files<ESC>[0m
+<ESC>[32m<ESC>[0m<ESC>[32m▓▓▓▓▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%     1.0 KiB  <ESC>[1m<ESC>[96m.<ESC>[0m 2 files
+<ESC>[32m<ESC>[0m<ESC>[32m▓▓▓▓▓▓▓▓▓▓<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%     1.0 KiB  <ESC>[90m  … and<ESC>[0m 2 more files
 
 NO CONTROLS
-<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m   100%        10 B  <ESC>[1m<ESC>[96m.<ESC>[0m 1 file
-<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m  <ESC>[90m 100%<ESC>[0m  <ESC>[90m      10 B<ESC>[0m  <ESC>[90m  … and 1 more file<ESC>[0m
+<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%        10 B  <ESC>[1m<ESC>[96m.<ESC>[0m 1 file
+<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%        10 B  <ESC>[90m  … and<ESC>[0m 1 more file
 
 REFUSED CONTROL
-<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m   100%         7 B  <ESC>[1m<ESC>[96m.<ESC>[0m 3 files
-<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[90m<ESC>[0m  <ESC>[90m 100%<ESC>[0m  <ESC>[90m       7 B<ESC>[0m  <ESC>[90m  … and 3 more files<ESC>[0m
+<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%         7 B  <ESC>[1m<ESC>[96m.<ESC>[0m 3 files
+<ESC>[32m▒▒▒▒▒▒▒▒▒▒<ESC>[0m<ESC>[2m<ESC>[32m<ESC>[0m   100%         7 B  <ESC>[90m  … and<ESC>[0m 3 more files
 
