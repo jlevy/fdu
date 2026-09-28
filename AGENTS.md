@@ -74,13 +74,6 @@ actions rather than telling them to run commands.
 
 <!-- END TBD INTEGRATION -->
 
-<!-- Kept outside the TBD INTEGRATION block, which `tbd setup` rewrites.
--->
-
-An agent claims a bead under its own name: `tbd start <id> --as <agent>`, or with
-`TBD_AGENT` set. Without either, tbd falls back to a `<harness>@<host>` identity, which
-writes the machine’s host name into the shared sync branch.
-
 ## Build and Test
 
 ```shell
