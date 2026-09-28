@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-08
 
-**Status:** Active
+**Status:** Active. Phase 0 and later walker increments have shipped; the Phase 1
+performance and evidence exit criteria below remain open.
 
 **Background:**
 [research-2026-08-06-file-rollup-engine.md](../../research/research-2026-08-06-file-rollup-engine.md)
@@ -131,11 +132,14 @@ they were not in the research:
 
 ## What Phase 1 Delivers
 
-Goal 1 met and *demonstrated*: the fastest walker available that also returns full
-detailed stats, with a cache that makes warm runs near-instant, benchmarked honestly
-against dut and gdu.
-Plus the CLI as a finished product surface, and the type-rule dialect defined early
-enough that plugins never need two rule languages.
+The Phase 1 target is a walker that returns full detailed stats, with a useful warm
+cache and comparable, reproducible evidence against peers.
+The parallel and native walker increments shipped, and the README now cites a dated
+macOS tool comparison on a generated tree.
+That exploratory, uncontrolled-host comparison does not establish the full Phase 1
+matrix, the warm 500k target, or the dedicated-host evidence gate.
+The product surfaces and type-rule dialect have also advanced, but the exit criteria
+below still determine when this phase is complete.
 
 Phase 1 explicitly excludes content-tier metrics (words, sentences, paragraphs) and a
 durable cross-restart delta journal.

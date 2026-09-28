@@ -761,11 +761,11 @@ Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
 (H139–H143 used on
-[Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md)
+[Linux parallel validation](../specs/done/plan-2026-09-19-linux-parallel-validation.md)
 on [#94](https://github.com/jlevy/fdu/pull/94); H144–H146 reserved on
-[Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md);
+[Linux performance iteration](../specs/done/plan-2026-09-20-linux-performance-iteration.md);
 H147 used for the Linux transient recycle keep; H148 recorded on
-[the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md) (folded onto
+[the Linux PGO screen](../specs/done/plan-2026-09-20-linux-pgo-screen.md) (folded onto
 [#97](https://github.com/jlevy/fdu/pull/97)); H149 is the leftover-timer restore mix on
 [#105](https://github.com/jlevy/fdu/pull/105); H150 and H151 are the progress handle’s
 cost on [#120](https://github.com/jlevy/fdu/pull/120); H152 and H153 are the exact
@@ -876,9 +876,9 @@ H153 confirmation, H154 Linux replication, and H155 post-H153 profiling are the 
 next-up work. Earlier H116–H120 planning is in
 [the historical post-H115 queue](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md).
 Linux replication and H111 are recorded in
-[the Linux parallel-validation block](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
+[the Linux parallel-validation block](../specs/done/plan-2026-09-19-linux-parallel-validation.md).
 Linux leftover iteration after that block lives in
-[Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md).
+[Linux performance iteration](../specs/done/plan-2026-09-20-linux-performance-iteration.md).
 Do not take `macos-agenda` beads in 2026-08-23 plan order without reading those.
 
 ### Traversal and syscalls

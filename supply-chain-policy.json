@@ -38,9 +38,9 @@
     "npm": [
       {
         "name": "get-tbd",
-        "version": "0.7.1",
-        "integrity": "sha512-ToFlkFXLlmndxnYG+PBiDx+z8NuCRPK6K0G9w843ZEnSnPaA5yzmUwUwVGx5oLuHok62njVjQVut/shgewxfHA==",
-        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.7.1.tgz",
+        "version": "0.9.0",
+        "integrity": "sha512-XB+oxBqR6oT6CqdmWqAxfRMPI9RZ5ofAEdU91+I+tC/lmwhwH7XqRk7y4m/KLB9WqtYKK9dTvr5jQR7jg57zBA==",
+        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.9.0.tgz",
         "files": [
           ".claude/hooks/tbd-closing-reminder.sh",
           ".claude/scripts/tbd-session.sh",

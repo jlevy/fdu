@@ -40,6 +40,7 @@ engine, query, and command-line audits.
 | T3 | Medium | Synthetic aggregates beyond `u64` capacity can wrap or panic | Open boundary defect, `fdu-sqyk` |
 | T4 | Medium | Nested-only omissions emitted a note referring to an absent remainder | Note now requires an actual remainder; bounds and tips remain |
 | T5 | Low | Floating-point conversion could label an extreme value below 1% as 1% | Less-than threshold now uses exact integer arithmetic |
+| T6 | Medium | Deep-render test pruned zero-byte descendants before exercising them | Explicit unlimited selection and independent 1,025-node assertion; separate bounded construction/render threads |
 
 The chosen design keeps one engine remainder model for every format.
 It changes the summary’s meaning rather than subtracting overlapping directory rows in
@@ -183,10 +184,76 @@ Library-only and minimum-Rust checks, source-package installation, concurrency, 
 path-independence cases, 72 release tests, three terminal tests, audits, and
 performance-evidence checks passed.
 The exact-percentage boundary regression passed.
-The Linux-recorded parity artifact still needs CI refresh for schema 10 and the changed
-accounting note; it has not been regenerated locally.
-The new candidate is not installed yet.
-CI and installation evidence will follow in the PR review record.
+The Linux-recorded parity artifact was adopted from
+[CI run 36359389050](https://github.com/jlevy/fdu/actions/runs/36359389050), commit
+`f03eeb551a861a049ece821bfabc8766b7eca8d4`. Its SHA-256 is
+`40dac093e2f231e5f5d3b718bdbd3e101978a651ccc37a0f44b4282bd3894747`. The reviewed
+differences cover schema 10, the accounting note, root-only remainder values, and skill
+wording; no new deviation class was introduced.
+
+The initial corrected and installed candidate `0.1.0-dev+g0d5f9a10a` passed an
+independent 77-check audit across 19 invocations, covering both byte measures, full
+expansion, bound composition, ignore controls, JSON and YAML facts, ANSI colors, and
+quiet diagnostics. The installed skill matches its bundled source byte-for-byte.
+Final matrix status is recorded in the
+[PR review](https://github.com/jlevy/fdu/pull/136).
+
+### Deep-Tree Validation Gap
+
+The zero-byte fixture originally used the default 1% filter, pruning descendants before
+rendering. The corrected test removes every display bound and independently asserts all
+1,025 nodes and no omissions.
+
+A separate intermittent Windows failure recurred during report construction in
+[run 36362072990](https://github.com/jlevy/fdu/actions/runs/36362072990), while
+identical core source passed the implementation and top-layer runs.
+The pinned Rust 1.97.1 Windows runtime reserves 20 KiB of each spawned thread’s stack
+for overflow handling, leaving little margin inside the test’s 64 KiB reservation.
+Review found no depth-recursive call in this fixture’s report-construction path.
+
+The test now constructs and verifies the report on a bounded 128 KiB thread, then moves
+it to a separate 64 KiB thread for text, JSON, JSONL, YAML, streaming, and explicit
+drop. Phase markers distinguish request, report construction, verification, each
+renderer, and destruction.
+This preserves the narrow renderer check and bounds construction independently.
+The focused macOS test passes; final Windows results and the disposition of `fdu-4793`
+are recorded in the
+[PR review](https://github.com/jlevy/fdu/pull/136#issuecomment-5860865321).
+
+## Presentation Follow-Up
+
+The subsequent presentation pass (`593cea57`) keeps remainder quantities in the same
+numeric roles as ordinary rows; only the “more files” annotation is gray.
+Unused bar cells are dim green.
+Directory names use regular cyan without bold only when their own path is gitignored,
+directly or through an ignored ancestor.
+Merely containing ignored files does not change a directory name, and file-name styling
+is unchanged.
+
+A nullable `entry_ignored` field carries that own-entry fact through Rust tree reports,
+machine output, and Python models.
+Tests distinguish empty ignored directories, inherited ignored directories, mixed
+directories, unknown classification, and unignored ancestors retained by
+`--ignored=only`. The expanded ANSI golden checks the actual folder and file styles.
+Progress and `perf:` now share one elapsed-time formatter, including two-decimal seconds
+such as `151.33 s` without minute/hour notation.
+
+Validation passed 98 CLI tests, 912 core tests (one intentional skip), 198 command-line
+goldens, 70 Python tests, and three terminal tests.
+The full handoff run completed; corrective Rust and library-only reruns passed after the
+progress-width expectations and one exact JSON assertion were updated.
+Minimum-Rust, wheel and source-package installation, concurrency, documentation, audits,
+2,267 path-independence cases, and 72 release tests passed.
+CLI/Python parity matched all 53 classified differences.
+
+The current parity record comes from
+[Linux CI run 36361381366](https://github.com/jlevy/fdu/actions/runs/36361381366),
+producer `345278eb4cde8b3ac03850bab240eae96ea0c036`, with SHA-256
+`1b02283b9e1eadcbfd142ad1345f0f7ef38609273f6a2bb65d9a8436d98b9a6f`. Its changes add the
+exact entry-classification facts and corresponding hunk offsets.
+The later commit corrects a test assertion and adopts this artifact; it does not change
+the report facts. Final installed-candidate acceptance and platform CI results are
+recorded in [PR #136](https://github.com/jlevy/fdu/pull/136).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
