@@ -66,7 +66,7 @@ def parse_analysis(value: str) -> str:
 # line refuses it.
 RETIRED_CACHE_POLICIES = {
     "only": "answering from the snapshot alone is now --stale-ok",
-    "refresh": "removed; use on to write the snapshot after every complete run",
+    "refresh": "removed; use on, which also writes after a one-shot report",
     "read-only": (
         "removed; auto no longer writes after a one-shot metadata report, and off reads nothing"
     ),

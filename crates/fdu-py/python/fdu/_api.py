@@ -569,7 +569,7 @@ def report(
 
     Under ``CachePolicy.AUTO`` a metadata report neither reads nor writes the snapshot
     cache, and a content-analysis report reads and writes it; ``CachePolicy.ON`` writes
-    after every complete scan, which is how to leave a snapshot for a later
+    after a one-shot report too, which is how to leave a snapshot for a later
     ``stale_ok=True`` report that answers without touching the tree.
 
     The contract the command line runs under, and until now the only way to get it was to

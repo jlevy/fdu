@@ -95,6 +95,8 @@ fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
         .args(args)
         .arg(tree)
         .env("XDG_CACHE_HOME", cache)
+        // FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu");
     assert!(
@@ -140,6 +142,7 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
             .args(["--watch", "--view", "files", "--interval", "1s"])
             .arg(&tree)
             .env("XDG_CACHE_HOME", cache.path())
+            .env_remove("FDU_CACHE_DIR")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -192,6 +195,7 @@ fn a_projected_controls_off_watch_never_replaces_the_stronger_snapshot() {
             ])
             .arg(&tree)
             .env("XDG_CACHE_HOME", cache.path())
+            .env_remove("FDU_CACHE_DIR")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -269,6 +273,7 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
             .args(["--watch", "--view", "files", "--interval", "1s"])
             .arg(&tree)
             .env("XDG_CACHE_HOME", cache.path())
+            .env_remove("FDU_CACHE_DIR")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -299,6 +304,7 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
         .args(["--view", "summary", "--format", "json", "--stale-ok"])
         .arg(&tree)
         .env("XDG_CACHE_HOME", cache.path())
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("run fdu against the saved cache");
 
@@ -322,6 +328,7 @@ fn a_killed_watch_still_leaves_a_warm_cache() {
         .args(["--view", "files", "--format", "jsonl", "--stale-ok"])
         .arg(&tree)
         .env("XDG_CACHE_HOME", cache.path())
+        .env_remove("FDU_CACHE_DIR")
         .output()
         .expect("list the saved cache");
     let listed = String::from_utf8_lossy(&listing.stdout);

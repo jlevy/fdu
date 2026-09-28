@@ -251,7 +251,7 @@ pub enum CachePolicy {
     /// start from a default snapshot by discarding its control tier while loading.
     #[default]
     Auto,
-    /// Read where `Auto` reads, and write after every complete indexed run.
+    /// Read and write where `Auto` does, and also write after a one-shot report.
     ///
     /// The way to leave a current snapshot behind a one-shot report, for a later
     /// [`query::Delivery::stale_ok`] answer or a warm session. A summary that would

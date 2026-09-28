@@ -1354,7 +1354,7 @@ pub fn parse_cache_policy(value: &str, axis: &'static str) -> Result<CachePolicy
         "refresh" => Err(invalid(
             axis,
             "refresh",
-            "removed; use on to write the snapshot after every complete run",
+            "removed; use on, which also writes after a one-shot report",
         )),
         "read-only" => Err(invalid(
             axis,
@@ -1486,10 +1486,17 @@ mod tests {
             ),
             (
                 "refresh",
-                "invalid --cache \"refresh\": removed; use on to write the snapshot after every \
-                 complete run",
-                "invalid cache policy \"refresh\": removed; use on to write the snapshot after \
-                 every complete run",
+                "invalid --cache \"refresh\": removed; use on, which also writes after a one-shot \
+                 report",
+                "invalid cache policy \"refresh\": removed; use on, which also writes after a \
+                 one-shot report",
+            ),
+            (
+                "read-only",
+                "invalid --cache \"read-only\": removed; auto no longer writes after a one-shot \
+                 metadata report, and off reads nothing",
+                "invalid cache policy \"read-only\": removed; auto no longer writes after a \
+                 one-shot metadata report, and off reads nothing",
             ),
         ] {
             let message = |axis| {
