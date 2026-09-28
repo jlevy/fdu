@@ -28,7 +28,25 @@ way or what the evidence actually supports.
 | [file content metrics](docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md) | In `specs/done/`. |
 | [rust module filenames](docs/project/specs/done/plan-2026-08-13-rust-module-filenames.md) | In `specs/done/`. |
 | [CLI UX and agent skill](docs/project/specs/done/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) | In `specs/done/`. |
-| [composable CLI surface](docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md) | In `specs/done/`; implementation complete and merged; follow-ups tracked under `fdu-pxeb` and `fdu-ktyl`. |
+| [composable CLI surface](docs/project/specs/done/plan-2026-08-10-fdu-composable-cli-surface.md) | In `specs/done/`; implementation complete and merged; follow-ups tracked under `fdu-pxeb` in the [active follow-up plan](docs/project/specs/active/plan-2026-09-27-cli-and-skill-followups.md); `fdu-ktyl` is closed. |
+
+## Completed Increments Reconciled 2026-09-27
+
+Implementation completion and publication are separate states.
+The analysis and inventory increments below are verified on the open PR stack;
+`fdu-0gqc` owns landing.
+
+| Plan | Completion evidence and retained follow-ups |
+| --- | --- |
+| [Analysis and presentation](docs/project/specs/done/plan-2026-09-26-code-analysis-presentation.md) | `fdu-ccf7` and implementation children closed; #133 CI green. |
+| [Inventory and allocation examples](docs/project/specs/done/plan-2026-09-26-directory-inventory-accounting.md) | #135 CI green; unique hard-link accounting remains `fdu-579b`/`fdu-8ybz`. |
+| [View vocabulary](docs/project/specs/done/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md) | `fdu-yov0` complete, including real JSONL parsing; lifecycle repair `fdu-747k` complete. |
+| [Linux parallel validation](docs/project/specs/done/plan-2026-09-19-linux-parallel-validation.md) | Recorded experiment, #94 merged; rejected H111 verdict retains its virtualized-host scope. |
+| [Linux PGO screen](docs/project/specs/done/plan-2026-09-20-linux-pgo-screen.md) | Recorded screen; release pipeline adoption remains `fdu-pdne`. |
+| [Linux performance iteration](docs/project/specs/done/plan-2026-09-20-linux-performance-iteration.md) | #97/#105 merged; recycling guard `fdu-lmxd` implemented. Cold-regime tuning remains `fdu-tk1b` under campaign 2. |
+
+Closed epics `fdu-ives`, `fdu-5e17`, and `fdu-ktyl` have also been removed from the
+active map. Their bead records retain delivery and disposition evidence.
 
 ## Landed campaigns worth remembering
 

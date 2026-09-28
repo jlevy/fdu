@@ -33,6 +33,14 @@ Never force-push: the committed evidence cites SHAs.
 The 2026-09-27 H152–H153 round started from `origin/main` at `4c4917f4`; its
 provisionally retained engine increment is `d0902cfd`.
 
+**Tracking update (2026-09-27):** The
+[current work map](../../../TODO.md#performance-and-evidence) records open owners.
+Linux parallel, iteration and PGO-screen increments are recorded in `specs/done/`; PGO
+release adoption (`fdu-pdne`) and cold-regime tuning (`fdu-tk1b`) remain.
+The #132 exploratory benchmark refresh does not resolve `fdu-ow8y`; #131 remains an open
+FSEvents probe/design increment.
+These status corrections do not alter the measured regimes or experiment verdicts below.
+
 ### Standing Best and Regime
 
 **H133 / exp-132** is the latest wall-speed increment on deciding-scale
@@ -654,7 +662,7 @@ Do not raise the README 200K files/s or 4M cached lines/s.
 7. **H111** (`fdu-jekg`). Linux floor stage of H86. **Failed** on
    [#94](https://github.com/jlevy/fdu/pull/94) (exp-141, virtualized).
    Recorded:
-   [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md).
+   [Linux parallel validation](../specs/done/plan-2026-09-19-linux-parallel-validation.md).
    Leftover is H143. Do not restart the rewrite.
    Do not treat a Darwin cell as this claim.
 
@@ -754,7 +762,7 @@ Do not defer snapshot `merge_upward`. Do not retry H109.
 | [Current Pickup](#current-pickup-2026-09-27) | Current action order and next free ids |
 | This standing section | Standing best and host regime |
 | [Post-H115 remaining-headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md) | Historical Darwin H107–H138 queue and rejected attempts; not the current pickup |
-| [Linux parallel validation](../specs/active/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
+| [Linux parallel validation](../specs/done/plan-2026-09-19-linux-parallel-validation.md) | Linux recorded on #94: H139–H142 same; H111 fail; H143 leftover confirmed. Base `main`; merges onto `main`, then #97 |
 | [The loop guide](performance-loop.md) | Protocol, accept rule, hypothesis registry |
 | [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | Floor-anchored strategy; the 2026-08-23 Tier 1–3 list is history |
 | [The instrumentation playbook](performance-instrumentation-playbook.md) | Instrument before optimizing; `FDU_COUNTERS=1` |
@@ -879,7 +887,7 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 
 [#94](https://github.com/jlevy/fdu/pull/94) is recorded and merges onto `main`, then
 #97. Further Linux cells are on
-[Linux performance iteration](../specs/active/plan-2026-09-20-linux-performance-iteration.md)
+[Linux performance iteration](../specs/done/plan-2026-09-20-linux-performance-iteration.md)
 (`cursor/linux-perf-iterate-de1b`).
 
 1. **H144** — Linux cache-hit leftover after the landed stack.
@@ -915,8 +923,8 @@ shipped release profile.
 Quiet `linux-v6.12` `cold-scan-index` −8.35% [−10.35%, −6.92%] and `warm-revalidate`
 −8.15% [−8.64%, −7.07%]. Revalidate component is flat.
 `[profile.release]` unchanged.
-See [the Linux PGO screen](../specs/active/plan-2026-09-20-linux-pgo-screen.md)
-(recorded on [#97](https://github.com/jlevy/fdu/pull/97)).
+See [the Linux PGO screen](../specs/done/plan-2026-09-20-linux-pgo-screen.md) (recorded
+on [#97](https://github.com/jlevy/fdu/pull/97)).
 
 **H149 / exp-155** is the standing Linux cache-hit mix after leftover apply-timer
 expansion: **same** leftover identity.

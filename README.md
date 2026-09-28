@@ -132,6 +132,86 @@ contain each file’s own size.
 See
 [complete inventories and find/fd examples](docs/usage.md#find-files-and-export-complete-inventories).
 
+## Understand a Codebase
+
+```shell
+fdu . --analyze=code --ignored=exclude --limit=5
+```
+
+For example, the output-design implementation applied to repository revision `ab0c4e36`
+produced this stdout:
+
+```text
+(5 of 16)
+119,938 code lines (14,767 comment, 11,762 blank)
+242 of 244 source files analyzed across 15 languages (exclude population)
+22 selected files with unclassified type
+2 unsupported
+Language shares of measured code lines
+    77,694   64.8%  Rust (101/101 analyzed)
+    37,757   31.5%  Python (95/95 analyzed)
+     3,808    3.2%  JavaScript (25/25 analyzed)
+       403    0.3%  C (3/3 analyzed)
+       249    0.2%  Shell (7/7 analyzed)
+```
+
+The suggestion appears once on stderr, followed by the run’s `perf:` summary:
+
+```text
+tip: show more rows: --limit=all
+```
+
+The percentages share one denominator: all measured code lines, including languages
+outside the five displayed rows.
+Counts include tests and fixtures in the selected repository, and change as the checkout
+changes. Coverage makes unsupported and unclassified files visible instead of treating
+them as zero lines.
+
+`--ignored=exclude` avoids traversing and reading ignored trees such as local builds and
+environments. Omit it to analyze both populations and show their contributions.
+`--limit=all` shows every language; `--format=json` gives structured counts and
+coverage. See [content analysis](docs/usage.md#analyze-file-contents) for the counting
+convention and supported languages.
+
+## Tally Environments and Build Outputs
+
+Find every `.venv`, `node_modules`, and Cargo `target` directory under a work directory,
+largest first, then get their combined usage from the same cached scan:
+
+```shell
+fdu ~/work --kind dir --include .venv --include node_modules --include target --full --long
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view summary --cache only
+```
+
+The first command lists each matching directory’s allocated size, modification age, and
+path. The second reads the snapshot without another walk; it describes that recorded
+scan, not changes made afterward.
+Ignored directories are included by default, which is useful for environments and build
+outputs.
+
+Nested matches appear individually in the list, so adding those rows can double-count
+contents. Summary counts their covered paths once.
+For example, a nested `node_modules` contributes to both its own row and its parent’s
+row, but only once to Summary.
+The names are conventions: `target` is Cargo’s default build directory, and custom build
+locations require another include pattern.
+Symlinks are not followed.
+
+For detailed rows and the total in one structured report:
+
+```shell
+fdu ~/work --kind dir --include .venv --include node_modules --include target \
+  --view files,summary --full --sort size --format json
+```
+
+These are per-path sizes, not estimates of space freed by deletion.
+Hard links can share one file, and copy-on-write clones can share physical blocks while
+retaining separate file identities.
+Multiple uv environments may therefore have overlapping physical storage even when their
+paths are distinct. See
+[allocation and shared files](docs/usage.md#allocation-and-shared-files).
+
 ## Find Stale Build Directories
 
 ```shell

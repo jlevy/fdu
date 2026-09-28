@@ -4,15 +4,17 @@
 
 **Author:** fdu project
 
-**Status:** Draft, and now scheduled rather than speculative.
-[The campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) places the Phase 0
-validation spike in its Phase D on the reasoning that a warm metadata revalidation stats
-every entry regardless of what the snapshot holds — measured twice — so a journal is not
-one warm optimization among several but the only mechanism that goes under the stat
-floor at all.
+**Status:** Proposed production design; validation is in progress.
+The August exploratory spike is recorded, and open
+[PR #131](https://github.com/jlevy/fdu/pull/131) adds a reproducible cross-process
+replay probe and revises the proposed freshness contract.
+That probe does not yet establish long-gap completeness, atomic publication, or a
+large-tree latency result.
+[The campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) places persistent
+representation and replay work in Phase D; the probe can run independently.
 
-Nothing here is implemented on `main`: the snapshot format has no replay cursor, and
-`fdu-core` has no FSEvents replay module.
+Production replay is not implemented on `main`: the snapshot format has no replay
+cursor, and `fdu-core` has no FSEvents replay module.
 The [disk-usage checkpoint plan](plan-2026-09-13-fdu-disk-usage-checkpoints.md) supplies
 the durable before/after comparison that this refresh mechanism alone does not provide.
 

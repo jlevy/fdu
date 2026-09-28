@@ -4,8 +4,14 @@
 
 **Author:** Codex
 
-**Status:** Complete; tally corrections validated locally, CI pending (`fdu-z0og`,
-`fdu-idn5`)
+**Status:** Complete; tally corrections and fresh installed acceptance validated
+(`fdu-z0og`, `fdu-idn5`); final matrix evidence is in PR #136
+
+Implementation is complete in PR #133; the documentation/examples layer is PR #135.
+Merge and release are separate steps.
+The [usage guide](../../../usage.md),
+[machine-output reference](../../../machine-output.md), and `fdu --skill` describe the
+current interface; this plan retains the design and acceptance criteria.
 
 **Tracking:** Epic `fdu-ccf7`; plan publication `fdu-r55w`;
 [senior review follow-up](https://github.com/jlevy/fdu/pull/133#issuecomment-5853335891)
@@ -73,9 +79,9 @@ This plan intentionally revises the current depth-two, ten-child tree default an
 directory-only rows.
 Update the default descriptions in the design principles and surface architecture when
 implementing that change.
-The [directory-query plan](plan-2026-09-20-directory-query-formats.md) preserves the
-filter and subtree-total contracts; its requirement to retain the earlier presentation
-is superseded for this increment.
+The [directory-query plan](../active/plan-2026-09-20-directory-query-formats.md)
+preserves the filter and subtree-total contracts; its requirement to retain the earlier
+presentation is superseded for this increment.
 Historical implementation evidence stays intact.
 
 ## Design
@@ -394,12 +400,12 @@ Use descriptive sibling names in the application cache directory:
   0123456789abcdef.analysis.bin
 ```
 
-The existing `.fdu` file is the filesystem snapshot: entries, metadata, classification,
+The `.metadata.bin` file is the filesystem snapshot: entries, metadata, classification,
 and observed ignore-control state.
-The `.fdu.content` file contains derived analyzer results, not copies of source files.
-The new names expose those roles directly; `.bin` correctly identifies the binary
-format. Keep the flat layout and existing root key of 16 lowercase hexadecimal digits,
-derived from the canonical native root path.
+The `.analysis.bin` file contains derived analyzer results, not copies of source files.
+The names expose those roles and `.bin` identifies the binary format.
+Keep the flat layout and existing root key of 16 lowercase hexadecimal digits, derived
+from the canonical native root path.
 Do not add a directory layer, root-basename sanitization, or a separate path-to-key
 manifest merely for naming.
 The key is a lookup aid, not a content hash or proof of identity; header identities and
