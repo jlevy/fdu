@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import signal
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -732,14 +731,3 @@ def clear_all_caches(*, cache_dir: str | Path | None = None) -> ClearSummary:
     """
     summary = _call(_native.clear_all_caches, cache_dir=cache_dir)
     return ClearSummary(snapshots=int(summary["snapshots"]), leftovers=int(summary["leftovers"]))
-
-
-def _main() -> int:
-    """Console-script boundary; argument parsing remains in the native CLI."""
-
-    # Python's SIGINT handler only sets a flag the native CLI never checks, so a
-    # `--watch` console script would ignore Ctrl-C until the native call returned.
-    # Restore the default disposition so the process dies on interrupt the way the
-    # cargo-installed binary does (fdu-18vk).
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    return _native.main()

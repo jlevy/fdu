@@ -662,6 +662,9 @@ input.
 A sample is valid at its filesystem observation point; the engine does not pretend
 it can freeze external mutation until the in-memory commit.
 Logical preconditions prevent an older sample from overwriting newer facts.
+A backend reports only what its kernel emits: on macOS, a write through an open
+descriptor produces an event only at the last close (and a writable mapping at the last
+unmap), so growth in a file held open is observed when it closes.
 
 Where the backend permits it, observation starts before baseline discovery and buffers
 hints in a bounded queue.
