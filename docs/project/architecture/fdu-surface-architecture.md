@@ -143,9 +143,8 @@ observable.
 `report` runs the command line’s one-shot contract, retaining the least state the
 request needs.
 Under the default `CachePolicy.AUTO` a metadata report writes no snapshot,
-and an unfiltered summary that turns `.gitignore` observation off is answered by a
-transient tier that retains nothing; the default summary reports its ignored share,
-which needs the index.
+and an unfiltered summary is answered by a transient tier that retains no index,
+classifying each entry against `.gitignore` as it counts it when observation is on.
 
 Using `open` for a single question caches state the walk never saved, which a later
 `stale_ok` read can see.

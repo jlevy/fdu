@@ -1562,18 +1562,12 @@ pub(crate) fn report_in(
         notes.push("note: requested analysis is not displayed by the selected views".to_owned());
         tips.push(format!("tip: show analysis: {} families, languages, or full", query.axes.view));
     }
-    if matches!(&ignore_rules, ControlCoverage::Observed(observed) if observed.refusals.len() > REFUSED_DIRECTORIES_NAMED)
-    {
-        tips.push(format!("tip: show retained ignore-file details: {} json", query.axes.format));
-    }
+    tips.extend(retained_refusals_tip(query, &ignore_rules));
     if tree_measurements.is_some_and(|values| values.values().any(|value| !value.complete)) {
         notes.push("note: incomplete subtrees remain visible below the size threshold".to_owned());
     }
     if index.observes_controls() && !index.ignored_classification_complete_below(Path::new("")) {
-        notes.push(
-            "note: gitignored subtotals are unavailable where governing rules could not be verified"
-                .to_owned(),
-        );
+        notes.push(UNVERIFIED_IGNORED_NOTE.to_owned());
     }
     Ok(Report {
         age_reference_ns,
@@ -1607,43 +1601,68 @@ pub(crate) fn report_in(
     })
 }
 
+/// Said of a report whose ignored subtotals a refused or unreadable control file withheld.
+const UNVERIFIED_IGNORED_NOTE: &str =
+    "note: gitignored subtotals are unavailable where governing rules could not be verified";
+
+/// Point at the structured report when the refused-controls note could not name every
+/// directory it counted.
+fn retained_refusals_tip(query: &Query, ignore_rules: &ControlCoverage) -> Option<String> {
+    matches!(ignore_rules, ControlCoverage::Observed(observed) if observed.refusals.len() > REFUSED_DIRECTORIES_NAMED)
+        .then(|| format!("tip: show retained ignore-file details: {} json", query.axes.format))
+}
+
 /// Build a one-section report from an already reduced exact summary.
 ///
 /// Pure for the same reason as [`report`]: scanning and time sampling happened before
 /// this boundary.  The execution planner uses this when a one-shot request proves that
-/// retaining paths and hierarchy cannot affect its answer.
+/// retaining paths and hierarchy cannot affect its answer. Every field is the one
+/// [`report`] derives for that request from an index of the same walk: `ignore_rules` is
+/// the control table's coverage, and `ignored_unverified` says the row withholds its
+/// ignored share, which [`report`] reads from the index as the root's classification
+/// being incomplete. The notes are therefore the same notes, in the same order, less
+/// those about content and trees this tier never answers.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn report_summary(
     root: &Path,
     scope: ScanScope,
     request: &Request,
     summary: SummaryRow,
+    ignore_rules: ControlCoverage,
+    ignored_unverified: bool,
     status: TreeStatus,
     provenance: ReportProvenance,
 ) -> Report {
+    let query = &request.query;
+    let (mut notes, mut tips) = display_notes(query, &ignore_rules);
+    tips.extend(retained_refusals_tip(query, &ignore_rules));
+    if ignored_unverified {
+        notes.push(UNVERIFIED_IGNORED_NOTE.to_owned());
+    }
     Report {
         age_reference_ns: crate::query::system_time_to_nanos(request.now),
-        format: request.query.format,
-        // A compact summary resolves one view and drops none.
-        notes: Vec::new(),
-        tips: Vec::new(),
-        axes: request.query.axes,
+        format: query.format,
+        notes,
+        tips,
+        axes: query.axes,
         status,
         provenance,
         scope,
         requested_analysis: AnalysisSet::NONE,
-        requested_views: vec![ViewSpec::Summary],
-        omitted_views: Vec::new(),
+        requested_views: query.views.clone(),
+        omitted_views: query.omitted_views.clone(),
         root: root.to_path_buf(),
-        size: request.query.selection.size,
-        sort_metric: None,
+        size: query.selection.size,
+        sort_metric: match query.selection.sort {
+            Some(SortKey::Metric(name)) => Some(name),
+            _ => None,
+        },
         // The planner only selects this tier when no analysis was requested, so there is
         // no analyzer provenance to report.
         analysis: None,
-        // An unfiltered summary selects every entry.
-        ignored_entries: IgnoredEntries::Include,
-        // Nor when control state is observed, since it retains no table to classify with.
-        ignore_rules: ControlCoverage::NotObserved,
-        sections: vec![Section::Summary(SummaryRow { ignored: None, ..summary })],
+        ignored_entries: query.selection.ignored,
+        ignore_rules,
+        sections: vec![Section::Summary(summary)],
     }
 }
 

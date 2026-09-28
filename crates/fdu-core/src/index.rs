@@ -3026,12 +3026,8 @@ impl Index {
         crate::scan::normalize_walk_errors(&root, errors);
         self.unreadable_control_paths.clear();
         for error in errors {
-            if let crate::Error::Io { .. } = error {
-                if let Some(path) = Issue::from_error_under(&root, error).path {
-                    if crate::control::is_control_file(&path) {
-                        self.unreadable_control_paths.insert(path);
-                    }
-                }
+            if let Some(path) = crate::control::unreadable_control(&root, error) {
+                self.unreadable_control_paths.insert(path);
             }
             self.retain_issue(Issue::from_error_under(&root, error));
         }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -64,10 +65,23 @@ class ReleaseBodyTests(unittest.TestCase):
         check_release_body(notes, stripped, stripped)
 
     def test_shipped_release_notes_have_only_the_guideline_footer(self) -> None:
-        notes = (ROOT / "docs/project/release-notes/0.1.0.md").read_text(encoding="utf-8")
-        self.assertEqual(html_comment_count(notes), EXPECTED_HTML_COMMENTS)
-        stripped = strip_html_comments(notes)
-        check_release_body(notes, stripped, stripped)
+        # Every notes file, including the one for the version being prepared: an unfilled
+        # `<!-- ... -->` placeholder fails here, before it can reach a tagged release body.
+        paths = sorted((ROOT / "docs/project/release-notes").glob("*.md"))
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(notes=path.name):
+                notes = path.read_text(encoding="utf-8")
+                self.assertEqual(html_comment_count(notes), EXPECTED_HTML_COMMENTS)
+                stripped = strip_html_comments(notes)
+                check_release_body(notes, stripped, stripped)
+
+    def test_the_cargo_version_has_release_notes(self) -> None:
+        # The runbook derives the release body from `release-notes/<version>.md`; a bump
+        # without notes would leave that step nothing to derive.
+        manifest = tomllib.loads((ROOT / "crates/fdu/Cargo.toml").read_text(encoding="utf-8"))
+        version = manifest["package"]["version"]
+        self.assertTrue((ROOT / f"docs/project/release-notes/{version}.md").is_file())
 
     def test_cli_identity_unwrap_writes_and_checks(self) -> None:
         notes = f"# Notes\n\nA paragraph.\n\n{GUIDELINE_FOOTER}\n"

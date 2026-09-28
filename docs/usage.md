@@ -449,8 +449,10 @@ accepts, a rule between two flags, and a scan scope this build cannot honour, su
 
 `--watch` streams changes from a retained index.
 `--interval` throttles rendering, not change detection; an idle tree performs no polling
-scan. The duration uses the same age grammar as `--modified-since`: `2s`, `200ms`,
-`1h30m`. Fractional ages such as `0.2s` are still rejected.
+scan. On macOS, the kernel reports writes to a file only when it is closed, so watch
+shows a file held open for writing as of its last close; a one-shot report reads its
+current size. The duration uses the same age grammar as `--modified-since`: `2s`,
+`200ms`, `1h30m`. Fractional ages such as `0.2s` are still rejected.
 Content analysis is one-shot and cannot be combined with watch mode.
 
 Run `fdu --docs` for the offline guide and `fdu --help` for every flag.

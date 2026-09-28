@@ -11,7 +11,7 @@ from pathlib import Path
 
 from scripts.release.inspect_artifacts import CRATE_PACKAGES, inspect_directory
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 def add_tar(archive: tarfile.TarFile, name: str, content: bytes = b"fixture") -> None:

@@ -150,13 +150,13 @@ bodies may be skipped.
 A retained index can answer narrower queries when it holds the required facts.
 
 Work has three layers.
-A single unfiltered `--no-gitignore --view summary PATH` is the one exact composition
-that retains only aggregate tallies and no index, except under `--cache on` and
-`--stale-ok`, whose contracts are about the snapshot itself.
+A single unfiltered `--view summary PATH` is the one exact composition that retains only
+aggregate tallies and no index, except under `--cache on` and `--stale-ok`, whose
+contracts are about the snapshot itself.
 Otherwise a snapshot cannot save the walk that request is already doing, so it neither
 reads nor writes one.
-Without `--no-gitignore` the summary reads `.gitignore` to report its ignored share,
-which needs the index.
+Reading `.gitignore`, the summary keeps the rules and classifies each entry as it counts
+it, so its ignored share needs no index either.
 Ordinary metadata requests retain the reusable index but never read regular-file
 contents. One-shot metadata reports under `auto` neither load a snapshot, which cannot
 avoid the current metadata walk, nor write one; `--cache on` writes one.

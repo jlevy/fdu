@@ -3,9 +3,10 @@
 //! The command surface stays composable: callers describe cache policy and a query, not
 //! an implementation strategy.  This module derives that strategy.  Most reports need
 //! the complete [`Index`](crate::Index), either because another view needs hierarchy or
-//! paths, or because the cache must retain reusable state.  An unfiltered summary that
-//! observes no `.gitignore` needs only five aggregate values, so that one plan reduces the
-//! scan's observations directly and never builds an index.
+//! paths, or because the cache must retain reusable state.  An unfiltered summary needs
+//! only its aggregate values and, when it observes `.gitignore`, the ignored share of
+//! them, so that one plan reduces the scan's observations directly and never builds an
+//! index.
 
 use std::time::SystemTime;
 
@@ -24,8 +25,9 @@ use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Progress, Resu
 pub(crate) enum RetainedState {
     /// One aggregate row; no path or hierarchy records survive the scan.
     ///
-    /// Without hierarchy or a control table this tier cannot tell whether an entry is
-    /// ignored, so a scan that observes control state never selects it.
+    /// A scan that observes control state keeps the control table and the few ignored
+    /// directories that head an ignored subtree, which is all it needs to classify each
+    /// entry as the index would ([`SummaryFold`]).
     Summary,
     /// The complete reusable metadata index.
     FullIndex,
@@ -329,17 +331,20 @@ pub fn throughput_rates(
 /// Validate a request and derive the least-retention plan for its delivery and route.
 ///
 /// A summary reducer is legal when no content analysis is requested, the sole requested
-/// view is an unfiltered summary, the scan observes no control state, and the policy does
-/// not require the snapshot to participate.  [`crate::open`] and live sessions still
+/// view is an unfiltered summary, the scan retains its whole population, and the policy
+/// does not require the snapshot to participate.  [`crate::open`] and live sessions still
 /// promise an index and therefore always plan full retention. Any future requirement the
 /// compact tier cannot prove falls closed to `RetainedState::FullIndex`.
 ///
 /// Control observation is the caller's decision, not this planner's: a report's rows carry
 /// the ignored share of every size they show (fdu-elnn), so a scan that reads `.gitignore`
 /// displays what it paid for, and one that turned it off shows no share rather than a zero.
-/// The summary reducer keeps no table to classify with, so an observing summary falls
-/// closed to the index. That trades the reducer's small footprint for the ignored share in
-/// the default `fdu --view summary`; the performance ledger records what it costs.
+/// The summary reducer classifies each entry against the control table the index would
+/// hold and folds the ignored share without retaining the entry (fdu-1ovb), so the default
+/// `fdu --view summary` takes it as well. A narrowed population (`--ignored=exclude|only`)
+/// is also a selection by ignored state, which `is_unfiltered` sends to the index; the
+/// planner checks the scope's population as well rather than rest on validation pairing
+/// the two.
 ///
 /// The compact tier is not gated on the cache being unavailable, because for an
 /// unfiltered metadata summary the snapshot cannot save the work the scan is doing.
@@ -408,7 +413,7 @@ pub fn plan(
     let analysis_requested = request.basis.content.is_enabled();
     let summary_is_sufficient = request.query.views.as_slice() == [ViewSpec::Summary]
         && request.query.selection.is_unfiltered()
-        && !request.basis.scope.read_controls;
+        && request.basis.scope.population == crate::query::IgnoredEntries::Include;
     let policy_requires_index =
         delivery.stale_ok || (delivery.cache == CachePolicy::On && delivery.cache_path.is_some());
     // What a later request can reuse decides both directions. A one-shot metadata query
@@ -455,9 +460,9 @@ pub fn plan(
 /// This is the contract the command line has always run under, and until now the only way
 /// to get it was to be the command line. `open` takes the session path: it retains an
 /// index and writes a snapshot, which is right for a caller asking many questions and
-/// wrong for one asking a single question -- an unfiltered summary that reads no
-/// `.gitignore` is answered by a transient tier that retains nothing, and writing a
-/// snapshot for it caches state the walk did not save. A Python caller therefore left
+/// wrong for one asking a single question -- an unfiltered summary is answered by a
+/// transient tier that retains no index, and writing a snapshot for it caches state the
+/// walk did not save. A Python caller therefore left
 /// cache state on a tree that the same command would not have, which a later cache-only
 /// read could see (fdu-4msv).
 ///
@@ -545,26 +550,8 @@ fn prepare_report_internal(
     match plan.retained {
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-            let mut summary = SummaryRow::default();
-            let mut reduce = |observed: &crate::ObservationOp| {
-                let crate::Op::Upsert { kind, attrs, .. } = &observed.op else {
-                    return;
-                };
-                match kind {
-                    EntryKind::File => {
-                        summary.files += 1;
-                        summary.bytes += attrs.size;
-                        summary.allocated += attrs.allocated;
-                        summary.newest_mtime_ns = Some(
-                            summary
-                                .newest_mtime_ns
-                                .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
-                        );
-                    }
-                    EntryKind::Dir => summary.dirs += 1,
-                    EntryKind::Symlink | EntryKind::Other => {}
-                }
-            };
+            let mut fold = SummaryFold::new(&scan_config);
+            let mut reduce = |observed: &crate::ObservationOp| fold.observe(observed);
             let (mut scan, scan_diagnostics) = if collect_scan_diagnostics {
                 let (scan, diagnostics) = crate::scan::scan_summary_fold_with_diagnostics(
                     &root,
@@ -577,11 +564,14 @@ fn prepare_report_internal(
             };
             let complete = scan.is_complete();
             let generated_at = SystemTime::now();
+            let (summary, ignore_rules, ignored_unverified) = fold.finish(&root, &scan.errors)?;
             let report = report_summary(
                 &root,
                 scan_config.scope(),
                 request,
                 summary,
+                ignore_rules,
+                ignored_unverified,
                 TreeStatus::of_walk(&root, &mut scan),
                 ReportProvenance::of_walk(scan_started_at, generated_at, complete),
             );
@@ -607,6 +597,215 @@ fn prepare_report_internal(
             // longer the caller's wait.
             crate::release_index(index);
             Ok((answer, pending_save, performance, scan_diagnostics))
+        }
+    }
+}
+
+/// The transient summary tier's reducer: the root roll-up the index would report, folded
+/// from the walk's observations as they arrive, with nothing retained per entry.
+///
+/// Observing `.gitignore`, it also classifies every entry as the detached index builder
+/// does, and tallies the entries no rule ignores beside every entry, the index's
+/// `unignored` and `all` partitions; the share it reports is
+/// [`IgnoredTally::between`](crate::query::IgnoredTally) the two, the index's own formula.
+///
+/// **Why each classification is the index's.** The builder classifies a child from two
+/// inputs: its parent's classification, since nothing below an ignored directory can be
+/// re-included, and the admitted control files of the directories above it, deepest
+/// first. The fold has both when each entry arrives:
+///
+/// - A worker publishes a listing before any directory in it becomes claimable, so an
+///   entry arrives after its parent's own observation, as a listing reaches the builder
+///   after its parent's.
+/// - A classifying walk sends each directory's control ahead of its entries
+///   (`SinkMode::groups_directories` in the scanner), so it is applied before any entry
+///   in the directory is classified, as the builder applies a listing's control before
+///   its children. A listing that fills a batch before its `.gitignore` is listed has
+///   that file read directly, and the read stands for the listing; on a tree nothing
+///   modifies during the walk it is the same file with the same bytes.
+/// - One consumer applies every control in arrival order, as the builder's one consumer
+///   does. Which files a budget refuses when several compete for it depends on that
+///   order on both routes; with one worker the order is the same on both, and with
+///   several it is an order the index could also have met. Whether any file is refused
+///   does not depend on it, because a cold walk only adds charges.
+///
+/// **Why it keeps no entries.** A parent's classification is final once its own
+/// observation is folded, since every ancestor's was folded first. So the fold keeps only
+/// the ignored directories whose parent is not ignored, which head every ignored subtree,
+/// and a parent is ignored exactly when one of them is its ancestor or itself.
+///
+/// **What it withholds.** The share, where the index withholds the root's: when a control
+/// file was refused, because it may have held negations as well as ignore rules, or could
+/// not be read. The coverage it reports is the table's, refusals included.
+struct SummaryFold {
+    /// Every entry the walk retained.
+    all: SummaryRow,
+    /// The classifier, when the scan observes `.gitignore`.
+    controls: Option<SummaryControls>,
+}
+
+/// What a classifying [`SummaryFold`] keeps: the control table, the heads of ignored
+/// subtrees, and the tallies of what no rule ignores.
+struct SummaryControls {
+    table: crate::control::ControlTable,
+    /// Ignored directories whose parent is not ignored.
+    ignored_heads: std::collections::HashSet<std::path::PathBuf>,
+    /// The parent last looked up, and whether it is ignored. A listing's entries mostly
+    /// arrive together, so this answers nearly all of them.
+    parent: Option<(std::path::PathBuf, bool)>,
+    /// Every entry no rule ignores, as the index's `unignored` partition.
+    unignored: crate::index::RollUpScalars,
+    /// The first control observation the table rejected, which fails the report as it
+    /// fails the index build.
+    rejected: Option<Error>,
+}
+
+impl SummaryFold {
+    fn new(config: &crate::ScanConfig) -> Self {
+        Self {
+            all: SummaryRow::default(),
+            controls: config.read_controls.then(|| SummaryControls {
+                table: crate::control::ControlTable::with_limits(config.control_limits),
+                ignored_heads: std::collections::HashSet::new(),
+                parent: None,
+                unignored: crate::index::RollUpScalars::default(),
+                rejected: None,
+            }),
+        }
+    }
+
+    fn observe(&mut self, observed: &crate::ObservationOp) {
+        match &observed.op {
+            crate::Op::Upsert { path, kind, attrs } => {
+                match kind {
+                    EntryKind::File => {
+                        self.all.files += 1;
+                        self.all.bytes += attrs.size;
+                        self.all.allocated += attrs.allocated;
+                        self.all.newest_mtime_ns = Some(
+                            self.all
+                                .newest_mtime_ns
+                                .map_or(attrs.mtime_ns, |current| current.max(attrs.mtime_ns)),
+                        );
+                    }
+                    EntryKind::Dir => self.all.dirs += 1,
+                    EntryKind::Symlink | EntryKind::Other => {}
+                }
+                let Some(controls) = &mut self.controls else { return };
+                if controls.classify(path, *kind) {
+                    return;
+                }
+                // The index's contribution of an unignored entry: a file's sizes, one
+                // directory, nothing for any other kind.
+                match kind {
+                    EntryKind::File => {
+                        controls.unignored.files += 1;
+                        controls.unignored.bytes += attrs.size;
+                        controls.unignored.allocated += attrs.allocated;
+                    }
+                    EntryKind::Dir => controls.unignored.dirs += 1,
+                    EntryKind::Symlink | EntryKind::Other => {}
+                }
+            }
+            crate::Op::ControlUpsert { path, source } => {
+                if let Some(controls) = &mut self.controls {
+                    let admitted = controls.table.upsert(path, source.clone()).map(drop);
+                    controls.record(admitted);
+                }
+            }
+            crate::Op::ControlRemove { path } => {
+                if let Some(controls) = &mut self.controls {
+                    let removed = controls.table.remove(path).map(drop);
+                    controls.record(removed);
+                }
+            }
+            // A cold walk observes what is there; it neither removes nor invalidates.
+            crate::Op::Remove { .. } | crate::Op::InvalidateSubtree { .. } => {}
+        }
+    }
+
+    /// The summary row, the control coverage, and whether the row withholds its ignored
+    /// share because a governing rule could not be verified.
+    ///
+    /// `errors` are the walk's, normalized, as the index records them.
+    fn finish(
+        self,
+        root: &std::path::Path,
+        errors: &[Error],
+    ) -> Result<(SummaryRow, crate::control::ControlCoverage, bool)> {
+        let Some(controls) = self.controls else {
+            return Ok((
+                SummaryRow { ignored: None, ..self.all },
+                crate::control::ControlCoverage::NotObserved,
+                false,
+            ));
+        };
+        if let Some(error) = controls.rejected {
+            return Err(error);
+        }
+        let unreadable =
+            errors.iter().any(|error| crate::control::unreadable_control(root, error).is_some());
+        let verified = controls.table.refused_len() == 0 && !unreadable;
+        let all = crate::index::RollUpScalars {
+            files: self.all.files,
+            dirs: self.all.dirs,
+            bytes: self.all.bytes,
+            allocated: self.all.allocated,
+            newest_mtime_ns: self.all.newest_mtime_ns.unwrap_or_default(),
+        };
+        let summary = SummaryRow {
+            ignored: verified.then(|| crate::query::IgnoredTally::between(all, controls.unignored)),
+            ..self.all
+        };
+        Ok((
+            summary,
+            crate::control::ControlCoverage::Observed(controls.table.observation()),
+            !verified,
+        ))
+    }
+}
+
+impl SummaryControls {
+    /// Whether the entry at `path` is ignored, decided as
+    /// `DetachedIndexBuilder::push_directory` decides it: an entry below an ignored
+    /// directory is ignored, one in a table with no rules is not, and otherwise the
+    /// deepest control with an opinion decides.
+    fn classify(&mut self, path: &std::path::Path, kind: EntryKind) -> bool {
+        // No rule and no ignored subtree yet, as in every tree without a `.gitignore`:
+        // nothing is ignored, and the parent need not even be derived.
+        if self.ignored_heads.is_empty() && self.table.is_empty() {
+            return false;
+        }
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+        let parent_ignored = self.parent_ignored(parent);
+        let ignored = if parent_ignored || self.table.is_empty() {
+            parent_ignored
+        } else {
+            self.table.matcher_for(path).is_ignored(kind.is_dir())
+        };
+        if ignored && !parent_ignored && kind.is_dir() {
+            self.ignored_heads.insert(path.to_path_buf());
+        }
+        ignored
+    }
+
+    fn parent_ignored(&mut self, parent: &std::path::Path) -> bool {
+        if self.ignored_heads.is_empty() {
+            return false;
+        }
+        if let Some((cached, ignored)) = &self.parent {
+            if cached == parent {
+                return *ignored;
+            }
+        }
+        let ignored = parent.ancestors().any(|ancestor| self.ignored_heads.contains(ancestor));
+        self.parent = Some((parent.to_path_buf(), ignored));
+        ignored
+    }
+
+    fn record(&mut self, applied: Result<()>) {
+        if let Err(error) = applied {
+            self.rejected.get_or_insert(error);
         }
     }
 }
@@ -1138,8 +1337,7 @@ mod tests {
         OpenFixture { scan: ScanConfig::default(), cache_path, policy, ..OpenFixture::default() }
     }
 
-    /// [`config`] with `.gitignore` observation turned off, the one scan the compact
-    /// summary tier can answer.
+    /// [`config`] with `.gitignore` observation turned off.
     fn blind(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenFixture {
         OpenFixture {
             scan: ScanConfig { read_controls: false, ..ScanConfig::default() },
@@ -1190,14 +1388,28 @@ mod tests {
         filtered.selection.include.push(Pattern::parse("*.rs").expect("pattern"));
         assert_eq!(planned(&off, &filtered).retained, RetainedState::FullIndex);
 
-        // The reducer keeps no control table, so a summary whose row carries an ignored
-        // share, or selects by one, needs the index.
+        // Changed deliberately by fdu-1ovb. The reducer classifies each entry with the
+        // control table the index would hold, so the default summary, whose row carries an
+        // ignored share, no longer needs the index; this assertion used to expect
+        // `FullIndex`. `compact_summary_equals_the_indexed_summary_under_every_control_case`
+        // is what licenses the change.
         let observing = config(CachePolicy::Off, None);
         assert!(observing.scan.read_controls, "observation is the default");
-        assert_eq!(planned(&observing, &summary_query()).retained, RetainedState::FullIndex);
+        assert_eq!(planned(&observing, &summary_query()).retained, RetainedState::Summary);
+        // Selecting by ignored state is a filter, and a narrowed population is one retained
+        // in the scope as well: both still need the index, whose traversal answers them.
         let mut by_ignored = summary_query();
         by_ignored.selection.ignored = IgnoredEntries::Exclude;
         assert_eq!(planned(&observing, &by_ignored).retained, RetainedState::FullIndex);
+        for population in [IgnoredEntries::Exclude, IgnoredEntries::Only] {
+            let narrowed = OpenFixture {
+                scan: ScanConfig { population, ..ScanConfig::default() },
+                ..config(CachePolicy::Off, None)
+            };
+            let mut query = summary_query();
+            query.selection.ignored = population;
+            assert_eq!(planned(&narrowed, &query).retained, RetainedState::FullIndex);
+        }
     }
 
     #[test]
@@ -1757,8 +1969,8 @@ mod tests {
         assert_eq!(performance.walked_files, 2);
         assert_eq!(performance.walked_bytes, 14);
 
-        // Only a report that turns control observation off takes the compact tier, so the
-        // index it must match exactly is opened under that scope too.
+        // This report turns control observation off, so the index it must match exactly is
+        // opened under that scope too.
         let (index, _open_report) = crate::open_fixture(root.path(), &off).expect("indexed scan");
         let indexed = report(
             &index,
@@ -1782,6 +1994,339 @@ mod tests {
         assert_eq!(compact.scope, indexed.scope);
         assert_eq!(compact.status.complete, indexed.status.complete);
         assert_eq!(compact.provenance.freshness, indexed.provenance.freshness);
+    }
+
+    /// One tree for the transient-versus-indexed differential, the scope it is summarized
+    /// under, and what the index must say of it, so a case that stopped exercising what it
+    /// names fails instead of agreeing vacuously.
+    struct ControlCase {
+        name: &'static str,
+        root: tempfile::TempDir,
+        scan: ScanConfig,
+        /// Whether the row carries an ignored share, which a refused or unreadable control
+        /// file withholds.
+        share: bool,
+        /// Control files refused.
+        refused: u64,
+        /// Which files a budget refuses depends on the order controls arrive in, so the two
+        /// routes are compared only where that order is fixed: with one worker.
+        order_dependent: bool,
+        /// Walk errors the case induces.
+        errors: bool,
+        /// A file the case made unreadable, readable again when the case is dropped so its
+        /// tree can be removed even after a failed assertion.
+        denied: Option<PathBuf>,
+    }
+
+    impl Drop for ControlCase {
+        fn drop(&mut self) {
+            #[cfg(unix)]
+            if let Some(path) = &self.denied {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+            }
+        }
+    }
+
+    fn put(root: &Path, path: &str, contents: &[u8]) {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().expect("a parent")).expect("parent directories");
+        fs::write(path, contents).expect("fixture file");
+    }
+
+    /// Negation, nested files, directory-only and anchored rules, rules below an ignored
+    /// directory that try to re-include, a re-included directory, a control file that
+    /// ignores itself, and a listing long enough to split across small batches.
+    fn rules_tree() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("tempdir");
+        let root_path = root.path();
+        put(
+            root_path,
+            ".gitignore",
+            b"*.log\n!keep.log\n/anchored.txt\ncache/\nnode_modules/\nvendor/*\n!vendor/keep/\n",
+        );
+        put(root_path, "a.log", b"alog");
+        put(root_path, "keep.log", b"keeplog");
+        put(root_path, "anchored.txt", b"anchored");
+        put(root_path, "cache", b"a file named like a directory rule");
+        put(root_path, "README.md", b"readme!");
+        put(root_path, "src/anchored.txt", b"not anchored here");
+        put(root_path, "src/x.log", b"xlog-");
+        put(root_path, "src/keep.log", b"kept everywhere");
+        put(root_path, "src/main.rs", b"fn main() {}");
+        put(root_path, "sub/.gitignore", b"!*.log\n*.tmp\n");
+        put(root_path, "sub/y.log", b"re-included");
+        put(root_path, "sub/z.tmp", b"tmp");
+        put(root_path, "sub/cache/data.bin", b"cached bytes");
+        put(root_path, "sub/deep/.gitignore", b"*\n!.gitignore\n");
+        put(root_path, "sub/deep/f.txt", b"deep");
+        put(root_path, "sub/deep/inner/g.txt", b"deeper");
+        put(root_path, "node_modules/pkg/.gitignore", b"!*\n");
+        put(root_path, "node_modules/pkg/index.js", b"module.exports = 1;");
+        put(root_path, "node_modules/pkg/lib/a.js", b"a");
+        put(root_path, "vendor/a.c", b"int a;");
+        put(root_path, "vendor/keep/k.c", b"int k;");
+        put(root_path, "vendor/drop/d.c", b"int d;");
+        put(root_path, "selfish/.gitignore", b".gitignore\n*.bak\n");
+        put(root_path, "selfish/x.bak", b"backup");
+        put(root_path, "selfish/y.txt", b"kept");
+        put(root_path, "many/.gitignore", b"*[02468].dat\n");
+        for file in 0..40 {
+            put(root_path, &format!("many/f{file:02}.dat"), &vec![b'.'; file + 1]);
+        }
+        root
+    }
+
+    fn control_cases() -> Vec<ControlCase> {
+        let case = |name, root, scan, share, refused| ControlCase {
+            name,
+            root,
+            scan,
+            share,
+            refused,
+            order_dependent: false,
+            errors: false,
+            denied: None,
+        };
+        let mut cases = vec![
+            case("rules", rules_tree(), ScanConfig::default(), true, 0),
+            case(
+                "rules with hidden entries pruned",
+                rules_tree(),
+                ScanConfig {
+                    hidden: Some(std::sync::Arc::new(crate::HiddenPolicy::prune_hidden(Vec::<
+                        std::ffi::OsString,
+                    >::new(
+                    )))),
+                    ..ScanConfig::default()
+                },
+                true,
+                0,
+            ),
+            case(
+                "rules under a depth bound",
+                rules_tree(),
+                ScanConfig { max_depth: Some(1), ..ScanConfig::default() },
+                true,
+                0,
+            ),
+        ];
+
+        let empty = tempfile::tempdir().expect("tempdir");
+        put(empty.path(), "only.txt", b"no rules anywhere");
+        cases.push(case("no control file", empty, ScanConfig::default(), true, 0));
+
+        // A line over the limit refuses its whole file, whatever order it arrives in.
+        let long = tempfile::tempdir().expect("tempdir");
+        put(long.path(), ".gitignore", b"*.log\n");
+        put(long.path(), "x.log", b"ignored");
+        let mut line = vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1];
+        line.push(b'\n');
+        put(long.path(), "long/.gitignore", &line);
+        put(long.path(), "long/kept.txt", b"kept");
+        put(long.path(), "long/y.log", b"unknown");
+        cases.push(case("line limit", long, ScanConfig::default(), false, 1));
+
+        // Each nested file alone exceeds what the root leaves of the budget, so all seventy
+        // are refused in any order: more than a note names and more than a report retains.
+        let over = tempfile::tempdir().expect("tempdir");
+        put(over.path(), ".gitignore", b"*.log\n");
+        let mut oversized = vec![b'x'; 200];
+        oversized.push(b'\n');
+        for directory in 0..70 {
+            put(over.path(), &format!("d{directory:02}/.gitignore"), &oversized);
+            put(over.path(), &format!("d{directory:02}/f.log"), b"log");
+        }
+        let limits = crate::control::ControlLimits { budget: Some(256), ..Default::default() };
+        cases.push(case(
+            "every nested file over the budget",
+            over,
+            ScanConfig { control_limits: limits, ..ScanConfig::default() },
+            false,
+            70,
+        ));
+
+        // Any two of four fit the budget and no third does: which two is arrival order.
+        let competing = tempfile::tempdir().expect("tempdir");
+        for (position, directory) in ["a", "b", "c", "d"].into_iter().enumerate() {
+            let mut rules = format!("r{position}").into_bytes();
+            rules.extend(std::iter::repeat_n(b'y', 100));
+            rules.push(b'\n');
+            put(competing.path(), &format!("{directory}/.gitignore"), &rules);
+            put(competing.path(), &format!("{directory}/file.txt"), b"file");
+        }
+        let limits = crate::control::ControlLimits { budget: Some(1000), ..Default::default() };
+        let mut competing = case(
+            "competing for the budget",
+            competing,
+            ScanConfig { control_limits: limits, ..ScanConfig::default() },
+            false,
+            2,
+        );
+        competing.order_dependent = true;
+        cases.push(competing);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            // A control file that is a directory or a symlink applies no rules.
+            let shapes = tempfile::tempdir().expect("tempdir");
+            put(shapes.path(), ".gitignore", b"*.tmp\n");
+            put(shapes.path(), "weird/.gitignore/inner.tmp", b"inner");
+            put(shapes.path(), "weird/kept.txt", b"kept");
+            put(shapes.path(), "rules.txt", b"*.txt\n");
+            fs::create_dir(shapes.path().join("linked")).expect("directory");
+            std::os::unix::fs::symlink("../rules.txt", shapes.path().join("linked/.gitignore"))
+                .expect("symlink");
+            put(shapes.path(), "linked/still.txt", b"still counted");
+            cases.push(case(
+                "control files that are not files",
+                shapes,
+                ScanConfig::default(),
+                true,
+                0,
+            ));
+
+            if crate::test_support::require_permission_bits() {
+                let unreadable = tempfile::tempdir().expect("tempdir");
+                put(unreadable.path(), ".gitignore", b"*.log\n");
+                put(unreadable.path(), "x.log", b"ignored");
+                put(unreadable.path(), "sub/.gitignore", b"!*.log\n");
+                put(unreadable.path(), "sub/y.log", b"unknown");
+                let control = unreadable.path().join("sub/.gitignore");
+                let mut denied =
+                    case("unreadable control file", unreadable, ScanConfig::default(), false, 0);
+                fs::set_permissions(&control, fs::Permissions::from_mode(0o000))
+                    .expect("deny the control file");
+                denied.denied = Some(control);
+                denied.errors = true;
+                cases.push(denied);
+            }
+        }
+        cases
+    }
+
+    /// The default summary of `root` under `scan`, from the transient tier and from the
+    /// index, with the transient report's provenance, which describes the delivery rather
+    /// than the tree, set to the index's once the parts both routes share agree.
+    fn transient_and_indexed(root: &Path, scan: &ScanConfig, label: &str) -> (Report, Report) {
+        let query = summary_query();
+        let transient = OpenFixture { scan: scan.clone(), ..config(CachePolicy::Off, None) };
+        assert_eq!(planned(&transient, &query).retained, RetainedState::Summary, "{label}");
+        let (mut compact, pending, compact_performance) =
+            prepared(root, &transient, &query).expect("transient report");
+        pending.join().expect("the transient tier saves nothing");
+
+        // `on` with a snapshot path is a delivery about the snapshot, so the same request
+        // takes the index: the route every default summary took before fdu-1ovb.
+        let cache = tempfile::tempdir().expect("cache dir");
+        let indexed = OpenFixture {
+            scan: scan.clone(),
+            ..config(CachePolicy::On, Some(cache.path().join("snapshot.fdu")))
+        };
+        assert_eq!(planned(&indexed, &query).retained, RetainedState::FullIndex, "{label}");
+        let (indexed, pending, indexed_performance) =
+            prepared(root, &indexed, &query).expect("indexed report");
+        pending.join().expect("save");
+
+        assert_eq!(
+            (
+                compact_performance.walked_files,
+                compact_performance.walked_bytes,
+                compact_performance.walked_allocated,
+                compact_performance.source,
+            ),
+            (
+                indexed_performance.walked_files,
+                indexed_performance.walked_bytes,
+                indexed_performance.walked_allocated,
+                indexed_performance.source,
+            ),
+            "{label}: walked totals"
+        );
+        assert_eq!(compact.provenance.source, indexed.provenance.source, "{label}");
+        assert_eq!(compact.provenance.freshness, indexed.provenance.freshness, "{label}");
+        assert_eq!(
+            (compact.provenance.tiers.entries.source, compact.provenance.tiers.entries.freshness),
+            (indexed.provenance.tiers.entries.source, indexed.provenance.tiers.entries.freshness),
+            "{label}"
+        );
+        compact.provenance = indexed.provenance.clone();
+        (compact, indexed)
+    }
+
+    /// The transient summary is the indexed summary, whole, for every control case the
+    /// index classifies: negations, nested and self-ignoring control files, rules below an
+    /// ignored directory, control files that are not files, refusals by the line limit
+    /// and by the budget, an unreadable control file, and the notes and coverage each
+    /// produces. Across worker counts, batch sizes small enough to split every listing,
+    /// and both traversal orders (fdu-1ovb).
+    #[test]
+    fn compact_summary_equals_the_indexed_summary_under_every_control_case() {
+        use crate::report_format::{Format, render};
+
+        let default_batch = ScanConfig::default().batch_size;
+        for case in control_cases() {
+            let mut compared = 0;
+            for threads in [Some(1), Some(2), Some(4), None] {
+                if case.order_dependent && threads != Some(1) {
+                    continue;
+                }
+                for batch_size in [default_batch, 1, 3] {
+                    for order in [crate::ScanOrder::BreadthFirst, crate::ScanOrder::DepthFirst] {
+                        let scan = ScanConfig { batch_size, threads, order, ..case.scan.clone() };
+                        let label = format!(
+                            "{} ({threads:?} workers, batch {batch_size}, {order:?})",
+                            case.name
+                        );
+                        let (compact, indexed) =
+                            transient_and_indexed(case.root.path(), &scan, &label);
+
+                        assert_eq!(format!("{compact:#?}"), format!("{indexed:#?}"), "{label}");
+                        for format in [Format::Text, Format::Json, Format::Yaml] {
+                            assert_eq!(
+                                render(&compact, format, false).expect("render"),
+                                render(&indexed, format, false).expect("render"),
+                                "{label}: {format:?}"
+                            );
+                        }
+
+                        // What each case exists to exercise.
+                        let Section::Summary(row) = indexed.sections[0] else {
+                            panic!("{label}: a summary")
+                        };
+                        let crate::control::ControlCoverage::Observed(coverage) =
+                            &indexed.ignore_rules
+                        else {
+                            panic!("{label}: the default scope observes .gitignore")
+                        };
+                        assert_eq!(coverage.refused, case.refused, "{label}");
+                        assert_eq!(row.ignored.is_some(), case.share, "{label}");
+                        assert_eq!(!indexed.status.errors.is_empty(), case.errors, "{label}");
+                        if case.share && case.name.starts_with("rules") {
+                            let ignored = row.ignored.expect("a share");
+                            assert!(
+                                ignored.files > 0 && ignored.files < row.files && ignored.dirs > 0,
+                                "{label}: {ignored:?} of {row:?}"
+                            );
+                        }
+                        if !case.share {
+                            assert!(
+                                indexed
+                                    .notes
+                                    .iter()
+                                    .any(|note| note.contains("could not be verified")),
+                                "{label}: {:?}",
+                                indexed.notes
+                            );
+                        }
+                        compared += 1;
+                    }
+                }
+            }
+            assert!(compared > 0, "{} was compared", case.name);
+        }
     }
 
     #[test]

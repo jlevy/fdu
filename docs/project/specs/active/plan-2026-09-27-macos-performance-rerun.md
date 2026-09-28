@@ -4,10 +4,13 @@
 
 **Author:** fdu project
 
-**Status:** Draft. Measurement is explicitly on hold while the user selects further
-integrations.
-Only the main-branch merge, focused correctness smoke checks, and this plan
-are authorized now. No new performance result is claimed.
+**Status:** Run on 2026-09-28 with the user’s authorization, against stack 141’s frozen
+top (`a5c0ab46`, the post-merge `main`), on a host the quiet gate refused throughout.
+Cells 1–3 (H156 as exp-164, `--cache auto` as exp-165, and the full peer table) ran
+declared `uncontrolled`; the results are in the
+[refreshed macOS comparison](../../reports/report-2026-09-26-fdu-live-tool-comparison.md).
+The H153 confirmation was attempted in the quiet regime and failed to qualify (20 of 24
+timed samples invalidated), so `fdu-9e9d` stays open and exp-159 stays provisional.
 
 ## Overview
 
@@ -144,16 +147,21 @@ retrospectively without new qualifying evidence.
 
 - [x] Complete the main merge and focused query/renderer/CLI smoke checks; publish this
   plan without running timings.
-- [ ] User selects remaining integrations and explicitly authorizes the official run.
-- [ ] Freeze final candidate and baseline source identities.
-  The H153 control differs only by removing shared resolution; an older pre-feature
-  binary is not a valid control.
-- [ ] Select approved cells, internal subjects, work contracts, and resource budget.
-  Resolve full-analysis adapter/oracle work separately if that cell is requested.
-- [ ] Build verified immutable artifacts externally, preflight correctness and host
+- [x] User selects remaining integrations and explicitly authorizes the official run:
+  stack 141, authorized 2026-09-28.
+- [x] Freeze final candidate and baseline source identities: `4e008e78` (#137),
+  `ea786683` (#138), `a5c0ab46` (#139). The H153 control is `a5c0ab46` with only the
+  shared one-pass metric resolution disabled (a one-line gate in `report_in`); a full
+  revert of `d0902cfd` and `93e417ca` conflicts with the later section-builder merges.
+- [x] Select approved cells, internal subjects, work contracts, and resource budget:
+  cells 1–3 of the stack handoff plus the H153 confirmation; the regenerated `balanced`
+  1M tree and the unchanged `metabrowser-clone`. The full-analysis cell was not
+  selected.
+- [x] Build verified immutable artifacts externally, preflight correctness and host
   conditions, then run only the approved fixed-N cells on internal storage.
-- [ ] Record every attempted cell, publish generated evidence once, validate the final
+- [x] Record every attempted cell, publish generated evidence once, validate the final
   handoff, and update README claims only to the scope the new evidence establishes.
+  The README numbers are applied on the stack’s documentation layer.
 
 Preparation validation passed Rust formatting, 139 query tests (including shared versus
 independent metric reports), the focused Code-renderer tests, and 100 CLI tests, plus
@@ -178,8 +186,9 @@ official host timing experiment.
 - Is a new matched baseline available for each product-level claim, or should that cell
   report current absolute performance without claiming an incremental speedup?
 
-Tracking: `fdu-6h2q` owns preparation; `fdu-9e9d` owns H153 confirmation and remains on
-hold until the user authorizes measurement.
+Tracking: `fdu-6h2q` owns preparation; `fdu-nr2y` owns the 2026-09-28 run (exp-164,
+exp-165, and the refreshed peer table); `fdu-9e9d` owns H153 confirmation, which still
+needs a quiet host after the 2026-09-28 attempt failed to qualify.
 Assign the next free experiment ID only after coordinating with the shared registry at
 launch; this plan reserves none.
 

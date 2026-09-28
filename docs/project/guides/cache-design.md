@@ -86,8 +86,8 @@ The file name is keyed by root alone, so alternating a default run with
 `--no-gitignore`, another `.gitignore` limit, `--scan-depth`, or `--one-filesystem`
 finds no usable snapshot and, in a run that writes, replaces the root’s one snapshot
 each time the run retains an index (`fdu-w3l5` tracks keying snapshots by scope).
-A `--no-gitignore` summary answered by the transient tier, described below, retains
-none, so it replaces nothing.
+An unfiltered summary answered by the transient tier, described below, retains none, so
+it replaces nothing.
 That projection applies to one-shot reports, Rust and Python `open`, cache-only reads,
 warm revalidation, and watch startup.
 A projected index never replaces the stronger controls-on snapshot, even after a watch
@@ -219,8 +219,8 @@ Under the default `auto` policy a one-shot metadata report neither reads nor wri
 snapshot: revalidation stats every entry regardless, so loading one is purely additive
 cost, and no later one-shot report reads what it would write.
 `--cache on` writes after every complete indexed scan, and an unfiltered
-`--view summary` under `--no-gitignore`, which the transient tier otherwise answers
-without an index, builds the index it writes.
+`--view summary`, which the transient tier otherwise answers without an index, builds
+the index it writes.
 [The policy axis](#the-policy-axis) lists which paths read and write.
 
 ## Layer Two: Derived Content Data

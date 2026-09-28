@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 75 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
@@ -245,8 +245,13 @@ dead end.
 | 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
 | 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
 | 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp163--linux-auto-cache-policy-stops-oneshot-snapshot-writes-clears-3-on-defaulttree) | H160 | `default-tree` | -13.8% | ✅ accepted |
+| 164 | [macOS one-shot index release shows no wall change and no regression](#exp164--macos-oneshot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
+| 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp165--macos-auto-cache-policy-cuts-defaulttree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
 | 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp166--macos-h159-unbounded-listing-pool-costs-15-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
 | 167 | [macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending](#exp167--macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-linux-pending) | H159 | `default-tree` | -1.4% | ⏳ in progress |
+| 170 | [macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout](#exp170--macos-ignoreaware-transient-summary-cuts-default-summary-peak-rss-69-on-a-source-checkout) | H161 | `aggregate-summary` | -69.1% | ✅ accepted |
+| 171 | [macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore](#exp171--macos-ignoreaware-transient-summary-cuts-peak-rss-58-on-a-tree-with-no-gitignore) | H161 | `aggregate-summary` | -57.9% | ✅ accepted |
+| 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp172--macos-wholelisting-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
 
 ## The experiments
 
@@ -5485,6 +5490,72 @@ zero.
 Full record:
 [`exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md`](../experiments/exp-163-linux-auto-cache-policy-stops-one-shot-snapshot-writes-clear.md)
 
+### exp-164 — macOS one-shot index release shows no wall change and no regression
+
+❌ rejected · 2026-09-28 · H156 · commit `71c52591`
+
+Control: pr137 probe at 4e008e78 (stack 141 layer 1): one-shot index released on the
+caller or joined writer thread
+
+Candidate: pr138 probe at ea786683 (layer 2): a large last index reference is released
+on a detached thread
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7354.1 | 7490.0 | -1.00% (n.s.) | [-5.13%, +6.11%] |
+| component (ms) | 7342.7 | 7475.9 | -1.05% (n.s.) | [-5.15%, +6.05%] |
+| cpu (ms) | 39155.2 | 38925.0 | -0.54% (n.s.) | [-2.66%, +0.66%] |
+| user (ms) | 1457.1 | 1408.0 | -2.43% (n.s.) | [-4.41%, +0.01%] |
+| system (ms) | 37673.7 | 37532.0 | -0.40% (n.s.) | [-2.65%, +0.82%] |
+| peak rss (MiB) | 381.1 | 381.0 | -0.05% (n.s.) | [-0.13%, +0.02%] |
+
+Other jobs, wall time: `cold-scan-index` +2.1% (n.s.), `default-tree-first` +0.2%
+(n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+**Rejected:** uncontrolled macOS balanced-1m default-tree -1.00% [-5.13%, +6.11%], first
+run +0.16% [-5.12%, +4.01%], placebo cold-scan-index +2.09% [-0.72%, +3.62%]: no wall
+change and no median past the +3% regression line; ships on the Linux accept (exp-160).
+
+Full record:
+[`exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md`](../experiments/exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md)
+
+### exp-165 — macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall
+
+❌ rejected · 2026-09-28 · H160 · commit `93cd1bb1`
+
+Control: pr138 probe at ea786683 (stack 141 layer 2): auto writes the snapshot after
+every one-shot metadata report
+
+Candidate: pr139 probe at a5c0ab46 (layer 3): auto persists only where a later request
+reads it
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7490.0 | 7229.9 | -3.09% (n.s.) | [-6.75%, +2.00%] |
+| component (ms) | 7475.9 | 7210.2 | -3.08% (n.s.) | [-6.77%, +2.02%] |
+| cpu (ms) | 38925.0 | 37743.6 | -1.49% (n.s.) | [-3.43%, +0.52%] |
+| user (ms) | 1408.0 | 1275.6 | -9.65% | [-11.20%, -8.80%] |
+| system (ms) | 37532.0 | 36488.3 | -1.16% (n.s.) | [-3.15%, +0.93%] |
+| peak rss (MiB) | 381.0 | 280.9 | -26.29% | [-26.34%, -26.23%] |
+
+Other jobs, wall time: `cold-scan-index` -0.4% (n.s.), `default-tree-first` -3.0%
+(n.s.).
+
+Cost to carry: 150 lines; no new dependencies.
+
+**Rejected:** uncontrolled macOS balanced-1m default-tree -3.09% [-6.75%, +2.00%] misses
+the accept rule; peak RSS -26.29% [-26.34%, -26.23%] and user CPU -9.65%; first run
+-2.98% [-7.12%, +5.12%]; placebo -0.44%; ships on the Linux accept (exp-163).
+
+Full record:
+[`exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md`](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)
+
 ### exp-166 — macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat
 
 ↩︎ superseded · 2026-09-28 · H159 · commit `666b51f0`
@@ -5552,6 +5623,107 @@ fdu-578e has not run.
 
 Full record:
 [`exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md`](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)
+
+### exp-170 — macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout
+
+✅ accepted · 2026-09-28 · H161 · commit `060bbfe6`
+
+Control: a5c0ab46 probe: the default summary falls closed to the full index
+
+Candidate: 060bbfe6 probe: the transient summary classifies entries against .gitignore
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 293.7 | 270.8 | -4.28% | [-11.33%, -0.21%] |
+| component (ms) | 288.2 | 265.7 | -4.08% | [-11.22%, -0.02%] |
+| cpu (ms) | 1686.7 | 1612.8 | -4.26% (n.s.) | [-7.33%, +0.09%] |
+| user (ms) | 133.1 | 123.2 | -5.75% (n.s.) | [-10.41%, +0.40%] |
+| system (ms) | 1553.9 | 1490.8 | -4.05% (n.s.) | [-6.78%, +0.21%] |
+| peak rss (MiB) | 35.9 | 11.0 | -69.12% | [-71.09%, -68.71%] |
+
+Cost to carry: 999 lines; no new dependencies; new failure mode: a listing that fills a
+batch before its .gitignore is listed takes one extra metadata probe.
+
+Two engine files carry the change: scan.rs groups a classifying fold’s controls ahead of
+their entries on the streaming path only (the detached builder is untouched), and
+execution.rs adds the SummaryFold reducer; query_report.rs shares its notes with
+report_in. lines_changed counts crates/fdu-core/src including about 450 test lines.
+
+**Accepted:** Pre-registered primary peak RSS -69.12% [-71.09%, -68.71%], past the 50%
+bar; wall -4.28% [-11.33%, -0.21%], non-inferior; placebo --no-controls on both arms
+includes zero on wall and RSS. Uncontrolled host; the Linux wall cell is pending.
+
+Full record:
+[`exp-170-macos-ignore-aware-transient-summary-cuts-default-summary-pe.md`](../experiments/exp-170-macos-ignore-aware-transient-summary-cuts-default-summary-pe.md)
+
+### exp-171 — macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore
+
+✅ accepted · 2026-09-28 · H161 · commit `060bbfe6`
+
+Control: a5c0ab46 probe: the default summary falls closed to the full index
+
+Candidate: 060bbfe6 probe: the transient summary classifies entries against .gitignore
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 129.7 | 126.0 | -3.87% (n.s.) | [-10.86%, +0.01%] |
+| component (ms) | 123.9 | 120.3 | -3.56% (n.s.) | [-10.95%, +0.22%] |
+| cpu (ms) | 643.0 | 607.7 | -5.79% (n.s.) | [-6.57%, +2.99%] |
+| user (ms) | 60.7 | 41.0 | -32.25% | [-33.76%, -29.02%] |
+| system (ms) | 583.2 | 567.1 | -2.56% (n.s.) | [-4.56%, +6.48%] |
+| peak rss (MiB) | 25.1 | 10.9 | -57.86% | [-58.98%, -53.96%] |
+
+Cost to carry: 999 lines; no new dependencies; new failure mode: a listing that fills a
+batch before its .gitignore is listed takes one extra metadata probe.
+
+Two engine files carry the change: scan.rs groups a classifying fold’s controls ahead of
+their entries on the streaming path only (the detached builder is untouched), and
+execution.rs adds the SummaryFold reducer; query_report.rs shares its notes with
+report_in. lines_changed counts crates/fdu-core/src including about 450 test lines.
+
+**Accepted:** Pre-registered primary peak RSS -57.86% [-58.98%, -53.96%], past the 50%
+bar; wall -3.87% [-10.86%, +0.01%], non-inferior; user CPU -32.25%; placebo
+--no-controls on both arms includes zero.
+Uncontrolled host; the Linux wall cell is pending.
+
+Full record:
+[`exp-171-macos-ignore-aware-transient-summary-cuts-peak-rss-58-on-a-t.md`](../experiments/exp-171-macos-ignore-aware-transient-summary-cuts-peak-rss-58-on-a-t.md)
+
+### exp-172 — macOS whole-listing hold keeps only 17% RSS saving on wide directories
+
+↩︎ superseded · 2026-09-28 · H161 · commit `cbeb9e57`
+
+Control: a5c0ab46 probe: the default summary falls closed to the full index
+
+Candidate: cbeb9e57 probe: first cut, each listing held whole until it ends
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 119.4 | 122.4 | +2.92% (n.s.) | [-9.90%, +14.52%] |
+| component (ms) | 113.8 | 117.1 | +3.28% (n.s.) | [-10.52%, +15.17%] |
+| cpu (ms) | 625.2 | 600.2 | -3.80% (n.s.) | [-10.71%, +2.52%] |
+| user (ms) | 49.0 | 37.1 | -24.39% | [-28.96%, -22.18%] |
+| system (ms) | 573.6 | 563.0 | -2.31% (n.s.) | [-9.61%, +5.15%] |
+| peak rss (MiB) | 25.6 | 21.3 | -17.07% | [-21.27%, -12.09%] |
+
+Cost to carry: 900 lines; no new dependencies.
+
+First cut of H161; its scan.rs emission held each listing until it ended.
+
+**Superseded:** Peak RSS -17.07% [-21.27%, -12.09%] (25 to 21 MiB, against 10 MiB
+without controls) fails the pre-registered 50% bar: holding whole listings sizes batches
+by the widest listing.
+Superseded by 060bbfe6, which sends at batch_size and probes the directory control when
+a batch fills first (exp-171).
+
+Full record:
+[`exp-172-macos-whole-listing-hold-keeps-only-17-rss-saving-on-wide-di.md`](../experiments/exp-172-macos-whole-listing-hold-keeps-only-17-rss-saving-on-wide-di.md)
 
 ## Absolute timings
 
@@ -5764,6 +5936,14 @@ Baselines show one value because they measure a state rather than a change.
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
 
+### metabrowser-clone (137,085 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
+| 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ⏳ in progress |
+| 170 | macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout | `aggregate-summary` | 293.7 | 270.8 | -4.3% | ✅ accepted |
+
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5809,19 +5989,19 @@ Baselines show one value because they measure a state rather than a change.
 | 141 | H111 Linux floor and RSS gates fail on current engine | `default-tree` | 419.1 | 429.8 | +2.0% | ❌ rejected |
 | 142 | Linux H111 leftover is still walk floor plus retained-index RSS | `cold-scan-index` | 857.6 | 856.7 | +0.1% | ✅ accepted |
 
+### macos-balanced-1m (1,000,001 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 164 | macOS one-shot index release shows no wall change and no regression | `default-tree` | 7,354.1 | 7,490.0 | -1.0% | ❌ rejected |
+| 165 | macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall | `default-tree` | 7,490.0 | 7,229.9 | -3.1% | ❌ rejected |
+
 ### metabrowser-113794 (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 100 | Move directory-only state out of line | `default-tree` | 355.9 | 350.6 | -0.8% | ❌ rejected |
 | 101 | Compact detached child topology with local promotion | `default-tree` | 392.0 | 361.4 | -7.7% | ✅ accepted |
-
-### metabrowser-clone (137,085 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 158 | Current content-query oracle and leftover | `content-query` | 37,903.9 | 38,337.2 | +1.0% | ✅ accepted |
-| 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ⏳ in progress |
 
 ### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -5843,6 +6023,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
+
+### rustup-toolchains (77,159 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 171 | macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore | `aggregate-summary` | 129.7 | 126.0 | -3.9% | ✅ accepted |
+| 172 | macOS whole-listing hold keeps only 17% RSS saving on wide directories | `aggregate-summary` | 119.4 | 122.4 | +2.9% | ↩︎ superseded |
 
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 

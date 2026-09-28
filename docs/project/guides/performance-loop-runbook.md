@@ -68,6 +68,15 @@ Only Documents participates in metric resolution, so that request does not exerc
 H153; `--analyze all --view full` can use it during report construction, but its
 end-to-end effect has not been measured.
 
+**Stack 141 on macOS (2026-09-28, uncontrolled).** The regenerated `balanced` 1M tree on
+internal APFS is this host’s CLI subject for stack-level checks; it is generated, so it
+decides nothing on its own.
+There, H156 (exp-164) and H160 (exp-165) each moved `default-tree` wall by less than the
+host could resolve, H160 cut peak RSS 26%, and the published `--cache off` indexed tree
+measured 6.4 s with #137 5.6% slower in the same matrix.
+The Linux accepts of both changes (exp-160, exp-163) stand; neither is a macOS wall
+claim.
+
 **exp-105** is the current rustup *probe* self-comparison baseline, 12-pair,
 `os_cache: warm-steady`, **uncontrolled**.
 
@@ -964,14 +973,28 @@ command writes none; compare `default-tree` runs across this change with that in
 
 ## Current Pickup (2026-09-27)
 
-**Run authorization is on hold:** finish selecting the integration stack before any new
-macOS timing run. The
-[macOS rerun plan](../specs/active/plan-2026-09-27-macos-performance-rerun.md) separates
-the required H153 confirmation from optional CLI and peer comparisons, and specifies
-external builds with internal-drive measurement.
-Preparation and smoke checks do not authorize starting the measurement cells below.
+**macOS re-measurement of stack 141, 2026-09-28 (`fdu-nr2y`):** run with the user’s
+authorization against the frozen top, `a5c0ab46` (the post-merge `main`), under the
+[macOS rerun plan](../specs/active/plan-2026-09-27-macos-performance-rerun.md).
+Unrelated work kept the host above the quiet gate all night, so every cell ran declared
+`uncontrolled` after a refused quiet start.
 
-Next free experiment id is **exp-168** and next free unused hypothesis id is **H161**.
+- H156 on macOS
+  ([exp-164](../experiments/exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md)):
+  no wall change and no regression, `default-tree` −1.00% [−5.13%, +6.11%].
+- H160 on macOS
+  ([exp-165](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)):
+  `default-tree` −3.09% [−6.75%, +2.00%], short of the accept rule; peak RSS −26%.
+- [Refreshed peer table](../reports/report-2026-09-26-fdu-live-tool-comparison.md):
+  fdu’s `--cache off` indexed tree 6.4 s, ahead of every peer (dumac +8.5%); the default
+  `fdu PATH` now costs the same as `--cache off`; #137 took 5.6% longer than #139 on the
+  same contract, so the stack did not regress it.
+- H153 quiet confirmation: failed to qualify, 20 of 24 timed samples invalidated; see
+  item 1 below.
+
+Next free experiment id is **exp-173** and next free unused hypothesis id is **H162**.
+exp-170–172 record H161, the ignore-aware transient summary.
+exp-166–167 record H159, the bounded listing recycle, and exp-168–169 are unused.
 This is the one statement of the next free ids for Darwin and Linux alike; the
 [registry header](performance-loop.md#hypotheses) agrees.
 exp-164–165 are the macOS stack-141 replications on the macOS rerun layer, and
@@ -998,6 +1021,12 @@ Its default single-view command is not covered by the earlier speedup.
 1. **H153 confirmation** (`fdu-9e9d`) — repeat the `content-query` pair under the
    predeclared quiet-host gate, preserve the raw run, and resolve major-fault
    non-regression before accepting or rejecting the provisional candidate.
+   The 2026-09-28 attempt on `a5c0ab46` failed to qualify: its control is that source
+   with the shared pass gated off, recorded in
+   [exp-159](../experiments/exp-159-share-content-metric-resolution-across-views.md#quiet-confirmation-attempt-2026-09-28).
+   Its major faults tracked run position (117 on the second process of a pair), not arm;
+   explain that before the next attempt, and run it only when the other workloads on the
+   host are paused.
 2. **H154** (`fdu-wbhe`) — replicate H153 on a reconstructible Linux deciding subject
    before claiming Linux magnitude.
    The same pure-Rust mechanism should transfer, but that is not evidence.

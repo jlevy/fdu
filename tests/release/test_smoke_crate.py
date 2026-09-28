@@ -17,7 +17,7 @@ from unittest import mock
 from scripts.release.smoke_crate import check_python, smoke_crate, verify_relock
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 
 # The shape `cargo package` writes into the `fdu` crate: `fdu-core` pinned to crates.io.
@@ -92,7 +92,7 @@ class FakeCargo:
         if step == "metadata":
             manifest = Path(command[command.index("--manifest-path") + 1])
             (manifest.parent / "Cargo.lock").write_text(self.relocked, encoding="utf-8")
-        stdout = self.reported if step == "--version" else "fdu-core-0.1.0  1 KB\n"
+        stdout = self.reported if step == "--version" else "fdu-core-0.2.0  1 KB\n"
         return subprocess.CompletedProcess(command, 0, stdout)
 
 
@@ -108,10 +108,10 @@ class VerifyRelockTests(unittest.TestCase):
         # published one, not a patch that failed to apply.
         cases = {
             "the patch did not apply": SHIPPED_LOCK,
-            "fdu-core 0.1.0 differs from the shipped lock beyond its source: dependencies": (
+            "fdu-core 0.2.0 differs from the shipped lock beyond its source: dependencies": (
                 RELOCKED_LOCK.replace(' "anstyle",\n]', ' "anstyle",\n "thiserror",\n]')
             ),
-            "the relocked lock has no fdu-core 0.1.0": RELOCKED_LOCK.replace(
+            "the relocked lock has no fdu-core 0.2.0": RELOCKED_LOCK.replace(
                 f'name = "fdu-core"\nversion = "{VERSION}"', 'name = "fdu-core"\nversion = "0.0.9"'
             ),
             "moved pins other than fdu-core: anstyle": RELOCKED_LOCK.replace("1.0.13", "1.0.14"),
