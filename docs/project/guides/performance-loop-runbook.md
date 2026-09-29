@@ -1010,13 +1010,15 @@ sparse tree and exp-190 H159 accepted on a directory-dense one; exp-173 H162 and
 H163 accepted; exp-191 H157 rejected.
 The comparison with pdu on a real tree, which found the `.gitignore` cost, is
 [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
-exp-175–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
+exp-178–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
 
 Next free ids are **exp-200** and **H180**. exp-173–199 and H162–H179 are reserved for
 Linux work: the peer-tool research (`fdu-92hp`) takes exp-173–186 and H162–H170, and the
 0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179. Of those, H171–H173 are the
-0.2.2 Linux parity hypotheses (`fdu-8a8r`); exp-175–186, exp-192–199, and H174–H179 are
-unused, and 0.2.2’s cells take them first.
+0.2.2 Linux parity hypotheses (`fdu-8a8r`). The 2026-09-29 overnight loop
+([plan](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md)) took
+exp-175–177 for its fc-v49 baselines and H174–H179 for its new hypotheses; its cells
+take exp-178–186, then exp-192–199, then exp-200 onward.
 exp-170–172 record H161, the ignore-aware transient summary.
 exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159
 layer), and exp-168–169 are unused.

@@ -4,10 +4,21 @@
 
 **Author:** fdu project
 
-**Status:** Stage 1 in progress, stages 2 and 3 not started.
-Epic `fdu-8a8r`. Stage 1 is 0.2.1, released from `c1644575`, which merges
+**Status:** Stage 1 done (0.2.1 tagged on `c1644575` and published); stages 2 and 3 not
+started. Epic `fdu-8a8r`. Stage 1 is 0.2.1, released from `c1644575`, which merges
 [#155](https://github.com/jlevy/fdu/pull/155) and
 [#156](https://github.com/jlevy/fdu/pull/156).
+
+**Amended 2026-09-29** by
+[the overnight plan](plan-2026-09-29-linux-overnight-performance-loop.md), whose review
+is recorded in
+[the peers, matchers and hot-path brief](../../research/research-2026-09-29-linux-peers-matchers-and-hot-path.md).
+It revised H171 (git’s ends-with bucket, required anchored grouping, residual
+pre-checks), demoted H173, and split H164 into a 0.2.2-eligible tree route and a summary
+route for 0.3.0. It re-pointed the deciding subjects of H166, H167, H169 and H172 from
+the generated tree to `node-modules-dense` and `linux-v6.12`, and added H175 (the chain
+from the parent, measured in H171’s cell) and H176 (reducer elision, inside H172’s
+tier). Where the two plans differ, the overnight plan’s amendments govern.
 
 ## Overview
 

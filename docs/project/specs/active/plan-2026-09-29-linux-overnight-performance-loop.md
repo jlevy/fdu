@@ -203,9 +203,10 @@ the [registry](../../guides/performance-loop.md#hypotheses).
 ## Amendments After the Plan Review
 
 A Fable subagent reviewed this plan against the code before any candidate was measured.
-The full review is kept with the night’s evidence; the amendments it drove, adopted at
-08:30 UTC, are listed here and take precedence over the queue text below where they
-differ.
+Its findings are kept in
+[the research brief](../../research/research-2026-09-29-linux-peers-matchers-and-hot-path.md);
+the amendments it drove, adopted at 08:30 UTC, are listed here and take precedence over
+the queue text below where they differ.
 
 1. **Two regimes.** Wall time is roughly the larger of the consumer’s serial work and
    total CPU divided by about 3.4, plus a 5–10 ms tail.
