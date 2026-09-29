@@ -757,24 +757,88 @@ pub(crate) struct ControlChain {
 }
 
 impl ControlChain {
+    /// Whether no control governs the directory, so none of its children is ignored.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.governing.is_empty()
+    }
+
     /// Decide the child `name` of `directory`, the directory this chain was resolved for,
     /// assuming that directory is not ignored.
+    #[cfg(test)]
+    pub(crate) fn is_ignored(&self, directory: &Path, name: &[u8], is_dir: bool) -> bool {
+        with_directory_components(directory, |components| {
+            self.is_ignored_within(components, name, is_dir)
+        })
+    }
+
+    /// Decide the child `name` of the directory this chain was resolved for, given that
+    /// directory's normal components, assuming that directory is not ignored.
     ///
     /// The answer is [`ControlMatcher::is_ignored`]'s for `directory/name`: the deepest
     /// control with an opinion wins, each matching the path relative to its own directory.
-    pub(crate) fn is_ignored(&self, directory: &Path, name: &[u8], is_dir: bool) -> bool {
+    /// A caller classifying a whole listing splits the directory once, with
+    /// [`with_directory_components`], and the name is hashed once here for every control
+    /// that governs it (H171).
+    pub(crate) fn is_ignored_within(&self, directory: &[&[u8]], name: &[u8], is_dir: bool) -> bool {
         if self.governing.is_empty() {
             return false;
         }
-        gitignore::with_components(directory, Some(name), |components| {
-            self.governing
-                .iter()
-                .find_map(|(leading, source)| {
-                    let relative = components.get(*leading..).unwrap_or_default();
-                    source.matcher.matches_components(relative, is_dir)
-                })
-                .unwrap_or(false)
+        let name = gitignore::Name::new(name);
+        self.governing
+            .iter()
+            .find_map(|(leading, source)| {
+                let relative = directory.get(*leading..).unwrap_or_default();
+                source.matcher.decide(relative, &name, is_dir)
+            })
+            .unwrap_or(false)
+    }
+}
+
+/// Call `each` with the normal components of `directory`, split once for every child of
+/// one listing, without a heap allocation for a path of ordinary depth.
+pub(crate) fn with_directory_components<R>(
+    directory: &Path,
+    each: impl FnOnce(&[&[u8]]) -> R,
+) -> R {
+    gitignore::with_components(directory, None, each)
+}
+
+/// A directory's normal components, copied once, for a caller that keeps them across
+/// calls and classifies each child of the directory as it arrives.
+///
+/// [`Path::components`] parses the whole path each time it is asked, which costs a
+/// deep entry more than matching its name does once the rules are indexed (H171).
+#[derive(Debug)]
+pub(crate) struct SplitDirectory {
+    bytes: Vec<u8>,
+    /// Where each component ends in `bytes`.
+    ends: Vec<usize>,
+}
+
+impl SplitDirectory {
+    pub(crate) fn new(directory: &Path) -> Self {
+        with_directory_components(directory, |components| {
+            let mut split = Self {
+                bytes: Vec::with_capacity(components.iter().map(|component| component.len()).sum()),
+                ends: Vec::with_capacity(components.len()),
+            };
+            for component in components {
+                split.bytes.extend_from_slice(component);
+                split.ends.push(split.bytes.len());
+            }
+            split
         })
+    }
+
+    /// Call `each` with the components, without a heap allocation for a path of ordinary
+    /// depth.
+    pub(crate) fn with_components<R>(&self, each: impl FnOnce(&[&[u8]]) -> R) -> R {
+        let components = self.ends.iter().scan(0, |start, &end| {
+            let component = &self.bytes[*start..end];
+            *start = end;
+            Some(component)
+        });
+        gitignore::with_collected(components, each)
     }
 }
 

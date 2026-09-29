@@ -1680,43 +1680,54 @@ impl DetachedIndexBuilder {
 
         let parent_ignored = self.index.entry(parent).ignored;
         // Every child shares this directory's governing controls, so they are resolved
-        // once here rather than looked up per child (H163).
+        // once here rather than looked up per child (H163), and the directory's path is
+        // split once for all of them rather than again for each child (H171).
         let chain = (!parent_ignored && !self.index.controls.is_empty())
             .then(|| self.index.controls.chain_for(path));
         self.index.reserve_detached_children(parent, children.len());
-        for child in children.drain(..) {
-            let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
-            crate::counters::bump(|counts| counts.upserts += 1);
-            let ext_id = (kind == EntryKind::File)
-                .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
-            let ignored = match &chain {
-                Some(chain) => chain.is_ignored(path, name.as_encoded_bytes(), kind.is_dir()),
-                None => parent_ignored,
-            };
-            let child_path = kind.is_dir().then(|| path.join(&name));
-            let child_id = self.index.alloc(Entry::new_detached(
-                NewEntry {
-                    parent: Some(parent),
-                    name,
-                    ext_id,
-                    ignored,
-                    source: Source::Scanned,
-                    kind,
-                    attrs,
-                },
-                false,
-            ));
-            self.index.push_detached_child(parent, child_id);
-            // Fold the child's own direct contribution while filesystem work is still
-            // in flight. Files are now complete; directories will add only their
-            // descendant roll-up in the short bottom-up finish pass.
-            let direct = self.index.contribution(child_id);
-            crate::counters::bump(|counts| counts.rollup_merges += 1);
-            self.index.entry_mut(parent).rollup_mut().merge(&direct);
-            if let Some(child_path) = child_path {
-                self.directory_ids.insert(child_path, child_id);
+        let path: &Path = path;
+        let mut classify_children = |directory: &[&[u8]]| {
+            for child in children.drain(..) {
+                let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
+                crate::counters::bump(|counts| counts.upserts += 1);
+                let ext_id = (kind == EntryKind::File)
+                    .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
+                let ignored = match &chain {
+                    Some(chain) => {
+                        chain.is_ignored_within(directory, name.as_encoded_bytes(), kind.is_dir())
+                    }
+                    None => parent_ignored,
+                };
+                let child_path = kind.is_dir().then(|| path.join(&name));
+                let child_id = self.index.alloc(Entry::new_detached(
+                    NewEntry {
+                        parent: Some(parent),
+                        name,
+                        ext_id,
+                        ignored,
+                        source: Source::Scanned,
+                        kind,
+                        attrs,
+                    },
+                    false,
+                ));
+                self.index.push_detached_child(parent, child_id);
+                // Fold the child's own direct contribution while filesystem work is still
+                // in flight. Files are now complete; directories will add only their
+                // descendant roll-up in the short bottom-up finish pass.
+                let direct = self.index.contribution(child_id);
+                crate::counters::bump(|counts| counts.rollup_merges += 1);
+                self.index.entry_mut(parent).rollup_mut().merge(&direct);
+                if let Some(child_path) = child_path {
+                    self.directory_ids.insert(child_path, child_id);
+                }
+                self.inserted = self.inserted.saturating_add(1);
             }
-            self.inserted = self.inserted.saturating_add(1);
+        };
+        if chain.as_ref().is_some_and(|chain| !chain.is_empty()) {
+            crate::control::with_directory_components(path, classify_children);
+        } else {
+            classify_children(&[]);
         }
         Ok(())
     }
