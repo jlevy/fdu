@@ -602,6 +602,8 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | Q7 H166 wake one | `fdu-i6nk` | Closed by its gate, no build | Walkers starved 2.2% (`linux-v6.12`) and 0.6% (`node-modules-dense`) of their time |
 | H180 summary walker trims | `fdu-cfbf` | Accepted, merged `c2a75fe4` | exp-183: `node-modules-dense` default summary −8.68%; exp-184: `linux-v6.12` −5.63% (blind −12.76%); tree placebos at zero |
 | H181 conditional wakes, H182 hash sort | `fdu-uk0u`, `fdu-sp4m` | Implementing (branch `perf/h181-h182`) | From the Fable mid-night sweep; one bundle cell after H169 |
+| Standing after H169 | — | Measured 12:40, 20 pairs | `linux-v6.12` fdu 0.077 s against pdu default 0.072 s (−8%) and diskus 0.073 s; `node-modules-dense` fdu 0.080 s against pdu default 0.081 s (+1%) and diskus 0.082 s (+1%): parity on the dense tree (evidence under exp-185) |
+| H183 matcher pre-checks | `fdu-7ydi` | Implementing (branch `perf/h183-matcher-prechecks`) | A callgrind of the head found `memcmp` (114M) and `Checks::admit` (97M) are most of the 333M instructions `.gitignore` still costs the consumer on `linux-v6.12` |
 | Q8 H170 summary fold | `fdu-lz25` | Queued | — |
 | Q9 H164 tree route | `fdu-emqf` | Conditional | — |
 | Harness invalid-sample verdict | `fdu-c2c6` | Fixed, `8a58d432` | INCONCLUSIVE for any invalid sample; the recorder refuses such an accept |
