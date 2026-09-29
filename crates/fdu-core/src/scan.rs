@@ -18,9 +18,9 @@
 //! lists with raw `getdents64` and stats with `statx` against the listing's descriptor,
 //! passing `AT_NO_AUTOMOUNT`; an open or enumeration failure, a malformed record, or a
 //! kernel without `statx` falls back the same way, and the fallback's own stats then
-//! pass the flag too ([`observe_dir_entry`]), as does every stat of a path a route
-//! verifies by itself ([`observe_path`]). Only the walk root is resolved through a mount
-//! ([`root_device`]). So an autofs tree answers the same on every route and delivery.
+//! pass the flag too (`observe_dir_entry`), as does every stat of a path a route
+//! verifies by itself (`observe_path`). Only the walk root is resolved through a mount
+//! (`root_device`). So an autofs tree answers the same on every route and delivery.
 //! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
