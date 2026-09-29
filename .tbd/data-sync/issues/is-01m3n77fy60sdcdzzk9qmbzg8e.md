@@ -5,7 +5,7 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: open
 priority: 2
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 labels:
   - docs
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T04:47:20.274Z
+updated_at: 2026-09-29T16:42:34.474Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 
@@ -285,3 +285,9 @@ fdu's `--exclude` only filters what is reported, so fdu still walks and reads th
 - **linguist** (v9.7.0): `attic/linguist/lib/linguist/{languages.yml,vendor.yml,repository.rb}`.
 - **Smaller tools:** `attic/gocloc/language.go`, `attic/loc/src/lib.rs`, `attic/polyglot/LANGUAGES.md`, `attic/pygount/pygount/analysis.py`, `attic/onefetch/Cargo.toml` (`tokei = "15.0.0"`).
 - **Web:** [tcount](https://github.com/RRethy/tcount).
+
+# Status check 2026-09-29 (Linux overnight round, PR jlevy/fdu#161)
+
+- Not landed: main's README has no "Comparison to Alternatives" section, and no remote branch carries one. This bead's notes are the only copy of the draft (durable on origin/tbd-sync).
+- Linux speed row: the Linux overnight round measured the generated 1M-entry tree after H169 (12 pairs, 4-vCPU Firecracker ext4): fdu default tree 1.2 s, pdu default +3% slower, diskus +6% slower, pdu --max-depth 2 -4% faster; peak RSS 58 vs 93 MiB. Rerun a quiet tool cell on the final head (0c8131fd or later) before filling SPEED_* placeholders; the README must claim only what a current cell shows. Real trees at the final head (20 pairs): linux-v6.12 and node-modules-dense level with pdu default and diskus (+1% [-2%, +2%] and +1% [-2%, +4%]).
+- .gitignore row, gdu: the draft marks gdu as no support (checked at 5.36.1), but upstream gdu (attic checkout, 2026-09-23) documents an `ignore-from-gitignore` option that reads gitignore-style patterns from one file. Re-check the released version before publishing; likely "partial: patterns from a file", like dua.
