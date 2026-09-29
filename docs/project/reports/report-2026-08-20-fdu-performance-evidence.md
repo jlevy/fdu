@@ -411,20 +411,25 @@ a negative figure means the peer took less time.
 | After H172 | 12 | `node-modules-dense` | 0.076 s | 0.077 s, +0% | 0.066 s, −12% | 0.075 s, −2% |
 | After H169 (exp-185 evidence) | 20 | `linux-v6.12` | 0.077 s | 0.072 s, −8% [−10%, −4%] | 0.067 s, −10% | 0.073 s, −4% |
 | After H169 | 20 | `node-modules-dense` | 0.080 s | 0.081 s, +1% [−3%, +7%] | 0.076 s, −4% | 0.082 s, +1% |
+| Final head, H183 included (exp-194 evidence) | 20 | `linux-v6.12` | 0.122 s | 0.121 s, +1% [−2%, +2%] | 0.114 s, −1% [−7%, +1%] | 0.125 s, +2% [−1%, +9%] |
+| Final head | 20 | `node-modules-dense` | 0.118 s | 0.119 s, +1% [−2%, +4%] | 0.113 s, −7% [−10%, −4%] | 0.117 s, −2% [−4%, +2%] |
 
 Only these within-cell ratios are evidence.
 Across cells the host drifted: the same probe arm moved by up to 29% between cells
 (exp-178, exp-180), and pdu’s own median on `linux-v6.12` went from 0.079 s to 0.072 s
 with an unchanged binary.
-Read within cells, fdu’s default command went from 2.4 times pdu’s default to 1.08 times
-on `linux-v6.12`, and from 11% behind to level on `node-modules-dense`. The night’s
-target, at most 1.25 times on `linux-v6.12` and the dense tree’s gap closed, was met
-after H172. The destination, faster than pdu’s default on both real trees, was not, and
-pdu with `--max-depth 2` stays ahead on both.
+Read within cells, fdu’s default command went from 2.4 times pdu’s default to level
+with it on `linux-v6.12`, and from 11% behind to level on `node-modules-dense`; diskus
+is level on both. The night’s target, at most 1.25 times on `linux-v6.12` and the dense
+tree’s gap closed, was met after H172. The destination, faster than pdu’s default on
+both real trees, was not: fdu reached parity, and pdu with `--max-depth 2` stays 7%
+ahead on the dense tree.
 
-**Final standing: see the plan’s
-[Status table](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md#status).**
-A closing tool cell on the night’s head, if one runs, is recorded there and not here.
+The final cell ran in a slower host regime: every tool took about 0.12 s, and 85–88% of
+each tool’s CPU was kernel time. There fdu used less CPU than pdu’s default and diskus
+on both trees (445 ms against 461 and 486 on `linux-v6.12`), but made more voluntary
+context switches (608 against pdu’s default 128), the handoff between walkers and
+consumer that H181 cut without moving wall.
 
 **What is left.** After H169, a callgrind of the default tree on `linux-v6.12` counted
 436M consumer instructions with `.gitignore` against 103M without; `memcmp` (114M) and
