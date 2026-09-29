@@ -785,6 +785,12 @@ pub struct WorkerPolicyDiagnostics {
 }
 
 /// Directory enumeration backends used by one scan.
+///
+/// The Linux native reader (`getdents64` and `statx`, glibc builds) has no fields here
+/// yet. Its listings are counted in neither portable field, so on Linux the directories
+/// it served are the report's `dirs_read` less `portable_directory_reads`; a directory it
+/// declined is counted once, as a portable attempt. `unavailable_reason` still describes
+/// only the macOS fields.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScanBackendDiagnostics {
     /// Portable `read_dir` calls attempted.
@@ -3514,6 +3520,9 @@ fn walk_worker_with<E: WalkEmission>(
                     diagnostics.macos_bulk_fell_back();
                 }
             }
+            // Recorded in no backend diagnostic field: `ScanBackendDiagnostics` has none for
+            // this reader yet, so a native listing is neither a portable attempt nor a
+            // portable read, and `dirs_read` less the portable reads is what it served.
             #[cfg(all(target_os = "linux", target_env = "gnu"))]
             {
                 let policy = linux_dents::StatPolicy {
@@ -8189,6 +8198,28 @@ mod tests {
             assert_eq!(diagnostics.backend.macos_bulk_fallbacks, None);
             assert_eq!(
                 diagnostics.backend.unavailable_reason,
+                Some("macOS bulk directory enumeration is unavailable on this platform")
+            );
+        }
+
+        // The Linux native reader has no backend fields: a parallel walk's native
+        // listings are counted in neither portable field, and every portable attempt is
+        // a directory it declined or never tried.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+            let (report, diagnostics) =
+                scan_with_diagnostics(dir.path(), &config, &mut |_| {}).expect("diagnostic scan");
+            let backend = &diagnostics.backend;
+            assert!(report.is_complete(), "{:?}", report.errors);
+            assert_eq!(backend.portable_attempts, backend.portable_directory_reads);
+            assert!(
+                backend.portable_directory_reads < report.dirs_read,
+                "native listings are not portable reads: {backend:?}, {} read",
+                report.dirs_read
+            );
+            assert_eq!(
+                backend.unavailable_reason,
                 Some("macOS bulk directory enumeration is unavailable on this platform")
             );
         }

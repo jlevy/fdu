@@ -155,6 +155,22 @@ describes an unknown mixture of decisions.
 The characterization, experiments, and no-change decision are in
 [the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
 
+### The Linux native reader is invisible to backend diagnostics
+
+The Linux reader (`scan/linux_dents.rs`, glibc builds) has no fields in
+`ScanBackendDiagnostics` in the 0.2 series, because adding them changes a public struct,
+and that waits for 0.3.0. Its listings are counted in neither portable field, and
+`unavailable_reason` still describes only the macOS fields.
+On Linux, the directories it served are therefore `dirs_read` less
+`portable_directory_reads`, and a directory it declined is counted once, as a portable
+attempt.
+
+The realtree harness’s claim-grade backend check compares `dirs_read` with the portable
+reads off macOS, so it refuses a Linux `--diagnostics` job whose walk the reader served.
+No Linux job in the loop requires scan diagnostics: the only job that does,
+`adaptive-scan-index`, also requires the macOS backend counts, so it cannot pass on
+Linux in any case.
+
 ## How a divergence is expressed in code
 
 Two kinds of platform difference live in this engine, and only one of them is a tuning
