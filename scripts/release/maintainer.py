@@ -7,8 +7,10 @@ this program is the part of it that needs no judgment. Each step reads git, GitH
 the registries, or writes only what can be undone: it pushes and deletes the
 `release/v{VERSION}` branch a rehearsal runs on, dispatches that rehearsal (which cannot
 publish), and downloads and verifies artifacts into the release directory. Pushing the
-tag, dispatching the publishing run, approving the `release` environment, and creating
-the GitHub release stay the maintainer's own commands; nothing here issues any of them.
+tag, dispatching the publishing run, and approving the `release` environment require
+the maintainer's release-specific authorization. The approved workflow creates the
+GitHub release; this local helper only prints a fallback command for older workflows
+or publication by hand.
 
 Every step takes the release identity from `VERSION`, `COMMIT`, and `RELEASE` in the
 environment (or `--version`, `--commit`, and `--dir`), and records the run IDs it finds
@@ -600,16 +602,22 @@ def workflow_runs(host: Host, release: Release, branch: str) -> list[dict[str, A
 
 
 def dispatch_rehearsal(
-    host: Host, release: Release, *, timeout: float = 120.0, interval: float = 5.0
+    host: Host,
+    release: Release,
+    *,
+    timeout: float = 120.0,
+    interval: float = 5.0,
+    previous: str | None = None,
 ) -> int:
     """
     Dispatch a rehearsal on the pinned branch and return the new run's ID.
 
-    No input is passed, so `publish` keeps its default of false: the run builds and
-    inspects every artifact and its publish job is skipped.
+    Only the optional notes base is passed; `publish` keeps its default of false, so
+    the run builds and inspects every artifact and its publish job is skipped.
     """
     before = {run["databaseId"] for run in workflow_runs(host, release, release.branch)}
-    output = host.run(gh(release, "workflow", "run", WORKFLOW, "--ref", release.branch))
+    inputs = [] if previous is None else ["-f", f"previous={compare_base(host, release, previous)}"]
+    output = host.run(gh(release, "workflow", "run", WORKFLOW, "--ref", release.branch, *inputs))
     printed = re.search(r"/actions/runs/([0-9]+)", output)
     if printed is not None:
         return int(printed[1])
@@ -728,7 +736,18 @@ def fetch_run(host: Host, release: Release, run_id: int, name: str, evidence_art
     else:
         download = target / "download"
         download.mkdir(parents=True)
-        host.run(gh(release, "run", "download", str(run_id), "--dir", str(download)))
+        host.run(
+            gh(
+                release,
+                "run",
+                "download",
+                str(run_id),
+                "--dir",
+                str(download),
+                "--pattern",
+                "release-*",
+            )
+        )
         flatten(download, target / "files", target / "evidence", evidence_artifact)
         marker.write_text(f"{run_id}\n", encoding="utf-8")
     verify_kept(release, target)
@@ -752,7 +771,15 @@ def verify_kept(release: Release, target: Path) -> None:
         print(f"verified {artifact.sha256}  {artifact.filename}")
 
 
-def candidate(host: Host, release: Release, *, run_id: int | None, redispatch: bool) -> Path:
+def candidate(
+    host: Host,
+    release: Release,
+    *,
+    run_id: int | None,
+    redispatch: bool,
+    previous: str | None = None,
+    no_download: bool = False,
+) -> Path | None:
     """
     Rehearse the release commit on GitHub and keep its verified artifacts.
 
@@ -771,7 +798,7 @@ def candidate(host: Host, release: Release, *, run_id: int | None, redispatch: b
         if not on_main.ok:
             raise StepError(f"{on_main.name}: {on_main.detail}; rehearse only reviewed history")
         pin_branch(host, release)
-        run_id = dispatch_rehearsal(host, release)
+        run_id = dispatch_rehearsal(host, release, previous=previous)
     save_state(release, rehearsal_run=run_id)
     print(f"rehearsal: {release.run_url(run_id)}")
     watch = gh(release, "run", "watch", str(run_id), "--exit-status", "--interval", "30")
@@ -782,6 +809,9 @@ def candidate(host: Host, release: Release, *, run_id: int | None, redispatch: b
             "and rehearse a new commit in a new RELEASE directory"
         )
     verify_run(host, release, run_id, publishing=False)
+    if no_download:
+        print(f"rehearsal verified; review notes and evidence at {release.run_url(run_id)}")
+        return None
     target = fetch_run(
         host, release, run_id, "rehearsal", f"release-evidence-rehearsal-{release.commit[:9]}"
     )
@@ -986,10 +1016,11 @@ def published(
     host: Host, release: Release, *, run_id: int | None, by_hand: bool = False
 ) -> list[str]:
     """
-    Verify the publishing run and every registry, and prepare the announcement.
+    Verify the publishing run and every registry, and print the fallback announcement.
 
     Writes `$RELEASE/registry-state.json` only when every registry holds exactly the
-    published manifest's files, and returns the `gh release create` command to run.
+    published manifest's files, and returns a `gh release create` fallback command.
+    Current workflows announce automatically; do not run the fallback for them.
     `by_hand` audits the files a hand publication uploaded, already in
     `$RELEASE/published`, instead of a publishing run's.
     """
@@ -1017,7 +1048,10 @@ def published(
     document = registry_state.registry_document(release.version, states)
     (release.directory / "registry-state.json").write_text(document, encoding="utf-8")
     command = announce_command(release)
-    print("every registry holds exactly the published files. Announce the release with:")
+    print(
+        "every registry holds exactly the published files. Current workflows announce automatically."
+    )
+    print("Fallback for an older workflow or publication by hand, only if no release exists:")
     print(shlex.join(command))
     return command
 
@@ -1211,6 +1245,10 @@ def parser() -> argparse.ArgumentParser:
     check = steps.add_parser("preflight", help="read-only readiness checks")
     check.add_argument("--previous", help=previous_help)
     rehearse = steps.add_parser("candidate", help="rehearse COMMIT on GitHub, keep its files")
+    rehearse.add_argument("--previous", help=previous_help)
+    rehearse.add_argument(
+        "--no-download", action="store_true", help="verify the run without local artifacts"
+    )
     rehearse.add_argument("--run", type=int, help="use this rehearsal run instead of dispatching")
     rehearse.add_argument(
         "--redispatch", action="store_true", help="dispatch a new rehearsal of the same commit"
@@ -1253,7 +1291,14 @@ def main(
         if args.step == "preflight":
             return report(preflight(host, release, args.signing_key, previous=args.previous))
         if args.step == "candidate":
-            candidate(host, release, run_id=args.run, redispatch=args.redispatch)
+            candidate(
+                host,
+                release,
+                run_id=args.run,
+                redispatch=args.redispatch,
+                previous=args.previous,
+                no_download=args.no_download,
+            )
         elif args.step == "body":
             body(host, release, previous=args.previous)
         elif args.step == "verify-tag":
