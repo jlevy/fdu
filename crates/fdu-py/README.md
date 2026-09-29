@@ -1,6 +1,6 @@
 # fdu (Python)
 
-**Fastest native du replacement and detailed file analytics for Python and Rust**
+**Fast native du replacement and detailed file analytics for Python and Rust**
 
 Python bindings for [fdu](https://github.com/jlevy/fdu).
 

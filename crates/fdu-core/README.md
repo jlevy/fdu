@@ -29,7 +29,7 @@ Published requirements are caret ranges of the reviewed minimum (`libc`,
 An exact pin in a published library would make any downstream that needs a newer
 compatible release unresolvable.
 
-The crate has no default features.
+The crate has no default build features.
 The `watch` capability is strictly additive; without it, scan, index, and snapshot
 remain fully functional.
 The `fdu` command and Python package enable it explicitly, while embedding consumers can

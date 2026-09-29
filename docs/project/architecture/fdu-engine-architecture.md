@@ -118,7 +118,10 @@ reducer without a separate engine or a caller-asserted trust flag.
 One-shot execution retains less state only when the request proves it needs less, with
 no content analysis, under a delivery that neither answers from the snapshot
 (`stale_ok`) nor asks to keep one (`CachePolicy::On`). One unfiltered summary retains no
-index. An unfiltered tree with a positive share threshold builds a folded index: every
+index (`RetainedState::Summary`); when it reads `.gitignore`, it keeps only the control
+table and the directories that head an ignored subtree, which is enough to classify each
+entry as it counts it.
+An unfiltered tree with a positive share threshold builds a folded index: every
 directory, but only the files large enough to be shown as rows, the rest counted in
 their directory’s roll-ups and in a folded tally its share omission reads
 (`RetainedState::Tree`). The planner reports from a folded index and frees it; it is
@@ -406,9 +409,10 @@ ignore: `TreeNode`, `SummaryRow`, and `TypeRow` an `IgnoredTally`, and `FileRow`
 The unfiltered tier derives the share from the maintained `all` and `unignored`
 partitions; the traversal tier counts it over the entries the selection admits, so a
 selection by ignored state (`Selection::ignored`) sizes, sorts, and bounds rows by what
-it selected. The share is `None` when the index observed no control state, and the
-aggregate-only plan, which keeps no control table, is taken only by a scan that turned
-observation off.
+it selected. The share is `None` when the scan observed no control state.
+The aggregate-only plan tallies the share as it counts each entry, from the control
+table and the ignored directories it keeps, so it serves the default summary as well as
+one that turned observation off.
 
 #### Content index and sidecar
 

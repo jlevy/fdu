@@ -1,6 +1,6 @@
 # fdu
 
-**Fastest native du replacement and detailed file analytics for Python and Rust**
+**Fast native du replacement and detailed file analytics for Python and Rust**
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.

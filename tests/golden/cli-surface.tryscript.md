@@ -305,9 +305,12 @@ Otherwise a snapshot cannot save the walk that request is already doing, so it n
 reads nor writes one.
 Reading `.gitignore`, the summary keeps the rules and classifies each entry as it counts
 it, so its ignored share needs no index either.
-Ordinary metadata requests retain the reusable index but never read regular-file
-contents. One-shot metadata reports under `auto` neither load a snapshot, which cannot
-avoid the current metadata walk, nor write one; `--cache on` writes one.
+An unfiltered tree with a share floor, such as the default `fdu PATH`, keeps every
+directory but only the files large enough to show as rows; other metadata requests
+retain the reusable index.
+None of them reads regular-file contents.
+One-shot metadata reports under `auto` neither load a snapshot, which cannot avoid the
+current metadata walk, nor write one; `--cache on` writes one.
 Any `--analyze` value other than `none` opts into a separate content sidecar.
 fdu reads eligible files whose requested result is absent or stale; a compatible
 repeated run reuses unchanged records.
@@ -583,7 +586,8 @@ No ordinary view requires a preexisting cache.
 Metadata-only one-shot reports include current sizes or timestamps, so they must inspect
 every entry; under `auto` they neither load a snapshot, which cannot make that
 verification cheaper, nor write one, which no later report reads.
-Content analysis, `--watch`, and an opened index read, revalidate, and write it.
+Content analysis, `--watch`, and a retained index from the Rust or Python `open` read,
+revalidate, and write it.
 `--cache on` also writes after a one-shot report, which is how to leave a snapshot for a
 later `--stale-ok` answer.
 
