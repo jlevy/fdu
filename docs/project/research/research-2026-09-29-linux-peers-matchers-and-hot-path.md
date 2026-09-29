@@ -695,7 +695,9 @@ The fix rides with H169 phase 1 (Q6): the Linux reader calls
 `statx(dirfd, d_name, AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT, STATX_BASIC_STATS)`. It
 changes no answer on a host without automounts, only whether a mount fires, and is
 recorded in H169’s row as a correctness side effect.
-The portable fallback and the root’s `symlink_metadata` still go through std.
+The other routes followed as `fdu-d2fn` (H184, exp-196): every route lists through the
+reader, the portable fallback and the per-path stats use the same flags by path, and
+only the walk root is resolved, through an opened descriptor.
 
 ### 6. Two Regimes of Wall Time
 

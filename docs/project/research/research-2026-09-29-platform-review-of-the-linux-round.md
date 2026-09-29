@@ -57,6 +57,15 @@ or measured. Every `file:line` citation is at `0c8131fd`. Epic: `fdu-9q80`.
 
 - **Correctness.** Matching was byte-exact and case-sensitive on every platform before
   the round (`control.rs:18-19`, `control/gitignore.rs:6-8`), and it still is.
+  One answer did change on Linux glibc, and on purpose: on a tree holding an unmounted
+  autofs trigger directory, 0.2.1 mounted the trigger by statting it and reported the
+  mounted root; the round reports the trigger, as `lstat` and GNU `du` do.
+  The review of #161 (R161-2) found that H169 phase 1 had changed it on the parallel
+  walk alone, so the same request answered differently by route; `fdu-d2fn` then made
+  every route list through the reader and pass `AT_NO_AUTOMOUNT` on every stat of a
+  listed child, so the answer no longer depends on route, worker count, or which reader
+  served a directory. The walk root is resolved on every route.
+  No other answer changed by construction.
   - H171 and H183 compare the same bytes the linear matcher compared, so
     case-insensitive APFS and NFD names get exactly the answers they got before.
   - A pre-existing difference is newly worth documenting: git on macOS defaults
@@ -325,6 +334,20 @@ up to the directory reader:
   - **Linux glibc only.** That covers the x86_64 and aarch64 manylinux wheels.
   - Not musl: `libc` has no `struct statx` there (`scan.rs:48`).
   - Not macOS, not Windows.
+- **Correctness by platform:**
+  - On glibc the reader’s `AT_NO_AUTOMOUNT` is an answer change against 0.2.1 on autofs
+    trees, and after `fdu-d2fn` it holds on every route: the serial walk, revalidation,
+    reconciliation and opened discovery list through the reader too, the directories it
+    declines and the paths a route verifies by itself are stated by path with the same
+    flags (`linux_dents::stat_path`, `scan::observe_path`), and the walk root alone is
+    resolved through an opened descriptor (`scan::root_device`), under glibc and musl
+    alike. `strace` of every probe route shows every tree-entry `statx` carrying the flag
+    (exp-196).
+  - musl never mounted by a stat: std’s `DirEntry::metadata` and `symlink_metadata` are
+    `fstatat` and `lstat` there (`library/std/src/sys/pal/unix/fs.rs` at 1.85.0 lines
+    95–109 and 915, `library/std/src/sys/fs/unix.rs` at 1.97.1 lines 109–123 and 1080),
+    which the kernel treats as passing the flag.
+  - macOS: `fdu-bida`, below, is still open.
 - **On macOS’s default hot path:** no; it is not compiled.
   - The macOS engine at the H169 merge (`217861c1`) is functionally the engine at
     `c2a75fe4`. The merge’s non-Linux changes are `cfg(test)` widening
@@ -524,7 +547,8 @@ Record these in a plan’s Status table before any timed sample, as `78980e4a` d
 exp-194.
 
 Proposed ids start at exp-200: the runbook reserves exp-196–199 for Linux
-(`performance-loop-runbook.md:1047`). New hypotheses start at H184.
+(`performance-loop-runbook.md:1047`). New hypotheses start at the next free id in the
+runbook (H184 went to `fdu-d2fn`, the automount fix).
 
 **Arms** in every end-to-end cell, as interleaved variants in this order:
 
@@ -650,8 +674,8 @@ each, and the serial floors are not the question.
   - then a second copy per entry in `record_detached_entry` (`scan.rs:3730`).
 
   macOS therefore makes two name allocations per retained entry, where Linux now makes
-  one. A borrowed-name bulk listing (proposed **H184**) is the macOS form of H169 phase
-  1’s user-space half.
+  one. A borrowed-name bulk listing (proposed; it takes the next free id, since H184 went
+  to `fdu-d2fn`) is the macOS form of H169 phase 1’s user-space half.
   - H54 (exp-028: reusing the staging `Vec`, +0.2%, RSS worse) and H63 (exp-042: user
     CPU −51%, wall +1.9%) predict a user-CPU cut of a few percent and no wall change.
   - So it is a screen only, gated on M9 naming at least 3%.
@@ -711,13 +735,14 @@ each, and the serial floors are not the question.
   - H66 (962): note that H172 carries it, and give its macOS RSS verdict from exp-204;
   - H166 (888): the macOS `starved_ns` reading;
   - H169 (891): “not compiled on macOS; `getattrlistbulk` covers everything except
-    in-place names (H184)”;
-  - new rows for H184, and for a macOS tail or utilization hypothesis if M9 names one.
+    in-place names (the borrowed-name listing)”;
+  - new rows for the borrowed-name listing, and for a macOS tail or utilization
+    hypothesis if M9 names one.
 - **Runbook** (`performance-loop-runbook.md`):
   - `## Current Pickup` (988): the macOS confirmation goes first under “Next”, as a gate
     before 0.2.2;
   - `### Darwin Subjects` (523): add S1 and S2;
-  - the Ids paragraph (1047): exp-200+ used, and H184+.
+  - the Ids paragraph (1047): exp-200+ used, and the hypothesis ids taken.
 - **0.2.2 plan** (`plan-2026-09-29-linux-parity-0.2.2.md`):
   - Stage 3 (212): add a checklist item for the APFS differential and the macOS
     non-inferiority confirmation before release;
@@ -745,7 +770,7 @@ close it too.
 | `fdu-4tr6` | Nominate `linux-v6.12` and `node-modules-dense` as Darwin subjects on APFS |
 | `fdu-446h` | macOS: peer standings for the default command on real trees |
 | `fdu-ijkv` | macOS: utilization and handoff profile of the post-round head (the macOS half of `fdu-j4p7`) |
-| `fdu-7qz3` | H184: borrowed-name `getattrlistbulk` listings on macOS (screen) |
+| `fdu-7qz3` | Borrowed-name `getattrlistbulk` listings on macOS (screen; the next free hypothesis id) |
 | `fdu-bida` | The macOS half of `fdu-puk7`: does the bulk reader’s `lstat` fallback trigger autofs mounts? |
 | `fdu-64cu` | Lint and test the Linux native reader on aarch64 (under `fdu-8a8r`) |
 | `fdu-jyed` | Record in `platform-tuning.md` which of the round’s changes are inherited, not measured, on macOS and Windows (under `fdu-8a8r`) |
