@@ -4273,6 +4273,26 @@ impl RegionId {
 /// shallow preference is expressed in *which subtree a worker picks up*, not in the
 /// order a single queue drains — which is the property progressive consumers actually
 /// need.
+///
+/// # Why a wake is issued only to a counted waiter
+///
+/// `Condvar::notify_*` is a `futex(FUTEX_WAKE)` syscall even when no thread waits, and
+/// every chunk that discovers a directory publishes it. So the state counts the workers
+/// inside [`claim`](Self::claim)'s wait, and a publisher reads that count under the same
+/// lock it publishes under (H181). Nothing is lost by skipping the wake at zero: a worker
+/// increments the count and enters the wait in one critical section, the wait releasing
+/// the lock atomically, so a publisher either holds the lock first, and the worker then
+/// finds the work before it waits, or holds it after, and counts the worker. The wake
+/// itself can follow the release of the lock: a counted worker began waiting before the
+/// publisher took the lock, so a wake issued after reaches it, or finds it already woken.
+///
+/// A publisher wakes at most one waiter per directory it published: all of them at once
+/// when that covers every waiter, since `notify_all` is one syscall, and one at a time
+/// otherwise, so one discovered directory does not stampede the whole pool back onto the
+/// lock. Each wake finds a parked worker when there is one, and each woken worker takes
+/// at least a directory when any is left, so no worker stays parked while more
+/// directories are queued than wakes are outstanding. The end of the walk wakes every
+/// waiter.
 struct DirectoryQueue {
     state: std::sync::Mutex<DirectoryQueueState>,
     ready: std::sync::Condvar,
@@ -4346,6 +4366,12 @@ struct DirectoryQueueState {
     in_flight_directories: usize,
     outstanding: usize,
     finished: bool,
+    /// Workers inside [`DirectoryQueue::claim`]'s condvar wait: parked, or woken and not
+    /// yet holding this lock again. Changed only under the lock, immediately either side
+    /// of the wait, so a publisher that reads zero while holding it knows that no worker
+    /// can miss what it publishes, and skips the wake: `Condvar::notify_*` is a `futex`
+    /// syscall whether or not anyone waits (H181).
+    waiters: usize,
     controller: Option<WorkerController>,
     /// Observation-only windows retained after the shipped one-shot decision.
     shadow_calibration: Option<RepeatedCalibration>,
@@ -4373,6 +4399,7 @@ impl DirectoryQueueState {
             in_flight_directories: 0,
             outstanding: 0,
             finished: false,
+            waiters: 0,
             controller: calibration.map(|value| WorkerController::new(value, policy)),
             shadow_calibration: None,
             next_policy_sequence: 0,
@@ -4546,12 +4573,20 @@ impl DirectoryQueue {
             }
             if state.outstanding == 0 {
                 state.finished = true;
-                self.ready.notify_all();
+                let waiters = state.waiters;
+                self.wake(waiters, waiters);
                 return None;
             }
+            // Counted in the same critical section that found nothing to take, and the
+            // wait releases the lock atomically: a publisher that locks after this sees
+            // the count, and one that locked before left work this worker already took.
+            state.waiters += 1;
             let started = std::time::Instant::now();
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
             timing.starved_ns += elapsed_ns(started);
+            // Woken, spuriously or not, and holding the lock again: no publisher can
+            // reach this worker with a wake until it counts itself again.
+            state.waiters -= 1;
         }
     }
 
@@ -4561,11 +4596,30 @@ impl DirectoryQueue {
         timing: &mut WalkAttribution,
     ) {
         let mut state = self.lock_timed(timing);
+        let mut published = 0_usize;
         for item in directories {
             state.push(item, self.order);
+            published += 1;
         }
+        let waiters = state.waiters;
         drop(state);
-        self.ready.notify_all();
+        self.wake(published.min(waiters), waiters);
+    }
+
+    /// Wake `wanted` of the `waiters` the caller counted under the lock it has since
+    /// released or still holds: none when nobody waits, which is the syscall this saves,
+    /// and every one at once when `wanted` covers them all (see [`DirectoryQueue`]).
+    fn wake(&self, wanted: usize, waiters: usize) {
+        if wanted == 0 {
+            return;
+        }
+        if wanted >= waiters {
+            self.ready.notify_all();
+        } else {
+            for _ in 0..wanted {
+                self.ready.notify_one();
+            }
+        }
     }
 
     /// Give up a claim whose chunk never finished. Wakes everyone if it was the last.
@@ -4580,8 +4634,11 @@ impl DirectoryQueue {
         state.in_flight_directories = state.in_flight_directories.saturating_sub(directories);
         if state.outstanding == 0 && state.is_empty(self.order) {
             state.finished = true;
+            // Every worker that waits from here on finds the walk finished first, so the
+            // count read with `finished` set is every worker the end must wake.
+            let waiters = state.waiters;
             drop(state);
-            self.ready.notify_all();
+            self.wake(waiters, waiters);
         }
     }
 
@@ -4621,6 +4678,8 @@ impl DirectoryQueue {
         if finished {
             state.finished = true;
         }
+        // Read with `finished` set, as in `abandon`: the waiters the end must wake.
+        let waiters = state.waiters;
         let handoff_backlog = self.diagnostics.as_ref().map_or(0, |diagnostics| {
             diagnostics.handoff_backlog.load(std::sync::atomic::Ordering::Relaxed)
         });
@@ -4729,7 +4788,7 @@ impl DirectoryQueue {
         }
 
         if finished {
-            self.ready.notify_all();
+            self.wake(waiters, waiters);
         }
         requested_workers
     }
@@ -9335,6 +9394,213 @@ mod tests {
             finished.recv_timeout(std::time::Duration::from_secs(5)),
             Ok(false),
             "the queue must report the walk finished instead of parking the worker"
+        );
+    }
+
+    /// Park `workers` threads in [`DirectoryQueue::claim`], each reporting what it was
+    /// handed and then giving its claim back, and return once every one is counted.
+    fn park_workers(
+        queue: &std::sync::Arc<DirectoryQueue>,
+        workers: usize,
+    ) -> std::sync::mpsc::Receiver<Option<Vec<PathBuf>>> {
+        let (report, reports) = std::sync::mpsc::channel();
+        for _ in 0..workers {
+            let queue = std::sync::Arc::clone(queue);
+            let report = report.clone();
+            std::thread::spawn(move || {
+                let mut timing = WalkAttribution::default();
+                let mut claimed = Vec::new();
+                // The claim is given back before the report, so a caller that has every
+                // report knows every claim it describes is returned.
+                let paths = queue
+                    .claim(&mut claimed, &mut timing)
+                    .map(|_claim| claimed.iter().map(|item| item.0.clone()).collect());
+                let _ = report.send(paths);
+            });
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while queue.lock().waiters < workers {
+            assert!(std::time::Instant::now() < deadline, "the workers never parked");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        reports
+    }
+
+    #[test]
+    fn a_published_directory_wakes_a_parked_worker_while_the_walk_is_live() {
+        // H181 skips the wake when no worker is counted as waiting. Here three are, and
+        // the publisher keeps its own claim throughout, so the walk cannot end: only the
+        // wake that publishing issues can hand a parked worker the new directory.
+        let timeout = std::time::Duration::from_secs(10);
+        let queue = std::sync::Arc::new(DirectoryQueue::new(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            None,
+            None,
+        ));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+        let root = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
+        let reports = park_workers(&queue, 3);
+
+        // One directory for three waiters: one of them takes it.
+        queue.extend([(PathBuf::from("a"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        let first = reports.recv_timeout(timeout).expect("a parked worker takes the directory");
+        assert_eq!(first, Some(vec![PathBuf::from("a")]));
+
+        // Two directories in two regions for the two still waiting: each takes one.
+        queue.extend(
+            ["b", "c"].into_iter().map(|name| (PathBuf::from(name), 1, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+        let mut rest: Vec<_> = (0..2)
+            .map(|_| reports.recv_timeout(timeout).expect("each parked worker is woken"))
+            .collect();
+        rest.sort();
+        assert_eq!(rest, [Some(vec![PathBuf::from("b")]), Some(vec![PathBuf::from("c")])]);
+
+        // Their claims were abandoned on exit; the root's release ends the walk.
+        assert!(root.release(0, 0, &mut timing).is_none());
+        let state = queue.lock();
+        assert!(state.finished && state.waiters == 0 && state.outstanding == 0);
+    }
+
+    #[test]
+    fn the_end_of_the_walk_wakes_every_parked_worker() {
+        let queue = std::sync::Arc::new(DirectoryQueue::new(
+            (PathBuf::new(), 0),
+            ScanOrder::DepthFirst,
+            None,
+            None,
+        ));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+        let root = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
+        let reports = park_workers(&queue, 4);
+        assert!(root.release(0, 0, &mut timing).is_none());
+        for _ in 0..4 {
+            assert_eq!(
+                reports.recv_timeout(std::time::Duration::from_secs(10)),
+                Ok(None),
+                "every parked worker learns the walk is over"
+            );
+        }
+        assert_eq!(queue.lock().waiters, 0);
+    }
+
+    /// A lost wakeup fails this rather than hanging it. Workers walk a pseudo-random
+    /// tree whose shape is a pure function of each directory's id, so the number of
+    /// directories claimed is known in advance. They publish each chunk's discoveries in
+    /// one to three separate extends, stall at random so others park, and at random
+    /// abandon a claim after publishing instead of releasing it. Every walk must end
+    /// with every directory claimed exactly once and nobody still counted as waiting.
+    #[test]
+    fn the_queue_hands_out_every_directory_and_ends_under_concurrent_stress() {
+        const MAX_DEPTH: usize = 9;
+
+        fn mix(mut value: u64) -> u64 {
+            value ^= value >> 33;
+            value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+            value ^= value >> 33;
+            value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+            value ^ (value >> 33)
+        }
+        fn children(seed: u64, id: u64, depth: usize) -> Vec<u64> {
+            let fanout = match depth {
+                0 => 8,
+                depth if depth >= MAX_DEPTH => 0,
+                _ => mix(seed ^ id) % 5,
+            };
+            (0..fanout).map(|child| mix(id.wrapping_mul(31).wrapping_add(child + 1))).collect()
+        }
+        fn size(seed: u64, id: u64, depth: usize) -> usize {
+            1 + children(seed, id, depth)
+                .into_iter()
+                .map(|c| size(seed, c, depth + 1))
+                .sum::<usize>()
+        }
+
+        let walk = |seed: u64, workers: usize, order: ScanOrder| {
+            let queue = DirectoryQueue::new((PathBuf::from("0"), 0), order, None, None);
+            let claimed_total = std::sync::atomic::AtomicUsize::new(0);
+            std::thread::scope(|scope| {
+                for worker in 0..workers {
+                    let (queue, claimed_total) = (&queue, &claimed_total);
+                    let worker = u64::try_from(worker).expect("a small worker index");
+                    scope.spawn(move || {
+                        let mut rng = mix(seed ^ ((worker + 1) << 40)) | 1;
+                        let mut next = move || {
+                            rng ^= rng << 13;
+                            rng ^= rng >> 7;
+                            rng ^= rng << 17;
+                            rng
+                        };
+                        let mut timing = WalkAttribution::default();
+                        let mut claimed = Vec::new();
+                        while let Some(claim) = queue.claim(&mut claimed, &mut timing) {
+                            let mut discovered = Vec::new();
+                            for (path, depth, region) in claimed.drain(..) {
+                                claimed_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                let id: u64 =
+                                    path.to_str().and_then(|s| s.parse().ok()).expect("id");
+                                let region = if depth == 0 { RegionId::UNASSIGNED } else { region };
+                                discovered.extend(
+                                    children(seed, id, depth)
+                                        .into_iter()
+                                        .map(|c| (PathBuf::from(c.to_string()), depth + 1, region)),
+                                );
+                            }
+                            match next() % 16 {
+                                0 => std::thread::sleep(std::time::Duration::from_micros(50)),
+                                1..=3 => std::thread::yield_now(),
+                                _ => {}
+                            }
+                            while !discovered.is_empty() {
+                                let parts = usize::try_from(next() % 3 + 1).expect("small");
+                                let take = discovered.len().div_ceil(parts);
+                                let rest = discovered.split_off(take);
+                                queue.extend(discovered.drain(..), &mut timing);
+                                discovered = rest;
+                            }
+                            if next() % 8 == 0 {
+                                drop(claim);
+                            } else {
+                                let _ = claim.release(0, 0, &mut timing);
+                            }
+                        }
+                    });
+                }
+            });
+            let state = queue.lock();
+            assert!(state.finished, "the walk ended");
+            assert_eq!((state.waiters, state.outstanding, state.ready_directories), (0, 0, 0));
+            drop(state);
+            claimed_total.into_inner()
+        };
+
+        let (done, result) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut walks = 0;
+            for seed in 0..24_u64 {
+                let expected = size(seed, 0, 0);
+                assert!(expected > 50, "seed {seed} builds a tree worth walking: {expected}");
+                for (workers, order) in [
+                    (2, ScanOrder::BreadthFirst),
+                    (4, ScanOrder::DepthFirst),
+                    (8, ScanOrder::BreadthFirst),
+                    (16, ScanOrder::DepthFirst),
+                ] {
+                    let claimed = walk(seed, workers, order);
+                    assert_eq!(claimed, expected, "seed {seed}, {workers} workers, {order:?}");
+                    walks += 1;
+                }
+            }
+            let _ = done.send(walks);
+        });
+        assert_eq!(
+            result.recv_timeout(std::time::Duration::from_secs(120)),
+            Ok(96),
+            "every stress walk finishes; a timeout here is a worker that was never woken"
         );
     }
 
