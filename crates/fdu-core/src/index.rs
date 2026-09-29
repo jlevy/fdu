@@ -295,6 +295,40 @@ impl From<&InternedRollUp> for RollUpScalars {
     }
 }
 
+/// The regular files a folded index counted directly in one directory without keeping
+/// them as entries ([`crate::execution::RetainedState::Tree`]).
+///
+/// They are in the directory's roll-ups like any other file. This tally is the rest of
+/// what a tree needs of them: they are rows its share threshold omits, and an omission
+/// states exactly the entries, files, and sizes it stands for, with their ignored part,
+/// which is what [`Index::folded_children`] supplies for them. Each is a single file, so
+/// the entries omitted are the files counted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FoldedFiles {
+    /// Files folded.
+    pub(crate) files: u64,
+    /// Their apparent bytes.
+    pub(crate) bytes: u64,
+    /// Their allocated bytes.
+    pub(crate) allocated: u64,
+    /// The apparent and allocated bytes of those `.gitignore` rules ignore, whether or
+    /// not a report may state them: a row's own classification is withheld where its
+    /// governing rules are unknown, and so is this ([`Index::children_classification_known`]).
+    pub(crate) ignored: crate::query::IgnoredSize,
+}
+
+impl FoldedFiles {
+    fn add(&mut self, attrs: &Attrs, ignored: bool) {
+        self.files += 1;
+        self.bytes += attrs.size;
+        self.allocated += attrs.allocated;
+        if ignored {
+            self.ignored.bytes += attrs.size;
+            self.ignored.allocated += attrs.allocated;
+        }
+    }
+}
+
 impl InternedRollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
@@ -950,6 +984,13 @@ pub struct Index {
     /// Detached indexes deliberately carry `None`, including the standalone CLI's
     /// one-shot scan. Only [`crate::OpenedIndex`] enables this allocation.
     serving: Option<Box<ServingIndexes>>,
+    /// The files a folded index counted in each directory without keeping them, by the
+    /// directory's arena slot, or `None` for an index that keeps every file.
+    ///
+    /// Only the transient tree tier builds a folded index, and it answers that one report
+    /// from it and frees it: such an index is never returned, persisted, or mutated
+    /// ([`Self::is_folded`]), so its slots never change hands.
+    folded: Option<Vec<FoldedFiles>>,
 }
 
 #[derive(Clone, Copy)]
@@ -1588,6 +1629,90 @@ pub(crate) struct DetachedIndexBuilder {
     /// everything below it, once per observation.
     repeated_directories: Vec<PathBuf>,
     inserted: u64,
+    /// What a folded index has kept and folded so far, when this builds one.
+    tree: Option<TreeFold>,
+}
+
+/// A folded index in construction ([`DetachedIndexBuilder::folding`]).
+///
+/// Every regular file is counted in its directory's roll-ups as it arrives, and offered
+/// to a bounded heap of the largest by the retention's size metric. A file the heap turns
+/// away, or later displaces, is counted in its directory's folded tally instead. The heap
+/// is final only when the walk is, so the files it holds become entries in
+/// [`DetachedIndexBuilder::finish`].
+struct TreeFold {
+    retention: crate::execution::TreeRetention,
+    /// The largest files offered so far, the smallest on top.
+    largest: std::collections::BinaryHeap<std::cmp::Reverse<KeptFile>>,
+    /// Each directory's folded files, by arena slot.
+    folded: Vec<FoldedFiles>,
+}
+
+/// A file a folded index keeps while it stays among the largest, ordered by its size in
+/// the retention's metric alone. Which of several equal files is kept cannot change an
+/// answer: the smallest kept is never shown ([`crate::query::ShareThreshold`]'s bound).
+struct KeptFile {
+    value: u64,
+    parent: EntryId,
+    name: OsString,
+    attrs: Attrs,
+    ignored: bool,
+}
+
+impl PartialEq for KeptFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for KeptFile {}
+
+impl PartialOrd for KeptFile {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for KeptFile {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl TreeFold {
+    /// Count one file of `parent` that is not kept.
+    fn fold(folded: &mut Vec<FoldedFiles>, parent: EntryId, attrs: &Attrs, ignored: bool) {
+        let slot = parent.idx();
+        if folded.len() <= slot {
+            folded.resize(slot + 1, FoldedFiles::default());
+        }
+        folded[slot].add(attrs, ignored);
+    }
+
+    /// Offer one file of `parent` for keeping. Its name is taken from the listing only
+    /// if it is kept, so a file folded at once leaves its name for the walker that
+    /// allocated it to free (H159).
+    fn offer(&mut self, parent: EntryId, name: &mut OsString, attrs: Attrs, ignored: bool) {
+        let value = self.retention.size.of(&attrs);
+        let capacity = usize::try_from(self.retention.largest_files).unwrap_or(usize::MAX);
+        if self.largest.len() < capacity {
+            let name = std::mem::take(name);
+            self.largest.push(std::cmp::Reverse(KeptFile { value, parent, name, attrs, ignored }));
+            return;
+        }
+        match self.largest.peek_mut() {
+            Some(mut smallest) if value > smallest.0.value => {
+                let name = std::mem::take(name);
+                let displaced = std::mem::replace(
+                    &mut smallest.0,
+                    KeptFile { value, parent, name, attrs, ignored },
+                );
+                drop(smallest);
+                Self::fold(&mut self.folded, displaced.parent, &displaced.attrs, displaced.ignored);
+            }
+            _ => Self::fold(&mut self.folded, parent, &attrs, ignored),
+        }
+    }
 }
 
 impl DetachedIndexBuilder {
@@ -1604,12 +1729,25 @@ impl DetachedIndexBuilder {
             directory_ids: HashMap::from([(PathBuf::new(), (EntryId::ROOT, Arc::default()))]),
             repeated_directories: Vec::new(),
             inserted: 0,
+            tree: None,
         }
     }
 
     /// Refuse control sources past either of `limits` while building.
     pub(crate) fn with_control_limits(mut self, limits: crate::control::ControlLimits) -> Self {
         self.index.set_control_limits(limits);
+        self
+    }
+
+    /// Build a folded index ([`crate::execution::RetainedState::Tree`]): every directory,
+    /// symlink, and other entry, but only the largest regular files `retention` names,
+    /// and no extension tallies, which no tree reads (H176).
+    pub(crate) fn folding(mut self, retention: crate::execution::TreeRetention) -> Self {
+        self.tree = Some(TreeFold {
+            retention,
+            largest: std::collections::BinaryHeap::new(),
+            folded: Vec::new(),
+        });
         self
     }
 
@@ -1624,7 +1762,9 @@ impl DetachedIndexBuilder {
     ///
     /// The listing is drained, not consumed: an applied listing is left with its path
     /// and an empty child buffer, so the caller can hand both back to the worker that
-    /// allocated them (H159). A listing that is not applied keeps its children.
+    /// allocated them (H159). A listing that is not applied keeps its children, and one a
+    /// folded index applied keeps the names of the files it folded, for that worker to
+    /// free as well.
     pub(crate) fn push_directory(
         &mut self,
         directory: &mut crate::scan::DetachedDirectory,
@@ -1703,20 +1843,37 @@ impl DetachedIndexBuilder {
             path.display()
         );
         let classifying = !parent_ignored && !chain.is_empty();
-        self.index.reserve_detached_children(parent, children.len());
+        let entries = match self.tree {
+            None => children.len(),
+            // Files are kept, if at all, only once the walk is over.
+            Some(_) => children.iter().filter(|child| child.kind != EntryKind::File).count(),
+        };
+        self.index.reserve_detached_children(parent, entries);
         let path: &Path = path;
         let mut classify_children = |directory: &[&[u8]]| {
-            for child in children.drain(..) {
-                let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
+            for child in children.iter_mut() {
+                let &mut crate::scan::DetachedChild { ref mut name, kind, attrs, .. } = child;
                 crate::counters::bump(|counts| counts.upserts += 1);
-                let ext_id = (kind == EntryKind::File)
-                    .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
+                let ext_id = (kind == EntryKind::File && self.tree.is_none())
+                    .then(|| self.index.intern_ext(&crate::classify::ext_bucket(name)));
                 let ignored = if classifying {
                     chain.is_ignored_within(directory, name.as_encoded_bytes(), kind.is_dir())
                 } else {
                     parent_ignored
                 };
+                if let (EntryKind::File, Some(tree)) = (kind, &mut self.tree) {
+                    // Counted in its directory whether or not it is kept, as the file it is.
+                    let direct = Index::file_contribution(&attrs, None, ignored);
+                    crate::counters::bump(|counts| counts.rollup_merges += 1);
+                    self.index.entry_mut(parent).rollup_mut().merge(&direct);
+                    tree.offer(parent, name, attrs, ignored);
+                    self.inserted = self.inserted.saturating_add(1);
+                    continue;
+                }
+                let name = std::mem::take(name);
                 let child_path = kind.is_dir().then(|| path.join(&name));
+                // Listed in full unless the walk reports otherwise, which only a failure
+                // does (`Index::set_initial_detached_scan_freshness`).
                 let child_id = self.index.alloc(Entry::new_detached(
                     NewEntry {
                         parent: Some(parent),
@@ -1727,7 +1884,7 @@ impl DetachedIndexBuilder {
                         kind,
                         attrs,
                     },
-                    false,
+                    true,
                 ));
                 self.index.push_detached_child(parent, child_id);
                 // Fold the child's own direct contribution while filesystem work is still
@@ -1747,11 +1904,56 @@ impl DetachedIndexBuilder {
         } else {
             classify_children(&[]);
         }
+        // Every name an entry kept has been taken. Only a folded index leaves any behind.
+        if self.tree.is_none() {
+            children.clear();
+        }
         Ok(())
+    }
+
+    /// Allocate the files a folded index kept, now that the walk is over and the heap of
+    /// the largest is final, and hand the index what it folded.
+    ///
+    /// Each kept file was already counted in its directory's roll-ups when it arrived, so
+    /// this only makes it an entry: it joins its directory's children, and the directories
+    /// that gained one are put back in name order, the order a listing allocates in.
+    fn keep_largest_files(&mut self, tree: TreeFold) {
+        let TreeFold { largest, folded, .. } = tree;
+        let mut gained = Vec::with_capacity(largest.len());
+        for std::cmp::Reverse(file) in largest {
+            let KeptFile { parent, name, attrs, ignored, .. } = file;
+            let id = self.index.alloc(Entry::new_detached(
+                NewEntry {
+                    parent: Some(parent),
+                    name,
+                    ext_id: None,
+                    ignored,
+                    source: Source::Scanned,
+                    kind: EntryKind::File,
+                    attrs,
+                },
+                true,
+            ));
+            self.index.push_detached_child(parent, id);
+            gained.push(parent.idx());
+        }
+        gained.sort_unstable();
+        gained.dedup();
+        for slot in gained {
+            let parent = EntryId {
+                slot: u32::try_from(slot).expect("index arena exceeded u32 capacity"),
+                generation: 0,
+            };
+            self.index.sort_detached_children(parent);
+        }
+        self.index.folded = Some(folded);
     }
 
     /// Complete the private baseline after every directory listing has arrived.
     pub(crate) fn finish(mut self) -> Index {
+        if let Some(tree) = self.tree.take() {
+            self.keep_largest_files(tree);
+        }
         // Parents are allocated before descendants, so reverse arena order is a valid
         // bottom-up traversal. Direct contributions were merged during the pipelined
         // build; only completed directory descendants remain to propagate here.
@@ -1923,6 +2125,7 @@ impl Index {
             types,
             controls: crate::control::ControlTable::default(),
             unreadable_control_paths: BTreeSet::new(),
+            folded: None,
         }
     }
 
@@ -2227,6 +2430,7 @@ impl Index {
         max_files: Option<u64>,
         track_file_progress: bool,
     ) -> crate::Result<ApplyOutcome> {
+        debug_assert!(!self.is_folded(), "a folded index answers one report and is never mutated");
         if prepared.ops.is_empty()
             && discovery.as_ref().is_none_or(|discovery| {
                 discovery.directory_complete.is_none() && discovery.transition.is_none()
@@ -2950,7 +3154,6 @@ impl Index {
     }
 
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
-        self.freshness_marks.clear();
         if complete {
             for slot in &mut self.arena {
                 if let Slot::Occupied { entry, .. } = slot {
@@ -2959,6 +3162,39 @@ impl Index {
                     }
                 }
             }
+        }
+        self.set_initial_state(complete);
+    }
+
+    /// Finish a detached cold walk ([`DetachedIndexBuilder`]) as
+    /// [`Self::set_initial_scan_freshness`] does.
+    ///
+    /// The builder allocates every directory as listed in full, so a walk without failures
+    /// leaves each one as it is rather than marking the whole arena complete a second time
+    /// (F6e), and a walk with failures withdraws completeness exactly as any cold walk's
+    /// does.
+    pub(crate) fn set_initial_detached_scan_freshness(&mut self, errors: &[crate::Error]) {
+        if !errors.is_empty() {
+            self.set_initial_scan_freshness(errors);
+            return;
+        }
+        debug_assert!(
+            self.arena.iter().all(|slot| match slot {
+                Slot::Occupied { entry, .. } if entry.kind.is_dir() => {
+                    entry.directory().children_complete
+                }
+                Slot::Occupied { .. } | Slot::Free { .. } => true,
+            }),
+            "a detached builder allocates every directory as listed in full"
+        );
+        self.set_initial_state(true);
+    }
+
+    /// The index-wide lifecycle state a first pass leaves, whatever it records of each
+    /// directory's own listing.
+    fn set_initial_state(&mut self, complete: bool) {
+        self.freshness_marks.clear();
+        if complete {
             self.state.phase = LifecyclePhase::Ready;
             self.state.coverage = Coverage::Complete;
             self.state.freshness = Freshness::Fresh;
@@ -3920,12 +4156,26 @@ impl Index {
     }
 
     pub(crate) fn control_classification_known(&self, path: &Path) -> bool {
-        self.controls.classification_known(path)
+        path.parent().is_none_or(|directory| self.controls_known_in(directory))
+    }
+
+    /// Whether the entries directly in `directory` have a known ignore classification, as
+    /// [`Self::ignored_classification_of`] decides it for each of them: it depends on
+    /// their parent alone, so it is also what a folded tally of them may state
+    /// ([`FoldedFiles::ignored`]).
+    pub(crate) fn children_classification_known(&self, directory: &Path) -> bool {
+        self.observes_controls() && self.controls_known_in(directory)
+    }
+
+    /// Whether every control file that governs the entries in `directory` was admitted
+    /// and read: none was refused, and none could not be read.
+    fn controls_known_in(&self, directory: &Path) -> bool {
+        self.controls.children_classification_known(directory)
             && (self.unreadable_control_paths.is_empty()
-                || !path.parent().into_iter().flat_map(Path::ancestors).any(|directory| {
+                || !directory.ancestors().any(|ancestor| {
                     self.unreadable_control_paths
                         .iter()
-                        .any(|control| control.parent() == Some(directory))
+                        .any(|control| control.parent() == Some(ancestor))
                 }))
     }
 
@@ -4009,6 +4259,29 @@ impl Index {
             let rollup = entry.rollup();
             (RollUpScalars::from(&rollup.all), RollUpScalars::from(&rollup.unignored))
         })
+    }
+
+    /// Whether this index was built by the transient tree tier and keeps only some of the
+    /// files it walked ([`Self::folded_children`]).
+    ///
+    /// Such an index answers the one tree report its plan made it for, and nothing else:
+    /// a flat inventory, extension tallies, or a snapshot of it would omit the files it
+    /// folded. It is unreachable from every route that returns, persists, or mutates an
+    /// index, which assert as much. Subtree measurements over it (a tree of an incomplete
+    /// walk takes them) are exact only in which subtrees are complete, the one part a tree
+    /// reads: completeness is a property of directories, all of which it keeps.
+    pub(crate) const fn is_folded(&self) -> bool {
+        self.folded.is_some()
+    }
+
+    /// The files a folded index counted directly in directory `id` without keeping them,
+    /// or `None` where it kept every one, which is always in an index that keeps every
+    /// file. The one reader of that tally: a tree states them as rows its share threshold
+    /// omits.
+    pub(crate) fn folded_children(&self, id: EntryId) -> Option<FoldedFiles> {
+        let folded = self.folded.as_ref()?;
+        self.try_entry(id)?;
+        folded.get(id.idx()).copied().filter(|folded| folded.files > 0)
     }
 
     /// Whether a live directory's in-scope child set is authoritative: the id form of
@@ -4969,6 +5242,18 @@ impl Index {
         Self::bump_children_revision(entry);
     }
 
+    /// Put a detached directory's children back in name order after entries were
+    /// appended to it out of order.
+    fn sort_detached_children(&mut self, parent: EntryId) {
+        let DirectoryChildren::Sorted(ids) = &mut self.entry_mut(parent).directory_mut().children
+        else {
+            unreachable!("detached directories retain sorted child storage")
+        };
+        let mut ids = std::mem::take(ids);
+        ids.sort_unstable_by(|left, right| self.entry(*left).name.cmp(&self.entry(*right).name));
+        self.entry_mut(parent).directory_mut().children = DirectoryChildren::Sorted(ids);
+    }
+
     /// Merge a completed detached directory without cloning its retained roll-up.
     fn merge_detached_descendants(&mut self, parent: EntryId, child: EntryId) {
         debug_assert!(parent.idx() < child.idx(), "cold parents must precede descendants");
@@ -5278,30 +5563,35 @@ impl Index {
                 }
                 InternedPartitionRollUp { all, unignored }
             }
-            EntryKind::File => {
-                let mut all = InternedRollUp {
-                    files: 1,
-                    dirs: 0,
-                    bytes: entry.attrs.size,
-                    allocated: entry.attrs.allocated,
-                    newest_mtime_ns: entry.attrs.mtime_ns,
-                    by_ext: BTreeMap::new(),
-                };
-                if let Some(ext_id) = entry.ext_id {
-                    all.by_ext.insert(
-                        ext_id,
-                        ExtTally {
-                            files: 1,
-                            bytes: entry.attrs.size,
-                            allocated: entry.attrs.allocated,
-                        },
-                    );
-                }
-                let unignored = if entry.ignored { InternedRollUp::default() } else { all.clone() };
-                InternedPartitionRollUp { all, unignored }
-            }
+            EntryKind::File => Self::file_contribution(&entry.attrs, entry.ext_id, entry.ignored),
             EntryKind::Symlink | EntryKind::Other => InternedPartitionRollUp::default(),
         }
+    }
+
+    /// What a regular file contributes to each of its ancestors, whether or not the index
+    /// keeps it as an entry: a folded index counts the files it does not keep through this
+    /// too, without an extension, since it keeps no extension tallies.
+    fn file_contribution(
+        attrs: &Attrs,
+        ext_id: Option<ExtId>,
+        ignored: bool,
+    ) -> InternedPartitionRollUp {
+        let mut all = InternedRollUp {
+            files: 1,
+            dirs: 0,
+            bytes: attrs.size,
+            allocated: attrs.allocated,
+            newest_mtime_ns: attrs.mtime_ns,
+            by_ext: BTreeMap::new(),
+        };
+        if let Some(ext_id) = ext_id {
+            all.by_ext.insert(
+                ext_id,
+                ExtTally { files: 1, bytes: attrs.size, allocated: attrs.allocated },
+            );
+        }
+        let unignored = if ignored { InternedRollUp::default() } else { all.clone() };
+        InternedPartitionRollUp { all, unignored }
     }
 
     fn merge_upward(
@@ -6093,6 +6383,130 @@ mod tests {
                 .collect::<Vec<_>>(),
             [OsString::from("a.txt"), OsString::from("m.txt"), OsString::from("z.txt")]
         );
+    }
+
+    /// A folded builder keeps the largest files as entries, counts every file in the
+    /// roll-ups, tallies the rest in their directory, keeps the last observation of a
+    /// repeated name as the full builder does, keeps no extension tallies, and leaves the
+    /// names of the files it folded at once in the listing, for the walker to free.
+    #[test]
+    fn a_folded_builder_keeps_the_largest_files_and_leaves_folded_names_to_the_walker() {
+        let child = |name: &str, kind, size, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(size, 1),
+            position,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
+        .folding(crate::execution::TreeRetention {
+            largest_files: 2,
+            size: crate::query::SizeMetric::Apparent,
+        });
+        let mut root = crate::scan::DetachedDirectory {
+            path: PathBuf::new(),
+            children: vec![
+                child("small.log", EntryKind::File, 1, 0),
+                child("dir", EntryKind::Dir, 0, 1),
+                child("big.bin", EntryKind::File, 50, 2),
+                child("twice.txt", EntryKind::File, 3, 3),
+                child("twice.txt", EntryKind::File, 40, 4),
+                child("mid.rs", EntryKind::File, 5, 5),
+            ],
+            control: Some(Op::ControlUpsert {
+                path: PathBuf::from(".gitignore"),
+                source: b"*.log\n".to_vec(),
+            }),
+        };
+        builder.push_directory(&mut root).expect("root listing");
+        // `big.bin` and `mid.rs` filled the heap; `small.log` was turned away at once, so
+        // its name is still in the listing; `twice.txt` then displaced `mid.rs`, whose name
+        // the heap already held.
+        let left: Vec<_> =
+            root.children.iter().filter(|child| !child.name.is_empty()).map(|c| &c.name).collect();
+        assert_eq!(left, [&OsString::from("small.log")]);
+
+        let index = builder.finish();
+        assert!(index.is_folded());
+        assert_eq!(index.len(), 4, "the root, the directory, and the two largest files");
+        assert_eq!(
+            index
+                .children(Path::new(""))
+                .expect("root children")
+                .map(|(name, _)| name.to_os_string())
+                .collect::<Vec<_>>(),
+            [OsString::from("big.bin"), OsString::from("dir"), OsString::from("twice.txt")],
+            "kept files join their directory in name order"
+        );
+        assert_eq!(index.attrs(Path::new("twice.txt")), Some(&file_attrs(40, 1)));
+        let total = index.total();
+        assert_eq!((total.files, total.dirs, total.bytes), (4, 1, 96));
+        assert!(total.by_ext.is_empty(), "a folded index keeps no extension tallies");
+        assert_eq!(
+            index.partition_total().expect("observed").unignored.bytes,
+            95,
+            "the folded ignored file left the unignored partition"
+        );
+        assert_eq!(
+            index.folded_children(EntryId::ROOT),
+            Some(FoldedFiles {
+                files: 2,
+                bytes: 6,
+                allocated: 1_024,
+                ignored: crate::query::IgnoredSize { bytes: 1, allocated: 512 },
+            })
+        );
+        assert!(index.children_classification_known(Path::new("")));
+        let dir = index.lookup(Path::new("dir")).expect("the directory");
+        assert_eq!(index.folded_children(dir), None, "nothing was folded there");
+    }
+
+    /// A file the heap displaces folds into its own directory, not into the directory of
+    /// the file that displaced it, which is listed later and elsewhere.
+    #[test]
+    fn a_displaced_file_folds_into_its_own_directory() {
+        let child = |name: &str, kind, size, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(size, 1),
+            position,
+        };
+        let listing = |path: &str, children| crate::scan::DetachedDirectory {
+            path: PathBuf::from(path),
+            children,
+            control: None,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
+        .folding(crate::execution::TreeRetention {
+            largest_files: 1,
+            size: crate::query::SizeMetric::Apparent,
+        });
+        builder
+            .push_directory(&mut listing(
+                "",
+                vec![child("first", EntryKind::File, 10, 0), child("dir", EntryKind::Dir, 0, 1)],
+            ))
+            .expect("root listing");
+        builder
+            .push_directory(&mut listing("dir", vec![child("larger", EntryKind::File, 20, 0)]))
+            .expect("nested listing");
+        let index = builder.finish();
+        assert_eq!(
+            index.folded_children(EntryId::ROOT),
+            Some(FoldedFiles { files: 1, bytes: 10, allocated: 512, ..FoldedFiles::default() })
+        );
+        let dir = index.lookup(Path::new("dir")).expect("the directory");
+        assert_eq!(index.folded_children(dir), None);
+        assert_eq!(index.kind(Path::new("dir/larger")), Some(EntryKind::File));
+        assert_eq!(index.kind(Path::new("first")), None);
+        assert_eq!(index.total().bytes, 30, "both files count in the totals");
     }
 
     #[test]

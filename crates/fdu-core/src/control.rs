@@ -664,11 +664,12 @@ impl ControlTable {
     /// A refused source may contain ignore or negation rules, so its descendants have
     /// unknown classification even if the admitted rules currently say otherwise.
     pub(crate) fn classification_known(&self, path: &Path) -> bool {
-        !path
-            .parent()
-            .into_iter()
-            .flat_map(Path::ancestors)
-            .any(|directory| self.refused.contains_key(directory))
+        path.parent().is_none_or(|directory| self.children_classification_known(directory))
+    }
+
+    /// [`Self::classification_known`] for every entry directly in `directory`.
+    pub(crate) fn children_classification_known(&self, directory: &Path) -> bool {
+        !directory.ancestors().any(|ancestor| self.refused.contains_key(ancestor))
     }
 
     /// Number of refused control files.

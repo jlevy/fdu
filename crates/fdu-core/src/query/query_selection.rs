@@ -32,6 +32,14 @@ impl SizeMetric {
             Self::Allocated => "allocated",
         }
     }
+
+    /// One entry's own size in this metric.
+    pub(crate) const fn of(self, attrs: &crate::Attrs) -> u64 {
+        match self {
+            Self::Apparent => attrs.size,
+            Self::Allocated => attrs.allocated,
+        }
+    }
 }
 
 /// Allocated, from the request model's defaults table.
@@ -226,6 +234,34 @@ impl ShareThreshold {
             remainder %= denominator;
         }
         true
+    }
+
+    /// At least as many parts as this threshold can admit out of one whole they partition,
+    /// or `None` when it bounds nothing this arithmetic can state.
+    ///
+    /// Parts whose sum is at most the whole can each reach a share `s` at most `⌊100 / s⌋`
+    /// times, and none can when the whole is zero ([`Self::admits`]), so every such
+    /// partition has at most that many admitted parts. The bound returned is
+    /// `⌈100 / s⌉` for a share of up to 18 decimal places; a finer share is read truncated
+    /// to 18 places, a smaller share than it spells, whose bound is therefore larger and
+    /// still holds. A zero share admits every part and bounds nothing, as does a share
+    /// finer than 18 places that truncates to zero.
+    ///
+    /// This is what lets a one-shot tree retain only the largest files: every file it can
+    /// show as a row is among them, since each is a part of the root total it is measured
+    /// against.
+    pub(crate) fn admitted_parts_bound(&self) -> Option<u64> {
+        const PLACES: usize = 18;
+        let places = self.fractional.len().min(PLACES);
+        let scale = 10_u128.pow(u32::try_from(places).expect("at most 18 places"));
+        let spelled = self.fractional[..places]
+            .iter()
+            .fold(u128::from(self.whole), |value, digit| value * 10 + u128::from(*digit));
+        if spelled == 0 {
+            return None;
+        }
+        // `100 / (spelled / scale)`, rounded up; at most 10^20, below u128's range.
+        u64::try_from((100 * scale).div_ceil(spelled)).ok()
     }
 
     /// Stable spelling for request serialization.
@@ -690,6 +726,66 @@ mod tests {
         );
         for invalid in ["-1%", "101%", "100.1%", "NaN%", "1", "1.%", "1e1%"] {
             assert!(ShareThreshold::parse(invalid).is_none(), "{invalid}");
+        }
+    }
+
+    /// The bound is `⌈100 / share⌉` wherever the share is spelled exactly, and no partition
+    /// of a whole ever has more admitted parts than it: checked exhaustively over every
+    /// multiset of parts of small wholes, at shares on and off an exact divisor.
+    #[test]
+    fn no_partition_admits_more_parts_than_the_share_bounds() {
+        use super::ShareThreshold;
+
+        /// Every multiset of at most 12 parts summing to at most `whole`, largest first.
+        fn partitions(whole: u64, largest: u64, prefix: &mut Vec<u64>, out: &mut Vec<Vec<u64>>) {
+            out.push(prefix.clone());
+            if prefix.len() == 12 {
+                return;
+            }
+            for part in (0..=largest.min(whole)).rev() {
+                prefix.push(part);
+                partitions(whole - part, part, prefix, out);
+                prefix.pop();
+            }
+        }
+
+        let bound =
+            |share: &str| ShareThreshold::parse(share).expect("percentage").admitted_parts_bound();
+        for (share, expected) in [
+            ("100%", Some(1)),
+            ("10%", Some(10)),
+            ("3%", Some(34)),
+            ("1%", Some(100)),
+            ("1.0%", Some(100)),
+            ("0.5%", Some(200)),
+            ("0.01%", Some(10_000)),
+            ("0.00152587890625%", Some(65_536)),
+            ("0.0015258%", Some(65_540)),
+            ("0%", None),
+            ("0.000%", None),
+            ("0.0000000000000000001%", None),
+        ] {
+            assert_eq!(bound(share), expected, "{share}");
+        }
+        // Past 18 places the share is read truncated, so the bound is at least the true one.
+        assert_eq!(bound("0.0010000000000000000001%"), Some(100_000));
+
+        for share in ["100%", "50%", "33%", "33.4%", "25%", "12.5%", "10%", "9.99%"] {
+            let threshold = ShareThreshold::parse(share).expect("percentage");
+            let bound = threshold.admitted_parts_bound().expect("a positive share bounds parts");
+            for whole in 0..=12 {
+                let mut all = Vec::new();
+                partitions(whole, whole, &mut Vec::new(), &mut all);
+                for parts in all {
+                    let total = parts.iter().sum::<u64>();
+                    let admitted =
+                        parts.iter().filter(|part| threshold.admits(**part, total)).count();
+                    assert!(
+                        u64::try_from(admitted).expect("small") <= bound,
+                        "{share}: {parts:?} admits {admitted} > {bound}"
+                    );
+                }
+            }
         }
     }
     use super::*;
