@@ -16,7 +16,7 @@ const PRODUCERS = new Map([
   [
     "crates/fdu-core/src/scan.rs",
     {
-      loops: 8,
+      loops: 9,
       routes: [
         "admission::decide(",
         "emission.record_entry(",
@@ -38,6 +38,7 @@ const NON_INVENTORY_READERS = new Map([
   ["crates/fdu-core/src/cache.rs", "cache-status enumeration"],
   ["crates/fdu-core/src/snapshot.rs", "snapshot temporary-file housekeeping"],
   ["crates/fdu-core/src/opened/golden_support.rs", "test fixture serialization"],
+  ["crates/fdu-core/src/scan/linux_dents.rs", "platform adapter reference tests"],
   ["crates/fdu-core/src/scan/macos_bulk.rs", "platform adapter reference tests"],
   ["crates/fdu-core/src/watch.rs", "case-only rename name lookup, never admitted"],
 ]);
