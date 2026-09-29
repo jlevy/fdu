@@ -45177,10 +45177,10 @@
    "platform": "Linux",
    "primary_job": "aggregate-summary",
    "primary_metric": "wall_ns",
-   "reason": "quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25% [-14.02%, -1.23%], default summary -9.66%, default-tree -4.29% [-8.81%, -0.90%]; serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4; answers identical",
+   "reason": "quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25% [-14.02%, -1.23%], short of the predicted -8% to -12% but clearing the rule; default summary -9.66%; default-tree with controls on -4.29% [-8.81%, -0.90%], while the default-tree result recorded here is the --no-controls pair, -1.67%; serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4 in an strace of linux-v6.12; answers identical",
    "reference_tools": [],
    "subject": "db6d49b68990:79957:11c4122bec53",
-   "title": "Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense",
+   "title": "Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense",
    "trials": 20
   },
   {
@@ -45385,7 +45385,7 @@
    "platform": "Linux",
    "primary_job": "aggregate-summary",
    "primary_metric": "wall_ns",
-   "reason": "quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90% [-9.55%, -4.74%], default summary -9.39%; default-tree -2.06% [-7.38%, +1.83%] does not clear (co-secondary); serial-portable placebo -0.29% includes zero",
+   "reason": "quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90% [-9.55%, -4.74%], narrowly short of the predicted -8% to -12% but clearing the rule; default summary -9.39%; default-tree with controls on -2.06% [-7.38%, +1.83%] does not clear (co-secondary), nor does the --no-controls pair recorded here, -1.79%; serial-portable placebo -0.29% includes zero",
    "reference_tools": [],
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear",
@@ -46484,7 +46484,7 @@
    "anchored": false,
    "candidate": "7233dad6 probe: H181 + H182 bundle",
    "change_pct": 0.2,
-   "commit": "d1c667f6",
+   "commit": "7233dad6",
    "complexity": {
     "lines_changed": 700,
     "new_dependencies": [],
