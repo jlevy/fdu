@@ -10,7 +10,12 @@
 Epic `fdu-faqa`. It makes no new wall claim: wall figures are cited from the quiet
 20-pair cells of exp-194 and exp-195, and everything measured here is load-independent
 (instructions, system calls, page faults, context switches) or marked as a screen taken
-under load.
+under load. **Built on the branch, unmeasured on wall (2026-09-29, host busy):** H185
+(`c0da65ae`), H188 with H189 (`a0666bf0`, `7a3a7058`), H186 (`a356d456`) and H187
+(`cfae174e`), each with its answers proved identical by the differential tests, the
+goldens and the three-format answer diff, and its load-independent secondary recorded in
+[the registry](../guides/performance-loop.md#hypotheses); their cells run when the host
+is quiet, as exp-197 onward.
 
 ## Question
 
