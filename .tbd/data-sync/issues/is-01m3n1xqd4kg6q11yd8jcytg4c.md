@@ -5,7 +5,7 @@ title: "H164: classify .gitignore on walker threads"
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/research/research-2026-09-28-pdu-and-the-linux-peer-gap.md
 labels:
   - performance
@@ -14,6 +14,10 @@ labels:
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T22:24:46.500Z
-updated_at: 2026-09-28T22:24:46.500Z
+updated_at: 2026-09-29T01:17:11.584Z
 ---
 After H162-H163 classification is still serial on one consumer (~100 ms above the --no-controls walk on linux-v6.12; default tree 211 ms vs pdu 70 ms). Carry each directory's governing chain and ignored state down the walk queue so walkers classify their own listings in parallel. Registry row in docs/project/guides/performance-loop.md; mechanism and pre-registration in the pdu brief.
+
+## Notes
+
+2026-09-29 design study: sequenced after H171 (fdu-sdul). H171 cuts the classification it would parallelise from ~1.8G to ~0.5G consumer instructions; H164 then targets that residual. It also needs a public Op::Upsert field for the summary route and walker-side budget admission.
