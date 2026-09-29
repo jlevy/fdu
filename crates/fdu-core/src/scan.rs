@@ -4812,7 +4812,7 @@ fn consolidate_detached_index(
         });
     }
     index.record_walk_errors(&mut output.errors);
-    index.set_initial_scan_freshness(&output.errors);
+    index.set_initial_detached_scan_freshness(&output.errors);
     (index, output)
 }
 

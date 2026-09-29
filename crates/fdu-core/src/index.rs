@@ -1694,6 +1694,8 @@ impl DetachedIndexBuilder {
                 None => parent_ignored,
             };
             let child_path = kind.is_dir().then(|| path.join(&name));
+            // Listed in full unless the walk reports otherwise, which only a failure does
+            // (`Index::set_initial_detached_scan_freshness`).
             let child_id = self.index.alloc(Entry::new_detached(
                 NewEntry {
                     parent: Some(parent),
@@ -1704,7 +1706,7 @@ impl DetachedIndexBuilder {
                     kind,
                     attrs,
                 },
-                false,
+                true,
             ));
             self.index.push_detached_child(parent, child_id);
             // Fold the child's own direct contribution while filesystem work is still
@@ -2921,7 +2923,6 @@ impl Index {
     }
 
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
-        self.freshness_marks.clear();
         if complete {
             for slot in &mut self.arena {
                 if let Slot::Occupied { entry, .. } = slot {
@@ -2930,6 +2931,39 @@ impl Index {
                     }
                 }
             }
+        }
+        self.set_initial_state(complete);
+    }
+
+    /// Finish a detached cold walk ([`DetachedIndexBuilder`]) as
+    /// [`Self::set_initial_scan_freshness`] does.
+    ///
+    /// The builder allocates every directory as listed in full, so a walk without failures
+    /// leaves each one as it is rather than marking the whole arena complete a second time
+    /// (F6e), and a walk with failures withdraws completeness exactly as any cold walk's
+    /// does.
+    pub(crate) fn set_initial_detached_scan_freshness(&mut self, errors: &[crate::Error]) {
+        if !errors.is_empty() {
+            self.set_initial_scan_freshness(errors);
+            return;
+        }
+        debug_assert!(
+            self.arena.iter().all(|slot| match slot {
+                Slot::Occupied { entry, .. } if entry.kind.is_dir() => {
+                    entry.directory().children_complete
+                }
+                Slot::Occupied { .. } | Slot::Free { .. } => true,
+            }),
+            "a detached builder allocates every directory as listed in full"
+        );
+        self.set_initial_state(true);
+    }
+
+    /// The index-wide lifecycle state a first pass leaves, whatever it records of each
+    /// directory's own listing.
+    fn set_initial_state(&mut self, complete: bool) {
+        self.freshness_marks.clear();
+        if complete {
             self.state.phase = LifecyclePhase::Ready;
             self.state.coverage = Coverage::Complete;
             self.state.freshness = Freshness::Fresh;
