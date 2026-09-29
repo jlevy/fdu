@@ -467,3 +467,178 @@ fn reconciling_a_tree_that_is_changing_underneath_converges_once_it_settles() {
     let (fresh, _) = scan_into_index(&root, &config(1)).expect("verification scan");
     assert_same_image(&image(&fresh), &image(&index), "reconcile after concurrent churn");
 }
+
+/// Fixed seeds for the random-tree differential; a failure names the one it used.
+#[cfg(target_os = "linux")]
+const RANDOM_TREE_SEEDS: [u64; 4] = [1, 0x5eed, 169, 20_260_929];
+
+/// The deterministic generator `tests/reference_model.rs` uses.
+#[cfg(target_os = "linux")]
+struct Generator(u64);
+
+#[cfg(target_os = "linux")]
+impl Generator {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        self.0
+    }
+
+    /// A value in `0..bound`, from the high bits, which an LCG mixes best.
+    fn below(&mut self, bound: usize) -> usize {
+        usize::try_from(self.next() >> 33).expect("31 bits fit usize") % bound
+    }
+}
+
+/// A name of 1–255 bytes mixing ASCII, raw high bytes, and multibyte UTF-8.
+#[cfg(target_os = "linux")]
+fn random_name(generator: &mut Generator) -> Vec<u8> {
+    const ASCII: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._-~";
+    const MULTIBYTE: [&str; 4] = ["\u{e9}", "\u{df}", "\u{6f22}", "\u{1f600}"];
+    let length = 1 + generator.below(255);
+    let mut name = Vec::with_capacity(length);
+    while name.len() < length {
+        match generator.below(4) {
+            0 | 1 => name.push(ASCII[generator.below(ASCII.len())]),
+            2 => name.push(0x80 | u8::try_from(generator.below(0x80)).expect("seven bits")),
+            _ => {
+                let piece = MULTIBYTE[generator.below(MULTIBYTE.len())].as_bytes();
+                if name.len() + piece.len() <= length {
+                    name.extend_from_slice(piece);
+                } else {
+                    name.push(b'x');
+                }
+            }
+        }
+    }
+    name
+}
+
+/// Build a random tree under `root` from `seed`.
+///
+/// Depth at most three, 0–300 entries per directory of which at most three are
+/// directories, and files of 0–10 KiB beside symlinks to siblings and dangling ones.
+#[cfg(target_os = "linux")]
+fn random_tree(root: &Path, seed: u64) {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::symlink;
+
+    const MAX_DEPTH: usize = 3;
+    const MAX_SUBDIRECTORIES: usize = 3;
+    const MAX_FILE_BYTES: usize = 10 * 1024;
+    let mut generator = Generator(seed);
+    let contents = vec![b'z'; MAX_FILE_BYTES];
+    let mut pending = vec![(root.to_path_buf(), 0)];
+    while let Some((directory, depth)) = pending.pop() {
+        let mut used = std::collections::HashSet::from([b".".to_vec(), b"..".to_vec()]);
+        let mut files: Vec<Vec<u8>> = Vec::new();
+        let mut subdirectories = 0;
+        for _ in 0..generator.below(301) {
+            let name = random_name(&mut generator);
+            if !used.insert(name.clone()) {
+                continue;
+            }
+            let path = directory.join(OsStr::from_bytes(&name));
+            match generator.below(8) {
+                0 if depth < MAX_DEPTH && subdirectories < MAX_SUBDIRECTORIES => {
+                    fs::create_dir(&path).expect("random directory");
+                    subdirectories += 1;
+                    pending.push((path, depth + 1));
+                }
+                1 if !files.is_empty() => {
+                    let target = &files[generator.below(files.len())];
+                    symlink(OsStr::from_bytes(target), &path).expect("symlink to a sibling");
+                }
+                2 => symlink("missing/target", &path).expect("dangling symlink"),
+                _ => {
+                    let size = generator.below(MAX_FILE_BYTES + 1);
+                    fs::write(&path, &contents[..size]).expect("random file");
+                    files.push(name);
+                }
+            }
+        }
+    }
+}
+
+/// Every entry below the root with its kind and stat-tier attributes.
+#[cfg(target_os = "linux")]
+type Entries = BTreeMap<PathBuf, (fdu_core::EntryKind, fdu_core::Attrs)>;
+
+/// What public [`scan`](fdu_core::scan::scan) observed at `threads` workers.
+#[cfg(target_os = "linux")]
+fn scanned(root: &Path, threads: usize) -> Entries {
+    let mut entries = Entries::new();
+    let report = fdu_core::scan::scan(root, &config(threads), &mut |observation| {
+        for observed in observation.ops {
+            if let fdu_core::Op::Upsert { path, kind, attrs } = observed.op {
+                entries.insert(path, (kind, attrs));
+            }
+        }
+    })
+    .expect("scan");
+    assert!(report.is_complete(), "{threads} workers: {:?}", report.errors);
+    entries.remove(Path::new(""));
+    entries
+}
+
+/// What an index holds for every entry below its root.
+#[cfg(target_os = "linux")]
+fn indexed(index: &Index) -> Entries {
+    let mut entries = Entries::new();
+    let mut stack = vec![EntryId::ROOT];
+    while let Some(id) = stack.pop() {
+        for (_, child) in index.children_of(id).into_iter().flatten() {
+            let kind = index.kind_of(child).expect("live id");
+            let attrs = *index.attrs_of(child).expect("live id");
+            entries.insert(index.path_of(child).expect("live id"), (kind, attrs));
+            stack.push(child);
+        }
+    }
+    entries
+}
+
+/// Report the first differing entry, so a failure names it rather than the tree.
+#[cfg(target_os = "linux")]
+fn assert_same_entries(reference: &Entries, candidate: &Entries, context: &str) {
+    if reference == candidate {
+        return;
+    }
+    let missing = reference.iter().find(|(path, value)| candidate.get(*path) != Some(value));
+    let extra = candidate.iter().find(|(path, _)| !reference.contains_key(*path));
+    panic!(
+        "{context}: diverged from the serial portable walk\n  expected: {missing:?}\n  extra:    {extra:?}"
+    );
+}
+
+/// Random trees hold names of every byte shape a listing can return and every kind.
+///
+/// On Linux, public `scan` with one worker is the serial portable `read_dir` walk. Every
+/// other count, and `scan_into_index` at every count, lists through the native
+/// `getdents64` reader on glibc builds, so this is the walk-level differential for it: all
+/// of them must describe the same entries, and every index must hold the same image.
+#[cfg(target_os = "linux")]
+#[test]
+fn cold_scans_agree_across_worker_counts_on_random_trees() {
+    for seed in RANDOM_TREE_SEEDS {
+        let dir = tempfile::Builder::new().prefix("fdu-diff-random-").tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        random_tree(&root, seed);
+        let reference = scanned(&root, 1);
+        let mut reference_image = None;
+        for threads in [1, 2, 4, 8] {
+            if threads > 1 {
+                let context = format!("seed {seed:#x}, scan at {threads} workers");
+                assert_same_entries(&reference, &scanned(&root, threads), &context);
+            }
+            let (index, report) = scan_into_index(&root, &config(threads)).expect("cold scan");
+            assert!(report.is_complete(), "seed {seed:#x}, {threads} workers: {:?}", report.errors);
+            let context = format!("seed {seed:#x}, index at {threads} workers");
+            assert_same_entries(&reference, &indexed(&index), &context);
+            let candidate = image(&index);
+            match &reference_image {
+                None => reference_image = Some(candidate),
+                Some(expected) => assert_same_image(expected, &candidate, &context),
+            }
+        }
+    }
+}

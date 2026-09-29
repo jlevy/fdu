@@ -20,7 +20,7 @@ function baseline(overrides = new Map()) {
         "impl WalkEmission for DetachedEmission {",
         "  fn record_entry() { record_detached_entry(); }",
         "}",
-        ...Array.from({ length: 8 }, () => "for item in listing {\n  process_entry();\n}"),
+        ...Array.from({ length: 9 }, () => "for item in listing {\n  process_entry();\n}"),
       ].join("\n"),
     ],
     [
