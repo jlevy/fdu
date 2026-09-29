@@ -1298,6 +1298,9 @@ pub(crate) enum WalkHookPoint<'a> {
     /// After a reconciliation's listing of a directory returns its last entry; an error is
     /// read as one more listing item, which leaves the listing incomplete.
     ListingEnd,
+    /// After a lookup of a directory's canonical control path, at this absolute path, has
+    /// returned and before its answer is used; an error stands in for that answer.
+    ControlLookup(&'a Path),
 }
 
 /// Hooks run at each [`WalkHookPoint`], each for the paths under its root.
@@ -1353,7 +1356,7 @@ pub(crate) fn install_child_metadata_hook(
 ) -> WalkHookGuard {
     install_walk_hook(root, move |point| match point {
         WalkHookPoint::ChildMetadata(path) => hook(path),
-        WalkHookPoint::ListingEnd => None,
+        WalkHookPoint::ListingEnd | WalkHookPoint::ControlLookup(_) => None,
     })
 }
 
@@ -3888,14 +3891,33 @@ fn read_directory_control(
         return Ok(None);
     }
     let absolute = control_lookup_path(root, control_path);
+    let found = look_up_control(&absolute, control_path, config.control_limits.budget);
+    #[cfg(test)]
+    {
+        if let Some(error) =
+            walk_hook(&absolute).and_then(|hook| hook(WalkHookPoint::ControlLookup(&absolute)))
+        {
+            return Err(Error::io(&absolute, error));
+        }
+    }
+    found
+}
+
+/// The lookup [`read_directory_control`] makes, at `absolute`, of the control it names
+/// `control_path`.
+fn look_up_control(
+    absolute: &Path,
+    control_path: &Path,
+    budget: Option<usize>,
+) -> Result<Option<Op>> {
     crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
-    let kind = match fs::symlink_metadata(&absolute) {
+    let kind = match fs::symlink_metadata(absolute) {
         Ok(metadata) if metadata.file_type().is_file() => EntryKind::File,
         Ok(_) => EntryKind::Other,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(Error::io(&absolute, error)),
+        Err(error) => return Err(Error::io(absolute, error)),
     };
-    read_control_source(&absolute, control_path, kind, config.control_limits.budget)
+    read_control_source(absolute, control_path, kind, budget)
 }
 
 /// [`read_directory_control`], answering a miss with the removal of the directory's rules.
@@ -6454,22 +6476,28 @@ struct ListedControl {
     /// The listing showed the directory's control, or failed to read it, so the closing
     /// sweep must not remove it.
     seen: bool,
+    /// The listing showed a case variant of the control name, such as `.GITIGNORE`.
+    variant_listed: bool,
     /// The last control a lookup of the canonical path found during this listing: a
     /// listed case variant's, or a narrowed walk's before the listing.
     ///
     /// A case-only rename on a case-insensitive volume (`.gitignore` to `.GITIGNORE`) leaves
     /// the old spelling's entry in the index, and the closing sweep removes it. Removing
     /// the entry at the canonical path drops the rules it governs
-    /// (`Index::projected_controls`), yet those rules are now the variant's, so the sweep
-    /// restates this observation right after that removal
-    /// ([`Self::restatement_after_removing`]).
+    /// (`Index::projected_controls`), yet those rules are now the variant's, so when this
+    /// listing showed the variant the sweep restates this observation right after that
+    /// removal ([`Self::restatement_after_removing`]).
     looked_up: Option<Op>,
 }
 
 impl ListedControl {
     /// Note that `name` was listed, before its metadata or its control is read.
     fn listed(&mut self, name: &OsStr) {
-        self.seen |= name == crate::control::CONTROL_FILE_NAME;
+        match crate::control::control_spelling(name) {
+            Some(crate::control::ControlSpelling::Exact) => self.seen = true,
+            Some(crate::control::ControlSpelling::Variant) => self.variant_listed = true,
+            None => {}
+        }
     }
 
     /// Note what reading the control through the listed `name` returned. Only a case
@@ -6494,9 +6522,22 @@ impl ListedControl {
     }
 
     /// The observation to push right after the sweep removes the entry `name`: what the
-    /// lookup found, when `name` is the stale exact spelling and nothing listed it.
+    /// lookup found, when `name` is the stale exact spelling and this listing showed a case
+    /// variant in its place.
+    ///
+    /// Only a listed variant can hold rules the removal would drop. Without one, the exact
+    /// file is simply gone: a narrowed walk's lookup found it before the listing and it was
+    /// deleted in between, and the removal leaves the table as bare as the directory, as a
+    /// cold walk would. Restating that lookup would keep rules for a file that no longer
+    /// exists until the next pass. That window remains only where a case-sensitive
+    /// directory stores a variant beside the exact file deleted in it, a variant that never
+    /// held the rules there.
     fn restatement_after_removing(&self, name: &OsStr) -> Option<Op> {
-        if name == crate::control::CONTROL_FILE_NAME { self.looked_up.clone() } else { None }
+        if name == crate::control::CONTROL_FILE_NAME && self.variant_listed {
+            self.looked_up.clone()
+        } else {
+            None
+        }
     }
 }
 
@@ -7718,6 +7759,163 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Revalidate a copy of `index` and apply every observation it sends, none of which may
+    /// lose a race.
+    fn revalidated_copy(index: &Index, config: &ScanConfig, label: &str) -> Index {
+        let mut revalidated = index.clone();
+        let mut observations = Vec::new();
+        let report = revalidate(&revalidated, config, &mut |observation| {
+            observations.push(observation);
+        })
+        .expect("revalidate");
+        assert!(report.is_complete(), "{label}: {:?}", report.errors);
+        for observation in &observations {
+            let outcome = revalidated.apply(observation).expect("apply");
+            assert_eq!(outcome.stats.stale, 0, "{label}: revalidation lost a race");
+        }
+        revalidated
+    }
+
+    /// A narrowed population's reconciliation keeps a case-variant control through a
+    /// case-only rename, as a cold walk finds it. Its lookup before the listing is what
+    /// finds the variant's rules, and the listing shows the variant, so the sweep restates
+    /// the rules its removal of the stale `.gitignore` entry drops (fdu-0w1b).
+    #[test]
+    fn a_narrowed_reconciliation_follows_a_case_only_rename() {
+        use crate::test_support::CaseLookups;
+
+        let probe = tempfile::tempdir().expect("tempdir");
+        for (lookups, governs) in CaseLookups::on_this_host(probe.path()) {
+            for population in
+                [crate::query::IgnoredEntries::Exclude, crate::query::IgnoredEntries::Only]
+            {
+                let label = format!("{lookups:?}, {population:?}");
+                let dir = tempfile::tempdir().expect("tempdir");
+                let root = dir.path().canonicalize().expect("canonical root");
+                let _lookups = lookups.install(&root);
+                let config = ScanConfig { population, batch_size: 3, ..ScanConfig::default() };
+                write_file(&root.join("up/.gitignore"), b"*.tmp\n");
+                write_file(&root.join("up/x.tmp"), b"governed");
+                for file in 0..4 {
+                    write_file(&root.join(format!("up/f{file}.dat")), b"unignored");
+                }
+                let (mut index, _) = scan_into_index(&root, &config).expect("cold scan");
+                fs::rename(root.join("up/.gitignore"), root.join("up/.GITIGNORE")).expect("recase");
+                let (cold, report) = scan_into_index(&root, &config).expect("cold");
+                assert!(report.is_complete(), "{label}: {:?}", report.errors);
+                let cold = classification(&cold);
+                assert_eq!(
+                    cold.1.iter().any(|(path, _)| path == Path::new("up/.gitignore")),
+                    governs,
+                    "{label}: the variant governs exactly where the lookup resolves to it"
+                );
+
+                let revalidated = revalidated_copy(&index, &config, &label);
+                assert_eq!(classification(&revalidated), cold, "{label}: revalidate");
+                let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+                assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                assert_eq!(report.apply.stale, 0, "{label}: no observation lost a race");
+                assert_eq!(classification(&index), cold, "{label}: reconcile");
+            }
+        }
+    }
+
+    /// A narrowed population's reconciliation looks a directory's control up before
+    /// listing it. When the `.gitignore` that lookup found is deleted before the listing,
+    /// the sweep removes the stale entry, and the rules go with it: no case variant was
+    /// listed to hold them, so nothing is restated, and the table is as bare as the
+    /// directory. The next pass agrees with a cold walk.
+    #[test]
+    fn a_control_deleted_between_its_lookup_and_the_listing_leaves_no_rules() {
+        for population in
+            [crate::query::IgnoredEntries::Exclude, crate::query::IgnoredEntries::Only]
+        {
+            for revalidating in [true, false] {
+                let label = format!("{population:?}, revalidating: {revalidating}");
+                let dir = tempfile::tempdir().expect("tempdir");
+                let root = dir.path().canonicalize().expect("canonical root");
+                let config = ScanConfig { population, ..ScanConfig::default() };
+                write_file(&root.join("up/.gitignore"), b"*.tmp\n");
+                write_file(&root.join("up/x.tmp"), b"governed");
+                write_file(&root.join("up/y.dat"), b"unignored");
+                let control_path = Path::new("up/.gitignore");
+                let (mut index, _) = scan_into_index(&root, &config).expect("cold scan");
+                assert!(index.control_table().contains(control_path), "{label}");
+
+                let control = root.join(control_path);
+                let deleted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let hook_deleted = std::sync::Arc::clone(&deleted);
+                let race = install_walk_hook(&root, move |point| {
+                    if let WalkHookPoint::ControlLookup(looked_up) = point {
+                        if looked_up == control && fs::remove_file(looked_up).is_ok() {
+                            hook_deleted.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    }
+                    None
+                });
+                if revalidating {
+                    index = revalidated_copy(&index, &config, &label);
+                } else {
+                    let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+                    assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                }
+                drop(race);
+                assert!(
+                    deleted.load(std::sync::atomic::Ordering::SeqCst),
+                    "{label}: the lookup found the control before it was deleted"
+                );
+                assert_eq!(index.path_state(control_path), PathState::Absent, "{label}");
+                assert!(
+                    !index.control_table().contains(control_path),
+                    "{label}: no rules remain for a file that is gone"
+                );
+
+                let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+                assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                let (cold, _) = scan_into_index(&root, &config).expect("cold");
+                assert_eq!(classification(&index), classification(&cold), "{label}");
+            }
+        }
+    }
+
+    /// The sweep restates what a lookup found only after removing the stale `.gitignore`
+    /// entry of a listing that showed a case variant, the one spelling that can still hold
+    /// the rules that removal drops. Without a listed variant the exact file is gone, and
+    /// so are its rules.
+    #[test]
+    fn a_listing_restates_looked_up_rules_only_after_showing_a_case_variant() {
+        let found =
+            Op::ControlUpsert { path: PathBuf::from("up/.gitignore"), source: b"*.tmp\n".to_vec() };
+        let exact = OsStr::new(".gitignore");
+
+        let mut deleted = ListedControl::default();
+        deleted.lookup(&Ok(Some(found.clone())));
+        deleted.listed(OsStr::new("x.tmp"));
+        assert_eq!(deleted.restatement_after_removing(exact), None, "the exact file is gone");
+
+        let mut recased = ListedControl::default();
+        recased.lookup(&Ok(Some(found.clone())));
+        recased.listed(OsStr::new(".GITIGNORE"));
+        assert_eq!(recased.restatement_after_removing(exact), Some(found.clone()));
+        assert_eq!(
+            recased.restatement_after_removing(OsStr::new(".GitIgnore")),
+            None,
+            "only removing the canonical entry drops rules"
+        );
+        assert_eq!(recased.restatement_after_removing(OsStr::new("x.tmp")), None);
+
+        // An included population looks the control up through the listed variant itself.
+        let mut read = ListedControl::default();
+        read.listed(OsStr::new(".GitIgnore"));
+        read.read(OsStr::new(".GitIgnore"), &Ok(Some(found.clone())));
+        assert_eq!(read.restatement_after_removing(exact), Some(found));
+
+        let mut missed = ListedControl::default();
+        missed.lookup(&Ok(None));
+        missed.listed(OsStr::new(".GITIGNORE"));
+        assert_eq!(missed.restatement_after_removing(exact), None, "nothing was found");
     }
 
     /// Where a directory is case-sensitive it can list `.gitignore` beside `.GITIGNORE`,
@@ -11274,6 +11472,7 @@ mod tests {
                 None
             }
             WalkHookPoint::ListingEnd => Some(std::io::Error::other("injected listing error")),
+            WalkHookPoint::ControlLookup(_) => None,
         })
     }
 
