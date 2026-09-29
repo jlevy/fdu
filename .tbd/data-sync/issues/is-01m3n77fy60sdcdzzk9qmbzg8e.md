@@ -5,7 +5,7 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: in_progress
 priority: 2
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 delegate: claude-code@vm
 labels:
@@ -16,7 +16,7 @@ parent_id: is-01m3mvdz2891yheyemx49gzm6j
 hold: null
 hold_until: null
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T18:06:23.182Z
+updated_at: 2026-09-29T18:08:44.859Z
 started_at: 2026-09-29T17:02:10.729Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
@@ -306,3 +306,5 @@ Branch head: 63e01e63. Commits: 9f968651 (measurement), 93bac1cf (README matrix 
 - Cells changed from the draft: dua re-read at 2.45.0 (.gitignore partial now includes TUI dimming of ignored entries; aggregate --depth; snapshots and diff; dua-core library). gdu re-read at 5.37.0: .gitignore stays ❌, `-G/--ignore-from-gitignore` exists only on unreleased main (4b179b0), footnoted. gdu plain total `-ns`. pdu cache "JSON, not revalidated" (--json-input), matching ncdu's export cell. Platforms, Installation, and Output formats rows cut to keep 11 rows (platforms in the versions footnote; formats merged into "APIs and machine output"). Code row names 15 languages; footnote gives scc 4.1.0 (366 languages) and tokei 15.0.0 (333).
 - README Speed rewritten: Linux first (current engine), macOS labeled as the 0.2.1 engine; tagline and Speed bullet no longer say "fastest". Why corrected ("exactly one persists anything" contradicted the matrix).
 - Not done here: the short SLOC survey brief under docs/project/research/ that the parity plan lists for this bead; Cargo.toml/pyproject descriptions and the CLI about string still say "Fastest native du replacement" (maintainer's call; changing them changes --help and its golden).
+
+Stack layer (2026-09-29): branch claude/readme-comparison-matrix, draft PR jlevy/fdu#162, based on #161. Close when #162 merges.
