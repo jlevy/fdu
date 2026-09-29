@@ -998,8 +998,8 @@ Its
 is the summary of the night: read it first, then `tbd list --status in_progress`. The
 work is on branch `claude/linux-perf-improvements-review-2kqius`, in draft
 [#161](https://github.com/jlevy/fdu/pull/161), unreleased.
-It carries H171, H175, H172 with H176 and F6e, H180, and H169 phase 1, each as a change
-commit followed by its record commit; rejected work is not merged.
+It carries H171, H175, H172 with H176 and F6e, H180, H169 phase 1, and H183, each as a
+change commit followed by its record commit; rejected work is not merged.
 [The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md#the-linux-overnight-round-2026-09-29)
 has the night’s numbers.
 
@@ -1007,9 +1007,11 @@ has the night’s numbers.
   fdu’s default command took 1.08 times pdu’s default on `linux-v6.12`, from 2.4 times
   at Q0, and ran level with it on `node-modules-dense`. Final standing: see the plan’s
   Status table.
-- **What sets the time.** On `linux-v6.12` the consumer still spends about 333M
-  instructions on `.gitignore`, most of it in the residual rules’ pre-checks (H183).
-  With `.gitignore` off, and on the dense tree, wall follows the walk’s total CPU.
+- **What sets the time.** After H183 the consumer spends about 135M instructions on
+  `.gitignore` on `linux-v6.12`, down from 333M, and the controls-on default tree is
+  1.085 times its own `--no-controls` arm (exp-193). With `.gitignore` off, and on the
+  dense tree, wall follows the walk’s total CPU. Profile the head before choosing
+  between H179 and H177.
 
 **Host setup.** The night ran on a 4-vCPU Firecracker guest (Intel Xeon at 2.1 GHz,
 Linux 6.18.44-fc-v49, ext4), as root.
@@ -1038,13 +1040,13 @@ and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-193** and **H184**. exp-193–199 remain in the reserved
-Linux block, then exp-200 onward; H183 is registered and in flight.
+**Ids.** Next free are **exp-195** and **H184**. exp-195–199 remain in the reserved
+Linux block, then exp-200 onward.
 exp-173–199 and H162–H183 are Linux work.
 The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
 (`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
 (`fdu-8a8r`), came from its range.
-The 2026-09-29 overnight loop used exp-175–186 and exp-192, H174–H179 for its new
+The 2026-09-29 overnight loop used exp-175–186 and exp-192–194, H174–H179 for its new
 hypotheses, and H180–H183 for what its profiles and mid-night sweep found.
 exp-170–172 record H161, the ignore-aware transient summary.
 exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159
@@ -1059,23 +1061,20 @@ exp-113 remains reserved unused.
 
 **Next, in order:**
 
-1. **H183** (`fdu-7ydi`), pre-checks for the residual `.gitignore` rules: pending; see
-   the plan. It is pre-registered, predicted −4% to −8% on the `linux-v6.12` default
-   tree.
-2. **H179**, each directory’s attributes from the descriptor the reader opened (H169
+1. **H179**, each directory’s attributes from the descriptor the reader opened (H169
    phase 2), only if `strace -c` still shows the directory `statx` as a named share of
    at least 3%.
-3. **H177**, a per-listing name arena on top of H169.
-4. **H164**’s tree route (`fdu-emqf`) and **H178** (the consumer walks when its channel
+2. **H177**, a per-listing name arena on top of H169.
+3. **H164**’s tree route (`fdu-emqf`) and **H178** (the consumer walks when its channel
    is empty), each conditional on the consumer still setting the wall; H174 (`fdu-sfse`)
    only if the consumer is busy for more than 80% of the walk.
-5. **H169 phase 3**, directories opened relative to the parent’s descriptor, once an fd
+4. **H169 phase 3**, directories opened relative to the parent’s descriptor, once an fd
    budget sized to the breadth-first frontier is designed.
-6. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
+5. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
    0.3.0.
-7. **`fdu-puk7`** on the remaining routes: musl builds, the serial walk, and
+6. **`fdu-puk7`** on the remaining routes: musl builds, the serial walk, and
    reconciliation still stat through std without `AT_NO_AUTOMOUNT`.
-8. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
+7. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
    fixed with recorded git verdicts, outside the performance loop.
 
 **Superseded by the overnight loop.** What follows is the pickup as it stood before

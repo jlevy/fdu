@@ -338,6 +338,7 @@ were identical.
 |  | `linux-v6.12`, default summary | −5.63% [−15.15%, −2.75%] | [exp-184](../experiments/exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md) |
 | H169 phase 1, a Linux-native directory reader | `node-modules-dense`, summary `--no-controls` | −6.25% [−14.02%, −1.23%] | [exp-185](../experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md) |
 |  | `linux-v6.12`, summary `--no-controls` | −7.90% [−9.55%, −4.74%] | [exp-186](../experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md) |
+| H183, cheap pre-checks for the residual rules | `linux-v6.12`, default tree | −7.62% [−10.41%, −5.28%] | [exp-193](../experiments/exp-193-linux-h183-cheap-matcher-pre-checks-cut-the-default-tree-8-o.md) |
 
 - **H171** compiles each `.gitignore` into literal-name and ends-with maps, anchored
   rules grouped by segment count, and a residual list behind cheap pre-checks, and
@@ -368,6 +369,12 @@ were identical.
   longer triggers automounts (`fdu-puk7`). The default summary gained 9.7% and 9.4%. The
   default tree gained 4.29% [−8.81%, −0.90%] on `node-modules-dense` and 2.06%
   [−7.38%, +1.83%], not clearing, on `linux-v6.12`, against a predicted 6–8%.
+- **H183** computes a 32-class byte set of each name once per entry and rejects a
+  residual rule by a mask test and its first and last literal bytes before any string
+  comparison; the survivors compare with inline byte loops.
+  Found by a callgrind of the H169 head, it cut the consumer from 436M to 238M
+  instructions and matching’s `memcmp` from 101M to zero.
+  Both placebos, `--no-controls` and `node-modules-dense`, included zero.
 
 **Rejected and closed:**
 
@@ -419,12 +426,14 @@ pdu with `--max-depth 2` stays ahead on both.
 [Status table](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md#status).**
 A closing tool cell on the night’s head, if one runs, is recorded there and not here.
 
-**What is left.** After H169, a callgrind of the default tree on `linux-v6.12` counts
+**What is left.** After H169, a callgrind of the default tree on `linux-v6.12` counted
 436M consumer instructions with `.gitignore` against 103M without; `memcmp` (114M) and
-the residual rules’ pre-checks (`Checks::admit`, about 97M) are most of the difference.
-H183 targets them, predicted −4% to −8% on that tree, which would put fdu ahead of pdu’s
-default there. With `.gitignore` off, and on the dense tree, wall follows the walk’s
-total CPU, the target of H179 and H177.
+the residual rules’ pre-checks (`Checks::admit`, about 97M) were most of the difference.
+H183 removed most of it (exp-193): the consumer fell to 238M instructions and the
+default tree 7.62% [−10.41%, −5.28%], leaving that tree 1.085 times its own
+`--no-controls` arm.
+With `.gitignore` off, and on the dense tree, wall follows the walk’s total CPU, the
+target of H179 and H177.
 
 ## Qualifications on Current Results
 
@@ -529,8 +538,8 @@ recorded as closed.
 
 The `.gitignore`-on default command is not a campaign-2 tier.
 At 0.2.1 it held the largest measured Linux gap, 211 ms against 81 ms with `.gitignore`
-off; after the 2026-09-29 round the gap is about 12%, 76.8 ms against 68.5 ms in one
-cell (exp-186), and H183 targets most of what remains.
+off; after the 2026-09-29 round the gap is about 8.5%, 67.4 ms against 62.1 ms in one
+cell (exp-193).
 
 ## Open Work
 
@@ -540,15 +549,13 @@ Grouped by topic; the order to run them in is
 queue.
 
 - **Next on Linux** (epic `fdu-8a8r`), in order:
-  1. **H183** (`fdu-7ydi`), pre-checks for the residual `.gitignore` rules: pending; see
-     the plan.
-  2. **H179**, each directory’s attributes from the descriptor the reader opened (H169
+  1. **H179**, each directory’s attributes from the descriptor the reader opened (H169
      phase 2), if `strace -c` still shows the directory `statx` as a named share of at
      least 3%.
-  3. **H177**, a per-listing name arena.
-  4. **H164**’s tree route (`fdu-emqf`), **H174** (`fdu-sfse`), and **H178**, each
+  2. **H177**, a per-listing name arena.
+  3. **H164**’s tree route (`fdu-emqf`), **H174** (`fdu-sfse`), and **H178**, each
      conditional on the consumer still setting the wall.
-  5. **H169 phase 3**, directories opened relative to the parent’s descriptor, which
+  4. **H169 phase 3**, directories opened relative to the parent’s descriptor, which
      needs an fd budget sized to the breadth-first frontier.
 - **Follow-ups from the reader and the matcher:**
   - `fdu-q7hf`: the reader’s public diagnostics fields, a public API change for 0.3.0;
