@@ -4256,6 +4256,11 @@ fn read_control_op_unconditional(
     read_control_source(&root.join(path), path, kind, budget)
 }
 
+/// The most a control file's read buffer is sized from its metadata length (H189): every
+/// `.gitignore` in the nominated subjects is under 16 KiB, and a larger one grows its
+/// buffer by reading, as any file did before.
+const CONTROL_READ_RESERVE_BYTES: usize = 64 * 1024;
+
 /// Read the control at `absolute`, whose kind is `kind`, as an observation of `path`.
 ///
 /// `absolute` is where the lookup went and `path` the canonical control path the
@@ -4270,12 +4275,24 @@ fn read_control_source(
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
     let file = open_control_file(absolute).map_err(|error| Error::io(absolute, error))?;
-    if !file.metadata().map_err(|error| Error::io(absolute, error))?.file_type().is_file() {
+    let metadata = file.metadata().map_err(|error| Error::io(absolute, error))?;
+    if !metadata.file_type().is_file() {
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
     let read_limit = budget
         .map_or(u64::MAX, |budget| u64::try_from(budget).unwrap_or(u64::MAX).saturating_add(1));
-    let mut source = Vec::new();
+    // Room for the length the metadata already carries, within the read limit and a
+    // fixed bound, plus the byte `read_to_end` reads to see the end (H189). `take` hides
+    // the length from `read_to_end`, which otherwise grows from 32 bytes by doubling: eight
+    // `read` calls for the 2 KiB root `.gitignore` of a kernel tree, two now. A file that
+    // grew since its stat reads on as before; a longer one is bounded by the limit as
+    // before, and its buffer is grown by `read_to_end` past the reservation, not sized
+    // from its length.
+    let reserve = usize::try_from(metadata.len().min(read_limit))
+        .unwrap_or(usize::MAX)
+        .min(CONTROL_READ_RESERVE_BYTES)
+        .saturating_add(1);
+    let mut source = Vec::with_capacity(reserve);
     file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(absolute, error))?;
     crate::counters::bump(|counts| counts.control_reads = counts.control_reads.saturating_add(1));
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))

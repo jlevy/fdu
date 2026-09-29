@@ -756,15 +756,19 @@ struct SummaryControls {
     /// such subtrees, not with the entries in them: a tree of many small ignored
     /// directories, each under a directory that is not ignored, is the case that makes it
     /// large. The RSS evidence so far (exp-170, exp-171) is on trees with few heads.
-    ignored_heads: std::collections::HashSet<std::path::PathBuf>,
+    ///
+    /// Keyed by the path's bytes: an `OsString` hashes and compares as bytes, where a
+    /// `PathBuf` does both component by component, which cost this fold 28M instructions
+    /// of hashing on `linux-v6.12` (H188).
+    ignored_heads: std::collections::HashSet<std::ffi::OsString>,
     /// The parent last looked up, and whether it is ignored. A listing's entries mostly
-    /// arrive together, so this answers nearly all of them.
-    parent: Option<(std::path::PathBuf, bool)>,
+    /// arrive together, so this answers nearly all of them. Compared as bytes (H188).
+    parent: Option<(std::ffi::OsString, bool)>,
     /// The controls governing the parent last classified under, resolved once for its
     /// listing (H163) with the parent's components split once for it too (H171), and
-    /// dropped whenever the table changes.
+    /// dropped whenever the table changes. Compared as bytes (H188).
     chain:
-        Option<(std::path::PathBuf, crate::control::ControlChain, crate::control::SplitDirectory)>,
+        Option<(std::ffi::OsString, crate::control::ControlChain, crate::control::SplitDirectory)>,
     /// Every entry no rule ignores, as the index's `unignored` partition.
     unignored: crate::index::RollUpScalars,
     /// The first control observation the table rejected, which fails the report as it
@@ -891,16 +895,23 @@ impl SummaryControls {
         if self.ignored_heads.is_empty() && self.table.is_empty() {
             return false;
         }
-        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+        // The parent and the name are the bytes before and after the last separator
+        // (H188): `Path::parent` and `Path::file_name` each parse the components, and the
+        // fold asked for both on every entry, then compared the parent with the cached one
+        // component by component. On `linux-v6.12` that was 180M of the fold's 373M
+        // instructions; the bytes say the same thing for the normalized relative paths a
+        // walk emits.
+        let (parent, name) = split_parent(path);
         let parent_ignored = self.parent_ignored(parent);
         let ignored = if parent_ignored || self.table.is_empty() {
             parent_ignored
-        } else if let Some(name) = path.file_name() {
-            if !matches!(&self.chain, Some((cached, ..)) if cached == parent) {
+        } else if !name.is_empty() {
+            if !matches!(&self.chain, Some((cached, ..)) if cached.as_os_str() == parent) {
+                let directory = std::path::Path::new(parent);
                 self.chain = Some((
-                    parent.to_path_buf(),
-                    self.table.chain_for(parent),
-                    crate::control::SplitDirectory::new(parent),
+                    parent.to_os_string(),
+                    self.table.chain_for(directory),
+                    crate::control::SplitDirectory::new(directory),
                 ));
             }
             let (_, chain, split) = self.chain.as_ref().expect("the chain was just resolved");
@@ -912,22 +923,22 @@ impl SummaryControls {
             self.table.matcher_for(path).is_ignored(kind.is_dir())
         };
         if ignored && !parent_ignored && kind.is_dir() {
-            self.ignored_heads.insert(path.to_path_buf());
+            self.ignored_heads.insert(path.as_os_str().to_os_string());
         }
         ignored
     }
 
-    fn parent_ignored(&mut self, parent: &std::path::Path) -> bool {
+    fn parent_ignored(&mut self, parent: &std::ffi::OsStr) -> bool {
         if self.ignored_heads.is_empty() {
             return false;
         }
         if let Some((cached, ignored)) = &self.parent {
-            if cached == parent {
+            if cached.as_os_str() == parent {
                 return *ignored;
             }
         }
-        let ignored = parent.ancestors().any(|ancestor| self.ignored_heads.contains(ancestor));
-        self.parent = Some((parent.to_path_buf(), ignored));
+        let ignored = ancestors(parent).any(|ancestor| self.ignored_heads.contains(ancestor));
+        self.parent = Some((parent.to_os_string(), ignored));
         ignored
     }
 
@@ -938,6 +949,53 @@ impl SummaryControls {
     }
 }
 
+/// `path.parent()` and `path.file_name()` of a normalized relative path, as a walk emits
+/// them, by the bytes before and after its last separator (H188); `""` for a missing
+/// parent or name, as the fold reads either.
+fn split_parent(path: &std::path::Path) -> (&std::ffi::OsStr, &std::ffi::OsStr) {
+    let parsed = || {
+        (
+            path.parent().map_or(std::ffi::OsStr::new(""), std::path::Path::as_os_str),
+            path.file_name().unwrap_or(std::ffi::OsStr::new("")),
+        )
+    };
+    #[cfg(unix)]
+    let split = {
+        use std::os::unix::ffi::OsStrExt as _;
+        let bytes = path.as_os_str().as_bytes();
+        match bytes.iter().rposition(|byte| *byte == b'/') {
+            Some(at) => (
+                std::ffi::OsStr::from_bytes(&bytes[..at]),
+                std::ffi::OsStr::from_bytes(&bytes[at + 1..]),
+            ),
+            None => (std::ffi::OsStr::new(""), path.as_os_str()),
+        }
+    };
+    #[cfg(not(unix))]
+    let split = parsed();
+    debug_assert_eq!(split, parsed(), "a walked path is normalized and relative");
+    split
+}
+
+/// `Path::ancestors` of a normalized relative directory, by its separators (H188): the
+/// directory, each directory above it, and the root, `""`.
+#[cfg(unix)]
+fn ancestors(directory: &std::ffi::OsStr) -> impl Iterator<Item = &std::ffi::OsStr> {
+    use std::os::unix::ffi::OsStrExt as _;
+    let bytes = directory.as_bytes();
+    let mut next = Some(bytes.len());
+    std::iter::from_fn(move || {
+        let end = next?;
+        next = (end > 0).then(|| bytes[..end].iter().rposition(|byte| *byte == b'/').unwrap_or(0));
+        Some(std::ffi::OsStr::from_bytes(&bytes[..end]))
+    })
+}
+
+#[cfg(not(unix))]
+fn ancestors(directory: &std::ffi::OsStr) -> impl Iterator<Item = &std::ffi::OsStr> {
+    std::path::Path::new(directory).ancestors().map(std::path::Path::as_os_str)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -946,6 +1004,34 @@ mod tests {
     use super::*;
     use crate::query::{IgnoredEntries, Pattern, Query, Section};
     use crate::{OpenFixture, ScanConfig};
+
+    /// H188: the byte-wise parent, name, and ancestors of a walked path are the ones
+    /// `Path` parses, for every shape a normalized relative path takes, including the
+    /// root itself, names with dots, and bytes that are not UTF-8.
+    #[test]
+    fn byte_wise_path_splits_match_the_parsed_ones() {
+        use std::ffi::{OsStr, OsString};
+        let mut paths: Vec<OsString> =
+            ["", "a", "a/b", "a/b/c.txt", ".gitignore", "d.d/.h", "x/..y"]
+                .into_iter()
+                .map(OsString::from)
+                .collect();
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt as _;
+            paths.push(OsString::from_vec(b"d\xff/f\xfe".to_vec()));
+            paths.push(OsString::from_vec(b"\xfe".to_vec()));
+        }
+        for path in &paths {
+            let path = Path::new(path);
+            let (parent, name) = split_parent(path);
+            assert_eq!(parent, path.parent().map_or(OsStr::new(""), Path::as_os_str), "{path:?}");
+            assert_eq!(name, path.file_name().unwrap_or(OsStr::new("")), "{path:?}");
+            let by_bytes: Vec<&OsStr> = ancestors(parent).collect();
+            let parsed: Vec<&OsStr> = Path::new(parent).ancestors().map(Path::as_os_str).collect();
+            assert_eq!(by_bytes, parsed, "{path:?}");
+        }
+    }
 
     #[test]
     fn total_throughput_uses_one_elapsed_sample_and_selected_size() {
