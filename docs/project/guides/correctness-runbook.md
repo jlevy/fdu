@@ -165,11 +165,11 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-This run was on 2026-09-29, for the 0.2.1 release candidate.
-It used the `fdu` of the candidate wheel, built from `672c2188f` and installed with
-`uv tool install` (`fdu 0.2.1-dev+g672c2188f`). The release branch head `ee97bf337` has
-the same tree, and neither the crates nor `tests/correctness` changed after the first
-0.2.1 release commit, `e889694c`.
+This run was on 2026-09-29, for the 0.2.1 release commit, `b10fe7b39` on `main`. It used
+the `fdu` of the candidate wheel, built from `672c2188f` and installed with
+`uv tool install` (`fdu 0.2.1-dev+g672c2188f`). The release commit has the same tree as
+`672c2188f`, so the result applies to it by tree identity, and neither the crates nor
+`tests/correctness` changed after `e889694c`, the first 0.2.1 release layer.
 
 **Regime.**
 

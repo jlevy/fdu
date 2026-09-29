@@ -35,20 +35,21 @@ Library steps are time-boxed and must stay bounded.
 
 ## Current Status (Last Update 2026-09-29)
 
-This table records the 0.2.1 release candidate.
+This table records the 0.2.1 release commit, `b10fe7b39` on `main`. The pass ran on
+`672c2188f`, whose tree (`761850ec6`) the release commit and the release branch head
+`ee97bf337` share byte for byte, so every result applies to `b10fe7b39` by tree
+identity; no crate or script changed after `e889694c`, the first 0.2.1 release layer.
 The installed command was the `cp312-abi3` `manylinux_2_34_x86_64` wheel built from
 `672c2188f` as [Install the Candidate](#11-install-the-candidate) describes, installed
 with `uv tool install` into an isolated tool directory, and `fdu --version` printed
-`fdu 0.2.1-dev+g672c2188f`. The release branch head `ee97bf337` has the same tree
-(`761850ec6`), so every result applies to it by tree identity, and no crate or script
-changed after the first 0.2.1 release commit, `e889694c`. The host was a 4-vCPU Linux
-x86_64 virtual machine (Firecracker) on ext4, running as root and otherwise quiet; the
-gates on `672c2188f` (`make check`, `make cross-lint`, `make release-rehearse`, and
-`make semver-check`) passed with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and
-`FDU_TEST_ALLOW_NO_NATIVE_WATCH=1` declared, as AGENTS.md prescribes for such a host,
-and with `UV_PYTHON=3.12`, because this host’s default `python3` is 3.11 and
-`test-performance` runs the benchmark tests, which need 3.12, on the interpreter uv
-finds. Each timing is a single run.
+`fdu 0.2.1-dev+g672c2188f`. The host was a 4-vCPU Linux x86_64 virtual machine
+(Firecracker) on ext4, running as root and otherwise quiet; the gates on `672c2188f`
+(`make check`, `make cross-lint`, `make release-rehearse`, and `make semver-check`)
+passed with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`
+declared, as AGENTS.md prescribes for such a host, and with `UV_PYTHON=3.12`, because
+this host’s default `python3` is 3.11 and `test-performance` runs the benchmark tests,
+which need 3.12, on the interpreter uv finds.
+Each timing is a single run.
 
 | Phase | Status | Notes |
 | --- | --- | --- |
