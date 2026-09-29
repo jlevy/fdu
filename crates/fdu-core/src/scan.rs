@@ -9557,6 +9557,77 @@ mod tests {
     }
 
     #[test]
+    fn one_publish_wakes_a_parked_worker_for_each_directory_it_publishes() {
+        // Five workers wait and two directories arrive in one publish, each in a
+        // breadth-first region of its own, so a take takes one and two workers must be
+        // woken: fewer wakes than waiters, which is `wake`'s one-at-a-time loop. The
+        // publisher and both takers keep their claims, so the walk cannot end, and no worker
+        // comes back to claim: only those two wakes can hand out the second directory.
+        let timeout = std::time::Duration::from_secs(10);
+        let queue = std::sync::Arc::new(DirectoryQueue::new(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            None,
+            None,
+        ));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+        let root = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
+        // Held for writing until the takers may give their claims back.
+        let gate = std::sync::Arc::new(std::sync::RwLock::new(()));
+        let held = gate.write().expect("the gate is new");
+        let (report, reports) = std::sync::mpsc::channel();
+        let workers: Vec<_> = (0..5)
+            .map(|_| {
+                let (queue, gate, report) =
+                    (std::sync::Arc::clone(&queue), std::sync::Arc::clone(&gate), report.clone());
+                std::thread::spawn(move || {
+                    let mut timing = WalkAttribution::default();
+                    let mut claimed = Vec::new();
+                    let claim = queue.claim(&mut claimed, &mut timing);
+                    let paths = claim
+                        .as_ref()
+                        .map(|_| claimed.iter().map(|item| item.0.clone()).collect::<Vec<_>>());
+                    let _ = report.send(paths);
+                    drop(gate.read());
+                    drop(claim);
+                })
+            })
+            .collect();
+        let deadline = std::time::Instant::now() + timeout;
+        while queue.lock().waiters < 5 {
+            assert!(std::time::Instant::now() < deadline, "the workers never parked");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        queue.extend(
+            ["a", "b"].into_iter().map(|name| (PathBuf::from(name), 1, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+        let mut taken: Vec<_> = (0..2)
+            .map(|_| {
+                reports.recv_timeout(timeout).expect("each directory wakes a worker of its own")
+            })
+            .collect();
+        taken.sort();
+        assert_eq!(taken, [Some(vec![PathBuf::from("a")]), Some(vec![PathBuf::from("b")])]);
+        assert_eq!(queue.lock().waiters, 3, "the other three are still waiting");
+
+        // The takers give their claims back, the root's release ends the walk, and the end
+        // wakes the three still waiting.
+        drop(held);
+        assert!(root.release(0, 0, &mut timing).is_none());
+        for _ in 0..3 {
+            assert_eq!(reports.recv_timeout(timeout), Ok(None), "the end wakes every waiter");
+        }
+        for worker in workers {
+            worker.join().expect("a worker");
+        }
+        let state = queue.lock();
+        assert!(state.finished && state.waiters == 0 && state.outstanding == 0);
+    }
+
+    #[test]
     fn the_end_of_the_walk_wakes_every_parked_worker() {
         let queue = std::sync::Arc::new(DirectoryQueue::new(
             (PathBuf::new(), 0),
@@ -9579,12 +9650,22 @@ mod tests {
         assert_eq!(queue.lock().waiters, 0);
     }
 
-    /// A lost wakeup fails this rather than hanging it. Workers walk a pseudo-random
-    /// tree whose shape is a pure function of each directory's id, so the number of
-    /// directories claimed is known in advance. They publish each chunk's discoveries in
-    /// one to three separate extends, stall at random so others park, and at random
-    /// abandon a claim after publishing instead of releasing it. Every walk must end
-    /// with every directory claimed exactly once and nobody still counted as waiting.
+    /// Workers walk a pseudo-random tree whose shape is a pure function of each
+    /// directory's id, so the number of directories claimed is known in advance. They
+    /// publish each chunk's discoveries in one to three separate extends, stall at random so
+    /// others park, and at random abandon a claim after publishing instead of releasing it.
+    ///
+    /// A walk whose workers always come back to claim cannot lose a directory to a missed
+    /// publishing wake, because its publisher takes back whatever nobody was woken for. So
+    /// that walk catches only a lost end-of-walk wake, which a timeout turns into a failure
+    /// rather than a hang, and it must end with every directory claimed exactly once. A
+    /// missed publishing wake strands a parked worker only once every running worker has
+    /// left, which is what a walk does when its consumer goes away (`break 'walk`). So every
+    /// walk is repeated with a sticky "consumer gone" flag raised at a random directory:
+    /// from then on each worker ends its chunk, publishes its discoveries or not, gives its
+    /// claim back, and leaves. Directories published to parked workers must then still
+    /// reach them, and every worker must leave, with nobody counted as waiting, though the
+    /// walk need not finish.
     #[test]
     fn the_queue_hands_out_every_directory_and_ends_under_concurrent_stress() {
         const MAX_DEPTH: usize = 9;
@@ -9611,12 +9692,15 @@ mod tests {
                 .sum::<usize>()
         }
 
-        let walk = |seed: u64, workers: usize, order: ScanOrder| {
+        // Every worker runs until the queue says the walk is over, or, once `gone_after`
+        // directories have been claimed, until it has ended its current chunk.
+        let walk = |seed: u64, workers: usize, order: ScanOrder, gone_after: Option<usize>| {
             let queue = DirectoryQueue::new((PathBuf::from("0"), 0), order, None, None);
             let claimed_total = std::sync::atomic::AtomicUsize::new(0);
+            let gone = std::sync::atomic::AtomicBool::new(false);
             std::thread::scope(|scope| {
                 for worker in 0..workers {
-                    let (queue, claimed_total) = (&queue, &claimed_total);
+                    let (queue, claimed_total, gone) = (&queue, &claimed_total, &gone);
                     let worker = u64::try_from(worker).expect("a small worker index");
                     scope.spawn(move || {
                         let mut rng = mix(seed ^ ((worker + 1) << 40)) | 1;
@@ -9631,7 +9715,11 @@ mod tests {
                         while let Some(claim) = queue.claim(&mut claimed, &mut timing) {
                             let mut discovered = Vec::new();
                             for (path, depth, region) in claimed.drain(..) {
-                                claimed_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                let claimed = claimed_total
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if gone_after.is_some_and(|after| claimed + 1 >= after) {
+                                    gone.store(true, std::sync::atomic::Ordering::Relaxed);
+                                }
                                 let id: u64 =
                                     path.to_str().and_then(|s| s.parse().ok()).expect("id");
                                 let region = if depth == 0 { RegionId::UNASSIGNED } else { region };
@@ -9642,9 +9730,17 @@ mod tests {
                                 );
                             }
                             match next() % 16 {
+                                // A coarse sleep timer would make the stall milliseconds long.
+                                0 if cfg!(windows) => std::thread::yield_now(),
                                 0 => std::thread::sleep(std::time::Duration::from_micros(50)),
                                 1..=3 => std::thread::yield_now(),
                                 _ => {}
+                            }
+                            let leaving = gone.load(std::sync::atomic::Ordering::Relaxed);
+                            if leaving && next() % 2 == 0 {
+                                // The consumer went away before this chunk's discoveries
+                                // were published.
+                                discovered.clear();
                             }
                             while !discovered.is_empty() {
                                 let parts = usize::try_from(next() % 3 + 1).expect("small");
@@ -9652,6 +9748,11 @@ mod tests {
                                 let rest = discovered.split_off(take);
                                 queue.extend(discovered.drain(..), &mut timing);
                                 discovered = rest;
+                            }
+                            if leaving {
+                                // As `break 'walk` leaves it: abandoned, never claimed again.
+                                drop(claim);
+                                break;
                             }
                             if next() % 8 == 0 {
                                 drop(claim);
@@ -9662,9 +9763,13 @@ mod tests {
                     });
                 }
             });
+            // Every worker has left, so none can still be waiting, and none holds a claim.
             let state = queue.lock();
-            assert!(state.finished, "the walk ended");
-            assert_eq!((state.waiters, state.outstanding, state.ready_directories), (0, 0, 0));
+            assert_eq!((state.waiters, state.outstanding), (0, 0));
+            if gone_after.is_none() {
+                assert!(state.finished, "the walk ended");
+                assert_eq!(state.ready_directories, 0);
+            }
             drop(state);
             claimed_total.into_inner()
         };
@@ -9680,18 +9785,25 @@ mod tests {
                     (4, ScanOrder::DepthFirst),
                     (8, ScanOrder::BreadthFirst),
                     (16, ScanOrder::DepthFirst),
+                    (16, ScanOrder::BreadthFirst),
                 ] {
-                    let claimed = walk(seed, workers, order);
-                    assert_eq!(claimed, expected, "seed {seed}, {workers} workers, {order:?}");
-                    walks += 1;
+                    let label = format!("seed {seed}, {workers} workers, {order:?}");
+                    assert_eq!(walk(seed, workers, order, None), expected, "{label}");
+                    // The consumer goes away somewhere in the first four fifths of the walk.
+                    let after = 1 + usize::try_from(mix(seed ^ 0x6f6e_65) % 9).expect("small")
+                        * expected
+                        / 10;
+                    let claimed = walk(seed, workers, order, Some(after));
+                    assert!((after..=expected).contains(&claimed), "{label}: {claimed} claimed");
+                    walks += 2;
                 }
             }
             let _ = done.send(walks);
         });
         assert_eq!(
             result.recv_timeout(std::time::Duration::from_secs(120)),
-            Ok(96),
-            "every stress walk finishes; a timeout here is a worker that was never woken"
+            Ok(240),
+            "every stress walk ends; a timeout here is a worker that was never woken"
         );
     }
 
