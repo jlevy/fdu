@@ -181,12 +181,6 @@ impl Reader {
     /// `macos_bulk::Reader::read` gives: a declined directory is counted by the portable
     /// retry, and counting it here as well would double it.
     pub(super) fn read(&mut self, path: &Path, policy: StatPolicy) -> Option<Listing<'_>> {
-        // A test hook injects into per-entry lookups and listings, which only the portable
-        // path makes.
-        #[cfg(test)]
-        if super::walk_hook_covers(path) {
-            return None;
-        }
         if self.statx.state() == STATX_UNAVAILABLE {
             return None;
         }

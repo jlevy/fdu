@@ -78,8 +78,8 @@ def verdict_label(decision: Mapping[str, Any]) -> str:
 def verdict(
     comparison: Mapping[str, Any],
     *,
+    invalid_samples: int,
     metric: str = "wall_ns",
-    invalid_samples: int = 0,
 ) -> Dict[str, Any]:
     """Decide accept/reject for one comparison on one metric.
 
@@ -91,7 +91,9 @@ def verdict(
     count makes the verdict inconclusive, neither accept nor reject: the valid pairs
     that remain are a subset the host chose, and the accept rule requires that no
     sample was invalidated. Exit code 3 already said so; this makes the printed word
-    say it too, so nobody reads ACCEPT off a cell that has to be run again.
+    say it too, so nobody reads ACCEPT off a cell that has to be run again. It has no
+    default because a caller that left it out would do exactly that: the surviving
+    pairs of an inconclusive cell can clear the accept arithmetic on their own.
     """
     if invalid_samples:
         entry = (comparison.get("metrics") or {}).get(metric) or {}
