@@ -816,7 +816,7 @@ impl ControlChain {
     /// control with an opinion wins, each matching the path relative to its own directory.
     /// A caller classifying a whole listing splits the directory once, with
     /// [`with_directory_components`], and the name is hashed once here for every control
-    /// that governs it (H171).
+    /// that governs it (H171), as the set of its byte classes is collected (H183).
     pub(crate) fn is_ignored_within(&self, directory: &[&[u8]], name: &[u8], is_dir: bool) -> bool {
         if self.governing.is_empty() {
             return false;

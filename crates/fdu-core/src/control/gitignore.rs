@@ -95,15 +95,19 @@ pub(super) fn with_collected<'a, R>(
 ///   `n` components below its file, so only the rules of the entry's own depth are tried;
 /// - every other rule is tried in descending index order, and only while its index is
 ///   above the best found so far, after checks git's matcher makes too: its length, its
-///   literal prefix and suffix, and a literal run it must contain.
+///   literal prefix and suffix, and a literal run it must contain. Before any of those
+///   reads the rule's bytes, a mask test asks whether the name holds a byte of every
+///   class the rule's literal bytes fall in, against a set of the name's bytes built once
+///   for every file that governs it, and the name's first and last bytes are compared
+///   with those the rule records (H183).
 ///
 /// Git tests every rule, and so did fdu, although on `linux-v6.12` about 110 rules
 /// govern each entry and 99% of entries match none of them. A rule `**/glob` is matched
 /// as the basename rule `glob`, which git's semantics make it, so it is indexed as one.
 ///
 /// The rules themselves are kept whole and still decide every answer: the index holds
-/// only rule indices, hashes, and short lengths, never a copy of a rule's bytes. Each
-/// indexed rule adds one 16-byte record, and a rule's segments are now allocated to their
+/// only rule indices, hashes, short lengths, byte classes, and a rule's first and last
+/// literal bytes, never a copy of its glob. Each indexed rule adds one 16-byte record, and a rule's segments are now allocated to their
 /// exact size rather than a growable vector's, so the charge [`super::content_cost`]
 /// makes per line still covers the matcher it retains, even for a file of the shortest
 /// possible rules (`a_source_charge_covers_its_indexed_matcher`).
@@ -227,9 +231,8 @@ impl Gitignore {
             if candidate.index < best {
                 break;
             }
-            let glob = self.name_glob(candidate.index);
-            if candidate.checks.admit(glob, name.bytes, is_dir)
-                && tally.test(glob_matches(glob, name.bytes))
+            if self.admits(candidate, name, is_dir)
+                && tally.test(glob_matches(self.name_glob(candidate.index), name.bytes))
             {
                 best = candidate.index + 1;
                 break;
@@ -239,9 +242,12 @@ impl Gitignore {
             if candidate.index < best {
                 break;
             }
-            let pattern = self.pattern(candidate.index);
-            if candidate.checks.admit(self.name_glob(candidate.index), name.bytes, is_dir)
-                && tally.test(fixed_matches(&pattern.segments, directory, name.bytes))
+            if self.admits(candidate, name, is_dir)
+                && tally.test(fixed_matches(
+                    &self.pattern(candidate.index).segments,
+                    directory,
+                    name.bytes,
+                ))
             {
                 best = candidate.index + 1;
                 break;
@@ -251,10 +257,10 @@ impl Gitignore {
             if candidate.index < best {
                 break;
             }
-            let pattern = self.pattern(candidate.index);
-            if candidate.checks.admit(self.name_glob(candidate.index), name.bytes, is_dir)
-                && tally
-                    .test(with_joined(directory, name.bytes, |path| pattern.matches(path, is_dir)))
+            if self.admits(candidate, name, is_dir)
+                && tally.test(with_joined(directory, name.bytes, |path| {
+                    self.pattern(candidate.index).matches(path, is_dir)
+                }))
             {
                 best = candidate.index + 1;
                 break;
@@ -286,6 +292,20 @@ impl Gitignore {
             .filter(|pattern| pattern.matches(components, is_dir))
             .map(|pattern| pattern.ignored)
             .next_back()
+    }
+
+    /// Whether `candidate` passes its checks for `name`: first those its own record
+    /// answers, and only then the literal bytes of its glob, which most entries never read.
+    #[inline]
+    fn admits(&self, candidate: &Candidate, name: &Name<'_>, is_dir: bool) -> bool {
+        candidate.checks.admit(name, is_dir) && self.holds_literals(candidate, name.bytes)
+    }
+
+    /// [`Checks::holds_literals`] for `candidate`'s own glob, kept out of line so that the
+    /// record's checks, which rule out most entries, stay in the loop that tries each rule.
+    #[inline(never)]
+    fn holds_literals(&self, candidate: &Candidate, name: &[u8]) -> bool {
+        candidate.checks.holds_literals(self.name_glob(candidate.index), name)
     }
 
     fn pattern(&self, index: u32) -> &Pattern {
@@ -323,14 +343,17 @@ impl Tally {
     }
 }
 
-/// An entry's name, with the hashes every control file on its path looks it up by, so it
-/// is hashed once however many files govern it.
+/// An entry's name, with the hashes every control file on its path looks it up by and the
+/// classes of the bytes it holds, so each is computed once however many files govern it.
 pub(super) struct Name<'a> {
     bytes: &'a [u8],
     /// FNV-1a of the whole name, for literal names.
     hash: u32,
     /// FNV-1a of the bytes after the name's last `.`, when it has one, for literal tails.
     extension: Option<u32>,
+    /// The [`byte_class`] of every byte the name holds, one bit each, which a rule's
+    /// [`Checks::classes`] are tested against before any of its bytes are read (H183).
+    classes: u32,
 }
 
 impl<'a> Name<'a> {
@@ -339,8 +362,26 @@ impl<'a> Name<'a> {
             .iter()
             .rposition(|byte| *byte == b'.')
             .map(|dot| fnv1a(bytes[dot + 1..].iter().copied()));
-        Self { bytes, hash: fnv1a(bytes.iter().copied()), extension }
+        let (hash, classes) =
+            bytes.iter().fold((FNV1A_OFFSET_BASIS, 0), |(hash, classes), byte| {
+                (fnv1a_step(hash, *byte), classes | byte_class(*byte))
+            });
+        Self { bytes, hash, extension, classes }
     }
+}
+
+/// The one bit of a 32-bit byte-presence set that stands for `byte`.
+///
+/// A name holding `byte` has its bit set, so a rule whose literal bytes set bits the name
+/// lacks cannot match it. The set folds 256 bytes into 32 classes, so it is a necessary
+/// test and never a sufficient one: a byte the name lacks can share a class with one it
+/// holds, and whatever the test admits is compared byte for byte. The fold is the byte's
+/// low five bits with its high bits mixed in, which keeps the letters, digits, and
+/// punctuation of ordinary file names in mostly distinct classes; any fold would give
+/// the same answers. The set is 32 bits rather than 256 so that a rule's [`Candidate`]
+/// stays the 16 bytes the per-line charge of [`super::content_cost`] leaves room for.
+fn byte_class(byte: u8) -> u32 {
+    1 << ((byte ^ (byte >> 3)) & 31)
 }
 
 /// 32-bit FNV-1a: a few instructions a byte for the short keys it hashes here, without a
@@ -359,7 +400,7 @@ fn fnv1a_step(hash: u32, byte: u8) -> u32 {
 /// Where one file's rules are looked up from, built once when the file is parsed.
 ///
 /// Every rule is in exactly one place. Keys are compared against the rule's own glob, so
-/// nothing here copies a rule's bytes: each keyed or listed rule costs one 16-byte record,
+/// nothing here copies a rule's glob: each keyed or listed rule costs one 16-byte record,
 /// less than the matcher shell [`super::content_cost`] already charges every line.
 #[derive(Clone, Debug, Default)]
 struct RuleIndex {
@@ -427,20 +468,29 @@ struct Candidate {
 /// the glob when it is parsed, as git derives its literal-prefix length.
 ///
 /// Each is a necessary condition, so failing one skips the glob without changing any
-/// answer. Lengths are saturated to 16 bits, which only weakens a check: a shorter prefix,
-/// suffix, run, or minimum is still necessary, and the exact-length flag is dropped when
-/// the minimum does not fit.
+/// answer. They are tested cheapest first, and those this record answers alone — the
+/// directory, the length, the byte classes, and the name's first and last bytes — before
+/// any byte of the rule is read (H183). Lengths and the run's position are saturated to 8
+/// bits, which only weakens a check: a shorter prefix, suffix, run, or minimum is still
+/// necessary, the exact-length flag is dropped when the minimum does not fit, and so is a
+/// run that starts past the first 255 bytes. The record is 12 bytes, so a [`Candidate`]
+/// stays the 16 bytes the per-line charge of [`super::content_cost`] leaves room for.
 #[derive(Clone, Copy, Debug, Default)]
 struct Checks {
+    /// The [`byte_class`] of every literal byte of the glob, escaped or not, each of which
+    /// every match holds.
+    classes: u32,
     /// Bytes the glob consumes at least: one per literal, `?`, or bracket expression.
-    min_len: u16,
-    /// Literal bytes that open the glob.
-    prefix: u16,
-    /// Literal bytes that close the glob.
-    suffix: u16,
+    min_len: u8,
+    /// Literal bytes that open the glob, and the first of them.
+    prefix: u8,
+    first: u8,
+    /// Literal bytes that close the glob, and the last of them.
+    suffix: u8,
+    last: u8,
     /// Where a run of literal bytes inside the glob starts, and its length.
-    required_at: u16,
-    required_len: u16,
+    required_at: u8,
+    required_len: u8,
     flags: u8,
 }
 
@@ -460,7 +510,7 @@ impl Checks {
     }
 
     fn of(glob: &[u8], flags: u8) -> Self {
-        let saturate = |value: usize| u16::try_from(value).unwrap_or(u16::MAX);
+        let saturate = |value: usize| u8::try_from(value).unwrap_or(u8::MAX);
         let mut checks = Self { flags, ..Self::default() };
         let mut min_len = 0usize;
         let mut star = false;
@@ -476,10 +526,16 @@ impl Checks {
                     star = true;
                     (false, 1)
                 }
-                b'\\' if position + 1 < glob.len() => (false, 2),
+                b'\\' if position + 1 < glob.len() => {
+                    checks.classes |= byte_class(glob[position + 1]);
+                    (false, 2)
+                }
                 b'?' => (false, 1),
                 b'[' => (false, class_match(&glob[position..], 0).map_or(1, |(_, length)| length)),
-                _ => (true, 1),
+                literal => {
+                    checks.classes |= byte_class(literal);
+                    (true, 1)
+                }
             };
             min_len += usize::from(glob[position] != b'*');
             match (plain, run_start) {
@@ -502,15 +558,22 @@ impl Checks {
             }
             checks.suffix = saturate(glob.len() - start);
         }
+        // Every run is a slice of the glob, so these are its first and last literal bytes.
+        if checks.prefix > 0 {
+            checks.first = glob[0];
+        }
+        if checks.suffix > 0 {
+            checks.last = glob[glob.len() - 1];
+        }
         checks.min_len = saturate(min_len);
-        if !star && u16::try_from(min_len).is_ok() {
+        if !star && u8::try_from(min_len).is_ok() {
             checks.flags |= Self::EXACT;
         }
         // Every match contains each run somewhere; the prefix and suffix already pin
         // theirs, so only a run inside the glob adds to them, and only one of two or more
-        // bytes rules out more than a single comparison would.
+        // bytes rules out more than the byte classes already do.
         if let Some((start, length)) = inner.filter(|(_, length)| *length >= 2) {
-            if let Ok(at) = u16::try_from(start) {
+            if let Ok(at) = u8::try_from(start) {
                 checks.required_at = at;
                 checks.required_len = saturate(length);
             }
@@ -518,19 +581,33 @@ impl Checks {
         checks
     }
 
-    /// Whether `name` passes every check, and the rule could therefore match it.
-    fn admit(&self, glob: &[u8], name: &[u8], is_dir: bool) -> bool {
+    /// Whether `name` passes the checks this record answers without the rule's glob: the
+    /// directory, the length, the byte classes, and the first and last bytes, a few
+    /// instructions for each rule an entry is tested against.
+    #[inline]
+    fn admit(&self, name: &Name<'_>, is_dir: bool) -> bool {
         if self.flags & Self::DIRECTORY_ONLY != 0 && !is_dir {
             return false;
         }
         let min_len = usize::from(self.min_len);
-        if name.len() < min_len || (self.flags & Self::EXACT != 0 && name.len() != min_len) {
+        let length = name.bytes.len();
+        if length < min_len || (self.flags & Self::EXACT != 0 && length != min_len) {
             return false;
         }
-        let required_at = usize::from(self.required_at);
-        name.starts_with(&glob[..usize::from(self.prefix)])
-            && name.ends_with(&glob[glob.len() - usize::from(self.suffix)..])
-            && contains(name, &glob[required_at..required_at + usize::from(self.required_len)])
+        name.classes & self.classes == self.classes
+            && (self.prefix == 0 || name.bytes.first() == Some(&self.first))
+            && (self.suffix == 0 || name.bytes.last() == Some(&self.last))
+    }
+
+    /// Whether `name` holds the rule's literal prefix, suffix, and inner run, read from
+    /// `glob`, the rule's name glob, once [`Self::admit`] has compared their outer bytes.
+    /// Each is compared a byte at a time: a run is a few bytes, which a call to `memcmp`
+    /// would cost more than it saves.
+    fn holds_literals(&self, glob: &[u8], name: &[u8]) -> bool {
+        let at = usize::from(self.required_at);
+        starts_with_bytes(name, &glob[..usize::from(self.prefix)])
+            && ends_with_bytes(name, &glob[glob.len() - usize::from(self.suffix)..])
+            && contains_bytes(name, &glob[at..at + usize::from(self.required_len)])
     }
 }
 
@@ -702,9 +779,10 @@ fn literal_key_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 /// Whether `name` ends with the bytes the literal `tail` matches.
+#[allow(clippy::manual_contains)] // A tail is a few bytes, shorter than `memchr` takes to set up.
 fn ends_with_literal(name: &[u8], tail: &[u8]) -> bool {
-    if !tail.contains(&b'\\') {
-        return name.ends_with(tail);
+    if !tail.iter().any(|byte| *byte == b'\\') {
+        return ends_with_bytes(name, tail);
     }
     let length = unescaped(tail).count();
     name.len() >= length && literal_eq(tail, &name[name.len() - length..])
@@ -715,8 +793,46 @@ fn tail(glob: &[u8]) -> &[u8] {
     glob.strip_prefix(b"*").unwrap_or(glob)
 }
 
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    needle.is_empty() || haystack.windows(needle.len()).any(|window| window == needle)
+/// Whether `left` and `right` are the same bytes, compared one at a time from the first.
+///
+/// The literals compared here are a few bytes, and most comparisons fail on the first, so
+/// a loop the compiler keeps inline costs less than slice equality, which calls `memcmp`
+/// (H183).
+fn same_bytes(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len() && left.iter().zip(right).all(|(left, right)| left == right)
+}
+
+/// Whether `text` starts with `literal`, compared from its first byte.
+fn starts_with_bytes(text: &[u8], literal: &[u8]) -> bool {
+    text.get(..literal.len()).is_some_and(|start| same_bytes(start, literal))
+}
+
+/// Whether `text` ends with `literal`, compared from its last byte, where names ending in
+/// different extensions first differ.
+fn ends_with_bytes(text: &[u8], literal: &[u8]) -> bool {
+    text.len().checked_sub(literal.len()).is_some_and(|start| {
+        text[start..].iter().rev().zip(literal.iter().rev()).all(|(left, right)| left == right)
+    })
+}
+
+/// Whether `text` holds `literal` anywhere: only a position holding its first byte is
+/// compared further, rather than every window.
+fn contains_bytes(text: &[u8], literal: &[u8]) -> bool {
+    let Some((first, rest)) = literal.split_first() else {
+        return true;
+    };
+    let Some(last_start) = text.len().checked_sub(literal.len()) else {
+        return false;
+    };
+    let mut from = 0;
+    while let Some(offset) = text[from..=last_start].iter().position(|byte| byte == first) {
+        let at = from + offset;
+        if same_bytes(&text[at + 1..at + literal.len()], rest) {
+            return true;
+        }
+        from = at + 1;
+    }
+    false
 }
 
 /// Call `each` with `directory` and then `name` as one path, without a heap allocation for
@@ -2172,13 +2288,18 @@ mod tests {
     /// The checks read from a glob, including those a rule ending in `**` does not have.
     #[test]
     fn glob_checks_hold_what_every_match_must_contain() {
-        fn checks(glob: &[u8]) -> (u16, &[u8], &[u8], &[u8], bool) {
+        fn checks(glob: &[u8]) -> (u8, &[u8], &[u8], &[u8], bool) {
             let checks = Checks::of(glob, 0);
             let at = usize::from(checks.required_at);
+            let prefix = &glob[..usize::from(checks.prefix)];
+            let suffix = &glob[glob.len() - usize::from(checks.suffix)..];
+            // The outer bytes the record compares are the prefix's and the suffix's own.
+            assert_eq!(prefix.first().map_or(0, |first| *first), checks.first);
+            assert_eq!(suffix.last().map_or(0, |last| *last), checks.last);
             (
                 checks.min_len,
-                &glob[..usize::from(checks.prefix)],
-                &glob[glob.len() - usize::from(checks.suffix)..],
+                prefix,
+                suffix,
                 &glob[at..at + usize::from(checks.required_len)],
                 checks.flags & Checks::EXACT != 0,
             )
@@ -2189,8 +2310,134 @@ mod tests {
         assert_eq!(checks(b"vmlinux"), (7, &b"vmlinux"[..], &b"vmlinux"[..], &b""[..], true));
         assert_eq!(checks(b"a?bc\\*de[x]f"), (9, &b"a"[..], &b"f"[..], &b"bc"[..], true));
         assert_eq!(checks(b"*[.]"), (1, &b""[..], &b""[..], &b""[..], false));
+        assert_eq!(checks(b"\\#*#"), (2, &b""[..], &b"#"[..], &b""[..], false));
+        // Saturated at 8 bits: the minimum and the literal lengths shrink, and a run that
+        // starts past the first 255 bytes is dropped.
+        let long = [&[b'a'; 300][..], b"*bc*", &[b'd'; 300][..]].concat();
+        assert_eq!(checks(&long), (255, &long[..255], &long[long.len() - 255..], &b""[..], false));
+        let late = [&[b'a'; 300][..], b"*bc*d"].concat();
+        assert_eq!(checks(&late), (255, &late[..255], &b"d"[..], &b""[..], false));
+        let early = [&b"a*bc*"[..], &[b'd'; 300][..]].concat();
+        assert_eq!(
+            checks(&early),
+            (255, &b"a"[..], &early[early.len() - 255..], &b"bc"[..], false)
+        );
         let any = Checks::for_pattern(&Pattern::parse(b"a/**").expect("a rule"));
-        assert!(any.admit(&[], b"", false));
+        assert!(any.admit(&Name::new(b""), false) && any.holds_literals(&[], b""));
+    }
+
+    /// A rule's byte classes are those of its literal bytes, escaped or not, and never of
+    /// a `?`, a `*`, or a bracket expression's members; a name lacking one of them is
+    /// ruled out before the rule's bytes are read, and a name the glob matches never is.
+    #[test]
+    fn byte_classes_rule_out_names_lacking_a_literal_byte() {
+        /// A glob, the literal bytes every match holds, names it matches, and names lacking
+        /// one of those bytes.
+        type Case =
+            (&'static [u8], &'static [u8], &'static [&'static [u8]], &'static [&'static [u8]]);
+        let classes = |bytes: &[u8]| bytes.iter().fold(0, |set, byte| set | byte_class(*byte));
+        let cases: &[Case] = &[
+            (b"\\#*#", b"#", &[b"#x#", b"##"], &[b"xy", b"ab"]),
+            (b"*.asn1.[ch]", b".asn1", &[b"x.asn1.c", b".asn1.h"], &[b"b.asn.c", b"asn1ch"]),
+            (b"a?b\\*d", b"ab*d", &[b"a?b*d", b"axb*d"], &[b"axbyd", b"aybxd"]),
+            (b"[xyz]q*", b"q", &[b"xq", b"zqq"], &[b"xy", b"z"]),
+            (b"*\xff\xfe*", b"\xff\xfe", &[b"\xff\xfe", b"a\xff\xfeb"], &[b"\xff", b"\xfea"]),
+            (b"\\?x", b"?x", &[b"?x"], &[b"ax", b"??"]),
+            (b"\\[ab]", b"[ab]", &[b"[ab]"], &[b"ab]", b"[ab"]),
+            (b"[!a]b", b"b", &[b"cb", b"\xffb"], &[b"ca", b"cc"]),
+            (b"???", b"", &[b"abc", b"\xff\xfe\xfd"], &[]),
+            (b"*[.]", b"", &[b".", b"x."], &[]),
+            // A backslash with nothing after it is itself, as `glob_matches` reads it.
+            (b"a\\", b"a\\", &[b"a\\"], &[b"ab"]),
+        ];
+        for &(glob, required, matched, lacking) in cases {
+            let checks = Checks::of(glob, 0);
+            let shown = glob.escape_ascii();
+            assert_eq!(checks.classes, classes(required), "{shown}");
+            for name in matched {
+                assert!(glob_matches(glob, name), "{shown} matches {}", name.escape_ascii());
+                assert!(
+                    checks.admit(&Name::new(name), false) && checks.holds_literals(glob, name),
+                    "{shown} admits {}",
+                    name.escape_ascii()
+                );
+            }
+            for name in lacking {
+                // No byte of the name shares a class with a byte it lacks.
+                let missing = classes(required) & !Name::new(name).classes;
+                assert_ne!(missing, 0, "{shown}: {} lacks a class", name.escape_ascii());
+                assert!(!glob_matches(glob, name), "{shown} rejects {}", name.escape_ascii());
+                assert!(
+                    !checks.admit(&Name::new(name), false),
+                    "{shown} rules out {}",
+                    name.escape_ascii()
+                );
+            }
+        }
+
+        // Every name a generated glob matches passes every check, and names made to nearly
+        // match it are ruled out by the byte classes often enough to exercise them.
+        let mut ruled_out = 0usize;
+        for seed in 0..4000 {
+            let mut random = Random(seed);
+            let atoms = glob_atoms(&mut random);
+            let mut glob = Vec::new();
+            for atom in &atoms {
+                atom.render(&mut glob);
+            }
+            let glob = normalize_glob(&glob);
+            let checks = Checks::of(&glob, 0);
+            for _ in 0..16 {
+                let mut name = Vec::new();
+                for atom in &atoms {
+                    atom.instantiate(&mut random, &mut name);
+                }
+                if name.is_empty() || random.chance(3) {
+                    name = random_name(&mut random);
+                }
+                let admitted = checks.admit(&Name::new(&name), false);
+                ruled_out += usize::from(!admitted);
+                if glob_matches(&glob, &name) {
+                    assert!(
+                        admitted && checks.holds_literals(&glob, &name),
+                        "seed {seed}: {} must admit {}",
+                        glob.escape_ascii(),
+                        name.escape_ascii()
+                    );
+                }
+            }
+        }
+        assert!(ruled_out >= 1000, "{ruled_out} names ruled out");
+    }
+
+    /// The byte comparisons answer as the slice methods they replace, for every pair of
+    /// short strings over a few bytes, the empty literal and one longer than the text
+    /// among them.
+    #[test]
+    fn inline_byte_comparisons_answer_as_slice_methods() {
+        let alphabet: &[u8] = b"ab\xff";
+        let mut strings: Vec<Vec<u8>> = vec![Vec::new()];
+        for length in 1..=4u32 {
+            for mut code in 0..alphabet.len().pow(length) {
+                let mut string = Vec::new();
+                for _ in 0..length {
+                    string.push(alphabet[code % alphabet.len()]);
+                    code /= alphabet.len();
+                }
+                strings.push(string);
+            }
+        }
+        for text in &strings {
+            for literal in &strings {
+                let shown = format!("{} and {}", text.escape_ascii(), literal.escape_ascii());
+                let contained = literal.is_empty()
+                    || text.windows(literal.len()).any(|window| window == literal.as_slice());
+                assert_eq!(same_bytes(text, literal), text == literal, "{shown}");
+                assert_eq!(starts_with_bytes(text, literal), text.starts_with(literal), "{shown}");
+                assert_eq!(ends_with_bytes(text, literal), text.ends_with(literal), "{shown}");
+                assert_eq!(contains_bytes(text, literal), contained, "{shown}");
+            }
+        }
     }
 
     /// What a parsed matcher holds, in bytes, by the same accounting as `content_cost`:
