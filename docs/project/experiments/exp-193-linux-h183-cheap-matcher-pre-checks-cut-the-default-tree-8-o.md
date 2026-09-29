@@ -316,7 +316,7 @@ Candidate: `e2ef8bcb`.
 | `node-modules-dense`, `default-tree` (placebo) | 69.9 ms | 70.3 ms | +1.43% [−2.74%, +3.89%] |
 
 The `node-modules-dense` run is kept beside this record’s evidence.
-With H183 the controls-on default tree is 1.085 times its own `--no-controls` arm (67.4
+With H183 the controls-on default tree is 1.086 times its own `--no-controls` arm (67.4
 against 62.1 ms).
 
 **Answers.** The product command line matched the H169 head byte for byte in 171

@@ -306,8 +306,8 @@ directories.
 
 - A/A: `default-tree` +3.86% [−4.28%, +7.86%]; `aggregate-summary` −0.27%
   [−5.97%, +2.25%]. Both include zero.
-- Controls on against off: `default-tree` +0.65% [−2.61%, +5.79%], as predicted with no
-  rules to match.
+- Controls off against on (`control-blind_vs_control`): `default-tree` +0.65%
+  [−2.61%, +5.79%], as predicted with no rules to match.
 
 Quiet tool cell, `fdu-default-tree` contract, 12 pairs, no invalid samples or
 mismatches:

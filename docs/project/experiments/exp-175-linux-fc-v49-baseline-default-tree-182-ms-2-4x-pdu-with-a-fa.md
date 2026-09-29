@@ -330,7 +330,7 @@ An uncontrolled A/A earlier the same session (load 0.7) read `default-tree` +8.2
 
 **Supplementary runs.** Beside the primary artifact, gzipped to keep the diff
 reviewable: `run-q0-tools-linux.json.gz`, the Q0 tool standing on `linux-v6.12` (fdu,
-pdu, diskus, dut).
+pdu’s default, pdu `--max-depth 2`, diskus).
 
 ## Decision
 

@@ -1008,14 +1008,16 @@ has the night’s numbers.
   times pdu’s default on `linux-v6.12` at Q0; pdu with `--max-depth 2` stays 7% ahead on
   `node-modules-dense`. Against the Q0 engine in one paired cell, the default tree is
   39% faster on `linux-v6.12` and 10% faster on `node-modules-dense` (exp-194, exp-195).
-- **What sets the time.** Every tool spent 85–88% of its CPU in the kernel in that cell,
-  and fdu spent the least CPU of fdu, pdu’s default and diskus, but kept fewer cores
-  busy: 3.65 against pdu’s 3.80 on `linux-v6.12`, and 3.54 against 3.72 on the dense
+- **What sets the time.** Every tool spent 85–90% of its CPU in the kernel in that cell
+  (85–88% for fdu, pdu’s default and diskus; 89–90% for pdu with `--max-depth 2`), and
+  fdu spent the least CPU of fdu, pdu’s default and diskus, but kept fewer cores busy:
+  3.65 against pdu’s default 3.81 on `linux-v6.12`, and 3.54 against 3.72 on the dense
   tree. Wall is now set by utilization and kernel work per entry, not by `.gitignore`,
   which costs the kernel tree 1.6% of its blind walk.
-  Before the next candidate, profile the head for the serial tail after the walk ends
-  and for the walker–consumer handoffs (608 voluntary context switches against pdu’s
-  128), and weigh these against H179, the one queued item that cuts kernel work.
+  Before the next candidate, profile the head (`fdu-j4p7`) for the serial tail after the
+  walk ends and for the walker–consumer handoffs (608 voluntary context switches against
+  pdu’s default 128), and weigh these against H179, the one queued item that cuts kernel
+  work.
 
 **Host setup.** The night ran on a 4-vCPU Firecracker guest (Intel Xeon at 2.1 GHz,
 Linux 6.18.44-fc-v49, ext4), as root.
@@ -1076,8 +1078,9 @@ exp-113 remains reserved unused.
    budget sized to the breadth-first frontier is designed.
 5. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
    0.3.0.
-6. **`fdu-puk7`** on the remaining routes: musl builds, the serial walk, and
-   reconciliation still stat through std without `AT_NO_AUTOMOUNT`.
+6. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes: musl builds, the serial
+   walk, and reconciliation still stat through std without it.
+   `fdu-puk7` is closed for the native reader’s path (exp-185).
 7. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
    fixed with recorded git verdicts, outside the performance loop.
 

@@ -272,7 +272,7 @@ experiment:
     primary_job: aggregate-summary
     primary_metric: wall_ns
     change_pct: -7.899
-    reason: "quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90% [-9.55%, -4.74%], default summary -9.39%; default-tree -2.06% [-7.38%, +1.83%] does not clear (co-secondary); serial-portable placebo -0.29% includes zero"
+    reason: "quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90% [-9.55%, -4.74%], narrowly short of the predicted -8% to -12% but clearing the rule; default summary -9.39%; default-tree with controls on -2.06% [-7.38%, +1.83%] does not clear (co-secondary), nor does the --no-controls pair recorded here, -1.79%; serial-portable placebo -0.29% includes zero"
     commit: "20933081"
     kept: candidate
 ---
@@ -289,6 +289,11 @@ Quiet, 20 pairs, no invalid samples.
 Control: `70c2725c` probe (the H180 engine).
 Candidate: `20933081`.
 
+This record’s frontmatter results are the `--no-controls` pair the deciding job used
+(`h169-blind_vs_control-blind`): the `aggregate-summary` result is the deciding job, and
+the `default-tree` result is `default-tree --no-controls`, −1.79%. The controls-on rows
+below come from the run’s controls-on arms (`h169_vs_control` in `run.json`).
+
 | Job | Control | H169 | Change |
 | --- | ---: | ---: | --- |
 | `aggregate-summary --no-controls` (deciding) | 63.8 ms | 60.0 ms | **−7.90% [−9.55%, −4.74%]** |
@@ -303,7 +308,9 @@ reviewable: `run-placebo-serial.json.gz`, the `--threads 1` serial placebo.
 ## Decision
 
 Accepted on the deciding job, with the placebo at zero.
-The default summary gains 9.4%. The default tree’s −2.1% does not clear the rule on this
-subject, below its co-secondary prediction.
+The deciding job’s −7.90% clears the rule and falls a tenth of a point short of its
+predicted −8% to −12%. The default summary gains 9.4%. The default tree’s −2.1% with
+controls on, and −1.8% without, do not clear the rule on this subject, below the
+co-secondary prediction.
 The tree route’s remaining cost here is dominated by the kernel’s `statx` and the
 consumer, which this reader does not touch.
