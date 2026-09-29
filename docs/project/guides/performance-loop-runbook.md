@@ -1248,8 +1248,9 @@ numbers do not decide anything.
 
 ### DECIDE
 
-The harness prints `ACCEPT` or `REJECT` per job from the arithmetic in the accept rule:
-median at least 3% faster, the 95% interval entirely below zero, no sample invalidated.
+The harness prints `ACCEPT`, `REJECT`, or `INCONCLUSIVE` (any invalid sample in the job)
+per job from the arithmetic in the accept rule: median at least 3% faster, the 95%
+interval entirely below zero, no sample invalidated.
 Read it with the three checks the arithmetic cannot make:
 
 - Was it the **predicted** job and metric?

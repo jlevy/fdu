@@ -248,6 +248,124 @@ class ProvenanceRecordingTests(unittest.TestCase):
         self.assertIn("--tree-provenance", captured.getvalue())
 
 
+class InconclusiveCellRecordingTests(unittest.TestCase):
+    """An accept is never recorded from a cell the quiet-host gate broke.
+
+    The harness exits 3 and prints INCONCLUSIVE for such a run; without this, the one
+    step that makes a verdict permanent would still take ``--decision accepted``.
+    """
+
+    def setUp(self) -> None:
+        self.scratch = Path(tempfile.mkdtemp(prefix="fdu-record-inconclusive-"))
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+
+    def _record(self, run: dict, decision: str):
+        run_path = self.scratch / "run.json"
+        run_path.write_text(json.dumps(run), encoding="utf-8")
+        output = self.scratch / f"out-{decision}"
+        stderr = io.StringIO()
+        argv = [
+            "--run",
+            str(run_path),
+            "--id",
+            "exp-042",
+            "--title",
+            "Test experiment",
+            "--control",
+            "before",
+            "--candidate",
+            "after",
+            "--decision",
+            decision,
+            "--primary-job",
+            "cold-scan-index",
+            "--reason",
+            "r",
+            "--tree-provenance",
+            "fixture",
+            "--output-dir",
+            str(output),
+            "--no-validate",
+        ]
+        with contextlib.redirect_stderr(stderr):
+            try:
+                code = record.main(argv)
+            except SystemExit as exit_:
+                code = exit_.code
+        return code, stderr.getvalue(), sorted(output.glob("exp-*.md")) if output.exists() else []
+
+    @staticmethod
+    def _run_with_invalid(**counts: int) -> dict:
+        run = _run_document()
+        variants = run["statistics"]["cold-scan-index"]["variants"]
+        for name, count in counts.items():
+            variants.setdefault(
+                name, {"samples": 12, "invalid": 0, "metrics": {"wall_ns": _metric(800.0)}}
+            )
+            variants[name]["invalid"] = count
+            variants[name]["samples"] = 12 - count
+        return run
+
+    def test_an_accept_from_a_run_with_invalid_samples_is_refused(self) -> None:
+        code, stderr, written = self._record(self._run_with_invalid(candidate=2), "accepted")
+
+        self.assertEqual(code, 2)
+        self.assertIn("--decision accepted refused", stderr)
+        self.assertIn("2 invalid timed samples (candidate 2)", stderr)
+        self.assertIn("rerun the cell whole", stderr)
+        self.assertEqual(written, [], "a refused accept must write nothing")
+
+    def test_an_invalid_sample_in_another_arm_of_the_cell_also_refuses(self) -> None:
+        # A sweep's third arm shares the interleaved cell with the recorded pair.
+        code, stderr, written = self._record(self._run_with_invalid(four_threads=1), "accepted")
+
+        self.assertEqual(code, 2)
+        self.assertIn("1 invalid timed sample (four_threads 1)", stderr)
+        self.assertEqual(written, [])
+
+    def test_decisions_that_claim_no_accept_are_still_recorded(self) -> None:
+        for decision in ("rejected", "superseded", "blocked", "in-progress", "baseline"):
+            with self.subTest(decision=decision):
+                code, stderr, written = self._record(
+                    self._run_with_invalid(candidate=2), decision
+                )
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(len(written), 1)
+                self.assertIn("invalid_samples: 2", written[0].read_text(encoding="utf-8"))
+
+    def test_a_clean_accept_is_recorded_unchanged(self) -> None:
+        code, stderr, written = self._record(_run_document(), "accepted")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(written), 1)
+        text = written[0].read_text(encoding="utf-8")
+        self.assertIn("decision: accepted", text)
+        self.assertIn("invalid_samples: 0", text)
+
+    def test_the_model_refuses_an_accept_whose_primary_job_had_invalid_samples(self) -> None:
+        payload = experiment_model.from_run(
+            self._run_with_invalid(candidate=3),
+            experiment_id="exp-042",
+            title="Test experiment",
+            hypotheses=["H1"],
+            control="before",
+            candidate="after",
+            complexity={"lines_changed": 10},
+            verdict={
+                "decision": "accepted",
+                "primary_job": "cold-scan-index",
+                "change_pct": -30.0,
+                "reason": "faster",
+            },
+        )
+        with self.assertRaises(ValueError) as raised:
+            experiment_model.Experiment.model_validate(payload)
+        self.assertIn("recorded 3 invalid samples", str(raised.exception))
+
+        payload["verdict"]["decision"] = "rejected"
+        experiment_model.Experiment.model_validate(payload)
+
+
 class HeadlineSelectionTests(unittest.TestCase):
     """The recorded change must belong to the pair the experiment claims to be about.
 
