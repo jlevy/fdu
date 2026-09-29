@@ -1,4 +1,4 @@
-"""Paired live-tree comparison of fdu with external disk-usage tools.
+"""Paired live-tree comparison of fdu with external disk-usage and line-count tools.
 
 This is calibration evidence, not the optimization accept/reject loop. External tools
 make different semantic trade-offs, so each competitor runs immediately beside an fdu
@@ -53,6 +53,13 @@ class ToolContract:
     #: would leave a snapshot of the subject tree behind afterwards. Runs carrying this
     #: flag get an isolated cache directory for the duration.
     writes_cache: bool = False
+    #: What the timed output measures. A comparison admits only contracts of one class:
+    #: a byte total and a line count share no unit, and two line-count arms that differ
+    #: in ignore handling count different file populations.
+    measures: str = "disk-usage"
+    #: The text-table layout whose total row validates a line-count sample, or None
+    #: for a contract that does not count lines.
+    code_table: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -276,7 +283,158 @@ CONTRACTS: Dict[str, ToolContract] = {
         argv=("{binary}", "-sk", "{root}"),
         version_argv=("{binary}", "--version"),
     ),
+    # Source-line counters, in two arms. The `-no-ignore` arm turns every ignore source
+    # off and counts hidden files, so the three tools walk the same population; run it
+    # on a copy of the tree without `.git`. The `-gitignore` arm uses each tool's own
+    # ignore handling on a real clone, which is what a user of each gets. Every command
+    # prints its text table: JSON would time serialization that differs by design
+    # (tokei's includes every file's record). The table is a few kilobytes captured to
+    # a file and parsed after the timed window.
+    #
+    # The tools recognize different languages, so their totals differ by design and
+    # the harness cannot check one against another. Each sample must instead print a
+    # parsable total row, with no stderr and a zero exit, and every sample of one tool
+    # must report the same totals; cross-tool agreement is established separately, by
+    # an untimed per-file comparison of each tool's JSON output.
+    "fdu-code-no-ignore": ToolContract(
+        name="fdu-code-no-ignore",
+        work_class="code-by-language",
+        description=(
+            "complete scan that opens every regular file, counts lines in all text, and "
+            "counts code, comment, and blank lines in its 15 languages; ignore rules and "
+            "the persisted cache off; per-language text table"
+        ),
+        argv=(
+            "{binary}",
+            "--analyze=code",
+            "--view=code",
+            "--no-gitignore",
+            "--cache=off",
+            "--color=never",
+            "--quiet",
+            "{root}",
+        ),
+        version_argv=("{binary}", "--version"),
+        measures="source-lines-no-ignore",
+        code_table="fdu",
+    ),
+    # A repeated `fdu --analyze=code` under the default cache policy. The first warm-up
+    # writes the content cache into the comparison's isolated cache directory, and every
+    # later run revalidates the tree against it and reopens no unchanged file. It prints
+    # the same table as the cache-off contract; neither peer has a cache to compare.
+    "fdu-code-cached-no-ignore": ToolContract(
+        name="fdu-code-cached-no-ignore",
+        work_class="code-by-language-cached",
+        description=(
+            "the ignore-off count under the default cache policy: a complete scan that "
+            "revalidates every file against the content cache the first warm-up wrote, "
+            "reading only files that changed"
+        ),
+        argv=(
+            "{binary}",
+            "--analyze=code",
+            "--view=code",
+            "--no-gitignore",
+            "--color=never",
+            "--quiet",
+            "{root}",
+        ),
+        version_argv=("{binary}", "--version"),
+        writes_cache=True,
+        measures="source-lines-no-ignore",
+        code_table="fdu",
+    ),
+    "fdu-code-gitignore": ToolContract(
+        name="fdu-code-gitignore",
+        work_class="code-by-language",
+        description=(
+            "the same count with .gitignore rules read and ignored entries neither "
+            "reported nor read; .git is pruned as ignored, and the exclusion repeats that "
+            "for the report"
+        ),
+        argv=(
+            "{binary}",
+            "--analyze=code",
+            "--view=code",
+            "--ignored=exclude",
+            "--exclude=.git/**",
+            "--cache=off",
+            "--color=never",
+            "--quiet",
+            "{root}",
+        ),
+        version_argv=("{binary}", "--version"),
+        measures="source-lines-gitignore",
+        code_table="fdu",
+    ),
+    "scc-no-ignore": ToolContract(
+        name="scc-no-ignore",
+        work_class="code-by-language",
+        description=(
+            "parallel walk that reads files in its recognized languages and counts code, "
+            "comment, and blank lines; every ignore-file source, complexity, COCOMO, and "
+            "size output off; per-language text table"
+        ),
+        argv=(
+            "{binary}",
+            "--no-gitignore",
+            "--no-ignore",
+            "--no-scc-ignore",
+            "--no-gitmodule",
+            "-c",
+            "--no-cocomo",
+            "--no-size",
+            "{root}",
+        ),
+        version_argv=("{binary}", "--version"),
+        measures="source-lines-no-ignore",
+        code_table="scc",
+    ),
+    "scc-gitignore": ToolContract(
+        name="scc-gitignore",
+        work_class="code-by-language",
+        description=(
+            "the same count with its own .gitignore, .ignore, and .sccignore handling on; "
+            "it skips .git, .hg, and .svn by default"
+        ),
+        argv=("{binary}", "-c", "--no-cocomo", "--no-size", "{root}"),
+        version_argv=("{binary}", "--version"),
+        measures="source-lines-gitignore",
+        code_table="scc",
+    ),
+    "tokei-no-ignore": ToolContract(
+        name="tokei-no-ignore",
+        work_class="code-by-language",
+        description=(
+            "parallel walk that reads files in its recognized languages and counts code, "
+            "comment, and blank lines, including embedded languages; ignore files off and "
+            "hidden files counted; per-language text table"
+        ),
+        argv=("{binary}", "--no-ignore", "--hidden", "{root}"),
+        version_argv=("{binary}", "--version"),
+        measures="source-lines-no-ignore",
+        code_table="tokei",
+    ),
+    "tokei-gitignore": ToolContract(
+        name="tokei-gitignore",
+        work_class="code-by-language",
+        description=(
+            "the same count with its ignore handling on, which applies .gitignore only "
+            "inside a git repository; hidden files counted and .git excluded"
+        ),
+        argv=("{binary}", "--hidden", "--exclude", ".git", "{root}"),
+        version_argv=("{binary}", "--version"),
+        measures="source-lines-gitignore",
+        code_table="tokei",
+    ),
 }
+
+FDU_CODE_CONTRACTS = frozenset(
+    {"fdu-code-no-ignore", "fdu-code-cached-no-ignore", "fdu-code-gitignore"}
+)
+FDU_ANCHOR_CONTRACTS = frozenset(
+    {"fdu", "fdu-default-tree", *FDU_SUMMARY_CONTRACTS, *FDU_CODE_CONTRACTS}
+)
 
 
 def main(argv: Sequence[str]) -> int:
@@ -447,15 +605,18 @@ def run(
     timeout_seconds: float = measure.DEFAULT_TIMEOUT_SECONDS,
 ) -> Dict[str, Any]:
     """Run each competitor immediately beside the anchor and return redacted evidence."""
-    if anchor.contract.name not in {
-        "fdu",
-        "fdu-index-summary",
-        "fdu-transient-summary",
-        "fdu-default-tree",
-    }:
+    if anchor.contract.name not in FDU_ANCHOR_CONTRACTS:
         raise ComparisonError("the comparison anchor must use an fdu contract")
     if not competitors:
         raise ComparisonError("at least one competitor is required")
+    mismatched = [
+        tool.name for tool in competitors if tool.contract.measures != anchor.contract.measures
+    ]
+    if mismatched:
+        raise ComparisonError(
+            f"{', '.join(mismatched)} cannot pair with a {anchor.contract.measures} anchor: "
+            "a comparison admits only contracts that measure the same thing"
+        )
     if trials < 3:
         raise ComparisonError("at least three trials are required for a paired interval")
     if host_regime not in measure.HOST_REGIMES:
@@ -528,6 +689,7 @@ def run(
     after = tree.fingerprint(root, label=label)
     mutation = tree.compare(after, before)
     semantic_mismatches = _invalidate_semantic_mismatches(samples, anchor=anchor.name)
+    code_total_mismatches = _invalidate_unstable_code_totals(samples)
     oracle_mismatches = [
         {
             "pair": sample["pair"],
@@ -594,6 +756,9 @@ def run(
         "semantic_mismatches": semantic_mismatches,
         "summary_oracle_mismatches": oracle_mismatches,
     }
+    if anchor.contract.code_table is not None:
+        document["code_totals"] = _code_totals_by_tool(samples)
+        document["code_total_mismatches"] = code_total_mismatches
     if provenance_document is not None:
         document["provenance"] = dict(provenance_document)
     if installation_document is not None:
@@ -651,6 +816,91 @@ def _invalidate_semantic_mismatches(
             }
         )
     return mismatches
+
+
+def _invalidate_unstable_code_totals(samples: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Invalidate every sample of a line counter whose totals changed between runs.
+
+    Line counters recognize different languages, so there is no cross-tool check to
+    make. What must hold is that one tool gives one answer on an unchanged tree: the
+    fingerprint proves the tree did not change, so a second answer means the timing
+    measured something other than the declared work.
+    """
+    by_tool: Dict[str, List[Dict[str, Any]]] = {}
+    for sample in samples:
+        if sample.get("code_totals") is not None:
+            by_tool.setdefault(str(sample["tool"]), []).append(sample)
+    mismatches: List[Dict[str, Any]] = []
+    for name, selected in sorted(by_tool.items()):
+        distinct = {json.dumps(sample["code_totals"], sort_keys=True) for sample in selected}
+        if len(distinct) < 2:
+            continue
+        reason = f"{name} reported {len(distinct)} different line totals on one tree"
+        for sample in selected:
+            sample["valid"] = False
+            sample["reasons"].append(reason)
+        mismatches.append({"tool": name, "distinct_totals": sorted(distinct)})
+    return mismatches
+
+
+def _code_totals_by_tool(samples: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """The one set of totals each line counter reported, or None where it had none."""
+    result: Dict[str, Any] = {}
+    for sample in samples:
+        name = str(sample["tool"])
+        totals = sample.get("code_totals")
+        if totals is not None and result.get(name) is None:
+            result[name] = dict(totals)
+        else:
+            result.setdefault(name, None)
+    return result
+
+
+_CODE_NUMBER = r"[0-9][0-9,]*"
+#: Each layout's total row, with the columns in the order the tool prints them.
+_CODE_TOTAL_ROWS = {
+    # `26,312,547  100.0%  4,290,517  4,343,072   61,452/65,896  TOTAL  (…)`
+    "fdu": re.compile(
+        rf"^\s*(?P<code>{_CODE_NUMBER})\s+\S+\s+(?P<comment>{_CODE_NUMBER})\s+"
+        rf"(?P<blank>{_CODE_NUMBER})\s+(?P<files>{_CODE_NUMBER})/{_CODE_NUMBER}\s+TOTAL\b.*$"
+    ),
+    # `Total  81,820  39,097,537  4,906,599  4,465,118  29,725,820`
+    "scc": re.compile(
+        rf"^\s*Total\s+(?P<files>{_CODE_NUMBER})\s+(?P<lines>{_CODE_NUMBER})\s+"
+        rf"(?P<blank>{_CODE_NUMBER})\s+(?P<comment>{_CODE_NUMBER})\s+(?P<code>{_CODE_NUMBER})\s*$"
+    ),
+    # ` Total  81894  39095423  29615689  4577792  4901942`
+    "tokei": re.compile(
+        rf"^\s*Total\s+(?P<files>{_CODE_NUMBER})\s+(?P<lines>{_CODE_NUMBER})\s+"
+        rf"(?P<code>{_CODE_NUMBER})\s+(?P<comment>{_CODE_NUMBER})\s+(?P<blank>{_CODE_NUMBER})\s*$"
+    ),
+}
+
+
+def _code_table_totals(
+    layout: str, stdout: bytes, stderr: str
+) -> Tuple[Optional[Dict[str, int]], Optional[str]]:
+    """Parse the one total row of a line counter's text table.
+
+    Any stderr invalidates the sample: fdu runs with `--quiet`, and scc and tokei write
+    there only when a file could not be read, which would make the count incomplete.
+    """
+    if stderr.strip():
+        return None, f"{layout} reported warnings or errors"
+    try:
+        text = stdout.decode("utf-8")
+    except UnicodeDecodeError as error:
+        return None, f"{layout} output was not UTF-8: {error}"
+    pattern = _CODE_TOTAL_ROWS[layout]
+    rows = [match for match in map(pattern.fullmatch, text.splitlines()) if match]
+    if len(rows) != 1:
+        return None, f"{layout} output did not contain exactly one total row"
+    totals = {
+        key: int(value.replace(",", ""))
+        for key, value in rows[0].groupdict().items()
+        if key in {"files", "code", "comment", "blank"}
+    }
+    return totals, None
 
 
 def _apple_silicon_apfs_scope_reasons(
@@ -756,6 +1006,13 @@ def _run_one(
         if dust_error is not None:
             summary_oracle_error = dust_error
             reasons.append(dust_error)
+    code_totals: Optional[Dict[str, int]] = None
+    if tool.contract.code_table is not None:
+        code_totals, code_error = _code_table_totals(
+            tool.contract.code_table, result["stdout"], effective_stderr
+        )
+        if code_error is not None:
+            reasons.append(code_error)
     stderr = effective_stderr.encode("utf-8", errors="replace")
     claim_metrics = metrics if not reasons else {key: None for key in metrics}
     return {
@@ -771,6 +1028,7 @@ def _run_one(
         "stdout_sha256": hashlib.sha256(result["stdout"]).hexdigest(),
         "semantic_sha256": semantic_sha256,
         "semantic_total_bytes": semantic_total_bytes,
+        "code_totals": code_totals,
         "peak_rss_floor_bytes": result.get("peak_rss_floor_bytes"),
         "scan_diagnostics": scan_diagnostics,
         "summary_oracle_error": summary_oracle_error,
@@ -1363,6 +1621,7 @@ def render(document: Mapping[str, Any]) -> str:
                 )
                 else []
             ),
+            *_code_totals_section(document),
             "",
             "## Release qualification",
             "",
@@ -1412,6 +1671,39 @@ def render(document: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _code_totals_section(document: Mapping[str, Any]) -> List[str]:
+    """The totals each line counter printed, which differ by design between tools."""
+    totals = document.get("code_totals")
+    if not isinstance(totals, Mapping):
+        return []
+    lines = [
+        "",
+        "## Line totals",
+        "",
+        "| Tool | Files counted | Code | Comment | Blank |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for name in [document["anchor"], *document["competitor_order"]]:
+        entry = totals.get(name)
+        if not isinstance(entry, Mapping):
+            lines.append(f"| {name} | — | — | — | — |")
+            continue
+        lines.append(
+            f"| {name} | {entry['files']:,} | {entry['code']:,} | "
+            f"{entry['comment']:,} | {entry['blank']:,} |"
+        )
+    lines.extend(
+        [
+            "",
+            "Each tool counts only the languages it recognizes, so these totals differ "
+            "by design. The harness requires one answer per tool on the unchanged tree "
+            f"(mismatches: {len(document.get('code_total_mismatches') or [])}); "
+            "cross-tool agreement is a separate, untimed per-file comparison.",
+        ]
+    )
+    return lines
 
 
 def _throughput(

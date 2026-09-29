@@ -757,11 +757,17 @@ class DefaultTreeContractTests(unittest.TestCase):
         self.assertEqual(contract.argv, ("{binary}", "--color", "never", "{root}"))
         self.assertIn("writes it inside the timed run", contract.description)
 
-    def test_it_is_the_only_contract_declaring_a_cache_write(self) -> None:
+    def test_only_default_cache_contracts_declare_a_cache_write(self) -> None:
+        # The two contracts that leave the cache policy at its default; every other fdu
+        # contract passes `--cache off`.
         writers = {
             name for name, contract in compare_tools.CONTRACTS.items() if contract.writes_cache
         }
-        self.assertEqual(writers, {"fdu-default-tree"})
+        self.assertEqual(writers, {"fdu-default-tree", "fdu-code-cached-no-ignore"})
+        for name in writers:
+            self.assertFalse(
+                any(item.startswith("--cache") for item in compare_tools.CONTRACTS[name].argv)
+            )
 
     def test_a_cache_writing_run_without_an_isolated_directory_fails_closed(self) -> None:
         # The failure that matters: silently falling back to $HOME/Library/Caches would
@@ -790,6 +796,225 @@ class DefaultTreeContractTests(unittest.TestCase):
         # It measures fdu, so it is a legal anchor; it is not a summary contract, so the
         # held-out release gate still refuses it. Both halves matter.
         self.assertNotIn("fdu-default-tree", compare_tools.FDU_SUMMARY_CONTRACTS)
+
+
+FDU_CODE_TABLE = """\
+Code lines   Share   Comments      Blank  Analyzed files  Language
+26,059,137   99.0%  4,229,132  4,286,449   59,786/59,786  C           (26,059,137 unknown)
+         —       —          —          —         0/1,338  Assembly
+26,312,547  100.0%  4,290,517  4,343,072   61,452/65,896  TOTAL       (26,312,547 unknown)
+6 analyzed languages (include population)
+""".encode()
+
+SCC_TABLE = """\
+───────────────────────────────────────────────────────────────────────────────
+Language                    Files       Lines     Blanks    Comments       Code
+───────────────────────────────────────────────────────────────────────────────
+C                          34,661  24,595,873  3,545,815   2,752,964 18,297,094
+───────────────────────────────────────────────────────────────────────────────
+Total                      81,820  39,097,537  4,906,599   4,465,118 29,725,820
+───────────────────────────────────────────────────────────────────────────────
+""".encode()
+
+TOKEI_TABLE = b"""\
+ Language              Files        Lines         Code     Comments       Blanks
+ C                     34661     24595873     18301279      2751125      3543469
+ Rust                     76        12370         8982         1819         1569
+ |- Markdown              70         6425          772         4247         1406
+ (Total)                            18795         9754         6066         2975
+ Total                 81894     39095423     29615689      4577792      4901942
+"""
+
+
+class LineCountContractTests(unittest.TestCase):
+    """Source-line counters: two arms, three tools, and no cross-tool semantic check."""
+
+    def test_each_arm_runs_the_protocol_commands(self) -> None:
+        expected = {
+            "fdu-code-no-ignore": (
+                "{binary}",
+                "--analyze=code",
+                "--view=code",
+                "--no-gitignore",
+                "--cache=off",
+                "--color=never",
+                "--quiet",
+                "{root}",
+            ),
+            "fdu-code-gitignore": (
+                "{binary}",
+                "--analyze=code",
+                "--view=code",
+                "--ignored=exclude",
+                "--exclude=.git/**",
+                "--cache=off",
+                "--color=never",
+                "--quiet",
+                "{root}",
+            ),
+            "scc-no-ignore": (
+                "{binary}",
+                "--no-gitignore",
+                "--no-ignore",
+                "--no-scc-ignore",
+                "--no-gitmodule",
+                "-c",
+                "--no-cocomo",
+                "--no-size",
+                "{root}",
+            ),
+            "scc-gitignore": ("{binary}", "-c", "--no-cocomo", "--no-size", "{root}"),
+            "tokei-no-ignore": ("{binary}", "--no-ignore", "--hidden", "{root}"),
+            "tokei-gitignore": ("{binary}", "--hidden", "--exclude", ".git", "{root}"),
+        }
+        for name, argv in expected.items():
+            with self.subTest(contract=name):
+                contract = compare_tools.CONTRACTS[name]
+                self.assertEqual(contract.argv, argv)
+                self.assertEqual(contract.work_class, "code-by-language")
+                self.assertIsNotNone(contract.code_table)
+                # Text, never JSON: tokei's JSON carries every file's record.
+                self.assertFalse({"-o", "-f", "--format=json"} & set(argv))
+                arm = "no-ignore" if name.endswith("-no-ignore") else "gitignore"
+                self.assertEqual(contract.measures, f"source-lines-{arm}")
+
+    def test_the_cached_count_repeats_the_ignore_off_command_with_its_cache(self) -> None:
+        cached = compare_tools.CONTRACTS["fdu-code-cached-no-ignore"]
+        uncached = compare_tools.CONTRACTS["fdu-code-no-ignore"]
+
+        self.assertEqual(
+            cached.argv, tuple(item for item in uncached.argv if item != "--cache=off")
+        )
+        self.assertTrue(cached.writes_cache)
+        self.assertEqual(cached.measures, uncached.measures)
+        self.assertEqual(cached.code_table, "fdu")
+        self.assertEqual(cached.work_class, "code-by-language-cached")
+
+    def test_only_the_fdu_arms_may_anchor(self) -> None:
+        self.assertEqual(
+            compare_tools.FDU_CODE_CONTRACTS,
+            {"fdu-code-no-ignore", "fdu-code-cached-no-ignore", "fdu-code-gitignore"},
+        )
+        self.assertTrue(compare_tools.FDU_CODE_CONTRACTS <= compare_tools.FDU_ANCHOR_CONTRACTS)
+        self.assertFalse(compare_tools.FDU_CODE_CONTRACTS & compare_tools.FDU_SUMMARY_CONTRACTS)
+        self.assertNotIn("scc-no-ignore", compare_tools.FDU_ANCHOR_CONTRACTS)
+
+    def test_a_comparison_admits_one_measure_and_one_arm(self) -> None:
+        cases = (
+            ("fdu-code-no-ignore", "dust"),
+            ("fdu-code-no-ignore", "scc-gitignore"),
+            ("fdu-code-gitignore", "tokei-no-ignore"),
+            ("fdu-default-tree", "scc-no-ignore"),
+        )
+        for anchor, competitor in cases:
+            with (
+                self.subTest(anchor=anchor, competitor=competitor),
+                self.assertRaisesRegex(compare_tools.ComparisonError, "measure the same"),
+            ):
+                compare_tools.run(
+                    root=Path("/does/not-matter"),
+                    label="fixture",
+                    anchor=tool(anchor),
+                    competitors=[tool(competitor)],
+                    trials=3,
+                    warmups=1,
+                    baseline_fingerprint=None,
+                    baseline_output=None,
+                    storage="fixture",
+                )
+
+    def test_each_layout_parses_its_total_row(self) -> None:
+        cases = (
+            ("fdu", FDU_CODE_TABLE, (61_452, 26_312_547, 4_290_517, 4_343_072)),
+            ("scc", SCC_TABLE, (81_820, 29_725_820, 4_465_118, 4_906_599)),
+            # The grand total, not a language's `(Total)` with its embedded children.
+            ("tokei", TOKEI_TABLE, (81_894, 29_615_689, 4_577_792, 4_901_942)),
+        )
+        for layout, stdout, (files, code, comment, blank) in cases:
+            with self.subTest(layout=layout):
+                totals, error = compare_tools._code_table_totals(layout, stdout, "")
+                self.assertIsNone(error)
+                self.assertEqual(
+                    totals, {"files": files, "code": code, "comment": comment, "blank": blank}
+                )
+
+    def test_the_total_row_parser_fails_closed(self) -> None:
+        unmeasured = FDU_CODE_TABLE.replace(b"26,312,547  100.0%", "—  —".encode())
+        cases = (
+            ("scc", SCC_TABLE, "error reading file", "warnings or errors"),
+            ("scc", b"Language Files\n", "", "exactly one total row"),
+            ("tokei", TOKEI_TABLE + TOKEI_TABLE, "", "exactly one total row"),
+            ("fdu", unmeasured, "", "exactly one total row"),
+            ("fdu", b"\xff\xfe", "", "not UTF-8"),
+        )
+        for layout, stdout, stderr, message in cases:
+            with self.subTest(layout=layout, message=message):
+                totals, error = compare_tools._code_table_totals(layout, stdout, stderr)
+                self.assertIsNone(totals)
+                self.assertIn(message, error or "")
+
+    def test_a_sample_records_its_totals(self) -> None:
+        result = {
+            "exit_code": 0,
+            "resources": {field: 1 for field in compare_tools.measure._RESOURCE_FIELDS},
+            "stderr": "",
+            "stdout": SCC_TABLE,
+            "timed_out": False,
+            "wall_ns": 10,
+        }
+        regime = compare_tools.measure.HostRegime(name="uncontrolled", initial={})
+        with (
+            mock.patch.object(compare_tools.measure, "_spawn", return_value=result),
+            mock.patch.object(compare_tools.measure, "_host_pressure_snapshot", return_value={}),
+        ):
+            sample = compare_tools._run_one(
+                tool("scc-no-ignore"),
+                pair="scc-no-ignore",
+                ordinal=0,
+                warmup=False,
+                root=Path("/fixture"),
+                summary_oracle={},
+                host_regime=regime,
+                timeout_seconds=1,
+            )
+
+        self.assertTrue(sample["valid"], sample["reasons"])
+        self.assertEqual(sample["code_totals"]["code"], 29_725_820)
+        # Line totals never enter the byte-report digest that pairs are checked against.
+        self.assertIsNone(sample["semantic_sha256"])
+
+    def test_a_tool_with_two_answers_on_one_tree_loses_every_sample(self) -> None:
+        def sample(name: str, code: int) -> dict:
+            totals = {"files": 1, "code": code, "comment": 0, "blank": 0}
+            return {"tool": name, "valid": True, "reasons": [], "code_totals": totals}
+
+        samples = [sample("fdu", 5), sample("fdu", 5), sample("tokei", 4), sample("tokei", 6)]
+
+        mismatches = compare_tools._invalidate_unstable_code_totals(samples)
+
+        self.assertEqual([entry["tool"] for entry in mismatches], ["tokei"])
+        self.assertTrue(all(entry["valid"] for entry in samples[:2]))
+        self.assertFalse(any(entry["valid"] for entry in samples[2:]))
+        self.assertIn("2 different line totals", samples[2]["reasons"][0])
+
+    def test_the_report_lists_each_tools_totals(self) -> None:
+        document = {
+            "anchor": "fdu",
+            "competitor_order": ["scc", "tokei"],
+            "code_totals": {
+                "fdu": {"files": 2, "code": 1_000, "comment": 3, "blank": 4},
+                "scc": {"files": 5, "code": 2_000, "comment": 6, "blank": 7},
+                "tokei": None,
+            },
+            "code_total_mismatches": [],
+        }
+
+        section = "\n".join(compare_tools._code_totals_section(document))
+
+        self.assertIn("| fdu | 2 | 1,000 | 3 | 4 |", section)
+        self.assertIn("| tokei | — | — | — | — |", section)
+        self.assertIn("differ by design", section)
+        self.assertEqual(compare_tools._code_totals_section({"anchor": "fdu"}), [])
 
 
 if __name__ == "__main__":
