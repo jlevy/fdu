@@ -75,6 +75,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
+| Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -276,6 +277,7 @@ dead end.
 | 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp193--linux-h183-cheap-matcher-prechecks-cut-the-default-tree-8-on-linuxv612) | H183 | `default-tree` | -7.6% | ✅ accepted |
 | 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linuxv612) | — | `default-tree` | -39.0% | 📏 baseline |
 | 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-nodemodulesdense) | — | `default-tree` | -9.8% | 📏 baseline |
+| 196 | [Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger](#exp196--linux-every-route-lists-through-the-native-reader-and-no-stat-of-a-child-mounts-an-autofs-trigger) | H184 | `warm-revalidate` | -2.7% | ❌ rejected |
 
 ## The experiments
 
@@ -6405,6 +6407,45 @@ against the Q0 engine; no decision rests on it.
 Full record:
 [`exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md`](../experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)
 
+### exp-196 — Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger
+
+❌ rejected · 2026-09-29 · H184 · commit `17874dd6`
+
+Control: 4bc9b738 probe: the #161 layer head
+
+Candidate: 17874dd6 probe: fdu-d2fn, every route through the native reader
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 554.2 | 542.4 | -2.74% (n.s.) | [-3.96%, +0.28%] |
+| component (ms) | 124.1 | 119.3 | -3.56% (n.s.) | [-6.98%, +0.76%] |
+| cpu (ms) | 856.1 | 839.9 | -1.45% (n.s.) | [-3.87%, +0.25%] |
+| user (ms) | 510.3 | 493.0 | -3.23% | [-6.23%, -1.34%] |
+| system (ms) | 347.5 | 350.2 | -0.64% (n.s.) | [-4.08%, +3.65%] |
+| peak rss (MiB) | 40.1 | 40.5 | +1.07% (regression) | [+0.91%, +1.53%] |
+
+Other jobs, wall time: `default-tree` +0.4% (n.s.), `opened-discovery` +1.2%
+(regression).
+
+Cost to carry: 777 lines; no new dependencies.
+
+the reader’s statx wrapper gained a caller by path (stat_path), and one listing iterator
+now serves the serial walk, revalidation, both reconciliations and opened discovery in
+place of five read_dir loops; the concurrent walk’s own native block is untouched
+
+**Rejected:** not a speed decision: the non-regression screen of a correctness change
+(fdu-d2fn) that ships regardless, quiet 20 pairs on linux-v6.12: warm-revalidate -2.74%
+[-3.96%, +0.28%], its reconciliation component -3.56%; opened-discovery wall +1.19%
+[+0.56%, +3.51%] with its discovery component +0.06% non-inferior; default-tree +0.42%
+within noise; the serial walk, exp-185’s placebo arm, -5.14% [-6.63%, -2.44%] against
+the control’s serial walk; fstat 5,773 -> 4 on every moved route; every tree-entry statx
+carries AT_NO_AUTOMOUNT on every route.
+
+Full record:
+[`exp-196-linux-every-route-lists-through-the-native-reader-and-no-sta.md`](../experiments/exp-196-linux-every-route-lists-through-the-native-reader-and-no-sta.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6806,6 +6847,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 104 | Hash the content roll-up map by path bytes instead of components | `content-cache-hit` | 1,961.3 | 1,973.6 | +0.1% | ❌ rejected |
+
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 196 | Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger | `warm-revalidate` | 554.2 | 542.4 | -2.7% | ❌ rejected |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

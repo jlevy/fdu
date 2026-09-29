@@ -1048,8 +1048,8 @@ and
   view variants a tree-tier change reaches.
 
 **Ids.** Next free are **exp-197** and **H185**. exp-197–199 remain in the reserved
-Linux block, then exp-200 onward. exp-196 and H184 record `fdu-d2fn`, the automount
-fix.
+Linux block, then exp-200 onward.
+exp-196 and H184 record `fdu-d2fn`, the automount fix.
 exp-173–199 and H162–H183 are Linux work.
 The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
 (`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
@@ -1080,11 +1080,12 @@ exp-113 remains reserved unused.
    budget sized to the breadth-first frontier is designed.
 5. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
    0.3.0.
-6. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes. **Done** in the review of
-   #161 (H184, exp-196): every route lists through the native reader, the directories
-   it declines and the paths a route verifies by itself are stated by path with the
-   same flags, and the walk root alone is resolved. musl never needed it: std stats
-   with `fstatat` there. `fdu-puk7` was closed for the reader’s path by exp-185.
+6. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes.
+   **Done** in the review of #161 (H184, exp-196): every route lists through the native
+   reader, the directories it declines and the paths a route verifies by itself are
+   stated by path with the same flags, and the walk root alone is resolved.
+   musl never needed it: std stats with `fstatat` there.
+   `fdu-puk7` was closed for the reader’s path by exp-185.
 7. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
    fixed with recorded git verdicts, outside the performance loop.
 

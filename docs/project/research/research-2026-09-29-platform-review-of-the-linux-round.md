@@ -59,12 +59,13 @@ or measured. Every `file:line` citation is at `0c8131fd`. Epic: `fdu-9q80`.
   the round (`control.rs:18-19`, `control/gitignore.rs:6-8`), and it still is.
   One answer did change on Linux glibc, and on purpose: on a tree holding an unmounted
   autofs trigger directory, 0.2.1 mounted the trigger by statting it and reported the
-  mounted root; the round reports the trigger, as `lstat` and GNU `du` do. The review of
-  #161 (R161-2) found that H169 phase 1 had changed it on the parallel walk alone, so
-  the same request answered differently by route; `fdu-d2fn` then made every route list
-  through the reader and pass `AT_NO_AUTOMOUNT` on every stat of a listed child, so the
-  answer no longer depends on route, worker count, or which reader served a directory.
-  The walk root is resolved on every route. No other answer changed by construction.
+  mounted root; the round reports the trigger, as `lstat` and GNU `du` do.
+  The review of #161 (R161-2) found that H169 phase 1 had changed it on the parallel
+  walk alone, so the same request answered differently by route; `fdu-d2fn` then made
+  every route list through the reader and pass `AT_NO_AUTOMOUNT` on every stat of a
+  listed child, so the answer no longer depends on route, worker count, or which reader
+  served a directory. The walk root is resolved on every route.
+  No other answer changed by construction.
   - H171 and H183 compare the same bytes the linear matcher compared, so
     case-insensitive APFS and NFD names get exactly the answers they got before.
   - A pre-existing difference is newly worth documenting: git on macOS defaults
@@ -334,15 +335,15 @@ up to the directory reader:
   - Not musl: `libc` has no `struct statx` there (`scan.rs:48`).
   - Not macOS, not Windows.
 - **Correctness by platform:**
-  - On glibc the reader's `AT_NO_AUTOMOUNT` is an answer change against 0.2.1 on autofs
+  - On glibc the reader’s `AT_NO_AUTOMOUNT` is an answer change against 0.2.1 on autofs
     trees, and after `fdu-d2fn` it holds on every route: the serial walk, revalidation,
     reconciliation and opened discovery list through the reader too, the directories it
     declines and the paths a route verifies by itself are stated by path with the same
     flags (`linux_dents::stat_path`, `scan::observe_path`), and the walk root alone is
     resolved through an opened descriptor (`scan::root_device`), under glibc and musl
-    alike. `strace` of every probe route shows every tree-entry `statx` carrying the
-    flag (exp-196).
-  - musl never mounted by a stat: std's `DirEntry::metadata` and `symlink_metadata` are
+    alike. `strace` of every probe route shows every tree-entry `statx` carrying the flag
+    (exp-196).
+  - musl never mounted by a stat: std’s `DirEntry::metadata` and `symlink_metadata` are
     `fstatat` and `lstat` there (`library/std/src/sys/pal/unix/fs.rs` at 1.85.0 lines
     95–109 and 915, `library/std/src/sys/fs/unix.rs` at 1.97.1 lines 109–123 and 1080),
     which the kernel treats as passing the flag.
@@ -546,7 +547,8 @@ Record these in a plan’s Status table before any timed sample, as `78980e4a` d
 exp-194.
 
 Proposed ids start at exp-200: the runbook reserves exp-196–199 for Linux
-(`performance-loop-runbook.md:1047`). New hypotheses start at the next free id in the runbook (H184 went to `fdu-d2fn`, the automount fix).
+(`performance-loop-runbook.md:1047`). New hypotheses start at the next free id in the
+runbook (H184 went to `fdu-d2fn`, the automount fix).
 
 **Arms** in every end-to-end cell, as interleaved variants in this order:
 
@@ -673,8 +675,7 @@ each, and the serial floors are not the question.
 
   macOS therefore makes two name allocations per retained entry, where Linux now makes
   one. A borrowed-name bulk listing (proposed; it takes the next free id, since H184 went
-  to `fdu-d2fn`) is the macOS form of H169 phase
-  1’s user-space half.
+  to `fdu-d2fn`) is the macOS form of H169 phase 1’s user-space half.
   - H54 (exp-028: reusing the staging `Vec`, +0.2%, RSS worse) and H63 (exp-042: user
     CPU −51%, wall +1.9%) predict a user-CPU cut of a few percent and no wall change.
   - So it is a screen only, gated on M9 naming at least 3%.

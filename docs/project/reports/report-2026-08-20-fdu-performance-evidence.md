@@ -379,11 +379,11 @@ were identical.
   `fstat` calls fell from 5,773 to 4 on the kernel tree, and the per-entry `statx` no
   longer triggers automounts on the reader’s path (`fdu-puk7`; the review of #161 then
   put every other route on the reader too, `fdu-d2fn`, H184, exp-196). The default
-  summary gained 9.7% and 9.4%. The default
-  tree, controls on, gained 4.29% [−8.81%, −0.90%] on `node-modules-dense` and 2.06%
-  [−7.38%, +1.83%], not clearing, on `linux-v6.12`, against a predicted 6–8%. The
-  records’ frontmatter, and so the ledger, carry the `--no-controls` tree pair the
-  deciding job used: −1.67% and −1.79%, neither clearing.
+  summary gained 9.7% and 9.4%. The default tree, controls on, gained 4.29%
+  [−8.81%, −0.90%] on `node-modules-dense` and 2.06% [−7.38%, +1.83%], not clearing, on
+  `linux-v6.12`, against a predicted 6–8%. The records’ frontmatter, and so the ledger,
+  carry the `--no-controls` tree pair the deciding job used: −1.67% and −1.79%, neither
+  clearing.
 - **H183** computes a 32-class byte set of each name once per entry and rejects a
   residual rule by a mask test and its first and last literal bytes before any string
   comparison; the survivors compare with inline byte loops.

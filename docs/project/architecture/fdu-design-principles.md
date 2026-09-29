@@ -294,13 +294,13 @@ filesystem boundaries, or through symlink ancestors.
 ### A Stat Never Mounts; Only a Listing Does
 
 On Linux the kernel mounts an unmounted autofs trigger directory for a `statx` of it
-unless the call passes `AT_NO_AUTOMOUNT`, and never for `fstatat` or `lstat`.
-The standard library stats with `statx` and without the flag on glibc, so a walker that
-merely observes a directory's children can mount, and hang on, a network filesystem it
-would never descend into, and report the mounted root's identity where `lstat` and GNU
-`du` report the trigger's.
+unless the call passes `AT_NO_AUTOMOUNT`, and never for `fstatat` or `lstat`. The
+standard library stats with `statx` and without the flag on glibc, so a walker that
+merely observes a directory’s children can mount, and hang on, a network filesystem it
+would never descend into, and report the mounted root’s identity where `lstat` and GNU
+`du` report the trigger’s.
 
-fdu's stat of a listed child never mounts, on any route or delivery: the native reader
+fdu’s stat of a listed child never mounts, on any route or delivery: the native reader
 and the portable fallback, the serial and concurrent walks, revalidation and
 reconciliation, opened discovery, watch verification, and control lookups all pass the
 flag, and a musl build never had the problem.
@@ -308,10 +308,10 @@ The walk root alone is resolved: the user named it, listing it mounts it in any 
 and `--one-filesystem` must bound the walk to the filesystem the listing finds, so its
 device is read from an opened descriptor rather than from a stat that might have
 answered for the trigger.
-This is a consequence of the rule above that every route returns the same answer:
-when one route's stat mounted and another's did not, the same request answered
-differently by worker count, and by whether a directory happened to be read natively or
-portably. The mechanism is in `scan/linux_dents.rs` and at `scan::root_device`.
+This is a consequence of the rule above that every route returns the same answer: when
+one route’s stat mounted and another’s did not, the same request answered differently by
+worker count, and by whether a directory happened to be read natively or portably.
+The mechanism is in `scan/linux_dents.rs` and at `scan::root_device`.
 
 ## Data Structures
 
