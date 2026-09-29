@@ -1133,6 +1133,7 @@ fn run_discovery(
         std::fs::symlink_metadata(root).map_err(|source| Error::io(root, source))?;
     let root_dev =
         crate::scan::root_device(root, &root_metadata).map_err(|source| Error::io(root, source))?;
+    let mut readers = crate::scan::Readers::new();
 
     while let Some(directory) = frontier.pop() {
         if cancellation.is_cancelled() {
@@ -1150,6 +1151,7 @@ fn run_discovery(
             &directory,
             frontier,
             cancellation,
+            &mut readers,
             #[cfg(test)]
             controls.deterministic_discovery_order.load(Ordering::Acquire),
         )? {
@@ -1235,11 +1237,12 @@ fn discover_directory(
     directory: &PendingDirectory,
     frontier: &DiscoveryFrontier,
     cancellation: &Cancellation,
+    readers: &mut crate::scan::Readers,
     #[cfg(test)] deterministic_discovery_order: bool,
 ) -> Result<DiscoveryStep> {
     let absolute = root.join(&directory.path);
-    crate::counters::bump(|c| c.dir_opens += 1);
-    let listing = match std::fs::read_dir(&absolute) {
+    let policy = crate::scan::ListingPolicy::every_child_stated(scan.one_filesystem);
+    let listing = match crate::scan::list_directory(readers, &absolute, policy, None) {
         Ok(listing) => listing,
         // Removed or replaced after its parent was listed -- a build cache, an editor's
         // temporary directory. That is stale frontier work, not an inaccessible boundary:
@@ -1293,28 +1296,25 @@ fn discover_directory(
             frontier.stop();
             return Ok(DiscoveryStep::Stopped);
         }
-        let item = item
-            .inspect_err(|source| {
+        let (name, observed) = match item {
+            crate::scan::Listed::Child { name, observed } => (name, observed),
+            crate::scan::Listed::Failed(source) => {
                 retain_local_issue(
                     &mut issues,
                     &mut omitted_issues,
-                    crate::Issue::from_io_under(root, &absolute, source),
+                    crate::Issue::from_io_under(root, &absolute, &source),
                 );
-            })
-            .ok();
-        let Some(item) = item else {
-            continue;
+                continue;
+            }
         };
-        crate::counters::bump(|c| c.dir_entries += 1);
-        let name = item.file_name();
-        let (kind, attrs) = match crate::scan::observe_dir_entry(&item) {
+        let (kind, attrs) = match observed {
             Ok(Some(observed)) => observed,
             Ok(None) => continue,
             Err(source) => {
                 retain_local_issue(
                     &mut issues,
                     &mut omitted_issues,
-                    crate::Issue::from_io_under(root, &item.path(), &source),
+                    crate::Issue::from_io_under(root, &absolute.join(&name), &source),
                 );
                 continue;
             }
@@ -1414,10 +1414,11 @@ fn discover_directory(
 }
 
 #[cfg(test)]
-fn test_directory_listing(
-    listing: std::fs::ReadDir,
+fn test_directory_listing<'r>(
+    listing: crate::scan::Listing<'r>,
     deterministic: bool,
-) -> Box<dyn Iterator<Item = std::io::Result<std::fs::DirEntry>>> {
+) -> Box<dyn Iterator<Item = crate::scan::Listed<'r>> + 'r> {
+    use crate::scan::Listed;
     if !deterministic {
         return Box::new(listing);
     }
@@ -1426,10 +1427,10 @@ fn test_directory_listing(
     // normalize or reorder the commits whose exact sequence the golden records.
     let mut entries = listing.collect::<Vec<_>>();
     entries.sort_by(|left, right| match (left, right) {
-        (Ok(left), Ok(right)) => left.file_name().cmp(&right.file_name()),
-        (Ok(_), Err(_)) => std::cmp::Ordering::Less,
-        (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
-        (Err(_), Err(_)) => std::cmp::Ordering::Equal,
+        (Listed::Child { name: left, .. }, Listed::Child { name: right, .. }) => left.cmp(right),
+        (Listed::Child { .. }, Listed::Failed(_)) => std::cmp::Ordering::Less,
+        (Listed::Failed(_), Listed::Child { .. }) => std::cmp::Ordering::Greater,
+        (Listed::Failed(_), Listed::Failed(_)) => std::cmp::Ordering::Equal,
     });
     Box::new(entries.into_iter())
 }
