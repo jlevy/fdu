@@ -720,10 +720,14 @@ wrong once and each fails silently.
   invite a reader to divide the absolute values into it.
 - **Absolute values only mean something against their own subject.** A new figure that
   puts two subjects on one axis has to normalise, and has to keep synthetic subjects
-  visibly apart. `SYNTHETIC_SUBJECTS` in
-  [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py) is a
-  hand-maintained set; a new adversarial tree must be added to it or it will be averaged
-  in with ordinary work.
+  visibly apart. [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py)
+  marks a subject generated when its `tree_provenance` names a generator in
+  `TREE_GENERATORS` (`gen_tree.py` or `benchmarks.generate`), and otherwise by the
+  hand-maintained `SYNTHETIC_SUBJECTS` labels; a constructed tree whose provenance names
+  neither generator, adversarial or not, must be added to that label set or it will be
+  averaged in with ordinary work.
+  The million-entry `balanced` tree both tool comparisons use was drawn as a real
+  subject until the corpus generator joined that list.
 - **A rejected candidate is not the product’s state.** Anything plotting “where we are
   now” must read the kept arm, and the record says which that is: `verdict.kept` is
   `candidate`, `control`, or `neither`, and when it is omitted the decision implies it —
