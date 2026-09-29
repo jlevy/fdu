@@ -44439,6 +44439,544 @@
   },
   {
    "anchored": false,
+   "candidate": "956659de probe, --threads 3 (cores - 1)",
+   "change_pct": 10.253,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "956659de probe, --threads 4 (shipped PORTABLE)",
+   "date": "2026-09-29",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [
+    "H165"
+   ],
+   "id": "exp-182",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 91465378,
+        "control": 81353172.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 11.114,
+        "ci95_high_pct": 14.743,
+        "ci95_low_pct": 6.321,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 310356500,
+        "control": 297178000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 4.147,
+        "ci95_high_pct": 5.596,
+        "ci95_low_pct": 0.566,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 219401000,
+        "control": 202665500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.992,
+        "ci95_high_pct": 11.962,
+        "ci95_low_pct": -3.261,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 105713500,
+        "control": 93976500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 11.326,
+        "ci95_high_pct": 26.593,
+        "ci95_low_pct": -2.858,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 94509218,
+        "control": 84690026
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 10.253,
+        "ci95_high_pct": 14.082,
+        "ci95_low_pct": 5.944,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1022.0085429417999,
+      "control": 915.825269805567
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 182,
+   "path": "exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 12-pair screen on the H172 head: --threads 3 regresses +10.25% [+5.94%, +14.08%] on linux-v6.12 and +21.95% on node-modules-dense; 6 and 8 walkers do not clear on both real subjects; PORTABLE unchanged",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux walker count after H172: three walkers regress, six and eight do not clear on both trees",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "70c2725c probe: H180 summary walker trims",
+   "change_pct": -8.678,
+   "commit": "70c2725c",
+   "complexity": {
+    "lines_changed": 125,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "956659de probe: H172 head",
+   "date": "2026-09-29",
+   "decision": "accepted",
+   "entries": 79957,
+   "family": "Linux:db6d49b68990",
+   "hypotheses": [
+    "H180"
+   ],
+   "id": "exp-183",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 64693938.5,
+        "control": 70708585.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -8.693,
+        "ci95_high_pct": -4.385,
+        "ci95_low_pct": -12.099,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 243126000,
+        "control": 262773000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -7.044,
+        "ci95_high_pct": -4.497,
+        "ci95_low_pct": -10.836,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 184940000,
+        "control": 192960500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.71,
+        "ci95_high_pct": 2.076,
+        "ci95_low_pct": -8.817,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 61318500,
+        "control": 77053000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -15.88,
+        "ci95_high_pct": -11.642,
+        "ci95_low_pct": -22.452,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 67528712.5,
+        "control": 73486768.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -8.678,
+        "ci95_high_pct": -4.661,
+        "ci95_low_pct": -11.488,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 844.5628587865978,
+      "control": 919.0786110034144
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 71155634,
+        "control": 72722171.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.209,
+        "ci95_high_pct": 4.57,
+        "ci95_low_pct": -4.787,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 251589500,
+        "control": 250140000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.3,
+        "ci95_high_pct": 4.807,
+        "ci95_low_pct": -2.662,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 191365000,
+        "control": 179564500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 13.764,
+        "ci95_high_pct": 15.523,
+        "ci95_low_pct": -0.97,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 58770000,
+        "control": 70082500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -11.928,
+        "ci95_high_pct": -4.18,
+        "ci95_low_pct": -31.598,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 74557658.5,
+        "control": 75646599.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -2.795,
+        "ci95_high_pct": 4.524,
+        "ci95_low_pct": -4.61,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 932.4719349150168,
+      "control": 946.0910176719987
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 183,
+   "path": "exp-183-linux-h180-summary-walker-trims-cut-the-default-summary-9-on.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 20-pair node-modules-dense aggregate-summary -8.68% [-11.49%, -4.66%]; --no-controls -1.12% n.s.; default-tree placebos include zero; walker instructions -33% (callgrind); answers identical",
+   "reference_tools": [],
+   "subject": "db6d49b68990:79957:11c4122bec53",
+   "title": "Linux H180 summary walker trims cut the default summary 9% on node-modules-dense",
+   "trials": 20
+  },
+  {
+   "anchored": false,
+   "candidate": "70c2725c probe: H180 summary walker trims",
+   "change_pct": -5.635,
+   "commit": "70c2725c",
+   "complexity": {
+    "lines_changed": 125,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "956659de probe: H172 head",
+   "date": "2026-09-29",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [
+    "H180"
+   ],
+   "id": "exp-184",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 79257789,
+        "control": 87141779.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -6.831,
+        "ci95_high_pct": -2.708,
+        "ci95_low_pct": -15.757,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 281746500,
+        "control": 309763000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -8.628,
+        "ci95_high_pct": -6.266,
+        "ci95_low_pct": -13.117,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 174967000,
+        "control": 179752500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.813,
+        "ci95_high_pct": 6.951,
+        "ci95_low_pct": -9.903,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 112636500,
+        "control": 136119000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -16.786,
+        "ci95_high_pct": -10.369,
+        "ci95_low_pct": -24.837,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 83108095,
+        "control": 90462371.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -5.635,
+        "ci95_high_pct": -2.754,
+        "ci95_low_pct": -15.149,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 898.7185046607696,
+      "control": 978.2465503817289
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 77135045,
+        "control": 75652127.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 2.975,
+        "ci95_high_pct": 11.021,
+        "ci95_low_pct": -3.012,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 275927000,
+        "control": 272907500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.362,
+        "ci95_high_pct": 7.009,
+        "ci95_low_pct": -2.228,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 192556000,
+        "control": 185650500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.911,
+        "ci95_high_pct": 9.047,
+        "ci95_low_pct": -7.877,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 95236500,
+        "control": 90368500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 5.601,
+        "ci95_high_pct": 16.844,
+        "ci95_low_pct": -11.66,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 80750524,
+        "control": 78571028.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 3.294,
+        "ci95_high_pct": 10.521,
+        "ci95_low_pct": -2.628,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 873.2240846075654,
+      "control": 849.6553463676277
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 184,
+   "path": "exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 20-pair linux-v6.12 aggregate-summary -5.63% [-15.15%, -2.75%], --no-controls -12.76% [-15.71%, -10.09%]; default-tree placebos include zero",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12",
+   "trials": 20
+  },
+  {
+   "anchored": false,
    "candidate": "0d73ed54 probe (main with 149): the transient summary classifies entries",
    "change_pct": -6.926,
    "commit": "0d73ed54",
@@ -45777,6 +46315,29 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-175",
+    "exp-178",
+    "exp-179",
+    "exp-180",
+    "exp-182",
+    "exp-184"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:55a09ea65f48",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 179605080,
    "directories": 2240,
    "entries": 11141,
@@ -45929,27 +46490,6 @@
    "synthetic": true
   },
   {
-   "apparent_bytes": 1759293209,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-175",
-    "exp-178",
-    "exp-179",
-    "exp-180"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "4ffe9d749fe6:92474:55a09ea65f48",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
-  },
-  {
    "apparent_bytes": 1085083672,
    "directories": 7350,
    "entries": 60067,
@@ -46090,6 +46630,26 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 538992241,
+   "directories": 9439,
+   "entries": 79957,
+   "experiments": [
+    "exp-176",
+    "exp-181",
+    "exp-183"
+   ],
+   "files": 70411,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "db6d49b68990:79957:11c4122bec53",
+   "labels": [
+    "node-modules-dense"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -46262,25 +46822,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 538992241,
-   "directories": 9439,
-   "entries": 79957,
-   "experiments": [
-    "exp-176",
-    "exp-181"
-   ],
-   "files": 70411,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "db6d49b68990:79957:11c4122bec53",
-   "labels": [
-    "node-modules-dense"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -46609,21 +47150,21 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 24760,
+  "accepted_lines_changed": 25010,
   "decisions": {
-   "accepted": 103,
+   "accepted": 105,
    "baseline": 13,
    "blocked": 2,
    "in-progress": 4,
-   "rejected": 57,
+   "rejected": 58,
    "superseded": 5
   },
-  "experiments": 184,
+  "experiments": 187,
   "first_date": "2026-08-10",
-  "hypotheses": 124,
+  "hypotheses": 126,
   "last_date": "2026-09-29",
   "platforms": {
-   "Linux": 47,
+   "Linux": 50,
    "macOS": 137
   }
  },

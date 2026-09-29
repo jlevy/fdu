@@ -3784,9 +3784,9 @@ fn prepare_walk_entry_reading(
     if disposition == crate::admission::Disposition::Reject {
         return None;
     }
-    let path = rel_dir.join(name);
+    let path = join_listed_name(rel_dir, name);
     let (control, control_error) = if read_control {
-        match read_control_op(config, root, &path, kind) {
+        match read_named_control_op(config, root, &path, name, kind) {
             Ok(control) => (control, None),
             Err(error) => (None, Some(error)),
         }
@@ -3802,6 +3802,21 @@ fn prepare_walk_entry_reading(
         descend: should_descend(kind, attrs, depth, root_dev, config),
         control_error,
     })
+}
+
+/// `rel_dir.join(name)`, allocated once at the joined length.
+///
+/// [`Path::join`] copies `rel_dir` at its exact length and pushes onto the copy, so the
+/// separator grows it and, for a name longer than the directory, so does the name: a
+/// `realloc` for nearly every entry a streaming walk prepares. The summary route's
+/// walkers spent 760-820 instructions per entry joining, and 410-450 in `realloc`
+/// against the detached route's 85-150 (H180). The same push onto a copy that already
+/// fits both makes the same path, byte for byte, on every platform.
+fn join_listed_name(rel_dir: &Path, name: &OsStr) -> PathBuf {
+    let mut path = PathBuf::with_capacity(rel_dir.as_os_str().len() + 1 + name.len());
+    path.as_mut_os_string().push(rel_dir);
+    path.push(name);
+    path
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3863,11 +3878,16 @@ fn record_walk_entry(
         }
     }
     report.observe(kind, attrs);
-    emission.batch.push(ObservationOp::unconditional(Op::Upsert {
-        path: prepared.path.clone(),
-        kind,
-        attrs,
-    }));
+    // Only a directory the walk descends into needs its path twice, in its observation
+    // and in the queue. Every other entry's path moves into its observation, so it is
+    // allocated once and freed with its batch rather than copied and freed at once
+    // (H180).
+    let (path, descend_path) = if prepared.descend {
+        (prepared.path.clone(), Some(prepared.path))
+    } else {
+        (prepared.path, None)
+    };
+    emission.batch.push(ObservationOp::unconditional(Op::Upsert { path, kind, attrs }));
     if !emission.send_if_full(root, rel_dir, config, report, sender, chunk_send_ns, diagnostics) {
         return false;
     }
@@ -3878,12 +3898,12 @@ fn record_walk_entry(
             return false;
         }
     }
-    if prepared.descend {
+    if let Some(path) = descend_path {
         // A child of the root seeds a new region; everything deeper inherits its
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((prepared.path, depth + 1, child_region));
+        discovered.push((path, depth + 1, child_region));
     }
     true
 }
@@ -3908,11 +3928,11 @@ fn controls_first(listing: &mut [ObservationOp]) {
 /// control state at all.
 ///
 /// Every control observation goes through here -- each walk and reconcile site, and the
-/// watch layer's verification -- so the policy cannot be forgotten at one of them. A
-/// watch must honor it like a scan does: its scope has to equal the index's, the scope
-/// carries this bit, and a verifier that read control files regardless would grow a
-/// partial rule set, from whichever sources events touched, under a scope that says
-/// there is none.
+/// watch layer's verification -- or through [`read_named_control_op`], which shares its
+/// gate, so the policy cannot be forgotten at one of them. A watch must honor it like a
+/// scan does: its scope has to equal the index's, the scope carries this bit, and a
+/// verifier that read control files regardless would grow a partial rule set, from
+/// whichever sources events touched, under a scope that says there is none.
 ///
 /// It is also where a listed name becomes a control read, by the rule the module
 /// documentation of [`crate::control`] states: the directory's control is what a lookup
@@ -3929,10 +3949,42 @@ pub(crate) fn read_control_op(
     path: &Path,
     kind: EntryKind,
 ) -> Result<Option<Op>> {
+    read_spelled_control_op(config, root, path, kind, crate::control::path_control_spelling)
+}
+
+/// [`read_control_op`] for the entry `name` a listing just produced, at `path`, the
+/// listed directory joined with `name`.
+///
+/// The walker already holds the name, so its spelling is tested on those bytes: a length
+/// comparison for nearly every entry, as in the detached builder. Parsing the last
+/// component back out of the joined path cost the transient summary about 270
+/// instructions for every entry, on a tree with no `.gitignore` as much as on one with
+/// many (H180). A listed name is one normal component, so it is the path's last one and
+/// the decision is the same.
+fn read_named_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    name: &OsStr,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
+    debug_assert_eq!(path.file_name(), Some(name), "a listed name ends its path");
+    read_spelled_control_op(config, root, path, kind, |_| crate::control::control_spelling(name))
+}
+
+/// [`read_control_op`], with the spelling of `path`'s last component found by `spelling`
+/// once the policy allows a read at all.
+fn read_spelled_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+    spelling: impl FnOnce(&Path) -> Option<crate::control::ControlSpelling>,
+) -> Result<Option<Op>> {
     if !config.read_controls {
         return Ok(None);
     }
-    match crate::control::path_control_spelling(path) {
+    match spelling(path) {
         Some(crate::control::ControlSpelling::Exact) => {
             read_control_op_unconditional(root, path, kind, config.control_limits.budget)
         }
@@ -7595,7 +7647,15 @@ mod tests {
                 .expect("lookup")
             };
             let listed = |path: &str, kind| {
-                read_control_op(&config, dir.path(), Path::new(path), kind).expect("listed read")
+                let path = Path::new(path);
+                let read = read_control_op(&config, dir.path(), path, kind).expect("listed read");
+                let name = path.file_name().expect("a listed name");
+                assert_eq!(
+                    read_named_control_op(&config, dir.path(), path, name, kind).expect("named"),
+                    read,
+                    "{label}: a walker's read by the listed name decides as the path's (H180)"
+                );
+                read
             };
 
             assert_eq!(lookup("exact"), upsert("exact/.gitignore", b"*.log\n"), "{label}");
@@ -7629,6 +7689,39 @@ mod tests {
                 .expect("read"),
                 None,
                 "{label}: a scan that reads no rules looks nothing up"
+            );
+            assert_eq!(
+                read_named_control_op(
+                    &blind,
+                    dir.path(),
+                    Path::new("exact/.gitignore"),
+                    OsStr::new(".gitignore"),
+                    EntryKind::File
+                )
+                .expect("read"),
+                None,
+                "{label}: nor does a read by the listed name"
+            );
+        }
+    }
+
+    /// The walker's join makes [`Path::join`]'s path byte for byte, including under the
+    /// root, whose relative directory is empty, and for a name longer than its directory
+    /// (H180).
+    #[test]
+    fn a_listed_name_joins_as_path_join_does() {
+        for (rel_dir, name) in [
+            ("", "file"),
+            ("", ".gitignore"),
+            ("a", "b"),
+            ("a/b", ".GITIGNORE"),
+            ("node_modules/x", "a-name-longer-than-twice-its-directory.js"),
+        ] {
+            let joined = join_listed_name(Path::new(rel_dir), OsStr::new(name));
+            assert_eq!(
+                joined.as_os_str(),
+                Path::new(rel_dir).join(name).as_os_str(),
+                "{rel_dir:?} and {name:?}"
             );
         }
     }
