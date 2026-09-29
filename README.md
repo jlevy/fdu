@@ -8,11 +8,12 @@ without writing a filesystem walker.
 Key features:
 
 - **Speed:** Native Rust and native filesystem APIs make fdu fast.
-  On a one-million-file macOS benchmark of the 0.2.1 engine, fdu ran at about 9× the
-  speed of standard `du`, over 50% faster than [dust](https://github.com/bootandy/dust),
-  49% faster than [pdu](https://github.com/KSXGitHub/parallel-disk-usage), and about 9%
-  faster than [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest
-  tool, which returns only a total.
+  On a one-million-file macOS benchmark of a pre-0.2.0 build (`a5c0ab46`), fdu ran at
+  about 9× the speed of standard `du`, over 50% faster than
+  [dust](https://github.com/bootandy/dust), 49% faster than
+  [pdu](https://github.com/KSXGitHub/parallel-disk-usage), and about 9% faster (on an
+  uncontrolled host) than [dumac](https://github.com/healeycodes/dumac#readme), the
+  next-fastest tool, which returns only a total.
   On Linux, the current engine’s default command runs level with pdu and
   [diskus](https://github.com/sharkdp/diskus), the fastest peers there, on real source
   and `node_modules` trees.
@@ -432,9 +433,9 @@ host with warm filesystem caches, 2026-09-29, on the current engine (`ebc06c78`)
 | pdu | default tree: ten levels, 1% floor | 1.14 s | +4% | 93 MiB |
 | diskus | one total | 1.16 s | +7% | ≤ 54 MiB |
 | dust | one allocated-byte total | 1.75 s | +62% | 446 MiB |
-| gdu | ten-row tree | 2.81 s | +158% | 596 MiB |
+| gdu | ten largest files | 2.81 s | +158% | 596 MiB |
 | GNU `du` | one total, serial | 2.85 s | +160% | ≤ 54 MiB |
-| ncdu | browsable in-memory tree | 3.00 s | +174% | ≤ 54 MiB |
+| ncdu | full-tree JSON export, streamed to `/dev/null` | 3.00 s | +174% | ≤ 54 MiB |
 | dua | the root’s children and a total | 3.65 s | +234% | ≤ 54 MiB |
 
 Each percentage is paired against the adjacent fdu run, and every 95% interval excludes
@@ -460,8 +461,8 @@ for versions, CPU time, and the protocol, and
 [the performance evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
 for the round that closed the gap.
 
-The macOS figures measure the 0.2.1 engine (`a5c0ab46`); no macOS comparison has run on
-the current one. On the same million-entry tree, 0.2.1 built a reusable index and
+The macOS figures measure a pre-0.2.0 build (`a5c0ab46`); no macOS comparison has run on
+the current engine. On the same million-entry tree, that build made a reusable index and
 rendered a ten-row tree in **6.4 seconds**, covering **137k files/s** and **0.47 GB/s**.
 Measured on an M1 Pro’s internal APFS SSD with warm filesystem caches and fdu’s cache
 disabled (`--cache off`), 2026-09-28. These are approximate local results under heavy
@@ -473,11 +474,11 @@ background load. The default `fdu PATH` measured the same within 0.1%.
 | dumac | allocated-byte total only | 6.9 s | **+9%** | 127k | 0.43 |
 | pdu | block total only (`--max-depth 1`)¹ | 9.2 s | +49% | 96k | 0.33 |
 | diskus | scalar total only | 9.3 s | +42% | 94k | 0.32 |
-| dua | scalar total only | 10.4 s | +61% | 84k | 0.29 |
-| gdu | rendered tree | 10.5 s | +67% | 83k | 0.28 |
+| dua | the root’s children and a total | 10.4 s | +61% | 84k | 0.29 |
+| gdu | ten largest files | 10.5 s | +67% | 83k | 0.28 |
 | dust | allocated-byte total only | 11.0 s | +57% | 79k | 0.27 |
 | BSD `du` | one total, serial | 55.6 s | +801% | 16k | 0.054 |
-| ncdu | reusable index | 67.3 s | +968% | 13k | 0.044 |
+| ncdu | full-tree JSON export, streamed to `/dev/null` | 67.3 s | +968% | 13k | 0.044 |
 | GNU `du` | one total, serial | 68.0 s | +960% | 13k | 0.044 |
 
 Rates count regular files and their disk space, not file-content reads; `k` means
@@ -519,28 +520,33 @@ for the paired interval, host regime, and resource qualification.
 
 Many tools report disk usage, and this is how fdu compares with the ones people most
 often reach for, and with the two leading source-line counters for its code analysis.
-Each cell was checked against that tool’s source or documentation:
+Each cell was checked against that tool’s source or documentation.
+Outside the speed rows, ✅ means the tool does what the row names, text alone means
+partial or different support, ❌ means none (any text says what the tool does instead),
+and — means the row does not apply:
 
 | Feature | fdu | du | ncdu | dust | dua | gdu | pdu | diskus | dumac | scc | tokei |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Plain total | ✅ `--view summary` | ✅ `-s` | ❌ TUI only | ✅ `-d 0` | ✅ total row | ✅ `-ns` | ✅ `-d 1` | ✅ | ✅ | —⁴ | —⁴ |
+| Plain total | ✅ `--view summary` | ✅ `-s` | ❌ TUI or export | ✅ `-d 0` | ✅ total row | ✅ `-ns` | ✅ `-d 1` | ✅ | ✅ | —⁴ | —⁴ |
 | Speed, 1M entries, macOS¹ | 6.4 s | 56–68 s | 67 s | 11.0 s | 10.4 s | 10.5 s | 9.2 s | 9.3 s | 6.9 s | — | — |
 | Speed, 1M entries, Linux² | 1.09 s | 2.85 s | 3.00 s | 1.75 s | 3.65 s | 2.81 s | 1.14 s; 1.06 s at `-d 2` | 1.16 s | macOS only | — | — |
-| Tree breakdown and pruning | ✅ depth, breadth, share floor, row limit | depth, size floor | TUI browsing | depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | depth, share floor | ❌ | ❌ | ❌ per language or file | ❌ per language or file |
+| Tree breakdown and pruning | ✅ depth, breadth, share floor, row limit | ✅ depth, size floor | TUI browsing | ✅ depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | ✅ depth, share floor | ❌ | ❌ | ❌ per language or file | ❌ per language or file |
 | `.gitignore` | ✅ classify; include, exclude, or only ignored | ❌ | ❌ | ❌ | partial: TUI dims ignored entries; `--ignore-from` patterns | ❌³ | ❌ | ❌ | ❌ | ✅ exclude | ✅ exclude, inside a git repository |
 | Source code analysis⁴ | ✅ 15 languages: code, comment, and blank lines, per directory | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ 366 languages; complexity and cost estimates | ✅ 333 languages; embedded languages |
 | Code analysis speed, Linux source⁵ | 7.9 s; 0.55 s repeated | — | — | — | — | — | — | — | — | 1.2 s | 1.9 s |
 | Text analysis | ✅ lines, words, paragraphs, pages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | ❌ | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | Rust library; JSON | Rust library | ❌ | Go package; JSON, CSV, HTML, SQL | Rust library; JSON |
+| APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | tab-separated text; `-0` | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | ✅ Rust library; JSON | Rust library | ❌ | ✅ Go package; JSON, CSV, HTML, SQL | ✅ Rust library; JSON |
 | Watch and stream | ✅ `--watch`, JSONL change stream | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Cached results | ✅ snapshot and content cache, revalidated | ❌ | export, not revalidated | ❌ | snapshot, not revalidated | database, not revalidated | JSON, not revalidated | ❌ | ❌ | ❌ | ❌ |
 | Agent skill | ✅ `--install-skill` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | MCP server (`--mcp`) | ❌ |
 
 ¹ Median wall time on one generated 1,000,001-entry tree with warm caches, each tool
 doing its own job; see [Speed](#speed).
-macOS: an M1 Pro under heavy background load, 2026-09-28, with fdu’s 0.2.1 engine
-building a reusable index and a ten-row tree (`--cache off`); `du` is BSD at 55.6 s and
-GNU at 68.0 s, ncdu is 2.9.2, and pdu ran at `-d 1`, a total.
+macOS: an M1 Pro under heavy background load, 2026-09-28, with a pre-0.2.0 fdu build
+(`a5c0ab46`) building a reusable index and a ten-row tree (`--cache off`); `du` is BSD
+at 55.6 s and GNU 9.9 at 68.0 s, and pdu ran at `-d 1`, a total.
+The peers measured there were dust 1.2.4, dua 2.41.1, gdu 5.36.1, pdu 0.24.0, diskus
+0.9.0, and ncdu 2.9.2.
 
 ² Linux: a quiet 4-vCPU virtualized ext4 host, 2026-09-29, with the current engine’s
 default `fdu PATH`, pdu’s default, GNU `du` 9.4, and ncdu 1.19. On real source and
@@ -562,23 +568,24 @@ lines as code, and tokei on 165: 107 through three defects in its C parsing, 55 
 a different convention for a macro’s line splice after a comment, and 3 not attributed.
 See the
 [SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md).
-[cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs on
-one thread.
+[cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs as
+a single Perl process by default.
 
-⁵ Median wall time on the Linux v6.12 source (86,618 files, 1.6 GB), each tool with
-every ignore source off, hidden files counted, and text output: 12 adjacent pairs on the
-quiet Linux host of note 2, 2026-09-29. fdu’s first run, with its cache off, took 6.4
-times as long as scc and 4.2 times as long as tokei; the three read about the same
-bytes, so the gap is fdu’s CPU per byte.
+⁵ Median wall time on a copy of the Linux v6.12 source without `.git` (86,618 files, 1.5
+GB of file data), each tool with every ignore-file source off, hidden files counted, and
+text output: 12 adjacent pairs on the quiet Linux host of note 2, 2026-09-29. fdu’s
+first run, with its cache off, took 6.4 times as long as scc and 4.2 times as long as
+tokei; the three read about the same bytes, so the gap is fdu’s CPU per byte.
 Run again under the default cache policy, fdu reopened no unchanged file and answered in
 0.55 s. With each tool’s own `.gitignore` handling on a git clone, fdu took 9.2 s, scc
 1.3 s, and tokei 2.0 s.
 
-Versions checked: GNU coreutils `du` 9.4, and its source after 9.12; ncdu 1.19 and
-2.9.2; dust 1.2.5; dua 2.45.0; gdu 5.37.0, and its main branch at `4b179b0`; pdu 0.24.0;
-diskus 0.9.0; dumac at `1ffbe3c`; scc 4.1.0; tokei 15.0.0. dumac runs only on macOS and
-ncdu only on Unix-like systems; the others run on macOS, Linux, and Windows, `du`
-through a Unix layer such as MSYS2.
+Versions checked for the feature cells (note 1 names the macOS speed row’s): GNU
+coreutils `du` 9.4, and its source after 9.12; ncdu 1.19 and 2.9.2; dust 1.2.5; dua
+2.45.0; gdu 5.37.0, and its main branch at `4b179b0`; pdu 0.24.0; diskus 0.9.0; dumac at
+`1ffbe3c`; scc 4.1.0; tokei 15.0.0. dumac runs only on macOS and ncdu only on Unix-like
+systems; the others run on macOS, Linux, and Windows, `du` through a Unix layer such as
+MSYS2.
 
 **When to use each.** ncdu, dua, and gdu let you browse a tree and delete from it
 interactively, which fdu does not; gdu can also serve a browser view, and `dua clean`

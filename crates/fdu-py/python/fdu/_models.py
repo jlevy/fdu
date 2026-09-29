@@ -79,9 +79,10 @@ class CachePolicy(StrEnum):
     """Whether :func:`fdu.open` and :func:`fdu.report` may read and write the snapshot cache.
 
     ``AUTO`` uses the cache where the kind of request gains from it: a one-shot metadata
-    report neither reads nor writes it, while content analysis and an opened index read,
-    revalidate, and write it. ``ON`` also writes after a one-shot report, leaving a
-    snapshot for a later ``stale_ok`` answer. ``OFF`` neither reads nor writes.
+    report neither reads nor writes it, while content analysis and an index from
+    :func:`fdu.open` read, revalidate, and write it. ``ON`` also writes after a one-shot
+    report, leaving a snapshot for a later ``stale_ok`` answer. ``OFF`` neither reads nor
+    writes.
     """
 
     AUTO = "auto"

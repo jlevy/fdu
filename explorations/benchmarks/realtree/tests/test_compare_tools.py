@@ -13,6 +13,51 @@ def tool(name: str) -> compare_tools.Tool:
     return compare_tools.Tool(name, compare_tools.CONTRACTS[name], Path("/bin/true"))
 
 
+def rate_document() -> dict:
+    """A two-tool comparison of 2-second medians over 500,000 files and 3 GB."""
+    wall = {"median": 2_000_000_000}
+    rss = {"median": 8 * 1024 * 1024}
+    comparison = {
+        "median_change_pct": 50.0,
+        "ci95_change_pct": [40.0, 60.0],
+    }
+    return {
+        "anchor": "fdu",
+        "baseline_drift": [],
+        "competitor_order": ["du"],
+        "conditions": {"storage": "internal APFS SSD"},
+        "host": {"cpu_model": "Fixture CPU"},
+        "invalid_samples": 0,
+        "overall": {"fdu": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
+        "semantic_mismatches": [],
+        "statistics": {
+            "du": {
+                "competitor_vs_fdu": {"wall_ns": comparison},
+                "fdu_vs_competitor": {
+                    "policy_stability": {"stable": False},
+                    "qualification": {
+                        "classification": "inconclusive",
+                        "confirmable": False,
+                        "reasons": [],
+                    },
+                },
+                "tools": {"du": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
+            }
+        },
+        "summary_oracle_mismatches": [],
+        "tools": {
+            "fdu": {"work_class": "indexed-tree"},
+            "du": {"work_class": "total-only"},
+        },
+        "tree": {
+            "counts": {"files": 500_000, "total": 600_001},
+            "hardlinks": {"duplicate_allocated_bytes": 0, "duplicate_file_entries": 0},
+            "sizes": {"allocated_bytes": 3_000_000_000},
+        },
+        "tree_mutated_during_run": [],
+    }
+
+
 class ToolComparisonTests(unittest.TestCase):
     def test_held_out_release_comparison_rejects_an_uncontrolled_host(self) -> None:
         with self.assertRaisesRegex(compare_tools.ComparisonError, "held-out release evidence"):
@@ -333,49 +378,7 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertIn("not an assertion", note)
 
     def test_render_reports_absolute_file_and_allocated_byte_rates(self) -> None:
-        wall = {"median": 2_000_000_000}
-        rss = {"median": 8 * 1024 * 1024}
-        comparison = {
-            "median_change_pct": 50.0,
-            "ci95_change_pct": [40.0, 60.0],
-        }
-        document = {
-            "anchor": "fdu",
-            "baseline_drift": [],
-            "competitor_order": ["du"],
-            "conditions": {"storage": "internal APFS SSD"},
-            "host": {"cpu_model": "Fixture CPU"},
-            "invalid_samples": 0,
-            "overall": {"fdu": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
-            "semantic_mismatches": [],
-            "statistics": {
-                "du": {
-                    "competitor_vs_fdu": {"wall_ns": comparison},
-                    "fdu_vs_competitor": {
-                        "policy_stability": {"stable": False},
-                        "qualification": {
-                            "classification": "inconclusive",
-                            "confirmable": False,
-                            "reasons": [],
-                        },
-                    },
-                    "tools": {"du": {"metrics": {"wall_ns": wall, "peak_rss_bytes": rss}}},
-                }
-            },
-            "summary_oracle_mismatches": [],
-            "tools": {
-                "fdu": {"work_class": "indexed-tree"},
-                "du": {"work_class": "total-only"},
-            },
-            "tree": {
-                "counts": {"files": 500_000, "total": 600_001},
-                "hardlinks": {"duplicate_allocated_bytes": 0, "duplicate_file_entries": 0},
-                "sizes": {"allocated_bytes": 3_000_000_000},
-            },
-            "tree_mutated_during_run": [],
-        }
-
-        rendered = compare_tools.render(document)
+        rendered = compare_tools.render(rate_document())
 
         self.assertIn(
             "| Median wall-clock time | Wall time vs. fdu | Files/s | GB/s |",
@@ -890,6 +893,13 @@ class LineCountContractTests(unittest.TestCase):
         self.assertEqual(cached.code_table, "fdu")
         self.assertEqual(cached.work_class, "code-by-language-cached")
 
+    def test_a_contract_names_a_table_layout_exactly_when_it_counts_lines(self) -> None:
+        # A line-count contract without a layout would still pair, but its samples would
+        # never be checked for a total row or for stable totals.
+        for name, contract in compare_tools.CONTRACTS.items():
+            with self.subTest(contract=name):
+                self.assertEqual(contract.code_table is None, contract.measures == "disk-usage")
+
     def test_only_the_fdu_arms_may_anchor(self) -> None:
         self.assertEqual(
             compare_tools.FDU_CODE_CONTRACTS,
@@ -1015,6 +1025,29 @@ class LineCountContractTests(unittest.TestCase):
         self.assertIn("| tokei | — | — | — | — |", section)
         self.assertIn("differ by design", section)
         self.assertEqual(compare_tools._code_totals_section({"anchor": "fdu"}), [])
+
+    def test_each_tool_records_the_totals_it_reported(self) -> None:
+        totals = {"files": 1, "code": 5, "comment": 0, "blank": 0}
+        samples = [
+            # An invalid first sample leaves no totals; a later valid one supplies them.
+            {"tool": "fdu", "code_totals": None},
+            {"tool": "fdu", "code_totals": totals},
+            {"tool": "fdu", "code_totals": dict(totals)},
+            {"tool": "scc"},
+        ]
+
+        self.assertEqual(compare_tools._code_totals_by_tool(samples), {"fdu": totals, "scc": None})
+
+    def test_a_line_count_report_shows_no_metadata_rates(self) -> None:
+        # The tree's allocated bytes per second would describe no work a counter did.
+        document = {**rate_document(), "code_totals": {"fdu": None, "du": None}}
+
+        rendered = compare_tools.render(document)
+
+        self.assertIn("| fdu | indexed-tree | 2.0 s | baseline | — | — |", rendered)
+        self.assertIn("| du | total-only | 2.0 s | +50% | — | — |", rendered)
+        self.assertIn("not shown for line counters", rendered)
+        self.assertNotIn("Rates divide", rendered)
 
 
 if __name__ == "__main__":

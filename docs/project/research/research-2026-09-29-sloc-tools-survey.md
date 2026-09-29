@@ -61,7 +61,7 @@ The short answers:
   4.1.0, cloc 2.10, linguist 9.7.0, gocloc 0.7.0, loc 0.4.1, polyglot 0.5.29, ohcount
   4.0.0, pygount 3.2.0, and onefetch 2.28.1.
 - The subject: Linux v6.12 (tag `adc21867`), 86,618 regular files, 62 symbolic links,
-  and 5,757 directories in 1.6 GB, with 358 `.gitignore` files.
+  and 5,757 directories holding 1.5 GB of file data, with 358 `.gitignore` files.
 - The host: a 4-vCPU Intel Xeon at 2.1 GHz with 15 GiB of memory, Linux 6.18.44 in a
   Firecracker KVM guest, ext4 on virtio; warm file cache, quiet host.
 
@@ -134,7 +134,7 @@ COCOMO and LOCOMO cost estimates are a non-goal, per the
 
 ### Accuracy on Linux v6.12
 
-With every ignore source off, the three tools counted the C family as follows.
+With every ignore-file source off, the three tools counted the C family as follows.
 fdu has no separate header language: its C row includes headers, and it labels 168
 kernel headers C++ (below).
 
@@ -147,7 +147,8 @@ kernel headers C++ (below).
 | tokei | C | 34,661 | 18,301,279 | 2,751,125 | 3,543,469 |
 | tokei | C Header | 25,292 | 7,804,229 | 1,500,959 | 749,686 |
 
-Summed over C and C++ sources and headers, the totals agree to within 0.02%:
+Summed over C and C++ sources and headers, code and comment totals agree within 0.02%,
+and blank lines within 0.06%:
 
 | Tool | Files | Code | Comment | Blank |
 | --- | ---: | ---: | ---: | ---: |
@@ -257,9 +258,9 @@ CPU time and peak memory, as medians:
 | Ignore rules off, fdu repeated with its cache | 0.72 s, 142 MiB | 4.8 s, 241 MiB | 7.2 s, 150 MiB |
 
 - **First run:** fdu takes 6.4 times as long as scc and 4.2 times as long as tokei, and
-  spends 6.2 and 4.1 times the CPU. The three read about the same data: by its scan
-  counters, fdu opened 86,611 files and read 1.48 GB, and scc and tokei read the 81,820
-  and 81,894 files they recognize, 1.46 GB each.
+  spends 6.2 and 4.1 times the CPU. The three read about the same data: fdu opened all
+  86,618 files and read 1.48 GB, and scc and tokei read the 81,820 and 81,894 files they
+  recognize, 1.46 GB each.
   The gap is CPU per byte.
 - **Ignore rules:** excluding ignored files adds 1.3 s to fdu, 16%, against 4% for scc
   and 6% for tokei; these are comparisons between cells, not paired.
@@ -274,7 +275,7 @@ CPU time and peak memory, as medians:
 - **Context:** on small macOS trees in 2026-08
   ([performance checkpoint](../reports/report-2026-08-13-code-sloc-performance.md)), fdu
   was close to tokei and about 20% behind scc.
-  On a 1.6 GB tree the gap is wider.
+  On a tree with 1.5 GB of file data the gap is wider.
 
 ### Earlier Accuracy Results
 
@@ -300,8 +301,8 @@ Add scc and tokei as README matrix columns, and name cloc in a footnote:
   formats, an MCP server), and actively released.
 - **tokei** is the Rust ecosystem’s counter and a library: onefetch and crates.io’s line
   counts use it. It handles embedded languages and is widely packaged.
-- **cloc** recognizes the most languages but runs on one thread in Perl, so it belongs
-  in a footnote.
+- **cloc** recognizes the most languages but runs as a single Perl process by default,
+  so it belongs in a footnote.
 
 In the matrix, scc and tokei show “—” in the disk-usage rows, because they count source
 lines, not disk usage.

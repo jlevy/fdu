@@ -154,9 +154,9 @@ CONTRACTS: Dict[str, ToolContract] = {
         name="fdu-default-tree",
         work_class="default-tree",
         description=(
-            "the bare default invocation: complete scan, reusable exact metadata "
-            "index, and rendered default tree; a binary that persists a snapshot by "
-            "default writes it inside the timed run"
+            "the bare default invocation: complete scan, exact directory roll-ups, and "
+            "rendered default tree; a binary that persists a snapshot by default writes "
+            "it inside the timed run"
         ),
         argv=("{binary}", "--color", "never", "{root}"),
         version_argv=("{binary}", "--version"),
@@ -188,7 +188,10 @@ CONTRACTS: Dict[str, ToolContract] = {
     "gdu": ToolContract(
         name="gdu",
         work_class="rendered-tree",
-        description="complete parallel scan and non-interactive 10-row tree",
+        description=(
+            "complete parallel scan and a non-interactive list of the ten largest files "
+            "at any depth; --top takes precedence over --depth"
+        ),
         argv=(
             "{binary}",
             "--non-interactive",
@@ -235,7 +238,7 @@ CONTRACTS: Dict[str, ToolContract] = {
     "ncdu": ToolContract(
         name="ncdu",
         work_class="indexed-tree",
-        description="complete scan and in-memory browseable tree, with its UI disabled",
+        description="complete scan streamed as a full-tree JSON export, with its UI disabled",
         argv=(
             "{binary}",
             "-0",
@@ -249,7 +252,7 @@ CONTRACTS: Dict[str, ToolContract] = {
     "dua": ToolContract(
         name="dua",
         work_class="total-only",
-        description="complete parallel scan reduced to one aggregate total",
+        description="complete parallel scan listing the root's children and a total",
         argv=("{binary}", "{root}"),
         version_argv=("{binary}", "--version"),
     ),
@@ -283,13 +286,16 @@ CONTRACTS: Dict[str, ToolContract] = {
         argv=("{binary}", "-sk", "{root}"),
         version_argv=("{binary}", "--version"),
     ),
-    # Source-line counters, in two arms. The `-no-ignore` arm turns every ignore source
-    # off and counts hidden files, so the three tools walk the same population; run it
-    # on a copy of the tree without `.git`. The `-gitignore` arm uses each tool's own
-    # ignore handling on a real clone, which is what a user of each gets. Every command
-    # prints its text table: JSON would time serialization that differs by design
-    # (tokei's includes every file's record). The table is a few kilobytes captured to
-    # a file and parsed after the timed window.
+    # Source-line counters, in two arms. The `-no-ignore` arm turns every ignore-file
+    # source off and counts hidden files, so the three tools walk the same population;
+    # run it on a copy of the tree without `.git`. scc still applies two built-in
+    # exclusions there: `--exclude-dir` (.git, .hg, .svn) and `--exclude-file` (lock
+    # files such as Cargo.lock and package-lock.json). Neither touches a kernel copy
+    # without `.git`, but a tree with lock files would differ. The `-gitignore` arm uses
+    # each tool's own ignore handling on a real clone, which is what a user of each gets.
+    # Every command prints its text table: JSON would time serialization that differs by
+    # design (tokei's includes every file's record). The table is a few kilobytes
+    # captured to a file and parsed after the timed window.
     #
     # The tools recognize different languages, so their totals differ by design and
     # the harness cannot check one against another. Each sample must instead print a
@@ -659,10 +665,11 @@ def run(
     samples: List[Dict[str, Any]] = []
     total = len(schedule) * 2
     position = 0
-    # One isolated cache directory for the whole comparison, discarded afterwards. Per
-    # run rather than per trial because the default plan does not read what it wrote:
-    # every trial scans cold and rewrites, so trials stay identical to each other while
-    # the operator's real cache is neither consulted nor disturbed.
+    # One isolated cache directory serves the whole comparison and is discarded
+    # afterwards, so the operator's real cache is neither consulted nor disturbed. A
+    # contract that reads its cache, such as `fdu-code-cached-no-ignore`, is warm after
+    # its first warm-up, and every timed trial measures a repeated run; a contract that
+    # does not read what it wrote scans cold in every trial.
     needs_cache_home = any(tool.contract.writes_cache for tool in tools)
     with measure._host_regime(host_regime, background_load_workers) as regime:
         with tempfile.TemporaryDirectory(prefix="fdu-tool-cache-") as cache_directory:
@@ -1569,7 +1576,7 @@ def render(document: Mapping[str, Any]) -> str:
                 document["tools"][anchor]["work_class"],
                 _seconds(anchor_metrics["wall_ns"]),
                 "baseline",
-                *_throughput(tree_document, anchor_metrics["wall_ns"]),
+                *_rates(document, anchor_metrics["wall_ns"]),
                 "—",
                 _rss_cell(anchor_metrics["peak_rss_bytes"], document["overall"][anchor]),
             ]
@@ -1591,7 +1598,7 @@ def render(document: Mapping[str, Any]) -> str:
                     contract["work_class"],
                     _seconds(wall),
                     change[0],
-                    *_throughput(tree_document, wall),
+                    *_rates(document, wall),
                     change[1],
                     _rss_cell(rss, document["overall"].get(name, {})),
                 ]
@@ -1602,11 +1609,18 @@ def render(document: Mapping[str, Any]) -> str:
         [
             "",
             (
-                f"Rates divide the subject's {tree_document['counts']['files']:,} regular "
-                f"files and {tree_document['sizes']['allocated_bytes']:,} allocated bytes by "
-                "each row's wall median. Displayed values are rounded; k means thousands. "
-                "GB is decimal (1,000,000,000 bytes); the byte rate "
-                "describes metadata coverage, not file-body read bandwidth."
+                (
+                    "Files/s and GB/s are not shown for line counters: they would divide "
+                    "the tree's metadata by time spent reading file contents."
+                )
+                if _counts_lines(document)
+                else (
+                    f"Rates divide the subject's {tree_document['counts']['files']:,} regular "
+                    f"files and {tree_document['sizes']['allocated_bytes']:,} allocated bytes "
+                    "by each row's wall median. Displayed values are rounded; k means "
+                    "thousands. GB is decimal (1,000,000,000 bytes); the byte rate "
+                    "describes metadata coverage, not file-body read bandwidth."
+                )
             ),
             *(
                 [
@@ -1704,6 +1718,22 @@ def _code_totals_section(document: Mapping[str, Any]) -> List[str]:
         ]
     )
     return lines
+
+
+def _counts_lines(document: Mapping[str, Any]) -> bool:
+    """Whether a run counts source lines: it carries totals exactly when its anchor does."""
+    return isinstance(document.get("code_totals"), Mapping)
+
+
+def _rates(document: Mapping[str, Any], wall: Optional[Mapping[str, Any]]) -> Tuple[str, str]:
+    """A row's Files/s and GB/s, or dashes for a line-count run.
+
+    A line counter spends its time reading file contents, so dividing the tree's
+    metadata by that time would read as a scan rate the tool never had.
+    """
+    if _counts_lines(document):
+        return "—", "—"
+    return _throughput(document["tree"], wall)
 
 
 def _throughput(

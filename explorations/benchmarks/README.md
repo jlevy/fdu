@@ -301,10 +301,10 @@ Keep the evidence outside disposable scratch; clean up only the recorded generat
 anchored on its fdu contract:
 
 - **Ignore rules off:** `fdu-code-no-ignore`, `scc-no-ignore`, and `tokei-no-ignore`
-  turn off every ignore source and count hidden files, so all three walk one population.
-  Measure a copy of the tree without `.git`, made with `tar` rather than hard links: a
-  hard-linked copy gives every file a second link, and fdu’s shared-file accounting
-  would then do work the others skip.
+  turn off every ignore-file source and count hidden files, so all three walk one
+  population. Measure a copy of the tree without `.git`, made with `tar` rather than hard
+  links: a hard-linked copy gives every file a second link, and fdu’s shared-file
+  accounting would then do work the others skip.
 - **Each tool’s own ignore handling:** `fdu-code-gitignore`, `scc-gitignore`, and
   `tokei-gitignore` on the real clone.
   tokei applies `.gitignore` only inside a git repository.

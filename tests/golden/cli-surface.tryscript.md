@@ -28,7 +28,7 @@ A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
 $ fdu
-Fastest native du replacement and detailed file analytics for Python and Rust
+Fast native du replacement and detailed file analytics for Python and Rust
 
 Usage: fdu [OPTIONS] <PATH>
        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]

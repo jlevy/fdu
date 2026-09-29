@@ -20,8 +20,8 @@ fdu is measured as a user runs it, the bare `fdu PATH` (the `fdu-default-tree`
 contract), rather than with `--cache off --depth 1 --limit 10`. And pdu is measured
 twice: at its own defaults, and at `--max-depth 2`, the tree fdu’s `--depth 1` renders.
 
-- **fdu, pdu, and diskus are within 7% of each other.** fdu’s default command answered
-  in a **1.09-second median** (804k files/s). pdu’s default took 4% longer and diskus 7%
+- **pdu and diskus are within 7% of fdu.** fdu’s default command answered in a
+  **1.09-second median** (804k files/s). pdu’s default took 4% longer and diskus 7%
   longer; pdu at `--max-depth 2` took 3% less.
   Every interval excludes zero.
 - **Every other peer is slower,** from dust at +62% to dua at +234%.
@@ -52,23 +52,25 @@ These are not equal-output jobs:
   every directory. On this engine that request builds a folded index, every directory but
   only the files large enough to show, and frees it after answering
   ([engine architecture](../architecture/fdu-engine-architecture.md#one-fact-model-serves-every-lifecycle)).
-  The harness’s contract text still calls it a reusable index, which it was when the
-  contract was written.
+  The contract text recorded in this run’s result file calls it a reusable index, which
+  it was when the contract was written.
 - **pdu’s default** keeps every node within ten levels and prints those above 1% of the
   root; **pdu at `--max-depth 2`** keeps only the root’s children.
 - **diskus, dust, and GNU `du`** return one total; dust runs at `-d 0`.
 - **dua**, given one directory, lists its children and then a total.
   The harness’s `total-only` label for dua predates noticing this.
-- **gdu** renders a depth-one tree of its ten largest entries.
-- **ncdu** builds its complete browsable tree and exports it to `/dev/null`.
+- **gdu** lists its ten largest files, at any depth: `--top` takes precedence over
+  `--depth`.
+- **ncdu** streams a full-tree JSON export to `/dev/null`. The `rendered-tree` label for
+  gdu and `indexed-tree` label for ncdu likewise predate noticing what each returns.
 
 ### CPU and Memory, 2026-09-29
 
-fdu used 4.17 CPU-seconds per run, 0.84 of them in user space.
+fdu used 4.16 CPU-seconds per run, 0.84 of them in user space.
 pdu’s default used 5.5% more [4.4%, 7.5%] and diskus 11.0% more [9.9%, 13.3%]; pdu at
-`--max-depth 2` used the same [−0.8%, +1.4%]. Every tool spent most of its CPU in the
-kernel. fdu still makes the most voluntary context switches of the three leaders: a
-median of 14,502 per run, against pdu’s 1,620 at its default and 26 at depth 2.
+`--max-depth 2` used the same [−0.8%, +1.4%]. Every tool but gdu spent most of its CPU
+in the kernel. fdu still makes the most voluntary context switches of the three leaders:
+a median of 14,502 per run, against pdu’s 1,620 at its default and 26 at depth 2.
 
 The harness withholds a peak RSS at or below its own floor, 54.0 MiB in this run, for
 the reason [Peak RSS on Linux](#peak-rss-on-linux) gives, and shows it as a bound.
