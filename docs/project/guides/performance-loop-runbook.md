@@ -824,7 +824,13 @@ Walk 95.7–96.1% of `default-tree` component.
 Leftover is `getdents64`+`statx` (one open/dir, one stat/entry).
 Quiet attempt invalidated 23/24 timed samples.
 Do not compile a walk trim.
-Do not retry H71.
+Do not retry H71. **Caveat (2026-09-29):** that walk share includes `.gitignore`
+classification, which the consumer runs inside the walk-phase timer, and no
+`.gitignore`-off arm was measured.
+exp-173 later measured this job at 590 ms with `.gitignore` and 82 ms with
+`--no-controls` (Firecracker host, Linux 6.18.44, a later engine), and H162 and H163 cut
+it to 211 ms (exp-174). The floor reading holds for the `--no-controls` walk only; a
+leftover determination on a tree with ignore rules needs a `--no-controls` arm.
 
 **H141 / exp-140** is the standing Linux content-query replication: **same**.
 Uncontrolled 12-pair `content-query` of the same #91 control versus this engine (H138
@@ -867,7 +873,10 @@ Do not port `macos_bulk`.
 Quiet 12-pair `default-tree-first` on `linux-v6.12`. Walk 93% of component.
 Isolated `snapshot-save` 23.6 ms (~5%) is ≥3% and not skippable.
 Load/core 0.082–0.119 held.
-Do not retry H100.
+Do not retry H100. **Caveat (2026-09-29):** as for H140, `.gitignore` was on and no off
+arm was measured, so the 93% walk share includes classification (exp-173 measured
+`default-tree` at 590 ms with `.gitignore` and 82 ms without).
+H160 later stopped the default command writing the snapshot (exp-163).
 
 **H85 / exp-150** is the standing Linux transient-recycle screen: **rejected** against
 its 20% bar. Quiet `linux-v6.12` `--no-controls` aggregate −4.98%. Incomplete quiet
@@ -914,7 +923,8 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 4. **H146** — Linux first-run leftover after H140 (H136 analog).
    **Same leftover identity** (exp-147, quiet).
    Walk 93%; isolated save ~24 ms not skippable.
-   Do not retry H100.
+   Do not retry H100. The walk share includes `.gitignore` classification; see the
+   caveat above.
 5. **H85 / H147** — transient `--no-controls` aggregate recycle.
    H86 detached arenas did not consume `RetainedState::Summary`. **H85 rejected**
    against its 20% bar (exp-150, quiet `linux-v6.12` −4.98%). **H147 accepted** as the
