@@ -542,6 +542,32 @@ impl ControlTable {
         ControlChain { governing }
     }
 
+    /// The chain for `directory`'s children, derived from `above`, the chain resolved for
+    /// its parent's children, instead of resolved from the table again (H175).
+    ///
+    /// It is [`Self::chain_for`]'s answer whenever no control of a directory above
+    /// `directory` has changed since `above` was resolved: `above` then names every control
+    /// above `directory`, deepest first, and only `directory`'s own can be new, which goes
+    /// first. A parent-first build meets that condition, because each listing applies only
+    /// its own directory's control, before any of its children is listed. It costs one
+    /// lookup, and an allocation only when `directory` holds a control; a caller that
+    /// knows `directory` holds none, because its listing carried no control, can share
+    /// `above` without asking.
+    pub(crate) fn chain_below(
+        &self,
+        above: &Arc<ControlChain>,
+        directory: &Path,
+    ) -> Arc<ControlChain> {
+        let Some(source) = self.by_directory.get(directory) else {
+            return Arc::clone(above);
+        };
+        let depth = gitignore::with_components(directory, None, |components| components.len());
+        let mut governing = Vec::with_capacity(above.governing.len() + 1);
+        governing.push((depth, Arc::clone(source)));
+        governing.extend(above.governing.iter().cloned());
+        Arc::new(ControlChain { governing })
+    }
+
     /// Evaluate complete ignore semantics without relying on retained parent facts.
     ///
     /// The index hot path uses [`ControlMatcher::is_ignored`] with the parent's stored
@@ -760,6 +786,17 @@ impl ControlChain {
     /// Whether no control governs the directory, so none of its children is ignored.
     pub(crate) fn is_empty(&self) -> bool {
         self.governing.is_empty()
+    }
+
+    /// Whether two chains name the same controls, as the same retained contents, at the
+    /// same depths and in the same order.
+    pub(crate) fn same_as(&self, other: &Self) -> bool {
+        self.governing.len() == other.governing.len()
+            && self
+                .governing
+                .iter()
+                .zip(&other.governing)
+                .all(|(left, right)| left.0 == right.0 && Arc::ptr_eq(&left.1, &right.1))
     }
 
     /// Decide the child `name` of `directory`, the directory this chain was resolved for,
@@ -1195,6 +1232,66 @@ mod tests {
             b"x.log",
             false
         ));
+    }
+
+    /// A chain derived parent-first, each directory adding only its own control, names the
+    /// same controls as the chain the table resolves, whatever each directory's control
+    /// did: applied, shared with another directory, refused for the budget or for a line,
+    /// removed, or never listed (H175).
+    #[test]
+    fn chains_derived_parent_first_are_the_ones_the_table_resolves() {
+        let long_line = [vec![b'x'; DEFAULT_CONTROL_LINE_LIMIT + 1], b"\n".to_vec()].concat();
+        let large = b"pattern/\n".repeat(40);
+        let contents: [&[u8]; 6] =
+            [b"*.log\n", b"!keep\n*.tmp\n", b"", b"/a/x.log\n!*.log\n", &large, &long_line];
+        let budget = 3 * retained_source_cost(Path::new("a/b/c"), &large);
+        for seed in 0..200 {
+            let mut random = SplitMix(seed);
+            let mut table = ControlTable::with_limits(ControlLimits {
+                budget: Some(budget),
+                ..ControlLimits::default()
+            });
+            let mut listings = std::collections::VecDeque::from([(
+                PathBuf::new(),
+                Arc::<ControlChain>::default(),
+            )]);
+            while let Some((directory, above)) = listings.pop_front() {
+                let control = directory.join(CONTROL_FILE_NAME);
+                let listed = match random.below(4) {
+                    0 | 1 => {
+                        let content = contents[random.below(contents.len())].to_vec();
+                        table.upsert(&control, content).expect("control path");
+                        true
+                    }
+                    2 => {
+                        table.remove(&control).expect("control path");
+                        true
+                    }
+                    _ => false,
+                };
+                let chain = if listed { table.chain_below(&above, &directory) } else { above };
+                let resolved = table.chain_for(&directory);
+                assert!(chain.same_as(&resolved), "seed {seed}: {}", directory.display());
+                for name in ["x.log", "keep", "x.tmp", "pattern", "a"] {
+                    for is_dir in [false, true] {
+                        assert_eq!(
+                            chain.is_ignored(&directory, name.as_bytes(), is_dir),
+                            resolved.is_ignored(&directory, name.as_bytes(), is_dir),
+                            "seed {seed}: {}/{name}",
+                            directory.display()
+                        );
+                    }
+                }
+                if directory.components().count() < 4 {
+                    for name in ["a", "b", "c"] {
+                        if random.below(3) > 0 {
+                            listings.push_back((directory.join(name), Arc::clone(&chain)));
+                        }
+                    }
+                }
+            }
+            table.assert_consistent();
+        }
     }
 
     #[test]
