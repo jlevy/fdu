@@ -309,9 +309,10 @@ anchored on its fdu contract:
   `tokei-gitignore` on the real clone.
   tokei applies `.gitignore` only inside a git repository.
 - **A repeated fdu run:** `fdu-code-cached-no-ignore` is the ignore-off count under the
-  default cache policy. The first warm-up writes the content cache into the comparison’s
-  isolated cache directory, and the timed runs revalidate against it; anchor a separate
-  matrix on it to compare a repeated fdu run with the peers, which have no cache.
+  default cache policy.
+  The first warm-up writes the content cache into the comparison’s isolated cache
+  directory, and the timed runs revalidate against it; anchor a separate matrix on it to
+  compare a repeated fdu run with the peers, which have no cache.
 
 ```shell
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
@@ -326,13 +327,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations \
   --output-dir "$RESULTS" --name sloc-no-ignore
 ```
 
-The harness refuses to pair contracts that measure different things, so the arms and
-the disk-usage contracts cannot mix.
+The harness refuses to pair contracts that measure different things, so the arms and the
+disk-usage contracts cannot mix.
 Every command prints its text table, which the harness parses for its total row.
 The tools recognize different languages, so their totals differ by design and are not
 checked against each other; a sample is valid when it prints one total row with no
 stderr and a zero exit, and every sample of one tool must report the same totals.
-Check agreement between tools separately, untimed, from each tool’s per-file JSON.
+Check agreement between tools separately, untimed, from each tool’s per-file JSON. The
+current result, on Linux v6.12, is in
+[the SLOC tools survey](../../docs/project/research/research-2026-09-29-sloc-tools-survey.md#speed-on-linux-v612).
 
 ### Future Linux Cold Comparison
 
