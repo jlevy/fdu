@@ -59,7 +59,20 @@ def forbidden(argv: Sequence[str]) -> str | None:
     if command[:1] == ["git"] and "tag" in command and "-v" not in command:
         return "creating or moving a tag"
     if command[:3] == ["gh", "workflow", "run"] and {"-f", "-F", "--json"} & set(command):
-        return "dispatching with inputs"
+        allowed = [
+            "gh",
+            "workflow",
+            "run",
+            "release.yml",
+            "--ref",
+            BRANCH,
+            "-f",
+            f"previous={PREVIOUS}",
+            "--repo",
+            REPO,
+        ]
+        if command != allowed:
+            return "dispatching with publishing inputs"
     if command[:2] == ["gh", "release"]:
         return "writing a GitHub release"
     writes = {"-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"}
@@ -457,6 +470,29 @@ class CandidateTests(ReleaseCase):
                 self.host, self.release, run_id=run_id, redispatch=redispatch
             )
         )
+
+    def test_remote_only_rehearsal_still_verifies_the_run_without_downloading(self) -> None:
+        result = self.quietly(
+            lambda: maintainer.candidate(
+                self.host, self.release, run_id=None, redispatch=False, no_download=True
+            )
+        )
+        self.assertIsNone(result)
+        self.assertTrue(self.host.commands("gh", "run", "view"))
+        self.assertEqual(self.host.commands("gh", "run", "download"), [])
+
+    def test_rehearsal_forwards_a_validated_previous_shipped_version(self) -> None:
+        self.remote[f"refs/tags/v{PREVIOUS}"] = OTHER
+        self.quietly(
+            lambda: maintainer.candidate(
+                self.host, self.release, run_id=None, redispatch=False, previous=PREVIOUS
+            )
+        )
+        command = self.host.commands("gh", "workflow", "run")[0]
+        self.assertEqual(command[command.index("-f") + 1], f"previous={PREVIOUS}")
+        self.assertNotIn("publish=true", command)
+        download = self.host.commands("gh", "run", "download")[0]
+        self.assertEqual(download[download.index("--pattern") + 1], "release-*")
 
     def test_it_pins_dispatches_watches_verifies_and_keeps_the_files(self) -> None:
         target = self.candidate()

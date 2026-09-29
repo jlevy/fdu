@@ -85,11 +85,9 @@ class MetadataTests(unittest.TestCase):
                     else:
                         self.assertNotIn(marker, body)
         self.assertRegex(workflow, r"(?m)^permissions:\n  contents: read\n\n")
-        # The one write grant is the publish job's `id-token: write`: the GitHub release stays
-        # a maintainer step, so nothing may write the repository, and a build job that ran
-        # dependency build scripts under `write-all` could push or move a tag. Matched as a
-        # word, so a doubled space or a `write-all` cannot slip past a substring.
-        self.assertEqual(re.findall(r"(?i)\bwrite(?:-all)?\b", code(workflow)), ["write"])
+        # Only registry publication and announcement hold write authority.
+        # Build jobs cannot push or move a tag.
+        self.assertEqual(re.findall(r"(?i)\bwrite(?:-all)?\b", code(workflow)), ["write", "write"])
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("gh-action-pypi-publish", workflow)
         # No registry secret exists: the only secret read is the workflow's own read-only
@@ -108,6 +106,33 @@ class MetadataTests(unittest.TestCase):
             with self.subTest(step=holder):
                 self.assertIn(f"CARGO_REGISTRY_TOKEN: ${{{{ {token} }}}}\n", steps[holder])
 
+    def test_announcement_authority_and_dependencies(self) -> None:
+        jobs = workflow_jobs((ROOT / ".github/workflows/release.yml").read_text())
+        announce = jobs["announce"]
+        self.assertIn("    needs: [plan, publish, notes]\n", announce)
+        self.assertIn("    if: needs.plan.outputs.publish == 'true'\n", announce)
+        self.assertIn("    permissions:\n      contents: write\n", announce)
+        self.assertIn("scripts/release/announce.py", announce)
+        self.assertNotRegex(announce, r"\b(?:pip|npm|cargo|uvx|make)\b")
+        self.assertNotIn("--project", announce)
+        for name, job in jobs.items():
+            if name != "announce":
+                self.assertNotIn("contents: write", job)
+        notes = jobs["notes"]
+        self.assertIn("scripts/release/maintainer.py body", notes)
+        self.assertIn("PREVIOUS: ${{ inputs.previous }}", notes)
+        self.assertIn('args+=(--previous "${PREVIOUS}")', notes)
+        self.assertIn("name: announcement-notes-", notes)
+        for artifact in (
+            "announcement-notes-",
+            "release-evidence-",
+            "release-crate",
+            "release-sdist",
+            "release-wheel-*",
+        ):
+            self.assertIn(artifact, announce)
+        self.assertNotIn("pattern: release-*", announce)
+
     def test_the_publish_job_runs_only_on_the_planned_tag_after_the_rehearsal(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = workflow_jobs(workflow)[PUBLISH_JOB]
@@ -116,7 +141,7 @@ class MetadataTests(unittest.TestCase):
             "    permissions:\n      contents: read\n      id-token: write\n    env:\n", publish
         )
         self.assertIn(
-            "    needs: [plan, crate, semver, sdist, wheels, evidence, release-environment]\n",
+            "    needs: [plan, crate, semver, sdist, wheels, evidence, notes, release-environment]\n",
             publish,
         )
         # The whole condition, exactly: a presence check on each clause would pass
@@ -160,6 +185,9 @@ class MetadataTests(unittest.TestCase):
                 "      publish:",
                 "        type: boolean",
                 "        default: false",
+                "      previous:",
+                "        type: string",
+                '        default: ""',
             ],
         )
 
@@ -300,7 +328,9 @@ class MetadataTests(unittest.TestCase):
             sorted(set(scripts)),
             [
                 "-m",
+                "scripts/release/announce.py",
                 "scripts/release/inspect_artifacts.py",
+                "scripts/release/maintainer.py",
                 "scripts/release/publish_gate.py",
                 "scripts/release/registry_state.py",
                 "scripts/release/resolve_plan.py",
@@ -326,7 +356,7 @@ class MetadataTests(unittest.TestCase):
             step.split("\n      - ", 1)[0]
             for step in workflow.split("- uses: actions/download-artifact@")[1:]
         ]
-        self.assertEqual(len(downloads), 5)
+        self.assertEqual(len(downloads), 10)
         for step in downloads:
             with self.subTest(step=step):
                 self.assertRegex(step, r"(?m)^\s+path: \S.*$")
