@@ -3139,6 +3139,13 @@ mod tests {
                 420,
                 ScanConfig { read_controls: false, ..ScanConfig::default() },
             ),
+            // The folded walk takes directory kinds from the listing (H185) except under
+            // `--one-filesystem`, where descent reads each directory's device.
+            (
+                0x7C15_9E37_79B9_7F4A,
+                390,
+                ScanConfig { one_filesystem: true, ..ScanConfig::default() },
+            ),
         ] {
             let tree = random_tree(seed, files);
             let label = format!("random tree {seed:#x} of {files} files");
