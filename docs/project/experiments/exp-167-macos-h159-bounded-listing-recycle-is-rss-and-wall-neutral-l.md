@@ -1,5 +1,5 @@
 ---
-title: "macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending"
+title: "macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux"
 softschema:
   contract: fdu.performance:Experiment/v1
   schema: experiment.schema.yaml
@@ -7,7 +7,7 @@ softschema:
   status: enforced
 experiment:
   id: exp-167
-  title: "macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending"
+  title: "macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux"
   date: "2026-09-28"
   hypotheses:
     - H159
@@ -300,11 +300,11 @@ experiment:
     new_failure_modes: []
     notes: "about 105 of the 256 diff lines are tests; no dependency, no unsafe, no platform gate"
   verdict:
-    decision: in-progress
+    decision: rejected
     primary_job: default-tree
     primary_metric: wall_ns
     change_pct: -1.41
-    reason: "uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no macOS regression and the exp-166 RSS cost is gone; the deciding Linux cell pre-registered in fdu-578e has not run"
+    reason: "uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no 3% win and no macOS regression, and the exp-166 RSS cost is gone; ships on the Linux accept (exp-190)"
     commit: b1f57ecd
     kept: candidate
 ---
@@ -422,3 +422,27 @@ Linux protocol, from `fdu-578e`:
    These are reported beside the probe verdict and do not replace it.
 5. Record the Linux cell as a new experiment, then update H159’s registry row and
    `fdu-578e`. H157’s product-job rerun (`fdu-o6um`) takes the kept arm as its control.
+
+## Resolution (2026-09-29)
+
+This record was written as `in-progress`, waiting for the Linux cell above.
+That cell has run. On the deciding subject it named, `linux-v6.12`, H159 was rejected
+twice:
+[exp-188](exp-188-linux-h159-listing-recycle-misses-on-linux-v6-12-10-6-on-the.md)
+measured `default-tree` −2.19% [−4.50%, +1.08%], and
+[exp-189](exp-189-linux-h159-rejected-again-on-linux-v6-12-after-h162-and-h163.md), on
+top of H162 and H163, +2.26% [−5.33%, +12.96%]. The saving is per directory, and that
+tree averages 16 entries per directory.
+On the real, directory-dense `node-modules-dense` tree (79,953 entries in 9,439
+directories), registered before the run,
+[exp-190](exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md)
+accepted it in a quiet cell: `default-tree` −8.61% [−19.47%, −5.04%]. The change
+measured here, `b1f57ecd`, is in the layer exp-190 measured (`aa58a6b1`) and in the
+0.2.1 release commit, `c1644575`.
+
+The verdict above is therefore changed from `in-progress` to `rejected` with
+`kept: candidate`. This is how exp-164 and exp-165 record the macOS cells of H156 and
+H160: neither cell cleared the accept rule on its own primary, and each change ships on
+its Linux accept. The measurement is unchanged.
+It shows no macOS regression and no 3% win, and it does not establish noninferiority at
+the 3% margin, because both wall intervals reach past +3%.

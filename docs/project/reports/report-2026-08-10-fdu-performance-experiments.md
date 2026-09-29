@@ -248,7 +248,7 @@ dead end.
 | 164 | [macOS one-shot index release shows no wall change and no regression](#exp164--macos-oneshot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
 | 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp165--macos-auto-cache-policy-cuts-defaulttree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
 | 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp166--macos-h159-unbounded-listing-pool-costs-15-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
-| 167 | [macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending](#exp167--macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-linux-pending) | H159 | `default-tree` | -1.4% | ⏳ in progress |
+| 167 | [macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux](#exp167--macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-decided-on-linux) | H159 | `default-tree` | -1.4% | ❌ rejected |
 | 170 | [macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout](#exp170--macos-ignoreaware-transient-summary-cuts-default-summary-peak-rss-69-on-a-source-checkout) | H161 | `aggregate-summary` | -69.1% | ✅ accepted |
 | 171 | [macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore](#exp171--macos-ignoreaware-transient-summary-cuts-peak-rss-58-on-a-tree-with-no-gitignore) | H161 | `aggregate-summary` | -57.9% | ✅ accepted |
 | 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp172--macos-wholelisting-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
@@ -5597,9 +5597,9 @@ exp-167.
 Full record:
 [`exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md`](../experiments/exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md)
 
-### exp-167 — macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending
+### exp-167 — macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux
 
-⏳ in progress · 2026-09-28 · H159 · commit `b1f57ecd`
+❌ rejected · 2026-09-28 · H159 · commit `b1f57ecd`
 
 Control: 56c506e1 probe (stack-141 top, engine a5c0ab46)
 
@@ -5623,10 +5623,10 @@ Cost to carry: 256 lines; no new dependencies.
 
 about 105 of the 256 diff lines are tests; no dependency, no unsafe, no platform gate
 
-**In-progress:** uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and
-cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no macOS
-regression and the exp-166 RSS cost is gone; the deciding Linux cell pre-registered in
-fdu-578e has not run.
+**Rejected:** uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and
+cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no 3% win and
+no macOS regression, and the exp-166 RSS cost is gone; ships on the Linux accept
+(exp-190).
 
 Full record:
 [`exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md`](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)
@@ -6044,7 +6044,7 @@ Baselines show one value because they measure a state rather than a change.
 | 156 | Progress indicator without a handle against main | `default-tree` | 2,469.4 | 2,457.6 | -1.8% | ✅ accepted |
 | 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
 | 166 | macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat | `default-tree` | 2,862.5 | 2,867.2 | +1.3% | ↩︎ superseded |
-| 167 | macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ⏳ in progress |
+| 167 | macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ❌ rejected |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

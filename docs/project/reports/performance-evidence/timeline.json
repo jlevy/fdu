@@ -41784,7 +41784,7 @@
    },
    "control": "56c506e1 probe (stack-141 top, engine a5c0ab46)",
    "date": "2026-09-28",
-   "decision": "in-progress",
+   "decision": "rejected",
    "entries": 158705,
    "family": "macOS:b718281f3051",
    "hypotheses": [
@@ -42002,7 +42002,7 @@
    "platform": "macOS",
    "primary_job": "default-tree",
    "primary_metric": "wall_ns",
-   "reason": "uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no macOS regression and the exp-166 RSS cost is gone; the deciding Linux cell pre-registered in fdu-578e has not run",
+   "reason": "uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no 3% win and no macOS regression, and the exp-166 RSS cost is gone; ships on the Linux accept (exp-190)",
    "reference_tools": [
     {
      "argv": [
@@ -42017,7 +42017,7 @@
     }
    ],
    "subject": "b718281f3051:158705:0c863b0ab28d",
-   "title": "macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending",
+   "title": "macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux",
    "trials": 12
   },
   {
@@ -45015,8 +45015,8 @@
    "accepted": 99,
    "baseline": 10,
    "blocked": 2,
-   "in-progress": 5,
-   "rejected": 56,
+   "in-progress": 4,
+   "rejected": 57,
    "superseded": 5
   },
   "experiments": 177,

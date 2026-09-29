@@ -824,7 +824,13 @@ Walk 95.7–96.1% of `default-tree` component.
 Leftover is `getdents64`+`statx` (one open/dir, one stat/entry).
 Quiet attempt invalidated 23/24 timed samples.
 Do not compile a walk trim.
-Do not retry H71.
+Do not retry H71. **Caveat (2026-09-29):** that walk share includes `.gitignore`
+classification, which the consumer runs inside the walk-phase timer, and no
+`.gitignore`-off arm was measured.
+exp-173 later measured this job at 590 ms with `.gitignore` and 82 ms with
+`--no-controls` (Firecracker host, Linux 6.18.44, a later engine), and H162 and H163 cut
+it to 211 ms (exp-174). The floor reading holds for the `--no-controls` walk only; a
+leftover determination on a tree with ignore rules needs a `--no-controls` arm.
 
 **H141 / exp-140** is the standing Linux content-query replication: **same**.
 Uncontrolled 12-pair `content-query` of the same #91 control versus this engine (H138
@@ -867,7 +873,10 @@ Do not port `macos_bulk`.
 Quiet 12-pair `default-tree-first` on `linux-v6.12`. Walk 93% of component.
 Isolated `snapshot-save` 23.6 ms (~5%) is ≥3% and not skippable.
 Load/core 0.082–0.119 held.
-Do not retry H100.
+Do not retry H100. **Caveat (2026-09-29):** as for H140, `.gitignore` was on and no off
+arm was measured, so the 93% walk share includes classification (exp-173 measured
+`default-tree` at 590 ms with `.gitignore` and 82 ms without).
+H160 later stopped the default command writing the snapshot (exp-163).
 
 **H85 / exp-150** is the standing Linux transient-recycle screen: **rejected** against
 its 20% bar. Quiet `linux-v6.12` `--no-controls` aggregate −4.98%. Incomplete quiet
@@ -914,7 +923,8 @@ Two deciding characters, so the set cannot yet carry a ranking or transfer claim
 4. **H146** — Linux first-run leftover after H140 (H136 analog).
    **Same leftover identity** (exp-147, quiet).
    Walk 93%; isolated save ~24 ms not skippable.
-   Do not retry H100.
+   Do not retry H100. The walk share includes `.gitignore` classification; see the
+   caveat above.
 5. **H85 / H147** — transient `--no-controls` aggregate recycle.
    H86 detached arenas did not consume `RetainedState::Summary`. **H85 rejected**
    against its 20% bar (exp-150, quiet `linux-v6.12` −4.98%). **H147 accepted** as the
@@ -958,10 +968,12 @@ The first run on `4c4917f` ranked them the same way.
 indexed tree’s mean −6.9%. **H157 rejected** on its probe job (exp-161, −2.22%) but
 −3.71% on the product CLI job; rerun with that job pre-registered is `fdu-o6um`. **H158
 rejected** (exp-162): consumer `futex` wakes 106k → 18k, wall flat.
-**H159 open** (`fdu-578e`): the unchanged binary under `LD_PRELOAD` mimalloc closes the
-whole indexed gap, and the context-switch profile names the consumer’s frees of
-walker-allocated child lists and path keys.
-Start there; an allocator dependency comes only after a structural fix is measured (H74,
+**H159 accepted** (`fdu-578e`, [#150](https://github.com/jlevy/fdu/pull/150), in 0.2.1):
+the index builder returns each drained listing to the walker that allocated it.
+No effect on the directory-sparse `linux-v6.12` (exp-188, exp-189); `default-tree`
+−8.61% [−19.47%, −5.04%] on the real directory-dense `node-modules-dense` (exp-190), as
+its per-directory mechanism predicts; a screen on `linux-balanced-1m` measured −10.63%.
+An allocator dependency still comes only after the structural fixes are measured (H74,
 H85).
 
 **H160 accepted** (exp-163): `--cache auto` no longer persists a one-shot metadata
@@ -1001,8 +1013,10 @@ The comparison with pdu on a real tree, which found the `.gitignore` cost, is
 exp-175–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
 
 Next free ids are **exp-200** and **H180**. exp-173–199 and H162–H179 are reserved for
-Linux work running in parallel: the peer-tool research (`fdu-92hp`) takes exp-173–186
-and H162–H170, and the 0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179.
+Linux work: the peer-tool research (`fdu-92hp`) takes exp-173–186 and H162–H170, and the
+0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179. Of those, H171–H173 are the
+0.2.2 Linux parity hypotheses (`fdu-8a8r`); exp-175–186, exp-192–199, and H174–H179 are
+unused, and 0.2.2’s cells take them first.
 exp-170–172 record H161, the ignore-aware transient summary.
 exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159
 layer), and exp-168–169 are unused.
@@ -1053,12 +1067,21 @@ Its default single-view command is not covered by the earlier speedup.
    maintainer.
 6. **H157 rerun** (`fdu-o6um`) — **rejected** on its product-job primary on top of H159
    (exp-191); kept on its branch for a re-screen after H166/H167.
-7. **H164** (`fdu-emqf`) — classify `.gitignore` on the walker threads.
+7. **H171** (`fdu-sdul`) — bucketed `.gitignore` matching, the 0.2.2 point solution.
    H161 (exp-187, Linux wall accepted), H162 (exp-173) and H163 (exp-174) cut the
    default summary on `linux-v6.12` from 505 to 167 ms, and the default tree to 211 ms
-   against pdu’s 70 ms; what remains is serial classification.
-   Then H165 (walker count), H166 and H167 (the index-tier pair on the generated tree),
-   H169, H170; the order and pre-registrations are in
+   against pdu’s 70 ms.
+   The
+   [design study](../research/research-2026-09-29-linux-default-tree-point-solution.md)
+   attributes 81% of what remains to a linear scan of about 111 patterns per entry, most
+   of them literal names or `*.suffix`; its prototype cut consumer instructions 63%. Run
+   the `.gitignore` matching survey (`fdu-p6vc`) first; H171 depends on it.
+   The plan is [the 0.2.2 plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md).
+8. **H172** (`fdu-dp98`) — an exact transient tree tier for the generated tree’s indexed
+   gap; settle its carrier before pre-registering.
+9. **H173** and **H164** (`fdu-emqf`) only if H171’s counters show the residual still
+   sets the wall time. Then H165 (walker count), H166 and H167 (the index-tier pair on
+   the generated tree), H169, H170; their pre-registrations are in
    [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
 
 ## Before the First Round

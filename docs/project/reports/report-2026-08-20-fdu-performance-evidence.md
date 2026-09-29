@@ -114,10 +114,13 @@ Most Linux cells since 2026-09-20 are quiet.
 
 0.2.0 (2026-09-28) carries H153, H156 (a large one-shot index is freed after the
 answer), and H160 (`--cache auto` writes no snapshot for a one-shot metadata report).
-H161 is on `main`, unreleased.
-H159, H162, and H163 are on the branch being prepared for 0.2.1 (`fdu-k1n8`), whose
-changelog lists them as unreleased, and are not on `main` as of 2026-09-29; H159 is
-[#150](https://github.com/jlevy/fdu/pull/150).
+0.2.1 (tagged 2026-09-29 on `c1644575`, published to crates.io and PyPI) adds H161 (the
+default summary classifies ignore rules without an index), H159 (listings recycled to
+the walker that allocated them, [#150](https://github.com/jlevy/fdu/pull/150)), and H162
+and H163 (allocation-free matching and per-directory control chains,
+[#155](https://github.com/jlevy/fdu/pull/155)). The peer comparisons have not been
+re-measured on 0.2.1. 0.2.2 is planned around H171 and H172 (see
+[Open Work](#open-work)).
 
 ## Standing Results by Tier
 
@@ -201,8 +204,13 @@ inside the phase, and a placebo with the suspected work turned off is the cheap 
 default summary and −46.2% on the default tree (exp-173). H163 resolves each directory’s
 governing ignore files once for all its entries: another −36.4% and −35.9% (exp-174).
 Both placebos include zero, and neither change moved the tree without ignore rules.
-What remains, about 130 ms of the tree, is matching on one thread; H164 moves it onto
-the walkers.
+What remains, about 130 ms of the tree, is matching on one thread.
+The
+[0.2.2 design study](../research/research-2026-09-29-linux-default-tree-point-solution.md)
+counted it per thread: 81% of the consumer’s instructions are a linear scan of about 111
+patterns per entry, most of them literal names or `*.suffix`, which bucketed matching
+(H171) replaces with lookups; a prototype cut those instructions 63% with identical
+answers. H164, moving matching onto the walkers, follows only if a residual still binds.
 
 **The index-tier gap on the generated tree is user space.** fdu, pdu, and diskus make
 the same system calls, and fdu spends less kernel time; it spends more user time and its
@@ -258,12 +266,14 @@ These do not overturn a verdict; they say what a verdict rests on.
 - **H159’s deciding subject changed after two misses.** The dense tree was registered
   before exp-190 ran and fits the per-directory mechanism, but it was chosen after the
   first subject had failed.
-  exp-167 still reads in progress, waiting for the Linux decision exp-190 made.
+  exp-167, the macOS cell, is now resolved as rejected with the change kept, the
+  encoding exp-164 and exp-165 use for H156’s and H160’s macOS cells.
 - **The leftover determinations on Linux v6.12 predate the `.gitignore` finding.** H140
   (exp-139) and H146
   ([exp-147](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md))
   attributed the default command to the walk; exp-173 shows most of it was
-  classification.
+  classification. Both registry rows now carry that caveat, and a new determination needs
+  a `--no-controls` arm.
 - **Every macOS accept since 0.1.0 is uncontrolled.** They stand as paired evidence on a
   busy host; none has a quiet replication.
 - **The Linux floor scoreboard is stale.** It was last derived on 2026-09-20 (exp-141).
@@ -332,8 +342,17 @@ Grouped by topic; the order to run them in is
 [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27) and
 the pdu brief’s recommendations.
 
-- **H164** (`fdu-emqf`): classify `.gitignore` on the walker threads, the remaining
-  default-command gap on real trees.
+- **0.2.2 Linux parity** (epic `fdu-8a8r`,
+  [the plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md)):
+  - the `.gitignore` matching survey (`fdu-p6vc`), first;
+  - **H171** (`fdu-sdul`), bucketed matching, for the default command on real trees;
+  - **H172** (`fdu-dp98`), an exact transient tree tier, for the indexed gap on the
+    generated tree;
+  - **H173**, the live residual set, only if H171’s counters call for it.
+- **H164** (`fdu-emqf`): classify `.gitignore` on the walker threads, now sequenced
+  after H171 for whatever residual remains.
+- **Confirm on real trees:** H156 and H160 (`fdu-b9ga`); H162 and H163 on macOS
+  (`fdu-dv07`); the Linux ×floor scoreboard (`fdu-z2h6`).
 - **H165** (`fdu-c11z`): revisit the Linux walker count once classification no longer
   binds the consumer.
 - **H166** (`fdu-i6nk`) and **H167** (`fdu-lwsy`): a walk queue that does not park
