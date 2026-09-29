@@ -5,7 +5,7 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: in_progress
 priority: 2
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 delegate: claude-code@vm
 labels:
@@ -16,7 +16,7 @@ parent_id: is-01m3mvdz2891yheyemx49gzm6j
 hold: null
 hold_until: null
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T18:57:44.674Z
+updated_at: 2026-09-29T19:48:38.587Z
 started_at: 2026-09-29T17:02:10.729Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
@@ -308,3 +308,10 @@ Branch head: 63e01e63. Commits: 9f968651 (measurement), 93bac1cf (README matrix 
 - Not done here: the short SLOC survey brief under docs/project/research/ that the parity plan lists for this bead; Cargo.toml/pyproject descriptions and the CLI about string still say "Fastest native du replacement" (maintainer's call; changing them changes --help and its golden).
 
 Stack layer (2026-09-29): branch claude/readme-comparison-matrix, draft PR jlevy/fdu#162, based on #161. Close when #162 merges.
+
+
+# scc and tokei columns (2026-09-29, fdu-bj94, on #162 at 0fa5e017)
+
+- README matrix now has scc and tokei columns: "—" in disk-usage rows (footnote: they count source lines); code rows 366 and 333 languages vs 15, complexity (scc) and embedded languages (tokei); .gitignore "exclude" (tokei only inside a git repository); Go package / Rust library; scc MCP server in the agent row; a new "Code analysis speed, Linux source" row: fdu 7.9 s first run, 0.55 s repeated from its cache; scc 1.2 s; tokei 1.9 s (ignore rules off, 12 quiet pairs). cloc stays a footnote. "When to use each" says scc/tokei are broader and 4-6x faster for line counts alone; fdu adds per-directory counts, ignored share, and a cache.
+- The SLOC survey is committed as docs/project/research/research-2026-09-29-sloc-tools-survey.md with the kernel differential and speed results; evidence under docs/project/research/evidence/sloc-*.json.gz. Harness contracts in compare_tools.py (commit 5e5b5198).
+- Correction to the survey notes above: scc 4.1.0 lists 366 languages (368 is main after the release), as the README already said.
