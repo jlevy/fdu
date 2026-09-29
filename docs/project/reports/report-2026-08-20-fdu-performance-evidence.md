@@ -377,8 +377,9 @@ were identical.
   stats each entry with `statx` relative to the directory, passing `AT_NO_AUTOMOUNT`. It
   sits behind four audited `unsafe` expressions on Linux glibc.
   `fstat` calls fell from 5,773 to 4 on the kernel tree, and the per-entry `statx` no
-  longer triggers automounts on the reader’s path (`fdu-puk7`, closed for that path; the
-  other routes are `fdu-d2fn`). The default summary gained 9.7% and 9.4%. The default
+  longer triggers automounts on the reader’s path (`fdu-puk7`; the review of #161 then
+  put every other route on the reader too, `fdu-d2fn`, H184, exp-196). The default
+  summary gained 9.7% and 9.4%. The default
   tree, controls on, gained 4.29% [−8.81%, −0.90%] on `node-modules-dense` and 2.06%
   [−7.38%, +1.83%], not clearing, on `linux-v6.12`, against a predicted 6–8%. The
   records’ frontmatter, and so the ledger, carry the `--no-controls` tree pair the
@@ -603,9 +604,9 @@ queue.
      needs an fd budget sized to the breadth-first frontier.
 - **Follow-ups from the reader and the matcher:**
   - `fdu-q7hf`: the reader’s public diagnostics fields, a public API change for 0.3.0;
-  - `fdu-d2fn`: `AT_NO_AUTOMOUNT` on the routes the native reader does not cover.
-    musl builds, the serial walk, and reconciliation still stat through std without it;
-    `fdu-puk7` is closed for the native reader’s path (exp-185);
+  - `fdu-d2fn`, done: every route lists through the native reader and every stat of a
+    listed child passes `AT_NO_AUTOMOUNT` (H184, exp-196); musl never needed it, and
+    `fdu-puk7` was closed for the reader’s path by exp-185;
   - `fdu-ifci`: a UTF-8 BOM and an embedded NUL in `.gitignore`, where fdu diverges from
     git; it changes answers, so it is fixed apart from the performance loop;
   - the benchmark half of the matcher survey (`fdu-p6vc`).

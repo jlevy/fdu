@@ -612,11 +612,13 @@ fn assert_same_entries(reference: &Entries, candidate: &Entries, context: &str) 
 
 /// Random trees hold names of every byte shape a listing can return and every kind.
 ///
-/// Public `scan` with one worker is the serial portable `read_dir` walk; every other
-/// count, and `scan_into_index` at every count, must describe the same entries, and every
-/// index must hold the same image. On glibc those list through the native `getdents64`
-/// reader, so this is the walk-level differential for it. On musl, which has no native
-/// reader, it is the portable walk's worker-count differential only.
+/// Public `scan` with one worker is the serial walk; every other count, and
+/// `scan_into_index` at every count, must describe the same entries, and every index
+/// must hold the same image. On glibc every count lists through the native `getdents64`
+/// reader, so this is the reader's worker-count differential; its differential against
+/// the portable `read_dir` walk is `linux_dents`' own, which forces the portable path
+/// with a walk hook. On musl, which has no native reader, this is the portable walk's
+/// worker-count differential.
 ///
 /// The gate is Linux rather than the reader's own because it is the names that need
 /// Linux: they hold bytes that are not UTF-8. Worker counts must agree wherever those

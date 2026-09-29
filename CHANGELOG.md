@@ -9,6 +9,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
 tree, and classifying entries against `.gitignore` is faster again.
+On Linux a stat of a directory's child no longer mounts an unmounted autofs trigger, on
+any route.
 One Rust API change is breaking: `counters::Counts` gains three public fields.
 No command-line option, report or cache schema, or Python API changed.
 
@@ -53,14 +55,33 @@ No command-line option, report or cache schema, or Python API changed.
   without it to 1.6%. What the rules match is unchanged, and so is
   `IGNORE_RULES_VERSION`; fdu’s ignored set agrees with `git check-ignore` on every path
   of that tree.
-- On Linux builds against glibc, the parallel walk reads each directory with
-  `getdents64` into a reused buffer and stats its entries with `statx` relative to the
-  directory, instead of through the standard library.
+- On Linux builds against glibc, every walk, revalidation, reconciliation, and opened
+  discovery reads each directory with `getdents64` into a reused buffer and stats its
+  entries with `statx` relative to the directory, instead of through the standard
+  library.
   A directory it cannot read that way is read the portable way; musl builds use only the
   portable reader. On the Linux v6.12 source tree the default command’s `fstat` calls
   fell from 5,773 to 4, and the default summary was 9–10% faster on both real trees
   ([exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
   [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
+
+### Fixed
+
+- On Linux, no stat of a listed child triggers an automount, on any route or with any
+  worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
+  automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
+  report it, and a walk no longer mounts, or hangs on, a network filesystem it would
+  not descend into.
+  0.2.1 and earlier mounted the trigger by statting it, because the standard library
+  stats with `statx` and without `AT_NO_AUTOMOUNT` on glibc; the 0.2.2 engine before
+  this fix did so on every route but the parallel walk, so the same request answered
+  differently by route.
+  The walk root itself is resolved: listing it mounts it in any case, and
+  `--one-filesystem` bounds the walk to the filesystem it finds there.
+  musl builds were never affected: the standard library stats with `fstatat` there.
+  The answer on a tree without automount triggers is unchanged
+  ([exp-196](docs/project/experiments/exp-196-linux-h184-every-route-lists-through-the-native-reader-no-stat-of-a-child-mounts-an-autofs-trigger.md)
+  records the non-regression screen).
 
 ## [0.2.1] - 2026-09-29
 
