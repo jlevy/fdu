@@ -5,7 +5,7 @@ title: "0.2.2: beat pdu and diskus on Linux for the default tree and .gitignore 
 kind: epic
 status: open
 priority: 1
-version: 25
+version: 31
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 labels: []
 dependencies: []
@@ -30,8 +30,14 @@ child_order_hints:
   - is-01m3q0d97mjbmn75fpw19ggr4y
   - is-01m3q18wp4135dd1fcbjydxv7p
   - is-01m3q1fwrd3v6ry34e6abmzd7k
+  - is-01m3q1k1swt258x2wsca9hwrpe
+  - is-01m3q1rvcnwdw17kysjfag0f6g
+  - is-01m3q1rz8d21m89rk9xr9g0sb8
+  - is-01m3q1rzqwfz4nj4fayv448cas
+  - is-01m3q1s06maby5hs5dta6sgg8w
+  - is-01m3q1s0nb5w4x6d1s6ebn6krc
 created_at: 2026-09-29T01:17:07.054Z
-updated_at: 2026-09-29T16:55:42.092Z
+updated_at: 2026-09-29T17:00:41.003Z
 ---
 Point solution from the 2026-09-29 design study (brief in this epic's notes). Gap (b), the default command on a real repo, is 81% consumer-thread .gitignore classification: a linear scan of ~111 governing patterns per entry, although 1,118 of the 1,593 linux-v6.12 rules are literal names or *.suffix. Fix: H171, bucketed matching. Gap (a), the tree view on the generated 1M tree, is the one-shot index build that no reader reuses. Fix: H172, an exact transient tree tier. H164 (fdu-emqf) follows on the ~0.5G residual. Predicted quiet ranking on linux-v6.12: default tree 211 -> ~85-95 ms (pdu 70, diskus 74.5); balanced tree 1.25 -> ~1.03-1.10 s (pdu 1.02). Ids H171/H172 come from the unused fdu-k1n8 block (H171-H179).
 
