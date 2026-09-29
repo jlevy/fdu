@@ -26,6 +26,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use super::{Attrs, EntryKind, compose_ns};
 
 /// Bytes asked of each `getdents64` call. Two literals, not a cast: pedantic clippy.
+///
+/// Not measured: 64 KiB mirrors `macos_bulk`'s buffer and is twice glibc's `readdir`
+/// request, as the platform tuning guide records.
 const CHUNK_BYTES: usize = 65_536;
 const CHUNK_COUNT: libc::c_uint = 65_536;
 /// Record-buffer capacity kept between listings; a larger buffer shrinks back to a chunk.
