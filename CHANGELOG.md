@@ -7,6 +7,61 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
+tree, and classifying entries against `.gitignore` is faster again.
+One Rust API change is breaking: `counters::Counts` gains three public fields.
+No command-line option, report or cache schema, or Python API changed.
+
+### Added
+
+- `FDU_COUNTERS=1` reports three more rows in its `control state` group:
+  `ignore patterns tested`, the `.gitignore` rules whose glob ran against an entry;
+  `ignore bucket probes`, the lookups of an entry’s name in an ignore file’s indexed
+  rules; and `ignore bucket hits`, those lookups that found a rule matching the entry.
+
+### Changed
+
+- **Breaking:** `fdu_core::counters::Counts` gains three public fields,
+  `ignore_patterns_tested`, `ignore_bucket_probes`, and `ignore_bucket_hits`, which
+  carry the rows above.
+  Rust code that builds `Counts` with a struct literal must name them or end the literal
+  with `..Counts::default()`, and code that destructures it exhaustively must name them
+  or use `..`; code that only reads its fields is unaffected.
+  This is the only public API change.
+- On Linux the default tree is 39% faster on the Linux v6.12 source tree (200 to 120 ms)
+  and 10% faster on a `node_modules` tree (127 to 114 ms) than on 0.2.1’s engine, and
+  the default summary 26% and 7% faster, each in one paired cell of 20 pairs
+  ([exp-194](docs/project/experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md),
+  [exp-195](docs/project/experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)).
+  The changes below account for it.
+- When a one-shot tree report needs nothing but the tree, as the default `fdu PATH`
+  does, fdu no longer keeps every file in its index: it keeps every directory and only
+  the largest files that could reach the smallest share the tree prints, and folds the
+  rest into their directory’s totals.
+  The answer is unchanged.
+  On a generated million-entry Linux tree the default tree’s peak memory fell 79%, from
+  292 to 62 MiB, and its wall time 9% against 0.2.1’s engine, in a 12-pair screen
+  (exp-194).
+- Classifying entries against `.gitignore` is faster again.
+  Each ignore file’s rules are indexed by literal name, extension, and suffix, anchored
+  rules are grouped by depth, and the rules left over are ruled out by cheap byte checks
+  before any glob runs.
+  On the Linux v6.12 source tree full glob evaluations fell from about 110 per entry to
+  0.0019
+  ([exp-178](docs/project/experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md)),
+  and what `.gitignore` handling adds to the default tree fell from 52% of a walk
+  without it to 1.6%. What the rules match is unchanged, and so is
+  `IGNORE_RULES_VERSION`; fdu’s ignored set agrees with `git check-ignore` on every path
+  of that tree.
+- On Linux builds against glibc, the parallel walk reads each directory with
+  `getdents64` into a reused buffer and stats its entries with `statx` relative to the
+  directory, instead of through the standard library.
+  A directory it cannot read that way is read the portable way; musl builds use only the
+  portable reader. On the Linux v6.12 source tree the default command’s `fstat` calls
+  fell from 5,773 to 4, and the default summary was 9–10% faster on both real trees
+  ([exp-185](docs/project/experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md),
+  [exp-186](docs/project/experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)).
+
 ## [0.2.1] - 2026-09-29
 
 fdu 0.2.1 is a patch release focused on Linux.

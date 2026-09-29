@@ -55,7 +55,12 @@ the next night’s.
 ## Non-Goals
 
 - A public API change.
-  Anything that needs one (H164’s summary route) waits for 0.3.0.
+  Anything that needs one (H164’s summary route) waits for 0.3.0. The round made one:
+  H171’s counter rows added three public fields to `counters::Counts`
+  (`ignore_patterns_tested`, `ignore_bucket_probes`, `ignore_bucket_hits`), which is
+  semver-breaking and its only public API change.
+  Under the 0.2.2 plan’s rule it ships in 0.3.0
+  ([the release gate](plan-2026-09-29-linux-parity-0.2.2.md#stage-3-022)).
 - A new dependency in `fdu-core`, an allocator in the command line, or shipping PGO.
   These are maintainer decisions; the loop may screen them but never adopts them.
 - New `.gitignore` semantics.

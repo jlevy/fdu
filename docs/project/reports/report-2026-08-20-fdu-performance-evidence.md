@@ -145,8 +145,11 @@ Each landed as a change commit followed by its record commit:
   built on glibc only;
 - H183, cheap pre-checks for the residual `.gitignore` rules.
 
-None changes an answer, `IGNORE_RULES_VERSION`, or the public API, and none adds a
-dependency. The reader’s public diagnostics fields are deferred to 0.3.0 (`fdu-q7hf`).
+None changes an answer or `IGNORE_RULES_VERSION`, and none adds a dependency.
+The only public API change is H171’s: `counters::Counts` gains three public fields,
+`ignore_patterns_tested`, `ignore_bucket_probes`, and `ignore_bucket_hits`, for its
+`FDU_COUNTERS=1` rows, which is semver-breaking, so the round ships in 0.3.0. The
+reader’s public diagnostics fields are deferred to 0.3.0 (`fdu-q7hf`).
 
 ## Standing Results by Tier
 

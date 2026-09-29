@@ -190,7 +190,9 @@ residual still sets the wall time.
 ### API Changes
 
 None public. The new functions are crate-private.
-If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
+If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2. H171’s
+counters are the exception: they landed as three public `counters::Counts` fields, a
+breaking change, so the round ships in 0.3.0 (see the release gate in Stage 3).
 
 ## Implementation Plan
 
@@ -261,7 +263,12 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
   The real-tree tool cells were re-run on the overnight loop’s final head (exp-194’s
   evidence); the generated-tree table and the matrix are not refreshed.
 - [ ] `cargo-semver-checks` against 0.2.1, goldens, and parity.
-  If all three pass, run the release layer and checklist for 0.2.2.
+  If all three pass, run the release layer and checklist for 0.2.2. **2026-09-29:** the
+  round fails the first check.
+  H171 added three public fields to `counters::Counts` (`ignore_patterns_tested`,
+  `ignore_bucket_probes`, `ignore_bucket_hits`), and `Counts` has only public fields, so
+  code that builds it with a struct literal or destructures it exhaustively stops
+  compiling. Under this plan’s rule the release is therefore 0.3.0, not 0.2.2.
 
 ## Testing Strategy
 
