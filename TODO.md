@@ -14,11 +14,14 @@ Publication does not complete every first-user verification exercise.
 The analysis and inventory work (#130, #133, #135, and the #136 tracking follow-up) and
 stack 141 (#137, #138, #139, and #142) landed for 0.2.0, whose
 [release notes](docs/project/release-notes/0.2.0.md) and CHANGELOG entry are written.
-0.2.0 is not yet tagged or published.
+0.2.0 is tagged and published on crates.io, PyPI, and GitHub (2026-09-28). 0.2.1 is
+prepared for tagging under `fdu-k1n8`, with its
+[release notes](docs/project/release-notes/0.2.1.md) written.
 
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
 | 0.2.0 release | `fdu-0gqc`, maintainer | `fdu-0gqc` owns post-merge verification of the landed work and does not tag or publish. The maintainer then runs the [installed-CLI QA playbook](tests/qa/cli-installed-e2e.qa.md) and its peer-agreement phase on the release commit, and the [release process](docs/project/guides/release-process.md): rehearse, tag, and publish. |
+| 0.2.1 release | `fdu-k1n8`, `fdu-kg22`, maintainer | Merge #150 then #155; the maintainer runs the [release checklist](docs/project/guides/release-process.md#release-checklist) from `make release-preflight` on the release commit: rehearse, tag, and publish. |
 | Output-design manual acceptance | `fdu-kwjc` | [Recorded candidate checks](docs/project/reports/report-2026-09-27-manual-acceptance.md): 30 of 33 passed or corrected; light/dark visual judgment, fresh-session skill discovery, and upgrade after this increment publishes remain open. |
 | Published 0.1.0 verification | `fdu-gjc2`, `fdu-yfej`, `fdu-vxvm` | Record the remaining [published-channel first-user checks](docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md). |
 | Release automation | `fdu-zr73` | [Packaging follow-ups](docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md), including registry propagation retry (`fdu-zx9y`). |

@@ -499,9 +499,14 @@ def render(args: Args, report: fdu.Report) -> str:
     # The one renderer, reached through the API rather than reimplemented. A shim that
     # drew its own bars and padding would be testing the reimplementation.
     color = args.color == "always"
+    # write_report_diagnostics' order: notes, warnings, tips. --quiet drops notes and tips
+    # but never a warning, which is what keeps a stale answer marked as one.
     if not args.quiet:
         for note in report.notes:
             print(note, file=sys.stderr)
+    for warning in report.warnings:
+        print(warning, file=sys.stderr)
+    if not args.quiet:
         for tip in report.tips:
             print(tip, file=sys.stderr)
     return report.render(args.format, color=color, bar_size=args.bar_size)

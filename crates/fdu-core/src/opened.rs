@@ -2253,6 +2253,53 @@ mod tests {
         outcome
     }
 
+    /// An opened root takes a control file spelled `.GITIGNORE` as a detached scan does:
+    /// in discovery, and in a refresh of the variant's own path once it is gone, which no
+    /// stat can verify and the directory's control lookup answers (fdu-0w1b).
+    #[test]
+    fn an_opened_root_takes_a_case_variant_control_as_a_detached_scan_does() {
+        use crate::test_support::CaseLookups;
+
+        let probe = tempfile::tempdir().expect("temp root");
+        for (lookups, governs) in CaseLookups::on_this_host(probe.path()) {
+            let root = tempfile::tempdir().expect("temp root");
+            let _lookups = lookups.install(root.path());
+            std::fs::create_dir(root.path().join("up")).expect("directory");
+            std::fs::write(root.path().join("up/.GITIGNORE"), b"*.tmp\n").expect("variant");
+            std::fs::write(root.path().join("up/x.tmp"), b"governed").expect("fixture");
+            std::fs::write(root.path().join("up/notes.txt"), b"never").expect("fixture");
+            let facts = |index: &Index| {
+                let sources: Vec<(PathBuf, Vec<u8>)> = index
+                    .controls()
+                    .expect("observed")
+                    .sources()
+                    .map(|(path, source)| (path, source.to_vec()))
+                    .collect();
+                (index.is_ignored(Path::new("up/x.tmp")).expect("observed"), sources)
+            };
+            let cold = || {
+                let (cold, _) =
+                    crate::scan::scan_into_index(root.path(), &crate::ScanConfig::default())
+                        .expect("cold scan");
+                facts(&cold)
+            };
+
+            let options = OpenOptions { batch_size: 1, ..OpenOptions::default() };
+            let opened = open_fixture(root.path(), options).expect("opened root");
+            wait_until_settled(&opened);
+            let discovered = opened.state.index.read_with(facts).expect("read");
+            assert_eq!(discovered, cold(), "{lookups:?}: discovery");
+            assert_eq!(discovered.0, Some(governs), "{lookups:?}");
+
+            std::fs::remove_file(root.path().join("up/.GITIGNORE")).expect("remove the variant");
+            opened.refresh(&[PathBuf::from("up/.GITIGNORE")]).expect("refresh");
+            let refreshed = opened.state.index.read_with(facts).expect("read");
+            assert_eq!(refreshed, cold(), "{lookups:?}: refresh of the removed variant");
+            assert_eq!(refreshed.0, Some(false), "{lookups:?}");
+            opened.close().expect("close");
+        }
+    }
+
     #[test]
     fn associated_and_free_open_contracts_coexist() {
         let root = tempfile::tempdir().expect("temp root");

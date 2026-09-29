@@ -994,6 +994,14 @@ class Report:
     age_reference_ns: int | None = None
     #: Actionable suggestions, separate from facts and formatted data.
     tips: tuple[str, ...] = ()
+    #: What a reader must not miss about the answer itself, in the order a renderer
+    #: prints them, between `notes` and `tips`. A ``stale_ok`` answer that no filesystem
+    #: check verified carries one, naming ``stale_ok`` as the way to a fresh answer; a
+    #: verified answer carries none. The command line prints these as ``warn:`` lines
+    #: even under ``--quiet``, which suppresses notes and tips. Like them, not in
+    #: `as_dict`: the wire envelope states the same fact as ``provenance.source`` and
+    #: ``provenance.freshness``.
+    warnings: tuple[str, ...] = ()
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
     _renderer: Callable[[str, bool, int], str] | None = field(
         default=None, repr=False, compare=False

@@ -134,6 +134,14 @@ failed to qualify: the unchanged 25% gate invalidated 20 of 24 timed samples.
 It produced no figure, it was not rerun under a weaker regime, and exp-159’s provisional
 verdict stands.
 
+**Correction (2026-09-28).** pdu counts the root as depth 1, so the `--max-depth 1`
+contract these runs used printed only the root’s total: pdu’s work class here is a
+total, not a rendered tree.
+The harness now passes `--max-depth 2`, the tree fdu’s `--depth 1` renders.
+On a real source tree pdu’s default depth took 6% longer than depth 1
+([pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)), so the
+times above understate a matched pdu tree slightly.
+
 ## Measurement Protocol
 
 The publishable local comparison has four phases:

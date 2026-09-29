@@ -29,6 +29,44 @@
 
 use std::path::{Component, Path};
 
+/// Path components matched without a heap allocation. Deeper paths still match exactly;
+/// they collect into a vector first.
+const INLINE_COMPONENTS: usize = 32;
+
+/// Positions a `**` pattern tracks on the stack: a path of up to this many components,
+/// plus the empty prefix. Deeper paths use heap rows with the same arithmetic.
+const INLINE_POSITIONS: usize = 64;
+
+/// Call `each` with the normal components of `path`, then `last` if given, without a heap
+/// allocation for a path of up to [`INLINE_COMPONENTS`] of them.
+pub(super) fn with_components<R>(
+    path: &Path,
+    last: Option<&[u8]>,
+    each: impl FnOnce(&[&[u8]]) -> R,
+) -> R {
+    let mut inline: [&[u8]; INLINE_COMPONENTS] = [&[]; INLINE_COMPONENTS];
+    let mut spilled: Vec<&[u8]> = Vec::new();
+    let mut count = 0usize;
+    let normal = path.components().filter_map(|component| match component {
+        Component::Normal(value) => Some(value.as_encoded_bytes()),
+        Component::CurDir | Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+            None
+        }
+    });
+    for bytes in normal.chain(last) {
+        if count < INLINE_COMPONENTS {
+            inline[count] = bytes;
+        } else {
+            if spilled.is_empty() {
+                spilled.extend_from_slice(&inline);
+            }
+            spilled.push(bytes);
+        }
+        count += 1;
+    }
+    each(if count <= INLINE_COMPONENTS { &inline[..count] } else { &spilled[..] })
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct Gitignore {
     patterns: Vec<Pattern>,
@@ -38,8 +76,19 @@ pub(super) struct Gitignore {
 struct Pattern {
     ignored: bool,
     directory_only: bool,
-    matches_path: bool,
+    shape: Shape,
     segments: Vec<Segment>,
+}
+
+/// What a pattern is matched against, decided once when it is parsed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shape {
+    /// No `/`: one glob against the entry's own name.
+    Basename,
+    /// Anchored or holding a `/` but no `**`: only a path of the pattern's length.
+    Fixed,
+    /// Holding a `**`, which spans any number of components.
+    Spanning,
 }
 
 #[derive(Clone, Debug)]
@@ -64,21 +113,16 @@ impl Gitignore {
 
     /// Last matching line wins. `Some(false)` is an explicit negation; `None` means this
     /// control file expressed no opinion.
+    ///
+    /// Every classified entry asks this once per control file on its path, so it must not
+    /// allocate: the components of an ordinary path fit a stack buffer, and only a path
+    /// deeper than it spills to the heap (H162).
     pub(super) fn matches(&self, relative: &Path, is_dir: bool) -> Option<bool> {
-        let components: Vec<&[u8]> = relative
-            .components()
-            .filter_map(|component| match component {
-                Component::Normal(value) => Some(value.as_encoded_bytes()),
-                Component::CurDir
-                | Component::ParentDir
-                | Component::RootDir
-                | Component::Prefix(_) => None,
-            })
-            .collect();
-        self.matches_components(&components, is_dir)
+        with_components(relative, None, |components| self.matches_components(components, is_dir))
     }
 
-    fn matches_components(&self, components: &[&[u8]], is_dir: bool) -> Option<bool> {
+    /// [`Self::matches`] over components already split, relative to this file's directory.
+    pub(super) fn matches_components(&self, components: &[&[u8]], is_dir: bool) -> Option<bool> {
         self.patterns
             .iter()
             .filter(|pattern| pattern.matches(components, is_dir))
@@ -153,21 +197,34 @@ impl Pattern {
         if segments.is_empty() {
             return None;
         }
-        Some(Self { ignored, directory_only, matches_path, segments })
+        let shape = if !matches_path {
+            Shape::Basename
+        } else if segments.iter().all(|segment| matches!(segment, Segment::Glob(_))) {
+            Shape::Fixed
+        } else {
+            Shape::Spanning
+        };
+        Some(Self { ignored, directory_only, shape, segments })
     }
 
     fn matches(&self, path: &[&[u8]], is_dir: bool) -> bool {
         if path.is_empty() {
             return false;
         }
-        if !self.matches_path {
+        if self.shape == Shape::Basename {
             let Some(Segment::Glob(pattern)) = self.segments.first() else {
                 return false;
             };
             return path.last().is_some_and(|component| glob_matches(pattern, component))
                 && (!self.directory_only || is_dir);
         }
-        segment_path_matches(&self.segments, path, self.directory_only, is_dir)
+        segment_path_matches(
+            &self.segments,
+            self.shape == Shape::Fixed,
+            path,
+            self.directory_only,
+            is_dir,
+        )
     }
 }
 
@@ -234,15 +291,48 @@ fn normalize_glob(pattern: &[u8]) -> Vec<u8> {
 
 fn segment_path_matches(
     pattern: &[Segment],
+    glob_only: bool,
     path: &[&[u8]],
     directory_only: bool,
     target_is_dir: bool,
 ) -> bool {
-    let mut previous = vec![false; path.len() + 1];
+    if directory_only && !target_is_dir {
+        return false;
+    }
+    // Without a `**`, each segment consumes exactly one component, so only a path of the
+    // pattern's length can match, and it matches segment for segment. This is the shape
+    // of every anchored rule such as `/vmlinux`, which most entries fail on length alone.
+    if glob_only {
+        return pattern.len() == path.len()
+            && pattern.iter().zip(path).all(|(segment, component)| match segment {
+                Segment::Glob(glob) => glob_matches(glob, component),
+                Segment::DoubleStar | Segment::DoubleStarOneOrMore => false,
+            });
+    }
+    let positions = path.len() + 1;
+    if positions <= INLINE_POSITIONS {
+        let mut previous = [false; INLINE_POSITIONS];
+        let mut current = [false; INLINE_POSITIONS];
+        double_star_matches(pattern, path, &mut previous[..positions], &mut current[..positions])
+    } else {
+        double_star_matches(pattern, path, &mut vec![false; positions], &mut vec![false; positions])
+    }
+}
+
+/// The general matcher for a pattern holding `**`: `previous[i]` says the segments so
+/// far can consume exactly the first `i` path components. The rows are supplied by the
+/// caller so the common depth needs no allocation.
+fn double_star_matches<'rows>(
+    pattern: &[Segment],
+    path: &[&[u8]],
+    mut previous: &'rows mut [bool],
+    mut current: &'rows mut [bool],
+) -> bool {
+    previous.fill(false);
     previous[0] = true;
 
     for (position, segment) in pattern.iter().enumerate() {
-        let mut current = vec![false; path.len() + 1];
+        current.fill(false);
         match segment {
             Segment::DoubleStar if position + 1 < pattern.len() => {
                 current[0] = previous[0];
@@ -265,10 +355,10 @@ fn segment_path_matches(
                 }
             }
         }
-        previous = current;
+        std::mem::swap(&mut previous, &mut current);
     }
 
-    previous[path.len()] && (!directory_only || target_is_dir)
+    previous[path.len()]
 }
 
 fn glob_matches(pattern: &[u8], text: &[u8]) -> bool {
@@ -562,6 +652,116 @@ mod tests {
             Some(0) => Some(true),
             Some(1) => Some(false),
             code => panic!("git check-ignore exited unexpectedly: {code:?}"),
+        }
+    }
+
+    /// The matcher before H162: heap rows for every pattern and no length shortcut. Kept
+    /// as the oracle the allocation-free paths must agree with.
+    fn reference_segment_path_matches(
+        pattern: &[Segment],
+        path: &[&[u8]],
+        directory_only: bool,
+        target_is_dir: bool,
+    ) -> bool {
+        let mut previous = vec![false; path.len() + 1];
+        previous[0] = true;
+        for (position, segment) in pattern.iter().enumerate() {
+            let mut current = vec![false; path.len() + 1];
+            match segment {
+                Segment::DoubleStar if position + 1 < pattern.len() => {
+                    current[0] = previous[0];
+                    for path_at in 1..=path.len() {
+                        current[path_at] = previous[path_at] || current[path_at - 1];
+                    }
+                }
+                Segment::DoubleStar | Segment::DoubleStarOneOrMore => {
+                    for path_at in 1..=path.len() {
+                        current[path_at] = previous[path_at - 1] || current[path_at - 1];
+                    }
+                }
+                Segment::Glob(glob) => {
+                    for path_at in 1..=path.len() {
+                        current[path_at] =
+                            previous[path_at - 1] && glob_matches(glob, path[path_at - 1]);
+                    }
+                }
+            }
+            previous = current;
+        }
+        previous[path.len()] && (!directory_only || target_is_dir)
+    }
+
+    #[test]
+    fn allocation_free_matching_agrees_with_the_heap_rows_at_every_depth() {
+        // Depths straddle both stack buffers: 32 inline components, 63 inline positions.
+        let sources: &[&[u8]] = &[
+            b"/a",
+            b"/a/b",
+            b"a/b",
+            b"/a/*",
+            b"*/b",
+            b"a/**",
+            b"**/b",
+            b"a/**/b",
+            b"/a/**/b/",
+            b"**/a/**",
+            b"a/**\\/b",
+            b"/[ab]/?",
+            b"a/b/",
+            b"**/**/b",
+            b"**\\/b",
+            b"a/**\\/**\\/b",
+            b"/**",
+            b"**/b/",
+            b"!a/**/b",
+            b"/\xc3\xa9/*",
+        ];
+        for &source in sources {
+            let pattern = Pattern::parse(source).expect("fixture pattern parses");
+            for depth in [1usize, 2, 3, 31, 32, 33, 62, 63, 64, 70] {
+                for shape in 0..5 {
+                    let names: Vec<Vec<u8>> = (0..depth)
+                        // All `a`; `a` ending in `b`; `a` then all `b`; a multi-byte name then
+                        // `a`; distinct names.
+                        .map(|at| match (shape, at) {
+                            (1, at) if at + 1 == depth => b"b".to_vec(),
+                            (2, at) if at > 0 => b"b".to_vec(),
+                            (3, 0) => "\u{e9}".as_bytes().to_vec(),
+                            (0..=3, _) => b"a".to_vec(),
+                            _ => format!("n{at}").into_bytes(),
+                        })
+                        .collect();
+                    let path: Vec<&[u8]> = names.iter().map(Vec::as_slice).collect();
+                    let joined = names.join(&b'/');
+                    let text = std::str::from_utf8(&joined).expect("fixture names are UTF-8");
+                    for is_dir in [false, true] {
+                        let expected = if pattern.shape == Shape::Basename {
+                            pattern.matches(&path, is_dir)
+                        } else {
+                            reference_segment_path_matches(
+                                &pattern.segments,
+                                &path,
+                                pattern.directory_only,
+                                is_dir,
+                            )
+                        };
+                        assert_eq!(
+                            pattern.matches(&path, is_dir),
+                            expected,
+                            "{} against a depth-{depth} path, shape {shape}, dir {is_dir}",
+                            String::from_utf8_lossy(source)
+                        );
+                        let mut line = source.to_vec();
+                        line.push(b'\n');
+                        assert_eq!(
+                            Gitignore::parse(&line).matches(Path::new(text), is_dir),
+                            expected.then_some(pattern.ignored),
+                            "{} through the public matcher at depth {depth}",
+                            String::from_utf8_lossy(source)
+                        );
+                    }
+                }
+            }
         }
     }
 

@@ -138,6 +138,7 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 
 A report under `--cache on` retains the index and leaves a snapshot, which `--stale-ok`
 can then answer from without touching the tree.
+Stdout carries the answer alone; stderr says it is stale and how to get a fresh one.
 
 ```console
 $ fdu --cache on --size apparent project
@@ -161,7 +162,26 @@ $ fdu --cache on --size apparent project
 $ fdu --stale-ok --view summary --size apparent project
      269 B  7 files, 3 directories (128 B gitignored)
 ! note: gitignored sizes are included in row totals
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
 ! perf: took [PERF_TIME] to walk 0 files (0 B) at [PERF_RATE]; 1 gitignore rule (1 file); content read 0 B; analysis 0 fresh, 0 cached; cache only
+? 0
+```
+
+`--quiet` drops the note and the performance footer but keeps the warning, so a quiet
+stale answer still cannot pass for a current one.
+
+```console
+$ fdu --quiet --stale-ok --view summary --size apparent project
+     269 B  7 files, 3 directories (128 B gitignored)
+! warn: stale answer: served from the snapshot without filesystem verification; drop --stale-ok for a fresh answer
+? 0
+```
+
+A verified answer carries no such warning, quiet or not.
+
+```console
+$ fdu --quiet --view summary --size apparent project
+     269 B  7 files, 3 directories (128 B gitignored)
 ? 0
 ```
 

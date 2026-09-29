@@ -357,7 +357,9 @@ The default `include` measures both populations and reports their contributions
 separately. Unknown classifications cannot justify pruning.
 `--no-gitignore` with either selection is a usage error.
 Only per-directory `.gitignore` files apply, not `core.excludesFile`,
-`.git/info/exclude`, or a global ignore file, and matching is case-sensitive.
+`.git/info/exclude`, or a global ignore file.
+Each is found as git opens it, so a `.GITIGNORE` counts on a case-insensitive volume;
+matching itself is case-sensitive.
 Unignored does not mean tracked: `.git` is unignored unless a rule names it.
 For recent working files, add both `--ignored=exclude` and `--exclude='.git/**'`. An
 unreadable `.gitignore` makes the result partial (exit 2), while one past
@@ -418,7 +420,8 @@ Check the process exit status and these fields:
 
 `provenance.source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only
 `--stale-ok` can return `provenance.freshness: stale`, and it says so rather than
-implying currency; it fails outright when no usable snapshot exists rather than silently
+implying currency: every format also prints a `warn: stale answer` line on stderr, which
+`--quiet` keeps. It fails outright when no usable snapshot exists rather than silently
 scanning.
 
 Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or

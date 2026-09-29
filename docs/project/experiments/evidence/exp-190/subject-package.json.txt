@@ -1,0 +1,9 @@
+{
+  "name": "fdu-dense-subject",
+  "private": true,
+  "description": "Directory-dense real subject for fdu benchmarks: react-scripts 5.0.1 and gatsby 5.13.7 dependency trees, installed with --ignore-scripts",
+  "dependencies": {
+    "react-scripts": "5.0.1",
+    "gatsby": "5.13.7"
+  }
+}

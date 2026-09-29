@@ -27,12 +27,31 @@ class MetadataTests(unittest.TestCase):
             (ROOT / "crates/fdu-py/pyproject.toml").read_text(encoding="utf-8")
         )
         version = crate["package"]["version"]
-        self.assertEqual(version, "0.2.0")
+        self.assertEqual(version, "0.2.1")
         self.assertEqual(python_crate["package"]["version"], version)
         self.assertEqual(workspace["workspace"]["dependencies"]["fdu"]["version"], version)
         self.assertEqual(pyproject["project"]["name"], "fdu")
         self.assertEqual(pyproject["project"]["scripts"]["fdu"], "fdu:_main")
         self.assertEqual(pyproject["tool"]["maturin"]["module-name"], "fdu._native")
+
+    def test_golden_generator_strings_name_the_product_version(self) -> None:
+        # A version bump must move every golden's `generator`, in JSON and YAML spellings
+        # alike; the parity artifact holds no YAML session, so nothing else catches a miss.
+        version = tomllib.loads((ROOT / "crates/fdu/Cargo.toml").read_text(encoding="utf-8"))[
+            "package"
+        ]["version"]
+        generator = re.compile(r'"?generator"?:\s*"fdu ([^"]+)"')
+        seen = 0
+        for golden in sorted((ROOT / "tests/golden").rglob("*")):
+            if not golden.is_file():
+                continue
+            for number, line in enumerate(
+                golden.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+            ):
+                for found in generator.findall(line):
+                    seen += 1
+                    self.assertEqual(found, version, f"{golden.relative_to(ROOT)}:{number}")
+        self.assertGreater(seen, 0)
 
     def test_artifact_license_copies_match_repository_license(self) -> None:
         expected = (ROOT / "LICENSE").read_bytes()
@@ -53,7 +72,7 @@ class MetadataTests(unittest.TestCase):
         authority = (
             "id-token: write",
             "environment:",
-            "secrets.CARGO_REGISTRY_TOKEN",
+            "steps.crates-io-auth.outputs.token",
             "crates-io-auth-action",
             "cargo publish",
             "uv publish",
@@ -73,14 +92,21 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(re.findall(r"(?i)\bwrite(?:-all)?\b", code(workflow)), ["write"])
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("gh-action-pypi-publish", workflow)
-        # The bootstrap token is read by the step that reports which credential applies and
-        # by the two uploads, never in the job's `env`, where every action would see it.
+        # No registry secret exists: the only secret read is the workflow's own read-only
+        # GITHUB_TOKEN, for the supply-chain check. 0.1.0's bootstrap CARGO_REGISTRY_TOKEN
+        # outranked OIDC whenever it was set, so a stale one would have published in place
+        # of trusted publishing; 0.2.0 published through OIDC alone and the path is gone
+        # (fdu-brkf). The minted crates.io token is read by the two uploads alone, never in
+        # the job's `env`, where every action would see it.
+        self.assertEqual(re.findall(r"secrets\.(\w+)", code(workflow)), ["GITHUB_TOKEN"])
         steps = workflow_steps(jobs[PUBLISH_JOB])
-        holders = [name for name, text in steps.items() if "secrets.CARGO_REGISTRY_TOKEN" in text]
-        self.assertEqual(
-            holders, ["Choose the crates.io credential", "Publish fdu-core", "Publish fdu"]
-        )
-        self.assertEqual(workflow.count("secrets.CARGO_REGISTRY_TOKEN"), 3)
+        token = "steps.crates-io-auth.outputs.token"
+        holders = [name for name, text in steps.items() if token in text]
+        self.assertEqual(holders, ["Publish fdu-core", "Publish fdu"])
+        self.assertEqual(workflow.count(token), 2)
+        for holder in holders:
+            with self.subTest(step=holder):
+                self.assertIn(f"CARGO_REGISTRY_TOKEN: ${{{{ {token} }}}}\n", steps[holder])
 
     def test_the_publish_job_runs_only_on_the_planned_tag_after_the_rehearsal(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -90,7 +116,8 @@ class MetadataTests(unittest.TestCase):
             "    permissions:\n      contents: read\n      id-token: write\n    env:\n", publish
         )
         self.assertIn(
-            "    needs: [plan, crate, sdist, wheels, evidence, release-environment]\n", publish
+            "    needs: [plan, crate, semver, sdist, wheels, evidence, release-environment]\n",
+            publish,
         )
         # The whole condition, exactly: a presence check on each clause would pass
         # `a || b`, `!startsWith(...)`, or `inputs.publish != true` while letting the job
@@ -205,17 +232,17 @@ class MetadataTests(unittest.TestCase):
         self.assertTrue(referenced)
         self.assertNotRegex(publish, r"\.outputs\s*\[")
         artifacts = [
-            {"filename": "fdu-core-0.2.0.crate", "kind": "crate", "sha256": "a" * 64},
-            {"filename": "fdu-0.2.0.crate", "kind": "crate", "sha256": "b" * 64},
-            {"filename": "fdu-0.2.0.tar.gz", "kind": "sdist", "sha256": "c" * 64},
-            {"filename": "fdu-0.2.0-cp312-abi3-win_amd64.whl", "kind": "wheel", "sha256": "d" * 64},
+            {"filename": "fdu-core-0.2.1.crate", "kind": "crate", "sha256": "a" * 64},
+            {"filename": "fdu-0.2.1.crate", "kind": "crate", "sha256": "b" * 64},
+            {"filename": "fdu-0.2.1.tar.gz", "kind": "sdist", "sha256": "c" * 64},
+            {"filename": "fdu-0.2.1-cp312-abi3-win_amd64.whl", "kind": "wheel", "sha256": "d" * 64},
         ]
         with tempfile.TemporaryDirectory() as temporary:
             manifest = Path(temporary) / "manifest.json"
             manifest.write_text(
-                json.dumps({"version": "0.2.0", "artifacts": artifacts}), encoding="utf-8"
+                json.dumps({"version": "0.2.1", "artifacts": artifacts}), encoding="utf-8"
             )
-            written = publish_gate.audit(manifest, "0.2.0", lambda _url: None)
+            written = publish_gate.audit(manifest, "0.2.1", lambda _url: None)
         self.assertLessEqual(referenced, written.keys())
 
     def test_the_publish_job_runs_no_dependency_code_and_uploads_only_rehearsed_bytes(
@@ -235,10 +262,82 @@ class MetadataTests(unittest.TestCase):
         self.assertIn("uv publish\n          --trusted-publishing always\n", publish)
         self.assertIn("--check-url https://pypi.org/simple/", publish)
         # An allow-list rather than a deny-list: any build or test step would run dependency
-        # code in a job whose OIDC token the pending PyPI publisher trusts.
+        # code in a job whose OIDC token the pending PyPI publisher trusts. `uv run` is
+        # allowed only as the exact no-project form that runs a release script on the
+        # standard library, so a `--with`, a project, or a tool cannot ride in on it.
         self.assertEqual(set(re.findall(r"\bcargo\s+([a-z-]+)", publish)), {"package", "publish"})
-        self.assertEqual(set(re.findall(r"\buvx?\s+([a-z-]+)", publish)), {"publish"})
+        self.assertEqual(set(re.findall(r"\buvx?\s+([a-z-]+)", publish)), {"publish", "run"})
+        runs = re.findall(r"\buv run\b[^\n]*", publish)
+        self.assertTrue(runs)
+        for run in runs:
+            with self.subTest(run=run):
+                self.assertRegex(run, rf"^{re.escape(UV_PYTHON)} scripts/release/[a-z_]+\.py\b")
         self.assertNotRegex(publish, r"\b(?:uvx|pip|pip3|npm|npx|make|rustc|maturin)\b")
+
+    def test_every_release_script_runs_on_the_pinned_uv_python(self) -> None:
+        # The runner image's `python3` is one image update from a different interpreter,
+        # at the least recoverable moment; `make release-test` and `release-rehearse` use
+        # uv's 3.12, so the workflow does too. A job that runs uv installs the pinned one
+        # before its first use.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertNotIn("python3", code(workflow))
+        for line in code(workflow).splitlines():
+            if "scripts/release/" in line or "tests/release" in line:
+                with self.subTest(line=line.strip()):
+                    self.assertIn(f"{UV_PYTHON} ", line)
+        for name, job in workflow_jobs(workflow).items():
+            steps = list(workflow_steps(job).values())
+            first_run = next((i for i, step in enumerate(steps) if "uv run" in step), None)
+            if first_run is None:
+                continue
+            with self.subTest(job=name):
+                setup = next((i for i, s in enumerate(steps) if "astral-sh/setup-uv@" in s), None)
+                self.assertIsNotNone(setup)
+                assert setup is not None
+                self.assertLess(setup, first_run)
+        scripts = re.findall(r"\buv run --no-project --python 3\.12 python (\S+)", workflow)
+        self.assertEqual(
+            sorted(set(scripts)),
+            [
+                "-m",
+                "scripts/release/inspect_artifacts.py",
+                "scripts/release/publish_gate.py",
+                "scripts/release/registry_state.py",
+                "scripts/release/resolve_plan.py",
+                "scripts/release/semver_check.py",
+                "scripts/release/smoke_crate.py",
+            ],
+        )
+        # The same suite, the same way, as `make release-test`.
+        suite = "-m unittest discover -s tests/release -p 'test_*.py'"
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn(f"$(UV) {UV_PYTHON.removeprefix('uv ')} {suite}", makefile)
+        self.assertIn(f"{UV_PYTHON} {suite}", workflow)
+
+    def test_every_download_lands_its_files_directly_in_its_path(self) -> None:
+        # The inspector and `verify-files` expect the eight files flat in one directory.
+        # download-artifact extracts straight into `path` only for a download by `name`
+        # or a `pattern` with `merge-multiple: true`; otherwise each artifact gets its own
+        # subdirectory, and which case that is has changed between major versions. And
+        # since v8 a digest mismatch fails the download, which only holds while no step
+        # overrides `digest-mismatch` or skips decompression.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        downloads = [
+            step.split("\n      - ", 1)[0]
+            for step in workflow.split("- uses: actions/download-artifact@")[1:]
+        ]
+        self.assertEqual(len(downloads), 5)
+        for step in downloads:
+            with self.subTest(step=step):
+                self.assertRegex(step, r"(?m)^\s+path: \S.*$")
+                named = re.search(r"(?m)^\s+name: \S.*$", step) is not None
+                merged = re.search(r"(?m)^\s+pattern: \S.*$", step) is not None and (
+                    re.search(r"(?m)^\s+merge-multiple: true$", step) is not None
+                )
+                self.assertTrue(named != merged, "exactly one of name or a merged pattern")
+                self.assertNotRegex(
+                    step, r"(?m)^\s+(?:artifact-ids|skip-decompress|digest-mismatch):"
+                )
 
     def test_every_release_checkout_drops_its_credentials(self) -> None:
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -255,15 +354,36 @@ class MetadataTests(unittest.TestCase):
         rehearsal = makefile.split("\nrelease-rehearse:", 1)[1].split("\n\n", 1)[0]
         for text in (workflow, rehearsal):
             self.assertIn("scripts/release/smoke_crate.py", text)
-        self.assertNotIn("cargo install", workflow)
+        # The one `cargo install` is the reviewed semver tool; nothing installs `fdu` so.
+        self.assertEqual(
+            re.findall(r"cargo install[^\n]*", workflow),
+            [f"cargo install --locked cargo-semver-checks --version {semver_tool_version()}"],
+        )
+
+    def test_a_patch_release_cannot_publish_past_the_semver_check(self) -> None:
+        # The job compares both library crates with the pinned tool, and the publish job
+        # needs it directly, so a patch that breaks the Rust API stops before any upload.
+        # The local target runs the same script, so a maintainer sees the same verdict.
+        workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        jobs = workflow_jobs(workflow)
+        reviewed = REVIEWED_SEMVER_JOB.replace("<version>", semver_tool_version())
+        self.assertEqual(flat(jobs["semver"]), flat(reviewed))
+        self.assertRegex(jobs[PUBLISH_JOB], r"(?m)^    needs: \[[^\]]*\bsemver\b")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        target = makefile.split("\nsemver-check:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("python scripts/release/semver_check.py", target)
 
 
 PUBLISH_JOB = "publish"
+
+# How every release script runs, in the workflow as in the Makefile's release targets.
+UV_PYTHON = "uv run --no-project --python 3.12 python"
 
 # The publish job's steps in order, an action named without its pinned revision so that a
 # reviewed action update does not read as a reordering.
 PUBLISH_STEP_ORDER = [
     "actions/checkout",
+    "astral-sh/setup-uv",
     "Confirm the checkout is the planned release tag",
     "Locate the rehearsal's files",
     "actions/download-artifact",
@@ -273,9 +393,7 @@ PUBLISH_STEP_ORDER = [
     "Verify the downloaded files against the manifest and SHA256SUMS",
     "Audit both registries before publishing",
     "dtolnay/rust-toolchain",
-    "astral-sh/setup-uv",
     "Reproduce both crates and compare them with the rehearsal",
-    "Choose the crates.io credential",
     "Exchange GitHub OIDC for a short-lived crates.io token",
     "Publish fdu-core",
     "Wait until crates.io serves the rehearsed fdu-core",
@@ -293,23 +411,26 @@ PUBLISH_STEP_ORDER = [
 # Changing one there is a change to publishing safety, so it is made here too.
 REVIEWED_PUBLISH_STEPS = """
       - name: Confirm the checkout is the planned release tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          python3 scripts/release/resolve_plan.py
+          uv run --no-project --python 3.12 python scripts/release/resolve_plan.py
           --root .
           --mode release
           --ref "${GITHUB_REF}"
           --commit "${GITHUB_SHA}"
+          --repository "${GITHUB_REPOSITORY}"
           --validate-checkout
       - name: Verify the downloaded files against the manifest and SHA256SUMS
         run: >-
-          python3 scripts/release/publish_gate.py verify-files "${FILES}"
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py verify-files "${FILES}"
           --manifest "${MANIFEST}"
           --checksums "${EVIDENCE}/SHA256SUMS"
           --version "${VERSION}"
       - name: Audit both registries before publishing
         id: audit
         run: >-
-          python3 scripts/release/publish_gate.py audit
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py audit
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --github-output "${GITHUB_OUTPUT}"
@@ -318,39 +439,24 @@ REVIEWED_PUBLISH_STEPS = """
         if: steps.audit.outputs.crates == 'true'
         run: |
           cargo package --locked --no-verify -p fdu-core -p fdu
-          python3 scripts/release/publish_gate.py compare-crates \\
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py compare-crates \\
             --package-dir target/package \\
             --manifest "${MANIFEST}" \\
             --version "${VERSION}" \\
             --package fdu-core \\
             --package fdu
-      - name: Choose the crates.io credential
-        id: credential
-        if: steps.audit.outputs.crates == 'true'
-        env:
-          BOOTSTRAP_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          if [ -n "${BOOTSTRAP_TOKEN}" ]; then
-            echo "source=bootstrap" >> "${GITHUB_OUTPUT}"
-            echo "::warning title=crates.io bootstrap token::Publishing with the \
-            CARGO_REGISTRY_TOKEN environment secret. Delete the secret and revoke the \
-            token once this release is published."
-          else
-            echo "source=oidc" >> "${GITHUB_OUTPUT}"
-          fi
       - name: Exchange GitHub OIDC for a short-lived crates.io token
         id: crates-io-auth
-        if: steps.credential.outputs.source == 'oidc'
+        if: steps.audit.outputs.crates == 'true'
         uses: rust-lang/crates-io-auth-action@<pinned>
       - name: Publish fdu-core
         if: steps.audit.outputs.fdu_core == 'missing' && steps.reproduce-both.outcome == 'success'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN
-            || steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
         run: cargo publish --locked --no-verify -p fdu-core
       - name: Wait until crates.io serves the rehearsed fdu-core
         run: >-
-          python3 scripts/release/publish_gate.py wait-crate
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py wait-crate
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --package fdu-core
@@ -359,7 +465,7 @@ REVIEWED_PUBLISH_STEPS = """
         if: steps.audit.outputs.fdu == 'missing'
         run: |
           cargo package --locked --no-verify -p fdu
-          python3 scripts/release/publish_gate.py compare-crates \\
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py compare-crates \\
             --package-dir target/package \\
             --manifest "${MANIFEST}" \\
             --version "${VERSION}" \\
@@ -367,19 +473,18 @@ REVIEWED_PUBLISH_STEPS = """
       - name: Publish fdu
         if: steps.audit.outputs.fdu == 'missing' && steps.reproduce-fdu.outcome == 'success'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN
-            || steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
         run: cargo publish --locked --no-verify -p fdu
       - name: Wait until crates.io serves the rehearsed fdu
         run: >-
-          python3 scripts/release/publish_gate.py wait-crate
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py wait-crate
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --package fdu
       - name: Audit PyPI before uploading
         id: pypi
         run: >-
-          python3 scripts/release/publish_gate.py audit
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py audit
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --github-output "${GITHUB_OUTPUT}"
@@ -393,34 +498,37 @@ REVIEWED_PUBLISH_STEPS = """
           "${FILES}"/fdu-${VERSION}-*.whl
       - name: Wait until PyPI serves exactly the rehearsed files
         run: >-
-          python3 scripts/release/publish_gate.py wait-pypi
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py wait-pypi
           --manifest "${MANIFEST}"
           --version "${VERSION}"
       - name: Audit every registry against the manifest
         run: >-
-          python3 scripts/release/registry_state.py
+          uv run --no-project --python 3.12 python scripts/release/registry_state.py
           --manifest "${MANIFEST}"
           --version "${VERSION}"
           --require-identical
 """
 
 # The plan job's step that refuses, in release mode, a run whose ref is not the version's
-# tag naming the checked-out commit: the first of the two places the tag is validated.
+# annotated, GitHub-verified tag naming the checked-out commit on `main`: the first of the
+# two places the tag is validated.
 REVIEWED_PLAN_STEPS = """
       - name: Resolve exact release identity
         id: plan
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           PUBLISH: ${{ inputs.publish }}
         run: |
           mode=rehearsal
           if [ "${PUBLISH}" = "true" ]; then
             mode=release
           fi
-          python3 scripts/release/resolve_plan.py \\
+          uv run --no-project --python 3.12 python scripts/release/resolve_plan.py \\
             --root . \\
             --mode "${mode}" \\
             --ref "${GITHUB_REF}" \\
             --commit "${GITHUB_SHA}" \\
+            --repository "${GITHUB_REPOSITORY}" \\
             --validate-checkout \\
             --github-output "${GITHUB_OUTPUT}"
 """
@@ -438,14 +546,49 @@ REVIEWED_ENVIRONMENT_JOB = """
       - uses: actions/checkout@<pinned>
         with:
           persist-credentials: false
+      - uses: astral-sh/setup-uv@<pinned>
+        with:
+          version: "0.12.1"
+          enable-cache: false
       - name: Require a reviewer, v* tag deployments only, and no administrator bypass
         run: >-
-          python3 scripts/release/publish_gate.py check-environment
+          uv run --no-project --python 3.12 python scripts/release/publish_gate.py check-environment
           --repository "${GITHUB_REPOSITORY}"
           --environment release
         env:
           GITHUB_TOKEN: ${{ github.token }}
 """
+
+
+# The job whose failure stops a patch release that breaks the Rust API; `<version>` is the
+# cargo-semver-checks version supply-chain-policy.json inventories.
+REVIEWED_SEMVER_JOB = """
+    name: Check the Rust API against the last compatible release
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<pinned>
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@<pinned>
+        with:
+          toolchain: 1.97.1
+      - uses: astral-sh/setup-uv@<pinned>
+        with:
+          version: "0.12.1"
+          enable-cache: false
+      - name: Install the reviewed cargo-semver-checks
+        run: cargo install --locked cargo-semver-checks --version <version>
+      - name: Compare fdu-core and fdu with the release they must stay compatible with
+        run: uv run --no-project --python 3.12 python scripts/release/semver_check.py --root .
+"""
+
+
+def semver_tool_version() -> str:
+    """The cargo-semver-checks version the supply-chain policy inventories."""
+    policy = json.loads((ROOT / "supply-chain-policy.json").read_text(encoding="utf-8"))
+    (tool,) = [t for t in policy["bootstrap"]["cargoTools"] if t["name"] == "cargo-semver-checks"]
+    return tool["version"]
 
 
 def workflow_jobs(workflow: str, *, comments: bool = False) -> dict[str, str]:

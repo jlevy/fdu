@@ -69,12 +69,17 @@ METRICS = {
     "peak_rss_bytes": "bytes",
 }
 
-#: A tree built by this generator is generated, whatever it is labelled.
+#: A tree built by one of these generators is generated, whatever it is labelled.
 #:
 #: `tree_provenance` is the general answer and needs no list, which is why it is checked
 #: first. The list below covers the artifacts recorded before that field existed, and
-#: those whose provenance describes a generated tree without naming this script.
-TREE_GENERATOR = "gen_tree.py"
+#: those whose provenance describes a generated tree without naming a generator.
+#:
+#: There are two generators. `gen_tree.py` is the spike script behind the early Linux
+#: index-tier trees; `benchmarks.generate` is the corpus generator whose `balanced`
+#: recipe builds the million-entry tree both tool comparisons run on. The page drew the
+#: second as a real subject on both platforms while only the first was named here.
+TREE_GENERATORS = ("gen_tree.py", "benchmarks.generate")
 
 #: Subjects that are not a sample of ordinary work and must never be averaged with one.
 #:
@@ -114,11 +119,12 @@ def is_synthetic(subject: Mapping[str, Any]) -> bool:
     Asked of the recorded provenance first, because that is a property of the run and
     cannot fall behind: a recipe naming the generator describes a generated tree. The
     label set is the fallback for the artifacts recorded before `tree_provenance`
-    existed, and for a provenance that names a recipe rather than `gen_tree.py`; a
+    existed, and for a provenance that names a recipe rather than a generator; a
     hand-maintained set is exactly why this needed fixing — three `gen_tree.py`
     subjects were never added to it.
     """
-    if TREE_GENERATOR in str(subject.get("tree_provenance") or ""):
+    provenance = str(subject.get("tree_provenance") or "")
+    if any(generator in provenance for generator in TREE_GENERATORS):
         return True
     return str(subject.get("tree_label") or "") in SYNTHETIC_SUBJECTS
 

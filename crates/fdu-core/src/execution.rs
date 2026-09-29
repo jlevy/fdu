@@ -660,6 +660,9 @@ struct SummaryControls {
     /// The parent last looked up, and whether it is ignored. A listing's entries mostly
     /// arrive together, so this answers nearly all of them.
     parent: Option<(std::path::PathBuf, bool)>,
+    /// The controls governing the parent last classified under, resolved once for its
+    /// listing (H163) and dropped whenever the table changes.
+    chain: Option<(std::path::PathBuf, crate::control::ControlChain)>,
     /// Every entry no rule ignores, as the index's `unignored` partition.
     unignored: crate::index::RollUpScalars,
     /// The first control observation the table rejected, which fails the report as it
@@ -675,6 +678,7 @@ impl SummaryFold {
                 table: crate::control::ControlTable::with_limits(config.control_limits),
                 ignored_heads: std::collections::HashSet::new(),
                 parent: None,
+                chain: None,
                 unignored: crate::index::RollUpScalars::default(),
                 rejected: None,
             }),
@@ -716,12 +720,14 @@ impl SummaryFold {
             }
             crate::Op::ControlUpsert { path, source } => {
                 if let Some(controls) = &mut self.controls {
+                    controls.chain = None;
                     let admitted = controls.table.upsert(path, source.clone()).map(drop);
                     controls.record(admitted);
                 }
             }
             crate::Op::ControlRemove { path } => {
                 if let Some(controls) = &mut self.controls {
+                    controls.chain = None;
                     let removed = controls.table.remove(path).map(drop);
                     controls.record(removed);
                 }
@@ -787,6 +793,12 @@ impl SummaryControls {
         let parent_ignored = self.parent_ignored(parent);
         let ignored = if parent_ignored || self.table.is_empty() {
             parent_ignored
+        } else if let Some(name) = path.file_name() {
+            if !matches!(&self.chain, Some((cached, _)) if cached == parent) {
+                self.chain = Some((parent.to_path_buf(), self.table.chain_for(parent)));
+            }
+            let (_, chain) = self.chain.as_ref().expect("the chain was just resolved");
+            chain.is_ignored(parent, name.as_encoded_bytes(), kind.is_dir())
         } else {
             self.table.matcher_for(path).is_ignored(kind.is_dir())
         };
@@ -2020,6 +2032,11 @@ mod tests {
         order_dependent: bool,
         /// Walk errors the case induces.
         errors: bool,
+        /// How control lookups under the case's root resolve a case variant of the name.
+        lookups: crate::test_support::CaseLookups,
+        /// For a tree whose rules sit in a case variant of the name: whether they govern,
+        /// which is whether a lookup of `.gitignore` resolves to the variant.
+        variant_governs: Option<bool>,
         /// A file the case made unreadable, readable again when the case is dropped so its
         /// tree can be removed even after a failed assertion. Only Unix can make one.
         #[cfg(unix)]
@@ -2088,6 +2105,9 @@ mod tests {
     /// The control case whose only control-like file is `.GITIGNORE`.
     const CASE_VARIANT: &str = "a case-variant control name";
 
+    /// The control case whose directory lists `.gitignore` beside `.GITIGNORE`.
+    const CASE_BOTH: &str = "both spellings of the control name";
+
     fn control_cases() -> Vec<ControlCase> {
         let case = |name, root, scan, share, refused| ControlCase {
             name,
@@ -2097,6 +2117,8 @@ mod tests {
             refused,
             order_dependent: false,
             errors: false,
+            lookups: crate::test_support::CaseLookups::Host,
+            variant_governs: None,
             #[cfg(unix)]
             denied: None,
         };
@@ -2178,19 +2200,53 @@ mod tests {
         competing.order_dependent = true;
         cases.push(competing);
 
-        // A case variant of the control name is no control file to a listing or the index.
-        // On a case-insensitive volume a lookup of `.gitignore` finds it, and enough
-        // entries fill a default batch before the listing reaches it, so the probe path
-        // must confirm the exact name for the transient summary to agree.
-        let variant = tempfile::tempdir().expect("tempdir");
-        put(variant.path(), ".GITIGNORE", b"*.log\n");
-        for file in 0..1_200 {
-            put(variant.path(), &format!("f{file:04}.log"), b"log");
+        // A case variant of the control name governs exactly where a lookup of `.gitignore`
+        // resolves to it, as the open git makes does (fdu-0w1b): on a case-insensitive
+        // volume, and through folded lookups on a case-sensitive host. Enough entries fill
+        // a default batch before the listing reaches `.GITIGNORE` (enumeration order
+        // permitting), so the transient fold's probe must find what the listed variant's
+        // read and the index find. Hidden pruning drops the variant's row, not its rules.
+        let probe = tempfile::tempdir().expect("tempdir");
+        for (lookups, governs) in crate::test_support::CaseLookups::on_this_host(probe.path()) {
+            for hidden in [None, Some(Vec::<std::ffi::OsString>::new())] {
+                let variant = tempfile::tempdir().expect("tempdir");
+                put(variant.path(), ".GITIGNORE", b"*.log\n");
+                for file in 0..1_200 {
+                    put(variant.path(), &format!("f{file:04}.log"), b"log");
+                }
+                put(variant.path(), "kept.txt", b"kept");
+                let scan = ScanConfig {
+                    hidden: hidden
+                        .map(|allow| std::sync::Arc::new(crate::HiddenPolicy::prune_hidden(allow))),
+                    ..ScanConfig::default()
+                };
+                let mut variant = case(CASE_VARIANT, variant, scan, true, 0);
+                variant.lookups = lookups;
+                variant.variant_governs = Some(governs);
+                cases.push(variant);
+            }
         }
-        if fs::symlink_metadata(variant.path().join(".gitignore")).is_ok() {
-            cases.push(case(CASE_VARIANT, variant, ScanConfig::default(), true, 0));
-        } else {
-            eprintln!("skipped {CASE_VARIANT:?}: the temporary directory is case-sensitive");
+
+        // A case-sensitive directory can list both spellings, and only the exact name
+        // governs there, whatever the lookups; a case-insensitive one cannot hold both, and
+        // writing the second spelling there rewrites the first file.
+        for lookups in
+            [crate::test_support::CaseLookups::Host, crate::test_support::CaseLookups::Folded]
+        {
+            let both = tempfile::tempdir().expect("tempdir");
+            put(both.path(), ".gitignore", b"*.log\n");
+            put(both.path(), ".GITIGNORE", b"*.tmp\n");
+            if fs::read(both.path().join(".gitignore")).expect("read") != b"*.log\n" {
+                eprintln!("skipped {CASE_BOTH:?}: the temporary directory is case-insensitive");
+                break;
+            }
+            for file in 0..1_200 {
+                put(both.path(), &format!("f{file:04}.tmp"), b"tmp");
+            }
+            put(both.path(), "x.log", b"log");
+            let mut both = case(CASE_BOTH, both, ScanConfig::default(), true, 0);
+            both.lookups = lookups;
+            cases.push(both);
         }
 
         #[cfg(unix)]
@@ -2296,6 +2352,7 @@ mod tests {
 
         let default_batch = ScanConfig::default().batch_size;
         for case in control_cases() {
+            let _lookups = case.lookups.install(case.root.path());
             let mut compared = 0;
             for threads in [Some(1), Some(2), Some(4), None] {
                 if case.order_dependent && threads != Some(1) {
@@ -2305,8 +2362,8 @@ mod tests {
                     for order in [crate::ScanOrder::BreadthFirst, crate::ScanOrder::DepthFirst] {
                         let scan = ScanConfig { batch_size, threads, order, ..case.scan.clone() };
                         let label = format!(
-                            "{} ({threads:?} workers, batch {batch_size}, {order:?})",
-                            case.name
+                            "{} ({:?} lookups, {threads:?} workers, batch {batch_size}, {order:?})",
+                            case.name, case.lookups
                         );
                         let (compact, indexed) =
                             transient_and_indexed(case.root.path(), &scan, &label);
@@ -2339,12 +2396,20 @@ mod tests {
                                 "{label}: {ignored:?} of {row:?}"
                             );
                         }
-                        if case.name == CASE_VARIANT {
-                            assert_eq!(coverage.applied, 0, "{label}: no control file applies");
+                        if let Some(governs) = case.variant_governs {
+                            assert_eq!(coverage.applied, u64::from(governs), "{label}");
                             assert_eq!(
                                 row.ignored.map(|ignored| ignored.files),
-                                Some(0),
+                                Some(if governs { 1_200 } else { 0 }),
                                 "{label}"
+                            );
+                        }
+                        if case.name == CASE_BOTH {
+                            assert_eq!(coverage.applied, 1, "{label}: the exact name alone");
+                            assert_eq!(
+                                row.ignored.map(|ignored| ignored.files),
+                                Some(1),
+                                "{label}: only `x.log` is ignored"
                             );
                         }
                         if !case.share {

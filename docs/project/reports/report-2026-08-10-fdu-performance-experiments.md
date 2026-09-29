@@ -66,11 +66,11 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 78 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
+| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 4 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -247,9 +247,18 @@ dead end.
 | 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp163--linux-auto-cache-policy-stops-oneshot-snapshot-writes-clears-3-on-defaulttree) | H160 | `default-tree` | -13.8% | ✅ accepted |
 | 164 | [macOS one-shot index release shows no wall change and no regression](#exp164--macos-oneshot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
 | 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp165--macos-auto-cache-policy-cuts-defaulttree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
+| 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp166--macos-h159-unbounded-listing-pool-costs-15-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
+| 167 | [macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending](#exp167--macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-linux-pending) | H159 | `default-tree` | -1.4% | ⏳ in progress |
 | 170 | [macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout](#exp170--macos-ignoreaware-transient-summary-cuts-default-summary-peak-rss-69-on-a-source-checkout) | H161 | `aggregate-summary` | -69.1% | ✅ accepted |
 | 171 | [macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore](#exp171--macos-ignoreaware-transient-summary-cuts-peak-rss-58-on-a-tree-with-no-gitignore) | H161 | `aggregate-summary` | -57.9% | ✅ accepted |
 | 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp172--macos-wholelisting-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
+| 173 | [Linux H162 allocation-free gitignore matching halves the default summary on a source tree](#exp173--linux-h162-allocationfree-gitignore-matching-halves-the-default-summary-on-a-source-tree) | H162 | `aggregate-summary` | -47.0% | ✅ accepted |
+| 174 | [Linux H163 per-listing control chains cut another third from the default summary](#exp174--linux-h163-perlisting-control-chains-cut-another-third-from-the-default-summary) | H163 | `aggregate-summary` | -36.4% | ✅ accepted |
+| 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
+| 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
+| 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
+| 190 | [Linux H159 listing recycle clears 3 percent on a real directory-dense tree](#exp190--linux-h159-listing-recycle-clears-3-percent-on-a-real-directorydense-tree) | H159 | `default-tree` | -8.6% | ✅ accepted |
+| 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
 
 ## The experiments
 
@@ -5554,6 +5563,74 @@ the accept rule; peak RSS -26.29% [-26.34%, -26.23%] and user CPU -9.65%; first 
 Full record:
 [`exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md`](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)
 
+### exp-166 — macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat
+
+↩︎ superseded · 2026-09-28 · H159 · commit `666b51f0`
+
+Control: 56c506e1 probe (stack-141 top, engine a5c0ab46)
+
+Candidate: H159 first build 666b51f0: drained detached listings returned to their
+walker, up to 16 spare listings of up to 256 children per worker
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2862.5 | 2867.2 | +1.32% (n.s.) | [-5.10%, +5.20%] |
+| component (ms) | 2856.8 | 2861.1 | +1.30% (n.s.) | [-5.08%, +5.19%] |
+| cpu (ms) | 24070.7 | 23883.5 | +4.33% (n.s.) | [-8.31%, +8.26%] |
+| user (ms) | 349.1 | 350.7 | +2.82% (n.s.) | [-0.61%, +3.25%] |
+| system (ms) | 23715.5 | 23531.8 | +4.36% (n.s.) | [-8.45%, +8.35%] |
+| peak rss (MiB) | 70.1 | 71.1 | +1.43% (regression) | [+1.12%, +1.79%] |
+
+Other jobs, wall time: `cold-scan-index` +2.4% (n.s.).
+
+Cost to carry: 253 lines; no new dependencies.
+
+about 105 of the 253 diff lines are tests; no dependency, no unsafe, no platform gate
+
+**Superseded:** uncontrolled macOS frameworks default-tree wall +1.32% [-5.10%, +5.20%]
+with peak RSS +1.43% [+1.12%, +1.79%], and rustup default-tree peak RSS +5.04%
+[+2.89%, +11.52%] past the pre-registered 5% margin; superseded by the bounded pool of
+exp-167.
+
+Full record:
+[`exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md`](../experiments/exp-166-macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-fl.md)
+
+### exp-167 — macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending
+
+⏳ in progress · 2026-09-28 · H159 · commit `b1f57ecd`
+
+Control: 56c506e1 probe (stack-141 top, engine a5c0ab46)
+
+Candidate: H159 b1f57ecd: drained detached listings returned to their walker, reuse
+bounded to DIR_CLAIM spare listings of up to 64 children per worker
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2855.3 | 2842.4 | -1.41% (n.s.) | [-5.32%, +4.41%] |
+| component (ms) | 2849.7 | 2836.5 | -1.41% (n.s.) | [-5.33%, +4.42%] |
+| cpu (ms) | 24173.9 | 23983.3 | -0.40% (n.s.) | [-8.46%, +5.76%] |
+| user (ms) | 346.4 | 351.8 | +1.80% (n.s.) | [-0.86%, +4.01%] |
+| system (ms) | 23826.0 | 23635.4 | -0.40% (n.s.) | [-8.62%, +5.82%] |
+| peak rss (MiB) | 69.5 | 69.4 | -0.06% (n.s.) | [-1.33%, +0.18%] |
+
+Other jobs, wall time: `cold-scan-index` +1.1% (n.s.).
+
+Cost to carry: 256 lines; no new dependencies.
+
+about 105 of the 256 diff lines are tests; no dependency, no unsafe, no platform gate
+
+**In-progress:** uncontrolled macOS frameworks default-tree -1.41% [-5.32%, +4.41%] and
+cold-scan-index +1.06% [-3.29%, +5.08%] with peak RSS -0.06% and -1.20%: no macOS
+regression and the exp-166 RSS cost is gone; the deciding Linux cell pre-registered in
+fdu-578e has not run.
+
+Full record:
+[`exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md`](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)
+
 ### exp-170 — macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout
 
 ✅ accepted · 2026-09-28 · H161 · commit `060bbfe6`
@@ -5655,6 +5732,212 @@ a batch fills first (exp-171).
 Full record:
 [`exp-172-macos-whole-listing-hold-keeps-only-17-rss-saving-on-wide-di.md`](../experiments/exp-172-macos-whole-listing-hold-keeps-only-17-rss-saving-on-wide-di.md)
 
+### exp-173 — Linux H162 allocation-free gitignore matching halves the default summary on a source tree
+
+✅ accepted · 2026-09-28 · H162 · commit `892cef40`
+
+Control: aa58a6b1 probe (H159 layer): per-entry heap rows
+
+Candidate: 892cef40 probe: stack-buffered components, fixed-length fast path, stack DP
+rows
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 504.9 | 260.2 | -47.02% | [-52.43%, -44.35%] |
+| component (ms) | 500.4 | 255.4 | -47.71% | [-52.76%, -44.85%] |
+| cpu (ms) | 737.0 | 500.7 | -31.81% | [-36.12%, -29.25%] |
+| user (ms) | 565.8 | 310.9 | -45.14% | [-48.52%, -40.13%] |
+| system (ms) | 178.0 | 183.8 | +1.23% (n.s.) | [-3.41%, +9.49%] |
+| peak rss (MiB) | 27.7 | 27.5 | +0.00% (n.s.) | — |
+
+Other jobs, wall time: `default-tree` -46.2%.
+
+Cost to carry: 150 lines; no new dependencies.
+
+**Accepted:** quiet linux-v6.12 aggregate-summary -47.02% [-52.43%, -44.35%],
+default-tree -46.19%; no-controls and no-gitignore placebos include zero; allocations
+7.2M to 402k.
+
+Full record:
+[`exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md`](../experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md)
+
+### exp-174 — Linux H163 per-listing control chains cut another third from the default summary
+
+✅ accepted · 2026-09-28 · H163 · commit `a15b20f4`
+
+Control: 892cef40 probe (H162)
+
+Candidate: a15b20f4 probe: governing controls resolved once per listing
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 260.7 | 166.5 | -36.43% | [-38.58%, -28.98%] |
+| component (ms) | 256.8 | 163.0 | -36.82% | [-39.06%, -29.23%] |
+| cpu (ms) | 487.6 | 401.8 | -17.33% | [-19.95%, -12.40%] |
+| user (ms) | 297.7 | 224.9 | -26.22% | [-32.89%, -19.91%] |
+| system (ms) | 186.5 | 180.2 | -2.34% (n.s.) | [-7.72%, +8.33%] |
+
+Other jobs, wall time: `default-tree` -35.9%.
+
+Cost to carry: 104 lines; no new dependencies.
+
+**Accepted:** quiet linux-v6.12 aggregate-summary -36.43% [-38.58%, -28.98%],
+default-tree -35.86%; no-controls placebo includes zero.
+
+Full record:
+[`exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md`](../experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md)
+
+### exp-187 — Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore
+
+✅ accepted · 2026-09-28 · H161 · commit `0d73ed54`
+
+Control: a5c0ab46 probe: the default summary falls closed to the full index
+
+Candidate: 0d73ed54 probe (main with 149): the transient summary classifies entries
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 557.6 | 512.3 | -6.93% | [-11.29%, -0.17%] |
+| component (ms) | 551.1 | 506.5 | -7.00% | [-11.01%, -0.07%] |
+| cpu (ms) | 755.3 | 728.5 | -0.76% (n.s.) | [-6.15%, +2.48%] |
+| user (ms) | 572.6 | 562.5 | -0.99% (n.s.) | [-3.60%, +5.09%] |
+| system (ms) | 192.6 | 175.5 | -9.10% | [-18.28%, -5.78%] |
+| peak rss (MiB) | 35.8 | 27.6 | -22.86% | [-23.73%, -21.92%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** quiet linux-v6.12 wall -6.93% [-11.29%, -0.17%], placebos include zero;
+peak RSS -22.86% misses the 50% bar there, balanced-1m -19.27% wall and -97% RSS.
+
+Full record:
+[`exp-187-linux-h161-ignore-aware-transient-summary-clears-wall-rss-ba.md`](../experiments/exp-187-linux-h161-ignore-aware-transient-summary-clears-wall-rss-ba.md)
+
+### exp-188 — Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree
+
+❌ rejected · 2026-09-28 · H159 · commit `aa58a6b1`
+
+Control: 0d73ed54 probe (main)
+
+Candidate: aa58a6b1 probe (150): drained listings return to their walker
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 576.4 | 570.0 | -2.19% (n.s.) | [-4.50%, +1.08%] |
+| component (ms) | 572.0 | 565.0 | -2.19% (n.s.) | [-4.64%, +1.28%] |
+| cpu (ms) | 767.7 | 778.6 | +0.63% (n.s.) | [-2.17%, +4.75%] |
+| user (ms) | 586.6 | 577.5 | -0.81% (n.s.) | [-3.86%, +2.49%] |
+| system (ms) | 179.1 | 194.4 | +10.95% (n.s.) | [-10.23%, +17.73%] |
+| peak rss (MiB) | 36.8 | 37.2 | +0.33% (n.s.) | [-0.04%, +1.01%] |
+
+Other jobs, wall time: `cold-scan-index` +5.3% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** quiet linux-v6.12 default-tree -2.19% [-4.50%, +1.08%] where gitignore
+classification was about 85% of the job; screening balanced-1m -10.63%
+[-13.00%, -8.23%], product contract main +10%.
+
+Full record:
+[`exp-188-linux-h159-listing-recycle-misses-on-linux-v6-12-10-6-on-the.md`](../experiments/exp-188-linux-h159-listing-recycle-misses-on-linux-v6-12-10-6-on-the.md)
+
+### exp-189 — Linux H159 rejected again on linux-v6.12 after H162 and H163
+
+❌ rejected · 2026-09-28 · H159 · commit `aa58a6b1`
+
+Control: eb00edf8 scratch probe: main with H162 and H163
+
+Candidate: a15b20f4 probe: H159 with H162 and H163
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 204.5 | 207.1 | +2.26% (n.s.) | [-5.33%, +12.96%] |
+| component (ms) | 199.9 | 202.2 | +1.60% (n.s.) | [-4.97%, +13.63%] |
+| cpu (ms) | 399.2 | 417.0 | +3.27% (regression) | [+1.02%, +8.55%] |
+| user (ms) | 224.9 | 222.6 | +2.42% (n.s.) | [-10.35%, +14.49%] |
+| system (ms) | 182.0 | 193.3 | +9.61% (n.s.) | [-2.40%, +19.20%] |
+| peak rss (MiB) | 35.2 | 34.9 | -0.21% (n.s.) | [-1.90%, +1.40%] |
+
+Other jobs, wall time: `cold-scan-index` +3.2% (regression).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** quiet linux-v6.12 default-tree +2.26% [-5.33%, +12.96%], cold-scan-index
++3.22% [+1.21%, +12.87%] regression interval; the recycle helps only the directory-dense
+generated tree.
+
+Full record:
+[`exp-189-linux-h159-rejected-again-on-linux-v6-12-after-h162-and-h163.md`](../experiments/exp-189-linux-h159-rejected-again-on-linux-v6-12-after-h162-and-h163.md)
+
+### exp-190 — Linux H159 listing recycle clears 3 percent on a real directory-dense tree
+
+✅ accepted · 2026-09-28 · H159 · commit `aa58a6b1`
+
+Control: eb00edf8 scratch probe: main with H162 and H163
+
+Candidate: a15b20f4 probe: H159 with H162 and H163
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 106.3 | 92.9 | -8.61% | [-19.47%, -5.04%] |
+| component (ms) | 101.0 | 87.1 | -9.76% | [-20.12%, -5.13%] |
+| cpu (ms) | 305.4 | 292.4 | -4.78% (n.s.) | [-10.62%, +1.71%] |
+| user (ms) | 92.4 | 97.1 | +1.00% (n.s.) | [-20.69%, +32.42%] |
+| system (ms) | 212.5 | 205.6 | -2.21% (n.s.) | [-12.76%, +1.56%] |
+| peak rss (MiB) | 31.1 | 29.0 | -6.89% | [-8.98%, -1.53%] |
+
+Other jobs, wall time: `cold-scan-index` -6.8%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** quiet node-modules-dense (8.5 entries per directory) default-tree -8.61%
+[-19.47%, -5.04%], cold-scan-index -6.79%, peak RSS -6.89%; the per-directory saving the
+mechanism predicts, absent on sparse linux-v6.12.
+
+Full record:
+[`exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md`](../experiments/exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md)
+
+### exp-191 — Linux H157 file fold cuts allocations but misses on the product job after H159
+
+❌ rejected · 2026-09-28 · H157 · commit `4c283de0`
+
+Control: a15b20f4 probe and CLI: H159 with H162 and H163
+
+Candidate: 4c283de0: direct file fold and moved walker names
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 303.2 | 281.3 | -5.51% | [-12.12%, -1.29%] |
+| component (ms) | 198.8 | 170.2 | -14.74% | [-19.10%, -7.43%] |
+| cpu (ms) | 608.7 | 590.9 | -3.24% (n.s.) | [-8.63%, +2.49%] |
+| user (ms) | 329.8 | 299.4 | -5.91% | [-15.99%, -3.83%] |
+| system (ms) | 282.0 | 287.7 | +3.48% (n.s.) | [-5.91%, +9.50%] |
+| peak rss (MiB) | 32.4 | 31.4 | -4.55% | [-7.26%, -0.57%] |
+
+Other jobs, wall time: `default-tree` -5.1% (n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+**Rejected:** pre-registered primary, the product indexed-tree contract: control +3%
+[-1%, +10%] on linux-v6.12 and +1% [-3%, +6%] on balanced-1m; probe cold-scan-index
+-5.51% [-12.12%, -1.29%] secondary; allocations -40%.
+
+Full record:
+[`exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md`](../experiments/exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -5749,6 +6032,20 @@ Baselines show one value because they measure a state rather than a change.
 | 115 | First-pass analyze insert-then-rebuild on metabrowser | `content-basic` | 10,020.6 | 10,022.1 | -5.0% | ❌ rejected |
 | 117 | Stream sidecar parse-into-apply on metabrowser | `content-cache-hit` | 1,111.0 | 1,103.2 | -0.6% | ✅ accepted |
 
+### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
+| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
+| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
+| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
+| 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
+| 156 | Progress indicator without a handle against main | `default-tree` | 2,469.4 | 2,457.6 | -1.8% | ✅ accepted |
+| 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
+| 166 | macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat | `default-tree` | 2,862.5 | 2,867.2 | +1.3% | ↩︎ superseded |
+| 167 | macOS H159 bounded listing recycle is RSS and wall neutral, Linux pending | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ⏳ in progress |
+
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -5761,17 +6058,16 @@ Baselines show one value because they measure a state rather than a change.
 | 088 | Coalesce causal scanner fragments in the one-shot builder | `default-tree` | 362.5 | 360.4 | +0.1% | ❌ rejected |
 | 089 | Suppress causal publication in a producer-only scan | `cold-scan-producer` | 770.3 | 771.9 | +0.4% | ❌ rejected |
 
-### system-private-frameworks (158,705 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| 107 | Installed CLI metadata one-shot stays cold scan on frameworks | `cli-default-tree` | 2,100.0 | 2,060.0 | -0.6% | ✅ accepted |
-| 116 | Opened-root second report versus one-shot on frameworks | `default-tree` | 2,612.2 | 2,361.9 | -2.2% | ✅ accepted |
-| 118 | Deciding-scale metadata walk profile after current engine | `default-tree` | 1,807.7 | 1,873.4 | +0.2% | ✅ accepted |
-| 119 | Product Index.report versus one-shot on frameworks | `default-tree` | 2,078.3 | 2,140.4 | +1.5% | ✅ accepted |
-| 122 | Tighter metadata walk leftover after H122 | `default-tree` | 2,408.2 | 2,467.7 | -1.9% | ✅ accepted |
-| 156 | Progress indicator without a handle against main | `default-tree` | 2,469.4 | 2,457.6 | -1.8% | ✅ accepted |
-| 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
+| 173 | Linux H162 allocation-free gitignore matching halves the default summary on a source tree | `aggregate-summary` | 504.9 | 260.2 | -47.0% | ✅ accepted |
+| 174 | Linux H163 per-listing control chains cut another third from the default summary | `aggregate-summary` | 260.7 | 166.5 | -36.4% | ✅ accepted |
+| 187 | Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore | `aggregate-summary` | 557.6 | 512.3 | -6.9% | ✅ accepted |
+| 188 | Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree | `default-tree` | 576.4 | 570.0 | -2.2% | ❌ rejected |
+| 189 | Linux H159 rejected again on linux-v6.12 after H162 and H163 | `default-tree` | 204.5 | 207.1 | +2.3% | ❌ rejected |
+| 191 | Linux H157 file fold cuts allocations but misses on the product job after H159 | `cold-scan-index` | 303.2 | 281.3 | -5.5% | ❌ rejected |
 
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6060,6 +6356,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 090 | Bound FullIndex scan-diagnostics overhead | `default-tree` | 377.4 | 360.7 | -3.5% | ✅ accepted |
+
+### node-modules-dense (79,953 entries) — Linux 6.18.44-fc-v37, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 190 | Linux H159 listing recycle clears 3 percent on a real directory-dense tree | `default-tree` | 106.3 | 92.9 | -8.6% | ✅ accepted |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

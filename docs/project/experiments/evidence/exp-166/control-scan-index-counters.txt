@@ -1,0 +1,84 @@
+[filesystem operations]
+  directory opens                                  55256
+  directory enumeration calls                      77509
+  directory entries enumerated                    158704
+  metadata stats                                  158705
+  file opens                                           0
+  file read calls                                      0
+  bytes read from files                                0
+
+[memory]
+  allocations                                    1654218
+  reallocations                                  1168164
+  frees                                          1654209
+  bytes allocated                              309093103
+
+[index]
+  upserts applied                                 158704
+  parent path resolutions                              0
+  parent memo hits                                     0
+  roll-up merges                                  213959
+
+[control state]
+  control files read                                   0
+  control sources refused                              0
+  control sources shared                               0
+
+[index]
+  index entries allocated                         158704
+
+[mutation provenance]
+  baseline batches                                     1
+  baseline accepted ops                           158704
+  opened batches                                       0
+  opened accepted ops                                  0
+  public batches                                       0
+  public accepted ops                                  0
+
+[mutation preflight]
+  ancestry overlay inserts                             0
+  same-parent path comparisons                         0
+  parent chains proved                                 0
+
+[mutation timing]
+  scanner preparation microseconds                     0
+  scanner control projection microseconds              0
+  scanner reduction microseconds                       0
+
+[content sidecar timing]
+  sidecar image read microseconds                      0
+  sidecar parse microseconds                           0
+  sidecar candidate-map microseconds                   0
+  sidecar apply microseconds                           0
+
+[detached builder]
+  builds                                               1
+  entries                                         158704
+  walk microseconds                              2648525
+  finish microseconds                               4255
+
+[mutation consequences]
+  effective paths retained                             0
+  effective path bytes                                 0
+  impact candidates                                    0
+  impact ancestor visits                               0
+  impact dirty paths retained                          0
+  impact all-dirty transitions                         0
+
+[mutation journal]
+  commits retained                                     0
+  commits cloned                                       0
+  oversized commits                                    0
+  older commits dropped                                0
+
+[adaptive scan policy]
+  calibration chunks                                5370
+  calibration entries                              16385
+  calibration worker microseconds                 898470
+  reserve expansions                                   1
+  walks left undecided                                 0
+
+[process (macOS proc_taskinfo)]
+  page faults                4509
+  page-ins                      0
+  syscalls (total)         201672

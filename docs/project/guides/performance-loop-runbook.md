@@ -992,11 +992,21 @@ Unrelated work kept the host above the quiet gate all night, so every cell ran d
 - H153 quiet confirmation: failed to qualify, 20 of 24 timed samples invalidated; see
   item 1 below.
 
+**Linux round, 2026-09-28** (4-vCPU Firecracker guest, ext4, `linux-v6.12` rebuilt at
+`adc21867`): exp-187 H161 wall accepted; exp-188 and exp-189 H159 without effect on that
+sparse tree and exp-190 H159 accepted on a directory-dense one; exp-173 H162 and exp-174
+H163 accepted; exp-191 H157 rejected.
+The comparison with pdu on a real tree, which found the `.gitignore` cost, is
+[the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
+exp-175–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
+
 Next free ids are **exp-200** and **H180**. exp-173–199 and H162–H179 are reserved for
 Linux work running in parallel: the peer-tool research (`fdu-92hp`) takes exp-173–186
 and H162–H170, and the 0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179.
 exp-170–172 record H161, the ignore-aware transient summary.
-exp-166–167 are claimed by H159’s branch, and exp-168–169 are unused.
+exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159
+layer), and exp-168–169 are unused.
+exp-164–165 are the macOS stack-141 replications on the macOS rerun layer.
 This is the one statement of the next free ids for Darwin and Linux alike.
 H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
 keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
@@ -1036,6 +1046,20 @@ Its default single-view command is not covered by the earlier speedup.
    algorithmic candidate only if the post-H153 profile names at least 3% wall.
 4. Re-run H151 only when the quiet start gate holds.
    Do not spend an uncontrolled cell on the progress handle again.
+5. **H159 Linux decision** (`fdu-578e`) — **ran 2026-09-28**: no effect on the
+   directory-sparse `linux-v6.12` (exp-188, exp-189), **accepted** on the real
+   directory-dense `node-modules-dense` (exp-190, −8.61%), as its per-directory
+   mechanism predicts. [#150](https://github.com/jlevy/fdu/pull/150) is ready for the
+   maintainer.
+6. **H157 rerun** (`fdu-o6um`) — **rejected** on its product-job primary on top of H159
+   (exp-191); kept on its branch for a re-screen after H166/H167.
+7. **H164** (`fdu-emqf`) — classify `.gitignore` on the walker threads.
+   H161 (exp-187, Linux wall accepted), H162 (exp-173) and H163 (exp-174) cut the
+   default summary on `linux-v6.12` from 505 to 167 ms, and the default tree to 211 ms
+   against pdu’s 70 ms; what remains is serial classification.
+   Then H165 (walker count), H166 and H167 (the index-tier pair on the generated tree),
+   H169, H170; the order and pre-registrations are in
+   [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
 
 ## Before the First Round
 

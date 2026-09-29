@@ -6,8 +6,8 @@
 //! on one semantic path and makes deleting the last control file an ordinary state
 //! transition rather than a special rebuild.
 //!
-//! **Which of git's ignore inputs count.** Exactly one: every regular file named
-//! [`CONTROL_FILE_NAME`] inside the scanned root, each governing its own directory and
+//! **Which of git's ignore inputs count.** Exactly one: each directory's
+//! [`CONTROL_FILE_NAME`] inside the scanned root, governing its own directory and
 //! everything below it, with deeper files taking precedence. Nothing else git consults is
 //! read. `.git/info/exclude` and `core.excludesFile` are ignored, so a `.DS_Store` excluded
 //! only globally lands in the unignored partition. A nested repository is not a boundary:
@@ -17,11 +17,24 @@
 //! an excluded parent cannot be re-included is applied when matching, but the file's
 //! bytes are retained against the table bound. Matching is case-sensitive regardless of
 //! `core.ignorecase`.
+//!
+//! **Which file is a directory's control.** Whatever a lookup of `<dir>/.gitignore`
+//! resolves to, because that is the path git opens. On a case-sensitive directory that is
+//! only an entry named exactly `.gitignore`; on a case-insensitive one (APFS and NTFS by
+//! default, an ext4 casefold directory) it is the one entry the filesystem folds to that
+//! name, so a `.GITIGNORE` governs there as it does for git, and nowhere else. The rules
+//! are recorded under the canonical path `<dir>/.gitignore` whatever spelling holds them:
+//! every control operation, table key, refusal, and change names that path, as
+//! `git check-ignore -v` does, so [`is_control_file`] accepts only that path. A walk pays
+//! for this only on a listed name spelled `.gitignore` in another ASCII case, which it
+//! resolves with one lookup of the canonical path; the exact name is read by its own path
+//! as before, and every other name costs a length comparison. A name some filesystem
+//! folds to `.gitignore` through a non-ASCII character is not looked up.
 
 mod gitignore;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use gitignore::Gitignore;
@@ -501,6 +514,34 @@ impl ControlTable {
         ControlMatcher { table: self, path }
     }
 
+    /// The controls governing every child of `directory`, resolved once for all of them.
+    ///
+    /// [`ControlMatcher::is_ignored`] looks each ancestor up in the table for every entry
+    /// it classifies. A listing's children share those ancestors, so a caller classifying
+    /// a whole listing resolves them here once and matches each child against the chain
+    /// (H163). The chain owns its sources, so the table may change while it is held; it
+    /// then answers for the table as it was when resolved.
+    ///
+    /// `directory` must be a normalized relative path, as every walked or event path is:
+    /// the chain counts one component per ancestor, which a `..` would break.
+    pub(crate) fn chain_for(&self, directory: &Path) -> ControlChain {
+        debug_assert!(
+            directory.components().all(|component| matches!(component, Component::Normal(_))),
+            "control chains are resolved for normalized relative directories: {}",
+            directory.display()
+        );
+        let mut governing = Vec::new();
+        if !self.by_directory.is_empty() {
+            let depth = gitignore::with_components(directory, None, |components| components.len());
+            for (up, ancestor) in directory.ancestors().enumerate() {
+                if let Some(source) = self.by_directory.get(ancestor) {
+                    governing.push((depth.saturating_sub(up), Arc::clone(source)));
+                }
+            }
+        }
+        ControlChain { governing }
+    }
+
     /// Evaluate complete ignore semantics without relying on retained parent facts.
     ///
     /// The index hot path uses [`ControlMatcher::is_ignored`] with the parent's stored
@@ -708,6 +749,35 @@ impl ControlMatcher<'_> {
     }
 }
 
+/// The controls that govern one directory's children, deepest first, with how many of the
+/// directory's path components lead to each one's own directory.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ControlChain {
+    governing: Vec<(usize, Arc<SharedContent>)>,
+}
+
+impl ControlChain {
+    /// Decide the child `name` of `directory`, the directory this chain was resolved for,
+    /// assuming that directory is not ignored.
+    ///
+    /// The answer is [`ControlMatcher::is_ignored`]'s for `directory/name`: the deepest
+    /// control with an opinion wins, each matching the path relative to its own directory.
+    pub(crate) fn is_ignored(&self, directory: &Path, name: &[u8], is_dir: bool) -> bool {
+        if self.governing.is_empty() {
+            return false;
+        }
+        gitignore::with_components(directory, Some(name), |components| {
+            self.governing
+                .iter()
+                .find_map(|(leading, source)| {
+                    let relative = components.get(*leading..).unwrap_or_default();
+                    source.matcher.matches_components(relative, is_dir)
+                })
+                .unwrap_or(false)
+        })
+    }
+}
+
 /// Whether any key of `directories` is `subtree` or lies below it.
 ///
 /// One lookup rather than a scan: [`Path`] orders component by component, so every
@@ -720,21 +790,75 @@ fn has_key_at_or_below<V>(directories: &BTreeMap<PathBuf, V>, subtree: &Path) ->
         .is_some_and(|(directory, _)| directory.starts_with(subtree))
 }
 
-/// Whether a relative path names the fixed control file.
+/// Whether a relative path names the fixed control file: the canonical path every control
+/// operation, and the table, name a directory's rules by.
+///
+/// A directory's rules may be held by a `.GITIGNORE` on a case-insensitive volume, but
+/// they are still recorded under `<dir>/.gitignore` (see the module documentation), so a
+/// control operation naming any other spelling is malformed.
 pub fn is_control_file(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == CONTROL_FILE_NAME)
 }
 
-/// The control file a walk error under `root` names, relative to it, when there is one.
+/// How a listed name relates to its directory's control file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ControlSpelling {
+    /// Exactly [`CONTROL_FILE_NAME`]: the entry a lookup of the directory's control opens
+    /// on every filesystem, read through its own path.
+    Exact,
+    /// [`CONTROL_FILE_NAME`] in another ASCII case, such as `.GITIGNORE`: the directory's
+    /// control only where the filesystem resolves `.gitignore` to it, which a lookup of the
+    /// canonical path decides.
+    Variant,
+}
+
+/// Whether `name` spells the control file name, and how.
+///
+/// Every listed entry asks this, so it is a length test and, for the rare ten-byte name,
+/// an ASCII case-insensitive comparison: no allocation and no system call.
+pub(crate) fn control_spelling(name: &std::ffi::OsStr) -> Option<ControlSpelling> {
+    let bytes = name.as_encoded_bytes();
+    let exact = CONTROL_FILE_NAME.as_bytes();
+    if bytes.len() != exact.len() {
+        None
+    } else if bytes == exact {
+        Some(ControlSpelling::Exact)
+    } else if bytes.eq_ignore_ascii_case(exact) {
+        Some(ControlSpelling::Variant)
+    } else {
+        None
+    }
+}
+
+/// The spelling of the control name a relative path's last component uses, if any.
+pub(crate) fn path_control_spelling(path: &Path) -> Option<ControlSpelling> {
+    path.file_name().and_then(control_spelling)
+}
+
+/// The canonical control path of the directory `path` sits in: `<parent>/.gitignore`.
+pub(crate) fn sibling_control_path(path: &Path) -> PathBuf {
+    control_path(path.parent().unwrap_or_else(|| Path::new("")))
+}
+
+/// The control file a walk error under `root` names, relative to it, when there is one,
+/// by its canonical path.
 ///
 /// A control file the walk could not read leaves the rules it holds unknown, so the
-/// ignored split it governs cannot be verified. The index and the transient summary both
-/// ask this of the same normalized walk errors, so they withhold the same shares.
+/// ignored split it governs cannot be verified. That includes a listed case variant whose
+/// own metadata could not be read: on a case-insensitive volume it may hold the rules, and
+/// nothing looked the canonical path up. The index and the transient summary both ask this
+/// of the same normalized walk errors, so they withhold the same shares.
 pub(crate) fn unreadable_control(root: &Path, error: &crate::Error) -> Option<PathBuf> {
     let crate::Error::Io { .. } = error else {
         return None;
     };
-    crate::Issue::from_error_under(root, error).path.filter(|path| is_control_file(path))
+    crate::Issue::from_error_under(root, error).path.and_then(|path| governing_control(&path))
+}
+
+/// The canonical control path of the directory whose control an entry at `path` may hold,
+/// when its name spells the control name in any case.
+pub(crate) fn governing_control(path: &Path) -> Option<PathBuf> {
+    path_control_spelling(path).map(|_| sibling_control_path(path))
 }
 
 fn control_directory(path: &Path) -> crate::Result<&Path> {
@@ -967,6 +1091,68 @@ mod tests {
             assert_eq!(table.source_bytes(), 0, "seed {seed}");
             assert!(table.shared.is_empty(), "seed {seed}");
             assert!(table.is_vacant(), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn a_resolved_chain_answers_as_the_per_entry_matcher_does() {
+        let mut table = ControlTable::default();
+        for (path, source) in [
+            (".gitignore", &b"*.log\n/build/\n!keep.log\nsub/*.tmp\n"[..]),
+            ("a/.gitignore", b"!*.log\n*.o\n/deep/**\n"),
+            ("a/b/.gitignore", b"*.log\n!x.o\n"),
+            ("c/.gitignore", b"# comment only\n"),
+        ] {
+            table.upsert(Path::new(path), source.to_vec()).expect("fixture control");
+        }
+        let directories =
+            ["", "a", "a/b", "a/b/c", "a/deep", "a/deep/er", "build", "c", "c/sub", "sub", "x/y"];
+        let names = ["x.log", "keep.log", "x.o", "y.o", "build", "deep", "t.tmp", "plain"];
+        for directory in directories {
+            let chain = table.chain_for(Path::new(directory));
+            for name in names {
+                for is_dir in [false, true] {
+                    let path = Path::new(directory).join(name);
+                    assert_eq!(
+                        chain.is_ignored(Path::new(directory), name.as_bytes(), is_dir),
+                        table.matcher_for(&path).is_ignored(is_dir),
+                        "{} (dir {is_dir})",
+                        path.display()
+                    );
+                }
+            }
+        }
+        assert!(!ControlTable::default().chain_for(Path::new("a")).is_ignored(
+            Path::new("a"),
+            b"x.log",
+            false
+        ));
+    }
+
+    #[test]
+    fn a_chain_agrees_past_the_inline_buffers_and_beside_unrelated_controls() {
+        let mut table = ControlTable::default();
+        table.upsert(Path::new("z/.gitignore"), b"*.log\n".to_vec()).expect("unrelated");
+        let unrelated = table.chain_for(Path::new("a/b"));
+        assert!(!unrelated.is_ignored(Path::new("a/b"), b"x.log", false));
+        assert!(!table.matcher_for(Path::new("a/b/x.log")).is_ignored(false));
+
+        // A control 33 directories down, and directories of 31 to 34 components, cross the
+        // 32-component inline buffer both in the chain's key and in the matched path.
+        let deep: PathBuf = (0..33).map(|at| format!("d{at}")).collect();
+        table.upsert(Path::new(".gitignore"), b"**/x.log\n/d0/**/y.log\n".to_vec()).expect("root");
+        table.upsert(&deep.join(".gitignore"), b"!x.log\n*.tmp\n".to_vec()).expect("deep");
+        for depth in [31usize, 32, 33, 34] {
+            let directory: PathBuf = (0..depth).map(|at| format!("d{at}")).collect();
+            let chain = table.chain_for(&directory);
+            for name in ["x.log", "y.log", "z.tmp", "plain"] {
+                let path = directory.join(name);
+                assert_eq!(
+                    chain.is_ignored(&directory, name.as_bytes(), false),
+                    table.matcher_for(&path).is_ignored(false),
+                    "{name} at depth {depth}"
+                );
+            }
         }
     }
 
@@ -1264,5 +1450,39 @@ mod tests {
 
         assert!(table.is_ignored(Path::new("vendor"), true));
         assert!(table.is_ignored(Path::new("vendor/keep.txt"), false));
+    }
+
+    /// Only `.gitignore` spelled in some ASCII case is a spelling of the control name; the
+    /// canonical path every spelling is recorded under is its directory's `.gitignore`, and
+    /// only that path is a valid control path (fdu-0w1b).
+    #[test]
+    fn a_control_name_is_spelled_in_any_ascii_case_and_recorded_by_one_path() {
+        use std::ffi::OsStr;
+
+        assert_eq!(control_spelling(OsStr::new(".gitignore")), Some(ControlSpelling::Exact));
+        for variant in [".GITIGNORE", ".GitIgnore", ".gitIGNORE", ".gitignorE"] {
+            assert_eq!(control_spelling(OsStr::new(variant)), Some(ControlSpelling::Variant));
+        }
+        // A non-ASCII letter some filesystem folds to `i` is not looked up, and neither is a
+        // name of another length or with other characters.
+        for other in [".gıtıgnore", ".gitignor", ".gitignore~", "gitignore.", ".gitignor3", ""] {
+            assert_eq!(control_spelling(OsStr::new(other)), None, "{other:?}");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt as _;
+            assert_eq!(control_spelling(OsStr::from_bytes(b".gitignor\xff")), None);
+        }
+
+        assert_eq!(
+            governing_control(Path::new("a/.GITIGNORE")),
+            Some(PathBuf::from("a/.gitignore"))
+        );
+        assert_eq!(governing_control(Path::new(".gitignore")), Some(PathBuf::from(".gitignore")));
+        assert_eq!(governing_control(Path::new("a/README")), None);
+        assert!(is_control_file(Path::new("a/.gitignore")));
+        assert!(!is_control_file(Path::new("a/.GITIGNORE")), "operations name one path");
+        let mut table = ControlTable::default();
+        assert!(table.upsert(Path::new("a/.GITIGNORE"), b"*.log\n".to_vec()).is_err());
     }
 }

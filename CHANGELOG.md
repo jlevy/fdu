@@ -7,15 +7,69 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-29
+
+fdu 0.2.1 is a patch release focused on Linux.
+The default `fdu PATH` and `--view summary` are about three times faster on source trees
+with many `.gitignore` files, the default summary reports its ignored share without
+building an index, and building the full index is faster on trees of many small
+directories. A `.gitignore` spelled in another case applies where git applies it, and a
+`--stale-ok` answer always says it is stale.
+No command-line option, schema, or Rust or Python API changed incompatibly.
+The GitHub release text is
+[docs/project/release-notes/0.2.1.md](docs/project/release-notes/0.2.1.md).
+
+### Added
+
+- Python `Report.warnings` and Rust `report_format::report_warnings` carry what a reader
+  must not miss about an answer, between its notes and tips.
+  Today that is the stale-answer warning below; a verified answer carries none.
+
 ### Changed
 
+- A `--stale-ok` answer now says it is stale on every format, plain text included:
+  stderr carries a `warn: stale answer` line that names `--stale-ok` as the way to a
+  fresh answer, and `--quiet` keeps it.
+  Plain text used to mark it only with `cache only` at the end of the performance
+  footer, which `--quiet` removes.
+  Paths and long output no longer print a separate `note: cache-only result` line, which
+  the warning replaces.
+  Machine output is unchanged; `provenance.source` and `freshness` already said so.
 - The default `--view summary` no longer builds the full index to report its ignored
   share: it classifies each entry against `.gitignore` as it counts it, keeping only the
   rules and the heads of ignored subtrees.
   The answer is unchanged, on every surface.
   On macOS peak memory fell 69% on a 137k-entry source checkout and 58% on a 77k-entry
-  tree with no `.gitignore`, with wall time no worse; the Linux timing is not yet
-  measured.
+  tree with no `.gitignore`, with wall time no worse.
+  On Linux it took 19% less time and 97% less peak memory (314 to 8.6 MiB) on a
+  million-entry tree with no `.gitignore`, and 7% less time and 23% less memory on the
+  Linux v6.12 source tree.
+- On Linux, building the full index on a tree of many small directories is 7–11% faster:
+  the index builder returns each directory listing to the walker thread that allocated
+  it, so glibc no longer frees it across threads.
+  Measured on a million-entry generated tree (−10.6%) and a `node_modules` tree (−8.6%);
+  trees with few, larger directories are unchanged.
+- Classifying entries against `.gitignore` is about three times faster on trees with
+  many ignore files, which is what the default `fdu PATH` and `--view summary` do.
+  Matching no longer allocates, and each directory’s governing ignore files are resolved
+  once for all its entries instead of once per entry.
+  On the Linux v6.12 source tree (358 `.gitignore` files) the default tree fell from 590
+  to 211 ms and the default summary from 505 to 167 ms; answers are unchanged.
+
+### Fixed
+
+- A `.gitignore` spelled in another case, such as `.GITIGNORE`, now applies where git
+  applies it: on a case-insensitive volume (APFS and NTFS by default, an ext4 casefold
+  directory), where opening `<dir>/.gitignore` finds it.
+  Before, fdu took rules only from a file listed exactly as `.gitignore`, so its
+  gitignored shares differed from git’s on such trees.
+  On a case-sensitive volume nothing changes: a `.GITIGNORE` there is an ordinary file,
+  as it is for git. Every route and surface agrees, including the default summary,
+  `--ignored`, `--watch`, opened roots, and refresh; the rules are named `.gitignore`
+  wherever they are reported.
+  The engine fingerprint now mixes in the version of these rules, so nothing cached
+  under the old rule is reused: each cached tree’s first run after upgrading scans cold,
+  and its first analyzed run reads every file again.
 
 ## [0.2.0] - 2026-09-28
 

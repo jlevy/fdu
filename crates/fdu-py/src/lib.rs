@@ -937,6 +937,11 @@ impl PyOneShot {
     fn tips(&self) -> Vec<String> {
         fdu_core::report_format::report_tips(&self.report)
     }
+    /// What the reader must not miss about the answer itself, such as a `stale_ok` answer
+    /// nothing verified. The command line prints these even under `--quiet`.
+    fn warnings(&self) -> Vec<String> {
+        fdu_core::report_format::report_warnings(&self.report)
+    }
 }
 
 /// Produce one report the way the command line does, retaining the least state it needs.

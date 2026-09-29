@@ -50,6 +50,16 @@ test("portable golden paths require the exact fixture root and unchanged other f
     classify(session(["80 B  assets[SEP]logo.png"], ["80 B  assets/logo.png"]))?.id,
     "portable-golden-pattern",
   );
+  assert.equal(
+    classify(session(['{"path": "dist[JSON_SEP]a.tar.gz"}'], ['{"path": "dist/a.tar.gz"}']))?.id,
+    "portable-golden-pattern",
+    "the JSON-string separator pattern is the same separator",
+  );
+  assert.equal(
+    classify(session(['{"path": "dist[JSON_SEP]a.tar.gz"}'], ['{"path": "dist/b.tar.gz"}'])),
+    null,
+    "the rest of a JSON path must still match exactly",
+  );
   for (const [actual, fixture] of [
     ["[SANDBOX]/other", cache],
     ["[SANDBOX]/content-project", cache],
@@ -137,6 +147,36 @@ test("bound tips accept only exact CLI-to-Python setter names and values", () =>
     assert.ok(!matches(cli, api.replace("=all", "=3").replace("=0%", "=1%")), "value changed");
   }
   assert.ok(!matches("tip: show smaller entries: --min-share=0%", "tip: expand deeper: depth=all"));
+});
+
+test("the stale-answer warning accepts only its exact option translation", () => {
+  const cache = "[ROOT]/tests/parity/.corpus/cli-cache.tryscript.md";
+  const warning = (option) =>
+    `warn: stale answer: served from the snapshot without filesystem verification; drop ${option} for a fresh answer`;
+  const root = (value) => `{"root": "${value}"}`;
+  const classified = (cli, api) =>
+    classify(
+      session([root("[SCAN_PATH]"), cli], [root("[SANDBOX]/project"), api], "Stale", cache),
+    )?.id;
+  assert.equal(classified(warning("--stale-ok"), warning("stale_ok")), "portable-golden-pattern");
+  assert.equal(
+    classified(`! ${warning("--stale-ok")}`, `! ${warning("stale_ok")}`),
+    "portable-golden-pattern",
+    "stderr marker",
+  );
+  for (const api of [
+    warning("--stale-ok").replace("stale answer", "cached answer"),
+    warning("refresh()"),
+    `${warning("stale_ok")} now`,
+    warning("stale_ok").replace("warn:", "note:"),
+  ]) {
+    assert.equal(classified(warning("--stale-ok"), api), undefined, api);
+  }
+  assert.equal(
+    classify(session([warning("--stale-ok")], [warning("stale_ok")]))?.id,
+    "surface-label",
+    "alone, the option label is the whole difference",
+  );
 });
 
 // A class that cannot fail is worse than no class: the summary then reports a clean

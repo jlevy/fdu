@@ -6,8 +6,9 @@
 //! # Output design system
 //!
 //! Keep measured results and explanatory diagnostics separate. Renderers return only
-//! result data; frontends route the categorized messages from [`diagnostic_lines`] to
-//! their diagnostic stream. Machine formats must remain parseable and ANSI-free.
+//! result data; frontends route the categorized messages from [`diagnostic_lines`] and
+//! [`report_warnings`] to their diagnostic stream. Machine formats must remain parseable
+//! and ANSI-free.
 //!
 //! Human rows use bright bold cyan names, ordinary foreground file counts, and gray
 //! parenthetical detail. Ignored amounts embedded in a row are always gray parentheses;
@@ -50,7 +51,7 @@
 mod report_epilogue;
 
 pub use report_epilogue::{
-    DiagnosticLines, diagnostic_lines, diagnostics, report_notes, report_tips,
+    DiagnosticLines, diagnostic_lines, diagnostics, report_notes, report_tips, report_warnings,
 };
 
 use std::fmt::Write as _;
@@ -276,17 +277,18 @@ fn human_age(age: Option<i128>) -> String {
     format!("{}{}{unit}", if age < 0 { "-" } else { "" }, human_count_u128(amount))
 }
 
-/// Notes excluded from flat stdout, for a frontend's diagnostic stream.
+/// Notes, the report's warnings, and tips excluded from flat stdout, for a frontend's
+/// diagnostic stream.
 pub fn flat_diagnostics(report: &Report) -> Vec<String> {
-    flat_diagnostic_lines(report).into_lines()
+    report_epilogue::with_warnings(report, flat_diagnostic_lines(report))
 }
 
 /// Categorized flat-output diagnostics; paths and long rows stay alone on stdout.
+///
+/// A cache-only answer is stated by [`report_warnings`], on every format, so it is not
+/// repeated here as a note.
 pub fn flat_diagnostic_lines(report: &Report) -> DiagnosticLines {
     let DiagnosticLines { mut notes, tips } = diagnostic_lines(report);
-    if report.provenance.source == ReportSource::CacheOnly {
-        notes.push("note: cache-only result: retained contents have not been revalidated".into());
-    }
     if !report.status.complete || report.provenance.freshness != Freshness::Fresh {
         notes.push(format!(
             "note: result freshness: {}; complete: {}",
@@ -2959,8 +2961,8 @@ mod tests {
     use crate::query::{Bound, Query, Request, Selection, ShareThreshold};
     use std::ffi::OsStr;
     use std::path::PathBuf;
-    use std::process::Command;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     struct Provenance {
         scan_started_at: Option<SystemTime>,
@@ -3632,10 +3634,51 @@ mod tests {
         stale.provenance.freshness = Freshness::Stale;
         stale.scope.max_depth = Some(2);
         let notes = flat_diagnostics(&stale).join("\n");
-        assert!(notes.contains("not been revalidated"));
+        assert!(notes.contains("warn: stale answer"), "{notes}");
+        assert!(!notes.contains("note: cache-only"), "the warning states it once: {notes}");
         assert!(notes.contains("freshness: stale"));
         assert!(notes.contains("scan scope limited to depth 2"));
         assert_eq!(super::render(&stale, Format::Paths, false).expect("paths"), "src\n");
+    }
+
+    /// Only an answer nothing verified carries the stale warning, it names the surface's
+    /// own option for a fresh answer, and it sits between the notes and the tips, where a
+    /// quiet frontend's filter keeps it (fdu-mdop).
+    #[test]
+    fn only_a_cache_only_answer_warns_that_it_is_stale_in_the_surface_vocabulary() {
+        let tree = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+        let mut verified = fixture_for(&tree);
+        for source in [ReportSource::ColdScan, ReportSource::WarmRevalidate] {
+            verified.provenance.source = source;
+            assert!(report_warnings(&verified).is_empty(), "{source:?} is verified");
+            assert!(!diagnostics(&verified).iter().any(|line| line.starts_with("warn:")));
+        }
+        for (axes, option) in [
+            (&crate::query::AxisNames::FLAGS, "--stale-ok"),
+            (&crate::query::AxisNames::FIELDS, "stale_ok"),
+        ] {
+            let mut stale = fixture_for(&Query {
+                axes,
+                selection: Selection { depth: Some(Bound::Limit(0)), ..Selection::default() },
+                ..tree.clone()
+            });
+            stale.provenance.source = ReportSource::CacheOnly;
+            stale.provenance.freshness = Freshness::Stale;
+            let warning = format!(
+                "warn: stale answer: served from the snapshot without filesystem verification; \
+                 drop {option} for a fresh answer"
+            );
+            assert_eq!(report_warnings(&stale), std::slice::from_ref(&warning));
+            assert!(!report_notes(&stale).contains(&warning), "a note would be quieted");
+            let lines = diagnostics(&stale);
+            let at = lines.iter().position(|line| *line == warning).expect("warning");
+            assert!(lines[..at].iter().all(|line| line.starts_with("note:")), "{lines:?}");
+            assert!(lines[at + 1..].iter().all(|line| line.starts_with("tip:")), "{lines:?}");
+            assert!(lines.first().is_some_and(|line| line.starts_with("note:")), "{lines:?}");
+            assert!(lines.last().is_some_and(|line| line.starts_with("tip:")), "{lines:?}");
+            let rendered = super::render(&stale, Format::Text, false).expect("text");
+            assert!(!rendered.contains("warn:"), "stdout carries only the answer: {rendered}");
+        }
     }
 
     #[test]
@@ -5039,17 +5082,47 @@ mod tests {
             return;
         }
 
-        let output = Command::new(std::env::current_exe().expect("current test executable"))
+        let started = Instant::now();
+        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
             .args(["--exact", DEEP_RENDER_TEST_PATH, "--nocapture"])
             .env(DEEP_RENDER_CHILD_ENV, "1")
-            .output()
-            .expect("run deep-render child");
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn deep-render child");
+        let stdout = drain_pipe(child.stdout.take().expect("piped stdout"));
+        let stderr = drain_pipe(child.stderr.take().expect("piped stderr"));
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll deep-render child") {
+                break Some(status);
+            }
+            if started.elapsed() >= DEEP_RENDER_CHILD_TIMEOUT {
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let Some(status) = status else {
+            // `kill` is SIGKILL on Unix, which the child can neither catch nor ignore: the
+            // hang this bounds also ignored SIGTERM. Its result can be ignored because the
+            // child is not yet reaped, so even one that exited a moment ago is still there
+            // to signal, and `wait` returns once it is gone.
+            let _ = child.kill();
+            let reaped = child.wait().expect("reap the killed deep-render child");
+            panic!(
+                "deep-render child still running after {DEEP_RENDER_CHILD_TIMEOUT:?}; killed at \
+                 {:?} ({reaped}). The last `deep-render phase:` line is where it stalled.\n\
+                 stdout:\n{}\nstderr:\n{}",
+                started.elapsed(),
+                stdout.join().expect("stdout reader"),
+                stderr.join().expect("stderr reader")
+            );
+        };
+        let stdout = stdout.join().expect("stdout reader");
+        let stderr = stderr.join().expect("stderr reader");
         assert!(
-            output.status.success(),
-            "deep renderer failed in child process\nstdout:\n{stdout}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stderr)
+            status.success(),
+            "deep renderer failed in child process\nstdout:\n{stdout}\nstderr:\n{stderr}"
         );
 
         // The exit code alone cannot tell "the deep render survived" from "the filter
@@ -5067,12 +5140,37 @@ mod tests {
     /// where a move leaves it silently stale.
     const DEEP_RENDER_TEST_PATH: &str = "report_format::tests::deep_rendering_is_stack_safe";
 
+    /// How long the parent lets the deep-render child run before killing it.
+    ///
+    /// Without a bound a stuck child blocks the suite indefinitely: on 2026-09-28 one spun
+    /// for more than 85 minutes (fdu-xsg1). Measured on Linux x86-64 debug with four
+    /// cores, the child takes about 21 s alone and 28 s under the full parallel suite,
+    /// nearly all of it building the 1,024-level fixture one batch at a time. Five minutes
+    /// is ten times the loaded figure, room for a runner several times slower, and still
+    /// turns a hang into a failure well before anyone would notice a stalled gate.
+    const DEEP_RENDER_CHILD_TIMEOUT: Duration = Duration::from_secs(300);
+
+    /// Read a child's pipe to its end on a helper thread.
+    ///
+    /// One reader per pipe means a child that fills one pipe's buffer never blocks while
+    /// the parent waits on the other pipe or on its exit, and what the child wrote before
+    /// a hang is still there to report once it is killed.
+    fn drain_pipe(mut pipe: impl io::Read + Send + 'static) -> std::thread::JoinHandle<String> {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            // A read error ends the capture early; what arrived before it is still reported.
+            let _ = pipe.read_to_end(&mut bytes);
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    }
+
     fn run_deep_render_child() {
         // A deep tree must build and render without depth-recursive stack growth.
         // Windows reserves 20 KiB of a spawned thread's stack for overflow handling;
         // a 64 KiB reservation leaves too little dependable room for report setup in
         // debug builds. Keep construction bounded at 128 KiB, then test rendering and
         // release separately on the original 64 KiB stack.
+        eprintln!("deep-render phase: fixture");
         let mut index = crate::Index::new("/fixture");
         let mut path = PathBuf::new();
         for depth in 0..DEEP_RENDER_DEPTH {

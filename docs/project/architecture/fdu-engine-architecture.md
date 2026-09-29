@@ -274,6 +274,17 @@ beside an exact count.
 Sizes never depend on it; only the ignored and unignored split below a refused file
 does. Both limits are part of the scope’s ignore-rules identity.
 
+Control state is keyed by governing directory and named by one canonical path,
+`<dir>/.gitignore`. Which file supplies it is a producer’s lookup of that path, as git
+opens it, so a `.GITIGNORE` supplies it on a case-insensitive volume and never on a
+case-sensitive one. A listed exact name is read through its own path; only a listed case
+variant pays for the lookup.
+Removing the entry at the canonical path drops the rules it governs, so a producer that
+sees another spelling vanish states the directory’s control explicitly, and a
+reconciliation that removes a stale `.gitignore` entry after a case-only rename restates
+the variant’s rules in the same batch.
+The `crate::control` module documentation states the rule.
+
 A detached index may retain bounded exact history for a nonblocking `since` API. That
 history has no live session identity, waiter, worker, or continuation authority and is
 never persisted. A cloned `Index` is a separate value.
@@ -502,6 +513,11 @@ runtime type registry’s fingerprint, whether control files are observed and un
 budget and line limit, and a reducer-set fingerprint that is a constant today.
 The compiled classification-rules version is not part of it: `CLASSIFICATION_VERSION`
 rides in the snapshot’s engine fingerprint with the crate and format versions.
+The fixed `.gitignore` semantics version, `IGNORE_RULES_VERSION`, is in both.
+Semantic identity’s ignore-rules fingerprint hashes it, but a snapshot stores only the
+control tier’s observation and limits, and a loading build recomputes that fingerprint
+from them under its own version, so it is the engine fingerprint that refuses a snapshot
+written under other semantics.
 The engine derives scope and semantic identities from validated values.
 It never accepts a caller-supplied fingerprint as proof that independently supplied
 content matches.

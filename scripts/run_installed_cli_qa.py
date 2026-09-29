@@ -641,19 +641,32 @@ def phase_analyze_extra(runner: Runner, tree: Path, cache_home: Path) -> None:
 
 
 def check_json_analysis(path: Path, row: Row) -> None:
-    """JSON `--analyze` must carry a filled `physical_lines` total, not a schema shell."""
+    """JSON `--analyze` must carry a filled `physical_lines` total, not a schema shell.
+
+    In `fdu.report/10` a grouped view's total is `reports[0].metrics.total`, with its
+    content metrics in that total's own `metrics`; the top-level `analysis` names only
+    the analyzers. A missing field fails, so a shape change cannot make the check vacuous.
+    """
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         row.verdict = "fail"
         row.note = f"{row.note}; invalid json".strip("; ")
         return
-    analysis = payload.get("analysis") or {}
-    total = analysis.get("total") or analysis
-    physical = total.get("physical_lines")
+    try:
+        physical = payload["reports"][0]["metrics"]["total"]["metrics"]["physical_lines"]
+    except (KeyError, IndexError, TypeError):
+        physical = None
+    if not isinstance(physical, int):
+        schema = payload.get("schema") if isinstance(payload, dict) else None
+        row.verdict = "fail"
+        row.note = (
+            f"{row.note}; no reports[0].metrics.total.metrics.physical_lines in {schema}"
+        ).strip("; ")
+        return
     if physical == 0:
         row.verdict = "warn"
-        row.note = f"{row.note}; physical_lines=0".strip("; ")
+    row.note = f"{row.note}; physical_lines={physical}".strip("; ")
 
 
 def phase_watch(runner: Runner) -> None:

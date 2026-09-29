@@ -299,7 +299,8 @@ CACHE BEHAVIOR
 
   --stale-ok answers from the snapshot alone: it does no filesystem verification,
   requires a compatible snapshot and content sidecar for the requested analysis,
-  and labels its answer stale. --cache=off neither reads nor writes fdu's cache.
+  and labels its answer stale with a warn: line on stderr that --quiet keeps.
+  --cache=off neither reads nor writes fdu's cache.
 
   macOS and Linux default to ~/.cache/fdu; Windows uses %LOCALAPPDATA%/fdu.
   --cache-dir overrides FDU_CACHE_DIR, then XDG_CACHE_HOME/fdu and native defaults.
@@ -315,11 +316,12 @@ IGNORE RULES
   --ignored=only discovers gitignored matches through ordinary ancestors, reading
   only gitignored bodies for analysis. Sort and --min-size follow the size shown.
   --no-gitignore reads no rules and shows no share. Only per-directory .gitignore
-  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file,
-  and matching is case-sensitive on every platform. An unreadable .gitignore makes
-  the result partial, like any unreadable path. A .gitignore past --gitignore-budget
-  or --gitignore-line-limit is refused whole and named in a note: sizes stay exact,
-  gitignored shares under that directory do not.
+  files apply, not core.excludesFile, .git/info/exclude, or a global ignore file.
+  Each is found as git opens it, so a .GITIGNORE counts on a case-insensitive
+  volume; matching itself is case-sensitive on every platform. An unreadable
+  .gitignore makes the result partial, like any unreadable path. A .gitignore past
+  --gitignore-budget or --gitignore-line-limit is refused whole and named in a note:
+  sizes stay exact, gitignored shares under that directory do not.
 
 OUTPUT AND AUTOMATION
   Every machine report uses fdu.report/10; watch changes use fdu.stream/2.
@@ -1742,9 +1744,14 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
     Ok(ResolvedViews { selected, omitted })
 }
 
-/// Output-design boundary: flush result stdout before emitting notes, operational
-/// warnings, and deduplicated tips to stderr. The caller appends `perf:` last for human
-/// one-shot reports. Machine stdout receives no diagnostics or terminal escapes.
+/// Output-design boundary: flush result stdout before emitting notes, warnings, and
+/// deduplicated tips to stderr. The caller appends `perf:` last for human one-shot
+/// reports. Machine stdout receives no diagnostics or terminal escapes.
+///
+/// Warnings come from two owners: the engine's [`report_format::report_warnings`], which
+/// describe the answer itself (a `--stale-ok` answer nothing verified), then this
+/// frontend's operational ones (a failed save, each retained status issue). `--quiet`
+/// keeps every warning, on every format, and drops only notes, tips, and `perf:`.
 ///
 /// Use stderr's color decision: note/tip/perf are gray, warn is yellow without bold,
 /// and fatal rendering in `finish` is red bold. Preserve paths and causes on warning
@@ -1766,6 +1773,9 @@ fn write_report_diagnostics(
         for line in lines.notes {
             writeln!(diagnostic, "{}", paint(&line, STYLE_PERFORMANCE, color))?;
         }
+    }
+    for warning in report_format::report_warnings(report) {
+        writeln!(diagnostic, "{}", paint(&warning, STYLE_WARNING, color))?;
     }
     if let Some(warning) = save_warning {
         writeln!(diagnostic, "{}", paint(warning, STYLE_WARNING, color))?;
@@ -3191,6 +3201,71 @@ mod tests {
             String::from_utf8(diagnostic).expect("UTF-8"),
             "warn: snapshot could not be saved\n"
         );
+    }
+
+    /// A `--stale-ok` answer is marked on stderr by a warning that `--quiet` keeps, on the
+    /// plain text report and every other format, and a verified answer carries no such
+    /// line. Before this, plain text said only `cache only` at the end of the `perf:`
+    /// footer, and `--quiet` removed that too (fdu-mdop).
+    #[test]
+    fn quiet_keeps_the_stale_answer_warning_and_a_verified_answer_has_none() {
+        const WARNING: &str = "warn: stale answer: served from the snapshot without filesystem \
+                               verification; drop --stale-ok for a fresh answer\n";
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let command = |view: &str, format: &str, cache_policy: &str, stale_ok, quiet| Cli {
+            path: Some(root.path().to_path_buf()),
+            view: Some(view.to_string()),
+            format: format.to_string(),
+            size: "apparent".to_string(),
+            cache: cache_policy.to_string(),
+            cache_dir: Some(cache.path().to_path_buf()),
+            stale_ok,
+            quiet,
+            ..cli()
+        };
+        let run = |command: Cli| {
+            let (mut out, mut diagnostic) = (Vec::new(), Vec::new());
+            command
+                .run(
+                    &mut out,
+                    &mut diagnostic,
+                    false,
+                    &TerminalFacts::default(),
+                    ProgressIo::inert(),
+                )
+                .expect("report");
+            (
+                String::from_utf8(out).expect("UTF-8 stdout"),
+                String::from_utf8(diagnostic).expect("UTF-8 stderr"),
+            )
+        };
+
+        // `on` leaves the snapshot a stale answer reads; its own answer is verified.
+        let (_, seeded) = run(command("tree", "text", "on", false, false));
+        assert!(!seeded.contains("warn:"), "a cold scan is not stale: {seeded}");
+        let (fresh_out, fresh) = run(command("summary", "text", "auto", false, false));
+        assert!(!fresh.contains("warn:"), "a verified answer is not stale: {fresh}");
+        let (_, fresh_quiet) = run(command("summary", "text", "auto", false, true));
+        assert!(fresh_quiet.is_empty(), "nothing to keep: {fresh_quiet:?}");
+
+        let (stale_out, stale) = run(command("summary", "text", "auto", true, false));
+        assert_eq!(stale_out, fresh_out, "an unchanged tree gives the same answer");
+        let warning = stale.find(WARNING).unwrap_or_else(|| panic!("stale marker: {stale}"));
+        let perf = stale.find("perf:").expect("a text report closes with perf:");
+        assert!(warning < perf, "warnings precede the performance footer: {stale}");
+        assert!(stale.trim_end().ends_with("cache only"), "{stale}");
+
+        let (quiet_out, quiet) = run(command("summary", "text", "auto", true, true));
+        assert_eq!(quiet_out, stale_out, "quiet leaves result stdout intact");
+        assert_eq!(quiet, WARNING, "quiet keeps the stale marker and nothing else");
+        for (view, format) in [("summary", "json"), ("list", "paths")] {
+            let (_, quiet) = run(command(view, format, "auto", true, true));
+            assert_eq!(quiet, WARNING, "{format} keeps the same marker under quiet");
+            let (_, fresh_quiet) = run(command(view, format, "auto", false, true));
+            assert!(!fresh_quiet.contains("warn:"), "{format}: {fresh_quiet}");
+        }
     }
 
     /// The footer's walked size is measured as the answer is, so it reads as the summary

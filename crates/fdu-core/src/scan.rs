@@ -1298,6 +1298,9 @@ pub(crate) enum WalkHookPoint<'a> {
     /// After a reconciliation's listing of a directory returns its last entry; an error is
     /// read as one more listing item, which leaves the listing incomplete.
     ListingEnd,
+    /// After a lookup of a directory's canonical control path, at this absolute path, has
+    /// returned and before its answer is used; an error stands in for that answer.
+    ControlLookup(&'a Path),
 }
 
 /// Hooks run at each [`WalkHookPoint`], each for the paths under its root.
@@ -1353,7 +1356,7 @@ pub(crate) fn install_child_metadata_hook(
 ) -> WalkHookGuard {
     install_walk_hook(root, move |point| match point {
         WalkHookPoint::ChildMetadata(path) => hook(path),
-        WalkHookPoint::ListingEnd => None,
+        WalkHookPoint::ListingEnd | WalkHookPoint::ControlLookup(_) => None,
     })
 }
 
@@ -1862,17 +1865,20 @@ fn scan_internal(
             ) {
                 continue;
             }
-            let control = match if controls.is_some() && name == crate::control::CONTROL_FILE_NAME {
-                Ok(None)
-            } else {
-                read_control_op(config, root, &rel_path, kind)
-            } {
-                Ok(control) => control,
-                Err(error) => {
-                    report.errors.push(error);
-                    None
-                }
-            };
+            // A narrowed walk looked the directory's control up before listing it, and that
+            // lookup stands for every spelling the listing shows.
+            let control =
+                match if controls.is_some() && crate::control::control_spelling(&name).is_some() {
+                    Ok(None)
+                } else {
+                    read_control_op(config, root, &rel_path, kind)
+                } {
+                    Ok(control) => control,
+                    Err(error) => {
+                        report.errors.push(error);
+                        None
+                    }
+                };
             if disposition == crate::admission::Disposition::ControlOnly {
                 if let Some(control) = control {
                     batch.push(ObservationOp::unconditional(control));
@@ -2377,8 +2383,17 @@ fn atomic_update_max(target: &std::sync::atomic::AtomicUsize, value: usize) {
 
 enum WalkMessage {
     Batch(ScannerBatch),
-    DetachedDirectories(Vec<DetachedDirectory>),
-    ScaleUp { sender: std::sync::mpsc::Sender<Self>, target_workers: usize },
+    DetachedDirectories {
+        directories: Vec<DetachedDirectory>,
+        /// The worker that allocated `directories`. The consumer drains each listing
+        /// into the index and sends the emptied listings back here, so their path and
+        /// child buffers are freed or reused on that worker's thread (H159).
+        recycle: std::sync::mpsc::Sender<Vec<DetachedDirectory>>,
+    },
+    ScaleUp {
+        sender: std::sync::mpsc::Sender<Self>,
+        target_workers: usize,
+    },
 }
 
 impl WorkerPool {
@@ -2615,7 +2630,7 @@ fn scan_concurrent(
             }
             sink(batch);
         }
-        WalkMessage::DetachedDirectories(_) => {
+        WalkMessage::DetachedDirectories { .. } => {
             unreachable!("the streaming walker never publishes detached directories")
         }
         WalkMessage::ScaleUp { .. } => {
@@ -2659,18 +2674,21 @@ fn scan_concurrent_detached(
             WalkMessage::Batch(_) => {
                 unreachable!("the detached walker never publishes scanner batches")
             }
-            WalkMessage::DetachedDirectories(directories) => {
+            WalkMessage::DetachedDirectories { mut directories, recycle } => {
                 if let Some(diagnostics) = diagnostics {
                     diagnostics.handoff_received();
                 }
                 if build_error.is_none() {
-                    for directory in directories {
+                    for directory in &mut directories {
                         if let Err(error) = builder.push_directory(directory) {
                             build_error = Some(error);
                             break;
                         }
                     }
                 }
+                // A worker that has already left has dropped its receiver, and then the
+                // listings are freed here, as every listing was before H159.
+                let _ = recycle.send(directories);
             }
             WalkMessage::ScaleUp { .. } => {
                 unreachable!("the shared runner consumes scale-up messages")
@@ -2942,20 +2960,20 @@ struct StreamingEmission {
 /// Where the listing a grouping worker is recording stands on its directory's control.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ListingControl {
-    /// No `.gitignore` entry seen yet.
+    /// No listed spelling of `.gitignore` has read the directory's control yet.
     Unread,
-    /// The listing's own `.gitignore` was read, or failed to read; its observation, if any,
-    /// is among the held ones.
+    /// A listed spelling read the directory's control, or failed to; its observation, if
+    /// any, is among the held ones.
     Listed,
-    /// The held observations filled the batch before any `.gitignore` entry came, so the
-    /// directory's control was read directly (`probe_directory_control`) and stands for
-    /// the whole listing, as in the narrowed-population walk.
+    /// The held observations filled the batch before any listed spelling read the
+    /// control, so the directory's control was looked up directly (`read_directory_control`)
+    /// and stands for the whole listing, as in the narrowed-population walk.
     ///
-    /// A `.gitignore` entry listed afterwards is recorded as a row and not read again, so
-    /// the directory's control file is read once. On a tree nothing modifies during the
-    /// walk the probed file is the listed one; if the file changes between the two, the
-    /// listing keeps what the probe read, and an error the second read would have met is
-    /// never met.
+    /// A spelling listed afterwards is recorded as a row and not read again, so the
+    /// directory's control file is read once. On a tree nothing modifies during the walk
+    /// the probed file is the listed one; if the file changes between the two, the listing
+    /// keeps what the probe read, and an error the second read would have met is never
+    /// met.
     Probed,
 }
 
@@ -2990,10 +3008,9 @@ impl StreamingEmission {
     /// A grouped listing's observations are held until its control leads them: at the
     /// listing's end ([`WalkEmission::finish_directory`]), or here, when the batch fills
     /// first. So a batch never holds more than `batch_size` observations and one control,
-    /// however long the listing, and a fill that finds the listing's `.gitignore` not yet
-    /// listed probes for it once per listing: one metadata lookup, and on a hit one
-    /// confirming listing of the directory (`probe_directory_control`). Returns whether
-    /// the consumer is still there.
+    /// however long the listing, and a fill that finds no spelling of `.gitignore` listed
+    /// yet probes for it once per listing: one metadata lookup, and a read on a hit
+    /// (`read_directory_control`). Returns whether the consumer is still there.
     #[allow(clippy::too_many_arguments)]
     fn send_if_full(
         &mut self,
@@ -3032,7 +3049,9 @@ impl StreamingEmission {
         }
         self.listing_control = ListingControl::Probed;
         let control = rel_dir.join(crate::control::CONTROL_FILE_NAME);
-        match probe_directory_control(config, root, &control) {
+        // The probe is the lookup the rule names, so a hit stands for the directory
+        // whichever spelling it resolved to, exactly as a listed spelling's read would.
+        match read_directory_control(config, root, &control) {
             Ok(Some(op)) => {
                 self.batch.insert(self.directory_start, ObservationOp::unconditional(op));
             }
@@ -3183,16 +3202,96 @@ impl WalkEmission for StreamingEmission {
     }
 }
 
-#[derive(Default)]
+/// Emptied listings one detached worker keeps for reuse: one chunk's worth.
+///
+/// A bound on retention, not a tuned speed value. A chunk claims at most [`DIR_CLAIM`]
+/// directories, and the worker takes returned listings back once per chunk, so this
+/// covers the next chunk; a listing returned past it is freed at once, still on its own
+/// thread, which is the property H159 needs. Retained listings are memory the consumer
+/// can no longer reuse for the index: four chunks' worth of listings up to 256 children
+/// each cost 1.0 MiB (+1.4%) of peak RSS on a 158,705-entry macOS subject and 2.3 MiB
+/// (+5.0%) on a 77,159-entry one.
+const DETACHED_SPARE_LISTINGS: usize = DIR_CLAIM;
+
+/// The largest child buffer, in children, a spare listing may keep.
+///
+/// Also a bound on retention rather than a tuned value: most directories are small, and
+/// a listing whose buffer grew past this, at about 80 bytes per child, is freed when it
+/// comes back, on its own thread, instead of being pinned for the rest of the walk.
+const DETACHED_SPARE_CHILD_CAPACITY: usize = 64;
+
+/// One worker's detached emission: listings built here and published to the consumer.
+///
+/// Every path and child buffer in a listing is allocated on this worker's thread. The
+/// consumer drains each listing into the index and sends the emptied listings back
+/// (H159), and the worker reuses them or frees them itself. Under glibc a chunk freed on
+/// another thread goes back to the arena that allocated it, under that arena's lock,
+/// while this worker is allocating from it; the 2026-09-27 Linux comparison's allocator
+/// screen and context-switch profile point at that contention for the index tier's gap
+/// to its peers. A reused listing carries exactly the facts a fresh one would: the same
+/// path bytes, and children and control only from this directory's listing.
 struct DetachedEmission {
     directories: Vec<DetachedDirectory>,
+    /// Emptied listings ready to be reused by [`WalkEmission::begin_directory`].
+    spare: Vec<DetachedDirectory>,
+    /// An emptied list to publish the next chunk's listings in.
+    spare_list: Vec<DetachedDirectory>,
+    recycle_tx: std::sync::mpsc::Sender<Vec<DetachedDirectory>>,
+    recycle_rx: std::sync::mpsc::Receiver<Vec<DetachedDirectory>>,
+}
+
+impl DetachedEmission {
+    fn new() -> Self {
+        let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+        Self {
+            directories: Vec::new(),
+            spare: Vec::new(),
+            spare_list: Vec::new(),
+            recycle_tx,
+            recycle_rx,
+        }
+    }
+
+    /// Take back every list the consumer has returned since the last chunk.
+    ///
+    /// A listing the consumer skipped, after a build error or for a repeated directory,
+    /// comes back with its children and control still in it; they are dropped here, on
+    /// the thread that allocated them, before the listing can be reused.
+    fn collect_returned(&mut self) {
+        while let Ok(mut returned) = self.recycle_rx.try_recv() {
+            for mut directory in returned.drain(..) {
+                directory.children.clear();
+                directory.control = None;
+                if self.spare.len() < DETACHED_SPARE_LISTINGS
+                    && directory.children.capacity() <= DETACHED_SPARE_CHILD_CAPACITY
+                {
+                    self.spare.push(directory);
+                }
+            }
+            if self.spare_list.capacity() == 0 {
+                self.spare_list = returned;
+            }
+        }
+    }
 }
 
 impl WalkEmission for DetachedEmission {
     type Directory = DetachedDirectory;
 
     fn begin_directory(&mut self, path: &Path) -> Self::Directory {
-        DetachedDirectory { path: path.to_path_buf(), children: Vec::new(), control: None }
+        let Some(mut directory) = self.spare.pop() else {
+            return DetachedDirectory {
+                path: path.to_path_buf(),
+                children: Vec::new(),
+                control: None,
+            };
+        };
+        // The same bytes `to_path_buf` would copy, into a buffer this thread already owns.
+        let buffer = directory.path.as_mut_os_string();
+        buffer.clear();
+        buffer.push(path);
+        debug_assert!(directory.children.is_empty() && directory.control.is_none());
+        directory
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3246,9 +3345,14 @@ impl WalkEmission for DetachedEmission {
         if self.directories.is_empty() {
             return true;
         }
+        // Taking back returned listings is handoff work, timed with the send so the
+        // chunk's work time, which calibrates the worker pool, stays the walk's own.
         let send_started = std::time::Instant::now();
+        self.collect_returned();
+        let next = std::mem::take(&mut self.spare_list);
+        let directories = std::mem::replace(&mut self.directories, next);
         let sent =
-            send_detached_directories(sender, std::mem::take(&mut self.directories), diagnostics);
+            send_detached_directories(sender, directories, self.recycle_tx.clone(), diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         sent
     }
@@ -3277,7 +3381,7 @@ fn walk_detached_worker(
         queue,
         sender,
         diagnostics,
-        DetachedEmission::default(),
+        DetachedEmission::new(),
     );
     // A walker leaves only when the queue is empty with nothing in flight, or when its
     // consumer is gone, so the walk is over. The index may still be assembling the
@@ -3533,14 +3637,16 @@ fn record_detached_entry(
     if disposition == crate::admission::Disposition::Reject {
         return;
     }
-    // Construct a full path only for the one fixed control name. The scanner's public
+    // Construct a full path only for a spelling of the control name. The scanner's public
     // preparation builds one for every retained entry because that path escapes in an
     // observation; this private builder keeps ordinary children component-only.
-    if config.read_controls && name == OsStr::new(crate::control::CONTROL_FILE_NAME) {
+    if config.read_controls && crate::control::control_spelling(name).is_some() {
         let path = rel_dir.join(name);
         match read_control_op(config, root, &path, kind) {
-            // A listing can repeat the control name while the directory changes. The
-            // later read wins, as the builder keeps the later observation of the entry.
+            // A listing can repeat the control name while the directory changes, and a
+            // case-sensitive one can list `.gitignore` beside `.GITIGNORE`, whose lookup
+            // reads the same file. The later read wins, as the builder keeps the later
+            // observation of the entry.
             Ok(observed) => *control = observed,
             Err(error) => report.errors.push(error),
         }
@@ -3728,7 +3834,8 @@ fn controls_first(listing: &mut [ObservationOp]) {
     }
 }
 
-/// Observe one control file if the scan's policy asks for control state at all.
+/// Observe the control an entry at `path` stands for, if the scan's policy asks for
+/// control state at all.
 ///
 /// Every control observation goes through here -- each walk and reconcile site, and the
 /// watch layer's verification -- so the policy cannot be forgotten at one of them. A
@@ -3736,6 +3843,16 @@ fn controls_first(listing: &mut [ObservationOp]) {
 /// carries this bit, and a verifier that read control files regardless would grow a
 /// partial rule set, from whichever sources events touched, under a scope that says
 /// there is none.
+///
+/// It is also where a listed name becomes a control read, by the rule the module
+/// documentation of [`crate::control`] states: the directory's control is what a lookup
+/// of `<dir>/.gitignore` resolves to. An entry named exactly `.gitignore` is that
+/// lookup's target on every filesystem, so it is read through its own path with the kind
+/// its listing observed, and costs nothing more than it did. A case variant such as
+/// `.GITIGNORE` may or may not be the target, so the canonical path is looked up
+/// ([`read_directory_control`]): the entry decides only whether to look. The observation
+/// names the canonical path either way, and its bytes are the ones git reads. A name
+/// that spells no control is answered without a system call.
 pub(crate) fn read_control_op(
     config: &ScanConfig,
     root: &Path,
@@ -3745,76 +3862,160 @@ pub(crate) fn read_control_op(
     if !config.read_controls {
         return Ok(None);
     }
-    read_control_op_unconditional(root, path, kind, config.control_limits.budget)
+    match crate::control::path_control_spelling(path) {
+        Some(crate::control::ControlSpelling::Exact) => {
+            read_control_op_unconditional(root, path, kind, config.control_limits.budget)
+        }
+        Some(crate::control::ControlSpelling::Variant) => {
+            read_directory_control(config, root, &crate::control::sibling_control_path(path))
+        }
+        None => Ok(None),
+    }
 }
 
-/// Read a directory's fixed control before admitting any of its other children.
+/// Read a directory's control by looking up its canonical path, `<dir>/.gitignore`.
 ///
-/// The extra metadata probe is paid only by an exclusion scan; it permits a streaming
-/// directory listing while preserving control-first ordering for safe pruning.
+/// This is the rule itself: on a case-insensitive directory the lookup resolves to
+/// whichever spelling the directory stores, as git's open does, and on a case-sensitive
+/// one only to the exact name. `Ok(None)` means nothing resolves. It costs one metadata
+/// lookup, and a read on a hit, so it runs only where a listing cannot stand in for it: a
+/// narrowed population reads each directory's control before listing it, a classifying
+/// transient fold whose batch fills first probes for it (`StreamingEmission::send_if_full`),
+/// and a listed case variant resolves through it ([`read_control_op`]).
 fn read_directory_control(
     config: &ScanConfig,
     root: &Path,
     control_path: &Path,
 ) -> Result<Option<Op>> {
-    let absolute = root.join(control_path);
+    if !config.read_controls {
+        return Ok(None);
+    }
+    let absolute = control_lookup_path(root, control_path);
+    let found = look_up_control(&absolute, control_path, config.control_limits.budget);
+    #[cfg(test)]
+    {
+        if let Some(error) =
+            walk_hook(&absolute).and_then(|hook| hook(WalkHookPoint::ControlLookup(&absolute)))
+        {
+            return Err(Error::io(&absolute, error));
+        }
+    }
+    found
+}
+
+/// The lookup [`read_directory_control`] makes, at `absolute`, of the control it names
+/// `control_path`.
+fn look_up_control(
+    absolute: &Path,
+    control_path: &Path,
+    budget: Option<usize>,
+) -> Result<Option<Op>> {
     crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
-    let kind = match fs::symlink_metadata(&absolute) {
+    let kind = match fs::symlink_metadata(absolute) {
         Ok(metadata) if metadata.file_type().is_file() => EntryKind::File,
         Ok(_) => EntryKind::Other,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(Error::io(&absolute, error)),
+        Err(error) => return Err(Error::io(absolute, error)),
     };
-    read_control_op(config, root, control_path, kind)
+    read_control_source(absolute, control_path, kind, budget)
 }
 
-/// Read a directory's control ahead of its listing, as its listing would take it.
+/// [`read_directory_control`], answering a miss with the removal of the directory's rules.
 ///
-/// A classifying transient fold probes when a batch fills before the listing reaches its
-/// `.gitignore` (`StreamingEmission::send_if_full`). The listing, and the index built from
-/// it, take a control only from an entry listed exactly as `.gitignore`
-/// ([`crate::control::is_control_file`]), but a lookup by path resolves the name through
-/// the filesystem, and on a case-insensitive volume (APFS by default, Windows, an ext4
-/// casefold directory) `.GITIGNORE` answers for it. Whether the probe fired depends on
-/// where the batch filled, so an unconfirmed hit would let the same tree's summary
-/// differ between runs and from the index's. So a hit is confirmed against the names
-/// the directory lists before its bytes are read: a streaming listing that stops at the
-/// first exact match and retains nothing, paid only when the lookup finds a file.
-fn probe_directory_control(
+/// For a producer that saw one spelling of the control name vanish or fail: whether the
+/// directory still has a control is the lookup's question, and a removal of rules the
+/// table does not hold is inert.
+pub(crate) fn read_directory_control_or_removal(
     config: &ScanConfig,
     root: &Path,
     control_path: &Path,
 ) -> Result<Option<Op>> {
-    let absolute = root.join(control_path);
-    crate::counters::bump(|counts| counts.stats = counts.stats.saturating_add(1));
-    match fs::symlink_metadata(&absolute) {
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(Error::io(&absolute, error)),
-    }
-    let directory = absolute.parent().unwrap_or(root);
-    if !lists_exact_control_name(directory)? {
+    if !config.read_controls {
         return Ok(None);
     }
-    read_directory_control(config, root, control_path)
+    Ok(Some(
+        read_directory_control(config, root, control_path)?
+            .unwrap_or_else(|| Op::ControlRemove { path: control_path.to_path_buf() }),
+    ))
 }
 
-/// Whether `directory` lists an entry named exactly [`crate::control::CONTROL_FILE_NAME`].
-///
-/// Stops at the first match and keeps no name, so its cost is the listing up to that
-/// entry. Not an inventory producer: nothing it lists is admitted.
-fn lists_exact_control_name(directory: &Path) -> Result<bool> {
-    crate::counters::bump(|counts| counts.dir_opens = counts.dir_opens.saturating_add(1));
-    let control = OsStr::new(crate::control::CONTROL_FILE_NAME);
-    let mut names = fs::read_dir(directory).map_err(|error| Error::io(directory, error))?;
+/// Where a lookup of the control path `control_path` under `root` goes.
+#[cfg(not(test))]
+fn control_lookup_path(root: &Path, control_path: &Path) -> PathBuf {
+    root.join(control_path)
+}
+
+/// Where a lookup of the control path `control_path` under `root` goes, which a test may
+/// resolve as a case-insensitive directory would ([`install_case_folding_control_lookup`]).
+#[cfg(test)]
+fn control_lookup_path(root: &Path, control_path: &Path) -> PathBuf {
+    let absolute = root.join(control_path);
+    let folds = CASE_FOLDING_LOOKUPS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .any(|folded| absolute.starts_with(folded));
+    let Some(directory) = absolute.parent().filter(|_| folds) else {
+        return absolute;
+    };
+    // A case-insensitive directory holds at most one spelling, and the lookup returns it.
+    // A test tree may hold two only where the host is case-sensitive, and then the exact
+    // name is what the host itself resolves.
+    if fs::symlink_metadata(&absolute).is_ok() {
+        return absolute;
+    }
+    let Ok(mut names) = fs::read_dir(directory) else {
+        return absolute;
+    };
     names
-        .find_map(|item| match item {
-            Ok(entry) => (entry.file_name() == control).then_some(Ok(())),
-            Err(error) => Some(Err(error)),
+        .find_map(|item| {
+            let name = item.ok()?.file_name();
+            crate::control::control_spelling(&name).map(|_| directory.join(name))
         })
-        .transpose()
-        .map(|found| found.is_some())
-        .map_err(|error| Error::io(directory, error))
+        .unwrap_or(absolute)
+}
+
+/// Roots whose control lookups [`control_lookup_path`] resolves case-insensitively.
+#[cfg(test)]
+static CASE_FOLDING_LOOKUPS: std::sync::RwLock<Vec<PathBuf>> = std::sync::RwLock::new(Vec::new());
+
+/// Removes its root from [`CASE_FOLDING_LOOKUPS`] when dropped.
+#[cfg(test)]
+#[must_use = "the lookups fold only until the guard is dropped"]
+pub(crate) struct CaseFoldingGuard(Vec<PathBuf>);
+
+#[cfg(test)]
+impl Drop for CaseFoldingGuard {
+    fn drop(&mut self) {
+        CASE_FOLDING_LOOKUPS
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|root| !self.0.contains(root));
+    }
+}
+
+/// Resolve every control lookup under `root` as a case-insensitive directory would, until
+/// the guard drops: `<dir>/.gitignore` opens whichever spelling `<dir>` stores.
+///
+/// A case-sensitive test host cannot make a case-insensitive directory (an ext4 casefold
+/// directory needs a kernel built with Unicode support and an empty directory to flag), so
+/// this is how the rule's case-insensitive branch runs on every CI runner. It changes only
+/// the lookup the rule depends on: listings still show stored names, and every other path
+/// resolves as the host resolves it. A real case-insensitive volume is tested where the
+/// temporary directory is one. `root` matches as given and canonical.
+#[cfg(test)]
+pub(crate) fn install_case_folding_control_lookup(root: &Path) -> CaseFoldingGuard {
+    let mut roots = vec![root.to_path_buf()];
+    if let Ok(canonical) = root.canonicalize() {
+        if canonical != root {
+            roots.push(canonical);
+        }
+    }
+    CASE_FOLDING_LOOKUPS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .extend(roots.iter().cloned());
+    CaseFoldingGuard(roots)
 }
 
 fn read_listed_control_op(
@@ -3824,9 +4025,10 @@ fn read_listed_control_op(
     kind: EntryKind,
 ) -> Result<Option<Op>> {
     if config.population != crate::query::IgnoredEntries::Include
-        && crate::control::is_control_file(path)
+        && crate::control::path_control_spelling(path).is_some()
     {
-        // The exclusion walk already read this source before any sibling.
+        // The exclusion walk already looked the directory's control up before any
+        // sibling, whichever spelling holds it.
         Ok(None)
     } else {
         read_control_op(config, root, path, kind)
@@ -3843,7 +4045,9 @@ fn population_prunes(
 ) -> bool {
     // The fixed control source stays in the entry tier even for `only`: removing its
     // entry would also remove the retained rule source during a watch reconciliation.
-    if crate::control::is_control_file(path) {
+    // Every spelling is kept, because the listing cannot tell which one a case-insensitive
+    // directory resolves `.gitignore` to without the lookup the walk made before it.
+    if crate::control::path_control_spelling(path).is_some() {
         return false;
     }
     let Some(table) = controls else { return false };
@@ -3893,18 +4097,30 @@ fn read_control_op_unconditional(
     if !crate::control::is_control_file(path) {
         return Ok(None);
     }
+    read_control_source(&root.join(path), path, kind, budget)
+}
+
+/// Read the control at `absolute`, whose kind is `kind`, as an observation of `path`.
+///
+/// `absolute` is where the lookup went and `path` the canonical control path the
+/// observation names; on a real filesystem the first is `root.join(path)`.
+fn read_control_source(
+    absolute: &Path,
+    path: &Path,
+    kind: EntryKind,
+    budget: Option<usize>,
+) -> Result<Option<Op>> {
     if kind != EntryKind::File {
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
-    let absolute = root.join(path);
-    let file = open_control_file(&absolute).map_err(|error| Error::io(&absolute, error))?;
-    if !file.metadata().map_err(|error| Error::io(&absolute, error))?.file_type().is_file() {
+    let file = open_control_file(absolute).map_err(|error| Error::io(absolute, error))?;
+    if !file.metadata().map_err(|error| Error::io(absolute, error))?.file_type().is_file() {
         return Ok(Some(Op::ControlRemove { path: path.to_path_buf() }));
     }
     let read_limit = budget
         .map_or(u64::MAX, |budget| u64::try_from(budget).unwrap_or(u64::MAX).saturating_add(1));
     let mut source = Vec::new();
-    file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(&absolute, error))?;
+    file.take(read_limit).read_to_end(&mut source).map_err(|error| Error::io(absolute, error))?;
     crate::counters::bump(|counts| counts.control_reads = counts.control_reads.saturating_add(1));
     Ok(Some(Op::ControlUpsert { path: path.to_path_buf(), source }))
 }
@@ -3942,12 +4158,13 @@ fn send_scanner_batch(
 fn send_detached_directories(
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     directories: Vec<DetachedDirectory>,
+    recycle: std::sync::mpsc::Sender<Vec<DetachedDirectory>>,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
     if let Some(diagnostics) = diagnostics {
         diagnostics.handoff_sent();
     }
-    let sent = sender.send(WalkMessage::DetachedDirectories(directories)).is_ok();
+    let sent = sender.send(WalkMessage::DetachedDirectories { directories, recycle }).is_ok();
     if !sent {
         if let Some(diagnostics) = diagnostics {
             diagnostics.handoff_received();
@@ -4757,14 +4974,15 @@ pub fn revalidate(
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let mut had_control = index.control_table().contains(&control_path);
-        let mut control_seen = false;
+        let mut listed_control = ListedControl::default();
         if let Some(table) = controls.as_mut() {
             let baseline = index.relaxed_expectation(&control_path);
-            match read_directory_control(config, &root, &control_path) {
+            let lookup = read_directory_control(config, &root, &control_path);
+            listed_control.lookup(&lookup);
+            match lookup {
                 Ok(Some(op)) => {
                     apply_discovery_control(table, &op)?;
                     batch.push(ObservationOp::if_state(op, baseline));
-                    control_seen = true;
                 }
                 Ok(None) => {
                     table.remove(&control_path)?;
@@ -4779,7 +4997,6 @@ pub fn revalidate(
                 Err(error) => {
                     unreadable_controls.insert(rel_dir.clone());
                     report.errors.push(error);
-                    control_seen = true;
                 }
             }
         }
@@ -4830,12 +5047,12 @@ pub fn revalidate(
                     continue;
                 }
                 Err(e) => {
-                    control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                    listed_control.listed(&name);
                     report.errors.push(Error::io(item.path(), e));
                     continue;
                 }
             };
-            control_seen |= name == crate::control::CONTROL_FILE_NAME;
+            listed_control.listed(&name);
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             if population_prunes(
@@ -4851,7 +5068,9 @@ pub fn revalidate(
                 }
                 continue;
             }
-            let control = match read_listed_control_op(config, &root, &rel_path, kind) {
+            let read = read_listed_control_op(config, &root, &rel_path, kind);
+            listed_control.read(&name, &read);
+            let control = match read {
                 Ok(control) => control,
                 Err(error) => {
                     report.errors.push(error);
@@ -4867,7 +5086,10 @@ pub fn revalidate(
                 }
                 if disposition == crate::admission::Disposition::ControlOnly {
                     if let Some(control) = control {
-                        batch.push(ObservationOp::if_state(control, baseline));
+                        let guard = control_guard(&rel_path, baseline, |path| {
+                            index.relaxed_expectation(path)
+                        });
+                        batch.push(ObservationOp::if_state(control, guard));
                     }
                 }
                 if batch.len() >= batch_limit {
@@ -4886,7 +5108,9 @@ pub fn revalidate(
                 batch.reserve(batch_limit);
             }
             if let Some(control) = control {
-                batch.push(ObservationOp::if_state(control, baseline));
+                let guard =
+                    control_guard(&rel_path, baseline, |path| index.relaxed_expectation(path));
+                batch.push(ObservationOp::if_state(control, guard));
                 if batch.len() >= batch_limit {
                     sink(Observation::from_ops(std::mem::take(&mut batch)));
                     batch.reserve(batch_limit);
@@ -4922,10 +5146,18 @@ pub fn revalidate(
                             Op::Remove { path: path.clone() },
                             index.relaxed_expectation(&path),
                         ));
+                        // In the same batch, so the rules the removal drops are back
+                        // before any commit shows the directory without them.
+                        if let Some(control) = listed_control.restatement_after_removing(name) {
+                            batch.push(ObservationOp::if_state(
+                                control,
+                                index.relaxed_expectation(&control_path),
+                            ));
+                        }
                     }
                 }
             }
-            if had_control && !control_seen {
+            if had_control && !listed_control.seen {
                 batch.push(ObservationOp::if_state(
                     Op::ControlRemove { path: control_path.clone() },
                     index.relaxed_expectation(&control_path),
@@ -5357,12 +5589,15 @@ fn reconcile_target_inner(
                     Op::Remove { path: subtree.to_path_buf() },
                     baseline,
                 ));
-                if target.has_control(subtree)? {
-                    batch.push(ObservationOp::if_state(
-                        Op::ControlRemove { path: subtree.to_path_buf() },
-                        baseline,
-                    ));
-                }
+                push_lost_spelling_control(
+                    target,
+                    &root,
+                    config,
+                    subtree,
+                    baseline,
+                    &mut batch,
+                    &mut report,
+                )?;
                 flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 return Ok(report);
             }
@@ -5374,12 +5609,15 @@ fn reconcile_target_inner(
                         baseline,
                     ));
                 }
-                if target.has_control(subtree)? {
-                    batch.push(ObservationOp::if_state(
-                        Op::ControlRemove { path: subtree.to_path_buf() },
-                        baseline,
-                    ));
-                }
+                push_lost_spelling_control(
+                    target,
+                    &root,
+                    config,
+                    subtree,
+                    baseline,
+                    &mut batch,
+                    &mut report,
+                )?;
                 flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
                 return Ok(report);
             }
@@ -5401,21 +5639,8 @@ fn reconcile_target_inner(
                 ));
             }
             if disposition == crate::admission::Disposition::ControlOnly {
-                match read_control_op(config, &root, subtree, kind) {
-                    Ok(Some(control)) => {
-                        batch.push(ObservationOp::if_state(control, baseline));
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        if target.has_control(subtree)? {
-                            batch.push(ObservationOp::if_state(
-                                Op::ControlRemove { path: subtree.to_path_buf() },
-                                baseline,
-                            ));
-                        }
-                        report.scan.errors.push(error);
-                    }
-                }
+                let read = read_control_op(config, &root, subtree, kind);
+                push_read_control(target, subtree, baseline, read, &mut batch, &mut report)?;
             }
             flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
             return Ok(report);
@@ -5427,19 +5652,8 @@ fn reconcile_target_inner(
         // so nothing below would read them, and the table kept the old source while the
         // pass reported complete and marked the path fresh. In the same batch as the
         // upsert, so both are arbitrated against one baseline.
-        match read_control_op(config, &root, subtree, kind) {
-            Ok(Some(control)) => batch.push(ObservationOp::if_state(control, baseline)),
-            Ok(None) => {}
-            Err(error) => {
-                if target.has_control(subtree)? {
-                    batch.push(ObservationOp::if_state(
-                        Op::ControlRemove { path: subtree.to_path_buf() },
-                        baseline,
-                    ));
-                }
-                report.scan.errors.push(error);
-            }
-        }
+        let read = read_control_op(config, &root, subtree, kind);
+        push_read_control(target, subtree, baseline, read, &mut batch, &mut report)?;
         flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
@@ -5487,14 +5701,15 @@ fn reconcile_target_inner(
         let abs_dir = root.join(&rel_dir);
         let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
         let mut had_control = target.has_control(&control_path)?;
-        let mut control_seen = false;
+        let mut listed_control = ListedControl::default();
         if let Some(table) = controls.as_mut() {
-            match read_directory_control(config, &root, &control_path) {
+            let lookup = read_directory_control(config, &root, &control_path);
+            listed_control.lookup(&lookup);
+            match lookup {
                 Ok(Some(op)) => {
                     let baseline = target.expectation(&control_path)?;
                     apply_discovery_control(table, &op)?;
                     batch.push(ObservationOp::if_state(op, baseline));
-                    control_seen = true;
                 }
                 Ok(None) => {
                     table.remove(&control_path)?;
@@ -5527,7 +5742,7 @@ fn reconcile_target_inner(
                              kind: EntryKind,
                              attrs: Attrs,
                              baseline: PathExpectation,
-                             control_seen: &mut bool,
+                             listed_control: &mut ListedControl,
                              target: &mut ReconcileTarget<'_>,
                              queue: &mut VecDeque<(PathBuf, usize)>,
                              batch: &mut Vec<ObservationOp>,
@@ -5535,7 +5750,7 @@ fn reconcile_target_inner(
                              report: &mut ReconcileReport|
          -> Result<()> {
             let rel_path = rel_dir.join(&name);
-            *control_seen |= name == crate::control::CONTROL_FILE_NAME;
+            listed_control.listed(&name);
             let disposition =
                 crate::admission::decide(&name, kind, config.hidden(), config.exclude_special);
             if population_prunes(
@@ -5559,21 +5774,9 @@ fn reconcile_target_inner(
                     ));
                 }
                 if disposition == crate::admission::Disposition::ControlOnly {
-                    match read_listed_control_op(config, &root, &rel_path, kind) {
-                        Ok(Some(control)) => {
-                            batch.push(ObservationOp::if_state(control, baseline));
-                        }
-                        Ok(None) => {}
-                        Err(error) => {
-                            if target.has_control(&rel_path)? {
-                                batch.push(ObservationOp::if_state(
-                                    Op::ControlRemove { path: rel_path.clone() },
-                                    baseline,
-                                ));
-                            }
-                            report.scan.errors.push(error);
-                        }
-                    }
+                    let read = read_listed_control_op(config, &root, &rel_path, kind);
+                    listed_control.read(&name, &read);
+                    push_read_control(target, &rel_path, baseline, read, batch, report)?;
                 }
                 if batch.len() >= config.batch_size.max(1) {
                     flush_reconcile_batch(target, batch, sink, report)?;
@@ -5585,23 +5788,11 @@ fn reconcile_target_inner(
             if batch.len() >= config.batch_size.max(1) {
                 flush_reconcile_batch(target, batch, sink, report)?;
             }
-            match read_listed_control_op(config, &root, &rel_path, kind) {
-                Ok(Some(control)) => {
-                    batch.push(ObservationOp::if_state(control, baseline));
-                    if batch.len() >= config.batch_size.max(1) {
-                        flush_reconcile_batch(target, batch, sink, report)?;
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    if target.has_control(&rel_path)? {
-                        batch.push(ObservationOp::if_state(
-                            Op::ControlRemove { path: rel_path.clone() },
-                            baseline,
-                        ));
-                    }
-                    report.scan.errors.push(error);
-                }
+            let read = read_listed_control_op(config, &root, &rel_path, kind);
+            listed_control.read(&name, &read);
+            push_read_control(target, &rel_path, baseline, read, batch, report)?;
+            if batch.len() >= config.batch_size.max(1) {
+                flush_reconcile_batch(target, batch, sink, report)?;
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
@@ -5628,7 +5819,7 @@ fn reconcile_target_inner(
                     entry.kind,
                     entry.attrs,
                     baseline,
-                    &mut control_seen,
+                    &mut listed_control,
                     target,
                     &mut queue,
                     &mut batch,
@@ -5698,7 +5889,7 @@ fn reconcile_target_inner(
                         continue;
                     }
                     Err(error) => {
-                        control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                        listed_control.listed(&name);
                         report.scan.errors.push(Error::io(item.path(), error));
                         if baseline.state != PathState::Absent {
                             batch.push(ObservationOp::if_state(
@@ -5724,7 +5915,7 @@ fn reconcile_target_inner(
                     kind,
                     attrs,
                     baseline,
-                    &mut control_seen,
+                    &mut listed_control,
                     target,
                     &mut queue,
                     &mut batch,
@@ -5735,12 +5926,19 @@ fn reconcile_target_inner(
         }
 
         for (name, baseline) in known {
+            let restatement = listed_control.restatement_after_removing(&name);
             batch.push(ObservationOp::if_state(Op::Remove { path: rel_dir.join(name) }, baseline));
+            // Before the batch can be flushed, so the rules the removal drops are back in the
+            // same commit.
+            if let Some(control) = restatement {
+                let guard = target.expectation(&control_path)?;
+                batch.push(ObservationOp::if_state(control, guard));
+            }
             if batch.len() >= config.batch_size.max(1) {
                 flush_reconcile_batch(target, &mut batch, sink, &mut report)?;
             }
         }
-        if had_control && !control_seen {
+        if had_control && !listed_control.seen {
             let baseline = target.expectation(&control_path)?;
             batch.push(ObservationOp::if_state(Op::ControlRemove { path: control_path }, baseline));
         }
@@ -5767,6 +5965,11 @@ struct DeferredReconcile {
     scan: ScanReport,
     unchanged: u64,
     operations: Vec<Op>,
+    /// Each removal of a stale `.gitignore` entry whose rules a case variant now holds,
+    /// followed by the restatement of those rules (`ListedControl`). Applied after the
+    /// wave's sorted operations, in one batch, because the sort moves every removal after
+    /// every other operation and a batch boundary could fall between the two.
+    restated: Vec<Op>,
     discovered: Vec<(PathBuf, usize, RegionId)>,
     listed_incomplete: Vec<PathBuf>,
 }
@@ -5873,12 +6076,14 @@ fn reconcile_direct_parallel(
 
         let operation_count = deferred_count.load(std::sync::atomic::Ordering::Relaxed);
         let mut operations = Vec::with_capacity(operation_count);
+        let mut restated = Vec::new();
         for worker in results {
             report.listed_incomplete.extend(worker.listed_incomplete);
             report.scan.absorb(worker.scan);
             report.apply.unchanged += worker.unchanged;
             report.observations = report.observations.saturating_add(worker.unchanged);
             operations.extend(worker.operations);
+            restated.extend(worker.restated);
             for directory in worker.discovered {
                 frontier.push(directory, config.order);
             }
@@ -5886,6 +6091,7 @@ fn reconcile_direct_parallel(
         apply_deferred_reconcile(
             index,
             &mut operations,
+            restated,
             config,
             sink,
             &mut report.apply,
@@ -5899,6 +6105,7 @@ fn reconcile_direct_parallel(
 fn apply_deferred_reconcile(
     index: &mut Index,
     operations: &mut Vec<Op>,
+    restated: Vec<Op>,
     config: &ScanConfig,
     sink: &mut dyn FnMut(&Commit),
     stats: &mut ApplyStats,
@@ -5930,7 +6137,10 @@ fn apply_deferred_reconcile(
             flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)?;
         }
     }
-    flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)
+    flush_direct_reconcile_batch(index, &mut batch, sink, stats, observations)?;
+    // Whole, so no commit shows a directory without the rules a restatement puts back.
+    let mut restated = restated;
+    flush_direct_reconcile_batch(index, &mut restated, sink, stats, observations)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5963,7 +6173,7 @@ fn reconcile_wave_worker(
             let abs_dir = root.join(rel_dir);
             let control_path = rel_dir.join(crate::control::CONTROL_FILE_NAME);
             let mut had_control = index.control_table().contains(&control_path);
-            let mut control_seen = false;
+            let mut listed_control = ListedControl::default();
             let mut control_errors = Vec::new();
             let mut vanished = Vec::new();
             let mut unverified = Vec::new();
@@ -5976,9 +6186,9 @@ fn reconcile_wave_worker(
                      kind: EntryKind,
                      attrs: Attrs,
                      baseline: PathExpectation,
-                     control_seen: &mut bool| {
+                     listed_control: &mut ListedControl| {
                         let rel_path = rel_dir.join(&name);
-                        *control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                        listed_control.listed(&name);
                         let disposition = crate::admission::decide(
                             &name,
                             kind,
@@ -5998,7 +6208,9 @@ fn reconcile_wave_worker(
                             return;
                         }
                         if disposition == crate::admission::Disposition::ControlOnly {
-                            match read_control_op(config, root, &rel_path, kind) {
+                            let read = read_control_op(config, root, &rel_path, kind);
+                            listed_control.read(&name, &read);
+                            match read {
                                 Ok(Some(Op::ControlUpsert { path, source })) => {
                                     if !index.control_table().source_is(&path, &source) {
                                         defer_reconcile_op(
@@ -6046,7 +6258,9 @@ fn reconcile_wave_worker(
                                 max_deferred_ops,
                             );
                         }
-                        match read_control_op(config, root, &rel_path, kind) {
+                        let read = read_control_op(config, root, &rel_path, kind);
+                        listed_control.read(&name, &read);
+                        match read {
                             Ok(Some(Op::ControlUpsert { path, source })) => {
                                 if !index.control_table().source_is(&path, &source) {
                                     defer_reconcile_op(
@@ -6058,10 +6272,28 @@ fn reconcile_wave_worker(
                                     );
                                 }
                             }
+                            // The exact name's upsert as a non-file drops its rules by
+                            // itself; a case variant's does not, so its lookup's removal
+                            // is sent.
+                            Ok(Some(Op::ControlRemove { path }))
+                                if crate::control::control_spelling(&name)
+                                    == Some(crate::control::ControlSpelling::Variant)
+                                    && index.control_table().contains(&path) =>
+                            {
+                                defer_reconcile_op(
+                                    Op::ControlRemove { path },
+                                    &mut result.operations,
+                                    deferred_count,
+                                    overflowed,
+                                    max_deferred_ops,
+                                );
+                            }
                             Ok(Some(_) | None) => {}
                             Err(error) => {
                                 control_errors.push(error);
-                                control_read_failed |= name == crate::control::CONTROL_FILE_NAME;
+                                // The failed read was of the directory's control, through
+                                // the entry for the exact name and a lookup for a variant.
+                                control_read_failed = true;
                             }
                         }
 
@@ -6096,7 +6328,7 @@ fn reconcile_wave_worker(
                             entry.kind,
                             entry.attrs,
                             baseline,
-                            &mut control_seen,
+                            &mut listed_control,
                         );
                     }
                     true
@@ -6141,13 +6373,13 @@ fn reconcile_wave_worker(
                                     continue;
                                 }
                                 Err(error) => {
-                                    control_seen |= name == crate::control::CONTROL_FILE_NAME;
+                                    listed_control.listed(&name);
                                     result.scan.errors.push(Error::io(item.path(), error));
                                     unverified.push((name, baseline.state != PathState::Absent));
                                     continue;
                                 }
                             };
-                            process_entry(name, kind, attrs, baseline, &mut control_seen);
+                            process_entry(name, kind, attrs, baseline, &mut listed_control);
                         }
                     }
                 }
@@ -6188,15 +6420,30 @@ fn reconcile_wave_worker(
                 }
             }
             for (name, _) in known {
-                defer_reconcile_op(
-                    Op::Remove { path: rel_dir.join(name) },
-                    &mut result.operations,
-                    deferred_count,
-                    overflowed,
-                    max_deferred_ops,
-                );
+                let restatement = listed_control.restatement_after_removing(&name);
+                let removal = Op::Remove { path: rel_dir.join(name) };
+                match restatement {
+                    Some(control) => {
+                        for operation in [removal, control] {
+                            defer_reconcile_op(
+                                operation,
+                                &mut result.restated,
+                                deferred_count,
+                                overflowed,
+                                max_deferred_ops,
+                            );
+                        }
+                    }
+                    None => defer_reconcile_op(
+                        removal,
+                        &mut result.operations,
+                        deferred_count,
+                        overflowed,
+                        max_deferred_ops,
+                    ),
+                }
             }
-            if had_control && (!control_seen || control_read_failed) {
+            if had_control && (!listed_control.seen || control_read_failed) {
                 defer_reconcile_op(
                     Op::ControlRemove { path: control_path },
                     &mut result.operations,
@@ -6211,6 +6458,170 @@ fn reconcile_wave_worker(
         tally.flush(&result.scan);
     }
     result
+}
+
+/// What one reconciliation listing has shown about its directory's control file.
+///
+/// A listing names the control by the spelling the directory stores. The exact name
+/// `.gitignore` is the control wherever it is listed, so listing it proves a control
+/// present even when its read then fails. A case variant is the control only where a
+/// lookup of `.gitignore` resolves to it (`read_control_op`), so what listing one proves is
+/// what that lookup returned: a control when it found one, nothing when it missed, and
+/// nothing when the variant's own metadata could not be read and no lookup was made.
+/// That last case leaves the rules unknown, which the walk error records
+/// (`crate::control::unreadable_control`); the sweep removes rules nothing showed, so the
+/// table ends as a cold walk's does, having read nothing there either.
+#[derive(Default)]
+struct ListedControl {
+    /// The listing showed the directory's control, or failed to read it, so the closing
+    /// sweep must not remove it.
+    seen: bool,
+    /// The listing showed a case variant of the control name, such as `.GITIGNORE`.
+    variant_listed: bool,
+    /// The last control a lookup of the canonical path found during this listing: a
+    /// listed case variant's, or a narrowed walk's before the listing.
+    ///
+    /// A case-only rename on a case-insensitive volume (`.gitignore` to `.GITIGNORE`) leaves
+    /// the old spelling's entry in the index, and the closing sweep removes it. Removing
+    /// the entry at the canonical path drops the rules it governs
+    /// (`Index::projected_controls`), yet those rules are now the variant's, so when this
+    /// listing showed the variant the sweep restates this observation right after that
+    /// removal ([`Self::restatement_after_removing`]).
+    looked_up: Option<Op>,
+}
+
+impl ListedControl {
+    /// Note that `name` was listed, before its metadata or its control is read.
+    fn listed(&mut self, name: &OsStr) {
+        match crate::control::control_spelling(name) {
+            Some(crate::control::ControlSpelling::Exact) => self.seen = true,
+            Some(crate::control::ControlSpelling::Variant) => self.variant_listed = true,
+            None => {}
+        }
+    }
+
+    /// Note what reading the control through the listed `name` returned. Only a case
+    /// variant's read is a lookup; the exact name already counted when it was listed.
+    fn read(&mut self, name: &OsStr, read: &Result<Option<Op>>) {
+        if crate::control::control_spelling(name) == Some(crate::control::ControlSpelling::Variant)
+        {
+            self.lookup(read);
+        }
+    }
+
+    /// Note what a lookup of the directory's canonical control path returned.
+    fn lookup(&mut self, lookup: &Result<Option<Op>>) {
+        match lookup {
+            Ok(Some(observed)) => {
+                self.seen = true;
+                self.looked_up = Some(observed.clone());
+            }
+            Ok(None) => {}
+            Err(_) => self.seen = true,
+        }
+    }
+
+    /// The observation to push right after the sweep removes the entry `name`: what the
+    /// lookup found, when `name` is the stale exact spelling and this listing showed a case
+    /// variant in its place.
+    ///
+    /// Only a listed variant can hold rules the removal would drop. Without one, the exact
+    /// file is simply gone: a narrowed walk's lookup found it before the listing and it was
+    /// deleted in between, and the removal leaves the table as bare as the directory, as a
+    /// cold walk would. Restating that lookup would keep rules for a file that no longer
+    /// exists until the next pass. That window remains only where a case-sensitive
+    /// directory stores a variant beside the exact file deleted in it, a variant that never
+    /// held the rules there.
+    fn restatement_after_removing(&self, name: &OsStr) -> Option<Op> {
+        if name == crate::control::CONTROL_FILE_NAME && self.variant_listed {
+            self.looked_up.clone()
+        } else {
+            None
+        }
+    }
+}
+
+/// The expectation that guards the control observation a listed entry at `path` produced,
+/// given the entry's own, `entry`.
+///
+/// A guard is the expectation of the path its operation names. That is the entry's path
+/// for the exact name, but a case variant's observation names the canonical control path,
+/// so only a variant pays for `expect` to read that path's expectation. Asked only once an
+/// observation exists, so an ordinary entry never pays for it.
+fn control_guard<T>(path: &Path, entry: T, expect: impl FnOnce(&Path) -> T) -> T {
+    match crate::control::path_control_spelling(path) {
+        Some(crate::control::ControlSpelling::Variant) => {
+            expect(&crate::control::sibling_control_path(path))
+        }
+        _ => entry,
+    }
+}
+
+/// Push what reading the control through the entry at `path` returned: the observation,
+/// guarded by the expectation of the path it names ([`control_guard`]), or, when the read
+/// failed, the removal of rules the table holds there, since nothing verifies them now.
+fn push_read_control(
+    target: &ReconcileTarget<'_>,
+    path: &Path,
+    baseline: PathExpectation,
+    read: Result<Option<Op>>,
+    batch: &mut Vec<ObservationOp>,
+    report: &mut ReconcileReport,
+) -> Result<()> {
+    match read {
+        Ok(Some(control)) => {
+            let guard = control_guard(path, Ok(baseline), |named| target.expectation(named))?;
+            batch.push(ObservationOp::if_state(control, guard));
+        }
+        Ok(None) => {}
+        Err(error) => {
+            // The failed read was of the entry itself for the exact name, and of the
+            // canonical path a case variant looked up: the canonical path either way.
+            let control_path = crate::control::sibling_control_path(path);
+            if target.has_control(&control_path)? {
+                let guard = control_guard(path, Ok(baseline), |named| target.expectation(named))?;
+                batch
+                    .push(ObservationOp::if_state(Op::ControlRemove { path: control_path }, guard));
+            }
+            report.scan.errors.push(error);
+        }
+    }
+    Ok(())
+}
+
+/// Push what a reconcile root at `path` that vanished, or could not be observed, leaves of
+/// its directory's control, when `path` spells the control name.
+///
+/// The exact name was the lookup's target, so its loss removes the rules the table holds,
+/// as it always has. A case variant's loss says nothing by itself: another spelling may
+/// still resolve, or the variant was never the control, so the canonical path is looked
+/// up and its answer stands, a miss removing the rules.
+fn push_lost_spelling_control(
+    target: &ReconcileTarget<'_>,
+    root: &Path,
+    config: &ScanConfig,
+    path: &Path,
+    baseline: PathExpectation,
+    batch: &mut Vec<ObservationOp>,
+    report: &mut ReconcileReport,
+) -> Result<()> {
+    match crate::control::path_control_spelling(path) {
+        Some(crate::control::ControlSpelling::Exact) => {
+            if target.has_control(path)? {
+                batch.push(ObservationOp::if_state(
+                    Op::ControlRemove { path: path.to_path_buf() },
+                    baseline,
+                ));
+            }
+        }
+        Some(crate::control::ControlSpelling::Variant) => {
+            let control_path = crate::control::sibling_control_path(path);
+            let read = read_directory_control_or_removal(config, root, &control_path);
+            push_read_control(target, path, baseline, read, batch, report)?;
+        }
+        None => {}
+    }
+    Ok(())
 }
 
 /// What a listed child gone at its stat removes: its entry, if the baseline holds one, and
@@ -6906,6 +7317,64 @@ mod tests {
         assert_eq!(report.bytes_walked, expected_bytes);
     }
 
+    /// Publish one listing through `emission` and receive what the consumer would.
+    fn publish_detached(
+        emission: &mut DetachedEmission,
+        directory: DetachedDirectory,
+        sender: &std::sync::mpsc::Sender<WalkMessage>,
+        receiver: &std::sync::mpsc::Receiver<WalkMessage>,
+    ) -> (Vec<DetachedDirectory>, std::sync::mpsc::Sender<Vec<DetachedDirectory>>) {
+        emission.finish_directory(directory);
+        let mut send_ns = 0;
+        assert!(emission.publish_before_discovery(true, sender, &mut send_ns, None));
+        match receiver.try_recv().expect("a published chunk") {
+            WalkMessage::DetachedDirectories { directories, recycle } => (directories, recycle),
+            _ => panic!("the detached walker publishes only listings"),
+        }
+    }
+
+    #[test]
+    fn detached_emission_reuses_returned_listings_as_fresh_ones() {
+        // H159: the consumer hands drained listings back to the worker that allocated
+        // them. A reused listing must be indistinguishable from a fresh one, including
+        // after the consumer returned it unapplied, as it does after a build error.
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut emission = DetachedEmission::new();
+
+        let mut skipped = emission.begin_directory(Path::new("a/much/longer/relative/path"));
+        skipped.children.push(DetachedChild {
+            name: OsString::from("stale.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs::default(),
+            position: 0,
+        });
+        skipped.control = Some(Op::ControlRemove { path: PathBuf::from("a/.gitignore") });
+        let (directories, recycle) = publish_detached(&mut emission, skipped, &sender, &receiver);
+        let returned_list = directories.as_ptr();
+        let returned_children = directories[0].children.as_ptr();
+        recycle.send(directories).expect("the worker still listens");
+
+        // Returned listings are taken back at the next publish, so this one is fresh.
+        let mut large = emission.begin_directory(Path::new("large"));
+        assert_eq!(large.children.capacity(), 0);
+        large.children.reserve_exact(DETACHED_SPARE_CHILD_CAPACITY + 1);
+        let (directories, recycle) = publish_detached(&mut emission, large, &sender, &receiver);
+        recycle.send(directories).expect("the worker still listens");
+
+        let reused = emission.begin_directory(Path::new("b"));
+        assert_eq!(reused.path.as_os_str(), OsStr::new("b"));
+        assert!(reused.children.is_empty(), "a returned listing's children are dropped");
+        assert!(reused.control.is_none(), "a returned listing's control is dropped");
+        assert_eq!(reused.children.as_ptr(), returned_children, "the child buffer is reused");
+        let (directories, _recycle) = publish_detached(&mut emission, reused, &sender, &receiver);
+        assert_eq!(directories.as_ptr(), returned_list, "the published list is reused");
+
+        // The large listing came back past the retention bound and was freed instead.
+        let fresh = emission.begin_directory(Path::new("c"));
+        assert_eq!(fresh.path.as_os_str(), OsStr::new("c"));
+        assert_eq!(fresh.children.capacity(), 0);
+    }
+
     /// A transient fold that reads `.gitignore` receives each directory's control, once,
     /// ahead of every entry in that directory, whatever the batch size, the worker count,
     /// or where `.gitignore` falls in the listing (fdu-1ovb). Its consumer classifies each
@@ -6969,40 +7438,532 @@ mod tests {
         }
     }
 
-    /// A probe for a directory's control accepts only the name a listing accepts.
-    ///
-    /// On a case-insensitive volume a lookup of `.gitignore` finds `.GITIGNORE`, which no
-    /// listing and no index takes as a control, so the probe must not either; on a
-    /// case-sensitive volume the lookup already misses it.
+    /// A directory's control is what a lookup of `<dir>/.gitignore` resolves to, as git
+    /// opens it (fdu-0w1b). A listed `.GITIGNORE` reads exactly what that lookup finds,
+    /// named by the canonical path: its rules where the directory is case-insensitive, and
+    /// nothing where it is not. The probe a transient fold makes is that same lookup.
     #[test]
-    fn a_directory_control_probe_accepts_only_the_exact_name() {
+    fn a_directory_control_is_what_a_lookup_of_its_canonical_path_resolves_to() {
+        use crate::test_support::CaseLookups;
+
         let dir = tempfile::tempdir().expect("tempdir");
         write_file(&dir.path().join("exact/.gitignore"), b"*.log\n");
-        write_file(&dir.path().join("exact/kept.txt"), b"kept");
-        write_file(&dir.path().join("variant/.GITIGNORE"), b"*.log\n");
-        write_file(&dir.path().join("variant/kept.txt"), b"kept");
-        fs::create_dir(dir.path().join("absent")).expect("directory");
+        write_file(&dir.path().join("variant/.GITIGNORE"), b"*.tmp\n");
+        fs::create_dir_all(dir.path().join("shape/.GitIgnore")).expect("a directory so named");
+        write_file(&dir.path().join("absent/README"), b"no rules");
         let config = ScanConfig::default();
-        let probe = |directory: &str| {
-            probe_directory_control(&config, dir.path(), &Path::new(directory).join(".gitignore"))
-                .expect("probe")
+        let upsert = |path: &str, source: &[u8]| {
+            Some(Op::ControlUpsert { path: PathBuf::from(path), source: source.to_vec() })
         };
 
-        assert_eq!(
-            probe("exact"),
-            Some(Op::ControlUpsert {
-                path: PathBuf::from("exact/.gitignore"),
-                source: b"*.log\n".to_vec()
-            })
-        );
-        assert_eq!(probe("variant"), None, "a case variant is not a control file");
-        assert_eq!(probe("absent"), None);
-        if fs::symlink_metadata(dir.path().join("variant/.gitignore")).is_err() {
-            eprintln!(
-                "this volume is case-sensitive, so the lookup itself missed the variant and \
-                 the exact-name confirmation was not exercised"
+        for (lookups, insensitive) in CaseLookups::on_this_host(dir.path()) {
+            let _lookups = lookups.install(dir.path());
+            let label = format!("{lookups:?} lookups");
+            let lookup = |directory: &str| {
+                read_directory_control(
+                    &config,
+                    dir.path(),
+                    &Path::new(directory).join(".gitignore"),
+                )
+                .expect("lookup")
+            };
+            let listed = |path: &str, kind| {
+                read_control_op(&config, dir.path(), Path::new(path), kind).expect("listed read")
+            };
+
+            assert_eq!(lookup("exact"), upsert("exact/.gitignore", b"*.log\n"), "{label}");
+            assert_eq!(listed("exact/.gitignore", EntryKind::File), lookup("exact"), "{label}");
+            assert_eq!(
+                lookup("variant"),
+                if insensitive { upsert("variant/.gitignore", b"*.tmp\n") } else { None },
+                "{label}"
+            );
+            assert_eq!(
+                listed("variant/.GITIGNORE", EntryKind::File),
+                lookup("variant"),
+                "{label}: a listed variant reads what the lookup finds"
+            );
+            assert_eq!(
+                listed("shape/.GitIgnore", EntryKind::Dir),
+                insensitive.then(|| Op::ControlRemove { path: PathBuf::from("shape/.gitignore") }),
+                "{label}: a directory is resolved to, and holds no rules"
+            );
+            assert_eq!(lookup("absent"), None, "{label}");
+            assert_eq!(listed("absent/README", EntryKind::File), None, "{label}");
+
+            let blind = ScanConfig { read_controls: false, ..ScanConfig::default() };
+            assert_eq!(
+                read_control_op(
+                    &blind,
+                    dir.path(),
+                    Path::new("variant/.GITIGNORE"),
+                    EntryKind::File
+                )
+                .expect("read"),
+                None,
+                "{label}: a scan that reads no rules looks nothing up"
             );
         }
+    }
+
+    /// Every entry's kind and ignored classification, and every retained control source:
+    /// what a route's index says about a tree's `.gitignore` rules.
+    type Classification = (BTreeMap<PathBuf, (EntryKind, Option<bool>)>, Vec<(PathBuf, Vec<u8>)>);
+
+    fn classification(index: &Index) -> Classification {
+        let mut entries = BTreeMap::new();
+        let mut pending = vec![PathBuf::new()];
+        while let Some(directory) = pending.pop() {
+            let children: Vec<(PathBuf, crate::EntryId)> = index
+                .children(&directory)
+                .into_iter()
+                .flatten()
+                .map(|(name, id)| (directory.join(name), id))
+                .collect();
+            for (path, id) in children {
+                let kind = index.kind_of(id).expect("a live child");
+                entries.insert(path.clone(), (kind, index.is_ignored(&path).expect("observed")));
+                if kind.is_dir() {
+                    pending.push(path);
+                }
+            }
+        }
+        let sources = index
+            .controls()
+            .expect("observed")
+            .sources()
+            .map(|(path, source)| (path, source.to_vec()))
+            .collect();
+        (entries, sources)
+    }
+
+    /// A tree whose `up` directory holds its rules only in a case variant of the control
+    /// name, beside a root `.gitignore` those rules partly override.
+    fn case_variant_tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join(".gitignore"), b"*.log\n");
+        write_file(&dir.path().join("a.log"), b"root rule");
+        write_file(&dir.path().join("keep.txt"), b"kept");
+        write_file(&dir.path().join("up/.GITIGNORE"), b"*.tmp\n!keep.log\nbuild/\n");
+        write_file(&dir.path().join("up/x.tmp"), b"variant rule");
+        write_file(&dir.path().join("up/keep.log"), b"negated by the variant");
+        write_file(&dir.path().join("up/y.log"), b"root rule");
+        write_file(&dir.path().join("up/build/out.bin"), b"variant rule");
+        write_file(&dir.path().join("up/deep/z.tmp"), b"variant rule");
+        for file in 0..12 {
+            write_file(&dir.path().join(format!("up/f{file:02}.dat")), b"unignored");
+        }
+        dir
+    }
+
+    /// What [`case_variant_tree`] classifies where its variant does and does not govern.
+    fn assert_case_variant_classification(classified: &Classification, governs: bool, label: &str) {
+        let (entries, sources) = classified;
+        let ignored = |path: &str| entries.get(Path::new(path)).map(|(_, ignored)| *ignored);
+        assert_eq!(ignored("a.log"), Some(Some(true)), "{label}");
+        assert_eq!(ignored("up/y.log"), Some(Some(true)), "{label}");
+        assert_eq!(ignored("up/x.tmp"), Some(Some(governs)), "{label}");
+        assert_eq!(ignored("up/deep/z.tmp"), Some(Some(governs)), "{label}");
+        assert_eq!(ignored("up/build"), Some(Some(governs)), "{label}");
+        assert_eq!(ignored("up/build/out.bin"), Some(Some(governs)), "{label}");
+        assert_eq!(ignored("up/keep.log"), Some(Some(!governs)), "{label}: negation");
+        assert_eq!(ignored("up/f00.dat"), Some(Some(false)), "{label}");
+        let governing: Vec<&Path> = sources.iter().map(|(path, _)| path.as_path()).collect();
+        let expected: Vec<&Path> = if governs {
+            vec![Path::new(".gitignore"), Path::new("up/.gitignore")]
+        } else {
+            vec![Path::new(".gitignore")]
+        };
+        assert_eq!(governing, expected, "{label}: rules are recorded by the canonical path");
+    }
+
+    /// The detached builder, the retained scanner stream (serial and concurrent), and the
+    /// narrowed-population walks classify a tree whose rules sit in `.GITIGNORE` alike, and
+    /// apply those rules exactly where a lookup of `.gitignore` resolves to it (fdu-0w1b).
+    /// Hidden pruning keeps the variant a control signal, as it keeps `.gitignore` one.
+    #[test]
+    fn every_cold_route_classifies_a_case_variant_control_alike() {
+        use crate::test_support::CaseLookups;
+
+        let dir = case_variant_tree();
+        let root = dir.path();
+        let pruned = Some(std::sync::Arc::new(crate::HiddenPolicy::prune_hidden(Vec::<
+            std::ffi::OsString,
+        >::new())));
+        for (lookups, governs) in CaseLookups::on_this_host(root) {
+            let _lookups = lookups.install(root);
+            let reference = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+            let (index, report) = scan_into_index(root, &reference).expect("detached scan");
+            assert!(report.is_complete(), "{:?}", report.errors);
+            let expected = classification(&index);
+            assert_case_variant_classification(&expected, governs, &format!("{lookups:?}"));
+
+            for threads in [Some(1), Some(4)] {
+                for batch_size in [ScanConfig::default().batch_size, 1, 3] {
+                    let config = ScanConfig { batch_size, threads, ..ScanConfig::default() };
+                    let label = format!("{lookups:?}, {threads:?} workers, batch {batch_size}");
+                    let (detached, _) = scan_into_index(root, &config).expect("detached");
+                    assert_eq!(classification(&detached), expected, "{label}: detached");
+                    let (streamed, _) = scan_into_index_via_scanner(root, &config).expect("stream");
+                    assert_eq!(classification(&streamed), expected, "{label}: scanner stream");
+                }
+            }
+
+            // Pruning hidden entries drops the variant's row, never its rules.
+            let hidden = ScanConfig { hidden: pruned.clone(), ..ScanConfig::default() };
+            let (without_hidden, _) = scan_into_index(root, &hidden).expect("hidden pruned");
+            let (entries, sources) = classification(&without_hidden);
+            assert_eq!(sources, expected.1, "{lookups:?}: hidden pruning keeps the rules");
+            for (path, fact) in &entries {
+                assert_eq!(expected.0.get(path), Some(fact), "{lookups:?}: {path:?}");
+            }
+            assert!(!entries.contains_key(Path::new("up/.GITIGNORE")), "{lookups:?}");
+
+            // A narrowed population reads each control before listing its directory, which
+            // is the lookup itself; it keeps every spelling's row, as it keeps `.gitignore`.
+            let spelled = |path: &Path| crate::control::path_control_spelling(path).is_some();
+            for population in
+                [crate::query::IgnoredEntries::Exclude, crate::query::IgnoredEntries::Only]
+            {
+                let config = ScanConfig { population, ..ScanConfig::default() };
+                let (narrowed, report) = scan_into_index(root, &config).expect("narrowed");
+                assert!(report.is_complete(), "{:?}", report.errors);
+                let (entries, sources) = classification(&narrowed);
+                let label = format!("{lookups:?}, {population:?}");
+                assert_eq!(sources, expected.1, "{label}");
+                let files =
+                    |entries: &BTreeMap<PathBuf, (EntryKind, Option<bool>)>| -> Vec<PathBuf> {
+                        entries
+                            .iter()
+                            .filter(|(_, (kind, _))| *kind == EntryKind::File)
+                            .map(|(path, _)| path.clone())
+                            .collect()
+                    };
+                let wanted: BTreeMap<PathBuf, (EntryKind, Option<bool>)> = expected
+                    .0
+                    .iter()
+                    .filter(|(path, (_, ignored))| {
+                        spelled(path)
+                            || match population {
+                                crate::query::IgnoredEntries::Exclude => *ignored == Some(false),
+                                _ => *ignored == Some(true),
+                            }
+                    })
+                    .map(|(path, fact)| (path.clone(), *fact))
+                    .collect();
+                assert_eq!(files(&entries), files(&wanted), "{label}: retained files");
+            }
+        }
+    }
+
+    /// Reconciliation keeps a case-variant control exactly as a cold walk finds it through
+    /// every change: a case-only rename of `.gitignore` to `.GITIGNORE`, an edit, a
+    /// removal, and a refresh of the variant's own path after it is created and after it
+    /// is gone. Serial and parallel reconciliation, and revalidation, agree with a cold
+    /// walk after each (fdu-0w1b).
+    ///
+    /// The rename is the case a canonical path cannot follow on its own: the index still
+    /// holds the old `.gitignore` entry, and removing an entry at the canonical path drops
+    /// the rules it governs, which on a case-insensitive directory the variant still holds.
+    #[test]
+    fn reconciliation_follows_a_case_variant_control_through_every_change() {
+        use crate::test_support::CaseLookups;
+
+        let probe = tempfile::tempdir().expect("tempdir");
+        for (lookups, governs) in CaseLookups::on_this_host(probe.path()) {
+            for threads in [Some(1), Some(4)] {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let root = dir.path().canonicalize().expect("canonical root");
+                let _lookups = lookups.install(&root);
+                let config = ScanConfig { threads, batch_size: 3, ..ScanConfig::default() };
+                write_file(&root.join(".gitignore"), b"*.log\n");
+                write_file(&root.join("up/.gitignore"), b"*.tmp\n");
+                write_file(&root.join("up/x.tmp"), b"governed");
+                write_file(&root.join("up/y.bin"), b"governed after the edit");
+                for file in 0..8 {
+                    write_file(&root.join(format!("up/f{file}.dat")), b"unignored");
+                }
+                let (mut index, _) = scan_into_index(&root, &config).expect("cold scan");
+                let cold = |label: &str| {
+                    let (cold, report) = scan_into_index(&root, &config).expect("cold");
+                    assert!(report.is_complete(), "{label}: {:?}", report.errors);
+                    classification(&cold)
+                };
+                let reconciled = |index: &mut Index, label: &str| {
+                    let report = reconcile(index, &config, &mut |_| {}).expect("reconcile");
+                    assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                    assert_eq!(report.apply.stale, 0, "{label}: no observation lost a race");
+                };
+                let revalidated = |snapshot: &Index, label: &str| {
+                    let mut revalidated = snapshot.clone();
+                    let mut observations = Vec::new();
+                    revalidate(&revalidated, &config, &mut |observation| {
+                        observations.push(observation);
+                    })
+                    .expect("revalidate");
+                    for observation in &observations {
+                        let outcome = revalidated.apply(observation).expect("apply");
+                        assert_eq!(outcome.stats.stale, 0, "{label}: revalidation lost a race");
+                    }
+                    classification(&revalidated)
+                };
+                let governed = |label: &str| {
+                    let (entries, _) = cold(label);
+                    entries.get(Path::new("up/x.tmp")).map(|(_, ignored)| *ignored)
+                };
+
+                let before_rename = index.clone();
+                fs::rename(root.join("up/.gitignore"), root.join("up/.GITIGNORE")).expect("recase");
+                let label = format!("{lookups:?}, {threads:?} workers: case-only rename");
+                assert_eq!(governed(&label), Some(Some(governs)), "{label}");
+                assert_eq!(
+                    revalidated(&before_rename, &label),
+                    cold(&label),
+                    "{label}: revalidate"
+                );
+                reconciled(&mut index, &label);
+                assert_eq!(classification(&index), cold(&label), "{label}");
+
+                write_file(&root.join("up/.GITIGNORE"), b"*.bin\n");
+                let label = format!("{lookups:?}, {threads:?} workers: edit");
+                reconciled(&mut index, &label);
+                assert_eq!(classification(&index), cold(&label), "{label}");
+
+                fs::remove_file(root.join("up/.GITIGNORE")).expect("remove the variant");
+                let label = format!("{lookups:?}, {threads:?} workers: removal");
+                reconciled(&mut index, &label);
+                assert_eq!(classification(&index), cold(&label), "{label}");
+
+                // A refresh of the variant's own path looks the directory's control up
+                // whether the variant is there or gone.
+                write_file(&root.join("up/.GITIGNORE"), b"*.tmp\n");
+                for (step, label) in [
+                    (None, format!("{lookups:?}, {threads:?} workers: refresh of a new variant")),
+                    (
+                        Some(()),
+                        format!("{lookups:?}, {threads:?} workers: refresh of a removed variant"),
+                    ),
+                ] {
+                    if step.is_some() {
+                        fs::remove_file(root.join("up/.GITIGNORE")).expect("remove");
+                    }
+                    let report = reconcile_subtree(
+                        &mut index,
+                        Path::new("up/.GITIGNORE"),
+                        &config,
+                        &mut |_| {},
+                    )
+                    .expect("refresh");
+                    assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                    assert_eq!(classification(&index), cold(&label), "{label}");
+                }
+            }
+        }
+    }
+
+    /// Revalidate a copy of `index` and apply every observation it sends, none of which may
+    /// lose a race.
+    fn revalidated_copy(index: &Index, config: &ScanConfig, label: &str) -> Index {
+        let mut revalidated = index.clone();
+        let mut observations = Vec::new();
+        let report = revalidate(&revalidated, config, &mut |observation| {
+            observations.push(observation);
+        })
+        .expect("revalidate");
+        assert!(report.is_complete(), "{label}: {:?}", report.errors);
+        for observation in &observations {
+            let outcome = revalidated.apply(observation).expect("apply");
+            assert_eq!(outcome.stats.stale, 0, "{label}: revalidation lost a race");
+        }
+        revalidated
+    }
+
+    /// A narrowed population's reconciliation keeps a case-variant control through a
+    /// case-only rename, as a cold walk finds it. Its lookup before the listing is what
+    /// finds the variant's rules, and the listing shows the variant, so the sweep restates
+    /// the rules its removal of the stale `.gitignore` entry drops (fdu-0w1b).
+    #[test]
+    fn a_narrowed_reconciliation_follows_a_case_only_rename() {
+        use crate::test_support::CaseLookups;
+
+        let probe = tempfile::tempdir().expect("tempdir");
+        for (lookups, governs) in CaseLookups::on_this_host(probe.path()) {
+            for population in
+                [crate::query::IgnoredEntries::Exclude, crate::query::IgnoredEntries::Only]
+            {
+                let label = format!("{lookups:?}, {population:?}");
+                let dir = tempfile::tempdir().expect("tempdir");
+                let root = dir.path().canonicalize().expect("canonical root");
+                let _lookups = lookups.install(&root);
+                let config = ScanConfig { population, batch_size: 3, ..ScanConfig::default() };
+                write_file(&root.join("up/.gitignore"), b"*.tmp\n");
+                write_file(&root.join("up/x.tmp"), b"governed");
+                for file in 0..4 {
+                    write_file(&root.join(format!("up/f{file}.dat")), b"unignored");
+                }
+                let (mut index, _) = scan_into_index(&root, &config).expect("cold scan");
+                fs::rename(root.join("up/.gitignore"), root.join("up/.GITIGNORE")).expect("recase");
+                let (cold, report) = scan_into_index(&root, &config).expect("cold");
+                assert!(report.is_complete(), "{label}: {:?}", report.errors);
+                let cold = classification(&cold);
+                assert_eq!(
+                    cold.1.iter().any(|(path, _)| path == Path::new("up/.gitignore")),
+                    governs,
+                    "{label}: the variant governs exactly where the lookup resolves to it"
+                );
+
+                let revalidated = revalidated_copy(&index, &config, &label);
+                assert_eq!(classification(&revalidated), cold, "{label}: revalidate");
+                let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+                assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                assert_eq!(report.apply.stale, 0, "{label}: no observation lost a race");
+                assert_eq!(classification(&index), cold, "{label}: reconcile");
+            }
+        }
+    }
+
+    /// A narrowed population's reconciliation looks a directory's control up before
+    /// listing it. When the `.gitignore` that lookup found is deleted before the listing,
+    /// the sweep removes the stale entry, and the rules go with it: no case variant was
+    /// listed to hold them, so nothing is restated, and the table is as bare as the
+    /// directory. The next pass agrees with a cold walk.
+    #[test]
+    fn a_control_deleted_between_its_lookup_and_the_listing_leaves_no_rules() {
+        for population in
+            [crate::query::IgnoredEntries::Exclude, crate::query::IgnoredEntries::Only]
+        {
+            for revalidating in [true, false] {
+                let label = format!("{population:?}, revalidating: {revalidating}");
+                let dir = tempfile::tempdir().expect("tempdir");
+                let root = dir.path().canonicalize().expect("canonical root");
+                let config = ScanConfig { population, ..ScanConfig::default() };
+                write_file(&root.join("up/.gitignore"), b"*.tmp\n");
+                write_file(&root.join("up/x.tmp"), b"governed");
+                write_file(&root.join("up/y.dat"), b"unignored");
+                let control_path = Path::new("up/.gitignore");
+                let (mut index, _) = scan_into_index(&root, &config).expect("cold scan");
+                assert!(index.control_table().contains(control_path), "{label}");
+
+                let control = root.join(control_path);
+                let deleted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let hook_deleted = std::sync::Arc::clone(&deleted);
+                let race = install_walk_hook(&root, move |point| {
+                    if let WalkHookPoint::ControlLookup(looked_up) = point {
+                        if looked_up == control && fs::remove_file(looked_up).is_ok() {
+                            hook_deleted.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    }
+                    None
+                });
+                if revalidating {
+                    index = revalidated_copy(&index, &config, &label);
+                } else {
+                    let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+                    assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                }
+                drop(race);
+                assert!(
+                    deleted.load(std::sync::atomic::Ordering::SeqCst),
+                    "{label}: the lookup found the control before it was deleted"
+                );
+                assert_eq!(index.path_state(control_path), PathState::Absent, "{label}");
+                assert!(
+                    !index.control_table().contains(control_path),
+                    "{label}: no rules remain for a file that is gone"
+                );
+
+                let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+                assert!(report.is_complete(), "{label}: {:?}", report.scan.errors);
+                let (cold, _) = scan_into_index(&root, &config).expect("cold");
+                assert_eq!(classification(&index), classification(&cold), "{label}");
+            }
+        }
+    }
+
+    /// The sweep restates what a lookup found only after removing the stale `.gitignore`
+    /// entry of a listing that showed a case variant, the one spelling that can still hold
+    /// the rules that removal drops. Without a listed variant the exact file is gone, and
+    /// so are its rules.
+    #[test]
+    fn a_listing_restates_looked_up_rules_only_after_showing_a_case_variant() {
+        let found =
+            Op::ControlUpsert { path: PathBuf::from("up/.gitignore"), source: b"*.tmp\n".to_vec() };
+        let exact = OsStr::new(".gitignore");
+
+        let mut deleted = ListedControl::default();
+        deleted.lookup(&Ok(Some(found.clone())));
+        deleted.listed(OsStr::new("x.tmp"));
+        assert_eq!(deleted.restatement_after_removing(exact), None, "the exact file is gone");
+
+        let mut recased = ListedControl::default();
+        recased.lookup(&Ok(Some(found.clone())));
+        recased.listed(OsStr::new(".GITIGNORE"));
+        assert_eq!(recased.restatement_after_removing(exact), Some(found.clone()));
+        assert_eq!(
+            recased.restatement_after_removing(OsStr::new(".GitIgnore")),
+            None,
+            "only removing the canonical entry drops rules"
+        );
+        assert_eq!(recased.restatement_after_removing(OsStr::new("x.tmp")), None);
+
+        // An included population looks the control up through the listed variant itself.
+        let mut read = ListedControl::default();
+        read.listed(OsStr::new(".GitIgnore"));
+        read.read(OsStr::new(".GitIgnore"), &Ok(Some(found.clone())));
+        assert_eq!(read.restatement_after_removing(exact), Some(found));
+
+        let mut missed = ListedControl::default();
+        missed.lookup(&Ok(None));
+        missed.listed(OsStr::new(".GITIGNORE"));
+        assert_eq!(missed.restatement_after_removing(exact), None, "nothing was found");
+    }
+
+    /// Where a directory is case-sensitive it can list `.gitignore` beside `.GITIGNORE`,
+    /// and only the exact name governs, on every route and through every change: the
+    /// variant's lookup resolves to the exact file, and removing the variant leaves the
+    /// rules while removing the exact name takes them (fdu-0w1b).
+    #[test]
+    fn a_case_sensitive_directory_listing_both_spellings_takes_only_the_exact_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        write_file(&root.join(".gitignore"), b"*.log\n");
+        write_file(&root.join(".GITIGNORE"), b"*.tmp\n");
+        let listed = fs::read_dir(&root).expect("list").count();
+        if listed != 2 {
+            eprintln!(
+                "skipped: the temporary directory is case-insensitive, so it cannot hold both \
+                 spellings"
+            );
+            return;
+        }
+        write_file(&root.join("x.log"), b"exact rule");
+        write_file(&root.join("y.tmp"), b"variant, not a rule here");
+        let ignored =
+            |index: &Index, path: &str| index.is_ignored(Path::new(path)).expect("observed");
+
+        for threads in [Some(1), Some(4)] {
+            let config = ScanConfig { threads, batch_size: 1, ..ScanConfig::default() };
+            let (detached, _) = scan_into_index(&root, &config).expect("detached");
+            let (streamed, _) = scan_into_index_via_scanner(&root, &config).expect("stream");
+            for index in [&detached, &streamed] {
+                assert_eq!(ignored(index, "x.log"), Some(true), "{threads:?}");
+                assert_eq!(ignored(index, "y.tmp"), Some(false), "{threads:?}");
+                assert_eq!(classification(index), classification(&detached), "{threads:?}");
+            }
+        }
+
+        let config = ScanConfig::default();
+        let (mut index, _) = scan_into_index(&root, &config).expect("cold");
+        fs::remove_file(root.join(".GITIGNORE")).expect("remove the variant");
+        reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+        assert_eq!(ignored(&index, "x.log"), Some(true), "the exact name still governs");
+        write_file(&root.join(".GITIGNORE"), b"*.tmp\n");
+        fs::remove_file(root.join(".gitignore")).expect("remove the exact name");
+        reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+        assert_eq!(ignored(&index, "x.log"), Some(false), "no rules remain");
+        assert_eq!(ignored(&index, "y.tmp"), Some(false), "the variant never governs here");
+        let (cold, _) = scan_into_index(&root, &config).expect("cold");
+        assert_eq!(classification(&index), classification(&cold));
     }
 
     /// A listing whose control was already probed does not read its `.gitignore` again:
@@ -10511,6 +11472,7 @@ mod tests {
                 None
             }
             WalkHookPoint::ListingEnd => Some(std::io::Error::other("injected listing error")),
+            WalkHookPoint::ControlLookup(_) => None,
         })
     }
 
