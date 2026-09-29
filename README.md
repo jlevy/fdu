@@ -558,7 +558,8 @@ in a content cache so that a repeated run reads only changed files, and measures
 usage in the same pass.
 On the Linux kernel’s 59,953 C sources and headers, all three give the same code,
 comment, and blank counts for 59,766 files; scc differs on 22, where it counts form-feed
-lines as code, and tokei on 165, through three defects in its C parsing.
+lines as code, and tokei on 165: 107 through three defects in its C parsing, 55 through
+a different convention for a macro’s line splice after a comment, and 3 not attributed.
 See the
 [SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md).
 [cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs on
