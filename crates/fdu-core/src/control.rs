@@ -542,6 +542,32 @@ impl ControlTable {
         ControlChain { governing }
     }
 
+    /// The chain for `directory`'s children, derived from `above`, the chain resolved for
+    /// its parent's children, instead of resolved from the table again (H175).
+    ///
+    /// It is [`Self::chain_for`]'s answer whenever no control of a directory above
+    /// `directory` has changed since `above` was resolved: `above` then names every control
+    /// above `directory`, deepest first, and only `directory`'s own can be new, which goes
+    /// first. A parent-first build meets that condition, because each listing applies only
+    /// its own directory's control, before any of its children is listed. It costs one
+    /// lookup, and an allocation only when `directory` holds a control; a caller that
+    /// knows `directory` holds none, because its listing carried no control, can share
+    /// `above` without asking.
+    pub(crate) fn chain_below(
+        &self,
+        above: &Arc<ControlChain>,
+        directory: &Path,
+    ) -> Arc<ControlChain> {
+        let Some(source) = self.by_directory.get(directory) else {
+            return Arc::clone(above);
+        };
+        let depth = gitignore::with_components(directory, None, |components| components.len());
+        let mut governing = Vec::with_capacity(above.governing.len() + 1);
+        governing.push((depth, Arc::clone(source)));
+        governing.extend(above.governing.iter().cloned());
+        Arc::new(ControlChain { governing })
+    }
+
     /// Evaluate complete ignore semantics without relying on retained parent facts.
     ///
     /// The index hot path uses [`ControlMatcher::is_ignored`] with the parent's stored
@@ -757,24 +783,103 @@ pub(crate) struct ControlChain {
 }
 
 impl ControlChain {
+    /// Whether no control governs the directory, so none of its children is ignored.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.governing.is_empty()
+    }
+
+    /// Whether two chains name the same controls, as the same retained contents, at the
+    /// same depths and in the same order.
+    pub(crate) fn same_as(&self, other: &Self) -> bool {
+        self.governing.len() == other.governing.len()
+            && self
+                .governing
+                .iter()
+                .zip(&other.governing)
+                .all(|(left, right)| left.0 == right.0 && Arc::ptr_eq(&left.1, &right.1))
+    }
+
     /// Decide the child `name` of `directory`, the directory this chain was resolved for,
     /// assuming that directory is not ignored.
+    #[cfg(test)]
+    pub(crate) fn is_ignored(&self, directory: &Path, name: &[u8], is_dir: bool) -> bool {
+        with_directory_components(directory, |components| {
+            self.is_ignored_within(components, name, is_dir)
+        })
+    }
+
+    /// Decide the child `name` of the directory this chain was resolved for, given that
+    /// directory's normal components, assuming that directory is not ignored.
     ///
     /// The answer is [`ControlMatcher::is_ignored`]'s for `directory/name`: the deepest
     /// control with an opinion wins, each matching the path relative to its own directory.
-    pub(crate) fn is_ignored(&self, directory: &Path, name: &[u8], is_dir: bool) -> bool {
+    /// A caller classifying a whole listing splits the directory once, with
+    /// [`with_directory_components`], and the name is hashed once here for every control
+    /// that governs it (H171).
+    pub(crate) fn is_ignored_within(&self, directory: &[&[u8]], name: &[u8], is_dir: bool) -> bool {
         if self.governing.is_empty() {
             return false;
         }
-        gitignore::with_components(directory, Some(name), |components| {
-            self.governing
-                .iter()
-                .find_map(|(leading, source)| {
-                    let relative = components.get(*leading..).unwrap_or_default();
-                    source.matcher.matches_components(relative, is_dir)
-                })
-                .unwrap_or(false)
+        let name = gitignore::Name::new(name);
+        let mut tally = gitignore::Tally::default();
+        let ignored = self
+            .governing
+            .iter()
+            .find_map(|(leading, source)| {
+                let relative = directory.get(*leading..).unwrap_or_default();
+                source.matcher.decide(relative, &name, is_dir, &mut tally)
+            })
+            .unwrap_or(false);
+        tally.record();
+        ignored
+    }
+}
+
+/// Call `each` with the normal components of `directory`, split once for every child of
+/// one listing, without a heap allocation for a path of ordinary depth.
+pub(crate) fn with_directory_components<R>(
+    directory: &Path,
+    each: impl FnOnce(&[&[u8]]) -> R,
+) -> R {
+    gitignore::with_components(directory, None, each)
+}
+
+/// A directory's normal components, copied once, for a caller that keeps them across
+/// calls and classifies each child of the directory as it arrives.
+///
+/// [`Path::components`] parses the whole path each time it is asked, which costs a
+/// deep entry more than matching its name does once the rules are indexed (H171).
+#[derive(Debug)]
+pub(crate) struct SplitDirectory {
+    bytes: Vec<u8>,
+    /// Where each component ends in `bytes`.
+    ends: Vec<usize>,
+}
+
+impl SplitDirectory {
+    pub(crate) fn new(directory: &Path) -> Self {
+        with_directory_components(directory, |components| {
+            let mut split = Self {
+                bytes: Vec::with_capacity(components.iter().map(|component| component.len()).sum()),
+                ends: Vec::with_capacity(components.len()),
+            };
+            for component in components {
+                split.bytes.extend_from_slice(component);
+                split.ends.push(split.bytes.len());
+            }
+            split
         })
+    }
+
+    /// Call `each` with the components, without a heap allocation for a path of ordinary
+    /// depth.
+    pub(crate) fn with_components<R>(&self, each: impl FnOnce(&[&[u8]]) -> R) -> R {
+        let components = self.ends.iter().scan(0, |start, &end| {
+            let component = &self.bytes[*start..end];
+            *start = end;
+            Some(component)
+        });
+        gitignore::with_collected(components, each)
     }
 }
 
@@ -1129,6 +1234,66 @@ mod tests {
         ));
     }
 
+    /// A chain derived parent-first, each directory adding only its own control, names the
+    /// same controls as the chain the table resolves, whatever each directory's control
+    /// did: applied, shared with another directory, refused for the budget or for a line,
+    /// removed, or never listed (H175).
+    #[test]
+    fn chains_derived_parent_first_are_the_ones_the_table_resolves() {
+        let long_line = [vec![b'x'; DEFAULT_CONTROL_LINE_LIMIT + 1], b"\n".to_vec()].concat();
+        let large = b"pattern/\n".repeat(40);
+        let contents: [&[u8]; 6] =
+            [b"*.log\n", b"!keep\n*.tmp\n", b"", b"/a/x.log\n!*.log\n", &large, &long_line];
+        let budget = 3 * retained_source_cost(Path::new("a/b/c"), &large);
+        for seed in 0..200 {
+            let mut random = SplitMix(seed);
+            let mut table = ControlTable::with_limits(ControlLimits {
+                budget: Some(budget),
+                ..ControlLimits::default()
+            });
+            let mut listings = std::collections::VecDeque::from([(
+                PathBuf::new(),
+                Arc::<ControlChain>::default(),
+            )]);
+            while let Some((directory, above)) = listings.pop_front() {
+                let control = directory.join(CONTROL_FILE_NAME);
+                let listed = match random.below(4) {
+                    0 | 1 => {
+                        let content = contents[random.below(contents.len())].to_vec();
+                        table.upsert(&control, content).expect("control path");
+                        true
+                    }
+                    2 => {
+                        table.remove(&control).expect("control path");
+                        true
+                    }
+                    _ => false,
+                };
+                let chain = if listed { table.chain_below(&above, &directory) } else { above };
+                let resolved = table.chain_for(&directory);
+                assert!(chain.same_as(&resolved), "seed {seed}: {}", directory.display());
+                for name in ["x.log", "keep", "x.tmp", "pattern", "a"] {
+                    for is_dir in [false, true] {
+                        assert_eq!(
+                            chain.is_ignored(&directory, name.as_bytes(), is_dir),
+                            resolved.is_ignored(&directory, name.as_bytes(), is_dir),
+                            "seed {seed}: {}/{name}",
+                            directory.display()
+                        );
+                    }
+                }
+                if directory.components().count() < 4 {
+                    for name in ["a", "b", "c"] {
+                        if random.below(3) > 0 {
+                            listings.push_back((directory.join(name), Arc::clone(&chain)));
+                        }
+                    }
+                }
+            }
+            table.assert_consistent();
+        }
+    }
+
     #[test]
     fn a_chain_agrees_past_the_inline_buffers_and_beside_unrelated_controls() {
         let mut table = ControlTable::default();
@@ -1154,6 +1319,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The matching counters see each lookup, each lookup that found a rule, and each rule
+    /// whose glob had to run, on the thread that classified.
+    #[test]
+    fn matching_counts_lookups_hits_and_rules_tested() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        crate::counters::test_thread_reset();
+        let mut table = ControlTable::default();
+        table
+            .upsert(Path::new(".gitignore"), b"*.o\nMakefile\n/build\n*.c.[01]*\n".to_vec())
+            .expect("root control");
+        let chain = table.chain_for(Path::new(""));
+        // A name lookup, and an extension lookup that finds `*.o`; `/build` and the
+        // wildcard rule are ruled out by their length and literal checks.
+        assert!(chain.is_ignored_within(&[], b"main.o", false));
+        // Two lookups that find nothing, and the wildcard rule tested in full.
+        assert!(chain.is_ignored_within(&[], b"a.c.0x", false));
+        let counts = crate::counters::test_thread_snapshot();
+        crate::counters::enable(false);
+        assert_eq!(
+            (counts.ignore_bucket_probes, counts.ignore_bucket_hits, counts.ignore_patterns_tested),
+            (4, 1, 1)
+        );
     }
 
     #[test]

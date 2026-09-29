@@ -72,6 +72,15 @@ pub struct Counts {
     pub control_refused: u64,
     /// Control sources that joined a retained identical content instead of parsing again.
     pub control_sources_shared: u64,
+    /// `.gitignore` rules whose glob was tested against an entry: the rules an entry met
+    /// that no lookup or cheap check on its name could decide (H171).
+    pub ignore_patterns_tested: u64,
+    /// Lookups of an entry's name in a `.gitignore` file's indexed rules: one per
+    /// literal-name table and extension table consulted, and one per ends-with rule
+    /// without a `.` compared.
+    pub ignore_bucket_probes: u64,
+    /// Those lookups that found a rule matching the entry.
+    pub ignore_bucket_hits: u64,
     /// Index entries allocated.
     pub entries_allocated: u64,
     /// Successful detached baseline batches arbitrated by the index.
@@ -175,6 +184,9 @@ impl Counts {
         control_reads: 0,
         control_refused: 0,
         control_sources_shared: 0,
+        ignore_patterns_tested: 0,
+        ignore_bucket_probes: 0,
+        ignore_bucket_hits: 0,
         entries_allocated: 0,
         baseline_batches: 0,
         baseline_accepted_ops: 0,
@@ -235,6 +247,9 @@ impl Counts {
             ("control state", "control files read", self.control_reads),
             ("control state", "control sources refused", self.control_refused),
             ("control state", "control sources shared", self.control_sources_shared),
+            ("control state", "ignore patterns tested", self.ignore_patterns_tested),
+            ("control state", "ignore bucket probes", self.ignore_bucket_probes),
+            ("control state", "ignore bucket hits", self.ignore_bucket_hits),
             ("index", "index entries allocated", self.entries_allocated),
             ("mutation provenance", "baseline batches", self.baseline_batches),
             ("mutation provenance", "baseline accepted ops", self.baseline_accepted_ops),
@@ -322,6 +337,11 @@ impl Counts {
         self.control_refused = self.control_refused.saturating_add(other.control_refused);
         self.control_sources_shared =
             self.control_sources_shared.saturating_add(other.control_sources_shared);
+        self.ignore_patterns_tested =
+            self.ignore_patterns_tested.saturating_add(other.ignore_patterns_tested);
+        self.ignore_bucket_probes =
+            self.ignore_bucket_probes.saturating_add(other.ignore_bucket_probes);
+        self.ignore_bucket_hits = self.ignore_bucket_hits.saturating_add(other.ignore_bucket_hits);
         self.entries_allocated = self.entries_allocated.saturating_add(other.entries_allocated);
         self.baseline_batches = self.baseline_batches.saturating_add(other.baseline_batches);
         self.baseline_accepted_ops =
@@ -410,6 +430,9 @@ struct GlobalCounts {
     control_reads: AtomicU64,
     control_refused: AtomicU64,
     control_sources_shared: AtomicU64,
+    ignore_patterns_tested: AtomicU64,
+    ignore_bucket_probes: AtomicU64,
+    ignore_bucket_hits: AtomicU64,
     entries_allocated: AtomicU64,
     baseline_batches: AtomicU64,
     baseline_accepted_ops: AtomicU64,
@@ -469,6 +492,9 @@ impl GlobalCounts {
             control_reads: AtomicU64::new(0),
             control_refused: AtomicU64::new(0),
             control_sources_shared: AtomicU64::new(0),
+            ignore_patterns_tested: AtomicU64::new(0),
+            ignore_bucket_probes: AtomicU64::new(0),
+            ignore_bucket_hits: AtomicU64::new(0),
             entries_allocated: AtomicU64::new(0),
             baseline_batches: AtomicU64::new(0),
             baseline_accepted_ops: AtomicU64::new(0),
@@ -527,6 +553,9 @@ impl GlobalCounts {
         atomic_saturating_add(&self.control_reads, counts.control_reads);
         atomic_saturating_add(&self.control_refused, counts.control_refused);
         atomic_saturating_add(&self.control_sources_shared, counts.control_sources_shared);
+        atomic_saturating_add(&self.ignore_patterns_tested, counts.ignore_patterns_tested);
+        atomic_saturating_add(&self.ignore_bucket_probes, counts.ignore_bucket_probes);
+        atomic_saturating_add(&self.ignore_bucket_hits, counts.ignore_bucket_hits);
         atomic_saturating_add(&self.entries_allocated, counts.entries_allocated);
         atomic_saturating_add(&self.baseline_batches, counts.baseline_batches);
         atomic_saturating_add(&self.baseline_accepted_ops, counts.baseline_accepted_ops);
@@ -603,6 +632,9 @@ impl GlobalCounts {
             control_reads: self.control_reads.load(Ordering::Relaxed),
             control_refused: self.control_refused.load(Ordering::Relaxed),
             control_sources_shared: self.control_sources_shared.load(Ordering::Relaxed),
+            ignore_patterns_tested: self.ignore_patterns_tested.load(Ordering::Relaxed),
+            ignore_bucket_probes: self.ignore_bucket_probes.load(Ordering::Relaxed),
+            ignore_bucket_hits: self.ignore_bucket_hits.load(Ordering::Relaxed),
             entries_allocated: self.entries_allocated.load(Ordering::Relaxed),
             baseline_batches: self.baseline_batches.load(Ordering::Relaxed),
             baseline_accepted_ops: self.baseline_accepted_ops.load(Ordering::Relaxed),
@@ -665,6 +697,9 @@ impl GlobalCounts {
         self.control_reads.store(0, Ordering::Relaxed);
         self.control_refused.store(0, Ordering::Relaxed);
         self.control_sources_shared.store(0, Ordering::Relaxed);
+        self.ignore_patterns_tested.store(0, Ordering::Relaxed);
+        self.ignore_bucket_probes.store(0, Ordering::Relaxed);
+        self.ignore_bucket_hits.store(0, Ordering::Relaxed);
         self.entries_allocated.store(0, Ordering::Relaxed);
         self.baseline_batches.store(0, Ordering::Relaxed);
         self.baseline_accepted_ops.store(0, Ordering::Relaxed);

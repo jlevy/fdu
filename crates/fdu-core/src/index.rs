@@ -1580,7 +1580,10 @@ impl IndexHandle {
 /// path back into public observations or manufacturing one full path per file.
 pub(crate) struct DetachedIndexBuilder {
     index: Index,
-    directory_ids: HashMap<PathBuf, EntryId>,
+    /// Each directory listed but not yet itself consumed, with the controls governing its
+    /// parent's children: its own chain is that one plus its own control, if its listing
+    /// brings one (H175).
+    directory_ids: HashMap<PathBuf, (EntryId, Arc<crate::control::ControlChain>)>,
     /// Directories whose name one listing repeated. The walker lists each of them, and
     /// everything below it, once per observation.
     repeated_directories: Vec<PathBuf>,
@@ -1598,7 +1601,7 @@ impl DetachedIndexBuilder {
             DirectoryChildren::Sorted(Vec::new());
         Self {
             index,
-            directory_ids: HashMap::from([(PathBuf::new(), EntryId::ROOT)]),
+            directory_ids: HashMap::from([(PathBuf::new(), (EntryId::ROOT, Arc::default()))]),
             repeated_directories: Vec::new(),
             inserted: 0,
         }
@@ -1630,7 +1633,7 @@ impl DetachedIndexBuilder {
         // No descendant can become claimable until its parent's listing has been sent,
         // so the first listing of a directory finds its lookup entry. Retire the entry
         // now instead of retaining every walked directory path until the end of the scan.
-        let Some(parent) = self.directory_ids.remove(path.as_path()) else {
+        let Some((parent, above)) = self.directory_ids.remove(path.as_path()) else {
             if self.repeated_directories.iter().any(|repeated| path.starts_with(repeated)) {
                 return Ok(());
             }
@@ -1644,7 +1647,14 @@ impl DetachedIndexBuilder {
         // its complete fixed-control state before classifying any sibling, and every
         // later child listing will therefore inherit all governing controls without a
         // post-build subtree reclassification pass.
+        let listed_control = control.is_some();
         if let Some(control) = control.take() {
+            debug_assert!(
+                matches!(&control, Op::ControlUpsert { path: control_path, .. }
+                    | Op::ControlRemove { path: control_path }
+                    if control_path.parent() == Some(path.as_path())),
+                "a listing carries only its own directory's control"
+            );
             match control {
                 Op::ControlUpsert { path, source } => {
                     self.index.controls.upsert(&path, source)?;
@@ -1680,43 +1690,62 @@ impl DetachedIndexBuilder {
 
         let parent_ignored = self.index.entry(parent).ignored;
         // Every child shares this directory's governing controls, so they are resolved
-        // once here rather than looked up per child (H163).
-        let chain = (!parent_ignored && !self.index.controls.is_empty())
-            .then(|| self.index.controls.chain_for(path));
+        // once here rather than looked up per child (H163), and the directory's path is
+        // split once for all of them rather than again for each child (H171). Nor are
+        // they resolved from the table: they are the parent's, plus this directory's own
+        // control when its listing brought one, the only control that can have changed
+        // since the parent's listing (H175). Every other listing shares its parent's.
+        let chain =
+            if listed_control { self.index.controls.chain_below(&above, path) } else { above };
+        debug_assert!(
+            chain.same_as(&self.index.controls.chain_for(path)),
+            "a derived control chain is the one the table resolves for {}",
+            path.display()
+        );
+        let classifying = !parent_ignored && !chain.is_empty();
         self.index.reserve_detached_children(parent, children.len());
-        for child in children.drain(..) {
-            let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
-            crate::counters::bump(|counts| counts.upserts += 1);
-            let ext_id = (kind == EntryKind::File)
-                .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
-            let ignored = match &chain {
-                Some(chain) => chain.is_ignored(path, name.as_encoded_bytes(), kind.is_dir()),
-                None => parent_ignored,
-            };
-            let child_path = kind.is_dir().then(|| path.join(&name));
-            let child_id = self.index.alloc(Entry::new_detached(
-                NewEntry {
-                    parent: Some(parent),
-                    name,
-                    ext_id,
-                    ignored,
-                    source: Source::Scanned,
-                    kind,
-                    attrs,
-                },
-                false,
-            ));
-            self.index.push_detached_child(parent, child_id);
-            // Fold the child's own direct contribution while filesystem work is still
-            // in flight. Files are now complete; directories will add only their
-            // descendant roll-up in the short bottom-up finish pass.
-            let direct = self.index.contribution(child_id);
-            crate::counters::bump(|counts| counts.rollup_merges += 1);
-            self.index.entry_mut(parent).rollup_mut().merge(&direct);
-            if let Some(child_path) = child_path {
-                self.directory_ids.insert(child_path, child_id);
+        let path: &Path = path;
+        let mut classify_children = |directory: &[&[u8]]| {
+            for child in children.drain(..) {
+                let crate::scan::DetachedChild { name, kind, attrs, .. } = child;
+                crate::counters::bump(|counts| counts.upserts += 1);
+                let ext_id = (kind == EntryKind::File)
+                    .then(|| self.index.intern_ext(&crate::classify::ext_bucket(&name)));
+                let ignored = if classifying {
+                    chain.is_ignored_within(directory, name.as_encoded_bytes(), kind.is_dir())
+                } else {
+                    parent_ignored
+                };
+                let child_path = kind.is_dir().then(|| path.join(&name));
+                let child_id = self.index.alloc(Entry::new_detached(
+                    NewEntry {
+                        parent: Some(parent),
+                        name,
+                        ext_id,
+                        ignored,
+                        source: Source::Scanned,
+                        kind,
+                        attrs,
+                    },
+                    false,
+                ));
+                self.index.push_detached_child(parent, child_id);
+                // Fold the child's own direct contribution while filesystem work is still
+                // in flight. Files are now complete; directories will add only their
+                // descendant roll-up in the short bottom-up finish pass.
+                let direct = self.index.contribution(child_id);
+                crate::counters::bump(|counts| counts.rollup_merges += 1);
+                self.index.entry_mut(parent).rollup_mut().merge(&direct);
+                if let Some(child_path) = child_path {
+                    self.directory_ids.insert(child_path, (child_id, Arc::clone(&chain)));
+                }
+                self.inserted = self.inserted.saturating_add(1);
             }
-            self.inserted = self.inserted.saturating_add(1);
+        };
+        if classifying {
+            crate::control::with_directory_components(path, classify_children);
+        } else {
+            classify_children(&[]);
         }
         Ok(())
     }
