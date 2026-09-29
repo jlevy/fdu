@@ -70,8 +70,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 7 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -260,6 +260,8 @@ dead end.
 | 177 | [Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s](#exp177--linux-fcv49-baseline-on-the-generated-millionentry-tree-default-tree-136-s) | — | `default-tree` | +1.5% | 📏 baseline |
 | 178 | [Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12](#exp178--linux-h171-bucketed-gitignore-matching-cuts-the-default-tree-30-on-linuxv612) | H171 | `default-tree` | -29.6% | ✅ accepted |
 | 179 | [Linux H175 derived control chains take another 3% off the default tree](#exp179--linux-h175-derived-control-chains-take-another-3-off-the-default-tree) | H175 | `default-tree` | -3.3% | ✅ accepted |
+| 180 | [Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12](#exp180--linux-h172-exact-transient-tree-tier-cuts-the-default-tree-13-on-linuxv612) | H172, H176 | `default-tree` | -13.5% | ✅ accepted |
+| 181 | [Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense](#exp181--linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-nodemodulesdense) | H172 | `default-tree` | -10.3% | ✅ accepted |
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
@@ -5934,6 +5936,66 @@ H171, as predicted; aggregate-summary +1.83% [-0.64%, +4.39%] unchanged as predi
 Full record:
 [`exp-179-linux-h175-derived-control-chains-take-another-3-off-the-def.md`](../experiments/exp-179-linux-h175-derived-control-chains-take-another-3-off-the-def.md)
 
+### exp-180 — Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12
+
+✅ accepted · 2026-09-29 · H172, H176 · commit `956659de`
+
+Control: a1a4a568 probe: H171 + H175 (accepted engine)
+
+Candidate: 956659de probe: H172 transient tree tier with H176 and F6e
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 91.8 | 80.2 | -13.48% | [-18.85%, -6.31%] |
+| component (ms) | 86.8 | 76.9 | -11.67% | [-17.85%, -5.25%] |
+| cpu (ms) | 300.4 | 279.5 | -9.54% | [-10.26%, -4.94%] |
+| user (ms) | 113.1 | 93.4 | -18.07% | [-25.54%, -9.80%] |
+| system (ms) | 194.0 | 181.2 | -1.59% (n.s.) | [-10.41%, +4.08%] |
+
+Other jobs, wall time: `aggregate-summary` +3.5% (n.s.).
+
+Cost to carry: 1555 lines; no new dependencies.
+
+most lines are tests: the transient-versus-indexed differential over every bound case,
+eligibility, and boundary units
+
+**Accepted:** quiet 20-pair linux-v6.12 default-tree -13.48% [-18.85%, -6.31%] and
+node-modules-dense -10.30% [-15.09%, -7.20%] (exp-181); summary and cold-scan-index
+placebos include zero; balanced-1m screen -3.20% wall, peak RSS -79%; answers identical.
+
+Full record:
+[`exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md`](../experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md)
+
+### exp-181 — Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense
+
+✅ accepted · 2026-09-29 · H172 · commit `956659de`
+
+Control: a1a4a568 probe: H171 + H175 (accepted engine)
+
+Candidate: 956659de probe: H172 transient tree tier
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 85.3 | 75.4 | -10.30% | [-15.09%, -7.20%] |
+| component (ms) | 79.6 | 72.1 | -8.29% | [-13.27%, -4.66%] |
+| cpu (ms) | 265.6 | 253.5 | -4.20% | [-8.03%, -1.72%] |
+| user (ms) | 85.3 | 64.3 | -24.51% | [-31.56%, -17.50%] |
+| system (ms) | 184.2 | 183.3 | +4.99% (n.s.) | [-6.76%, +9.45%] |
+
+Other jobs, wall time: `cold-scan-index` -1.9% (n.s.).
+
+Cost to carry: 1555 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair node-modules-dense default-tree -10.30% [-15.09%, -7.20%];
+cold-scan-index placebo -1.90% [-5.18%, +2.25%] includes zero.
+
+Full record:
+[`exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md`](../experiments/exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md)
+
 ### exp-187 — Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore
 
 ✅ accepted · 2026-09-28 · H161 · commit `0d73ed54`
@@ -6270,6 +6332,15 @@ Baselines show one value because they measure a state rather than a change.
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
+| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
+| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
+| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
+
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6286,14 +6357,6 @@ Baselines show one value because they measure a state rather than a change.
 | 057 | Reject repeated adaptive worker windows on APFS | `adaptive-scan-index` | 1,871.8 | 2,963.2 | +58.5% | ❌ rejected |
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
-| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
-| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
 
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6391,6 +6454,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 098 | Share pool orchestration through a dynamic consumer | `cold-scan-index` | 552.2 | 557.7 | +0.8% | ❌ rejected |
 | 099 | Monomorphize shared concurrent-walk consumption | `cold-scan-index` | 569.3 | 566.0 | +0.2% | ✅ accepted |
+
+### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
+| 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
 
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6519,12 +6589,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 190 | Linux H159 listing recycle clears 3 percent on a real directory-dense tree | `default-tree` | 106.3 | 92.9 | -8.6% | ✅ accepted |
-
-### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
