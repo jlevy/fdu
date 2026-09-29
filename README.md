@@ -518,21 +518,23 @@ for the paired interval, host regime, and resource qualification.
 ## Comparison to Alternatives
 
 Many tools report disk usage, and this is how fdu compares with the ones people most
-often reach for, each cell checked against that tool’s source or documentation:
+often reach for, and with the two leading source-line counters for its code analysis.
+Each cell was checked against that tool’s source or documentation:
 
-| Feature | fdu | du | ncdu | dust | dua | gdu | pdu | diskus | dumac |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Plain total | ✅ `--view summary` | ✅ `-s` | ❌ TUI only | ✅ `-d 0` | ✅ total row | ✅ `-ns` | ✅ `-d 1` | ✅ | ✅ |
-| Speed, 1M entries, macOS¹ | 6.4 s | 56–68 s | 67 s | 11.0 s | 10.4 s | 10.5 s | 9.2 s | 9.3 s | 6.9 s |
-| Speed, 1M entries, Linux² | 1.09 s | 2.85 s | 3.00 s | 1.75 s | 3.65 s | 2.81 s | 1.14 s; 1.06 s at `-d 2` | 1.16 s | macOS only |
-| Tree breakdown and pruning | ✅ depth, breadth, share floor, row limit | depth, size floor | TUI browsing | depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | depth, share floor | ❌ | ❌ |
-| `.gitignore` | ✅ classify; include, exclude, or only ignored | ❌ | ❌ | ❌ | partial: TUI dims ignored entries; `--ignore-from` patterns | ❌³ | ❌ | ❌ | ❌ |
-| Source code analysis⁴ | ✅ 15 languages: code, comment, and blank lines | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Text analysis | ✅ lines, words, paragraphs, pages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | ❌ | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | Rust library; JSON | Rust library | ❌ |
-| Watch and stream | ✅ `--watch`, JSONL change stream | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Cached results | ✅ snapshot and content cache, revalidated | ❌ | export, not revalidated | ❌ | snapshot, not revalidated | database, not revalidated | JSON, not revalidated | ❌ | ❌ |
-| Agent skill | ✅ `--install-skill` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Feature | fdu | du | ncdu | dust | dua | gdu | pdu | diskus | dumac | scc | tokei |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Plain total | ✅ `--view summary` | ✅ `-s` | ❌ TUI only | ✅ `-d 0` | ✅ total row | ✅ `-ns` | ✅ `-d 1` | ✅ | ✅ | —⁴ | —⁴ |
+| Speed, 1M entries, macOS¹ | 6.4 s | 56–68 s | 67 s | 11.0 s | 10.4 s | 10.5 s | 9.2 s | 9.3 s | 6.9 s | — | — |
+| Speed, 1M entries, Linux² | 1.09 s | 2.85 s | 3.00 s | 1.75 s | 3.65 s | 2.81 s | 1.14 s; 1.06 s at `-d 2` | 1.16 s | macOS only | — | — |
+| Tree breakdown and pruning | ✅ depth, breadth, share floor, row limit | depth, size floor | TUI browsing | depth, top N, size floor | depth; TUI browsing | depth, top N files; TUI browsing | depth, share floor | ❌ | ❌ | ❌ per language or file | ❌ per language or file |
+| `.gitignore` | ✅ classify; include, exclude, or only ignored | ❌ | ❌ | ❌ | partial: TUI dims ignored entries; `--ignore-from` patterns | ❌³ | ❌ | ❌ | ❌ | ✅ exclude | ✅ exclude, inside a git repository |
+| Source code analysis⁴ | ✅ 15 languages: code, comment, and blank lines, per directory | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ 366 languages; complexity and cost estimates | ✅ 333 languages; embedded languages |
+| Code analysis speed, Linux source⁵ | 7.9 s; 0.55 s repeated | — | — | — | — | — | — | — | — | 1.2 s | 1.9 s |
+| Text analysis | ✅ lines, words, paragraphs, pages | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| APIs and machine output | ✅ Rust, Python; JSON, JSONL, YAML | ❌ | JSON export | JSON (`-j`) | Rust library; snapshot files | JSON export; SQLite or Badger | Rust library; JSON | Rust library | ❌ | Go package; JSON, CSV, HTML, SQL | Rust library; JSON |
+| Watch and stream | ✅ `--watch`, JSONL change stream | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Cached results | ✅ snapshot and content cache, revalidated | ❌ | export, not revalidated | ❌ | snapshot, not revalidated | database, not revalidated | JSON, not revalidated | ❌ | ❌ | ❌ | ❌ |
+| Agent skill | ✅ `--install-skill` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | MCP server (`--mcp`) | ❌ |
 
 ¹ Median wall time on one generated 1,000,001-entry tree with warm caches, each tool
 doing its own job; see [Speed](#speed).
@@ -547,10 +549,29 @@ default `fdu PATH`, pdu’s default, GNU `du` 9.4, and ncdu 1.19. On real source
 ³ gdu’s unreleased main branch adds `--ignore-from-gitignore`, which reads patterns from
 one file.
 
-⁴ For line counts alone, [scc](https://github.com/boyter/scc) and
-[tokei](https://github.com/XAMPPRocky/tokei) recognize 366 and 333 languages, and scc
-adds complexity and cost estimates; neither totals code per directory or caches its
-counts.
+⁴ [scc](https://github.com/boyter/scc) and [tokei](https://github.com/XAMPPRocky/tokei)
+count source lines, not disk usage, so the disk-usage rows show “—”. They count far more
+languages than fdu; tokei also counts code embedded in another language, such as
+Markdown code fences, and scc estimates complexity and cost.
+fdu tallies code per directory, reports each language’s ignored share, keeps its counts
+in a content cache so that a repeated run reads only changed files, and measures disk
+usage in the same pass.
+On the Linux kernel’s 59,953 C sources and headers, all three give the same code,
+comment, and blank counts for 59,766 files; scc differs on 22, where it counts form-feed
+lines as code, and tokei on 165, through three defects in its C parsing.
+See the
+[SLOC tools survey](docs/project/research/research-2026-09-29-sloc-tools-survey.md).
+[cloc](https://github.com/AlDanial/cloc) recognizes the most languages, 402, but runs on
+one thread.
+
+⁵ Median wall time on the Linux v6.12 source (86,618 files, 1.6 GB), each tool with
+every ignore source off, hidden files counted, and text output: 12 adjacent pairs on the
+quiet Linux host of note 2, 2026-09-29. fdu’s first run, with its cache off, took 6.4
+times as long as scc and 4.2 times as long as tokei; the three read about the same
+bytes, so the gap is fdu’s CPU per byte.
+Run again under the default cache policy, fdu reopened no unchanged file and answered in
+0.55 s. With each tool’s own `.gitignore` handling on a git clone, fdu took 9.2 s, scc
+1.3 s, and tokei 2.0 s.
 
 Versions checked: GNU coreutils `du` 9.4, and its source after 9.12; ncdu 1.19 and
 2.9.2; dust 1.2.5; dua 2.45.0; gdu 5.37.0, and its main branch at `4b179b0`; pdu 0.24.0;
@@ -564,9 +585,13 @@ finds build products to remove.
 `du` is already installed on every Unix-like system.
 diskus and dumac answer one total from a small binary, and pdu draws a compact size
 chart; on Linux, pdu and diskus are as fast as fdu, and pdu limited to two levels is
-slightly faster. For line counts across hundreds of languages, use scc or tokei.
+slightly faster. For line counts alone, use scc or tokei: they count hundreds of
+languages to fdu’s 15, tokei counts embedded code, scc estimates complexity, and both
+count a large tree four to six times as fast as fdu’s first run.
 Use fdu for a tree you can prune, a `.gitignore`-aware answer, content metrics,
-versioned machine output, a live or cached view, or a Rust or Python API.
+versioned machine output, a live or cached view, or a Rust or Python API; for code, it
+adds counts per directory, each language’s ignored share, and a cache that makes a
+repeated count faster than either counter’s.
 
 ## Why
 
