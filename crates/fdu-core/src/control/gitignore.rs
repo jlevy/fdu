@@ -107,10 +107,11 @@ pub(super) fn with_collected<'a, R>(
 ///
 /// The rules themselves are kept whole and still decide every answer: the index holds
 /// only rule indices, hashes, short lengths, byte classes, and a rule's first and last
-/// literal bytes, never a copy of its glob. Each indexed rule adds one 16-byte record, and a rule's segments are now allocated to their
-/// exact size rather than a growable vector's, so the charge [`super::content_cost`]
-/// makes per line still covers the matcher it retains, even for a file of the shortest
-/// possible rules (`a_source_charge_covers_its_indexed_matcher`).
+/// literal bytes, never a copy of its glob. Each indexed rule adds one 16-byte record,
+/// and a rule's segments are now allocated to their exact size rather than a growable
+/// vector's, so the charge [`super::content_cost`] makes per line still covers the
+/// matcher it retains, even for a file of the shortest possible rules
+/// (`a_source_charge_covers_its_indexed_matcher`).
 #[derive(Clone, Debug, Default)]
 pub(super) struct Gitignore {
     /// Every accepted rule in file order: a rule's index is its precedence.
@@ -779,9 +780,8 @@ fn literal_key_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 /// Whether `name` ends with the bytes the literal `tail` matches.
-#[allow(clippy::manual_contains)] // A tail is a few bytes, shorter than `memchr` takes to set up.
 fn ends_with_literal(name: &[u8], tail: &[u8]) -> bool {
-    if !tail.iter().any(|byte| *byte == b'\\') {
+    if !tail.contains(&b'\\') {
         return ends_with_bytes(name, tail);
     }
     let length = unescaped(tail).count();
