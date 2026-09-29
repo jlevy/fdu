@@ -230,10 +230,20 @@ const REFUSED_FOR_LINE_LIMIT: u8 = 2;
 /// wholesale answer to "the rules changed, so every derived verdict in the cache might
 /// be wrong" — far simpler than trying to work out which entries a rule change affected.
 ///
-/// Currently derived from the crate version, the format version, and the version of the
-/// classification rules. When compiled type-recognition rules and reducer registrations
-/// arrive, their hashes belong here too.
+/// Currently derived from the crate version, the format version, and the versions of the
+/// classification rules, of the per-entry validity facts, and of the fixed `.gitignore`
+/// semantics. When compiled type-recognition rules and reducer registrations arrive, their
+/// hashes belong here too.
 pub fn engine_fingerprint() -> u64 {
+    engine_fingerprint_under(crate::stored_state::IGNORE_RULES_VERSION)
+}
+
+/// [`engine_fingerprint`] as a build whose `.gitignore` semantics are
+/// `ignore_rules_version` computes it.
+///
+/// The rules version is the one input a snapshot's tier identities cannot tell apart for
+/// the default population, so a test forges a snapshot of another version through it.
+fn engine_fingerprint_under(ignore_rules_version: u64) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     let mut mix = |bytes: &[u8]| {
         for byte in bytes {
@@ -245,6 +255,7 @@ pub fn engine_fingerprint() -> u64 {
     mix(&FORMAT_VERSION.to_le_bytes());
     mix(&CLASSIFICATION_VERSION.to_le_bytes());
     mix(&VALIDITY_VERSION.to_le_bytes());
+    mix(&ignore_rules_version.to_le_bytes());
     hash
 }
 
@@ -2872,6 +2883,65 @@ mod tests {
             .expect("corrupt projection is absent"),
             LoadOutcome::Absent
         ));
+    }
+
+    /// A snapshot written under other `.gitignore` semantics is not served to the default
+    /// population, although its tier identities cannot say so: the control tier records only
+    /// its limits, from which a loading build recomputes the ignore-rules fingerprint under
+    /// its own rules version, and an Include entry tier records no governing control policy.
+    /// The engine fingerprint mixes the rules version, and it alone refuses the snapshot.
+    #[test]
+    fn a_snapshot_under_other_ignore_rules_is_refused_for_the_default_population() {
+        use crate::stored_state::IGNORE_RULES_VERSION;
+
+        let tree = tempfile::tempdir().expect("tree");
+        fs::write(tree.path().join(".gitignore"), b"*.log\n").expect("write");
+        fs::write(tree.path().join("debug.log"), b"log").expect("write");
+        let config = crate::ScanConfig::default();
+        let wanted = config.snapshot_identity();
+        assert_eq!(wanted.entries.scope.population, crate::query::IgnoredEntries::Include);
+        assert!(wanted.controls.is_observed(), "the default population reads .gitignore");
+
+        let (index, _) = crate::scan::scan_into_index(tree.path(), &config).expect("scan");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&index, &path).expect("save");
+        let current = fs::read(&path).expect("read");
+        let serve = || load_serving(&path, config.types_shared(), wanted).expect("load");
+        assert!(matches!(serve(), LoadOutcome::Served { .. }), "this build's snapshot serves");
+
+        let engine_at = MAGIC.len() + 4;
+        let tiers = IDENTITY_OFFSET..ROOT_OFFSET;
+        for version in [IGNORE_RULES_VERSION - 1, IGNORE_RULES_VERSION + 1] {
+            let label = format!("rules version {version}");
+            let other = engine_fingerprint_under(version);
+            assert_ne!(other, engine_fingerprint(), "{label}");
+            let mut forged = current.clone();
+            forged[engine_at..engine_at + 8].copy_from_slice(&other.to_le_bytes());
+            rewrite_checksum(&mut forged);
+            fs::write(&path, &forged).expect("write forged");
+
+            // The tier identities are this build's, byte for byte, and would serve the
+            // request exactly under this build's engine.
+            assert_eq!(forged[tiers.clone()], current[tiers.clone()], "{label}");
+            let bytes = forged[tiers.clone()].try_into().expect("the tier identities");
+            let stored = SnapshotIdentity::decode(wanted.entries.engine, bytes).expect("decode");
+            assert_eq!(serves_snapshot(stored, wanted), Serves::Exact, "{label}");
+
+            assert!(matches!(serve(), LoadOutcome::Absent), "{label}");
+            assert!(
+                matches!(
+                    identify(&path).expect("identify"),
+                    Some(Identity::Stale(crate::cache::StaleReason::OtherEngine))
+                ),
+                "{label}"
+            );
+            assert_eq!(
+                crate::cache::cache_status(&path).expect("status").state,
+                crate::cache::CacheState::Stale(crate::cache::StaleReason::OtherEngine),
+                "{label}"
+            );
+        }
     }
 
     /// A format-4 snapshot, laid out as that format wrote it, is fdu's and stale: the

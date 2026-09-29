@@ -55,7 +55,8 @@ This keeps arbitrary names distinct from each other and from conventional
 
 It holds entry records from which loading rebuilds per-directory roll-ups, and it is
 invalidated wholesale by an engine fingerprint of the crate version, the format version,
-and the classification-rules version.
+and the versions of the classification rules, the per-entry validity facts, and the
+fixed `.gitignore` semantics.
 A snapshot written by an incompatible build is not migrated and not repaired — it is
 treated as absent. Because the crate version is part of the fingerprint, every release
 invalidates every existing snapshot; nothing that must outlive an upgrade belongs in

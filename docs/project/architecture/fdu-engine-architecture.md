@@ -513,6 +513,11 @@ runtime type registry’s fingerprint, whether control files are observed and un
 budget and line limit, and a reducer-set fingerprint that is a constant today.
 The compiled classification-rules version is not part of it: `CLASSIFICATION_VERSION`
 rides in the snapshot’s engine fingerprint with the crate and format versions.
+The fixed `.gitignore` semantics version, `IGNORE_RULES_VERSION`, is in both.
+Semantic identity’s ignore-rules fingerprint hashes it, but a snapshot stores only the
+control tier’s observation and limits, and a loading build recomputes that fingerprint
+from them under its own version, so it is the engine fingerprint that refuses a snapshot
+written under other semantics.
 The engine derives scope and semantic identities from validated values.
 It never accepts a caller-supplied fingerprint as proof that independently supplied
 content matches.

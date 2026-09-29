@@ -28,8 +28,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as it is for git. Every route and surface agrees, including the default summary,
   `--ignored`, `--watch`, opened roots, and refresh; the rules are named `.gitignore`
   wherever they are reported.
-  A snapshot taken under the old rule is not reused, so the first run after upgrading
-  scans cold.
+  The engine fingerprint now mixes in the version of these rules, so nothing cached
+  under the old rule is reused: each cached tree’s first run after upgrading scans cold,
+  and its first analyzed run reads every file again.
 
 ## [0.2.0] - 2026-09-28
 

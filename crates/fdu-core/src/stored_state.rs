@@ -19,14 +19,22 @@ use crate::control::ControlLimits;
 use crate::engine_contract::ScanScope;
 use crate::query::IgnoredEntries;
 
-/// Version of the fixed `.gitignore` control semantics, the first thing
-/// [`ControlTierIdentity::ignore_rules_fingerprint`] hashes.
+/// Version of the fixed `.gitignore` control semantics.
+///
+/// Two identities carry it, for different reasons. The engine fingerprint
+/// ([`crate::snapshot::engine_fingerprint`]) mixes it, and that alone keeps a store written
+/// under other semantics from being served: a stored control tier records only its
+/// observation and limits, and an Include entry tier records no governing control policy,
+/// so a snapshot of the default population decodes to exactly the identity this build
+/// wants whichever semantics wrote it. [`ControlTierIdentity::ignore_rules_fingerprint`]
+/// hashes it first as well, so a scope's ignore-rules identity, and the governing control
+/// policy a narrowed entry tier records, also differ between semantics.
 ///
 /// 3: a directory's control is what a lookup of `<dir>/.gitignore` resolves to, so a
 /// `.GITIGNORE` governs on a case-insensitive volume (fdu-0w1b). A snapshot taken under 2
 /// recorded no rules for such a directory, and serving it would answer as the old rule
-/// did, so it is not served.
-const IGNORE_RULES_VERSION: u64 = 3;
+/// did; the engine fingerprint differs, so it is not served.
+pub(crate) const IGNORE_RULES_VERSION: u64 = 3;
 
 /// Which entries a scan retains: its depth, symlink, filesystem-boundary, hidden-entry,
 /// and special-object settings.
