@@ -4,15 +4,15 @@ id: is-01m3n77fy60sdcdzzk9qmbzg8e
 title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, dumac, and peers)"
 kind: task
 status: open
-priority: 1
-version: 7
+priority: 2
+version: 9
 labels:
   - docs
   - parity
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T00:24:50.087Z
+updated_at: 2026-09-29T00:35:18.023Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 
@@ -49,3 +49,5 @@ Requirements:
 2026-09-29 maintainer: every cell is verified from source checked out under attic/ (gitignored), not from web search alone; web pages only for packaging and distribution facts not in the repos. Research running in three parallel agents (du/ncdu/gdu; dust/dua/pdu; diskus/dumac/fdu).
 
 2026-09-29 maintainer: add the top 1 or 2 source-line-counting tools as extra matrix columns (covering the source-code rows; other rows n/a or as applicable), chosen by balancing speed and power; selection from the fdu-61ez survey plus a quiet speed run on linux-v6.12.
+
+2026-09-29: Maintainer: not a release blocker; lands after 0.2.1. Draft in session scratchpad matrix/readme-matrix.draft.md; needs Linux speed cells (quiet host) and the top 1-2 SLOC tool columns from fdu-61ez.
