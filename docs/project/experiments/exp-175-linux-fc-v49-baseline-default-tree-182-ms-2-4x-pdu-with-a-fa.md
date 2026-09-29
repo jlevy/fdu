@@ -328,6 +328,8 @@ oracle mismatch) on this subject:
 An uncontrolled A/A earlier the same session (load 0.7) read `default-tree` +8.26%
 [−0.02%, +14.10%].
 
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-q0-tools-linux.json.gz`, the Q0 tool standing on `linux-v6.12` (fdu, pdu, diskus, dut).
+
 ## Decision
 
 Baseline. Two consequences are adopted for the rest of the night and stated here before

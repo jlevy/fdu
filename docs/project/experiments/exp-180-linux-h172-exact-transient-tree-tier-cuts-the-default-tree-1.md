@@ -338,6 +338,8 @@ All cells quiet, with no invalid samples.
   eligibility against every request field and command-line flag hold.
   It also confirmed that a folded index can never leave the one-shot route.
 
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-h172-tools-linux-v6.12.json.gz`, the tool standing after H172 on `linux-v6.12`; `run-h172-tools-node-modules-dense.json.gz`, the tool standing after H172 on `node-modules-dense`; `run-screen-balanced.json.gz`, the `linux-balanced-1m` screen.
+
 ## Decision
 
 Accepted on both real co-primaries: the default tree is 13.5% faster on the source tree

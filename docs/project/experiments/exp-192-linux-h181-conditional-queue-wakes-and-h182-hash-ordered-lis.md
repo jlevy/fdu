@@ -315,6 +315,8 @@ Control: `20933081` probe (H169 head).
 
 The `node-modules-dense` run is kept beside this record’s evidence.
 
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-node-modules-dense.json.gz`, the `node-modules-dense` leg.
+
 ## Decision
 
 Rejected; neither change is merged.

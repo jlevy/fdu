@@ -297,6 +297,8 @@ Candidate: `20933081`.
 | `default-tree --no-controls` | 71.1 ms | 68.5 ms | −1.79% [−6.83%, +2.66%] |
 | `aggregate-summary --no-controls --threads 1` (placebo) | 193.7 ms | 191.9 ms | −0.29% [−3.76%, +0.43%] |
 
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-placebo-serial.json.gz`, the `--threads 1` serial placebo.
+
 ## Decision
 
 Accepted on the deciding job, with the placebo at zero.
