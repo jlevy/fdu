@@ -3,17 +3,25 @@ type: is
 id: is-01m3nbsak6hftpnr1rx5x90d1w
 title: "H171: bucketed .gitignore matching (literal-name and *.suffix maps, highest matching index wins)"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 7
+version: 9
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
+delegate: claude-code@vm
 labels: []
 dependencies:
   - type: blocks
     target: is-01m3n1xqd4kg6q11yd8jcytg4c
 parent_id: is-01m3nbs9kfe7ygc6jx23j1byzt
+hold: null
+hold_until: null
 created_at: 2026-09-29T01:17:08.070Z
-updated_at: 2026-09-29T05:50:47.961Z
+updated_at: 2026-09-29T10:10:22.733Z
+started_at: 2026-09-29T08:15:58.351Z
+closed_at: 2026-09-29T10:10:22.733Z
+close_reason: "Accepted and merged (2379233a): exp-178 (H171, default-tree -29.62%, summary -25.45%) and exp-179 (H175, default-tree -3.31%) on linux-v6.12, quiet, 20 pairs; placebos at zero; answers identical to the base and to git."
+resolution: null
+duplicate_of: null
 ---
 At Gitignore::parse (gitignore.rs:104), bucket patterns: Basename with no metacharacter goes to literal_names HashMap<name, Vec<index>>; Basename *.suffix goes to suffixes, keyed by the text after the last '.' and confirmed by ends_with; everything else goes to residual. matches_components (gitignore.rs:125) probes both maps with the entry's name and extension, scans the residual, and answers patterns[max matching index].ignored, so last-match-wins, negation and directory_only are exact. Add ControlChain::is_ignored_within(dir_components, name, is_dir) and split a listing's directory once, in push_directory (index.rs:1684-1695) and per cached parent in SummaryControls::classify (execution.rs:797-801). Snapshot format unchanged. Optional: bucket anchored Fixed patterns by segment count (~80M more). Prototype (diff in notes): linux-v6.12 default-tree consumer instructions 2,067M -> 761M (-63%), summary 1,918M -> 660M, answers byte-identical over 1,629,566 JSON leaves, 93 control tests pass. Screen under load: tree -27-31%. ACCEPT (pre-register): default-tree (deciding) and aggregate-summary, controls on, linux-v6.12: wall -3% with 95% interval below zero; consumer Ir -50%; placebos (both arms --no-controls on linux-v6.12; default-tree on balanced-1M) include zero; peak RSS non-inferior; route differential identical. TESTS: keep the linear matcher under cfg(test) and property-test random rule sets (literal, suffix, anchored, negated, dir-only, escaped, [..], non-UTF-8, names ending in '.', '*.') x random names against it, plus the git check-ignore verdict table. ~150 lines.
 
