@@ -3717,7 +3717,7 @@ fn prepare_walk_entry_reading(
     }
     let path = rel_dir.join(name);
     let (control, control_error) = if read_control {
-        match read_control_op(config, root, &path, kind) {
+        match read_named_control_op(config, root, &path, name, kind) {
             Ok(control) => (control, None),
             Err(error) => (None, Some(error)),
         }
@@ -3839,11 +3839,11 @@ fn controls_first(listing: &mut [ObservationOp]) {
 /// control state at all.
 ///
 /// Every control observation goes through here -- each walk and reconcile site, and the
-/// watch layer's verification -- so the policy cannot be forgotten at one of them. A
-/// watch must honor it like a scan does: its scope has to equal the index's, the scope
-/// carries this bit, and a verifier that read control files regardless would grow a
-/// partial rule set, from whichever sources events touched, under a scope that says
-/// there is none.
+/// watch layer's verification -- or through [`read_named_control_op`], which shares its
+/// gate, so the policy cannot be forgotten at one of them. A watch must honor it like a
+/// scan does: its scope has to equal the index's, the scope carries this bit, and a
+/// verifier that read control files regardless would grow a partial rule set, from
+/// whichever sources events touched, under a scope that says there is none.
 ///
 /// It is also where a listed name becomes a control read, by the rule the module
 /// documentation of [`crate::control`] states: the directory's control is what a lookup
@@ -3860,10 +3860,42 @@ pub(crate) fn read_control_op(
     path: &Path,
     kind: EntryKind,
 ) -> Result<Option<Op>> {
+    read_spelled_control_op(config, root, path, kind, crate::control::path_control_spelling)
+}
+
+/// [`read_control_op`] for the entry `name` a listing just produced, at `path`, the
+/// listed directory joined with `name`.
+///
+/// The walker already holds the name, so its spelling is tested on those bytes: a length
+/// comparison for nearly every entry, as in the detached builder. Parsing the last
+/// component back out of the joined path cost the transient summary about 270
+/// instructions for every entry, on a tree with no `.gitignore` as much as on one with
+/// many (H180). A listed name is one normal component, so it is the path's last one and
+/// the decision is the same.
+fn read_named_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    name: &OsStr,
+    kind: EntryKind,
+) -> Result<Option<Op>> {
+    debug_assert_eq!(path.file_name(), Some(name), "a listed name ends its path");
+    read_spelled_control_op(config, root, path, kind, |_| crate::control::control_spelling(name))
+}
+
+/// [`read_control_op`], with the spelling of `path`'s last component found by `spelling`
+/// once the policy allows a read at all.
+fn read_spelled_control_op(
+    config: &ScanConfig,
+    root: &Path,
+    path: &Path,
+    kind: EntryKind,
+    spelling: impl FnOnce(&Path) -> Option<crate::control::ControlSpelling>,
+) -> Result<Option<Op>> {
     if !config.read_controls {
         return Ok(None);
     }
-    match crate::control::path_control_spelling(path) {
+    match spelling(path) {
         Some(crate::control::ControlSpelling::Exact) => {
             read_control_op_unconditional(root, path, kind, config.control_limits.budget)
         }
@@ -7526,7 +7558,15 @@ mod tests {
                 .expect("lookup")
             };
             let listed = |path: &str, kind| {
-                read_control_op(&config, dir.path(), Path::new(path), kind).expect("listed read")
+                let path = Path::new(path);
+                let read = read_control_op(&config, dir.path(), path, kind).expect("listed read");
+                let name = path.file_name().expect("a listed name");
+                assert_eq!(
+                    read_named_control_op(&config, dir.path(), path, name, kind).expect("named"),
+                    read,
+                    "{label}: a walker's read by the listed name decides as the path's (H180)"
+                );
+                read
             };
 
             assert_eq!(lookup("exact"), upsert("exact/.gitignore", b"*.log\n"), "{label}");
@@ -7560,6 +7600,18 @@ mod tests {
                 .expect("read"),
                 None,
                 "{label}: a scan that reads no rules looks nothing up"
+            );
+            assert_eq!(
+                read_named_control_op(
+                    &blind,
+                    dir.path(),
+                    Path::new("exact/.gitignore"),
+                    OsStr::new(".gitignore"),
+                    EntryKind::File
+                )
+                .expect("read"),
+                None,
+                "{label}: nor does a read by the listed name"
             );
         }
     }
