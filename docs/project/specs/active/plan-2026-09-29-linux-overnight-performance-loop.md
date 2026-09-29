@@ -595,13 +595,13 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | Q2 H171 revised, with H175 | `fdu-sdul`, `fdu-hb0u` | Accepted, merged `2379233a` | exp-178: `linux-v6.12` default tree −29.62%, summary −25.45%; exp-179: H175 another −3.31% on the tree; placebos at zero; glob evaluations 110 → 0.0019 per entry; answers identical to the base and to git |
 | Matcher survey | `fdu-p6vc` | Source half done | Findings in the bead’s notes; benchmark half queued after Q2 |
 | Q3 H165 walker count | `fdu-c11z` | Queued | — |
-| Q4 H172 tree tier, with H176 | `fdu-dp98`, `fdu-dnfs` | Implementing (worktree `perf/h172-transient-tree`) | — |
+| Q4 H172 tree tier, with H176 | `fdu-dp98`, `fdu-dnfs` | Accepted, merged `0228ea42` | exp-180: `linux-v6.12` default tree −13.48% (91.8 → 80.2 ms); exp-181: `node-modules-dense` −10.30%; balanced screen −3.20% wall, peak RSS −79%; placebos at zero |
 | Q5 H174 listing digest | `fdu-sfse` | Queued | — |
-| Q6 H169 native reader | `fdu-leja` | Queued | — |
+| Q6 H169 native reader | `fdu-leja` | Implementing (worktree `perf/h169-linux-reader`), from a Fable spec | — |
 | Q7 H166 wake one | `fdu-i6nk` | Queued | — |
 | Q8 H170 summary fold | `fdu-lz25` | Queued | — |
 | Q9 H164 tree route | `fdu-emqf` | Conditional | — |
-| Harness invalid-sample verdict | `fdu-c2c6` | Queued | — |
+| Harness invalid-sample verdict | `fdu-c2c6` | Fixed, `8a58d432` | INCONCLUSIVE for any invalid sample; the recorder refuses such an accept |
 | Automount flag | `fdu-puk7` | Filed | Folded into Q6 on Linux |
 | BOM and NUL divergence | `fdu-ifci` | Filed | Not tonight: it changes answers |
 
