@@ -71,7 +71,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 3 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -258,6 +258,8 @@ dead end.
 | 175 | [Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary](#exp175--linux-fcv49-baseline-default-tree-182-ms-24x-pdu-with-a-false-aa-accept-on-the-summary) | — | `default-tree` | -1.1% | 📏 baseline |
 | 176 | [Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu](#exp176--linux-fcv49-baseline-on-nodemodulesdense-default-tree-84-ms-11-behind-pdu) | — | `default-tree` | +3.9% | 📏 baseline |
 | 177 | [Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s](#exp177--linux-fcv49-baseline-on-the-generated-millionentry-tree-default-tree-136-s) | — | `default-tree` | +1.5% | 📏 baseline |
+| 178 | [Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12](#exp178--linux-h171-bucketed-gitignore-matching-cuts-the-default-tree-30-on-linuxv612) | H171 | `default-tree` | -29.6% | ✅ accepted |
+| 179 | [Linux H175 derived control chains take another 3% off the default tree](#exp179--linux-h175-derived-control-chains-take-another-3-off-the-default-tree) | H175 | `default-tree` | -3.3% | ✅ accepted |
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
@@ -5868,6 +5870,70 @@ ms, aggregate-summary 1,234.3 ms; A/A +1.55% [-0.36%, +2.83%] and +0.67%
 Full record:
 [`exp-177-linux-fc-v49-baseline-on-the-generated-million-entry-tree-de.md`](../experiments/exp-177-linux-fc-v49-baseline-on-the-generated-million-entry-tree-de.md)
 
+### exp-178 — Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12
+
+✅ accepted · 2026-09-29 · H171 · commit `7c69e88a`
+
+Control: e5a71c8a probe (0.2.1 engine)
+
+Candidate: 7c69e88a probe: H171 bucketed matching
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 188.4 | 130.2 | -29.62% | [-33.58%, -26.11%] |
+| component (ms) | 181.8 | 124.9 | -30.78% | [-33.66%, -26.99%] |
+| cpu (ms) | 509.6 | 423.5 | -17.00% | [-18.69%, -15.19%] |
+| user (ms) | 202.7 | 119.7 | -41.74% | [-47.60%, -36.02%] |
+| system (ms) | 315.4 | 307.0 | -2.59% (n.s.) | [-7.62%, +7.10%] |
+| peak rss (MiB) | 32.6 | 30.9 | -6.05% | [-9.57%, -4.43%] |
+
+Other jobs, wall time: `aggregate-summary` -25.5%.
+
+Cost to carry: 1481 lines; no new dependencies.
+
+about 1,350 of the lines are tests: a property test against the linear matcher kept
+under cfg(test), a t3070-wildmatch table, FNV collision and memory-charge tests
+
+**Accepted:** quiet 20-pair linux-v6.12 default-tree -29.62% [-33.58%, -26.11%],
+aggregate-summary -25.45% [-28.15%, -21.74%]; placebos (--no-controls both arms;
+balanced-1m) include zero; glob evaluations 110 -> 0.0019 per entry; answers identical
+to the base and to git check-ignore.
+
+Full record:
+[`exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md`](../experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md)
+
+### exp-179 — Linux H175 derived control chains take another 3% off the default tree
+
+✅ accepted · 2026-09-29 · H175 · commit `a1a4a568`
+
+Control: 7c69e88a probe: H171
+
+Candidate: a1a4a568 probe: H171 + H175 derived chains
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 130.2 | 126.0 | -3.31% | [-7.43%, -0.84%] |
+| component (ms) | 124.9 | 120.2 | -4.05% | [-8.17%, -0.99%] |
+| cpu (ms) | 423.5 | 414.2 | -2.09% (n.s.) | [-5.21%, +1.66%] |
+| user (ms) | 119.7 | 109.7 | -9.99% | [-20.99%, -1.31%] |
+| system (ms) | 307.0 | 304.9 | +0.91% (n.s.) | [-4.09%, +3.55%] |
+| peak rss (MiB) | 30.9 | 29.6 | -2.15% | [-4.44%, -0.12%] |
+
+Other jobs, wall time: `aggregate-summary` +1.8% (n.s.).
+
+Cost to carry: 141 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair linux-v6.12 default-tree -3.31% [-7.43%, -0.84%] stacked on
+H171, as predicted; aggregate-summary +1.83% [-0.64%, +4.39%] unchanged as predicted;
+--no-controls placebo includes zero; answers identical.
+
+Full record:
+[`exp-179-linux-h175-derived-control-chains-take-another-3-off-the-def.md`](../experiments/exp-179-linux-h175-derived-control-chains-take-another-3-off-the-def.md)
+
 ### exp-187 — Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore
 
 ✅ accepted · 2026-09-28 · H161 · commit `0d73ed54`
@@ -6221,6 +6287,14 @@ Baselines show one value because they measure a state rather than a change.
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
+| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
+| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
+
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6391,12 +6465,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 104 | Hash the content roll-up map by path bytes instead of components | `content-cache-hit` | 1,961.3 | 1,973.6 | +0.1% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

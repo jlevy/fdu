@@ -6,13 +6,14 @@
 //! paths, or because the cache must retain reusable state.  An unfiltered summary needs
 //! only its aggregate values and, when it observes `.gitignore`, the ignored share of
 //! them, so that one plan reduces the scan's observations directly and never builds an
-//! index.
+//! index.  An unfiltered tree with a positive share threshold needs every directory but
+//! only the files large enough to be shown, so that plan builds an index of those alone.
 
 use std::time::SystemTime;
 
 use crate::query::{
-    Delivery, Report, ReportProvenance, ReportSource, Request, SummaryRow, TreeStatus, ViewSpec,
-    report, report_summary,
+    Delivery, Report, ReportProvenance, ReportSource, Request, SizeMetric, SortKey, SummaryRow,
+    TreeStatus, ViewSpec, report, report_summary,
 };
 use crate::{CachePolicy, EntryKind, Error, OpenPath, PendingSave, Progress, Result, execute};
 
@@ -29,8 +30,71 @@ pub(crate) enum RetainedState {
     /// directories that head an ignored subtree, which is all it needs to classify each
     /// entry as the index would ([`SummaryFold`]).
     Summary,
+    /// A folded index: every directory, symlink, and other entry, but only the largest
+    /// regular files, and only the reducers a tree reads.
+    ///
+    /// Every other file still counts in its directory's roll-ups, and in a folded tally
+    /// that stands for the rows a share threshold would have omitted
+    /// ([`Index::folded_children`](crate::Index)). Such an index answers its one tree
+    /// report exactly and nothing else, so the plan that builds it reports from it and
+    /// frees it: it is never returned, persisted, or mutated ([`Index::is_folded`]).
+    Tree(TreeRetention),
     /// The complete reusable metadata index.
     FullIndex,
+}
+
+/// What a folded index ([`RetainedState::Tree`]) keeps of the regular files it walks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct TreeRetention {
+    /// How many of the largest files it keeps as entries: at least as many as the share
+    /// threshold can show as rows ([`ShareThreshold::admitted_parts_bound`]), since every
+    /// file is a part of the root total the threshold measures it against.
+    ///
+    /// [`ShareThreshold::admitted_parts_bound`]: crate::query::ShareThreshold
+    pub(crate) largest_files: u32,
+    /// The metric the share threshold measures, which is the one that ranks them.
+    pub(crate) size: SizeMetric,
+}
+
+impl TreeRetention {
+    /// The most files a folded index keeps.
+    ///
+    /// Beyond this a request takes the full index. The bound is on the memory the kept
+    /// files hold at once, each a heap slot with its name and attributes until the walk
+    /// ends, and on the cost of ranking against them. It admits every share of at least
+    /// `100 / 65,536` percent, about 0.0015%.
+    pub(crate) const MAX_FILES: u32 = 65_536;
+
+    /// The retention that answers `request` exactly, when a folded index can.
+    ///
+    /// That is when the tree projection is the report's only reader of the index: every
+    /// requested view is a List or Tree rendered as a tree, whose rows [`report`] builds
+    /// from roll-ups and direct children alone, never from a flat inventory or extension
+    /// tallies; the selection filters nothing, so every row is measured against the
+    /// root's maintained total; the scan retains its whole population; nothing is sorted
+    /// by a content metric; and the share threshold is positive and admits at most
+    /// [`Self::MAX_FILES`] rows. A files view is a flat inventory even where it renders as
+    /// a tree, so it takes the index.
+    fn for_request(request: &Request) -> Option<Self> {
+        let query = &request.query;
+        let tree_only = !query.views.is_empty()
+            && query.views.iter().all(|view| {
+                matches!(view, ViewSpec::List | ViewSpec::Tree) && query.tree_for(*view)
+            });
+        if !tree_only
+            || !query.selection.is_unfiltered()
+            || matches!(query.selection.sort, Some(SortKey::Metric(_)))
+            || request.basis.scope.population != crate::query::IgnoredEntries::Include
+        {
+            return None;
+        }
+        let largest_files = query
+            .min_share_for()
+            .admitted_parts_bound()
+            .and_then(|bound| u32::try_from(bound).ok())
+            .filter(|bound| *bound <= Self::MAX_FILES)?;
+        Some(Self { largest_files, size: query.selection.size })
+    }
 }
 
 /// The engine lifecycle that will deliver an answer.
@@ -363,6 +427,13 @@ pub fn throughput_rates(
 /// though with no cache path configured there is nothing to write, and the compact tier
 /// answers it like any other summary.
 ///
+/// A tree takes a folded index under the same route, policy, and analysis conditions,
+/// when [`TreeRetention::for_request`] finds the tree projection is its only reader and
+/// its share threshold bounds the rows it can show. Every directory is kept, since the
+/// tree shows directories by their subtree totals; only files too small to be shown are
+/// folded into their directory. The default `fdu PATH` is such a tree: at its 1% share
+/// the index keeps at most a hundred files.
+///
 /// Persistence follows the same reasoning as the read.  Under [`CachePolicy::Auto`] a
 /// one-shot metadata report writes nothing, because no later one-shot report reads what
 /// it would store: on a million-entry Linux tree the write was 0.26 s of a 1.51 s default
@@ -433,18 +504,20 @@ pub fn plan(
             CachePolicy::Auto => stored_state_pays,
             CachePolicy::On => true,
         };
+    let transient = route == Route::OneShot && !policy_requires_index && !analysis_requested;
+    let retained = if !transient {
+        RetainedState::FullIndex
+    } else if summary_is_sufficient {
+        RetainedState::Summary
+    } else if let Some(retention) = TreeRetention::for_request(request) {
+        RetainedState::Tree(retention)
+    } else {
+        RetainedState::FullIndex
+    };
     Ok(Plan {
         basis: request.basis.clone(),
         route,
-        retained: if route == Route::OneShot
-            && !policy_requires_index
-            && !analysis_requested
-            && summary_is_sufficient
-        {
-            RetainedState::Summary
-        } else {
-            RetainedState::FullIndex
-        },
+        retained,
         load: if read_snapshot { Load::Snapshot } else { Load::None },
         verify: if delivery.stale_ok { Verify::None } else { Verify::Filesystem },
         persist,
@@ -584,6 +657,33 @@ fn prepare_report_internal(
             };
             Ok((report, PendingSave::none(), performance, scan_diagnostics))
         }
+        RetainedState::Tree(retention) => {
+            // The cold walk `execute` would run for this plan, which neither loads nor
+            // writes a snapshot and analyzes nothing, into a folded index. This arm is the
+            // only one that builds such an index, and it never lets it go: it reports from
+            // it and frees it here.
+            let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
+            let (index, scan, scan_diagnostics) = crate::scan::scan_into_folded_index(
+                &root,
+                &scan_config,
+                retention,
+                collect_scan_diagnostics,
+            )?;
+            let performance = PerformanceSummary {
+                walked_files: scan.files_walked,
+                walked_bytes: scan.bytes_walked,
+                walked_allocated: scan.allocated_walked,
+                source: ReportSource::ColdScan,
+                ..PerformanceSummary::default()
+            };
+            if let Some(progress) = progress {
+                progress.enter(crate::ProgressPhase::Summarizing);
+            }
+            let answer = report(&index, request, SystemTime::now())?;
+            debug_assert_eq!(answer.scope, scan_config.scope());
+            crate::release_index(std::sync::Arc::new(index));
+            Ok((answer, PendingSave::none(), performance, scan_diagnostics))
+        }
         RetainedState::FullIndex => {
             let (index, open_report, pending_save, scan_diagnostics) =
                 execute(&plan, &request.basis, collect_scan_diagnostics, progress)?;
@@ -661,8 +761,10 @@ struct SummaryControls {
     /// arrive together, so this answers nearly all of them.
     parent: Option<(std::path::PathBuf, bool)>,
     /// The controls governing the parent last classified under, resolved once for its
-    /// listing (H163) and dropped whenever the table changes.
-    chain: Option<(std::path::PathBuf, crate::control::ControlChain)>,
+    /// listing (H163) with the parent's components split once for it too (H171), and
+    /// dropped whenever the table changes.
+    chain:
+        Option<(std::path::PathBuf, crate::control::ControlChain, crate::control::SplitDirectory)>,
     /// Every entry no rule ignores, as the index's `unignored` partition.
     unignored: crate::index::RollUpScalars,
     /// The first control observation the table rejected, which fails the report as it
@@ -794,11 +896,18 @@ impl SummaryControls {
         let ignored = if parent_ignored || self.table.is_empty() {
             parent_ignored
         } else if let Some(name) = path.file_name() {
-            if !matches!(&self.chain, Some((cached, _)) if cached == parent) {
-                self.chain = Some((parent.to_path_buf(), self.table.chain_for(parent)));
+            if !matches!(&self.chain, Some((cached, ..)) if cached == parent) {
+                self.chain = Some((
+                    parent.to_path_buf(),
+                    self.table.chain_for(parent),
+                    crate::control::SplitDirectory::new(parent),
+                ));
             }
-            let (_, chain) = self.chain.as_ref().expect("the chain was just resolved");
-            chain.is_ignored(parent, name.as_encoded_bytes(), kind.is_dir())
+            let (_, chain, split) = self.chain.as_ref().expect("the chain was just resolved");
+            !chain.is_empty()
+                && split.with_components(|directory| {
+                    chain.is_ignored_within(directory, name.as_encoded_bytes(), kind.is_dir())
+                })
         } else {
             self.table.matcher_for(path).is_ignored(kind.is_dir())
         };
@@ -2443,6 +2552,688 @@ mod tests {
 
         assert!(report.status.complete);
         assert!(!cache.exists());
+    }
+
+    // The folded index (H172): every directory, and only the files a share can show.
+
+    /// A tree request at `share` of the `size` metric, every other bound the view's own.
+    fn tree_query(
+        views: Vec<ViewSpec>,
+        format: crate::report_format::Format,
+        share: &str,
+        size: crate::query::SizeMetric,
+    ) -> Query {
+        let mut query = Query { views, format, ..Query::default() };
+        query.selection.min_share =
+            Some(crate::query::ShareThreshold::parse(share).expect("a share"));
+        query.selection.size = size;
+        query
+    }
+
+    /// Each request the planner must answer from the full index, and each it may answer
+    /// from a folded one, with the retention that one keeps.
+    #[test]
+    fn a_tree_takes_the_folded_index_only_when_the_request_proves_it_suffices() {
+        use crate::query::{Bound, SizeMetric, SortKey};
+        use crate::report_format::Format;
+
+        let off = config(CachePolicy::Off, None);
+        let list = Query { views: vec![ViewSpec::List], ..Query::default() };
+        let size = list.selection.size;
+        let kept = |largest_files, size| RetainedState::Tree(TreeRetention { largest_files, size });
+
+        // `fdu PATH`: the list rendered as a tree, at the tree's own 1% share.
+        assert_eq!(planned(&off, &list).retained, kept(100, size));
+        // Every tree rendering, both tree views together, every sort a tree row carries, and
+        // every display bound: none reads a file the share cannot show.
+        let mut folded = vec![
+            Query { format: Format::Tree, ..list.clone() },
+            Query { views: vec![ViewSpec::List, ViewSpec::Tree], ..list.clone() },
+        ];
+        for format in [Format::Text, Format::Tree, Format::Json, Format::Jsonl, Format::Yaml] {
+            folded.push(Query { views: vec![ViewSpec::Tree], format, ..Query::default() });
+        }
+        for sort in [SortKey::Size, SortKey::Name, SortKey::Mtime, SortKey::Count] {
+            for reverse in [false, true] {
+                let mut query = list.clone();
+                query.selection.sort = Some(sort);
+                query.selection.reverse = reverse;
+                folded.push(query);
+            }
+        }
+        for bound in [Bound::Limit(0), Bound::Limit(2), Bound::All] {
+            let mut query = list.clone();
+            query.selection.depth = Some(bound);
+            query.selection.breadth = Some(bound);
+            query.selection.limit = Some(bound);
+            folded.push(query);
+        }
+        for query in &folded {
+            assert_eq!(planned(&off, query).retained, kept(100, size), "{query:?}");
+        }
+        // The share decides how many files, and the metric which.
+        for (share, largest_files) in
+            [("10%", 10), ("0.5%", 200), ("3%", 34), ("0.01%", 10_000), ("100%", 1)]
+        {
+            for metric in [SizeMetric::Apparent, SizeMetric::Allocated] {
+                let query = tree_query(vec![ViewSpec::List], Format::Text, share, metric);
+                assert_eq!(planned(&off, &query).retained, kept(largest_files, metric), "{share}");
+            }
+        }
+        // The ceiling is exact: `100 / 65,536` percent keeps 65,536 files, and any finer
+        // share would keep more, so it takes the full index.
+        let ceiling = tree_query(vec![ViewSpec::Tree], Format::Json, "0.00152587890625%", size);
+        assert_eq!(planned(&off, &ceiling).retained, kept(TreeRetention::MAX_FILES, size));
+        let past = tree_query(vec![ViewSpec::Tree], Format::Json, "0.0015258%", size);
+        assert_eq!(planned(&off, &past).retained, RetainedState::FullIndex);
+        // Neither the scan's reach nor whether it reads `.gitignore` changes what a tree
+        // reads, and a delivery that keeps no snapshot keeps no index either.
+        for fixture in [
+            blind(CachePolicy::Off, None),
+            OpenFixture {
+                scan: ScanConfig { max_depth: Some(2), ..ScanConfig::default() },
+                ..off.clone()
+            },
+            config(CachePolicy::Auto, Some(PathBuf::from("cache.fdu"))),
+            config(CachePolicy::On, None),
+        ] {
+            assert_eq!(planned(&fixture, &list).retained, kept(100, size), "{fixture:?}");
+        }
+
+        // What reads more than a tree: a flat inventory, extension or type tallies, or a
+        // files view, even one rendered as a tree.
+        let mut full = vec![
+            Query { format: Format::Json, ..list.clone() },
+            Query { views: vec![ViewSpec::Tree], format: Format::Paths, ..list.clone() },
+            Query { views: vec![ViewSpec::Tree], format: Format::Long, ..list.clone() },
+            Query { views: vec![ViewSpec::Files], format: Format::Tree, ..list.clone() },
+            Query { views: vec![ViewSpec::List, ViewSpec::Types], ..list.clone() },
+            Query { views: vec![ViewSpec::Tree, ViewSpec::Extensions], ..list.clone() },
+            Query { views: vec![ViewSpec::Tree, ViewSpec::Summary], ..list.clone() },
+            Query { views: vec![ViewSpec::Tree, ViewSpec::Files], ..list.clone() },
+            Query { views: Vec::new(), ..list.clone() },
+        ];
+        // Any filter, which measures rows against what it selects rather than the root.
+        let mut filtered = list.clone();
+        filtered.selection.include.push(Pattern::parse("*.rs").expect("pattern"));
+        full.push(filtered);
+        let mut excluded = list.clone();
+        excluded.selection.exclude.push(Pattern::parse("target").expect("pattern"));
+        full.push(excluded);
+        let mut sized = list.clone();
+        sized.selection.min_size = Some(1);
+        full.push(sized);
+        let mut kinds = list.clone();
+        kinds.selection.kinds = vec![EntryKind::Dir];
+        full.push(kinds);
+        let mut by_ignored = list.clone();
+        by_ignored.selection.ignored = IgnoredEntries::Exclude;
+        full.push(by_ignored);
+        // A zero share shows every file.
+        full.push(tree_query(vec![ViewSpec::List], Format::Text, "0%", size));
+        full.push(tree_query(vec![ViewSpec::Tree], Format::Json, "0.000%", size));
+        for query in &full {
+            assert_eq!(planned(&off, query).retained, RetainedState::FullIndex, "{query:?}");
+        }
+
+        // Content analysis, a narrowed population, and deliveries about the snapshot.
+        let cache = || Some(PathBuf::from("cache.fdu"));
+        for fixture in [
+            analyzing(off.clone()),
+            stale(config(CachePolicy::Auto, cache())),
+            config(CachePolicy::On, cache()),
+        ] {
+            assert_eq!(planned(&fixture, &list).retained, RetainedState::FullIndex, "{fixture:?}");
+        }
+        for population in [IgnoredEntries::Exclude, IgnoredEntries::Only] {
+            let narrowed = OpenFixture {
+                scan: ScanConfig { population, ..ScanConfig::default() },
+                ..off.clone()
+            };
+            let mut query = list.clone();
+            query.selection.ignored = population;
+            assert_eq!(planned(&narrowed, &query).retained, RetainedState::FullIndex);
+        }
+        // Every route but a one-shot report keeps its index.
+        let (request, delivery) = split(Path::new("."), &off, &list);
+        for route in [Route::Retained, Route::Refresh, Route::Watch, Route::Opened] {
+            let plan = plan(&request, &delivery, route).expect("a valid plan");
+            assert_eq!(plan.retained, RetainedState::FullIndex, "{route:?}");
+        }
+    }
+
+    /// The request each surface builds for a bare `fdu PATH` (the command line in its flag
+    /// spellings, Python in its field names) plans the folded tree under the deliveries it
+    /// runs with. The plan is not observable in any output, so a change to `tree_for`,
+    /// `is_unfiltered`, or a default that sends the default report back to the full index
+    /// would otherwise show only in a measurement.
+    #[test]
+    fn the_default_request_of_every_surface_plans_the_folded_tree() {
+        use crate::query::{AxisNames, ReadSpec, RequestSpec, SizeMetric};
+        let root = Path::new(".");
+        let default_tree =
+            RetainedState::Tree(TreeRetention { largest_files: 100, size: SizeMetric::Allocated });
+        let deliveries = [
+            Delivery::new(CachePolicy::Auto, Some(PathBuf::from("cache.fdu"))),
+            Delivery::new(CachePolicy::Off, None),
+        ];
+        let planned = |spec: &RequestSpec<'_>, axes, delivery: &Delivery| {
+            let request =
+                Request::build(spec, SystemTime::UNIX_EPOCH, axes).expect("a valid request");
+            plan(&request, delivery, Route::OneShot).expect("a valid plan").retained
+        };
+        for axes in [&AxisNames::FLAGS, &AxisNames::FIELDS] {
+            for delivery in &deliveries {
+                assert_eq!(planned(&RequestSpec::new(root), axes, delivery), default_tree);
+                // `--view tree` in a machine format is the same tree; the list in one is flat.
+                let tree_json = RequestSpec {
+                    read: ReadSpec { views: Some("tree"), format: Some("json"), ..ReadSpec::new() },
+                    ..RequestSpec::new(root)
+                };
+                assert_eq!(planned(&tree_json, axes, delivery), default_tree);
+                let list_json = RequestSpec {
+                    read: ReadSpec { format: Some("json"), ..ReadSpec::new() },
+                    ..RequestSpec::new(root)
+                };
+                assert_eq!(planned(&list_json, axes, delivery), RetainedState::FullIndex);
+            }
+        }
+    }
+
+    /// A small deterministic generator (xorshift64*), so a randomized tree is the same
+    /// tree on every run.
+    struct Shuffle(u64);
+
+    impl Shuffle {
+        fn below(&mut self, bound: usize) -> usize {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            let drawn = self.0.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 32;
+            usize::try_from(drawn).expect("32 bits") % bound
+        }
+    }
+
+    /// A file of `size` bytes, written or left sparse, modified at `minute`.
+    fn sized_file(path: &Path, size: u64, sparse: bool, minute: u64) {
+        use std::io::Write as _;
+        fs::create_dir_all(path.parent().expect("a parent")).expect("parent directories");
+        let mut file = fs::File::create(path).expect("fixture file");
+        if sparse {
+            file.set_len(size).expect("sparse length");
+        } else {
+            file.write_all(&vec![b'.'; usize::try_from(size).expect("small")]).expect("contents");
+        }
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(minute * 60))
+            .expect("mtime");
+    }
+
+    /// `files` files under a random hierarchy up to five deep: empty, small, many exactly
+    /// alike, and large ones sparse so apparent and allocated order them differently; a
+    /// few modification times, so a newest-first sort meets ties; `.gitignore` rules that
+    /// ignore, re-include, and ignore a whole directory; and symlinks, which a tree counts
+    /// in no row.
+    fn random_tree(seed: u64, files: usize) -> tempfile::TempDir {
+        let mut draw = Shuffle(seed);
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut dirs = vec![PathBuf::new()];
+        for index in 0..files.div_ceil(12) {
+            let parent = dirs[draw.below(dirs.len())].clone();
+            if parent.components().count() < 5 {
+                let dir = parent.join(format!("d{index:03}"));
+                fs::create_dir(root.path().join(&dir)).expect("directory");
+                dirs.push(dir);
+            }
+        }
+        let extensions = ["log", "txt", "bin", "tmp", "rs"];
+        for index in 0..files {
+            let dir = &dirs[draw.below(dirs.len())];
+            let name = format!("f{index:05}.{}", extensions[draw.below(extensions.len())]);
+            let (size, sparse) = match draw.below(20) {
+                0..=2 => (0, false),
+                3..=10 => (draw.below(300) as u64, false),
+                11..=13 => (1_000, false),
+                14..=17 => (draw.below(40_000) as u64, false),
+                _ => (50_000 + draw.below(4_000_000) as u64, true),
+            };
+            let minute = 28_000_000 + draw.below(4) as u64;
+            sized_file(&root.path().join(dir).join(name), size, sparse, minute);
+        }
+        put(root.path(), ".gitignore", b"*.log\n!f000*.log\nd002/\n");
+        if let Some(dir) = dirs.get(3) {
+            put(&root.path().join(dir), ".gitignore", b"!*.log\n*.tmp\n");
+        }
+        #[cfg(unix)]
+        for (index, dir) in dirs.iter().take(4).enumerate() {
+            std::os::unix::fs::symlink(
+                "elsewhere",
+                root.path().join(dir).join(format!("l{index}")),
+            )
+            .expect("symlink");
+        }
+        root
+    }
+
+    /// Trees built for the share boundary, each with what it holds there.
+    fn boundary_trees() -> Vec<(&'static str, tempfile::TempDir)> {
+        let mut trees = Vec::new();
+
+        // Nine files at exactly 10% of apparent bytes and two tied for the tenth place at
+        // 5%, which a 10% tree keeps one of and shows neither of; in allocated bytes all
+        // eleven tie. Two directories, so the tie spans parents.
+        let ties = tempfile::tempdir().expect("tempdir");
+        for index in 0..9 {
+            sized_file(&ties.path().join(format!("a/at{index}")), 1_000, false, index);
+        }
+        sized_file(&ties.path().join("a/half"), 500, false, 20);
+        sized_file(&ties.path().join("b/half"), 500, false, 20);
+        trees.push(("ties at the retention bound", ties));
+
+        // Exactly as many files at 5% as a 5% tree keeps, and empty files beside them.
+        let exact = tempfile::tempdir().expect("tempdir");
+        for index in 0..20 {
+            sized_file(&exact.path().join(format!("d{}/f{index:02}", index % 3)), 50, false, 1);
+            sized_file(&exact.path().join(format!("d{}/e{index:02}", index % 4)), 0, false, 2);
+        }
+        trees.push(("exactly the files a share shows", exact));
+
+        // Nothing but empty files: the root total is zero, and no row reaches any share.
+        let zero = tempfile::tempdir().expect("tempdir");
+        for index in 0..60 {
+            sized_file(&zero.path().join(format!("d{}/z{index:02}", index % 5)), 0, false, 3);
+        }
+        trees.push(("all files empty", zero));
+
+        let empty = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(empty.path().join("only/directories")).expect("directories");
+        trees.push(("no files", empty));
+
+        let single = tempfile::tempdir().expect("tempdir");
+        sized_file(&single.path().join("one"), 7, false, 4);
+        trees.push(("one file", single));
+
+        // Ignored files at and just below 1%, an ignored directory of small files, and
+        // enough unignored small files that most of both populations fold.
+        let ignored = tempfile::tempdir().expect("tempdir");
+        put(ignored.path(), ".gitignore", b"*.big\nbuild/\n");
+        sized_file(&ignored.path().join("src/at.big"), 1_000, false, 5);
+        sized_file(&ignored.path().join("src/below.big"), 999, false, 5);
+        for index in 0..150 {
+            sized_file(&ignored.path().join(format!("build/o{index:03}")), 30, false, 6);
+            sized_file(&ignored.path().join(format!("src/s{index:03}.rs")), 38, false, 7);
+            sized_file(&ignored.path().join(format!("src/x{index:03}.big")), 5, false, 8);
+        }
+        trees.push(("ignored files at the share boundary", ignored));
+
+        // Three paths to one file at exactly 10% each, which every route counts once per
+        // path, beside seven other files at 10% and empty files a share omits.
+        let linked = tempfile::tempdir().expect("tempdir");
+        sized_file(&linked.path().join("a/original"), 1_000, false, 9);
+        for link in ["b/link", "c/deeper/link"] {
+            fs::create_dir_all(linked.path().join(link).parent().expect("a parent"))
+                .expect("directories");
+            fs::hard_link(linked.path().join("a/original"), linked.path().join(link))
+                .expect("hard link");
+        }
+        for index in 0..7 {
+            sized_file(&linked.path().join(format!("d/f{index}")), 1_000, false, 10);
+        }
+        for index in 0..30 {
+            sized_file(&linked.path().join(format!("e/z{index:02}")), 0, false, 11);
+        }
+        trees.push(("hard links at the share boundary", linked));
+
+        // A FIFO and a socket, which are entries of no row, beside files a share omits.
+        #[cfg(unix)]
+        {
+            let special = tempfile::tempdir().expect("tempdir");
+            for index in 0..120 {
+                sized_file(&special.path().join(format!("s/f{index:03}")), 10, false, 12);
+            }
+            sized_file(&special.path().join("s/large"), 5_000, false, 13);
+            let fifo = special.path().join("s/pipe");
+            let status =
+                std::process::Command::new("mkfifo").arg(&fifo).status().expect("run mkfifo");
+            assert!(status.success(), "mkfifo exited with {status}");
+            drop(
+                std::os::unix::net::UnixListener::bind(special.path().join("s/socket"))
+                    .expect("bind socket"),
+            );
+            trees.push(("special files beside folded files", special));
+        }
+
+        // Two names that differ only in an invalid byte are one name once made readable,
+        // so rows of equal size and equal lossy name fall back to name order.
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::ffi::OsStrExt as _;
+            let lossy = tempfile::tempdir().expect("tempdir");
+            for byte in [0xfe_u8, 0xff] {
+                let bytes = [b't', b'i', b'e', byte];
+                let name = std::ffi::OsStr::from_bytes(&bytes);
+                sized_file(&lossy.path().join("n").join(name), 2_000, false, 14);
+            }
+            for index in 0..80 {
+                sized_file(&lossy.path().join(format!("n/small{index:02}")), 3, false, 15);
+            }
+            trees.push(("names equal once made readable", lossy));
+        }
+        trees
+    }
+
+    /// Worker counts and traversal orders the differential walks each tree under, and
+    /// whether it compares every request there or the default ones.
+    fn folded_walks(one_worker: bool) -> Vec<(usize, crate::ScanOrder, bool)> {
+        use crate::ScanOrder::{BreadthFirst, DepthFirst};
+        let mut walks = Vec::new();
+        for threads in [1, 2, 4, 8] {
+            if one_worker && threads != 1 {
+                continue;
+            }
+            for order in [BreadthFirst, DepthFirst] {
+                let every = matches!((threads, order), (1, BreadthFirst) | (8, DepthFirst))
+                    || (one_worker && order == DepthFirst);
+                walks.push((threads, order, every));
+            }
+        }
+        walks
+    }
+
+    /// The tree requests compared at one share and metric: the defaults, or every
+    /// rendering, sort, and display bound a tree has.
+    fn folded_queries(share: &str, size: crate::query::SizeMetric, every: bool) -> Vec<Query> {
+        use crate::query::{Bound, SortKey};
+        use crate::report_format::Format;
+        let list = tree_query(vec![ViewSpec::List], Format::Text, share, size);
+        let json = tree_query(vec![ViewSpec::Tree], Format::Json, share, size);
+        let mut queries = vec![list.clone(), json.clone()];
+        if !every {
+            return queries;
+        }
+        queries.push(Query { format: Format::Tree, ..list.clone() });
+        for format in [Format::Jsonl, Format::Yaml, Format::Text] {
+            queries.push(Query { format, ..json.clone() });
+        }
+        queries.push(Query { views: vec![ViewSpec::List, ViewSpec::Tree], ..list.clone() });
+        for sort in [SortKey::Size, SortKey::Name, SortKey::Mtime, SortKey::Count] {
+            for reverse in [false, true] {
+                let mut query = list.clone();
+                query.selection.sort = Some(sort);
+                query.selection.reverse = reverse;
+                queries.push(query);
+            }
+        }
+        let bounds: [(Option<Bound>, Option<Bound>, Option<Bound>); 12] = [
+            (Some(Bound::Limit(0)), None, None),
+            (None, Some(Bound::Limit(0)), None),
+            (Some(Bound::Limit(0)), Some(Bound::Limit(0)), None),
+            (Some(Bound::Limit(1)), None, None),
+            (Some(Bound::Limit(2)), None, None),
+            (Some(Bound::All), None, None),
+            (None, Some(Bound::Limit(1)), None),
+            (Some(Bound::All), Some(Bound::Limit(3)), None),
+            (None, None, Some(Bound::Limit(0))),
+            (None, None, Some(Bound::Limit(1))),
+            (None, None, Some(Bound::Limit(5))),
+            (Some(Bound::All), Some(Bound::Limit(2)), Some(Bound::Limit(7))),
+        ];
+        for (depth, breadth, limit) in bounds {
+            let mut query = json.clone();
+            query.selection.depth = depth;
+            query.selection.breadth = breadth;
+            query.selection.limit = limit;
+            queries.push(query.clone());
+            query.selection.sort = Some(SortKey::Name);
+            queries.push(query);
+        }
+        queries
+    }
+
+    /// The shares every tree is compared at: the default, finer and coarser ones, one
+    /// that divides 100 unevenly, the whole, and the ceiling of what a folded index keeps.
+    const FOLDED_SHARES: [&str; 8] =
+        ["1%", "0.5%", "5%", "10%", "0.01%", "33%", "100%", "0.00152587890625%"];
+
+    /// For every walk of `root` under `scan`, every share and metric, and every request in
+    /// [`folded_queries`], the report from the folded index the planner chooses is the
+    /// report from the full index of the same walk: as a value, and rendered. Returns
+    /// whether any folded index kept fewer entries than the full one, so a tree that stopped
+    /// exercising the fold is noticed rather than agreeing vacuously.
+    fn assert_folded_reports_match(
+        root: &Path,
+        scan: &ScanConfig,
+        shares: &[&str],
+        one_worker: bool,
+        label: &str,
+    ) -> bool {
+        use crate::query::SizeMetric;
+        let canonical = root.canonicalize().expect("canonical root");
+        let mut folded_any = false;
+        for (threads, order, every) in folded_walks(one_worker) {
+            let fixture = OpenFixture {
+                scan: ScanConfig { threads: Some(threads), order, ..scan.clone() },
+                ..config(CachePolicy::Off, None)
+            };
+            let mut full = None;
+            // Every share where every request is compared; the first four elsewhere.
+            for share in shares.iter().take(if every { shares.len() } else { 4 }) {
+                for size in [SizeMetric::Apparent, SizeMetric::Allocated] {
+                    let mut folded: Option<(TreeRetention, crate::Index)> = None;
+                    for query in folded_queries(share, size, every) {
+                        let (request, delivery) = split(root, &fixture, &query);
+                        let scan_config = request.basis.scope.scan_config(&delivery);
+                        let RetainedState::Tree(retention) =
+                            plan(&request, &delivery, Route::OneShot).expect("plan").retained
+                        else {
+                            panic!("{label}: {query:?} takes the full index")
+                        };
+                        let full = full.get_or_insert_with(|| {
+                            let (index, _) = crate::scan::scan_into_index(&canonical, &scan_config)
+                                .expect("full index");
+                            index
+                        });
+                        if folded.as_ref().is_none_or(|(held, _)| *held != retention) {
+                            let (index, _, _) = crate::scan::scan_into_folded_index(
+                                &canonical,
+                                &scan_config,
+                                retention,
+                                false,
+                            )
+                            .expect("folded index");
+                            assert!(index.is_folded() && !full.is_folded(), "{label}");
+                            folded_any |= index.len() < full.len();
+                            folded = Some((retention, index));
+                        }
+                        let (_, index) = folded.as_ref().expect("a folded index");
+                        let mut from_folded =
+                            report(index, &request, SystemTime::UNIX_EPOCH).expect("folded report");
+                        let from_full =
+                            report(full, &request, SystemTime::UNIX_EPOCH).expect("full report");
+                        // Provenance describes each walk; everything else describes the tree.
+                        assert_eq!(
+                            (from_folded.provenance.source, from_folded.provenance.freshness),
+                            (from_full.provenance.source, from_full.provenance.freshness),
+                            "{label}"
+                        );
+                        from_folded.provenance = from_full.provenance.clone();
+                        assert_eq!(
+                            format!("{from_folded:#?}"),
+                            format!("{from_full:#?}"),
+                            "{label} ({threads} workers, {order:?}, {share} of {size:?}): {query:?}"
+                        );
+                        assert_eq!(
+                            crate::report_format::render(&from_folded, query.format, false)
+                                .expect("render"),
+                            crate::report_format::render(&from_full, query.format, false)
+                                .expect("render"),
+                            "{label} ({threads} workers, {order:?}, {share} of {size:?}): {query:?}"
+                        );
+                    }
+                }
+            }
+        }
+        folded_any
+    }
+
+    /// The one-shot route end to end: `prepare_report` plans the folded index for the
+    /// default tree, and answers exactly what the full index answers under a delivery that
+    /// requires one, with the same walked totals.
+    fn assert_folded_route_matches(root: &Path, scan: &ScanConfig, label: &str) {
+        use crate::report_format::{Format, render};
+        let list = Query { views: vec![ViewSpec::List], ..Query::default() };
+        for threads in [Some(1), Some(4)] {
+            let scan = ScanConfig { threads, ..scan.clone() };
+            let transient = OpenFixture { scan: scan.clone(), ..config(CachePolicy::Off, None) };
+            assert!(matches!(planned(&transient, &list).retained, RetainedState::Tree(_)));
+            let (mut folded, pending, folded_performance) =
+                prepared(root, &transient, &list).expect("folded report");
+            pending.join().expect("the folded route saves nothing");
+
+            let cache = tempfile::tempdir().expect("cache dir");
+            let indexed = OpenFixture {
+                scan: scan.clone(),
+                ..config(CachePolicy::On, Some(cache.path().join("snapshot.fdu")))
+            };
+            assert_eq!(planned(&indexed, &list).retained, RetainedState::FullIndex);
+            let (indexed, pending, indexed_performance) =
+                prepared(root, &indexed, &list).expect("indexed report");
+            pending.join().expect("save");
+
+            assert_eq!(folded_performance, indexed_performance, "{label}");
+            assert_eq!(folded.provenance.source, indexed.provenance.source, "{label}");
+            assert_eq!(folded.provenance.freshness, indexed.provenance.freshness, "{label}");
+            folded.provenance = indexed.provenance.clone();
+            assert_eq!(format!("{folded:#?}"), format!("{indexed:#?}"), "{label}");
+            for format in [Format::Text, Format::Json, Format::Yaml] {
+                assert_eq!(
+                    render(&folded, format, false).expect("render"),
+                    render(&indexed, format, false).expect("render"),
+                    "{label}: {format:?}"
+                );
+            }
+        }
+    }
+
+    /// A tree from the folded index is the tree from the full index, whole, wherever the
+    /// planner chooses the folded one: randomized and boundary-built trees, and every control
+    /// case the summary differential uses (refusals by budget and line limit, an unreadable
+    /// control file where the host enforces permissions, case variants, hidden pruning, a
+    /// scan-depth bound whose subtrees are incomplete); at one, two, four, and eight workers
+    /// and both traversal orders; at the default, finer, coarser, uneven, whole, and ceiling
+    /// shares; in both size metrics; sorted by every key a tree row carries, both ways; at
+    /// every depth, breadth, and row bound; in every rendering. Ties at the retention bound,
+    /// empty files, an empty tree, and ignored files at the share are among the trees.
+    #[test]
+    fn transient_tree_equals_the_indexed_tree_under_every_bound_case() {
+        let mut folded_trees = 0;
+        for (seed, files, scan) in [
+            (0x9E37_79B9_7F4A_7C15_u64, 480, ScanConfig::default()),
+            (0xD1B5_4A32_D192_ED03, 700, ScanConfig::default()),
+            (
+                0x2545_F491_4F6C_DD1D,
+                360,
+                ScanConfig { max_depth: Some(3), ..ScanConfig::default() },
+            ),
+            (
+                0x94D0_49BB_1331_11EB,
+                420,
+                ScanConfig { read_controls: false, ..ScanConfig::default() },
+            ),
+        ] {
+            let tree = random_tree(seed, files);
+            let label = format!("random tree {seed:#x} of {files} files");
+            assert!(
+                assert_folded_reports_match(tree.path(), &scan, &FOLDED_SHARES, false, &label),
+                "{label} folds at some share"
+            );
+            assert_folded_route_matches(tree.path(), &scan, &label);
+            folded_trees += 1;
+        }
+
+        for (name, tree) in boundary_trees() {
+            let scan = ScanConfig::default();
+            let folds =
+                assert_folded_reports_match(tree.path(), &scan, &FOLDED_SHARES, false, name);
+            assert_eq!(
+                folds,
+                !matches!(name, "no files" | "one file"),
+                "{name}: whether the tree has files a share omits"
+            );
+            assert_folded_route_matches(tree.path(), &scan, name);
+            folded_trees += usize::from(folds);
+        }
+
+        // A directory whose listing failed, beside and above directories with folded files:
+        // the walk is partial, the subtree measurements run over the folded index, and the
+        // unlisted directory is shown whatever its share.
+        #[cfg(unix)]
+        if crate::test_support::require_permission_bits() {
+            use std::os::unix::fs::PermissionsExt;
+            /// Readable again when dropped, so the tree can be removed after a failure.
+            struct Unlocked(PathBuf);
+            impl Drop for Unlocked {
+                fn drop(&mut self) {
+                    let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+                }
+            }
+            let tree = random_tree(0x1405_7B7E_F767_814F, 300);
+            let locked = tree.path().join("locked");
+            sized_file(&locked.join("hidden-large"), 900_000, false, 16);
+            sized_file(&locked.join("inner/hidden-small"), 4, false, 16);
+            for index in 0..60 {
+                sized_file(&tree.path().join(format!("beside/b{index:02}")), 7, false, 17);
+            }
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("lock");
+            let _unlocked = Unlocked(locked);
+            let (index, _) = crate::scan::scan_into_index(tree.path(), &ScanConfig::default())
+                .expect("a partial index");
+            assert_ne!(index.state().coverage, crate::Coverage::Complete, "the listing failed");
+            let label = "a failed listing beside folded files";
+            assert!(
+                assert_folded_reports_match(
+                    tree.path(),
+                    &ScanConfig::default(),
+                    &FOLDED_SHARES,
+                    false,
+                    label
+                ),
+                "{label}"
+            );
+            assert_folded_route_matches(tree.path(), &ScanConfig::default(), label);
+            folded_trees += 1;
+        }
+
+        for case in control_cases() {
+            let _lookups = case.lookups.install(case.root.path());
+            let label = format!("{} ({:?} lookups)", case.name, case.lookups);
+            let folds = assert_folded_reports_match(
+                case.root.path(),
+                &case.scan,
+                &["1%", "10%", "0.5%"],
+                case.order_dependent,
+                &label,
+            );
+            if !case.order_dependent {
+                assert_folded_route_matches(case.root.path(), &case.scan, &label);
+            }
+            folded_trees += usize::from(folds);
+        }
+
+        // Enough files that the finest share compared still folds some: ten thousand kept
+        // at 0.01%, of twelve thousand.
+        let large = random_tree(0x6C8E_9CF5_7093_2BD5, 12_000);
+        let label = "a tree larger than 0.01% keeps";
+        assert!(
+            assert_folded_reports_match(
+                large.path(),
+                &ScanConfig::default(),
+                &["0.01%"],
+                true,
+                label
+            ),
+            "{label}"
+        );
+        assert!(folded_trees > 10, "the differential folded {folded_trees} trees");
     }
 
     #[test]
