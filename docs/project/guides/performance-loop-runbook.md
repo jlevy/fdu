@@ -1074,8 +1074,8 @@ Its default single-view command is not covered by the earlier speedup.
    The
    [design study](../research/research-2026-09-29-linux-default-tree-point-solution.md)
    attributes 81% of what remains to a linear scan of about 111 patterns per entry, most
-   of them literal names or `*.suffix`; its prototype cut consumer instructions 63%.
-   Read the `.gitignore` matching survey in `fdu-sdul`’s notes first.
+   of them literal names or `*.suffix`; its prototype cut consumer instructions 63%. Run
+   the `.gitignore` matching survey (`fdu-p6vc`) first; H171 depends on it.
    The plan is [the 0.2.2 plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md).
 8. **H172** (`fdu-dp98`) — an exact transient tree tier for the generated tree’s indexed
    gap; settle its carrier before pre-registering.

@@ -249,10 +249,10 @@ across full paths. A single automaton over every entry’s full path is not prop
   that eligibility depends on size only.
 - **Tool comparison:** add `linux-v6.12` with `.gitignore` handling on to the published
   comparison as a product job, and state pdu’s depth there.
-- **The `.gitignore` matching survey,** which reads ripgrep, git, gitoxide, Sapling,
-  Mercurial, jj and libgit2 from source and benchmarks them against `git check-ignore`,
-  was still running when this was written.
-  Its result goes into `fdu-sdul` and may revise H171 and H173.
+- **The `.gitignore` matching survey** (`fdu-sdul` depends on it, as `fdu-p6vc`) has not
+  been run: a first attempt was stopped before reporting.
+  It reads ripgrep, git, gitoxide, Sapling, Mercurial, jj and libgit2 from source and
+  benchmarks them against `git check-ignore`; its result may revise H171 and H173.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

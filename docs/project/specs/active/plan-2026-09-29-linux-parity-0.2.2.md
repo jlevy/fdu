@@ -200,11 +200,13 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
 
 ### Stage 3: 0.2.2
 
-- [ ] Read the `.gitignore` matching survey in `fdu-sdul`’s notes.
-  It covers ripgrep’s globset and ignore, git’s `dir.c` and wildmatch, gitoxide,
-  Sapling’s `TreeMatcher`, Mercurial’s Rust matchers, jj and libgit2, each measured in
-  instructions per entry on `linux-v6.12` and checked against `git check-ignore`. It may
-  revise H171 and H173.
+- [ ] Run the `.gitignore` matching survey (`fdu-p6vc`) before building H171. It reads
+  ripgrep’s globset and ignore, git’s `dir.c` and wildmatch, gitoxide, Sapling’s
+  `TreeMatcher`, Mercurial’s Rust matchers, jj and libgit2 from source; measures each in
+  instructions per entry on `linux-v6.12`, checked against `git check-ignore`; and
+  adopts git’s wildmatch and ignore test cases as a conformance table.
+  It may revise H171 and H173. A first attempt was stopped before reporting, so nothing
+  from it is recorded.
 - [ ] Nominate a second real subject heavy with wildcard rules, to test the residual
   path.
 - [ ] H171:
