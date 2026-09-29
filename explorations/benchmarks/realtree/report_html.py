@@ -639,8 +639,8 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
                 plot,
                 row_height - 8,
                 f'{subject["labels"][0]} - {subject["platform"]}, {entries:,} entries\n'
-                + ("A synthetic subject, built to stress a policy rather than to "
-                   "represent ordinary work.\n" if subject["synthetic"] else "")
+                + ("A generated subject: screening evidence, held apart from the real "
+                   "trees rather than averaged with them.\n" if subject["synthetic"] else "")
                 + f'First measured at {first["control"]:.2f} us per entry, latest '
                 f'{last["kept"]:.2f}, across {row["count"]} experiments.\n'
                 "Only the arm that stayed in the product is plotted, so a rejected "
@@ -1021,6 +1021,7 @@ def render(dataset: Mapping[str, Any]) -> str:
             _section_absolute(dataset),
             _section_relative(dataset),
             _section_scale(dataset),
+            _section_platforms(dataset),
             _section_mechanisms(dataset),
             _section_reading(dataset),
             _section_table(dataset),
@@ -1088,6 +1089,141 @@ def _section_scale(dataset: Mapping[str, Any]) -> str:
 but their cost per entry is, because a scan's work is very nearly linear in what it has
 to visit.</p>
 {figure_per_entry(dataset)}
+"""
+
+
+def kept_improvements(dataset: Mapping[str, Any], platform: str) -> List[Dict[str, Any]]:
+    """Accepted changes still in the product whose deciding run measured an improvement.
+
+    Three filters, each for a reason the record has already paid for. The kept arm must be
+    the candidate, so an accepted screen the release never adopted (exp-154) and a verdict
+    that decided a claim rather than code (`kept: neither`) stay out. A cumulative
+    checkpoint or a whole pull request measured at once is left out because it would credit
+    one row with a dozen changes, the rule the mechanism table applies. And the primary
+    interval has to lie below zero, so instrumentation and leftover determinations, which
+    are accepted on noninferiority, are not presented as speed-ups.
+
+    A validation run on a second subject or platform is kept even though it wrote no code:
+    it is the evidence this section exists to show.
+    """
+    rows = []
+    for record in dataset["experiments"]:
+        if record["platform"] != platform:
+            continue
+        if record["decision"] != "accepted" or record["kept"] != "candidate":
+            continue
+        if record["anchored"] or len(record["hypotheses"]) > 2:
+            continue
+        metric = _primary(record)
+        if not metric or metric["paired"]["evidence"] != "improved":
+            continue
+        rows.append(record)
+    rows.sort(key=lambda record: record["number"])
+    return rows
+
+
+def _entries_short(entries: int) -> str:
+    return f"{entries / 1_000_000:.2f}M" if entries >= 1_000_000 else f"{entries / 1000:.0f}k"
+
+
+def _section_platforms(dataset: Mapping[str, Any]) -> str:
+    """What each platform's evidence consists of, and what it kept.
+
+    The rest of the page mixes platforms on purpose, because the loop is one method. A
+    reader deciding what fdu does on their machine needs the opposite cut: the changes a
+    platform's own runs decided, with that run's absolute arms on its own subject, and how
+    many of those runs were on a generated tree, which the loop treats as screening.
+    """
+    subjects = {subject["key"]: subject for subject in dataset["subjects"]}
+    counts: Dict[str, Dict[str, int]] = {}
+    families: Dict[str, Dict[str, bool]] = {}
+    for record in dataset["experiments"]:
+        platform = record["platform"]
+        tally = counts.setdefault(platform, {})
+        tally[record["decision"]] = tally.get(record["decision"], 0) + 1
+        synthetic = subjects[record["subject"]]["synthetic"]
+        seen = families.setdefault(platform, {})
+        family = record.get("family") or record["subject"]
+        seen[family] = seen.get(family, False) or synthetic
+    if not counts:
+        return ""
+    platforms = sorted(counts, key=lambda name: (-sum(counts[name].values()), name))
+
+    summary = []
+    for platform in platforms:
+        tally = counts[platform]
+        other = sum(tally.values()) - tally.get("accepted", 0) - tally.get("rejected", 0)
+        generated = sum(1 for synthetic in families[platform].values() if synthetic)
+        summary.append(
+            f"<tr><td>{esc(platform)}</td>"
+            f"<td class='n'>{sum(tally.values())}</td>"
+            f"<td class='n'>{tally.get('accepted', 0)}</td>"
+            f"<td class='n'>{tally.get('rejected', 0)}</td>"
+            f"<td class='n'>{other}</td>"
+            f"<td class='n'>{len(families[platform]) - generated}</td>"
+            f"<td class='n'>{generated}</td></tr>"
+        )
+
+    sections = []
+    for platform in platforms:
+        rows = kept_improvements(dataset, platform)
+        if not rows:
+            continue
+        on_generated = sum(1 for record in rows if subjects[record["subject"]]["synthetic"])
+        body = []
+        for record in rows:
+            metric = _primary(record)
+            paired, absolute = metric["paired"], metric["absolute"]
+            subject = subjects[record["subject"]]
+            interval = (
+                f'{paired["ci95_low_pct"]:+.1f} to {paired["ci95_high_pct"]:+.1f}'
+                if paired["ci95_low_pct"] is not None
+                else "—"
+            )
+            body.append(
+                f"<tr><td class='n'>{esc(record['id'].removeprefix('exp-'))}</td>"
+                f"<td>{esc(record['title'])}</td>"
+                f"<td class='mono muted'>{esc(', '.join(record['hypotheses']) or '—')}</td>"
+                f"<td>{esc(subject['labels'][0])} "
+                f"<span class='muted'>&middot; {esc(_entries_short(subject['entries']))}"
+                + (" &middot; generated" if subject["synthetic"] else "")
+                + "</span></td>"
+                f"<td class='mono muted'>{esc(record['primary_job'] or '')}</td>"
+                f"<td class='n'>{esc(fmt_primary(absolute['control'], record['primary_metric']))}</td>"
+                f"<td class='n'>{esc(fmt_primary(absolute['candidate'], record['primary_metric']))}</td>"
+                f"<td class='n'>{esc(fmt_pct(paired['change_pct']))}</td>"
+                f"<td class='n muted'>{esc(interval)}</td></tr>"
+            )
+        noun = "improvement" if len(rows) == 1 else "improvements"
+        sections.append(
+            f"<h3>{esc(platform)}: {len(rows)} {noun} kept</h3>"
+            f"<p>Decided on a generated tree: {on_generated} of {len(rows)}. The loop treats "
+            "a generated tree as screening rather than as a sample of ordinary work.</p>"
+            '<div class="scroll"><table>'
+            '<thead><tr><th class="n">#</th><th>change</th><th>hypothesis</th>'
+            '<th>subject</th><th>primary job</th><th class="n">before</th>'
+            '<th class="n">after</th><th class="n">change</th>'
+            '<th class="n">95% interval</th></tr></thead>'
+            f"<tbody>{''.join(body)}</tbody></table></div>"
+        )
+
+    return f"""
+<h2 id="platforms">By platform</h2>
+<h3>What each platform's own runs decided</h3>
+<p>A result is evidence about the platform, host, and tree it was measured on. A change
+kept on one platform's evidence is inherited, not proven, on the other, and most
+hypotheses here were measured on one platform only. Subjects are counted as families: one
+tree measured in several states.</p>
+<div class="scroll"><table>
+<thead><tr><th>platform</th><th class="n">experiments</th><th class="n">accepted</th>
+<th class="n">rejected</th><th class="n">other verdicts</th>
+<th class="n">real subjects</th><th class="n">generated subjects</th></tr></thead>
+<tbody>{"".join(summary)}</tbody></table></div>
+<p>Below, per platform: accepted changes still in the product whose deciding run measured
+an improvement on its primary metric, oldest first, with that run's two arms on its own
+subject. A validation on a second subject appears as its own row. Rejected and
+noninferiority verdicts are in the full table at the end.</p>
+{"".join(sections)}
 """
 
 
@@ -1400,10 +1536,11 @@ def _header(dataset: Mapping[str, Any]) -> str:
 roll-up engine. It walks a tree once and answers questions about it &mdash; folder sizes,
 file types, languages, prose metrics &mdash; from one reusable index, in text or JSON.
 It is written in Rust, with no C in its build.</p>
-<p>The current installed-CLI comparison is
-<a href="../report-2026-09-26-fdu-live-tool-comparison.md">recorded separately</a>, with
-its workload, host, and peer-tool qualifications. This page describes the research loop
-and its incremental experiments; it is not a current product leaderboard.</p>
+<p>The current installed-CLI comparisons against other tools are recorded separately,
+<a href="../report-2026-09-26-fdu-live-tool-comparison.md">on macOS</a> and
+<a href="../report-2026-09-27-fdu-linux-tool-comparison.md">on Linux</a>, each with its
+workload, host, and peer-tool qualifications. This page describes the research loop and
+its incremental experiments; it is not a current product leaderboard.</p>
 <p class="lede">This page is about how it got there. That work was done as an iterative
 research loop rather than
 a sequence of hunches. Every experiment &mdash; including the

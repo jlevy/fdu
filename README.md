@@ -494,8 +494,8 @@ On macOS the saving is memory rather than time: about 100 MiB of peak RSS, with 
 change the benchmark could resolve.
 The default summary, which reads ignore rules, no longer falls back to the full index:
 it classifies each entry as it counts it.
-On this tree that made it 19% faster and cut its peak memory from 314 to 8.6 MiB, within
-2% of `--no-gitignore`
+On the generated million-entry tree that made it 19% faster and cut its peak memory from
+314 to 8.6 MiB, within 2% of `--no-gitignore`
 ([exp-187](docs/project/experiments/exp-187-linux-h161-ignore-aware-transient-summary-clears-wall-rss-ba.md));
 the table keeps the `--no-gitignore` figure the harness measured.
 The
