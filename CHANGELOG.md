@@ -28,6 +28,10 @@ No command-line option, report or cache schema, or Python API changed.
   with `..Counts::default()`, and code that destructures it exhaustively must name them
   or use `..`; code that only reads its fields is unaffected.
   This is the only public API change.
+- The package description on crates.io and PyPI, which `fdu --help` also prints, now
+  reads “Fast native du replacement …” rather than “Fastest”: on Linux fdu’s default
+  tree is level with pdu’s default on real trees, and `pdu --max-depth 2` is 2.5% faster
+  on a generated million-entry tree.
 - On Linux the default tree is 39% faster on the Linux v6.12 source tree (200 to 120 ms)
   and 10% faster on a `node_modules` tree (127 to 114 ms) than on 0.2.1’s engine, and
   the default summary 26% and 7% faster, each in one paired cell of 20 pairs
