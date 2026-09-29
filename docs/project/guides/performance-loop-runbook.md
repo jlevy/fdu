@@ -1003,15 +1003,19 @@ change commit followed by its record commit; rejected work is not merged.
 [The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md#the-linux-overnight-round-2026-09-29)
 has the night’s numbers.
 
-- **Where it stands.** In the 20-pair tool cell on the H169 head (exp-185’s evidence),
-  fdu’s default command took 1.08 times pdu’s default on `linux-v6.12`, from 2.4 times
-  at Q0, and ran level with it on `node-modules-dense`. Final standing: see the plan’s
-  Status table.
-- **What sets the time.** After H183 the consumer spends about 135M instructions on
-  `.gitignore` on `linux-v6.12`, down from 333M, and the controls-on default tree is
-  1.085 times its own `--no-controls` arm (exp-193). With `.gitignore` off, and on the
-  dense tree, wall follows the walk’s total CPU. Profile the head before choosing
-  between H179 and H177.
+- **Where it stands.** In the final 20-pair tool cell (exp-194’s evidence), fdu’s
+  default command ran level with pdu’s default and diskus on both real trees, from 2.4
+  times pdu’s default on `linux-v6.12` at Q0; pdu with `--max-depth 2` stays 7% ahead on
+  `node-modules-dense`. Against the Q0 engine in one paired cell, the default tree is
+  39% faster on `linux-v6.12` and 10% faster on `node-modules-dense` (exp-194, exp-195).
+- **What sets the time.** Every tool spent 85–88% of its CPU in the kernel in that cell,
+  and fdu spent the least CPU of fdu, pdu’s default and diskus, but kept fewer cores
+  busy: 3.65 against pdu’s 3.80 on `linux-v6.12`, and 3.54 against 3.72 on the dense
+  tree. Wall is now set by utilization and kernel work per entry, not by `.gitignore`,
+  which costs the kernel tree 1.6% of its blind walk.
+  Before the next candidate, profile the head for the serial tail after the walk ends
+  and for the walker–consumer handoffs (608 voluntary context switches against pdu’s
+  128), and weigh these against H179, the one queued item that cuts kernel work.
 
 **Host setup.** The night ran on a 4-vCPU Firecracker guest (Intel Xeon at 2.1 GHz,
 Linux 6.18.44-fc-v49, ext4), as root.
@@ -1040,13 +1044,13 @@ and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-195** and **H184**. exp-195–199 remain in the reserved
+**Ids.** Next free are **exp-196** and **H184**. exp-196–199 remain in the reserved
 Linux block, then exp-200 onward.
 exp-173–199 and H162–H183 are Linux work.
 The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
 (`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
 (`fdu-8a8r`), came from its range.
-The 2026-09-29 overnight loop used exp-175–186 and exp-192–194, H174–H179 for its new
+The 2026-09-29 overnight loop used exp-175–186 and exp-192–195, H174–H179 for its new
 hypotheses, and H180–H183 for what its profiles and mid-night sweep found.
 exp-170–172 record H161, the ignore-aware transient summary.
 exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159

@@ -69,7 +69,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 14 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -274,6 +274,8 @@ dead end.
 | 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
 | 192 | [Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time](#exp192--linux-h181-conditional-queue-wakes-and-h182-hashordered-listings-do-not-move-wall-time) | H181, H182 | `default-tree` | +0.2% | ❌ rejected |
 | 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp193--linux-h183-cheap-matcher-prechecks-cut-the-default-tree-8-on-linuxv612) | H183 | `default-tree` | -7.6% | ✅ accepted |
+| 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linuxv612) | — | `default-tree` | -39.0% | 📏 baseline |
+| 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-nodemodulesdense) | — | `default-tree` | -9.8% | 📏 baseline |
 
 ## The experiments
 
@@ -6354,6 +6356,50 @@ Cost to carry: 300 lines; no new dependencies.
 Full record:
 [`exp-193-linux-h183-cheap-matcher-pre-checks-cut-the-default-tree-8-o.md`](../experiments/exp-193-linux-h183-cheap-matcher-pre-checks-cut-the-default-tree-8-o.md)
 
+### exp-194 — Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12
+
+📏 baseline · 2026-09-29 · no hypothesis id · commit `ebc06c78`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 200.3 |
+| component (ms) | 195.0 |
+| cpu (ms) | 586.9 |
+| user (ms) | 213.9 |
+| system (ms) | 377.2 |
+
+Other jobs, wall time: `aggregate-summary` 156 ms.
+
+**Baseline:** Confirms the round’s accepted changes in one paired cell against the Q0
+engine; no decision rests on it.
+
+Full record:
+[`exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md`](../experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md)
+
+### exp-195 — Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense
+
+📏 baseline · 2026-09-29 · no hypothesis id · commit `ebc06c78`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 126.9 |
+| component (ms) | 122.7 |
+| cpu (ms) | 432.5 |
+| user (ms) | 84.0 |
+| system (ms) | 351.3 |
+
+Other jobs, wall time: `aggregate-summary` 109 ms.
+
+**Baseline:** Confirms the round’s accepted changes on the dense tree in one paired cell
+against the Q0 engine; no decision rests on it.
+
+Full record:
+[`exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md`](../experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6420,20 +6466,6 @@ Baselines show one value because they measure a state rather than a change.
 | 010 | Claim-list join and deferred path joins in reconcile | `warm-revalidate` | 698.5 | 695.6 | -0.0% | ❌ rejected |
 | 011 | One ancestor merge per same-parent insert run | `cold-scan-index` | 483.1 | 447.7 | -2.5% | ❌ rejected |
 
-### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 015 | Post-BFS worker depth under metadata-cache pressure | `cold-scan-index` | 7,238.6 | 6,231.9 | -11.7% | ✅ accepted |
-| 018 | Spawn reserve workers only after observed scan scale | `cold-scan-index` | 6,517.9 | 6,238.3 | -4.0% | ↩︎ superseded |
-| 020 | Delay adaptive workers until metadata-cache capacity | `cold-scan-index` | 6,185.8 | 6,036.8 | -1.7% | ❌ rejected |
-| 021 | Calibrate adaptive workers from initial filesystem service time | `cold-scan-index` | 6,300.4 | 6,056.1 | -5.3% | ✅ accepted |
-| 022 | Batch macOS scan metadata with getattrlistbulk | `cold-scan-index` | 6,478.7 | 4,537.0 | -30.1% | ✅ accepted |
-| 024 | Open macOS directories relative to one retained root fd | `cold-scan-index` | 3,685.7 | 3,625.6 | -0.1% | ❌ rejected |
-| 025 | Revisit worker depth after macOS bulk metadata | `cold-scan-index` | 3,700.5 | 4,374.3 | +19.2% | ❌ rejected |
-| 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
-| 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
-
 ### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6447,6 +6479,21 @@ Baselines show one value because they measure a state rather than a change.
 | 186 | Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear | `aggregate-summary` | 63.8 | 60.0 | -7.9% | ✅ accepted |
 | 192 | Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time | `default-tree` | 74.1 | 74.0 | +0.2% | ❌ rejected |
 | 193 | Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12 | `default-tree` | 73.2 | 67.4 | -7.6% | ✅ accepted |
+| 194 | Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12 | `default-tree` | 200.3 | — | — | 📏 baseline |
+
+### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 015 | Post-BFS worker depth under metadata-cache pressure | `cold-scan-index` | 7,238.6 | 6,231.9 | -11.7% | ✅ accepted |
+| 018 | Spawn reserve workers only after observed scan scale | `cold-scan-index` | 6,517.9 | 6,238.3 | -4.0% | ↩︎ superseded |
+| 020 | Delay adaptive workers until metadata-cache capacity | `cold-scan-index` | 6,185.8 | 6,036.8 | -1.7% | ❌ rejected |
+| 021 | Calibrate adaptive workers from initial filesystem service time | `cold-scan-index` | 6,300.4 | 6,056.1 | -5.3% | ✅ accepted |
+| 022 | Batch macOS scan metadata with getattrlistbulk | `cold-scan-index` | 6,478.7 | 4,537.0 | -30.1% | ✅ accepted |
+| 024 | Open macOS directories relative to one retained root fd | `cold-scan-index` | 3,685.7 | 3,625.6 | -0.1% | ❌ rejected |
+| 025 | Revisit worker depth after macOS bulk metadata | `cold-scan-index` | 3,700.5 | 4,374.3 | +19.2% | ❌ rejected |
+| 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
+| 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
 
 ### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
@@ -6530,6 +6577,16 @@ Baselines show one value because they measure a state rather than a change.
 | 094 | Borrow completed directory roll-ups | `cold-scan-index` | 581.0 | 579.1 | +0.2% | ✅ accepted |
 | 095 | Move incoming names and retire consumed paths | `cold-scan-index` | 574.0 | 572.1 | -0.3% | ✅ accepted |
 
+### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
+| 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
+| 183 | Linux H180 summary walker trims cut the default summary 9% on node-modules-dense | `aggregate-summary` | 73.5 | 67.5 | -8.7% | ✅ accepted |
+| 185 | Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
+| 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | — | — | 📏 baseline |
+
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6556,15 +6613,6 @@ Baselines show one value because they measure a state rather than a change.
 | 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
-
-### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
-| 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
-| 183 | Linux H180 summary walker trims cut the default summary 9% on node-modules-dense | `aggregate-summary` | 73.5 | 67.5 | -8.7% | ✅ accepted |
-| 185 | Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

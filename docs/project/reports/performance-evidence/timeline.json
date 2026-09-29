@@ -46896,6 +46896,418 @@
    "subject": "4ffe9d749fe6:92474:55a09ea65f48",
    "title": "Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12",
    "trials": 20
+  },
+  {
+   "anchored": false,
+   "candidate": "ebc06c78 probe (the final head of the round)",
+   "change_pct": -39.003,
+   "commit": "ebc06c78",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e5a71c8a probe (the Q0 engine)",
+   "date": "2026-09-29",
+   "decision": "baseline",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [],
+   "id": "exp-194",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 112881959,
+        "control": 153206498.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -26.566,
+        "ci95_high_pct": -25.676,
+        "ci95_low_pct": -39.585,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 439278000,
+        "control": 579538500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -24.899,
+        "ci95_high_pct": -23.406,
+        "ci95_low_pct": -25.732,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 360817500,
+        "control": 353055000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.932,
+        "ci95_high_pct": 7.168,
+        "ci95_low_pct": -0.116,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 77262000,
+        "control": 236478000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -68.702,
+        "ci95_high_pct": -64.15,
+        "ci95_low_pct": -72.82,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 115965481.5,
+        "control": 156471621
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -26.249,
+        "ci95_high_pct": -25.217,
+        "ci95_low_pct": -39.364,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1254.0333661353461,
+      "control": 1692.0606981421804
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 117079329,
+        "control": 194999690
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -38.806,
+        "ci95_high_pct": -34.828,
+        "ci95_low_pct": -42.863,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 443527500,
+        "control": 586916000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -24.397,
+        "ci95_high_pct": -23.071,
+        "ci95_low_pct": -26.178,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 378317500,
+        "control": 377171000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.254,
+        "ci95_high_pct": 4.506,
+        "ci95_low_pct": -4.261,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 66314000,
+        "control": 213876000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -68.666,
+        "ci95_high_pct": -66.105,
+        "ci95_low_pct": -72.472,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 119791905.5,
+        "control": 200301724.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -39.003,
+        "ci95_high_pct": -34.928,
+        "ci95_low_pct": -42.993,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1295.4117427601273,
+      "control": 2166.032879512079
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": null,
+   "number": 194,
+   "path": "exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "Confirms the round's accepted changes in one paired cell against the Q0 engine; no decision rests on it.",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12",
+   "trials": 20
+  },
+  {
+   "anchored": false,
+   "candidate": "ebc06c78 probe (the final head of the round)",
+   "change_pct": -9.75,
+   "commit": "ebc06c78",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e5a71c8a probe (the Q0 engine)",
+   "date": "2026-09-29",
+   "decision": "baseline",
+   "entries": 79957,
+   "family": "Linux:db6d49b68990",
+   "hypotheses": [],
+   "id": "exp-195",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 98451324,
+        "control": 106500127.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -7.016,
+        "ci95_high_pct": -3.665,
+        "ci95_low_pct": -11.31,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 377412500,
+        "control": 411093500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -6.887,
+        "ci95_high_pct": -3.424,
+        "ci95_low_pct": -11.168,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 330046000,
+        "control": 349742000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -4.145,
+        "ci95_high_pct": -1.169,
+        "ci95_low_pct": -7.111,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 50242500,
+        "control": 66571000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -31.489,
+        "ci95_high_pct": -20.279,
+        "ci95_low_pct": -41.686,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 101084782,
+        "control": 109415624
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -7.016,
+        "ci95_high_pct": -3.831,
+        "ci95_low_pct": -11.255,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1264.2393036256988,
+      "control": 1368.43083157197
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 111406357,
+        "control": 122690348.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -8.439,
+        "ci95_high_pct": -6.237,
+        "ci95_low_pct": -10.532,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 405500500,
+        "control": 432517500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -6.356,
+        "ci95_high_pct": -3.479,
+        "ci95_low_pct": -8.806,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 344130500,
+        "control": 351318500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.63,
+        "ci95_high_pct": 3.833,
+        "ci95_low_pct": -3.506,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 59174000,
+        "control": 84017500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -35.801,
+        "ci95_high_pct": -18.482,
+        "ci95_low_pct": -39.432,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 114228512.5,
+        "control": 126933756.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -9.75,
+        "ci95_high_pct": -7.328,
+        "ci95_low_pct": -11.84,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1428.6242918068463,
+      "control": 1587.5252510724515
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": null,
+   "number": 195,
+   "path": "exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "Confirms the round's accepted changes on the dense tree in one paired cell against the Q0 engine; no decision rests on it.",
+   "reference_tools": [],
+   "subject": "db6d49b68990:79957:11c4122bec53",
+   "title": "Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense",
+   "trials": 20
   }
  ],
  "prepared": "2026-09-29",
@@ -47022,6 +47434,33 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-175",
+    "exp-178",
+    "exp-179",
+    "exp-180",
+    "exp-182",
+    "exp-184",
+    "exp-186",
+    "exp-192",
+    "exp-193",
+    "exp-194"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:55a09ea65f48",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1085083672,
    "directories": 7350,
    "entries": 60067,
@@ -47072,32 +47511,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293209,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-175",
-    "exp-178",
-    "exp-179",
-    "exp-180",
-    "exp-182",
-    "exp-184",
-    "exp-186",
-    "exp-192",
-    "exp-193"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "4ffe9d749fe6:92474:55a09ea65f48",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -47219,6 +47632,28 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 538992241,
+   "directories": 9439,
+   "entries": 79957,
+   "experiments": [
+    "exp-176",
+    "exp-181",
+    "exp-183",
+    "exp-185",
+    "exp-195"
+   ],
+   "files": 70411,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "db6d49b68990:79957:11c4122bec53",
+   "labels": [
+    "node-modules-dense"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 35888409,
    "directories": 60314,
    "entries": 100001,
@@ -47324,27 +47759,6 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": true
-  },
-  {
-   "apparent_bytes": 538992241,
-   "directories": 9439,
-   "entries": 79957,
-   "experiments": [
-    "exp-176",
-    "exp-181",
-    "exp-183",
-    "exp-185"
-   ],
-   "files": 70411,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "db6d49b68990:79957:11c4122bec53",
-   "labels": [
-    "node-modules-dense"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
   },
   {
    "apparent_bytes": 1085083672,
@@ -47990,18 +48404,18 @@
   "accepted_lines_changed": 28552,
   "decisions": {
    "accepted": 108,
-   "baseline": 13,
+   "baseline": 15,
    "blocked": 2,
    "in-progress": 4,
    "rejected": 59,
    "superseded": 5
   },
-  "experiments": 191,
+  "experiments": 193,
   "first_date": "2026-08-10",
   "hypotheses": 130,
   "last_date": "2026-09-29",
   "platforms": {
-   "Linux": 54,
+   "Linux": 56,
    "macOS": 137
   }
  },
