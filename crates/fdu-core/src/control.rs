@@ -845,6 +845,12 @@ pub(crate) fn with_directory_components<R>(
     gitignore::with_components(directory, None, each)
 }
 
+/// The 32-bit FNV-1a hash the rules look a name up by, for a caller that groups names by
+/// hash and compares a colliding pair byte for byte (H182).
+pub(crate) fn name_hash(name: &[u8]) -> u32 {
+    gitignore::fnv1a(name.iter().copied())
+}
+
 /// A directory's normal components, copied once, for a caller that keeps them across
 /// calls and classifies each child of the directory as it arrives.
 ///

@@ -345,8 +345,9 @@ impl<'a> Name<'a> {
 
 /// 32-bit FNV-1a: a few instructions a byte for the short keys it hashes here, without a
 /// dependency. Only which rules an entry is compared with depends on it, never an answer:
-/// a colliding key is compared byte for byte and rejected.
-fn fnv1a(bytes: impl IntoIterator<Item = u8>) -> u32 {
+/// a colliding key is compared byte for byte and rejected. A folded index's listings are
+/// grouped by it on the same terms ([`super::name_hash`]).
+pub(super) fn fnv1a(bytes: impl IntoIterator<Item = u8>) -> u32 {
     bytes.into_iter().fold(FNV1A_OFFSET_BASIS, fnv1a_step)
 }
 

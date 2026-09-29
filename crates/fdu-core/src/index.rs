@@ -1631,6 +1631,123 @@ pub(crate) struct DetachedIndexBuilder {
     inserted: u64,
     /// What a folded index has kept and folded so far, when this builds one.
     tree: Option<TreeFold>,
+    /// A folded index's scratch for ordering each listing, reused across listings.
+    folded_listing: FoldedListing,
+}
+
+/// How a folded index orders one listing, reusable across listings (H182).
+///
+/// A full index allocates every child of a listing in name order, the order its directory
+/// retains children in, so it sorts the whole listing by name, and the sort also brings each
+/// repeated name's observations together so the last can be kept. A folded index allocates
+/// only the children that are not files, and folds the files. It needs the rest of the
+/// listing grouped by name only to find repeats, and a 32-bit hash of each name groups it
+/// as well as the name's bytes do: the few names that share a hash are then compared byte
+/// for byte, as the full sort compares every pair. So the listing is sorted by hash, which
+/// compares integers rather than strings, and only the children that become entries now are
+/// sorted by name, so each is allocated where a full index allocates it.
+#[derive(Default)]
+struct FoldedListing {
+    /// Each child's name hash above its slot in the listing, sorted, so that every
+    /// observation of a name is in one run of equal hashes.
+    by_hash: Vec<u64>,
+    /// The slots of observations that a later observation of the same name superseded, in
+    /// ascending order.
+    superseded: Vec<usize>,
+    /// The slots of the remaining children that are not files, in name order.
+    entries: Vec<usize>,
+}
+
+impl FoldedListing {
+    /// Order `children`, a listing of the directory at `path`: find the observations a
+    /// repeated name superseded, recording each repeated directory as the full index's
+    /// deduplication does, and put the children that become entries in name order.
+    fn resolve(
+        &mut self,
+        path: &Path,
+        children: &[crate::scan::DetachedChild],
+        repeated_directories: &mut Vec<PathBuf>,
+    ) {
+        let Self { by_hash, superseded, entries } = self;
+        by_hash.clear();
+        superseded.clear();
+        entries.clear();
+        by_hash.extend(children.iter().enumerate().map(|(slot, child)| {
+            // A listing of 2^32 children would hold hundreds of gigabytes of them.
+            let slot = u32::try_from(slot).expect("a listing's slots fit in 32 bits");
+            (u64::from(crate::control::name_hash(child.name.as_encoded_bytes())) << 32)
+                | u64::from(slot)
+        }));
+        by_hash.sort_unstable();
+        let mut start = 0;
+        while start < by_hash.len() {
+            let hash = by_hash[start] >> 32;
+            let end = by_hash[start..]
+                .iter()
+                .position(|key| key >> 32 != hash)
+                .map_or(by_hash.len(), |length| start + length);
+            if end - start > 1 {
+                Self::supersede_repeats(
+                    path,
+                    children,
+                    &mut by_hash[start..end],
+                    superseded,
+                    repeated_directories,
+                );
+            }
+            start = end;
+        }
+        superseded.sort_unstable();
+        let mut skipped = superseded.iter().peekable();
+        for (slot, child) in children.iter().enumerate() {
+            if skipped.next_if(|superseded| **superseded == slot).is_some() {
+                continue;
+            }
+            if child.kind != EntryKind::File {
+                entries.push(slot);
+            }
+        }
+        // The kept names are distinct, so an unstable sort orders them exactly.
+        entries.sort_unstable_by(|left, right| children[*left].name.cmp(&children[*right].name));
+    }
+
+    /// Within one run of equal hashes, which holds each observation of every name in it,
+    /// supersede every observation of a name but its last, in enumeration order.
+    fn supersede_repeats(
+        path: &Path,
+        children: &[crate::scan::DetachedChild],
+        run: &mut [u64],
+        superseded: &mut Vec<usize>,
+        repeated_directories: &mut Vec<PathBuf>,
+    ) {
+        let child = |key: &u64| &children[Self::slot(*key)];
+        // Names that only share a hash are told apart here, byte for byte.
+        run.sort_unstable_by(|left, right| {
+            let (left, right) = (child(left), child(right));
+            left.name.cmp(&right.name).then(left.position.cmp(&right.position))
+        });
+        for observations in run.chunk_by(|left, right| child(left).name == child(right).name) {
+            let Some((last, earlier)) = observations.split_last() else { continue };
+            if earlier.is_empty() {
+                continue;
+            }
+            // A directory observed and replaced, or replacing, is listed by its walker once
+            // per observation, as the full index's deduplication records.
+            if observations.iter().any(|key| child(key).kind.is_dir()) {
+                let repeated = path.join(&child(last).name);
+                if repeated_directories.last() != Some(&repeated) {
+                    repeated_directories.push(repeated);
+                }
+            }
+            superseded.extend(earlier.iter().map(|key| Self::slot(*key)));
+        }
+    }
+
+    /// The listing slot a key's low half holds.
+    #[allow(clippy::cast_possible_truncation)]
+    fn slot(key: u64) -> usize {
+        key as u32 as usize
+    }
 }
 
 /// A folded index in construction ([`DetachedIndexBuilder::folding`]).
@@ -1730,6 +1847,7 @@ impl DetachedIndexBuilder {
             repeated_directories: Vec::new(),
             inserted: 0,
             tree: None,
+            folded_listing: FoldedListing::default(),
         }
     }
 
@@ -1763,8 +1881,8 @@ impl DetachedIndexBuilder {
     /// The listing is drained, not consumed: an applied listing is left with its path
     /// and an empty child buffer, so the caller can hand both back to the worker that
     /// allocated them (H159). A listing that is not applied keeps its children, and one a
-    /// folded index applied keeps the names of the files it folded, for that worker to
-    /// free as well.
+    /// folded index applied keeps the names of the files it folded and of the observations
+    /// a repeated name superseded, for that worker to free as well.
     pub(crate) fn push_directory(
         &mut self,
         directory: &mut crate::scan::DetachedDirectory,
@@ -1807,26 +1925,35 @@ impl DetachedIndexBuilder {
             self.inserted = self.inserted.saturating_add(1);
         }
 
-        // Allocate in name order, the order the directory retains its children in, keeping
-        // the last observation of a repeated name. The sort is unstable so that it needs
-        // no scratch allocation; the enumeration position is what keeps "last" exact.
-        children.sort_unstable_by(|left, right| {
-            left.name.cmp(&right.name).then(left.position.cmp(&right.position))
-        });
-        let repeated_directories = &mut self.repeated_directories;
-        children.dedup_by(|later, kept| {
-            if later.name != kept.name {
-                return false;
-            }
-            if later.kind.is_dir() || kept.kind.is_dir() {
-                let repeated = path.join(&kept.name);
-                if repeated_directories.last() != Some(&repeated) {
-                    repeated_directories.push(repeated);
+        // A full index allocates in name order, the order the directory retains its
+        // children in, keeping the last observation of a repeated name. The sort is
+        // unstable so that it needs no scratch allocation; the enumeration position is
+        // what keeps "last" exact. A folded index allocates only the children that are not
+        // files, so it finds repeated names by hash and sorts only those children by name
+        // ([`FoldedListing`]), leaving the listing in enumeration order.
+        let folding = self.tree.is_some();
+        let mut listing = std::mem::take(&mut self.folded_listing);
+        if folding {
+            listing.resolve(path, children, &mut self.repeated_directories);
+        } else {
+            children.sort_unstable_by(|left, right| {
+                left.name.cmp(&right.name).then(left.position.cmp(&right.position))
+            });
+            let repeated_directories = &mut self.repeated_directories;
+            children.dedup_by(|later, kept| {
+                if later.name != kept.name {
+                    return false;
                 }
-            }
-            std::mem::swap(later, kept);
-            true
-        });
+                if later.kind.is_dir() || kept.kind.is_dir() {
+                    let repeated = path.join(&kept.name);
+                    if repeated_directories.last() != Some(&repeated) {
+                        repeated_directories.push(repeated);
+                    }
+                }
+                std::mem::swap(later, kept);
+                true
+            });
+        }
 
         let parent_ignored = self.index.entry(parent).ignored;
         // Every child shares this directory's governing controls, so they are resolved
@@ -1843,15 +1970,12 @@ impl DetachedIndexBuilder {
             path.display()
         );
         let classifying = !parent_ignored && !chain.is_empty();
-        let entries = match self.tree {
-            None => children.len(),
-            // Files are kept, if at all, only once the walk is over.
-            Some(_) => children.iter().filter(|child| child.kind != EntryKind::File).count(),
-        };
+        // Files are kept in a folded index, if at all, only once the walk is over.
+        let entries = if folding { listing.entries.len() } else { children.len() };
         self.index.reserve_detached_children(parent, entries);
         let path: &Path = path;
         let mut classify_children = |directory: &[&[u8]]| {
-            for child in children.iter_mut() {
+            let mut apply = |child: &mut crate::scan::DetachedChild| {
                 let &mut crate::scan::DetachedChild { ref mut name, kind, attrs, .. } = child;
                 crate::counters::bump(|counts| counts.upserts += 1);
                 let ext_id = (kind == EntryKind::File && self.tree.is_none())
@@ -1868,7 +1992,7 @@ impl DetachedIndexBuilder {
                     self.index.entry_mut(parent).rollup_mut().merge(&direct);
                     tree.offer(parent, name, attrs, ignored);
                     self.inserted = self.inserted.saturating_add(1);
-                    continue;
+                    return;
                 }
                 let name = std::mem::take(name);
                 let child_path = kind.is_dir().then(|| path.join(&name));
@@ -1897,6 +2021,23 @@ impl DetachedIndexBuilder {
                     self.directory_ids.insert(child_path, (child_id, Arc::clone(&chain)));
                 }
                 self.inserted = self.inserted.saturating_add(1);
+            };
+            if folding {
+                // The files in enumeration order, less the observations superseded; then
+                // the entries, in name order.
+                let mut superseded = listing.superseded.iter().peekable();
+                for (slot, child) in children.iter_mut().enumerate() {
+                    if superseded.next_if(|superseded| **superseded == slot).is_none()
+                        && child.kind == EntryKind::File
+                    {
+                        apply(child);
+                    }
+                }
+                for slot in &listing.entries {
+                    apply(&mut children[*slot]);
+                }
+            } else {
+                children.iter_mut().for_each(apply);
             }
         };
         if classifying {
@@ -1904,8 +2045,9 @@ impl DetachedIndexBuilder {
         } else {
             classify_children(&[]);
         }
+        self.folded_listing = listing;
         // Every name an entry kept has been taken. Only a folded index leaves any behind.
-        if self.tree.is_none() {
+        if !folding {
             children.clear();
         }
         Ok(())
@@ -6388,7 +6530,8 @@ mod tests {
     /// A folded builder keeps the largest files as entries, counts every file in the
     /// roll-ups, tallies the rest in their directory, keeps the last observation of a
     /// repeated name as the full builder does, keeps no extension tallies, and leaves the
-    /// names of the files it folded at once in the listing, for the walker to free.
+    /// names of the files it folded at once, and of the observations a repeated name
+    /// superseded, in the listing, for the walker to free.
     #[test]
     fn a_folded_builder_keeps_the_largest_files_and_leaves_folded_names_to_the_walker() {
         let child = |name: &str, kind, size, position| crate::scan::DetachedChild {
@@ -6422,12 +6565,17 @@ mod tests {
             }),
         };
         builder.push_directory(&mut root).expect("root listing");
-        // `big.bin` and `mid.rs` filled the heap; `small.log` was turned away at once, so
-        // its name is still in the listing; `twice.txt` then displaced `mid.rs`, whose name
-        // the heap already held.
-        let left: Vec<_> =
-            root.children.iter().filter(|child| !child.name.is_empty()).map(|c| &c.name).collect();
-        assert_eq!(left, [&OsString::from("small.log")]);
+        // Files are offered in enumeration order (H182): `small.log` and `big.bin` filled
+        // the heap, and the later `twice.txt` displaced `small.log`, whose name the heap
+        // already held. `mid.rs` was turned away at once, so its name is still in the
+        // listing, as is the earlier `twice.txt`'s, which the later one superseded.
+        let left: Vec<_> = root
+            .children
+            .iter()
+            .filter(|child| !child.name.is_empty())
+            .map(|child| (child.name.to_str().expect("utf-8"), child.attrs.size))
+            .collect();
+        assert_eq!(left, [("twice.txt", 3), ("mid.rs", 5)]);
 
         let index = builder.finish();
         assert!(index.is_folded());
@@ -6612,6 +6760,154 @@ mod tests {
         assert!(index.lookup(Path::new("swapped/stale.txt")).is_none());
         let total = index.total();
         assert_eq!((total.files, total.dirs, total.bytes), (2, 2, 9));
+    }
+
+    /// Assert that every directory of a detached index keeps compact children in strictly
+    /// increasing name order, the order [`Index::child`] searches.
+    fn assert_children_in_name_order(index: &Index) {
+        let mut pending = vec![EntryId::ROOT];
+        while let Some(id) = pending.pop() {
+            let Some(directory) = index.entry(id).directory.as_deref() else { continue };
+            let DirectoryChildren::Sorted(ids) = &directory.children else {
+                panic!("{:?} keeps mutable children", index.path_of(id));
+            };
+            let names: Vec<_> = ids.iter().map(|child| &index.entry(*child).name).collect();
+            assert!(
+                names.windows(2).all(|pair| pair[0] < pair[1]),
+                "{:?} is out of name order: {names:?}",
+                index.path_of(id)
+            );
+            pending.extend(ids);
+        }
+    }
+
+    /// Every entry below the root, each directory's children in its own order.
+    fn detached_tree(index: &Index) -> Vec<(PathBuf, EntryKind, Attrs)> {
+        let mut rows = Vec::new();
+        let mut pending = vec![PathBuf::new()];
+        while let Some(directory) = pending.pop() {
+            for (name, id) in index.children(&directory).expect("a directory") {
+                let path = directory.join(name);
+                let entry = index.entry(id);
+                rows.push((path.clone(), entry.kind, entry.attrs));
+                if entry.kind.is_dir() {
+                    pending.push(path);
+                }
+            }
+        }
+        rows
+    }
+
+    /// A folded index groups a listing's names by hash instead of sorting them (H182).
+    /// Names that share a hash are told apart byte for byte, so each keeps its own last
+    /// observation even where the two interleave; a directory a repeated name observed is
+    /// recorded as the full builder records it, so the walker's repeated listings are
+    /// accepted; and every directory ends with its children in name order, including one
+    /// holding only directories, symlinks, and other entries.
+    #[test]
+    fn a_folded_listing_resolves_repeated_and_colliding_names_as_the_full_builder_does() {
+        // Two pairs of names that share a 32-bit FNV-1a hash.
+        let (first, second, third, fourth) = ("jvqpfqg", "jaczypz", "gepvjpr", "bbscqdq");
+        for (left, right) in [(first, second), (third, fourth)] {
+            assert_eq!(
+                crate::control::name_hash(left.as_bytes()),
+                crate::control::name_hash(right.as_bytes()),
+                "{left} and {right} share a hash"
+            );
+        }
+        let child = |name: &str, kind, size, position: u32| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(size, i64::from(position) + 1),
+            position,
+        };
+        let listing = |path: &str, children| crate::scan::DetachedDirectory {
+            path: PathBuf::from(path),
+            children,
+            control: None,
+        };
+        let listings = || {
+            vec![
+                listing(
+                    "",
+                    vec![
+                        child(first, EntryKind::File, 1, 0),
+                        child(second, EntryKind::Dir, 0, 1),
+                        // Supersedes the first observation, across a colliding name.
+                        child(first, EntryKind::File, 2, 2),
+                        child(fourth, EntryKind::Dir, 0, 3),
+                        // Replaces the directory observed before it.
+                        child(second, EntryKind::File, 3, 4),
+                        child("zeta", EntryKind::Symlink, 0, 5),
+                        child(third, EntryKind::Dir, 0, 6),
+                        child("alpha", EntryKind::Dir, 0, 7),
+                        // A directory observed twice.
+                        child(fourth, EntryKind::Dir, 0, 8),
+                        child("big", EntryKind::File, 90, 9),
+                    ],
+                ),
+                listing(
+                    "alpha",
+                    vec![
+                        child("m", EntryKind::Dir, 0, 0),
+                        child("k", EntryKind::Symlink, 0, 1),
+                        child("b", EntryKind::Dir, 0, 2),
+                        child("a", EntryKind::Other, 0, 3),
+                    ],
+                ),
+                // The walker lists the directory the file replaced, and the repeated one
+                // once per observation.
+                listing(second, vec![child("stale", EntryKind::File, 7, 0)]),
+                listing(fourth, vec![child("inner", EntryKind::File, 4, 0)]),
+                listing(fourth, vec![child("inner", EntryKind::File, 4, 0)]),
+                listing(third, Vec::new()),
+                listing("alpha/m", Vec::new()),
+                listing("alpha/b", Vec::new()),
+            ]
+        };
+        let build = |largest_files: Option<u32>| {
+            let mut builder = DetachedIndexBuilder::new(
+                "/root",
+                ScanScope::default(),
+                crate::classify::TypeRegistry::compiled_shared(),
+            );
+            if let Some(largest_files) = largest_files {
+                builder = builder.folding(crate::execution::TreeRetention {
+                    largest_files,
+                    size: crate::query::SizeMetric::Apparent,
+                });
+            }
+            for mut listing in listings() {
+                builder.push_directory(&mut listing).expect("every listing is accepted");
+            }
+            builder.finish()
+        };
+        let (full, whole, folded) = (build(None), build(Some(100)), build(Some(1)));
+        for index in [&full, &whole, &folded] {
+            assert_children_in_name_order(index);
+        }
+
+        assert_eq!(detached_tree(&full).len(), 12);
+        assert_eq!(
+            detached_tree(&whole),
+            detached_tree(&full),
+            "a folded index that keeps every file is the full index"
+        );
+        assert_eq!(full.attrs(Path::new(first)), Some(&file_attrs(2, 3)));
+        assert_eq!(full.kind(Path::new(second)), Some(EntryKind::File));
+        assert_eq!(full.attrs(Path::new(fourth)), Some(&file_attrs(0, 9)));
+        assert_eq!(full.kind(Path::new(&format!("{fourth}/inner"))), Some(EntryKind::File));
+
+        // Folding every file but the largest changes which files are entries, not totals.
+        assert_eq!(folded.total(), whole.total());
+        let total = full.total();
+        assert_eq!((total.files, total.dirs, total.bytes), (4, 5, 99));
+        assert_eq!(folded.kind(Path::new("big")), Some(EntryKind::File));
+        assert_eq!(folded.kind(Path::new(first)), None);
+        assert_eq!(
+            folded.folded_children(EntryId::ROOT).map(|folded| (folded.files, folded.bytes)),
+            Some((2, 5))
+        );
     }
 
     #[test]
