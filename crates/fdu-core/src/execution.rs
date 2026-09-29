@@ -901,7 +901,7 @@ impl SummaryControls {
         // component by component. On `linux-v6.12` that was 180M of the fold's 373M
         // instructions; the bytes say the same thing for the normalized relative paths a
         // walk emits.
-        let (parent, name) = split_parent(path);
+        let (parent, name) = crate::control::split_parent(path);
         let parent_ignored = self.parent_ignored(parent);
         let ignored = if parent_ignored || self.table.is_empty() {
             parent_ignored
@@ -937,7 +937,8 @@ impl SummaryControls {
                 return *ignored;
             }
         }
-        let ignored = ancestors(parent).any(|ancestor| self.ignored_heads.contains(ancestor));
+        let ignored =
+            crate::control::ancestors(parent).any(|ancestor| self.ignored_heads.contains(ancestor));
         self.parent = Some((parent.to_os_string(), ignored));
         ignored
     }
@@ -947,53 +948,6 @@ impl SummaryControls {
             self.rejected.get_or_insert(error);
         }
     }
-}
-
-/// `path.parent()` and `path.file_name()` of a normalized relative path, as a walk emits
-/// them, by the bytes before and after its last separator (H188); `""` for a missing
-/// parent or name, as the fold reads either.
-fn split_parent(path: &std::path::Path) -> (&std::ffi::OsStr, &std::ffi::OsStr) {
-    let parsed = || {
-        (
-            path.parent().map_or(std::ffi::OsStr::new(""), std::path::Path::as_os_str),
-            path.file_name().unwrap_or(std::ffi::OsStr::new("")),
-        )
-    };
-    #[cfg(unix)]
-    let split = {
-        use std::os::unix::ffi::OsStrExt as _;
-        let bytes = path.as_os_str().as_bytes();
-        match bytes.iter().rposition(|byte| *byte == b'/') {
-            Some(at) => (
-                std::ffi::OsStr::from_bytes(&bytes[..at]),
-                std::ffi::OsStr::from_bytes(&bytes[at + 1..]),
-            ),
-            None => (std::ffi::OsStr::new(""), path.as_os_str()),
-        }
-    };
-    #[cfg(not(unix))]
-    let split = parsed();
-    debug_assert_eq!(split, parsed(), "a walked path is normalized and relative");
-    split
-}
-
-/// `Path::ancestors` of a normalized relative directory, by its separators (H188): the
-/// directory, each directory above it, and the root, `""`.
-#[cfg(unix)]
-fn ancestors(directory: &std::ffi::OsStr) -> impl Iterator<Item = &std::ffi::OsStr> {
-    use std::os::unix::ffi::OsStrExt as _;
-    let bytes = directory.as_bytes();
-    let mut next = Some(bytes.len());
-    std::iter::from_fn(move || {
-        let end = next?;
-        next = (end > 0).then(|| bytes[..end].iter().rposition(|byte| *byte == b'/').unwrap_or(0));
-        Some(std::ffi::OsStr::from_bytes(&bytes[..end]))
-    })
-}
-
-#[cfg(not(unix))]
-fn ancestors(directory: &std::ffi::OsStr) -> impl Iterator<Item = &std::ffi::OsStr> {
-    std::path::Path::new(directory).ancestors().map(std::path::Path::as_os_str)
 }
 
 #[cfg(test)]
@@ -1024,10 +978,10 @@ mod tests {
         }
         for path in &paths {
             let path = Path::new(path);
-            let (parent, name) = split_parent(path);
+            let (parent, name) = crate::control::split_parent(path);
             assert_eq!(parent, path.parent().map_or(OsStr::new(""), Path::as_os_str), "{path:?}");
             assert_eq!(name, path.file_name().unwrap_or(OsStr::new("")), "{path:?}");
-            let by_bytes: Vec<&OsStr> = ancestors(parent).collect();
+            let by_bytes: Vec<&OsStr> = crate::control::ancestors(parent).collect();
             let parsed: Vec<&OsStr> = Path::new(parent).ancestors().map(Path::as_os_str).collect();
             assert_eq!(by_bytes, parsed, "{path:?}");
         }

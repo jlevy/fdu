@@ -263,6 +263,12 @@ impl ControlObservation {
 #[derive(Clone, Debug)]
 pub struct ControlTable {
     by_directory: BTreeMap<PathBuf, Arc<SharedContent>>,
+    /// The same sources by the bytes of their directory (H188). [`Self::chain_for`] probes
+    /// every ancestor of a listing's directory, and a `PathBuf` key compares component by
+    /// component at each probe: 90M of the summary fold's instructions on `linux-v6.12`,
+    /// where the bytes answer the same question. One extra copy of each retained key,
+    /// bounded by the count `retained_cost` already charges a key for.
+    by_directory_bytes: HashMap<std::ffi::OsString, Arc<SharedContent>>,
     /// Distinct contents by identity. A list, because an equal length and FNV-1a digest do
     /// not prove equal bytes, and a collision must never share another source's matcher.
     shared: HashMap<ControlIdentity, Vec<Holding>>,
@@ -285,6 +291,7 @@ impl ControlTable {
     pub(crate) fn with_limits(limits: ControlLimits) -> Self {
         Self {
             by_directory: BTreeMap::new(),
+            by_directory_bytes: HashMap::new(),
             shared: HashMap::new(),
             refused: BTreeMap::new(),
             limits,
@@ -466,6 +473,7 @@ impl ControlTable {
         let Some(content) = self.by_directory.remove(directory) else {
             return false;
         };
+        self.by_directory_bytes.remove(directory.as_os_str());
         let holdings = self.shared.get_mut(&content.identity).expect("a retained content is held");
         let position = holdings
             .iter()
@@ -506,6 +514,7 @@ impl ControlTable {
         };
         self.retained_cost += directory_cost(directory);
         self.source_bytes += content.bytes.len();
+        self.by_directory_bytes.insert(directory.as_os_str().to_os_string(), Arc::clone(&content));
         self.by_directory.insert(directory.to_path_buf(), content);
     }
 
@@ -531,10 +540,10 @@ impl ControlTable {
             directory.display()
         );
         let mut governing = Vec::new();
-        if !self.by_directory.is_empty() {
+        if !self.by_directory_bytes.is_empty() {
             let depth = gitignore::with_components(directory, None, |components| components.len());
-            for (up, ancestor) in directory.ancestors().enumerate() {
-                if let Some(source) = self.by_directory.get(ancestor) {
+            for (up, ancestor) in ancestors(directory.as_os_str()).enumerate() {
+                if let Some(source) = self.by_directory_bytes.get(ancestor) {
                     governing.push((depth.saturating_sub(up), Arc::clone(source)));
                 }
             }
@@ -558,7 +567,7 @@ impl ControlTable {
         above: &Arc<ControlChain>,
         directory: &Path,
     ) -> Arc<ControlChain> {
-        let Some(source) = self.by_directory.get(directory) else {
+        let Some(source) = self.by_directory_bytes.get(directory.as_os_str()) else {
             return Arc::clone(above);
         };
         let depth = gitignore::with_components(directory, None, |components| components.len());
@@ -882,6 +891,53 @@ impl SplitDirectory {
         });
         gitignore::with_collected(components, each)
     }
+}
+
+/// `path.parent()` and `path.file_name()` of a normalized relative path, as a walk emits
+/// them, by the bytes before and after its last separator (H188); `""` for a missing
+/// parent or name, as the fold reads either.
+pub(crate) fn split_parent(path: &std::path::Path) -> (&std::ffi::OsStr, &std::ffi::OsStr) {
+    let parsed = || {
+        (
+            path.parent().map_or(std::ffi::OsStr::new(""), std::path::Path::as_os_str),
+            path.file_name().unwrap_or(std::ffi::OsStr::new("")),
+        )
+    };
+    #[cfg(unix)]
+    let split = {
+        use std::os::unix::ffi::OsStrExt as _;
+        let bytes = path.as_os_str().as_bytes();
+        match bytes.iter().rposition(|byte| *byte == b'/') {
+            Some(at) => (
+                std::ffi::OsStr::from_bytes(&bytes[..at]),
+                std::ffi::OsStr::from_bytes(&bytes[at + 1..]),
+            ),
+            None => (std::ffi::OsStr::new(""), path.as_os_str()),
+        }
+    };
+    #[cfg(not(unix))]
+    let split = parsed();
+    debug_assert_eq!(split, parsed(), "a walked path is normalized and relative");
+    split
+}
+
+/// `Path::ancestors` of a normalized relative directory, by its separators (H188): the
+/// directory, each directory above it, and the root, `""`.
+#[cfg(unix)]
+pub(crate) fn ancestors(directory: &std::ffi::OsStr) -> impl Iterator<Item = &std::ffi::OsStr> {
+    use std::os::unix::ffi::OsStrExt as _;
+    let bytes = directory.as_bytes();
+    let mut next = Some(bytes.len());
+    std::iter::from_fn(move || {
+        let end = next?;
+        next = (end > 0).then(|| bytes[..end].iter().rposition(|byte| *byte == b'/').unwrap_or(0));
+        Some(std::ffi::OsStr::from_bytes(&bytes[..end]))
+    })
+}
+
+#[cfg(not(unix))]
+pub(crate) fn ancestors(directory: &std::ffi::OsStr) -> impl Iterator<Item = &std::ffi::OsStr> {
+    std::path::Path::new(directory).ancestors().map(std::path::Path::as_os_str)
 }
 
 /// Whether any key of `directories` is `subtree` or lies below it.
