@@ -70,7 +70,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 7 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 8 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -262,6 +262,7 @@ dead end.
 | 179 | [Linux H175 derived control chains take another 3% off the default tree](#exp179--linux-h175-derived-control-chains-take-another-3-off-the-default-tree) | H175 | `default-tree` | -3.3% | ✅ accepted |
 | 180 | [Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12](#exp180--linux-h172-exact-transient-tree-tier-cuts-the-default-tree-13-on-linuxv612) | H172, H176 | `default-tree` | -13.5% | ✅ accepted |
 | 181 | [Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense](#exp181--linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-nodemodulesdense) | H172 | `default-tree` | -10.3% | ✅ accepted |
+| 182 | [Linux walker count after H172: three walkers regress, six and eight do not clear on both trees](#exp182--linux-walker-count-after-h172-three-walkers-regress-six-and-eight-do-not-clear-on-both-trees) | H165 | `default-tree` | +10.3% | ❌ rejected |
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
@@ -5996,6 +5997,33 @@ cold-scan-index placebo -1.90% [-5.18%, +2.25%] includes zero.
 Full record:
 [`exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md`](../experiments/exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md)
 
+### exp-182 — Linux walker count after H172: three walkers regress, six and eight do not clear on both trees
+
+❌ rejected · 2026-09-29 · H165
+
+Control: 956659de probe, --threads 4 (shipped PORTABLE)
+
+Candidate: 956659de probe, --threads 3 (cores - 1)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 84.7 | 94.5 | +10.25% (regression) | [+5.94%, +14.08%] |
+| component (ms) | 81.4 | 91.5 | +11.11% (regression) | [+6.32%, +14.74%] |
+| cpu (ms) | 297.2 | 310.4 | +4.15% (regression) | [+0.57%, +5.60%] |
+| user (ms) | 94.0 | 105.7 | +11.33% (n.s.) | [-2.86%, +26.59%] |
+| system (ms) | 202.7 | 219.4 | +3.99% (n.s.) | [-3.26%, +11.96%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Rejected:** quiet 12-pair screen on the H172 head: --threads 3 regresses +10.25%
+[+5.94%, +14.08%] on linux-v6.12 and +21.95% on node-modules-dense; 6 and 8 walkers do
+not clear on both real subjects; PORTABLE unchanged.
+
+Full record:
+[`exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md`](../experiments/exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md)
+
 ### exp-187 — Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore
 
 ✅ accepted · 2026-09-28 · H161 · commit `0d73ed54`
@@ -6285,6 +6313,16 @@ Baselines show one value because they measure a state rather than a change.
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
+| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
+| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
+| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
+| 182 | Linux walker count after H172: three walkers regress, six and eight do not clear on both trees | `default-tree` | 84.7 | 94.5 | +10.3% | ❌ rejected |
+
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6331,15 +6369,6 @@ Baselines show one value because they measure a state rather than a change.
 | 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
-| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
-| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
-| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 

@@ -44439,6 +44439,128 @@
   },
   {
    "anchored": false,
+   "candidate": "956659de probe, --threads 3 (cores - 1)",
+   "change_pct": 10.253,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "956659de probe, --threads 4 (shipped PORTABLE)",
+   "date": "2026-09-29",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [
+    "H165"
+   ],
+   "id": "exp-182",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 91465378,
+        "control": 81353172.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 11.114,
+        "ci95_high_pct": 14.743,
+        "ci95_low_pct": 6.321,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 310356500,
+        "control": 297178000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 4.147,
+        "ci95_high_pct": 5.596,
+        "ci95_low_pct": 0.566,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 219401000,
+        "control": 202665500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.992,
+        "ci95_high_pct": 11.962,
+        "ci95_low_pct": -3.261,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 105713500,
+        "control": 93976500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 11.326,
+        "ci95_high_pct": 26.593,
+        "ci95_low_pct": -2.858,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 94509218,
+        "control": 84690026
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 10.253,
+        "ci95_high_pct": 14.082,
+        "ci95_low_pct": 5.944,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1022.0085429417999,
+      "control": 915.825269805567
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 182,
+   "path": "exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 12-pair screen on the H172 head: --threads 3 regresses +10.25% [+5.94%, +14.08%] on linux-v6.12 and +21.95% on node-modules-dense; 6 and 8 walkers do not clear on both real subjects; PORTABLE unchanged",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux walker count after H172: three walkers regress, six and eight do not clear on both trees",
+   "trials": 12
+  },
+  {
+   "anchored": false,
    "candidate": "0d73ed54 probe (main with 149): the transient summary classifies entries",
    "change_pct": -6.926,
    "commit": "0d73ed54",
@@ -45822,6 +45944,28 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-175",
+    "exp-178",
+    "exp-179",
+    "exp-180",
+    "exp-182"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:55a09ea65f48",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 35888409,
    "directories": 60314,
    "entries": 100001,
@@ -45927,27 +46071,6 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": true
-  },
-  {
-   "apparent_bytes": 1759293209,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-175",
-    "exp-178",
-    "exp-179",
-    "exp-180"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "4ffe9d749fe6:92474:55a09ea65f48",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
   },
   {
    "apparent_bytes": 1085083672,
@@ -46615,15 +46738,15 @@
    "baseline": 13,
    "blocked": 2,
    "in-progress": 4,
-   "rejected": 57,
+   "rejected": 58,
    "superseded": 5
   },
-  "experiments": 184,
+  "experiments": 185,
   "first_date": "2026-08-10",
-  "hypotheses": 124,
+  "hypotheses": 125,
   "last_date": "2026-09-29",
   "platforms": {
-   "Linux": 47,
+   "Linux": 48,
    "macOS": 137
   }
  },
