@@ -23,11 +23,13 @@ default (exp-175). Four questions decide what the overnight loop builds:
 2. How do git and four other implementations evaluate `.gitignore`, and is H171 as
    designed both exact and enough?
 3. Where does fdu’s default command spend its work on Linux, stage by stage?
-4. What model of wall time should the loop’s predictions use?
+4. Measured side by side, what work does fdu do that the fastest peer does not?
+5. What model of wall time should the loop’s predictions use?
 
 ## Method and Regime
 
-- **Source reading only.** Nothing was built for this brief.
+- **Source reading, plus one profile.** Sections 1–3 and 5 read source; section 4
+  profiles built binaries and states its own method.
   fdu was read at `e5a71c8a`, the 0.2.1 engine plus documentation; the engine source is
   unchanged at `7c46664b`. Peers and matchers were read at the commits in each table.
 - **Evidence labels:**
@@ -462,7 +464,7 @@ Only the merge into the parent depends on anything outside the listing.
    Folded into H172’s tier.
 4. A walker count below the core count was never measured for the consumer-bound
    default. Now the Q3 screen, and H178 as the self-adjusting form.
-5. `statx` without `AT_NO_AUTOMOUNT` (section 4).
+5. `statx` without `AT_NO_AUTOMOUNT` (section 5).
 6. With counters on, each bump copies a 424-byte `Cell<Counts>` in and out, including on
    every allocation (`counters.rs:859-887`), so counter-run walls are not comparable
    with counters-off runs.
@@ -474,7 +476,199 @@ Only the merge into the parent depends on anything outside the listing.
    (`control.rs:640-646`, `index.rs:3886-3923`); and three canonicalizations of the
    root.
 
-### 4. `statx` Triggers Automounts That `fstatat` Does Not
+### 4. Side-by-Side Profile: fdu, pdu, diskus and dut
+
+Sections 1–3 read the code; this section measures where each tool’s instructions go on
+the same two trees.
+
+**Method:**
+
+- **Binaries:** fdu 0.2.1-dev at engine `e5a71c8a`, built with the `profiling` profile
+  (release plus debug information, rustc 1.97.1), sha256 `1f25b298`; pdu 0.24.0 and
+  diskus 0.9.0 from `cargo install --locked` with debug information, `03e48908` and
+  `70c5194b`; dut from source at `68d4ba2` with gcc 13.3.0 `-O3 -g`, `4718a056`.
+- **Instructions:** valgrind 3.22.0 callgrind with
+  `--separate-threads=yes --fair-sched=yes`, user space only.
+  Instruction counts do not depend on host load.
+  Buckets classify self cost by source file and function, so std code inlined into an
+  fdu function counts as the kind of work it does; the named-function inclusive figures
+  and call counts are the precise ones.
+- **System calls:** strace 6.8, `strace -f -c` once per command, plus flag traces
+  (`-e trace=openat,statx,fstat,getdents64,read`) on one small subtree.
+- **CPU splits:** two interleaved screens of 5 runs each, from `wait4` rusage, and peak
+  RSS from a small `wait4` launcher.
+  Other agents were building throughout (host busy 35–76%, load about 3.7 on 4 vCPUs),
+  so every CPU and wall figure here is a screen.
+- **Commands:** `fdu --color never PATH` (default), with `--no-gitignore`, with
+  `--view summary`, and with both; `pdu --silent-errors PATH`; `diskus PATH`;
+  `dut PATH`. fdu’s cache directory was isolated and was still empty afterwards.
+- **Threads:** natively fdu runs 4 walkers and the consumer, pdu 4 rayon workers, diskus
+  a driver and 12 workers, dut 4 threads with the main one walking.
+  Under valgrind and strace, fdu’s adaptive pool scaled to 8 walkers, because
+  instrumentation makes each entry look slow to the calibration.
+  Walker sums stay comparable with native runs; per-walker maxima do not.
+- **Subjects:** `linux-v6.12` (92,474 entries) and `node-modules-dense` (79,957 entries,
+  9,439 directories, no `.gitignore`).
+
+**Screens under load**, `linux-v6.12`, two screens of 5 runs each:
+
+| Command | Wall | User CPU | Kernel CPU | Minor faults | Peak RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| fdu default | 272–295 ms | 224–232 ms | 184–205 ms | 8,048 | 35.9 MiB |
+| fdu `--no-gitignore` | 138–141 ms | 64–74 ms | 199–217 ms | 6,355 | 29.6 MiB |
+| fdu `--view summary` | 248–253 ms | 231 ms | 169–198 ms | 5,124 | 24.8 MiB |
+| pdu | 142–143 ms | 47–50 ms | 200–228 ms | 2,323 | 12.2 MiB |
+| diskus | 132–137 ms | 46–48 ms | 218–241 ms | 1,118 | 7.3 MiB |
+| dut | 95–102 ms | 17 ms | 163–173 ms | 139 | 1.9 MiB |
+
+Kernel time is 1.8–2.6 µs per entry for every tool on both trees, lowest for dut.
+Wall moved by up to 50% between screens; do not rank tools by it.
+
+**Instructions per entry by thread** (callgrind, user space).
+fdu’s figures exclude the detached index release (83 per entry on `linux-v6.12`, 219 on
+`node-modules-dense`), which runs after the answer.
+
+| Run | `linux-v6.12` consumer or main | walkers | total | `node-modules-dense` consumer or main | walkers | total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| fdu default | 22,254 | 1,300 | 23,554 | 2,945 | 1,483 | 4,428 |
+| fdu `--no-gitignore` | 2,797 | 1,237 | 4,034 | 2,945 | 1,477 | 4,422 |
+| fdu `--view summary` | 20,807 | 2,819 | 23,625 | 91 | 3,087 | 3,177 |
+| fdu summary, `--no-gitignore` | 73 | 2,602 | 2,674 | 76 | 2,820 | 2,896 |
+| pdu | 53 | 2,780 | 2,832 | 136 | 3,061 | 3,197 |
+| diskus | 6 | 2,079 | 2,085 | 7 | 2,238 | 2,245 |
+| dut | (walks) | 176 | 176 | (walks) | 235 | 235 |
+
+The heaviest single thread, a proxy for the critical path, is fdu’s consumer in every
+retained-index run: 22,254 per entry on `linux-v6.12` and 2,945 without `.gitignore`,
+against pdu’s busiest worker at 736–928, diskus’s at 249–341 and dut’s at 49–64.
+
+**Where the instructions go**, per entry, all threads:
+
+| Bucket | fdu default | fdu default, node | fdu `--no-gitignore` | fdu summary, `--no-gitignore` | pdu | diskus | dut |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `.gitignore` matching | 17,646 | 3 | 0 | 0 | 0 | 0 | 0 |
+| String and path handling | 2,132 | 590 | 547 | 250 | 242 | 183 | 5 |
+| Allocation | 1,679 | 1,586 | 1,389 | 1,619 | 1,448 | 1,053 | 32 |
+| Index or tree build, extension tallies | 854 | 862 | 870 | 0 | 287 | 0 | 6 |
+| Hashing and maps | 471 | 572 | 457 | 1 | 0 | 0 | 0 |
+| Sorting | 270 | 238 | 270 | 0 | 0 | 0 | 0 |
+| std `fs` layer (`ReadDir`, `statx`, `CStr`) | 156 | 169 | 155 | 200 | 403 | 152 | 0 |
+| libc system-call wrappers | 66 | 79 | 65 | 64 | 65 | 65 | 21 |
+| Walker per-entry logic | 182 | 207 | 181 | 445 | 17 | 356 | 100 |
+| Channel, queue and sync | 50 | 73 | 54 | 27 | 338 | 261 | 5 |
+| Report and output | 25 | 22 | 24 | 2 | 10 | 1 | 0 |
+| Startup and other | 22 | 27 | 22 | 67 | 24 | 14 | 7 |
+| **Total** | **23,554** | **4,428** | **4,034** | **2,674** | **2,832** | **2,085** | **176** |
+
+Columns are `linux-v6.12` unless marked “node”.
+Instruction counts are not time: dut’s 16M instructions take about 17 ms of user CPU and
+fdu’s 2.19G about 228 ms, a 12-fold difference in cost per instruction.
+
+**Work fdu does that the fastest peer does not.** dut is fastest in wall, user and
+kernel time on both trees.
+Ranked by instructions per entry on `linux-v6.12`, with `node-modules-dense` in
+parentheses; source lines are at `e5a71c8a`.
+
+| # | Work | Per entry | Where in fdu | Registry |
+| ---: | --- | ---: | --- | --- |
+| 1 | `.gitignore` classification on the consumer: about 77 `glob_matches` calls per entry at about 200 instructions each, plus a re-split of the directory for every child (about 710) | 18,205 (0) | `ControlChain::is_ignored` `control.rs:765`; `matches_components` `control/gitignore.rs:125`; `glob_matches` `:364`; `with_components` `:42` | H171 |
+| 2 | Per-file extension tallies: a `String` per file, a `BTreeMap<String, u32>` lookup, a one-entry `BTreeMap` per file cloned for `unignored`, then merged | 1,230 (1,300) | `derive_ext` `classify.rs:1019`; `intern_ext` `index.rs:5170`; `contribution` `index.rs:5239`; `InternedRollUp::merge` `index.rs:301` | H176 in H172 |
+| 3 | Chain resolution per listing, 970 of it `compare_components` | 1,137 (0) | `ControlTable::chain_for` `control.rs:527` | H175 |
+| 4 | Walker allocation: three name copies and two frees per entry, a `PathBuf` and std’s 32 KiB buffer and `Arc` per directory; dut spends 32 (58) | 765 (865) | `scan.rs:3463`, `:3512`, `:3535`, `:3660` | H169 phase 1, H177 |
+| 5 | Consumer allocator self cost: 3.7 `malloc` and 3.4 `free` calls per entry, overlapping item 2 | 914 (722) | item 2’s functions; `Path::join` `index.rs:1696` | H176, H172 |
+| 6 | A name sort of every listing | 308 (259) | `index.rs:1663` | H172, H174 |
+| 7 | The tree query over the full index | 272 (231) | `report_in` `query/query_report.rs:1458` | H172 |
+| 8 | std’s `fs` layer: `try_statx` into `Metadata`, `ReadDir` glue; dut 0 | 155 (169) | `metadata_for_fingerprint` `scan.rs:1275` | H169 phase 1 |
+| 9 | The directory map’s SipHash over whole paths | 131 (293) | `index.rs:1633`, `:1717` | H167 |
+| 10 | Finish, consolidation and arena slots | 206 (284) | `index.rs:1725`, `scan.rs:4799`, `index.rs:4988` | H172 |
+| 11 | Walker logic: admission, descent, emission; dut 100 (109) | 174 (198) | `walk_worker_with` `scan.rs:3435`; `record_detached_entry` `scan.rs:3621` | — |
+| 12 | Channel and queue in user space, plus the futex traffic below | 50 (73) | `DirectoryQueue` `scan.rs:4223` | H166 |
+| 13 | The detached index release, off the critical path | 83 (219) | `release_index` `lib.rs:314` | H172 |
+
+The peers’ own extra work: pdu joins a full path per entry (656–761), builds a
+`DataTree` per entry (285–298), and pays rayon’s spinning (338–370, plus 362–2,512
+`sched_yield`); diskus runs 13 threads on 4 vCPUs (2,033–2,684 involuntary switches,
+6.7–7.2k `sched_yield`) and sends a message per entry; dut keeps a top-N heap and
+per-directory hard-link tables, 6–10 per entry.
+dut does no work that fdu avoids.
+
+**System calls** (`strace -f -c`, `linux-v6.12`; fdu ran 8 walkers under strace, which
+inflates its `futex` count):
+
+| Call | fdu default | pdu | diskus | dut |
+| --- | ---: | ---: | ---: | ---: |
+| `statx` | 92,836 | 92,484 | 92,478 | 92,473 |
+| `getdents64` | 11,540 | 11,540 | 11,540 | 11,538 |
+| `openat` | 6,134 | 5,782 | 5,780 | 5,771 |
+| `fstat` | 5,773 | 5,773 | 5,773 | 2 |
+| `futex` | 5,351 | 40 | 222 | 22 |
+| `read` | 1,260 | 28 | 17 | 1 |
+| `sched_yield` | 0 | 362 | 7,173 | 0 |
+
+The flag traces show how each tool asks (paths shortened to `<root>`):
+
+```text
+# fdu: absolute-path opendir, glibc fstat, 32 KiB getdents64, statx relative to the dirfd
+openat(AT_FDCWD, "<root>/tools/bpf/resolve_btfids", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 4
+fstat(4, {st_mode=S_IFDIR|0755, ...}) = 0
+getdents64(4, ..., 32768) = 384
+statx(4, "Makefile", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, ...) = 0
+
+# dut: O_NOFOLLOW open, no fstat, 1 MiB getdents64, basic stats, AT_NO_AUTOMOUNT
+openat(AT_FDCWD, "<root>/tools/bpf/resolve_btfids", O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_DIRECTORY) = 4
+getdents64(4, ..., 1048576) = 384
+statx(4, "Makefile", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW|AT_NO_AUTOMOUNT, STATX_BASIC_STATS, ...) = 0
+
+# pdu and diskus: std read_dir as fdu, then statx on an absolute path from AT_FDCWD
+statx(AT_FDCWD, "<root>/tools/bpf/Makefile", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, ...) = 0
+```
+
+- strace names std’s mask, basic stats plus birth time, `STATX_ALL`. The trace also
+  confirms that fdu’s per-entry `statx` carries no `AT_NO_AUTOMOUNT` (section 5).
+- fdu’s extra 358 `openat` and `statx` read the `.gitignore` files: an absolute-path
+  open, a `statx` on the fd, then reads of 32, 32 and 64 bytes and an end-of-file read,
+  about 3.5 per file, because `take` hides the size from `read_to_end`
+  (`scan.rs:4121-4123`).
+- The `fstat` per directory is glibc `opendir`’s; dut, calling `open` itself, has none.
+  pdu and diskus make the kernel resolve the full path on every `statx`, which fits
+  their higher kernel time per entry.
+
+**The summary route’s walkers cost twice the default route’s.** Its walkers execute
+2,602–3,087 instructions per entry against 1,237–1,483 for the default route’s, with or
+without `.gitignore`. Three costs make the difference:
+
+- `prepare_walk_entry_reading` joins a relative `PathBuf` for every entry
+  (`scan.rs:3717`), and `record_walk_entry` clones it into `Op::Upsert`, dropping the
+  original for files (`scan.rs:3797`). `Path::_join` alone is 764–819 per entry, and
+  `realloc` rises from 84–149 to 409–446.
+- Whenever controls are read, which is the default, `read_control_op` (`scan.rs:3856`)
+  costs 269–278 per entry, even on `node-modules-dense`, which has no `.gitignore`.
+  `path_control_spelling` (`control.rs:834`) parses `Path::file_name()` of the joined
+  path for every entry, although the walker already holds the bare name; the detached
+  route tests the name bytes and pays 15. With `--no-gitignore` the call returns early
+  at 20.
+- `DirEntry::metadata` (213) and batch sends (122–195) are the rest.
+
+With `.gitignore` off the summary route is CPU-bound (3.4 cores busy in exp-174), so
+walker instructions reach wall at about 1/3.4 of their CPU. This motivates H180: test
+the control spelling on the name bytes, and move the path into the op when the entry
+does not descend. The path-clone piece overlaps H51, refuted on macOS (exp-016); the
+Linux mechanism differs, since glibc frees a walker’s allocation on another thread and
+the route is CPU-bound.
+H170, which folds the summary on each walker, would remove the per-entry paths entirely.
+
+**What the profile motivates:**
+
+| Finding | Registry |
+| --- | --- |
+| Classification is 82% of all user-space instructions, on one thread | H171, H175 |
+| Extension tallies and their allocations exist for views a tree never shows | H176, inside H172 |
+| The full index, its sort, query, finish and release, and 6.4–8.0k minor faults | H172 |
+| Walker name copies, std’s `fs` layer, glibc’s `fstat`, `STATX_ALL`, no `AT_NO_AUTOMOUNT` | H169 phase 1, H177 |
+| Summary-route walkers at twice the default’s cost | H180; H170 beyond it |
+| Directory map and queue wakes | H167, H166 |
+
+### 5. `statx` Triggers Automounts That `fstatat` Does Not
 
 Bead `fdu-puk7`. Checked in the kernel at v6.12 (`adc21867`):
 
@@ -485,8 +679,9 @@ Bead `fdu-puk7`. Checked in the kernel at v6.12 (`adc21867`):
 
 So `lstat` and `fstatat` never trigger an automount on a terminal component, and a bare
 `statx` does. Rust std’s `DirEntry::metadata()` and `symlink_metadata` call `statx` with
-`AT_SYMLINK_NOFOLLOW | AT_STATX_SYNC_AS_STAT` and no `AT_NO_AUTOMOUNT` [ext]. dut
-(`main.c:604`) and bfs (`stat.c:62-74`) pass the flag; GNU du and ncdu use `fstatat`.
+`AT_SYMLINK_NOFOLLOW | AT_STATX_SYNC_AS_STAT` and no `AT_NO_AUTOMOUNT`, as section 4’s
+flag trace shows. dut (`main.c:604`) and bfs (`stat.c:62-74`) pass the flag; GNU du and
+ncdu use `fstatat`.
 
 The consequence: a walk that meets an autofs trigger directory (`/net`, `/misc`, a
 systemd automount unit) mounts it just by statting it, possibly a slow or hanging
@@ -501,7 +696,7 @@ changes no answer on a host without automounts, only whether a mount fires, and 
 recorded in H169’s row as a correctness side effect.
 The portable fallback and the root’s `symlink_metadata` still go through std.
 
-### 5. Two Regimes of Wall Time
+### 6. Two Regimes of Wall Time
 
 The plan’s first model, fixed cost plus the larger of the parallel walk and the serial
 consumer, omits CPU saturation.
@@ -565,7 +760,8 @@ These are adopted in
 4. **Q6: H169 phase 1**, with `AT_NO_AUTOMOUNT`, closing `fdu-puk7` on Linux.
    Parent-relative opens wait for an fd budget; fd-derived directory attributes are
    H179.
-5. **The next night:** H177 after H169, and H178 as the self-adjusting walker count.
+5. **The next night:** H177 after H169, H178 as the self-adjusting walker count, and
+   H180, the summary route’s walker trims from section 4.
 6. **Fix `fdu-ifci` separately,** with recorded git verdicts: it changes answers.
 7. **The matcher benchmark half** uses published crates past the cool-off, on the clean
    tree, the tree with virtual build outputs, a many-rules synthetic, and adversarial 16
@@ -583,9 +779,9 @@ These are adopted in
   [pdu brief](research-2026-09-28-pdu-and-the-linux-peer-gap.md)
 - [Metadata-walk floor report](../reports/report-2026-08-23-metadata-walk-floor.md)
 - [Hypothesis registry](../guides/performance-loop.md#hypotheses): H51, H58, H71, H72,
-  H74, H76, H84, H156–H179
+  H74, H76, H84, H156–H180
 - [Experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md):
-  exp-173, exp-174, exp-175
+  exp-016, exp-173, exp-174, exp-175
 - Peers at the commits in section 1: dut, bfs, pdu 0.24.0 at `c30e46f`, diskus, dust,
   dua-cli, jwalk, gdu, ripgrep `ignore`, fd, erdtree, fastwalk, GNU coreutils, ncdu,
   uutils, walkdir, duc, dumac
