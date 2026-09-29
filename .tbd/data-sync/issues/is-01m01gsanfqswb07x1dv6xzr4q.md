@@ -3,13 +3,17 @@ type: is
 id: is-01m01gsanfqswb07x1dv6xzr4q
 title: Replace oversized hypothesis chips in performance report
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 6
+version: 7
 labels: []
 dependencies: []
 created_at: 2026-08-15T01:32:36.910Z
-updated_at: 2026-09-29T01:12:16.343Z
+updated_at: 2026-09-29T06:05:32.331Z
+closed_at: 2026-09-29T06:05:32.331Z
+close_reason: "Not reproducible: no commit in the repository's history adds chip styling to the performance report renderer (git log --all -G 'hypothesis.?chip|class=.chip|\\.chip' matches only tbd sync commits carrying this bead's text); hypotheses render as plain text. Recorded in PR #158."
+resolution: null
+duplicate_of: null
 ---
 
 ## Notes
