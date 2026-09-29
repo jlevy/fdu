@@ -42898,6 +42898,669 @@
   },
   {
    "anchored": false,
+   "candidate": "e5a71c8a probe, copy B (A/A)",
+   "change_pct": -1.12,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e5a71c8a probe (0.2.1 engine + docs), copy A",
+   "date": "2026-09-29",
+   "decision": "baseline",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [],
+   "id": "exp-175",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 141048142,
+        "control": 145247590.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -3.434,
+        "ci95_high_pct": -0.467,
+        "ci95_low_pct": -11.955,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 422365000,
+        "control": 419982500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.344,
+        "ci95_high_pct": 3.467,
+        "ci95_low_pct": -5.762,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 211767000,
+        "control": 209674000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.609,
+        "ci95_high_pct": 9.44,
+        "ci95_low_pct": -6.43,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 210109000,
+        "control": 218741500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -5.358,
+        "ci95_high_pct": 0.852,
+        "ci95_low_pct": -13.723,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 144864626.5,
+        "control": 149467501.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -3.742,
+        "ci95_high_pct": -0.591,
+        "ci95_low_pct": -12.334,
+        "evidence": "improved",
+        "pairs": 12,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1566.5443962627332,
+      "control": 1616.3191978285788
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 174110000.5,
+        "control": 176093702
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.117,
+        "ci95_high_pct": 2.395,
+        "ci95_low_pct": -3.9,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 429263000,
+        "control": 427825000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.996,
+        "ci95_high_pct": 2.468,
+        "ci95_low_pct": -2.844,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 35434496,
+        "control": 35627008
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.628,
+        "ci95_high_pct": 0.459,
+        "ci95_low_pct": -1.451,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 222676000,
+        "control": 229759500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.55,
+        "ci95_high_pct": 5.615,
+        "ci95_low_pct": -9.783,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 198568500,
+        "control": 199718500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1.067,
+        "ci95_high_pct": 7.628,
+        "ci95_low_pct": -3.68,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 180696863.5,
+        "control": 181868759
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.12,
+        "ci95_high_pct": 3.122,
+        "ci95_low_pct": -3.785,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1954.0288459458875,
+      "control": 1966.7015485433744
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 175,
+   "path": "exp-175-linux-fc-v49-baseline-default-tree-182-ms-2-4x-pdu-with-a-fa.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet four-arm A/A of e5a71c8a on linux-v6.12: default-tree 181.9 ms (blind 89.9), aggregate-summary 149.5 ms (blind 77.8); default-tree A/A -1.12% [-3.79%, +3.12%] includes zero, aggregate-summary A/A -3.74% [-12.33%, -0.59%] would read as an accept",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "e5a71c8a probe, copy B (A/A)",
+   "change_pct": 3.862,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e5a71c8a probe (0.2.1 engine + docs), copy A",
+   "date": "2026-09-29",
+   "decision": "baseline",
+   "entries": 79957,
+   "family": "Linux:db6d49b68990",
+   "hypotheses": [],
+   "id": "exp-176",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 72251203.5,
+        "control": 73947535.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.375,
+        "ci95_high_pct": 2.58,
+        "ci95_low_pct": -6.175,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 270609500,
+        "control": 279440500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 0.061,
+        "ci95_high_pct": 2.652,
+        "ci95_low_pct": -6.561,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 205123500,
+        "control": 203393000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 4.837,
+        "ci95_high_pct": 14.841,
+        "ci95_low_pct": -10.876,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 65672000,
+        "control": 77278000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -13.783,
+        "ci95_high_pct": 25.755,
+        "ci95_low_pct": -39.695,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 74975597,
+        "control": 76635522
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -0.27,
+        "ci95_high_pct": 2.249,
+        "ci95_low_pct": -5.971,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 937.6989756994384,
+      "control": 958.4591968182898
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 79625297,
+        "control": 79045932
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 3.781,
+        "ci95_high_pct": 8.146,
+        "ci95_low_pct": -3.922,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 272283500,
+        "control": 274160500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 2.618,
+        "ci95_high_pct": 6.772,
+        "ci95_low_pct": -4.894,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 30656512,
+        "control": 30982144
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.58,
+        "ci95_high_pct": 1.018,
+        "ci95_low_pct": -2.901,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 195548000,
+        "control": 190863500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 4.494,
+        "ci95_high_pct": 8.863,
+        "ci95_low_pct": -3.08,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 78379000,
+        "control": 85809000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -10.372,
+        "ci95_high_pct": 25.339,
+        "ci95_low_pct": -20.535,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 84507680,
+        "control": 84033493
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 3.862,
+        "ci95_high_pct": 7.861,
+        "ci95_low_pct": -4.276,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1056.9140913240867,
+      "control": 1050.9835661668146
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 176,
+   "path": "exp-176-linux-fc-v49-baseline-on-node-modules-dense-default-tree-84-.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet four-arm A/A of e5a71c8a on node-modules-dense: default-tree 84.0 ms, aggregate-summary 76.6 ms; A/A +3.86% [-4.28%, +7.86%] and -0.27% [-5.97%, +2.25%] include zero",
+   "reference_tools": [],
+   "subject": "db6d49b68990:79957:11c4122bec53",
+   "title": "Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu",
+   "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "e5a71c8a probe, copy B (A/A)",
+   "change_pct": 1.548,
+   "commit": null,
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "e5a71c8a probe (0.2.1 engine + docs), copy A",
+   "date": "2026-09-29",
+   "decision": "baseline",
+   "entries": 1000001,
+   "family": "Linux:2aace7bc8aee",
+   "hypotheses": [],
+   "id": "exp-177",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1257299113.5,
+        "control": 1231716556
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.68,
+        "ci95_high_pct": 5.596,
+        "ci95_low_pct": -3.613,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 4668147500,
+        "control": 4565520500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.533,
+        "ci95_high_pct": 5.411,
+        "ci95_low_pct": -2.047,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3638737000,
+        "control": 3646055000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.5,
+        "ci95_high_pct": 3.612,
+        "ci95_low_pct": -2.339,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 980749500,
+        "control": 937300000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 3.082,
+        "ci95_high_pct": 6.689,
+        "ci95_low_pct": -1.394,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1259874410.5,
+        "control": 1234269563
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.674,
+        "ci95_high_pct": 5.596,
+        "ci95_low_pct": -3.626,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1259.8731506268493,
+      "control": 1234.2683287316713
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 1343631105.5,
+        "control": 1333226257.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.877,
+        "ci95_high_pct": 2.804,
+        "ci95_low_pct": -0.581,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 4968731000,
+        "control": 4944360000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.299,
+        "ci95_high_pct": 2.078,
+        "ci95_low_pct": -0.387,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 306483200,
+        "control": 306417664
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.02,
+        "ci95_high_pct": 0.072,
+        "ci95_low_pct": -0.029,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 3912181000,
+        "control": 3922305000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.158,
+        "ci95_high_pct": 3.19,
+        "ci95_low_pct": -1.988,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 1022513000,
+        "control": 1016363000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 2.401,
+        "ci95_high_pct": 5.643,
+        "ci95_low_pct": 0.155,
+        "evidence": "regressed",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 1369339101.5,
+        "control": 1358612297.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.548,
+        "ci95_high_pct": 2.827,
+        "ci95_low_pct": -0.358,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1369.337732162268,
+      "control": 1358.6109388890611
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 177,
+   "path": "exp-177-linux-fc-v49-baseline-on-the-generated-million-entry-tree-de.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet four-arm A/A of e5a71c8a on linux-balanced-1m: default-tree 1,358.6 ms, aggregate-summary 1,234.3 ms; A/A +1.55% [-0.36%, +2.83%] and +0.67% [-3.63%, +5.60%] include zero",
+   "reference_tools": [],
+   "subject": "2aace7bc8aee:1000001:91cca62204a7",
+   "title": "Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s",
+   "trials": 12
+  },
+  {
+   "anchored": false,
    "candidate": "0d73ed54 probe (main with 149): the transient summary classifies entries",
    "change_pct": -6.926,
    "commit": "0d73ed54",
@@ -44991,6 +45654,60 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-175"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:55a09ea65f48",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 538992241,
+   "directories": 9439,
+   "entries": 79957,
+   "experiments": [
+    "exp-176"
+   ],
+   "files": 70411,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "db6d49b68990:79957:11c4122bec53",
+   "labels": [
+    "node-modules-dense"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
+   "apparent_bytes": 793658448,
+   "directories": 125001,
+   "entries": 1000001,
+   "experiments": [
+    "exp-177"
+   ],
+   "files": 875000,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "2aace7bc8aee:1000001:91cca62204a7",
+   "labels": [
+    "linux-balanced-1m"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": true
+  },
+  {
    "apparent_bytes": 538478644,
    "directories": 9439,
    "entries": 79953,
@@ -45013,18 +45730,18 @@
   "accepted_lines_changed": 20028,
   "decisions": {
    "accepted": 99,
-   "baseline": 10,
+   "baseline": 13,
    "blocked": 2,
    "in-progress": 4,
    "rejected": 57,
    "superseded": 5
   },
-  "experiments": 177,
+  "experiments": 180,
   "first_date": "2026-08-10",
   "hypotheses": 120,
-  "last_date": "2026-09-28",
+  "last_date": "2026-09-29",
   "platforms": {
-   "Linux": 40,
+   "Linux": 43,
    "macOS": 137
   }
  },

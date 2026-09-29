@@ -71,6 +71,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 3 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -254,6 +255,9 @@ dead end.
 | 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp172--macos-wholelisting-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
 | 173 | [Linux H162 allocation-free gitignore matching halves the default summary on a source tree](#exp173--linux-h162-allocationfree-gitignore-matching-halves-the-default-summary-on-a-source-tree) | H162 | `aggregate-summary` | -47.0% | ✅ accepted |
 | 174 | [Linux H163 per-listing control chains cut another third from the default summary](#exp174--linux-h163-perlisting-control-chains-cut-another-third-from-the-default-summary) | H163 | `aggregate-summary` | -36.4% | ✅ accepted |
+| 175 | [Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary](#exp175--linux-fcv49-baseline-default-tree-182-ms-24x-pdu-with-a-false-aa-accept-on-the-summary) | — | `default-tree` | -1.1% | 📏 baseline |
+| 176 | [Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu](#exp176--linux-fcv49-baseline-on-nodemodulesdense-default-tree-84-ms-11-behind-pdu) | — | `default-tree` | +3.9% | 📏 baseline |
+| 177 | [Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s](#exp177--linux-fcv49-baseline-on-the-generated-millionentry-tree-default-tree-136-s) | — | `default-tree` | +1.5% | 📏 baseline |
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
@@ -5791,6 +5795,79 @@ default-tree -35.86%; no-controls placebo includes zero.
 Full record:
 [`exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md`](../experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md)
 
+### exp-175 — Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary
+
+📏 baseline · 2026-09-29 · no hypothesis id
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 181.9 |
+| component (ms) | 176.1 |
+| cpu (ms) | 427.8 |
+| user (ms) | 199.7 |
+| system (ms) | 229.8 |
+| peak rss (MiB) | 34.0 |
+
+Other jobs, wall time: `aggregate-summary` 149 ms.
+
+**Baseline:** quiet four-arm A/A of e5a71c8a on linux-v6.12: default-tree 181.9 ms
+(blind 89.9), aggregate-summary 149.5 ms (blind 77.8); default-tree A/A -1.12%
+[-3.79%, +3.12%] includes zero, aggregate-summary A/A -3.74% [-12.33%, -0.59%] would
+read as an accept.
+
+Full record:
+[`exp-175-linux-fc-v49-baseline-default-tree-182-ms-2-4x-pdu-with-a-fa.md`](../experiments/exp-175-linux-fc-v49-baseline-default-tree-182-ms-2-4x-pdu-with-a-fa.md)
+
+### exp-176 — Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu
+
+📏 baseline · 2026-09-29 · no hypothesis id
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 84.0 |
+| component (ms) | 79.0 |
+| cpu (ms) | 274.2 |
+| user (ms) | 85.8 |
+| system (ms) | 190.9 |
+| peak rss (MiB) | 29.5 |
+
+Other jobs, wall time: `aggregate-summary` 77 ms.
+
+**Baseline:** quiet four-arm A/A of e5a71c8a on node-modules-dense: default-tree 84.0
+ms, aggregate-summary 76.6 ms; A/A +3.86% [-4.28%, +7.86%] and -0.27% [-5.97%, +2.25%]
+include zero.
+
+Full record:
+[`exp-176-linux-fc-v49-baseline-on-node-modules-dense-default-tree-84-.md`](../experiments/exp-176-linux-fc-v49-baseline-on-node-modules-dense-default-tree-84-.md)
+
+### exp-177 — Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s
+
+📏 baseline · 2026-09-29 · no hypothesis id
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 1358.6 |
+| component (ms) | 1333.2 |
+| cpu (ms) | 4944.4 |
+| user (ms) | 1016.4 |
+| system (ms) | 3922.3 |
+| peak rss (MiB) | 292.2 |
+
+Other jobs, wall time: `aggregate-summary` 1234 ms.
+
+**Baseline:** quiet four-arm A/A of e5a71c8a on linux-balanced-1m: default-tree 1,358.6
+ms, aggregate-summary 1,234.3 ms; A/A +1.55% [-0.36%, +2.83%] and +0.67%
+[-3.63%, +5.60%] include zero.
+
+Full record:
+[`exp-177-linux-fc-v49-baseline-on-the-generated-million-entry-tree-de.md`](../experiments/exp-177-linux-fc-v49-baseline-on-the-generated-million-entry-tree-de.md)
+
 ### exp-187 — Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore
 
 ✅ accepted · 2026-09-28 · H161 · commit `0d73ed54`
@@ -6303,11 +6380,23 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 103 | H86 Linux evidence stage: relative gates pass, floor gates fail | `default-tree` | 1,189.7 | 821.7 | -31.7% | ❌ rejected |
 
+### linux-balanced-1m (1,000,001 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 177 | Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s | `default-tree` | 1,358.6 | — | — | 📏 baseline |
+
 ### linux-kernel-7043 (102,318 entries) — Linux 6.18.44-fc-v24, ext4, virtualized, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 104 | Hash the content roll-up map by path bytes instead of components | `content-cache-hit` | 1,961.3 | 1,973.6 | +0.1% | ❌ rejected |
+
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
 
 ### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6362,6 +6451,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 190 | Linux H159 listing recycle clears 3 percent on a real directory-dense tree | `default-tree` | 106.3 | 92.9 | -8.6% | ✅ accepted |
+
+### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

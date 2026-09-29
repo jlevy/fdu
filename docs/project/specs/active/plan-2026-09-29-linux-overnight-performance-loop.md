@@ -24,19 +24,27 @@ This plan does three things:
    policy and stop rules for running it unattended for about eight hours.
 
 The review’s central finding is arithmetic.
-On this host fdu’s wall time is set by one consumer thread, and the 0.2.2 plan’s two
-changes, by its own predictions, leave that thread slower than pdu’s whole run.
-Beating pdu needs three things together: classification made nearly free (H171 as
-revised here), the consumer’s index build cut below the walk (H172, and H174, which is
-new), and a faster walk (H169 with in-place names, H165 with a walker count below the
-core count, and H166).
+With `.gitignore` on, fdu’s wall time here is set by one consumer thread, and the 0.2.2
+plan’s two changes, by its own predictions, leave that thread slower than pdu’s whole
+run.
+The Fable review of this plan added the second regime: with `.gitignore` off the run
+is already CPU-bound (3.3 cores busy), so once the consumer stops being critical, wall
+time follows total CPU divided by about 3.4. Beating pdu therefore needs classification
+made nearly free (H171 as revised here, with H175), the consumer’s index build shrunk
+(H172 with H176), and then less CPU in the walk itself (H169’s in-place names, and a
+per-listing name arena, H177). Tonight’s realistic target is the first two; the walk is
+the next night’s.
 
 ## Goals
 
-- On `linux-v6.12` (a real source tree with 358 `.gitignore` files), bring the default
-  `fdu PATH` below pdu’s time on the same host in a quiet paired tool cell.
-- On `node-modules-dense` (a real, directory-dense tree), do the same.
-- On `linux-balanced-1m` (generated, screening only), bring the default tree below pdu.
+- The destination: fdu’s default `fdu PATH` faster than pdu’s default invocation
+  (`pdu --silent-errors PATH`, the `pdu-default` tool contract) in a quiet paired tool
+  cell on `linux-v6.12` (a real source tree with 358 `.gitignore` files) and on
+  `node-modules-dense` (a real, directory-dense tree), and on `linux-balanced-1m`
+  (generated, screening only).
+- Tonight’s target: on `linux-v6.12`, the default command at or under 1.25 times pdu’s
+  default (from 2.4 times at Q0, exp-175); on `node-modules-dense`, close the 11% gap
+  measured at Q0 (exp-176).
 - Change no answers: goldens, Python parity, the `git check-ignore` verdict table and a
   git differential over every path all stay identical.
 - Record every cell, accepted or not, so the loop can resume from the record alone.
@@ -191,6 +199,100 @@ the [registry](../../guides/performance-loop.md#hypotheses).
 | Teardown | Detached release of a large index kept (H156) | Measure the residual drop cost first; no item unless it is ≥3% |
 | Build profile | PGO screened −8% on the pre-H162 engine (H148, stale) | Re-screen on the current engine (Q11); never shipped by the loop |
 | Instrumentation | Counters cost under ~3.3% (exp-052, exp-053) | Consumer busy and idle time, patterns tested, freshness pass (Q1) |
+
+## Amendments After the Plan Review
+
+A Fable subagent reviewed this plan against the code before any candidate was measured.
+The full review is kept with the night’s evidence; the amendments it drove, adopted at
+08:30 UTC, are listed here and take precedence over the queue text below where they
+differ.
+
+1. **Two regimes.** Wall time is roughly the larger of the consumer’s serial work and
+   total CPU divided by about 3.4, plus a 5–10 ms tail.
+   On `linux-v6.12` the controls-on tree runs about 2 cores busy (consumer-bound) and
+   the blind tree 3.3 (CPU-bound).
+   Predictions are stated in CPU milliseconds from the harness’s user and system time;
+   instruction counts are the load-independent secondary.
+
+2. **Q1 is deferred.** The walker attribution (`starved_ns`, `lock_wait_ns`, `send_ns`)
+   already exists behind `FDU_SCAN_DIAGNOSTICS=1`; the pattern counters ride with Q2.
+
+3. **Q2 gains H175.** Each listing’s control chain is derived from its parent’s instead
+   of `ControlTable::chain_for` (about 104M consumer instructions on `linux-v6.12`), as
+   a separate commit measured stacked on H171. Q2 carries two predictions: the revised
+   buckets bring the controls-on tree to at most 1.15 times its `--no-controls` arm, and
+   the prototype would reach only 1.45 times.
+   The matcher stores indices, so `content_cost` stays an honest bound.
+
+4. **Q3 is a screen.** Arms `--threads 3`, `4`, `6` and `8` on the Q2 head, after
+   reading `starved_ns`. With the consumer no longer critical, `cores − 1` loses.
+   A `PORTABLE` change needs the accept rule on both real subjects and a formulation
+   that does not also change hosts with more cores, since a measurement is evidence
+   about its own regime.
+
+5. **Q4 is settled in design.** The carrier is a pruned `Index` with a
+   `folded: FoldedChildren` element per directory, so there is one reader.
+   The folded tally carries exactly what `record_omission` sums: entries, files, bytes,
+   allocated, and ignored as an option.
+   A folded index never escapes the one-shot route.
+   H176 is part of the tier: it maintains only the reducers the requested views read, so
+   no per-extension maps are built for a tree.
+   The post-walk passes are fused.
+   `linux-v6.12 default-tree` is a co-primary beside `node-modules-dense`. The review
+   checked exactness against `ShareThreshold::admits` and the root total: sort keys,
+   depth, breadth and ties at K all keep the tier.
+
+6. **Q5 is conditional.** It runs only if, after Q4, the consumer is busy for more than
+   80% of the walk. Its accept rule adds “total instructions non-increasing”, because
+   moving work off the consumer can satisfy a consumer-only secondary while adding work.
+
+7. **Q6 is phase 1 only.** It keeps absolute-path opens and adds raw `getdents64` into a
+   reused 64 KiB buffer, names used in place, and
+   `statx(dirfd, d_name, AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT)`. `libc` is already a
+   unix dependency of `fdu-core`.
+   - Parent-relative opens are dropped: their fd budget is the breadth-first frontier,
+     thousands of directories on the generated tree.
+   - Directory attributes from the opened fd move to phase 2 (H179).
+   - A `getdents64` failure declines the directory before any child is published, and
+     the portable path re-reads it.
+   - It needs 20 pairs, since the predicted effect is 10–15%.
+
+8. **Q7 is gated** on `starved_ns`: under 2% of walker time closes it without a build.
+
+9. **Q10 is folded into Q4.** Its path-clone piece is H51, refuted on macOS, and would
+   have to say why Linux differs.
+
+10. **Answer identity before every cell.** The probe’s oracle checks only root tallies.
+    Before every cell, the product command line is byte-diffed in JSON and JSONL over
+    all three subjects, with timestamps masked.
+    H172 adds `--sort name`, `--min-share 0.1%`, `--depth 3`, `--breadth 5`,
+    `--view summary` and `--view types`.
+
+11. **Noise rules** (from exp-175’s false A/A accept).
+    A candidate predicted below 10% is measured at 20 pairs, or recorded as a screen.
+    A placebo that excludes zero by at most 3% is noted and does not block; one beyond
+    3% blocks the verdict.
+
+12. **Locks and gates.**
+    - Builds take a shared `flock`, and cells take it exclusively.
+    - At most two implementation worktrees at once.
+      The orchestrator builds every release probe in the main checkout.
+    - Per item, the gate is `cargo test -p fdu-core`, `make fmt-check` and
+      `make clippy`. `make check` runs on the integrated head at the end of the night,
+      and again if `unsafe` or platform-gated code landed.
+
+13. **New hypotheses:**
+    - H175, the chain from the parent;
+    - H176, reducer elision by view;
+    - H177, a per-listing name arena;
+    - H178, the consumer walks when its channel is empty;
+    - H179, directory attributes from the opened fd.
+
+    H177–H179 are registered for the next night.
+
+14. **Side-by-side profiling** (the maintainer’s request).
+    Q0 adds callgrind, `strace` and CPU splits of fdu, pdu, dut and diskus on both real
+    subjects. The loop can then name the work fdu does that the fastest peer does not.
 
 ## The Queue
 
@@ -487,12 +589,12 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | --- | --- | --- | --- |
 | Review and plan | `fdu-fkyf` | Done | This document; five source reviews and a Fable plan review |
 | Environment | `fdu-fkyf` | Done | Tools pinned, three subjects rebuilt with their recorded counts, one harness cell, push, `tbd sync` and `make check` (19 min, pass) all run |
-| Q0 re-baseline | `fdu-o4z5` | Next | — |
-| Q1 consumer counters | `fdu-hjo1` | Queued | — |
-| Q2 H171 revised | `fdu-sdul` | Queued | — |
+| Q0 re-baseline | `fdu-o4z5` | Cells done; side-by-side profiling running | exp-175: `linux-v6.12` default tree 181.9 ms (blind 89.9), summary 149.5 (blind 77.8), fdu 0.19 s against pdu default 0.079 s; exp-176: `node-modules-dense` default tree 84.0 ms, fdu 0.086 s against pdu default 0.077 s (−11%); exp-177: balanced 1.36 s tree, 1.23 s summary; a false A/A accept on the `linux-v6.12` summary set the noise rules |
+| Q1 consumer counters | `fdu-hjo1` | Deferred | Walker attribution exists behind `FDU_SCAN_DIAGNOSTICS`; pattern counters ride with Q2 |
+| Q2 H171 revised, with H175 | `fdu-sdul`, `fdu-hb0u` | Implementing (worktree `perf/h171-bucketed-matching`) | — |
 | Matcher survey | `fdu-p6vc` | Source half done | Findings in the bead’s notes; benchmark half queued after Q2 |
 | Q3 H165 walker count | `fdu-c11z` | Queued | — |
-| Q4 H172 tree tier | `fdu-dp98` | Queued | — |
+| Q4 H172 tree tier, with H176 | `fdu-dp98`, `fdu-dnfs` | Implementing (worktree `perf/h172-transient-tree`) | — |
 | Q5 H174 listing digest | `fdu-sfse` | Queued | — |
 | Q6 H169 native reader | `fdu-leja` | Queued | — |
 | Q7 H166 wake one | `fdu-i6nk` | Queued | — |
