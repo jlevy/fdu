@@ -7,13 +7,18 @@
 //! (`statx` in 2.28, `getdents64` in 2.30) are newer than the manylinux2014 wheel's
 //! glibc 2.17, so this module calls them through `libc::syscall`, as the standard
 //! library's own fallback does, and is therefore the sole FFI boundary. Records are
-//! parsed by offset in safe code, and every kernel-provided length is validated before
-//! it is used. Any open, enumeration, or malformed-record failure, and a kernel or
-//! sandbox without `statx`, returns `None`, which makes the caller reopen the complete
-//! directory through the portable `read_dir` reference path.
+//! parsed by offset in safe code from a buffer that is always initialized, and every
+//! kernel-provided length is validated before it is used. Any open, enumeration, or
+//! malformed-record failure, and a kernel or sandbox without `statx`, returns `None`,
+//! which makes the caller reopen the complete directory through the portable `read_dir`
+//! reference path.
 //!
 //! Per-entry stats pass `AT_NO_AUTOMOUNT` (fdu-puk7): an unmounted automount point among
 //! the children is reported as the trigger directory rather than mounted by the stat.
+//!
+//! On 32-bit glibc targets the reader keeps `statx`'s 64-bit timestamps, where std's
+//! `from_statx` narrows them through a 32-bit `time_t`; the two differ only for times
+//! outside 1901–2038, and no 32-bit build is shipped.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -21,7 +26,7 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::{Attrs, EntryKind, compose_ns};
 
@@ -31,13 +36,13 @@ use super::{Attrs, EntryKind, compose_ns};
 /// request, as the platform tuning guide records.
 const CHUNK_BYTES: usize = 65_536;
 const CHUNK_COUNT: libc::c_uint = 65_536;
-/// Record-buffer capacity kept between listings; a larger buffer shrinks back to a chunk.
+/// Record-buffer size kept between listings; a larger buffer shrinks back to a chunk.
 const RETAINED_BYTES: usize = 1_048_576;
 /// Entry capacity kept between listings, bounded for the same reason as the records.
 const RETAINED_ENTRIES: usize = 16_384;
 /// `linux_dirent64` header: `d_ino` u64 at 0, `d_off` i64 at 8, `d_reclen` u16 at 16,
 /// `d_type` u8 at 18, then `d_name` at 19, NUL-terminated. The kernel pads `d_reclen` to
-/// 8 bytes; nothing here relies on that.
+/// 8 bytes and never writes the padding; nothing here reads it.
 const RECORD_HEADER: usize = 19;
 const RECLEN_OFFSET: usize = 16;
 const TYPE_OFFSET: usize = 18;
@@ -47,11 +52,37 @@ const STATX_MASK: libc::c_uint = libc::STATX_BASIC_STATS;
 // The kernel writes sizeof(struct statx) == 256 bytes; the binding must be that size.
 const _: () = assert!(size_of::<libc::statx>() == 256);
 
-/// Set once `statx` reports `ENOSYS` or `EPERM` (a kernel before 4.11, or a seccomp
-/// filter). Every later read then declines at once, as the standard library's own
-/// `statx` probe does, instead of paying an open and a `getdents64` per directory
-/// before declining.
-static STATX_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+const STATX_UNKNOWN: u8 = 0;
+const STATX_PRESENT: u8 = 1;
+const STATX_UNAVAILABLE: u8 = 2;
+
+/// Whether `statx` works in this process, settled the way std's `try_statx` settles it.
+///
+/// Unknown until a call decides it. A success makes it present for good, and from then
+/// on every error is that entry's own. A failure while it is unknown is confirmed with
+/// std's probe, `statx` with null pointers, which faults (`EFAULT`) wherever the call
+/// itself is served: a fault makes it present and the failure the entry's own, and
+/// anything else (`ENOSYS` before Linux 4.11, `EPERM` under a seccomp filter) makes it
+/// unavailable. Every read then declines at once instead of paying an open and a
+/// `getdents64` per directory before declining.
+pub(super) struct StatxSupport(AtomicU8);
+
+impl StatxSupport {
+    const fn new() -> Self {
+        Self(AtomicU8::new(STATX_UNKNOWN))
+    }
+
+    fn state(&self) -> u8 {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    fn set(&self, state: u8) {
+        self.0.store(state, Ordering::Relaxed);
+    }
+}
+
+/// The process's `statx` support, shared by every walker's reader.
+static STATX: StatxSupport = StatxSupport::new();
 
 /// Which listed children need a stat.
 #[derive(Clone, Copy, Debug)]
@@ -110,13 +141,21 @@ struct Counts {
 
 /// A walker's reusable native directory reader.
 pub(super) struct Reader {
-    /// The raw `getdents64` records of the current listing; names are ranges in it.
+    /// The raw `getdents64` records of the current listing, `..filled`; names are ranges
+    /// in it. Always initialized to its length, which grows (zero-filled) only when a call
+    /// needs more room than the buffer has ever had, so no call pays a memset. Bytes past
+    /// `filled`, and each record's unwritten alignment padding, are stale but initialized.
     names: Vec<u8>,
+    filled: usize,
     entries: Vec<Dent>,
+    statx: &'static StatxSupport,
     /// Test seam: runs before each entry's stat with the entry's name, so a test can
     /// delete or replace the entry between `getdents64` and `statx`.
     #[cfg(test)]
     pub(super) before_stat: Option<BeforeStat>,
+    /// Test seam: the errno the unavailability probe reports instead of making the call.
+    #[cfg(test)]
+    probe_errno: Option<i32>,
 }
 
 #[cfg(test)]
@@ -125,10 +164,14 @@ pub(super) type BeforeStat = Box<dyn FnMut(&OsStr) + Send>;
 impl Reader {
     pub(super) fn new() -> Self {
         Self {
-            names: Vec::with_capacity(CHUNK_BYTES),
+            names: vec![0; CHUNK_BYTES],
+            filled: 0,
             entries: Vec::new(),
+            statx: &STATX,
             #[cfg(test)]
             before_stat: None,
+            #[cfg(test)]
+            probe_errno: None,
         }
     }
 
@@ -144,12 +187,12 @@ impl Reader {
         if super::walk_hook_covers(path) {
             return None;
         }
-        if STATX_UNAVAILABLE.load(Ordering::Relaxed) {
+        if self.statx.state() == STATX_UNAVAILABLE {
             return None;
         }
-        // Clear first: `shrink_to` cannot go below the previous listing's length.
-        self.names.clear();
+        self.filled = 0;
         if self.names.capacity() > RETAINED_BYTES {
+            self.names.truncate(CHUNK_BYTES);
             self.names.shrink_to(CHUNK_BYTES);
         }
         self.entries.clear();
@@ -158,7 +201,7 @@ impl Reader {
         }
         let Some(counts) = self.read_native(path, policy) else {
             // Leave nothing half-parsed behind for the next listing.
-            self.names.clear();
+            self.filled = 0;
             self.entries.clear();
             return None;
         };
@@ -168,7 +211,7 @@ impl Reader {
             c.stats += counts.stats;
             c.dir_enumeration_calls += counts.enumeration_calls;
         });
-        Some(Listing { names: &self.names, entries: self.entries.drain(..) })
+        Some(Listing { names: &self.names[..self.filled], entries: self.entries.drain(..) })
     }
 
     fn read_native(&mut self, path: &Path, policy: StatPolicy) -> Option<Counts> {
@@ -182,24 +225,27 @@ impl Reader {
         let fd = directory.as_raw_fd();
         let mut counts = Counts::default();
         loop {
-            self.names.reserve(CHUNK_BYTES);
-            let start = self.names.len();
+            let start = self.filled;
+            let end = start + CHUNK_BYTES;
+            if self.names.len() < end {
+                self.names.resize(end, 0);
+            }
             let filled = loop {
-                let spare = self.names.spare_capacity_mut();
-                debug_assert!(spare.len() >= CHUNK_BYTES);
-                // SAFETY: `directory` keeps `fd` open for the call. `spare` is the live,
-                // writable, uninitialized tail of `names`, at least CHUNK_BYTES long after
-                // `reserve`, and the kernel is asked for exactly CHUNK_COUNT == CHUNK_BYTES
-                // bytes, so it cannot write past it. `fd: c_int`, the pointer, and
-                // `c_uint` are the register-width argument types std's own `syscall!`
-                // fallback passes to `libc::syscall`. The return value is checked before
-                // any byte is read, and every kernel-provided length is bounds-checked
-                // by `parse_record`.
+                let window = &mut self.names[start..end];
+                // SAFETY: `directory` keeps `fd` open for the call. `window` is an
+                // exclusively borrowed, initialized `[u8]` of exactly CHUNK_BYTES bytes
+                // inside `names`, and the kernel is asked for CHUNK_COUNT == CHUNK_BYTES
+                // bytes, so it cannot write outside it. Any byte the kernel writes is a
+                // valid `u8`, and the bytes it leaves alone (each record's alignment
+                // padding) stay initialized. `fd: c_int`, the pointer, and `c_uint` are
+                // the register-width argument types std's own `syscall!` fallback passes
+                // to `libc::syscall`. The return value is checked before any byte is read,
+                // and every kernel-provided length is bounds-checked by `parse_record`.
                 let returned = unsafe {
                     libc::syscall(
                         libc::SYS_getdents64,
                         fd,
-                        spare.as_mut_ptr().cast::<libc::c_void>(),
+                        window.as_mut_ptr().cast::<libc::c_void>(),
                         CHUNK_COUNT,
                     )
                 };
@@ -225,17 +271,15 @@ impl Reader {
                 // Impossible for a conforming kernel; fail closed.
                 return None;
             }
-            // SAFETY: the kernel initialized exactly `filled` bytes of the spare capacity
-            // just passed to it, and `filled <= CHUNK_BYTES <= spare.len()`.
-            unsafe { self.names.set_len(start + filled) };
+            self.filled = start + filled;
             self.parse_chunk(start, fd, policy, &mut counts)?;
         }
     }
 
-    /// Parse and observe one `getdents64` chunk, `names[start..]`.
+    /// Parse and observe one `getdents64` chunk, `names[start..filled]`.
     ///
     /// Records never straddle calls, so each chunk is parsed on its own, and name ranges
-    /// are indices into `names`, which stay valid across later `reserve` reallocations.
+    /// are indices into `names`, which stay valid across later growth.
     fn parse_chunk(
         &mut self,
         start: usize,
@@ -243,12 +287,18 @@ impl Reader {
         policy: StatPolicy,
         counts: &mut Counts,
     ) -> Option<()> {
+        let gate = StatxGate {
+            support: self.statx,
+            #[cfg(test)]
+            probe_errno: self.probe_errno,
+        };
+        let listing = &self.names[..self.filled];
         let mut offset = start;
-        while offset < self.names.len() {
-            let record = parse_record(&self.names, offset)?;
+        while offset < listing.len() {
+            let record = parse_record(listing, offset)?;
             let name_start = offset + RECORD_HEADER;
             offset += record.reclen;
-            let name_with_nul = &self.names[name_start..=name_start + record.name_len];
+            let name_with_nul = &listing[name_start..=name_start + record.name_len];
             let name = &name_with_nul[..record.name_len];
             if name == b"." || name == b".." {
                 continue;
@@ -258,7 +308,9 @@ impl Reader {
             if let Some(hook) = self.before_stat.as_mut() {
                 hook(OsStr::from_bytes(name));
             }
-            if let Some(outcome) = observe(fd, name_with_nul, record.d_type, policy, counts).ok()? {
+            if let Some(outcome) =
+                observe(fd, name_with_nul, record.d_type, policy, gate, counts).ok()?
+            {
                 self.entries.push(Dent { name_start, name_len: record.name_len, outcome });
             }
         }
@@ -284,7 +336,8 @@ fn parse_record(chunk: &[u8], offset: usize) -> Option<ParsedRecord> {
         return None;
     }
     let name_field = &record[RECORD_HEADER..reclen];
-    // No NUL inside the record: decline.
+    // No NUL inside the record: decline. The scan stops at the kernel's NUL, so it never
+    // reaches the padding after it.
     let name_len = name_field.iter().position(|&byte| byte == 0)?;
     let name = &name_field[..name_len];
     // Never kernel output.
@@ -314,12 +367,69 @@ const fn listing_names_kind(d_type: u8) -> bool {
 /// `statx` itself is unavailable, so the whole directory is declined.
 struct StatxUnavailable;
 
+/// What `observe` knows of `statx` support, copied out of the reader.
+#[derive(Clone, Copy)]
+struct StatxGate {
+    support: &'static StatxSupport,
+    #[cfg(test)]
+    probe_errno: Option<i32>,
+}
+
+impl StatxGate {
+    /// Settle support after a failed stat, as std's `try_statx` does: `Err` when `statx`
+    /// is unavailable and the directory must be declined.
+    fn confirm_after_failure(self) -> Result<(), StatxUnavailable> {
+        match self.support.state() {
+            STATX_PRESENT => Ok(()),
+            STATX_UNAVAILABLE => Err(StatxUnavailable),
+            _ => {
+                #[cfg(test)]
+                let faults =
+                    self.probe_errno.map_or_else(statx_probe_faults, |errno| errno == libc::EFAULT);
+                #[cfg(not(test))]
+                let faults = statx_probe_faults();
+                if faults {
+                    self.support.set(STATX_PRESENT);
+                    Ok(())
+                } else {
+                    self.support.set(STATX_UNAVAILABLE);
+                    Err(StatxUnavailable)
+                }
+            }
+        }
+    }
+}
+
+/// std's availability probe: `statx` with null pointers faults wherever the call is
+/// served, and fails otherwise (`ENOSYS` before 4.11, `EPERM` under seccomp).
+fn statx_probe_faults() -> bool {
+    let descriptor: libc::c_int = 0;
+    let flags: libc::c_int = 0;
+    // SAFETY: std's `try_statx` probe, argument for argument: descriptor 0, a null path, no
+    // flags, and a null buffer. The kernel's attempt to read the null path faults and
+    // returns EFAULT (or the call itself is refused with ENOSYS or EPERM) before any buffer
+    // is written, so no process memory is read or written; only the return value and errno
+    // are used.
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_statx,
+            descriptor,
+            std::ptr::null::<libc::c_char>(),
+            flags,
+            STATX_MASK,
+            std::ptr::null_mut::<libc::statx>(),
+        )
+    };
+    result != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EFAULT)
+}
+
 /// Observe one listed child, or `Ok(None)` when it vanished before its stat.
 fn observe(
     fd: RawFd,
     name_with_nul: &[u8],
     d_type: u8,
     policy: StatPolicy,
+    gate: StatxGate,
     counts: &mut Counts,
 ) -> Result<Option<Outcome>, StatxUnavailable> {
     if policy.skip_dir_symlink_stat {
@@ -341,14 +451,20 @@ fn observe(
     }
     counts.stats += 1;
     let (kind, attrs) = match stat_entry(fd, name_with_nul) {
-        Ok(Some(observed)) => observed,
-        // ENOENT: the entry vanished between the listing and the stat.
-        Ok(None) => return Ok(None),
-        Err(error) if matches!(error.raw_os_error(), Some(libc::ENOSYS | libc::EPERM)) => {
-            STATX_UNAVAILABLE.store(true, Ordering::Relaxed);
-            return Err(StatxUnavailable);
+        Ok(observed) => {
+            if gate.support.state() == STATX_UNKNOWN {
+                gate.support.set(STATX_PRESENT);
+            }
+            observed
         }
-        Err(error) => return Ok(Some(Outcome::Failed(error))),
+        Err(error) => {
+            gate.confirm_after_failure()?;
+            // ENOENT: the entry vanished between the listing and the stat.
+            if error.raw_os_error() == Some(libc::ENOENT) {
+                return Ok(None);
+            }
+            return Ok(Some(Outcome::Failed(error)));
+        }
     };
     // std's `file_type` stats a `DT_UNKNOWN` entry itself, and the skip then applies to
     // what it found (`listed_child_kind_and_attrs`). Reproduce that answer, default attrs
@@ -365,7 +481,7 @@ fn observe(
     Ok(Some(Outcome::Observed { kind, attrs }))
 }
 
-fn stat_entry(fd: RawFd, name_with_nul: &[u8]) -> std::io::Result<Option<(EntryKind, Attrs)>> {
+fn stat_entry(fd: RawFd, name_with_nul: &[u8]) -> std::io::Result<(EntryKind, Attrs)> {
     debug_assert_eq!(name_with_nul.last(), Some(&0));
     // SAFETY: every field of `libc::statx` is an integer or padding, so all-zero bytes
     // are a valid value (std initializes its buffer the same way).
@@ -388,16 +504,13 @@ fn stat_entry(fd: RawFd, name_with_nul: &[u8]) -> std::io::Result<Option<(EntryK
             )
         };
         if result == 0 {
-            break;
+            return Ok((kind_from_mode(buffer.stx_mode), attrs_from_statx(&buffer)));
         }
         let error = std::io::Error::last_os_error();
-        match error.raw_os_error() {
-            Some(libc::EINTR) => {}
-            Some(libc::ENOENT) => return Ok(None),
-            _ => return Err(error),
+        if error.raw_os_error() != Some(libc::EINTR) {
+            return Err(error);
         }
     }
-    Ok(Some((kind_from_mode(buffer.stx_mode), attrs_from_statx(&buffer))))
 }
 
 fn kind_from_mode(mode: u16) -> EntryKind {
@@ -518,6 +631,41 @@ mod tests {
         Some(parsed)
     }
 
+    /// A reader holding `records` as one `getdents64` chunk, as `read_native` leaves it.
+    fn loaded(records: &[(&[u8], u8)]) -> Reader {
+        let mut reader = Reader::new();
+        reader.names = records
+            .iter()
+            .flat_map(|(name, d_type)| record(name, *d_type, kernel_reclen(name)))
+            .collect();
+        reader.filled = reader.names.len();
+        reader
+    }
+
+    /// `reader` deciding `statx` support on its own state, which starts at `state`, so a
+    /// test never changes what concurrently running walks see.
+    fn with_support(mut reader: Reader, state: u8) -> Reader {
+        reader.statx = Box::leak(Box::new(StatxSupport(AtomicU8::new(state))));
+        reader
+    }
+
+    /// One yielded entry: its name with its kind and attrs, or the errno its stat failed
+    /// with.
+    type Yield = (OsString, Result<(EntryKind, Attrs), i32>);
+
+    /// What parsing the loaded chunk yielded.
+    fn yielded(reader: &mut Reader) -> Vec<Yield> {
+        Listing { names: &reader.names[..reader.filled], entries: reader.entries.drain(..) }
+            .map(|entry| {
+                let outcome = match entry.outcome {
+                    Outcome::Observed { kind, attrs } => Ok((kind, attrs)),
+                    Outcome::Failed(error) => Err(error.raw_os_error().expect("an OS error")),
+                };
+                (entry.name.to_os_string(), outcome)
+            })
+            .collect()
+    }
+
     #[test]
     fn parser_accepts_only_complete_in_bounds_records() {
         assert_eq!(Some(CHUNK_BYTES), usize::try_from(CHUNK_COUNT).ok());
@@ -573,37 +721,25 @@ mod tests {
         // Under the summary policy directory and symlink records need no stat, so a
         // synthetic chunk exercises the name ranges without any filesystem: the
         // descriptor is never used.
-        let records: [(&[u8], u8); 5] = [
+        let mut reader = loaded(&[
             (b"first", libc::DT_DIR),
             (b".", libc::DT_DIR),
             (b"\xff\xfe-not-utf8", libc::DT_DIR),
             (b"..", libc::DT_DIR),
             (b"link", libc::DT_LNK),
-        ];
-        let mut reader = Reader::new();
-        for (name, d_type) in records {
-            reader.names.extend(record(name, d_type, kernel_reclen(name)));
-        }
+        ]);
         let mut counts = Counts::default();
         assert!(reader.parse_chunk(0, -1, SUMMARY, &mut counts).is_some());
 
-        let listing = Listing { names: &reader.names, entries: reader.entries.drain(..) };
-        let yielded: Vec<_> = listing
-            .map(|entry| match entry.outcome {
-                Outcome::Observed { kind, attrs } => (entry.name.to_os_string(), kind, attrs),
-                Outcome::Failed(error) => panic!("{:?}: {error}", entry.name),
-            })
-            .collect();
         assert_eq!(
-            yielded,
+            yielded(&mut reader),
             vec![
-                (OsString::from("first"), EntryKind::Dir, Attrs::default()),
+                (OsString::from("first"), Ok((EntryKind::Dir, Attrs::default()))),
                 (
                     OsStr::from_bytes(b"\xff\xfe-not-utf8").to_os_string(),
-                    EntryKind::Dir,
-                    Attrs::default()
+                    Ok((EntryKind::Dir, Attrs::default()))
                 ),
-                (OsString::from("link"), EntryKind::Symlink, Attrs::default()),
+                (OsString::from("link"), Ok((EntryKind::Symlink, Attrs::default()))),
             ]
         );
         assert_eq!((counts.entries, counts.stats), (3, 0));
@@ -618,15 +754,16 @@ mod tests {
         fs::write(directory.path().join("present"), b"bytes").expect("regular file");
         let listed = fs::File::open(directory.path()).expect("open the directory");
         let too_long = vec![b'z'; 300];
-        let names: [&[u8]; 3] = [b"present", b"missing", &too_long];
-        let mut reader = Reader::new();
-        for name in names {
-            reader.names.extend(record(name, libc::DT_REG, kernel_reclen(name)));
-        }
+        let mut reader = loaded(&[
+            (b"present", libc::DT_REG),
+            (b"missing", libc::DT_REG),
+            (&too_long, libc::DT_REG),
+        ]);
         let mut counts = Counts::default();
         assert!(reader.parse_chunk(0, listed.as_raw_fd(), INDEX, &mut counts).is_some());
 
-        let mut listing = Listing { names: &reader.names, entries: reader.entries.drain(..) };
+        let mut listing =
+            Listing { names: &reader.names[..reader.filled], entries: reader.entries.drain(..) };
         let present = listing.next().expect("the present file");
         assert_eq!(present.name, "present");
         assert!(matches!(present.outcome, Outcome::Observed { kind: EntryKind::File, .. }));
@@ -645,6 +782,174 @@ mod tests {
         }
         assert!(listing.next().is_none(), "a vanished entry is skipped, not reported");
         assert_eq!((counts.entries, counts.stats), (3, 3));
+    }
+
+    /// glibc's `<dirent.h>` whiteout type, which `libc` does not name on Linux.
+    const DT_WHT: u8 = 14;
+
+    #[test]
+    fn an_unrecognized_d_type_is_stated_and_skipped_as_std_skips_it() {
+        // tmpfs and ext4 always fill `d_type`, so `DT_UNKNOWN` (XFS without ftype, some FUSE
+        // and NFS mounts) and values std does not name reach the reader only in a synthetic
+        // chunk. Its names are real, so its stats are too.
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        fs::write(root.join("f"), b"file contents").expect("regular file");
+        fs::create_dir(root.join("d")).expect("directory");
+        symlink("f", root.join("l")).expect("symlink");
+        let real = |name: &str| {
+            let path = root.join(name);
+            let metadata = fs::symlink_metadata(&path).expect("fixture metadata");
+            (kind_from(&metadata), attrs_from(&path, &metadata).expect("Unix attrs"))
+        };
+        let (file, dir, link) = (real("f"), real("d"), real("l"));
+        assert!(dir.1 != Attrs::default() && link.1 != Attrs::default());
+        let defaults = |(kind, _): (EntryKind, Attrs)| (kind, Attrs::default());
+        let listed = fs::File::open(root).expect("open the directory");
+        let records: [(&[u8], u8); 5] = [
+            (b"f", libc::DT_UNKNOWN),
+            (b"d", libc::DT_UNKNOWN),
+            (b"l", libc::DT_UNKNOWN),
+            (b"d", DT_WHT),
+            (b"l", DT_WHT),
+        ];
+        // What `listed_child_kind_and_attrs` answers once std's `file_type` has stated them.
+        for (policy, dir_answer, link_answer) in [
+            (POLICIES[0], dir, link),
+            (POLICIES[1], dir, link),
+            (POLICIES[2], defaults(dir), defaults(link)),
+            (POLICIES[3], dir, defaults(link)),
+        ] {
+            let mut reader = loaded(&records);
+            let mut counts = Counts::default();
+            assert!(reader.parse_chunk(0, listed.as_raw_fd(), policy, &mut counts).is_some());
+            let expected: Vec<Yield> = [
+                ("f", file),
+                ("d", dir_answer),
+                ("l", link_answer),
+                ("d", dir_answer),
+                ("l", link_answer),
+            ]
+            .into_iter()
+            .map(|(name, answer)| (OsString::from(name), Ok(answer)))
+            .collect();
+            assert_eq!(yielded(&mut reader), expected, "{policy:?}");
+            assert_eq!((counts.entries, counts.stats), (5, 5), "{policy:?}: all are stated");
+        }
+    }
+
+    #[test]
+    fn stale_bytes_in_the_buffer_never_reach_a_listing() {
+        // The kernel never writes a record's alignment padding, so those bytes keep what
+        // the buffer held before: an earlier listing's records, or growth's zeroes. A buffer
+        // of garbage with no NUL in it must change nothing, over names whose lengths leave
+        // every amount of padding and records that span many chunks.
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        fs::create_dir(root.join("dir")).expect("directory");
+        symlink("missing", root.join("dangling")).expect("dangling symlink");
+        for index in 0..3_000 {
+            let name = format!("{index}-{}", "p".repeat(index % 211));
+            fs::write(root.join(name), b"x").expect("wide entry");
+        }
+        for policy in POLICIES {
+            let fresh = native(root, policy);
+            let mut dirty = Reader::new();
+            dirty.names = vec![0xff; 4 * CHUNK_BYTES];
+            let first = observed(dirty.read(root, policy).expect("a native listing"));
+            assert!(first == fresh, "{policy:?}: a garbage-filled buffer changed the listing");
+            let again = observed(dirty.read(root, policy).expect("a native listing"));
+            assert!(again == fresh, "{policy:?}: a reused buffer changed the listing");
+        }
+    }
+
+    #[test]
+    fn an_unavailable_statx_declines_every_read_before_any_work() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        let directory = tempfile::tempdir().expect("temporary directory");
+        fs::write(directory.path().join("file"), b"x").expect("regular file");
+        let mut reader = with_support(Reader::new(), STATX_UNAVAILABLE);
+        crate::counters::test_thread_reset();
+        assert!(reader.read(directory.path(), INDEX).is_none());
+        assert_eq!(crate::counters::test_thread_snapshot(), crate::counters::Counts::default());
+        crate::counters::enable(false);
+    }
+
+    #[test]
+    fn statx_support_is_settled_as_std_settles_it() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        fs::write(root.join("present"), b"bytes").expect("regular file");
+        let listed = fs::File::open(root).expect("open the directory");
+        // The one stat failure a fixture can make on any host: a name no filesystem takes.
+        let too_long = vec![b'z'; 300];
+        let failing: [(&[u8], u8); 1] = [(&too_long, libc::DT_REG)];
+        let parse = |reader: &mut Reader| {
+            let mut counts = Counts::default();
+            reader.parse_chunk(0, listed.as_raw_fd(), INDEX, &mut counts).map(|()| yielded(reader))
+        };
+        let failed: Option<Vec<Yield>> =
+            Some(vec![(OsStr::from_bytes(&too_long).to_os_string(), Err(libc::ENAMETOOLONG))]);
+
+        // A first success settles it present.
+        let mut reader = with_support(Reader::new(), STATX_UNKNOWN);
+        assert!(reader.read(root, INDEX).is_some());
+        assert_eq!(reader.statx.state(), STATX_PRESENT);
+
+        // A failure before any success asks std's probe, which faults wherever `statx` is
+        // served, so the failure is the entry's own.
+        let mut reader = with_support(loaded(&failing), STATX_UNKNOWN);
+        assert_eq!(parse(&mut reader), failed);
+        assert_eq!(reader.statx.state(), STATX_PRESENT);
+
+        // A probe that does not fault (ENOSYS before 4.11, EPERM under seccomp) settles it
+        // unavailable: this listing declines, and so does every later read.
+        let mut reader = with_support(loaded(&failing), STATX_UNKNOWN);
+        reader.probe_errno = Some(libc::ENOSYS);
+        assert_eq!(parse(&mut reader), None);
+        assert_eq!(reader.statx.state(), STATX_UNAVAILABLE);
+        assert!(reader.read(root, INDEX).is_none());
+
+        // Once present, any failure, EPERM included, is the entry's own, and the probe is
+        // not asked.
+        let mut reader = with_support(loaded(&failing), STATX_PRESENT);
+        reader.probe_errno = Some(libc::EPERM);
+        assert_eq!(parse(&mut reader), failed);
+        assert_eq!(reader.statx.state(), STATX_PRESENT);
+    }
+
+    #[test]
+    fn a_search_denied_directory_reports_each_child_as_the_portable_walk_does() {
+        // A directory that is readable but not searchable opens and lists, and then every
+        // child's stat fails with EACCES: the per-entry stat error a real tree produces
+        // without hooks, so the one that reaches the walk's `Failed` route.
+        if !crate::test_support::require_permission_bits() {
+            return;
+        }
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let root = directory.path();
+        let sealed = root.join("sealed");
+        fs::create_dir(&sealed).expect("directory to seal");
+        fs::write(sealed.join("a"), b"a").expect("child");
+        fs::write(sealed.join("b"), b"b").expect("child");
+        fs::set_permissions(&sealed, fs::Permissions::from_mode(0o400)).expect("deny search");
+        let errors = |threads| {
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let report = crate::scan::scan(root, &config, &mut |_| {}).expect("scan");
+            report.errors.iter().map(ToString::to_string).collect::<Vec<_>>()
+        };
+        // One worker is the serial portable walk; four take the native reader.
+        let (serial, native) = (errors(1), errors(4));
+        fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).expect("allow search");
+        assert_eq!(native, serial);
+        for child in ["a", "b"] {
+            let path = sealed.join(child).to_string_lossy().into_owned();
+            assert!(
+                serial.iter().any(|error| error.contains(&path) && error.contains("denied")),
+                "{path} is reported as denied: {serial:?}"
+            );
+        }
     }
 
     #[test]

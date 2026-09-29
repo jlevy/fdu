@@ -614,8 +614,8 @@ fn assert_same_entries(reference: &Entries, candidate: &Entries, context: &str) 
 ///
 /// On Linux, public `scan` with one worker is the serial portable `read_dir` walk. Every
 /// other count, and `scan_into_index` at every count, lists through the native
-/// `getdents64` reader, so this is the walk-level differential for it: all of them must
-/// describe the same entries, and every index must hold the same image.
+/// `getdents64` reader on glibc builds, so this is the walk-level differential for it: all
+/// of them must describe the same entries, and every index must hold the same image.
 #[cfg(target_os = "linux")]
 #[test]
 fn cold_scans_agree_across_worker_counts_on_random_trees() {
