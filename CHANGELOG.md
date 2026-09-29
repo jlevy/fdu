@@ -10,11 +10,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
 tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
-any route. Two Rust API changes are breaking: `counters::Counts` gains three public
-fields, and `Error` gains a variant, `UnrepresentableTotal`. A `.gitignore` that starts
-with a byte-order mark, or holds a NUL byte inside a line, now reads as git reads it,
-which changes the `.gitignore` semantics version: a snapshot written by an earlier
-release is rebuilt rather than served.
+any route. Three Rust API changes are breaking: `counters::Counts` gains three public
+fields and is non-exhaustive, `Error` gains a variant, `UnrepresentableTotal`, and
+`scan::ScanBackendDiagnostics` gains three public fields.
+A `.gitignore` that starts with a byte-order mark, or holds a NUL byte inside a line,
+now reads as git reads it, which changes the `.gitignore` semantics version: a snapshot
+written by an earlier release is rebuilt rather than served.
 No command-line option, report or cache schema, or Python API changed.
 
 ### Added
@@ -33,6 +34,15 @@ No command-line option, report or cache schema, or Python API changed.
   Rust code outside the engine crate that built `Counts` with a struct literal, or
   destructured it exhaustively, must build it with `Counts::default()` and read or
   assign its fields instead; code that only reads its fields is unaffected.
+- **Breaking:** `fdu_core::scan::ScanBackendDiagnostics` gains three public fields,
+  `linux_dents_attempts`, `linux_dents_successes`, and `linux_dents_fallbacks`, which
+  count the Linux native reader’s listings on every route that lists directories; they
+  are `None` off Linux and on a Linux build without glibc.
+  The `--diagnostics` trace’s `backend` object carries them as `linux_dents_attempts`,
+  `linux_dents_fallbacks`, and `linux_dents_successes`, ahead of the macOS keys, and
+  `dirs_read` equals the native successes plus `portable_directory_reads`; no existing
+  key changes meaning.
+  [The platform tuning guide](docs/project/guides/platform-tuning.md) documents them.
 - **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
   `Index::apply` returns for the batch below; code that matches `Error` exhaustively
   must name it or use a wildcard arm.

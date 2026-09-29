@@ -327,6 +327,34 @@ class StatisticsTests(unittest.TestCase):
 
         self.assertIn("required macOS bulk/fallback counts are unavailable", reasons)
 
+    def test_linux_scan_counts_native_listings_beside_portable_ones(self) -> None:
+        document = json.loads(self._diagnostic_probe())
+        document["scan_diagnostics"]["backend"] = {
+            "linux_dents_attempts": 4,
+            "linux_dents_fallbacks": 1,
+            "linux_dents_successes": 3,
+            "macos_bulk_attempts": None,
+            "macos_bulk_fallbacks": None,
+            "macos_bulk_successes": None,
+            "portable_attempts": 1,
+            "portable_directory_reads": 1,
+            "unavailable_reason": "macOS bulk directory enumeration is unavailable on this platform",
+        }
+
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(), require_scan_diagnostics=True
+        )
+        self.assertEqual(reasons, [])
+
+        backend = document["scan_diagnostics"]["backend"]
+        backend["linux_dents_attempts"] = 5
+        document["summary"]["dirs_read"] += 1
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(), require_scan_diagnostics=True
+        )
+        self.assertIn("Linux native/fallback counts are inconsistent", reasons)
+        self.assertIn("portable backend count disagrees with reported directories read", reasons)
+
     def test_claim_grade_scan_cross_checks_trace_and_backend_aggregates(self) -> None:
         document = json.loads(self._diagnostic_probe("held"))
         policy = document["scan_diagnostics"]["worker_policy"]

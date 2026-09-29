@@ -100,7 +100,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert!(traced_stdout.contains("\"complete\": false"), "{traced_stdout}");
     assert!(traced_stdout.contains("/denied"), "{traced_stdout}");
     assert!(
-        traced_stderr.contains("__FDU_SCAN_DIAGNOSTICS__={\"backend\":{\"macos_bulk_attempts\":"),
+        traced_stderr.contains("__FDU_SCAN_DIAGNOSTICS__={\"backend\":{\"linux_dents_attempts\":"),
         "{traced_stderr}"
     );
     assert!(traced_stderr.contains("\"schema\":\"fdu-scan-diagnostics-v1\""), "{traced_stderr}");
