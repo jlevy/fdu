@@ -8,10 +8,11 @@
 Phase B’s artifact backfill still requires a quiet host; Phase C’s cross-platform
 coverage matrix and re-runs remain open.
 Phase D has a generated, charted
-[performance evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md),
-but its per-improvement sections and per-platform absolute walls remain open.
-The quiet-host peer cell `fdu-ow8y` is unresolved; PR #132’s exploratory macOS
-comparison does not replace it.
+[performance evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md)
+with a per-platform section (each platform’s kept improvements with their absolute
+walls, 2026-09-29); per-improvement sections that set both platforms side by side remain
+open, and depend on Phase C. The quiet-host peer cell `fdu-ow8y` is unresolved; PR
+#132’s exploratory macOS comparison does not replace it.
 Scheduled as Phase E of
 [the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md), which owns the
 work order; this plan owns what the record must contain.
@@ -153,8 +154,12 @@ subject, and every experiment’s paired effect with its 95% interval, accepted 
 rejected. It is a separate target from `perf-ledger`, and `make check` runs
 `perf-ledger-check` and `perf-report-check` together, so neither generated file can
 drift from the artifacts.
-The per-improvement sections with per-platform absolute walls are not in it, and they
-depend on Phase C’s cross-platform cells.
+Its “By platform” section (2026-09-29) lists, per platform, the accepted changes still
+in the product whose deciding run improved, with that run’s absolute arms, paired
+interval, and whether the subject was generated.
+Per-improvement sections that set a change’s macOS and Linux cells side by side are not
+in it: they depend on Phase C’s cross-platform cells, and matching by hypothesis id
+needs care because H91–H106 were reused.
 
 ## Testing Strategy
 
