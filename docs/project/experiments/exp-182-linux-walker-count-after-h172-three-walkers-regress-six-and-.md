@@ -204,7 +204,8 @@ Quiet, 12 pairs, `default-tree`, the H172 head (`956659de` probe); four is the c
 
 The node-modules-dense run is kept beside this record’s evidence.
 
-**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-node-modules-dense.json.gz`, the `node-modules-dense` leg.
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff
+reviewable: `run-node-modules-dense.json.gz`, the `node-modules-dense` leg.
 
 ## Decision
 

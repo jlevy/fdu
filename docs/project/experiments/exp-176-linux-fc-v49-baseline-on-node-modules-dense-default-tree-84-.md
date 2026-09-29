@@ -319,7 +319,8 @@ mismatches:
 | pdu 0.24.0, `--max-depth 2` | 0.070 s | −20% |
 | diskus 0.9.0 | 0.075 s | −12% |
 
-**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-q0-tools-nmd.json.gz`, the Q0 tool standing on `node-modules-dense`.
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff
+reviewable: `run-q0-tools-nmd.json.gz`, the Q0 tool standing on `node-modules-dense`.
 
 ## Decision
 

@@ -69,7 +69,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 13 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 14 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -273,6 +273,7 @@ dead end.
 | 190 | [Linux H159 listing recycle clears 3 percent on a real directory-dense tree](#exp190--linux-h159-listing-recycle-clears-3-percent-on-a-real-directorydense-tree) | H159 | `default-tree` | -8.6% | ✅ accepted |
 | 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
 | 192 | [Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time](#exp192--linux-h181-conditional-queue-wakes-and-h182-hashordered-listings-do-not-move-wall-time) | H181, H182 | `default-tree` | +0.2% | ❌ rejected |
+| 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp193--linux-h183-cheap-matcher-prechecks-cut-the-default-tree-8-on-linuxv612) | H183 | `default-tree` | -7.6% | ✅ accepted |
 
 ## The experiments
 
@@ -6324,6 +6325,35 @@ linux-v6.12 and -1.40% [-7.42%, +3.42%] on node-modules-dense; queue futex wakes
 Full record:
 [`exp-192-linux-h181-conditional-queue-wakes-and-h182-hash-ordered-lis.md`](../experiments/exp-192-linux-h181-conditional-queue-wakes-and-h182-hash-ordered-lis.md)
 
+### exp-193 — Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12
+
+✅ accepted · 2026-09-29 · H183 · commit `e2ef8bcb`
+
+Control: 20933081 probe: H169 head
+
+Candidate: e2ef8bcb probe: H183 matcher pre-checks
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 73.2 | 67.4 | -7.62% | [-10.41%, -5.28%] |
+| component (ms) | 70.0 | 64.4 | -7.96% | [-11.30%, -4.84%] |
+| cpu (ms) | 249.3 | 236.2 | -3.31% | [-5.91%, -2.10%] |
+| user (ms) | 89.4 | 80.2 | -6.80% (n.s.) | [-17.20%, +0.07%] |
+| system (ms) | 162.3 | 161.5 | -1.22% (n.s.) | [-4.53%, +2.69%] |
+
+Other jobs, wall time: `aggregate-summary` -6.3% (n.s.).
+
+Cost to carry: 300 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair linux-v6.12 default-tree -7.62% [-10.41%, -5.28%];
+--no-controls and node-modules-dense placebos include zero; consumer instructions 436M
+-> 238M; answers identical.
+
+Full record:
+[`exp-193-linux-h183-cheap-matcher-pre-checks-cut-the-default-tree-8-o.md`](../experiments/exp-193-linux-h183-cheap-matcher-pre-checks-cut-the-default-tree-8-o.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6404,6 +6434,20 @@ Baselines show one value because they measure a state rather than a change.
 | 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
 | 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
+| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
+| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
+| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
+| 182 | Linux walker count after H172: three walkers regress, six and eight do not clear on both trees | `default-tree` | 84.7 | 94.5 | +10.3% | ❌ rejected |
+| 184 | Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12 | `aggregate-summary` | 90.5 | 83.1 | -5.6% | ✅ accepted |
+| 186 | Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear | `aggregate-summary` | 63.8 | 60.0 | -7.9% | ✅ accepted |
+| 192 | Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time | `default-tree` | 74.1 | 74.0 | +0.2% | ❌ rejected |
+| 193 | Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12 | `default-tree` | 73.2 | 67.4 | -7.6% | ✅ accepted |
+
 ### metabrowser-clone (145,931 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6431,19 +6475,6 @@ Baselines show one value because they measure a state rather than a change.
 | 157 | Progress handle attached against no handle | `default-tree` | 2,289.7 | 2,323.0 | +5.8% | ⏳ in progress |
 | 166 | macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat | `default-tree` | 2,862.5 | 2,867.2 | +1.3% | ↩︎ superseded |
 | 167 | macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux | `default-tree` | 2,855.3 | 2,842.4 | -1.4% | ❌ rejected |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
-| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
-| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
-| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
-| 182 | Linux walker count after H172: three walkers regress, six and eight do not clear on both trees | `default-tree` | 84.7 | 94.5 | +10.3% | ❌ rejected |
-| 184 | Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12 | `aggregate-summary` | 90.5 | 83.1 | -5.6% | ✅ accepted |
-| 186 | Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear | `aggregate-summary` | 63.8 | 60.0 | -7.9% | ✅ accepted |
-| 192 | Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time | `default-tree` | 74.1 | 74.0 | +0.2% | ❌ rejected |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 

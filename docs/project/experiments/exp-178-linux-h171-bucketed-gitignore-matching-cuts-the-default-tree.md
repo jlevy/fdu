@@ -345,7 +345,8 @@ base and the H175 build with `--no-controls`.
 are exact-size slices, so `content_cost` is unchanged.
 A new test fits the tightest rule shapes under it with 0–1 byte of slack per line.
 
-**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-placebo-balanced.json.gz`, the `linux-balanced-1m` placebo screen.
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff
+reviewable: `run-placebo-balanced.json.gz`, the `linux-balanced-1m` placebo screen.
 
 ## Decision
 

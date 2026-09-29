@@ -329,7 +329,10 @@ run as a non-root user.
 `make cross-lint` passes on macOS, Windows, i686 glibc and x86_64 musl, and the MSRV
 check passes.
 
-**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff reviewable: `run-h169-tools-linux-v6.12.json.gz`, the tool standing after H169 on `linux-v6.12`; `run-h169-tools-node-modules-dense.json.gz`, the tool standing after H169 on `node-modules-dense`; `run-placebo-serial.json.gz`, the `--threads 1` serial placebo.
+**Supplementary runs.** Beside the primary artifact, gzipped to keep the diff
+reviewable: `run-h169-tools-linux-v6.12.json.gz`, the tool standing after H169 on
+`linux-v6.12`; `run-h169-tools-node-modules-dense.json.gz`, the tool standing after H169
+on `node-modules-dense`; `run-placebo-serial.json.gz`, the `--threads 1` serial placebo.
 
 ## Decision
 
