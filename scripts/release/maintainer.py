@@ -914,7 +914,8 @@ def verify_tag(host: Host, release: Release, key: Path | None) -> list[Check]:
     checks.append(
         Check(
             "GitHub verified",
-            verification.get("verified") is True or reason == resolve_plan.UNSIGNED,
+            verification.get("verified") is True
+            or (verification.get("verified") is False and reason == resolve_plan.UNSIGNED),
             f"reason: {reason}",
         )
     )

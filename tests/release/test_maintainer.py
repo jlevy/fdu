@@ -708,6 +708,30 @@ class VerifyTagTests(ReleaseCase):
         self.assertFalse(checks["tag signature"].ok)
         self.assertIn("without a good signature", checks["tag signature"].detail)
 
+    def test_a_tag_created_on_github_is_fetched_then_passes_unsigned(self) -> None:
+        # The checklist creates the tag through the API, so at first only origin holds it.
+        ref = f"refs/tags/{TAG}"
+        fetched: list[list[str]] = []
+
+        def local(_: list[str]) -> str:
+            if not fetched:
+                raise failure("")
+            return f"{TAG_OBJECT}\n"
+
+        def fetch(argv: list[str]) -> str:
+            fetched.append(argv)
+            return ""
+
+        self.host.on(["git", "rev-parse", "--verify", "--quiet", ref], local)
+        self.host.on(["git", "fetch"], fetch)
+        self.push_tag()
+        self.verified = {"verified": False, "reason": "unsigned"}
+        checks = {
+            check.name: check for check in maintainer.verify_tag(self.host, self.release, None)
+        }
+        self.assertTrue(all(check.ok for check in checks.values()), checks)
+        self.assertEqual(fetched, [["git", "fetch", "--quiet", "origin", f"{ref}:{ref}"]])
+
     def test_no_signing_key_leaves_the_signature_to_github(self) -> None:
         checks = {
             check.name: check for check in maintainer.verify_tag(self.host, self.release, None)

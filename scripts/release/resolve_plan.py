@@ -180,10 +180,12 @@ def validate_published_tag(
         )
     verification = field(record, "verification")
     reason = verification.get("reason")
-    # Only the JSON boolean counts as verified, and only GitHub's own "unsigned" verdict
-    # counts as unsigned: any other reason is a signature that does not verify.
+    # Only the JSON booleans count, each stated: `true` is verified, and `false` with
+    # GitHub's own "unsigned" reason is unsigned. Any other record is a signature that
+    # does not verify, or a verdict that is not stated, and neither is evidence.
     signed = verification.get("verified") is True
-    if not signed and reason != UNSIGNED:
+    unsigned = verification.get("verified") is False and reason == UNSIGNED
+    if not signed and not unsigned:
         raise ValueError(
             f"GitHub does not report {plan.release_tag}'s signature verified "
             f"(reason: {reason}); sign it with a registered key or leave it unsigned"

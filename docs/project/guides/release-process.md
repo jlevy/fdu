@@ -90,9 +90,9 @@ If the release commit changes, start again with a new directory.
    good; then verify what origin holds:
 
    ```shell
+   SHA=$(gh api "repos/jlevy/fdu/commits/$COMMIT" --jq .sha) && test -n "$SHA"
    TAG_OBJECT=$(gh api -X POST repos/jlevy/fdu/git/tags -f tag="v$VERSION" \
-     -f message="fdu $VERSION" -f object="$(git rev-parse "$COMMIT")" -f type=commit \
-     --jq .sha)
+     -f message="fdu $VERSION" -f object="$SHA" -f type=commit --jq .sha)
    gh api "repos/jlevy/fdu/git/tags/$TAG_OBJECT" --jq '[.tag, .object.sha, .message] | @tsv'
    gh api -X POST repos/jlevy/fdu/git/refs -f ref="refs/tags/v$VERSION" -f sha="$TAG_OBJECT"
    make release-verify-tag
@@ -594,7 +594,7 @@ Before each upload the job proves what it is about to send:
 
 | Before | The job checks |
 | --- | --- |
-| Anything | Its own checkout is the tag and the commit the plan resolved, and GitHub still reports that tag annotated, verified, and on `main`; the environment check passed; and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
+| Anything | Its own checkout is the tag and the commit the plan resolved, and GitHub still reports that tag annotated, unsigned or verified, and on `main`; the environment check passed; and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
 | The first write | Both registries are audited. An `identical` version is skipped, a `missing` one is published, and any conflict on either registry stops the job, so a PyPI conflict stops crates.io from being written first. |
 | Each crate | `cargo package --locked --no-verify` reproduces it from the tag, and its digest must equal the manifest’s. `fdu` is reproduced again against the published `fdu-core`. |
 | `fdu` and PyPI | For up to ten minutes, the job waits for crates.io to serve the manifest’s digest for the crate just published, in both the API record and the sparse index Cargo resolves from. Another digest in either stops the job. |
@@ -767,8 +767,8 @@ The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the toke
 prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 Every command runs in a fresh clone of the tag, whose `rust-toolchain.toml` selects the
 pinned Rust, after confirming it names the rehearsed commit and the Cargo version, and,
-as the workflow does, that the tag is annotated, GitHub reports it verified, and the
-commit is on `main`:
+as the workflow does, that the tag is annotated, GitHub reports it unsigned or verified,
+and the commit is on `main`:
 
 ```shell
 git clone --branch "v$VERSION" https://github.com/jlevy/fdu "$RELEASE/fdu"

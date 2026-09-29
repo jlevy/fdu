@@ -124,6 +124,11 @@ class PublishedTagTests(unittest.TestCase):
         del silent[TAG_URL]["verification"]
         truthy = self.answers()
         truthy[TAG_URL]["verification"] = {"verified": "true", "reason": "valid"}
+        # "Unsigned" counts only beside an explicit `verified: false`.
+        unstated = self.answers()
+        unstated[TAG_URL]["verification"] = {"reason": "unsigned"}
+        stringly = self.answers()
+        stringly[TAG_URL]["verification"] = {"verified": "false", "reason": "unsigned"}
         cases = {
             "has no tag v0.2.1": edited(REF_URL),
             # A lightweight tag is a ref straight to the commit, with no signature to check.
@@ -144,6 +149,8 @@ class PublishedTagTests(unittest.TestCase):
             r"signature verified \(reason: None\)": silent,
             # Only the JSON boolean counts: a string that reads as true is not a verdict.
             r"signature verified \(reason: valid\)": truthy,
+            r"signature verified \(reason: unsigned\); sign it": unstated,
+            r"does not report v0\.2\.1's signature verified \(reason: unsigned\)": stringly,
             "cannot compare": edited(COMPARE_URL),
             "status 'behind'": edited(COMPARE_URL, status="behind"),
             "status 'diverged'": edited(
