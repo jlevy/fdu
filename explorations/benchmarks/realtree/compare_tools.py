@@ -215,6 +215,16 @@ CONTRACTS: Dict[str, ToolContract] = {
         ),
         version_argv=("{binary}", "--version"),
     ),
+    # What a user types: pdu's own default depth (10) and ratio (1%). It keeps every
+    # node above that depth for the whole walk, so it retains and renders more than
+    # the depth-2 contract; the Linux default-command goal is stated against this one.
+    "pdu-default": ToolContract(
+        name="pdu-default",
+        work_class="rendered-tree",
+        description="complete parallel scan with pdu's default depth and ratio",
+        argv=("{binary}", "--silent-errors", "{root}"),
+        version_argv=("{binary}", "--version"),
+    ),
     "ncdu": ToolContract(
         name="ncdu",
         work_class="indexed-tree",
