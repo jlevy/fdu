@@ -44,6 +44,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   On the Linux v6.12 source tree (358 `.gitignore` files) the default tree fell from 590
   to 211 ms and the default summary from 505 to 167 ms; answers are unchanged.
 
+### Fixed
+
+- A `.gitignore` spelled in another case, such as `.GITIGNORE`, now applies where git
+  applies it: on a case-insensitive volume (APFS and NTFS by default, an ext4 casefold
+  directory), where opening `<dir>/.gitignore` finds it.
+  Before, fdu took rules only from a file listed exactly as `.gitignore`, so its
+  gitignored shares differed from git’s on such trees.
+  On a case-sensitive volume nothing changes: a `.GITIGNORE` there is an ordinary file,
+  as it is for git. Every route and surface agrees, including the default summary,
+  `--ignored`, `--watch`, opened roots, and refresh; the rules are named `.gitignore`
+  wherever they are reported.
+  The engine fingerprint now mixes in the version of these rules, so nothing cached
+  under the old rule is reused: each cached tree’s first run after upgrading scans cold,
+  and its first analyzed run reads every file again.
+
 ## [0.2.0] - 2026-09-28
 
 fdu 0.2.0 makes the command people type cheaper and narrows what the cache does by

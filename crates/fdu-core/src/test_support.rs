@@ -74,3 +74,57 @@ pub(crate) fn not_observing_controls() -> crate::ScanScope {
 pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate::query::Request {
     crate::query::Request::new(crate::query::Basis::held_by(index), query, std::time::UNIX_EPOCH)
 }
+
+/// Whether the filesystem under `dir` resolves a name in another case to the stored entry,
+/// as APFS and NTFS do by default and an ext4 casefold directory does.
+pub(crate) fn resolves_case_insensitively(dir: &std::path::Path) -> bool {
+    let probe = dir.join("CaseProbe");
+    std::fs::write(&probe, b"probe").expect("case probe");
+    let insensitive = std::fs::symlink_metadata(dir.join("caseprobe")).is_ok();
+    std::fs::remove_file(probe).expect("remove case probe");
+    insensitive
+}
+
+/// How a test's control lookups resolve a case variant of `.gitignore` under its root.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CaseLookups {
+    /// As the host filesystem resolves them.
+    Host,
+    /// As a case-insensitive directory would, through
+    /// [`crate::scan::install_case_folding_control_lookup`].
+    Folded,
+}
+
+impl CaseLookups {
+    /// The modes a case-variant control test runs under `dir` on this host, each with
+    /// whether a lookup there resolves `.gitignore` to a stored `.GITIGNORE`.
+    ///
+    /// The host always runs: on a case-insensitive volume (the macOS and Windows runners)
+    /// it is the real rule, and on a case-sensitive one the negative. Folded runs only on a
+    /// case-sensitive host, where it is the one way to reach the rule's other branch; a
+    /// case-insensitive host already resolves as it would. The mode is printed, so a run
+    /// says which branch it exercised for real.
+    pub(crate) fn on_this_host(dir: &std::path::Path) -> Vec<(Self, bool)> {
+        if resolves_case_insensitively(dir) {
+            eprintln!(
+                "the temporary directory is case-insensitive: the host exercises a case-variant \
+                 control for real, and folded lookups are not needed"
+            );
+            vec![(Self::Host, true)]
+        } else {
+            eprintln!(
+                "the temporary directory is case-sensitive: a case-variant control is exercised \
+                 through folded lookups, and the host is the negative"
+            );
+            vec![(Self::Host, false), (Self::Folded, true)]
+        }
+    }
+
+    /// Resolve control lookups under `root` in this mode until the guard drops.
+    pub(crate) fn install(self, root: &std::path::Path) -> Option<crate::scan::CaseFoldingGuard> {
+        match self {
+            Self::Host => None,
+            Self::Folded => Some(crate::scan::install_case_folding_control_lookup(root)),
+        }
+    }
+}

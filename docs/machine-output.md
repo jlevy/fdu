@@ -135,8 +135,9 @@ Cache status reports these fields too.
 The envelope’s `ignore_rules` is null when controls were not observed.
 Otherwise it states `applied` files, accepted `rules` counted per governing location,
 `refused` files, limits, and bounded refusal details.
-These counts describe retained control state and do not imply every rule file was reread
-on a cache-only run.
+A refusal names its rule file by the path git opens, `<dir>/.gitignore`, even where a
+case-insensitive volume stores that file as `.GITIGNORE`. These counts describe retained
+control state and do not imply every rule file was reread on a cache-only run.
 
 ## Coverage and Formats
 

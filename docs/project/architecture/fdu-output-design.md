@@ -287,6 +287,9 @@ rerunning will necessarily resolve a permission or filesystem failure.
 A refused ignore file makes classification incomplete; it does not by itself make size
 measurements inaccurate.
 Preserve that distinction in the note and structured result.
+Name an ignore file by its directory in a note, and by the path git opens,
+`<dir>/.gitignore`, in structured output, whichever spelling a case-insensitive volume
+stores: one directory’s rules then read the same on every route and every platform.
 A display limit hides rows but does not reduce totals or filesystem work.
 
 ## Ownership and Enforcement

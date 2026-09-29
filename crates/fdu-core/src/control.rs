@@ -6,8 +6,8 @@
 //! on one semantic path and makes deleting the last control file an ordinary state
 //! transition rather than a special rebuild.
 //!
-//! **Which of git's ignore inputs count.** Exactly one: every regular file named
-//! [`CONTROL_FILE_NAME`] inside the scanned root, each governing its own directory and
+//! **Which of git's ignore inputs count.** Exactly one: each directory's
+//! [`CONTROL_FILE_NAME`] inside the scanned root, governing its own directory and
 //! everything below it, with deeper files taking precedence. Nothing else git consults is
 //! read. `.git/info/exclude` and `core.excludesFile` are ignored, so a `.DS_Store` excluded
 //! only globally lands in the unignored partition. A nested repository is not a boundary:
@@ -17,6 +17,19 @@
 //! an excluded parent cannot be re-included is applied when matching, but the file's
 //! bytes are retained against the table bound. Matching is case-sensitive regardless of
 //! `core.ignorecase`.
+//!
+//! **Which file is a directory's control.** Whatever a lookup of `<dir>/.gitignore`
+//! resolves to, because that is the path git opens. On a case-sensitive directory that is
+//! only an entry named exactly `.gitignore`; on a case-insensitive one (APFS and NTFS by
+//! default, an ext4 casefold directory) it is the one entry the filesystem folds to that
+//! name, so a `.GITIGNORE` governs there as it does for git, and nowhere else. The rules
+//! are recorded under the canonical path `<dir>/.gitignore` whatever spelling holds them:
+//! every control operation, table key, refusal, and change names that path, as
+//! `git check-ignore -v` does, so [`is_control_file`] accepts only that path. A walk pays
+//! for this only on a listed name spelled `.gitignore` in another ASCII case, which it
+//! resolves with one lookup of the canonical path; the exact name is read by its own path
+//! as before, and every other name costs a length comparison. A name some filesystem
+//! folds to `.gitignore` through a non-ASCII character is not looked up.
 
 mod gitignore;
 
@@ -777,21 +790,75 @@ fn has_key_at_or_below<V>(directories: &BTreeMap<PathBuf, V>, subtree: &Path) ->
         .is_some_and(|(directory, _)| directory.starts_with(subtree))
 }
 
-/// Whether a relative path names the fixed control file.
+/// Whether a relative path names the fixed control file: the canonical path every control
+/// operation, and the table, name a directory's rules by.
+///
+/// A directory's rules may be held by a `.GITIGNORE` on a case-insensitive volume, but
+/// they are still recorded under `<dir>/.gitignore` (see the module documentation), so a
+/// control operation naming any other spelling is malformed.
 pub fn is_control_file(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == CONTROL_FILE_NAME)
 }
 
-/// The control file a walk error under `root` names, relative to it, when there is one.
+/// How a listed name relates to its directory's control file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ControlSpelling {
+    /// Exactly [`CONTROL_FILE_NAME`]: the entry a lookup of the directory's control opens
+    /// on every filesystem, read through its own path.
+    Exact,
+    /// [`CONTROL_FILE_NAME`] in another ASCII case, such as `.GITIGNORE`: the directory's
+    /// control only where the filesystem resolves `.gitignore` to it, which a lookup of the
+    /// canonical path decides.
+    Variant,
+}
+
+/// Whether `name` spells the control file name, and how.
+///
+/// Every listed entry asks this, so it is a length test and, for the rare ten-byte name,
+/// an ASCII case-insensitive comparison: no allocation and no system call.
+pub(crate) fn control_spelling(name: &std::ffi::OsStr) -> Option<ControlSpelling> {
+    let bytes = name.as_encoded_bytes();
+    let exact = CONTROL_FILE_NAME.as_bytes();
+    if bytes.len() != exact.len() {
+        None
+    } else if bytes == exact {
+        Some(ControlSpelling::Exact)
+    } else if bytes.eq_ignore_ascii_case(exact) {
+        Some(ControlSpelling::Variant)
+    } else {
+        None
+    }
+}
+
+/// The spelling of the control name a relative path's last component uses, if any.
+pub(crate) fn path_control_spelling(path: &Path) -> Option<ControlSpelling> {
+    path.file_name().and_then(control_spelling)
+}
+
+/// The canonical control path of the directory `path` sits in: `<parent>/.gitignore`.
+pub(crate) fn sibling_control_path(path: &Path) -> PathBuf {
+    control_path(path.parent().unwrap_or_else(|| Path::new("")))
+}
+
+/// The control file a walk error under `root` names, relative to it, when there is one,
+/// by its canonical path.
 ///
 /// A control file the walk could not read leaves the rules it holds unknown, so the
-/// ignored split it governs cannot be verified. The index and the transient summary both
-/// ask this of the same normalized walk errors, so they withhold the same shares.
+/// ignored split it governs cannot be verified. That includes a listed case variant whose
+/// own metadata could not be read: on a case-insensitive volume it may hold the rules, and
+/// nothing looked the canonical path up. The index and the transient summary both ask this
+/// of the same normalized walk errors, so they withhold the same shares.
 pub(crate) fn unreadable_control(root: &Path, error: &crate::Error) -> Option<PathBuf> {
     let crate::Error::Io { .. } = error else {
         return None;
     };
-    crate::Issue::from_error_under(root, error).path.filter(|path| is_control_file(path))
+    crate::Issue::from_error_under(root, error).path.and_then(|path| governing_control(&path))
+}
+
+/// The canonical control path of the directory whose control an entry at `path` may hold,
+/// when its name spells the control name in any case.
+pub(crate) fn governing_control(path: &Path) -> Option<PathBuf> {
+    path_control_spelling(path).map(|_| sibling_control_path(path))
 }
 
 fn control_directory(path: &Path) -> crate::Result<&Path> {
@@ -1383,5 +1450,39 @@ mod tests {
 
         assert!(table.is_ignored(Path::new("vendor"), true));
         assert!(table.is_ignored(Path::new("vendor/keep.txt"), false));
+    }
+
+    /// Only `.gitignore` spelled in some ASCII case is a spelling of the control name; the
+    /// canonical path every spelling is recorded under is its directory's `.gitignore`, and
+    /// only that path is a valid control path (fdu-0w1b).
+    #[test]
+    fn a_control_name_is_spelled_in_any_ascii_case_and_recorded_by_one_path() {
+        use std::ffi::OsStr;
+
+        assert_eq!(control_spelling(OsStr::new(".gitignore")), Some(ControlSpelling::Exact));
+        for variant in [".GITIGNORE", ".GitIgnore", ".gitIGNORE", ".gitignorE"] {
+            assert_eq!(control_spelling(OsStr::new(variant)), Some(ControlSpelling::Variant));
+        }
+        // A non-ASCII letter some filesystem folds to `i` is not looked up, and neither is a
+        // name of another length or with other characters.
+        for other in [".gıtıgnore", ".gitignor", ".gitignore~", "gitignore.", ".gitignor3", ""] {
+            assert_eq!(control_spelling(OsStr::new(other)), None, "{other:?}");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt as _;
+            assert_eq!(control_spelling(OsStr::from_bytes(b".gitignor\xff")), None);
+        }
+
+        assert_eq!(
+            governing_control(Path::new("a/.GITIGNORE")),
+            Some(PathBuf::from("a/.gitignore"))
+        );
+        assert_eq!(governing_control(Path::new(".gitignore")), Some(PathBuf::from(".gitignore")));
+        assert_eq!(governing_control(Path::new("a/README")), None);
+        assert!(is_control_file(Path::new("a/.gitignore")));
+        assert!(!is_control_file(Path::new("a/.GITIGNORE")), "operations name one path");
+        let mut table = ControlTable::default();
+        assert!(table.upsert(Path::new("a/.GITIGNORE"), b"*.log\n".to_vec()).is_err());
     }
 }

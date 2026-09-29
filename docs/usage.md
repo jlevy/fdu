@@ -255,6 +255,13 @@ Unignored means what the observed rules leave.
 fdu does not read trackedness, `.git/info/exclude`, `core.excludesFile`, or a global
 ignore file. `.git` itself is unignored unless a rule names it.
 
+Each directory’s rules come from `<dir>/.gitignore` as git opens it.
+On a case-insensitive volume, which macOS and Windows use by default, a `.GITIGNORE` is
+that file and its rules apply, as they do for git there; on a case-sensitive volume only
+the exact name counts.
+fdu names such a file `.gitignore` wherever it reports one, as `git check-ignore -v`
+does. Pattern matching itself stays case-sensitive.
+
 For the most recent working files without ignored entries or repository internals:
 
 ```shell
