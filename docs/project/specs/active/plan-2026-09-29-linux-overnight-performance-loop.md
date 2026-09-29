@@ -601,7 +601,7 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | Q6 H169 native reader | `fdu-leja` | Accepted (phase 1), merged `217861c1` | exp-185/186: `--no-controls` summary −6.25% and −7.90%, default summary −9.7% and −9.4%; default tree −4.29% on `node-modules-dense`, −2.06% (not clearing) on `linux-v6.12`; four audited `unsafe` expressions; public diagnostics fields deferred (`fdu-q7hf`) |
 | Q7 H166 wake one | `fdu-i6nk` | Closed by its gate, no build | Walkers starved 2.2% (`linux-v6.12`) and 0.6% (`node-modules-dense`) of their time |
 | H180 summary walker trims | `fdu-cfbf` | Accepted, merged `c2a75fe4` | exp-183: `node-modules-dense` default summary −8.68%; exp-184: `linux-v6.12` −5.63% (blind −12.76%); tree placebos at zero |
-| H181 conditional wakes, H182 hash sort | `fdu-uk0u`, `fdu-sp4m` | Implementing (branch `perf/h181-h182`) | From the Fable mid-night sweep; one bundle cell after H169 |
+| H181 conditional wakes, H182 hash sort | `fdu-uk0u`, `fdu-sp4m` | Rejected (exp-192), not merged | Bundle cell: +0.20% on `linux-v6.12`, −1.40% on `node-modules-dense`; the wake syscalls and consumer instructions fell, wall did not |
 | Standing after H169 | — | Measured 12:40, 20 pairs | `linux-v6.12` fdu 0.077 s against pdu default 0.072 s (−8%) and diskus 0.073 s; `node-modules-dense` fdu 0.080 s against pdu default 0.081 s (+1%) and diskus 0.082 s (+1%): parity on the dense tree (evidence under exp-185) |
 | H183 matcher pre-checks | `fdu-7ydi` | Implementing (branch `perf/h183-matcher-prechecks`) | A callgrind of the head found `memcmp` (114M) and `Checks::admit` (97M) are most of the 333M instructions `.gitignore` still costs the consumer on `linux-v6.12` |
 | Q8 H170 summary fold | `fdu-lz25` | Queued | — |

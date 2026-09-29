@@ -46479,6 +46479,215 @@
    "subject": "14549a49743a:92474:c7a4d447d9bf",
    "title": "Linux H157 file fold cuts allocations but misses on the product job after H159",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "7233dad6 probe: H181 + H182 bundle",
+   "change_pct": 0.2,
+   "commit": "d1c667f6",
+   "complexity": {
+    "lines_changed": 700,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "20933081 probe: H169 head",
+   "date": "2026-09-29",
+   "decision": "rejected",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [
+    "H181",
+    "H182"
+   ],
+   "id": "exp-192",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 72616932,
+        "control": 72786855.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 2.389,
+        "ci95_high_pct": 5.573,
+        "ci95_low_pct": -5.73,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 265101500,
+        "control": 273342000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.597,
+        "ci95_high_pct": 1.345,
+        "ci95_low_pct": -6.124,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 174435500,
+        "control": 177825500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -6.528,
+        "ci95_high_pct": 5.282,
+        "ci95_low_pct": -12.574,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 94141000,
+        "control": 90257500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 9.734,
+        "ci95_high_pct": 15.899,
+        "ci95_low_pct": -5.65,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 75897944,
+        "control": 76122974.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.409,
+        "ci95_high_pct": 5.874,
+        "ci95_low_pct": -6.357,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 820.7490105326902,
+      "control": 823.1824566905292
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 70697204,
+        "control": 71018722.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 0.613,
+        "ci95_high_pct": 2.594,
+        "ci95_low_pct": -2.562,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 259314500,
+        "control": 260473500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 1.203,
+        "ci95_high_pct": 4.155,
+        "ci95_low_pct": -3.225,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 179919500,
+        "control": 178985000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.422,
+        "ci95_high_pct": 1.017,
+        "ci95_low_pct": -5.8,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 85780000,
+        "control": 78277500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 2.963,
+        "ci95_high_pct": 13.161,
+        "ci95_low_pct": -10.579,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 74047053.5,
+        "control": 74117303.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.2,
+        "ci95_high_pct": 1.913,
+        "ci95_low_pct": -2.039,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 800.7337575967299,
+      "control": 801.4934305858944
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "control",
+   "number": 192,
+   "path": "exp-192-linux-h181-conditional-queue-wakes-and-h182-hash-ordered-lis.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 20-pair bundle cell: default-tree +0.20% [-2.04%, +1.91%] on linux-v6.12 and -1.40% [-7.42%, +3.42%] on node-modules-dense; queue futex wakes 1,426 -> 3-10 and consumer instructions -3% are real but below the wall bar",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time",
+   "trials": 20
   }
  ],
  "prepared": "2026-09-29",
@@ -46684,6 +46893,31 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-175",
+    "exp-178",
+    "exp-179",
+    "exp-180",
+    "exp-182",
+    "exp-184",
+    "exp-186",
+    "exp-192"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:55a09ea65f48",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1724995969,
    "directories": 11512,
    "entries": 145931,
@@ -46705,30 +46939,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293209,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-175",
-    "exp-178",
-    "exp-179",
-    "exp-180",
-    "exp-182",
-    "exp-184",
-    "exp-186"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "4ffe9d749fe6:92474:55a09ea65f48",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -47574,15 +47784,15 @@
    "baseline": 13,
    "blocked": 2,
    "in-progress": 4,
-   "rejected": 58,
+   "rejected": 59,
    "superseded": 5
   },
-  "experiments": 189,
+  "experiments": 190,
   "first_date": "2026-08-10",
-  "hypotheses": 127,
+  "hypotheses": 129,
   "last_date": "2026-09-29",
   "platforms": {
-   "Linux": 52,
+   "Linux": 53,
    "macOS": 137
   }
  },

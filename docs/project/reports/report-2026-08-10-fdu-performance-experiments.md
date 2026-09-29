@@ -69,7 +69,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | bare-metal | warm-steady | 80 |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 12 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 13 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
@@ -272,6 +272,7 @@ dead end.
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
 | 190 | [Linux H159 listing recycle clears 3 percent on a real directory-dense tree](#exp190--linux-h159-listing-recycle-clears-3-percent-on-a-real-directorydense-tree) | H159 | `default-tree` | -8.6% | ✅ accepted |
 | 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
+| 192 | [Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time](#exp192--linux-h181-conditional-queue-wakes-and-h182-hashordered-listings-do-not-move-wall-time) | H181, H182 | `default-tree` | +0.2% | ❌ rejected |
 
 ## The experiments
 
@@ -6294,6 +6295,35 @@ Cost to carry: 60 lines; no new dependencies.
 Full record:
 [`exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md`](../experiments/exp-191-linux-h157-file-fold-cuts-allocations-but-misses-on-the-prod.md)
 
+### exp-192 — Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time
+
+❌ rejected · 2026-09-29 · H181, H182 · commit `d1c667f6`
+
+Control: 20933081 probe: H169 head
+
+Candidate: 7233dad6 probe: H181 + H182 bundle
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 74.1 | 74.0 | +0.20% (n.s.) | [-2.04%, +1.91%] |
+| component (ms) | 71.0 | 70.7 | +0.61% (n.s.) | [-2.56%, +2.59%] |
+| cpu (ms) | 260.5 | 259.3 | +1.20% (n.s.) | [-3.23%, +4.16%] |
+| user (ms) | 78.3 | 85.8 | +2.96% (n.s.) | [-10.58%, +13.16%] |
+| system (ms) | 179.0 | 179.9 | -3.42% (n.s.) | [-5.80%, +1.02%] |
+
+Other jobs, wall time: `aggregate-summary` +1.4% (n.s.).
+
+Cost to carry: 700 lines; no new dependencies.
+
+**Rejected:** quiet 20-pair bundle cell: default-tree +0.20% [-2.04%, +1.91%] on
+linux-v6.12 and -1.40% [-7.42%, +3.42%] on node-modules-dense; queue futex wakes 1,426
+-> 3-10 and consumer instructions -3% are real but below the wall bar.
+
+Full record:
+[`exp-192-linux-h181-conditional-queue-wakes-and-h182-hash-ordered-lis.md`](../experiments/exp-192-linux-h181-conditional-queue-wakes-and-h182-hash-ordered-lis.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6413,6 +6443,7 @@ Baselines show one value because they measure a state rather than a change.
 | 182 | Linux walker count after H172: three walkers regress, six and eight do not clear on both trees | `default-tree` | 84.7 | 94.5 | +10.3% | ❌ rejected |
 | 184 | Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12 | `aggregate-summary` | 90.5 | 83.1 | -5.6% | ✅ accepted |
 | 186 | Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear | `aggregate-summary` | 63.8 | 60.0 | -7.9% | ✅ accepted |
+| 192 | Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time | `default-tree` | 74.1 | 74.0 | +0.2% | ❌ rejected |
 
 ### metabrowser-current (113,794 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
