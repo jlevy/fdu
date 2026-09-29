@@ -307,7 +307,7 @@ sharing one project’s publisher subject with another project.
 
 | Channel | fdu setup |
 | --- | --- |
-| GitHub Releases | A maintainer publishes the release from the verified evidence; no job receives `contents: write` (`fdu-kqa4` tracks automating it). |
+| GitHub Releases | The `announce` job runs after successful registry publication, uses the body derived from the committed notes, verifies all eleven assets, and publishes a complete draft. Only this job receives `contents: write`; see the [release process](../../guides/release-process.md#announce-the-release). |
 | PyPI bootstrap | The workflow’s `publish` job uploads `0.1.0` through the pending trusted publisher registered on 2026-09-24 for `jlevy/fdu`, `release.yml`, and environment `release`, which creates the project on first upload. No API token exists. |
 | PyPI steady state | The same publisher, now attached to the project. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
 | crates.io bootstrap | The `publish` job uploads `fdu-core 0.1.0`, then `fdu 0.1.0`, with a narrowly scoped, short-lived token held only as the `release` environment’s `CARGO_REGISTRY_TOKEN` secret, because trusted publishing cannot be configured until a crate exists. Delete the secret and revoke the token after verifying the release. |
@@ -624,8 +624,10 @@ Build and validation jobs have no publication authority.
 The protected `release` environment approves one `publish` job, so a single approval
 covers both registries, which trust the same environment subject; the job checks out the
 tag only to repackage the crates, compiles nothing, and uploads the downloaded,
-re-verified files to PyPI. The GitHub announcement stays a maintainer step, so no job
-receives `contents: write` (`fdu-kqa4` tracks automating it).
+re-verified files to PyPI. The dependent `announce` job has the only `contents: write`
+grant and publishes the GitHub release after another registry and artifact audit.
+The same protected-environment approval authorizes that announcement; draft retries
+resume missing uploads and refuse conflicting notes or bytes.
 Every action is pinned to a reviewed commit, every installed tool is pinned through the
 repository’s supply-chain policy, and no job persists checkout credentials.
 
@@ -727,7 +729,9 @@ Progressive downstream work is governed by the
 - [x] Emit checksums and SBOM evidence from the non-publishing workflow
 - [ ] Add attestations and a GitHub release only after registry state is verified.
   The `0.1.0` GitHub Release is live with 11 assets after the registry audit; the
-  attestation and workflow-automation portion remains unverified.
+  automatic announcement is now implemented and tested, including an unchanged retry
+  against `0.2.1`. Record the first automatic publication on the next release.
+  Provenance attestations remain separate unfinished work.
 
 ### Phase 4: First-Release Rehearsal and Publication
 
