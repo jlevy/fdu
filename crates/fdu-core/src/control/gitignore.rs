@@ -162,10 +162,13 @@ impl Gitignore {
     /// allocate: the components of an ordinary path fit a stack buffer, and only a path
     /// deeper than it spills to the heap (H162).
     pub(super) fn matches(&self, relative: &Path, is_dir: bool) -> Option<bool> {
-        with_components(relative, None, |components| {
+        let mut tally = Tally::default();
+        let answer = with_components(relative, None, |components| {
             let (name, directory) = components.split_last()?;
-            self.decide(directory, &Name::new(name), is_dir)
-        })
+            self.decide(directory, &Name::new(name), is_dir, &mut tally)
+        });
+        tally.record();
+        answer
     }
 
     /// The answer for the entry `name` in `directory`, a path relative to this file's own
@@ -178,32 +181,43 @@ impl Gitignore {
         directory: &[&[u8]],
         name: &Name<'_>,
         is_dir: bool,
+        tally: &mut Tally,
     ) -> Option<bool> {
         let index = &self.index;
         if index.in_order {
+            tally.tested += self.patterns.len() as u64;
             return with_joined(directory, name.bytes, |path| self.matches_in_order(path, is_dir));
         }
         // Ranks are one more than a rule's index, so 0 is "no rule matched".
         let mut best = index.everything.rank(is_dir);
-        if let Some(keyed) = with_hash(&index.names, name.hash)
-            .iter()
-            .find(|keyed| literal_eq(self.name_glob(keyed.pattern), name.bytes))
-        {
-            best = best.max(keyed.ranks.rank(is_dir));
+        let mut hit = |best: &mut u32, rank: u32| {
+            tally.hits += u64::from(rank > 0);
+            *best = (*best).max(rank);
+        };
+        if !index.names.is_empty() {
+            tally.probes += 1;
+            if let Some(keyed) = with_hash(&index.names, name.hash)
+                .iter()
+                .find(|keyed| literal_eq(self.name_glob(keyed.pattern), name.bytes))
+            {
+                hit(&mut best, keyed.ranks.rank(is_dir));
+            }
         }
-        if let Some(extension) = name.extension {
+        if let Some(extension) = name.extension.filter(|_| !index.extensions.is_empty()) {
+            tally.probes += 1;
             for keyed in with_hash(&index.extensions, extension) {
                 if ends_with_literal(name.bytes, tail(self.name_glob(keyed.pattern))) {
-                    best = best.max(keyed.ranks.rank(is_dir));
+                    hit(&mut best, keyed.ranks.rank(is_dir));
                 }
             }
         }
+        tally.probes += index.tails.len() as u64;
         for keyed in &index.tails {
             // A tail with no `.` is keyed by its last byte instead of a hash.
             if name.bytes.last().is_some_and(|last| u32::from(*last) == keyed.hash)
                 && ends_with_literal(name.bytes, tail(self.name_glob(keyed.pattern)))
             {
-                best = best.max(keyed.ranks.rank(is_dir));
+                hit(&mut best, keyed.ranks.rank(is_dir));
             }
         }
 
@@ -214,7 +228,9 @@ impl Gitignore {
                 break;
             }
             let glob = self.name_glob(candidate.index);
-            if candidate.checks.admit(glob, name.bytes, is_dir) && glob_matches(glob, name.bytes) {
+            if candidate.checks.admit(glob, name.bytes, is_dir)
+                && tally.test(glob_matches(glob, name.bytes))
+            {
                 best = candidate.index + 1;
                 break;
             }
@@ -225,7 +241,7 @@ impl Gitignore {
             }
             let pattern = self.pattern(candidate.index);
             if candidate.checks.admit(self.name_glob(candidate.index), name.bytes, is_dir)
-                && fixed_matches(&pattern.segments, directory, name.bytes)
+                && tally.test(fixed_matches(&pattern.segments, directory, name.bytes))
             {
                 best = candidate.index + 1;
                 break;
@@ -237,7 +253,8 @@ impl Gitignore {
             }
             let pattern = self.pattern(candidate.index);
             if candidate.checks.admit(self.name_glob(candidate.index), name.bytes, is_dir)
-                && with_joined(directory, name.bytes, |path| pattern.matches(path, is_dir))
+                && tally
+                    .test(with_joined(directory, name.bytes, |path| pattern.matches(path, is_dir)))
             {
                 best = candidate.index + 1;
                 break;
@@ -250,9 +267,9 @@ impl Gitignore {
     /// one testing every rule in order gives.
     #[cfg(test)]
     fn matches_components(&self, components: &[&[u8]], is_dir: bool) -> Option<bool> {
-        let indexed = components
-            .split_last()
-            .and_then(|(name, directory)| self.decide(directory, &Name::new(name), is_dir));
+        let indexed = components.split_last().and_then(|(name, directory)| {
+            self.decide(directory, &Name::new(name), is_dir, &mut Tally::default())
+        });
         assert_eq!(
             indexed,
             self.matches_in_order(components, is_dir),
@@ -277,6 +294,32 @@ impl Gitignore {
 
     fn name_glob(&self, index: u32) -> &[u8] {
         self.pattern(index).name_glob()
+    }
+}
+
+/// The matching work one entry's classification did, added to the process counters once
+/// for the entry rather than once per rule.
+#[derive(Default)]
+pub(super) struct Tally {
+    tested: u64,
+    probes: u64,
+    hits: u64,
+}
+
+impl Tally {
+    /// Count one rule tested in full, and pass its answer through.
+    fn test(&mut self, matched: bool) -> bool {
+        self.tested += 1;
+        matched
+    }
+
+    pub(super) fn record(&self) {
+        crate::counters::bump(|counts| {
+            counts.ignore_patterns_tested =
+                counts.ignore_patterns_tested.saturating_add(self.tested);
+            counts.ignore_bucket_probes = counts.ignore_bucket_probes.saturating_add(self.probes);
+            counts.ignore_bucket_hits = counts.ignore_bucket_hits.saturating_add(self.hits);
+        });
     }
 }
 
@@ -2078,7 +2121,7 @@ mod tests {
                 let (name, directory) = components.split_last().expect("a path has a name");
                 let expected = matcher.matches_in_order(&components, is_dir);
                 assert_eq!(
-                    matcher.decide(directory, &Name::new(name), is_dir),
+                    matcher.decide(directory, &Name::new(name), is_dir, &mut Tally::default()),
                     expected,
                     "seed {seed}: {} against {} (dir {is_dir})",
                     source.escape_ascii(),

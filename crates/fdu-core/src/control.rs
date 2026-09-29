@@ -784,13 +784,17 @@ impl ControlChain {
             return false;
         }
         let name = gitignore::Name::new(name);
-        self.governing
+        let mut tally = gitignore::Tally::default();
+        let ignored = self
+            .governing
             .iter()
             .find_map(|(leading, source)| {
                 let relative = directory.get(*leading..).unwrap_or_default();
-                source.matcher.decide(relative, &name, is_dir)
+                source.matcher.decide(relative, &name, is_dir, &mut tally)
             })
-            .unwrap_or(false)
+            .unwrap_or(false);
+        tally.record();
+        ignored
     }
 }
 
@@ -1218,6 +1222,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The matching counters see each lookup, each lookup that found a rule, and each rule
+    /// whose glob had to run, on the thread that classified.
+    #[test]
+    fn matching_counts_lookups_hits_and_rules_tested() {
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        crate::counters::test_thread_reset();
+        let mut table = ControlTable::default();
+        table
+            .upsert(Path::new(".gitignore"), b"*.o\nMakefile\n/build\n*.c.[01]*\n".to_vec())
+            .expect("root control");
+        let chain = table.chain_for(Path::new(""));
+        // A name lookup, and an extension lookup that finds `*.o`; `/build` and the
+        // wildcard rule are ruled out by their length and literal checks.
+        assert!(chain.is_ignored_within(&[], b"main.o", false));
+        // Two lookups that find nothing, and the wildcard rule tested in full.
+        assert!(chain.is_ignored_within(&[], b"a.c.0x", false));
+        let counts = crate::counters::test_thread_snapshot();
+        crate::counters::enable(false);
+        assert_eq!(
+            (counts.ignore_bucket_probes, counts.ignore_bucket_hits, counts.ignore_patterns_tested),
+            (4, 1, 1)
+        );
     }
 
     #[test]
