@@ -5,7 +5,7 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: in_progress
 priority: 2
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 delegate: claude-code@vm
 labels:
@@ -16,7 +16,7 @@ parent_id: is-01m3mvdz2891yheyemx49gzm6j
 hold: null
 hold_until: null
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T17:02:10.729Z
+updated_at: 2026-09-29T18:06:23.182Z
 started_at: 2026-09-29T17:02:10.729Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
@@ -295,3 +295,14 @@ fdu's `--exclude` only filters what is reported, so fdu still walks and reads th
 - Not landed: main's README has no "Comparison to Alternatives" section, and no remote branch carries one. This bead's notes are the only copy of the draft (durable on origin/tbd-sync).
 - Linux speed row: the Linux overnight round measured the generated 1M-entry tree after H169 (12 pairs, 4-vCPU Firecracker ext4): fdu default tree 1.2 s, pdu default +3% slower, diskus +6% slower, pdu --max-depth 2 -4% faster; peak RSS 58 vs 93 MiB. Rerun a quiet tool cell on the final head (0c8131fd or later) before filling SPEED_* placeholders; the README must claim only what a current cell shows. Real trees at the final head (20 pairs): linux-v6.12 and node-modules-dense level with pdu default and diskus (+1% [-2%, +2%] and +1% [-2%, +4%]).
 - .gitignore row, gdu: the draft marks gdu as no support (checked at 5.36.1), but upstream gdu (attic checkout, 2026-09-23) documents an `ignore-from-gitignore` option that reads gitignore-style patterns from one file. Re-check the released version before publishing; likely "partial: patterns from a file", like dua.
+
+
+# Landed on claude/readme-comparison-matrix (2026-09-29, stacked on #161)
+
+Branch head: 63e01e63. Commits: 9f968651 (measurement), 93bac1cf (README matrix and Speed), d2408cc3 (user docs revision, fdu-y3kb), 63e01e63 (merge of #161's latest branch). Checks: make check stages all passed (docs-format-check failed once on the report, fixed and re-run; path-independence re-run with the gate's smoke venv); post-merge docs-format, perf-test and evidence checks pass. PR body draft is with the coordinator.
+
+- Linux speed row measured on the final head (ebc06c78, fdu-default-tree), linux-balanced-1m, quiet, 12 pairs per peer, 2026-09-29: fdu 1.088 s; pdu default +3.6% [+2.5, +5.2]; pdu --max-depth 2 -2.5% [-4.0, -1.4]; diskus +7.2% [+5.4, +9.9]; dust 1.2.5 +62%; gdu 5.37.0 +158%; GNU du 9.4 +160%; ncdu 1.19 +174%; dua 2.45.0 +234%. Peak RSS fdu 58 MiB, pdu default 93, dust 446, gdu 596. Published as a dated section at the top of report-2026-09-27-fdu-linux-tool-comparison.md, with fdu-linux-tool-comparison-result-2026-09-29-default-tree.json.gz.
+- Peers installed at the latest release past the cool-off: dust 1.2.5 and dua 2.45.0 via cargo +1.97.1 install --locked; gdu 5.37.0 via go install (sumdb-verified module, reports version "development"); ncdu 1.19-0.1 from Ubuntu.
+- Cells changed from the draft: dua re-read at 2.45.0 (.gitignore partial now includes TUI dimming of ignored entries; aggregate --depth; snapshots and diff; dua-core library). gdu re-read at 5.37.0: .gitignore stays ❌, `-G/--ignore-from-gitignore` exists only on unreleased main (4b179b0), footnoted. gdu plain total `-ns`. pdu cache "JSON, not revalidated" (--json-input), matching ncdu's export cell. Platforms, Installation, and Output formats rows cut to keep 11 rows (platforms in the versions footnote; formats merged into "APIs and machine output"). Code row names 15 languages; footnote gives scc 4.1.0 (366 languages) and tokei 15.0.0 (333).
+- README Speed rewritten: Linux first (current engine), macOS labeled as the 0.2.1 engine; tagline and Speed bullet no longer say "fastest". Why corrected ("exactly one persists anything" contradicted the matrix).
+- Not done here: the short SLOC survey brief under docs/project/research/ that the parity plan lists for this bead; Cargo.toml/pyproject descriptions and the CLI about string still say "Fastest native du replacement" (maintainer's call; changing them changes --help and its golden).
