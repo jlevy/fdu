@@ -3,13 +3,16 @@
 Resolve and validate one fdu release or rehearsal identity.
 
 A rehearsal needs only a version and a commit. A release also needs proof that the run is
-publishing reviewed history under the maintainer's signature, so in release mode
+publishing reviewed history under one release identity, so in release mode
 `--validate-checkout` requires, besides a clean checkout of the planned commit:
 
 - locally, that `refs/tags/v{version}` is an annotated tag object naming HEAD, since
   `git tag --points-at` matches a lightweight tag as well;
-- on GitHub, that origin holds that same tag object, that GitHub reports its signature
-  verified, and that the commit is an ancestor of origin's `main`.
+- on GitHub, that origin holds that same tag object, that the commit is an ancestor of
+  origin's `main`, and that the tag is either unsigned or signed with a signature GitHub
+  verifies. A signature is optional: the reviewed commit on `main` and the one identity
+  are the controls, and nothing downstream verifies a tag signature. A signature that
+  fails verification is still refused, since it claims an identity that does not hold.
 
 The GitHub reads use `GITHUB_TOKEN` when it is set and fall back to the public record.
 """
@@ -36,6 +39,8 @@ from scripts.release.publish_gate import github_get
 
 REPOSITORY = "jlevy/fdu"
 MAIN = "main"
+# GitHub's `verification.reason` for a tag object that carries no signature.
+UNSIGNED = "unsigned"
 # A plain `X.Y.Z` release, the shape maintainer.py and semver_check.py also require. The
 # plan's version reaches release.yml's `run:` lines through `${{ }}`, so it is held to
 # that shape in either mode rather than trusted as whatever the manifest says.
@@ -119,8 +124,7 @@ def validate_checkout(root: Path, plan: ReleasePlan) -> str | None:
     kind = git_output(root, "cat-file", "-t", tag_object)
     if kind != "tag":
         raise ValueError(
-            f"release tag {plan.release_tag} is a {kind} object; a release needs the "
-            "annotated, signed tag"
+            f"release tag {plan.release_tag} is a {kind} object; a release needs the annotated tag"
         )
     target = git_output(root, "rev-parse", "--verify", f"{ref}^{{commit}}")
     if target != head:
@@ -141,7 +145,7 @@ def validate_published_tag(
     read: Read,
 ) -> list[str]:
     """
-    Prove origin's release tag is the checkout's, signed and verified, on reviewed history.
+    Prove origin's release tag is the checkout's, on reviewed history, and not mis-signed.
 
     `read` returns one GitHub REST resource as JSON, or None for a 404. Every answer is
     required to be present and to say so explicitly: a record that is missing a field is
@@ -175,10 +179,14 @@ def validate_published_tag(
             f"planned commit {plan.commit}"
         )
     verification = field(record, "verification")
-    if verification.get("verified") is not True:
+    reason = verification.get("reason")
+    # Only the JSON boolean counts as verified, and only GitHub's own "unsigned" verdict
+    # counts as unsigned: any other reason is a signature that does not verify.
+    signed = verification.get("verified") is True
+    if not signed and reason != UNSIGNED:
         raise ValueError(
             f"GitHub does not report {plan.release_tag}'s signature verified "
-            f"(reason: {verification.get('reason')})"
+            f"(reason: {reason}); sign it with a registered key or leave it unsigned"
         )
 
     # BASE...HEAD with the release commit as base: `ahead` or `identical`, and a merge
@@ -195,7 +203,9 @@ def validate_published_tag(
         )
     return [
         f"{plan.release_tag} is annotated tag object {tag_object} on origin",
-        f"GitHub reports its signature verified (reason: {verification.get('reason')})",
+        f"GitHub reports its signature verified (reason: {reason})"
+        if signed
+        else f"{plan.release_tag} is unsigned (reason: {reason}); a signature is optional",
         f"{plan.commit} is on {MAIN} ({status})",
     ]
 

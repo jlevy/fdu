@@ -100,6 +100,13 @@ class PublishedTagTests(unittest.TestCase):
         identical[COMPARE_URL]["status"] = "identical"
         self.assertIn(f"{COMMIT} is on main (identical)", self.check(identical))
 
+    def test_an_unsigned_annotated_tag_on_main_passes(self) -> None:
+        unsigned = self.answers()
+        unsigned[TAG_URL]["verification"] = {"verified": False, "reason": "unsigned"}
+        verified = self.check(unsigned)
+        self.assertIn("v0.2.1 is unsigned (reason: unsigned); a signature is optional", verified)
+        self.assertIn(f"{COMMIT} is on main (ahead)", verified)
+
     def test_each_missing_proof_is_refused(self) -> None:
         def edited(url: str, value: Any = None, **fields: Any) -> dict[str, Any]:
             answers = self.answers()
@@ -109,8 +116,10 @@ class PublishedTagTests(unittest.TestCase):
                 answers[url] = value
             return answers
 
+        # A signature is optional, but one GitHub cannot verify claims an identity that
+        # does not hold, so it is refused rather than treated as unsigned.
         unverified = self.answers()
-        unverified[TAG_URL]["verification"] = {"verified": False, "reason": "unsigned"}
+        unverified[TAG_URL]["verification"] = {"verified": False, "reason": "unknown_key"}
         silent = self.answers()
         del silent[TAG_URL]["verification"]
         truthy = self.answers()
@@ -131,7 +140,7 @@ class PublishedTagTests(unittest.TestCase):
                 TAG_URL, object={"type": "commit", "sha": "f" * 40}
             ),
             "names tree": edited(TAG_URL, object={"type": "tree", "sha": COMMIT}),
-            r"signature verified \(reason: unsigned\)": unverified,
+            r"signature verified \(reason: unknown_key\)": unverified,
             r"signature verified \(reason: None\)": silent,
             # Only the JSON boolean counts: a string that reads as true is not a verdict.
             r"signature verified \(reason: valid\)": truthy,

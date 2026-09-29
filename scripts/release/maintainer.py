@@ -40,7 +40,13 @@ if __package__ in (None, ""):
     # Run as a script: make the repository root importable, as the tests have it.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.release import inspect_artifacts, publish_gate, registry_state, release_body
+from scripts.release import (
+    inspect_artifacts,
+    publish_gate,
+    registry_state,
+    release_body,
+    resolve_plan,
+)
 from scripts.release.registry_state import CRATE_PACKAGES, RegistryError, RegistryState
 
 REPOSITORY = "jlevy/fdu"
@@ -444,10 +450,16 @@ def signing_key_fields(key: Path) -> tuple[str, str]:
 
 
 def signing_key_check(host: Host, key: Path | None) -> Check:
-    """SIGNING_KEY is set, is a public key, and GitHub lists it as a signing key."""
+    """
+    An optional SIGNING_KEY is a public key that GitHub lists as a signing key.
+
+    A tag signature is optional (see `resolve_plan`), so an unset key passes and the tag
+    goes out unsigned; a key that is set must be one GitHub will verify, since a tag signed
+    with any other key is refused.
+    """
     name = "signing key"
     if key is None:
-        return Check(name, False, "set SIGNING_KEY to the public key that signs the tag")
+        return Check(name, True, "SIGNING_KEY unset: the tag will be unsigned, which is allowed")
     try:
         fields = signing_key_fields(key)
     except (OSError, StepError) as error:
@@ -830,10 +842,10 @@ def body(
 
 
 def signature_check(host: Host, release: Release, key: Path | None) -> Check:
-    """Verify the local tag's SSH signature against SIGNING_KEY alone."""
+    """Verify the local tag's SSH signature against SIGNING_KEY alone, when one is set."""
     name = "tag signature"
     if key is None:
-        return Check(name, False, "set SIGNING_KEY to the public key the tag was signed with")
+        return Check(name, True, "SIGNING_KEY unset: not checked here; GitHub's verdict follows")
     try:
         algorithm, material = signing_key_fields(key)
     except (OSError, StepError) as error:
@@ -862,8 +874,9 @@ def verify_tag(host: Host, release: Release, key: Path | None) -> list[Check]:
     """
     Check the release tag here and, once pushed, on origin and GitHub.
 
-    Before the push it must be an annotated tag on COMMIT whose signature verifies; after
-    the push, origin must hold the same tag object and GitHub must report it verified.
+    Before the push it must be an annotated tag on COMMIT, and its signature must verify
+    when SIGNING_KEY is set; after the push, origin must hold the same tag object and
+    GitHub must report it verified or unsigned, the two verdicts the workflow accepts.
     """
     ref = f"refs/tags/{release.tag}"
     remote = remote_tag(host, release)
@@ -897,11 +910,12 @@ def verify_tag(host: Host, release: Release, key: Path | None) -> list[Check]:
     )
     record = gh_json(host, f"repos/{release.repository}/git/tags/{remote[0]}") or {}
     verification = record.get("verification") or {}
+    reason = verification.get("reason")
     checks.append(
         Check(
             "GitHub verified",
-            verification.get("verified") is True,
-            f"reason: {verification.get('reason')}",
+            verification.get("verified") is True or reason == resolve_plan.UNSIGNED,
+            f"reason: {reason}",
         )
     )
     return checks
@@ -1202,7 +1216,7 @@ def parser() -> argparse.ArgumentParser:
     )
     derive = steps.add_parser("body", help="derive and render-check the GitHub release body")
     derive.add_argument("--previous", help=previous_help)
-    steps.add_parser("verify-tag", help="check the signed tag here, on origin, and on GitHub")
+    steps.add_parser("verify-tag", help="check the release tag here, on origin, and on GitHub")
     publish = steps.add_parser("published", help="verify the publishing run and every registry")
     publish.add_argument("--run", type=int, help="the publishing run, when several exist")
     publish.add_argument(

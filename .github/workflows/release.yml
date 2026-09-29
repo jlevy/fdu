@@ -62,8 +62,9 @@ jobs:
           enable-cache: false
       # A publishing run resolves in release mode, which fails here, before anything is
       # built, unless the run is on `refs/tags/v{Cargo version}`, that tag is an annotated
-      # tag object naming the checked-out commit, origin holds the same object and GitHub
-      # reports its signature verified, and the commit is on `main`. The token only reads.
+      # tag object naming the checked-out commit, origin holds the same object, GitHub
+      # reports it unsigned or its signature verified, and the commit is on `main`. The
+      # token only reads.
       # A rehearsal resolves exactly as it always has, and reads nothing from GitHub.
       - name: Resolve exact release identity
         id: plan
@@ -366,8 +367,8 @@ jobs:
           enable-cache: false
       # The same identity check the plan made, against this job's own checkout: the crates
       # are packaged from it, so it has to be the tagged commit the rehearsal built. The
-      # tag's signature and the commit's place on `main` are read from GitHub again, since
-      # the approval can come long after the plan job ran.
+      # tag's signature verdict and the commit's place on `main` are read from GitHub
+      # again, since the approval can come long after the plan job ran.
       - name: Confirm the checkout is the planned release tag
         env:
           GITHUB_TOKEN: ${{ github.token }}
