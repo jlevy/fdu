@@ -6464,6 +6464,51 @@ mod tests {
         assert_eq!(index.folded_children(dir), None, "nothing was folded there");
     }
 
+    /// A file the heap displaces folds into its own directory, not into the directory of
+    /// the file that displaced it, which is listed later and elsewhere.
+    #[test]
+    fn a_displaced_file_folds_into_its_own_directory() {
+        let child = |name: &str, kind, size, position| crate::scan::DetachedChild {
+            name: OsString::from(name),
+            kind,
+            attrs: file_attrs(size, 1),
+            position,
+        };
+        let listing = |path: &str, children| crate::scan::DetachedDirectory {
+            path: PathBuf::from(path),
+            children,
+            control: None,
+        };
+        let mut builder = DetachedIndexBuilder::new(
+            "/root",
+            ScanScope::default(),
+            crate::classify::TypeRegistry::compiled_shared(),
+        )
+        .folding(crate::execution::TreeRetention {
+            largest_files: 1,
+            size: crate::query::SizeMetric::Apparent,
+        });
+        builder
+            .push_directory(&mut listing(
+                "",
+                vec![child("first", EntryKind::File, 10, 0), child("dir", EntryKind::Dir, 0, 1)],
+            ))
+            .expect("root listing");
+        builder
+            .push_directory(&mut listing("dir", vec![child("larger", EntryKind::File, 20, 0)]))
+            .expect("nested listing");
+        let index = builder.finish();
+        assert_eq!(
+            index.folded_children(EntryId::ROOT),
+            Some(FoldedFiles { files: 1, bytes: 10, allocated: 512, ..FoldedFiles::default() })
+        );
+        let dir = index.lookup(Path::new("dir")).expect("the directory");
+        assert_eq!(index.folded_children(dir), None);
+        assert_eq!(index.kind(Path::new("dir/larger")), Some(EntryKind::File));
+        assert_eq!(index.kind(Path::new("first")), None);
+        assert_eq!(index.total().bytes, 30, "both files count in the totals");
+    }
+
     #[test]
     fn detached_builder_tolerates_a_duplicate_readdir_name() {
         let mut builder = DetachedIndexBuilder::new(

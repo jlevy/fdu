@@ -2702,6 +2702,44 @@ mod tests {
         }
     }
 
+    /// The request each surface builds for a bare `fdu PATH` (the command line in its flag
+    /// spellings, Python in its field names) plans the folded tree under the deliveries it
+    /// runs with. The plan is not observable in any output, so a change to `tree_for`,
+    /// `is_unfiltered`, or a default that sends the default report back to the full index
+    /// would otherwise show only in a measurement.
+    #[test]
+    fn the_default_request_of_every_surface_plans_the_folded_tree() {
+        use crate::query::{AxisNames, ReadSpec, RequestSpec, SizeMetric};
+        let root = Path::new(".");
+        let default_tree =
+            RetainedState::Tree(TreeRetention { largest_files: 100, size: SizeMetric::Allocated });
+        let deliveries = [
+            Delivery::new(CachePolicy::Auto, Some(PathBuf::from("cache.fdu"))),
+            Delivery::new(CachePolicy::Off, None),
+        ];
+        let planned = |spec: &RequestSpec<'_>, axes, delivery: &Delivery| {
+            let request =
+                Request::build(spec, SystemTime::UNIX_EPOCH, axes).expect("a valid request");
+            plan(&request, delivery, Route::OneShot).expect("a valid plan").retained
+        };
+        for axes in [&AxisNames::FLAGS, &AxisNames::FIELDS] {
+            for delivery in &deliveries {
+                assert_eq!(planned(&RequestSpec::new(root), axes, delivery), default_tree);
+                // `--view tree` in a machine format is the same tree; the list in one is flat.
+                let tree_json = RequestSpec {
+                    read: ReadSpec { views: Some("tree"), format: Some("json"), ..ReadSpec::new() },
+                    ..RequestSpec::new(root)
+                };
+                assert_eq!(planned(&tree_json, axes, delivery), default_tree);
+                let list_json = RequestSpec {
+                    read: ReadSpec { format: Some("json"), ..ReadSpec::new() },
+                    ..RequestSpec::new(root)
+                };
+                assert_eq!(planned(&list_json, axes, delivery), RetainedState::FullIndex);
+            }
+        }
+    }
+
     /// A small deterministic generator (xorshift64*), so a randomized tree is the same
     /// tree on every run.
     struct Shuffle(u64);
@@ -2826,6 +2864,60 @@ mod tests {
             sized_file(&ignored.path().join(format!("src/x{index:03}.big")), 5, false, 8);
         }
         trees.push(("ignored files at the share boundary", ignored));
+
+        // Three paths to one file at exactly 10% each, which every route counts once per
+        // path, beside seven other files at 10% and empty files a share omits.
+        let linked = tempfile::tempdir().expect("tempdir");
+        sized_file(&linked.path().join("a/original"), 1_000, false, 9);
+        for link in ["b/link", "c/deeper/link"] {
+            fs::create_dir_all(linked.path().join(link).parent().expect("a parent"))
+                .expect("directories");
+            fs::hard_link(linked.path().join("a/original"), linked.path().join(link))
+                .expect("hard link");
+        }
+        for index in 0..7 {
+            sized_file(&linked.path().join(format!("d/f{index}")), 1_000, false, 10);
+        }
+        for index in 0..30 {
+            sized_file(&linked.path().join(format!("e/z{index:02}")), 0, false, 11);
+        }
+        trees.push(("hard links at the share boundary", linked));
+
+        // A FIFO and a socket, which are entries of no row, beside files a share omits.
+        #[cfg(unix)]
+        {
+            let special = tempfile::tempdir().expect("tempdir");
+            for index in 0..120 {
+                sized_file(&special.path().join(format!("s/f{index:03}")), 10, false, 12);
+            }
+            sized_file(&special.path().join("s/large"), 5_000, false, 13);
+            let fifo = special.path().join("s/pipe");
+            let status =
+                std::process::Command::new("mkfifo").arg(&fifo).status().expect("run mkfifo");
+            assert!(status.success(), "mkfifo exited with {status}");
+            drop(
+                std::os::unix::net::UnixListener::bind(special.path().join("s/socket"))
+                    .expect("bind socket"),
+            );
+            trees.push(("special files beside folded files", special));
+        }
+
+        // Two names that differ only in an invalid byte are one name once made readable,
+        // so rows of equal size and equal lossy name fall back to name order.
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::ffi::OsStrExt as _;
+            let lossy = tempfile::tempdir().expect("tempdir");
+            for byte in [0xfe_u8, 0xff] {
+                let bytes = [b't', b'i', b'e', byte];
+                let name = std::ffi::OsStr::from_bytes(&bytes);
+                sized_file(&lossy.path().join("n").join(name), 2_000, false, 14);
+            }
+            for index in 0..80 {
+                sized_file(&lossy.path().join(format!("n/small{index:02}")), 3, false, 15);
+            }
+            trees.push(("names equal once made readable", lossy));
+        }
         trees
     }
 
@@ -2871,8 +2963,10 @@ mod tests {
                 queries.push(query);
             }
         }
-        let bounds: [(Option<Bound>, Option<Bound>, Option<Bound>); 10] = [
+        let bounds: [(Option<Bound>, Option<Bound>, Option<Bound>); 12] = [
             (Some(Bound::Limit(0)), None, None),
+            (None, Some(Bound::Limit(0)), None),
+            (Some(Bound::Limit(0)), Some(Bound::Limit(0)), None),
             (Some(Bound::Limit(1)), None, None),
             (Some(Bound::Limit(2)), None, None),
             (Some(Bound::All), None, None),
@@ -3067,6 +3161,46 @@ mod tests {
             );
             assert_folded_route_matches(tree.path(), &scan, name);
             folded_trees += usize::from(folds);
+        }
+
+        // A directory whose listing failed, beside and above directories with folded files:
+        // the walk is partial, the subtree measurements run over the folded index, and the
+        // unlisted directory is shown whatever its share.
+        #[cfg(unix)]
+        if crate::test_support::require_permission_bits() {
+            use std::os::unix::fs::PermissionsExt;
+            /// Readable again when dropped, so the tree can be removed after a failure.
+            struct Unlocked(PathBuf);
+            impl Drop for Unlocked {
+                fn drop(&mut self) {
+                    let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+                }
+            }
+            let tree = random_tree(0x1405_7B7E_F767_814F, 300);
+            let locked = tree.path().join("locked");
+            sized_file(&locked.join("hidden-large"), 900_000, false, 16);
+            sized_file(&locked.join("inner/hidden-small"), 4, false, 16);
+            for index in 0..60 {
+                sized_file(&tree.path().join(format!("beside/b{index:02}")), 7, false, 17);
+            }
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("lock");
+            let _unlocked = Unlocked(locked);
+            let (index, _) = crate::scan::scan_into_index(tree.path(), &ScanConfig::default())
+                .expect("a partial index");
+            assert_ne!(index.state().coverage, crate::Coverage::Complete, "the listing failed");
+            let label = "a failed listing beside folded files";
+            assert!(
+                assert_folded_reports_match(
+                    tree.path(),
+                    &ScanConfig::default(),
+                    &FOLDED_SHARES,
+                    false,
+                    label
+                ),
+                "{label}"
+            );
+            assert_folded_route_matches(tree.path(), &ScanConfig::default(), label);
+            folded_trees += 1;
         }
 
         for case in control_cases() {
