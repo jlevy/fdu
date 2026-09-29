@@ -715,9 +715,9 @@ wrong once and each fails silently.
   median of the paired differences; `control_median` and `candidate_median` are marginal
   medians of each arm.
   Under host drift they disagree, and in this record they differ by more than two
-  percentage points on 21% of measurements.
-  Anything new that reports a change must take it from the paired figure, and must not
-  invite a reader to divide the absolute values into it.
+  percentage points on 20.3% of measurements (435 of 2,146 metric comparisons through
+  exp-191). Anything new that reports a change must take it from the paired figure, and
+  must not invite a reader to divide the absolute values into it.
 - **Absolute values only mean something against their own subject.** A new figure that
   puts two subjects on one axis has to normalise, and has to keep synthetic subjects
   visibly apart. [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py)
