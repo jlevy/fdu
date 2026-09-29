@@ -2115,7 +2115,7 @@ fn extension_rows(
             },
             count: |row: &TypeRow| row.files,
             mtime: |_: &TypeRow| None,
-            name: |row: &TypeRow| row.extension.clone(),
+            name: borrowed_name(|row: &TypeRow| std::borrow::Cow::Borrowed(row.extension.as_str())),
             content_metric: |_: &TypeRow, _: &MetricDef| None,
         },
     );
@@ -2432,7 +2432,7 @@ impl MetricAccumulator {
                 },
                 count: |row: &MetricRow| row.files,
                 mtime: |_: &MetricRow| None,
-                name: |row: &MetricRow| row.id.clone(),
+                name: borrowed_name(|row: &MetricRow| std::borrow::Cow::Borrowed(row.id.as_str())),
                 content_metric: MetricRow::metric_value,
             },
         );
@@ -2665,7 +2665,7 @@ fn file_rows(
             },
             count: |row: &FileRow| row.files.unwrap_or(1),
             mtime: |row: &FileRow| Some(row.mtime_ns),
-            name: |row: &FileRow| row.path.to_string_lossy().into_owned(),
+            name: borrowed_name(|row: &FileRow| row.path.to_string_lossy()),
             content_metric: |row: &FileRow, _: &MetricDef| row.sort_value,
         },
     );
@@ -2913,10 +2913,36 @@ impl FoldedRows {
     }
 }
 
+/// What an omitted row contributes to its omission: the scalars of a [`TreeNode`],
+/// without the path and name a node also carries. A row the share threshold omits is
+/// counted here without ever becoming a node (H186).
+#[derive(Clone, Copy)]
+struct RowFacts {
+    files: u64,
+    bytes: u64,
+    allocated: u64,
+    ignored: Option<IgnoredTally>,
+}
+
+impl From<&TreeNode> for RowFacts {
+    fn from(node: &TreeNode) -> Self {
+        Self {
+            files: node.files,
+            bytes: node.bytes,
+            allocated: node.allocated,
+            ignored: node.ignored,
+        }
+    }
+}
+
+fn facts_of(rows: &[(TreeNode, EntryId)]) -> Vec<RowFacts> {
+    rows.iter().map(|(row, _)| RowFacts::from(row)).collect()
+}
+
 fn record_omission(
     node: &mut TreeNode,
     reason: TreeOmissionReason,
-    rows: &[(TreeNode, EntryId)],
+    rows: &[RowFacts],
     folded: Option<FoldedRows>,
     complete: bool,
 ) {
@@ -2927,19 +2953,17 @@ fn record_omission(
     // exactly when the sum of all of them does, in whatever order they are added.
     let seed = folded.unwrap_or(FoldedRows::NONE);
     let bytes = complete
-        .then(|| rows.iter().try_fold(seed.bytes, |sum, (row, _)| sum.checked_add(row.bytes)))
+        .then(|| rows.iter().try_fold(seed.bytes, |sum, row| sum.checked_add(row.bytes)))
         .flatten();
     let allocated = complete
-        .then(|| {
-            rows.iter().try_fold(seed.allocated, |sum, (row, _)| sum.checked_add(row.allocated))
-        })
+        .then(|| rows.iter().try_fold(seed.allocated, |sum, row| sum.checked_add(row.allocated)))
         .flatten();
     let files = complete
-        .then(|| rows.iter().try_fold(seed.files, |sum, (row, _)| sum.checked_add(row.files)))
+        .then(|| rows.iter().try_fold(seed.files, |sum, row| sum.checked_add(row.files)))
         .flatten();
     let ignored = complete
         .then(|| {
-            rows.iter().try_fold(seed.ignored?, |sum, (row, _)| {
+            rows.iter().try_fold(seed.ignored?, |sum, row| {
                 sum.checked_add(IgnoredSize::from_tally(row.ignored?))
             })
         })
@@ -3067,25 +3091,17 @@ fn expand(
         let (id, depth) = (built[cursor].id, built[cursor].depth);
         let path = built[cursor].node.path.clone();
 
-        let mut rows = child_rows(index, query, walked, metric_values, id, &path);
-        let mut below_share = Vec::new();
-        rows.retain(|(row, child)| {
-            let value = match query.selection.size {
-                SizeMetric::Apparent => row.bytes,
-                SizeMetric::Allocated => row.allocated,
-            };
-            // A complete child below a partial root's observed total is also below
-            // the true (at least as large) total. Only an incomplete child's own
-            // unknown contents prevent that proof; unrelated scan errors do not.
-            let child_complete = row.kind == EntryKind::File
-                || tree_measurements
-                    .is_none_or(|values| values.get(child).is_some_and(|subtree| subtree.complete));
-            let eligible = !child_complete || threshold.admits(value, grand);
-            if !eligible {
-                below_share.push((row.clone(), *child));
-            }
-            eligible
-        });
+        let (mut rows, below_share) = child_rows(
+            index,
+            query,
+            walked,
+            metric_values,
+            tree_measurements,
+            id,
+            &path,
+            &threshold,
+            grand,
+        );
         // A folded index kept only files that can reach the share, so the files it folded
         // here are rows below it as well.
         record_omission(
@@ -3099,7 +3115,7 @@ fn expand(
             record_omission(
                 &mut built[cursor].node,
                 TreeOmissionReason::Depth,
-                &rows,
+                &facts_of(&rows),
                 None,
                 complete,
             );
@@ -3111,7 +3127,7 @@ fn expand(
             record_omission(
                 &mut built[cursor].node,
                 TreeOmissionReason::Breadth,
-                &hidden,
+                &facts_of(&hidden),
                 None,
                 complete,
             );
@@ -3142,23 +3158,36 @@ fn expand(
     node.truncated = root.node.truncated;
 }
 
-/// The directory children of one node, shaped and sorted but not yet expanded.
+/// The directory children of one node that the share threshold admits, shaped and
+/// sorted but not yet expanded, beside the facts of those it omits.
+///
+/// Each child's roll-up decides its admission before anything else is built for it
+/// (H186): a node carries a path and a name, and the share omits most children of a wide
+/// directory, so the report used to build, sort, clone and free a node for every child
+/// it would never show. The omitted children are summed by [`record_omission`] from their
+/// facts alone. Admitting before sorting orders the admitted rows exactly as sorting all
+/// of them would, since names are unique within a directory.
+#[allow(clippy::too_many_arguments)]
 fn child_rows(
     index: &Index,
     query: &Query,
     walked: Option<&Walked>,
     metric_values: &BTreeMap<PathBuf, u64>,
+    tree_measurements: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
     id: EntryId,
     path: &Path,
-) -> Vec<(TreeNode, EntryId)> {
+    threshold: &ShareThreshold,
+    grand: u64,
+) -> (Vec<(TreeNode, EntryId)>, Vec<RowFacts>) {
     let Some(children) = index.children_of(id) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
-    let children: Vec<(PathBuf, EntryId)> =
-        children.map(|(name, child)| (path.join(name), child)).collect();
-
+    // Every child's classification is known exactly when its parent's controls are.
+    let children_known = index.children_classification_known(path);
+    let mut child_path = path.to_path_buf();
     let mut rows: Vec<(TreeNode, EntryId)> = Vec::new();
-    for (child_path, child) in children {
+    let mut below_share: Vec<RowFacts> = Vec::new();
+    for (name, child) in children {
         let Some(kind) = index.kind_of(child) else {
             continue;
         };
@@ -3172,7 +3201,8 @@ fn child_rows(
         }) {
             continue;
         }
-        let entry_ignored = index.ignored_classification_of(&child_path, child);
+        let entry_ignored = children_known.then(|| index.entry_ignored(child)).flatten();
+        child_path.push(name);
         let summary = if kind == EntryKind::File {
             let attrs = index.attrs_of(child).expect("live child has attributes");
             let ignored = entry_ignored.map(|ignored| {
@@ -3201,14 +3231,30 @@ fn child_rows(
                 Some(walked) => walked.summary_of(child),
             }
         };
-        let name = child_path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let value = match query.selection.size {
+            SizeMetric::Apparent => summary.bytes,
+            SizeMetric::Allocated => summary.allocated,
+        };
+        // A complete child below a partial root's observed total is also below the true
+        // (at least as large) total. Only an incomplete child's own unknown contents
+        // prevent that proof; unrelated scan errors do not.
+        let child_complete = kind == EntryKind::File
+            || tree_measurements
+                .is_none_or(|values| values.get(&child).is_some_and(|subtree| subtree.complete));
+        if child_complete && !threshold.admits(value, grand) {
+            below_share.push(RowFacts {
+                files: summary.files,
+                bytes: summary.bytes,
+                allocated: summary.allocated,
+                ignored: summary.ignored,
+            });
+            child_path.pop();
+            continue;
+        }
         rows.push((
             TreeNode {
-                path: child_path,
-                name,
+                path: child_path.clone(),
+                name: name.to_string_lossy().into_owned(),
                 kind,
                 entry_ignored,
                 bytes: summary.bytes,
@@ -3223,6 +3269,7 @@ fn child_rows(
             },
             child,
         ));
+        child_path.pop();
     }
 
     sort_rows_by(
@@ -3236,13 +3283,15 @@ fn child_rows(
             },
             count: |(row, _): &(TreeNode, EntryId)| row.files,
             mtime: |(row, _): &(TreeNode, EntryId)| row.newest_mtime_ns,
-            name: |(row, _): &(TreeNode, EntryId)| row.name.clone(),
+            name: borrowed_name(|(row, _): &(TreeNode, EntryId)| {
+                std::borrow::Cow::Borrowed(row.name.as_str())
+            }),
             content_metric: |(row, _): &(TreeNode, EntryId), _: &MetricDef| {
                 metric_values.get(&row.path).copied()
             },
         },
     );
-    rows
+    (rows, below_share)
 }
 
 /// Trim a row list to the configured limit.
@@ -3271,14 +3320,26 @@ fn sort_rows<T>(
         impl Fn(&T, SizeMetric) -> u64,
         impl Fn(&T) -> u64,
         impl Fn(&T) -> Option<i64>,
-        impl Fn(&T) -> String,
+        impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
     >,
 ) {
     sort_rows_by(rows, query, view, accessors);
 }
 
+/// A name accessor that borrows from its row, given the higher-ranked signature a closure
+/// written inside a [`SortAccessors`] literal is not inferred to have.
+fn borrowed_name<T, F>(name: F) -> F
+where
+    F: for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
+{
+    name
+}
+
 /// Sort rows by the effective key, with a stable name tiebreak.
+///
+/// The name accessor borrows: the tiebreak runs once per compared pair, and a sort that
+/// cloned two `String`s for each was 4.6G instructions on an 80k-row listing (H186).
 fn sort_rows_by<T>(
     rows: &mut [T],
     query: &Query,
@@ -3287,7 +3348,7 @@ fn sort_rows_by<T>(
         impl Fn(&T, SizeMetric) -> u64,
         impl Fn(&T) -> u64,
         impl Fn(&T) -> Option<i64>,
-        impl Fn(&T) -> String,
+        impl for<'r> Fn(&'r T) -> std::borrow::Cow<'r, str>,
         impl Fn(&T, &MetricDef) -> Option<u64>,
     >,
 ) {

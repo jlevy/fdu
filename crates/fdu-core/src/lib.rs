@@ -288,10 +288,14 @@ pub enum OpenPath {
 /// Releasing an index frees every entry's name and every directory's child list, one
 /// allocation at a time, and nothing reads the result: on a million-entry Linux tree it
 /// was 95 ms of a 1.39 s `--cache off` report, all of it after the answer was complete
-/// (exp-160). At that rate this threshold is about 6 ms of release, well above the tens
-/// of microseconds a thread spawn costs; smaller indexes release inline, so a small
-/// report never starts a thread to save almost nothing.
-const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 64 * 1024;
+/// (exp-160). A folded tree index keeps few entries and many allocations per entry: one
+/// of 5.9k entries (5.8k directories) took 0.84 ms to release inline on `linux-v6.12`
+/// and one of 9.5k took 1.12 ms on `node-modules-dense`, every microsecond of it after
+/// the answer was complete and on the thread that renders it (H186). A thread spawn is
+/// tens of microseconds, so the threshold is 4Ki entries, about half a millisecond of
+/// release for either shape; smaller indexes release inline, so a small report never
+/// starts a thread to save almost nothing.
+const BACKGROUND_RELEASE_MIN_ENTRIES: u64 = 4 * 1024;
 
 /// Drop one reference to a one-shot index, moving the final release off this thread.
 ///

@@ -4155,6 +4155,13 @@ impl Index {
         self.try_entry(id).map(|entry| entry.ignored)
     }
 
+    /// The entry's own ignore flag, for a caller that already knows its parent's
+    /// classification is known ([`Self::children_classification_known`]): what
+    /// [`Self::ignored_classification_of`] answers for it without re-deriving that.
+    pub(crate) fn entry_ignored(&self, id: EntryId) -> Option<bool> {
+        self.try_entry(id).map(|entry| entry.ignored)
+    }
+
     pub(crate) fn control_classification_known(&self, path: &Path) -> bool {
         path.parent().is_none_or(|directory| self.controls_known_in(directory))
     }
