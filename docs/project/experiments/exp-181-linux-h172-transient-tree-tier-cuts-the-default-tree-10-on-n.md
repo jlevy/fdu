@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: docs/project/experiments/evidence/exp-181/run.json
+    run_artifact: docs/project/experiments/evidence/exp-181/run.json.gz
   results:
     - job: cold-scan-index
       start_state: cold
