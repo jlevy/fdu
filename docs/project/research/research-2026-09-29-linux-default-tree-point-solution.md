@@ -8,6 +8,7 @@
 follow-up.
 Registered in [the performance loop](../guides/performance-loop.md#hypotheses)
 and planned in [the 0.2.2 plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md).
+Outcomes: registry rows [H171–H173](../guides/performance-loop.md#hypotheses).
 Beads: epic `fdu-8a8r`, `fdu-sdul` (H171), `fdu-dp98` (H172), `fdu-emqf` (H164).
 
 ## Question
@@ -17,7 +18,8 @@ After H162 and H163, fdu still trails pdu on Linux in two places:
 - **The default command on a real repository.** On `linux-v6.12` the default tree takes
   211 ms and the default summary 167 ms, against pdu’s 70 ms and diskus’s 74.5 ms.
 - **The indexed tree on the generated million-entry tree.** It took 1.25 s in 0.2.0
-  against pdu’s 1.02 s. H159 cut that job by about a tenth.
+  against 1.02 s for pdu `--max-depth 1` (a total only).
+  H159 cut that job by about a tenth.
 
 The question was what the smallest change is that closes both gaps without changing any
 answer.
@@ -69,7 +71,9 @@ The 1,593 rules split into:
 
 Each entry is governed by 110.9 rules from 1.70 sources on average.
 The linear scan therefore costs about 111 patterns × about 140 instructions each,
-roughly 19.6k instructions per entry, on the one thread that cannot scale.
+roughly 15.5k instructions per entry, on the one thread that cannot scale.
+That matches `glob_matches`’ 1,423M over the 92,474 entries (15.4k); all of
+`is_ignored`, 1,684M, is about 18.2k per entry.
 The root `.gitignore` alone holds 37 `*.suffix`, 32 anchored, 26 literal (9 of them
 negated) and 12 other glob patterns.
 
@@ -97,7 +101,7 @@ That is 2.6k consumer instructions and 7 allocations per entry, and 8 times the 
 faults of the summary, for an index that no one-shot reader reuses.
 After H159 no cross-thread frees remain; what is left is the build itself.
 
-### A Compiled Matcher Is Not the Lever
+### A General-Purpose Glob Set Is Not the Lever
 
 `rg --files` walks in parallel and applies `.gitignore` through a compiled globset.
 On `linux-v6.12` it took:
@@ -105,11 +109,13 @@ On `linux-v6.12` it took:
 - 69–75 ms wall and 75 ms of user CPU with them off.
 
 With `-j1` the times were 233–236 ms on and 73–76 ms off (screens, load 2–3). Ignore
-handling costs ripgrep about 160 ms of CPU here, twice fdu’s linear matcher, and keeps
-it at 2.2–2.7 times its own no-ignore wall even in parallel.
-Some of that is per-directory matcher construction and per-candidate allocation rather
-than matching, but the conclusion holds: compiling the rules does not by itself make
-classification cheap.
+handling costs ripgrep about 160 ms of CPU here single-threaded and 160–255 ms in
+parallel, and even in parallel keeps it at 2.2–2.7 times its own no-ignore wall.
+fdu’s linear matcher costs about 160 ms of consumer CPU (81% of about 200 ms), or about
+130 ms of wall time (211 − 81 ms), so ripgrep’s cost is about one to two times fdu’s.
+Some of ripgrep’s cost is per-directory matcher construction and per-candidate
+allocation rather than matching, but the conclusion holds: compiling the rules does not
+by itself make classification cheap.
 What makes it cheap is doing less work per entry.
 
 ### Screens
@@ -201,8 +207,9 @@ The tier is exact: the share threshold is false for a zero total and requires pa
 - **Predicted effect:** on the balanced tree the tree run spends 0.64 CPU-seconds above
   the 0.94 s summary. The tier removes about 63% of consumer instructions and about 70%
   of faults, about 0.4 CPU-seconds.
-  That predicts 1.03–1.10 s, level with pdu at 1.02 s and diskus at 1.04 s within the
-  interval. It would move ahead only with H167 or H166 on top.
+  That predicts 1.03–1.10 s, level with pdu `--max-depth 1` (a total only) at 1.02 s and
+  diskus at 1.04 s within the interval.
+  It would move ahead only with H167 or H166 on top.
   The 200k proxy could not resolve wall time under load, so this is a prediction.
 
 ### H173: The Live Residual Set, Carried Down the Walk

@@ -700,7 +700,7 @@ class StatisticsTests(unittest.TestCase):
         entry = comparison["metrics"]["wall_ns"]
         self.assertAlmostEqual(entry["median_change_pct"], -30.0, places=3)
         self.assertTrue(entry["significant"])
-        self.assertTrue(ledger.verdict(comparison)["accepted"])
+        self.assertTrue(ledger.verdict(comparison, invalid_samples=0)["accepted"])
 
     def test_pure_noise_is_not_significant(self) -> None:
         control = [1000, 1100, 900, 1050, 950, 1000, 1080, 920, 1010, 990, 1040, 960]
@@ -711,7 +711,7 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        decision = ledger.verdict(comparison)
+        decision = ledger.verdict(comparison, invalid_samples=0)
         self.assertFalse(decision["accepted"])
 
     def test_a_small_but_certain_win_is_still_rejected(self) -> None:
@@ -722,7 +722,7 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        decision = ledger.verdict(comparison)
+        decision = ledger.verdict(comparison, invalid_samples=0)
         self.assertFalse(decision["accepted"])
         self.assertIn("under the", decision["reason"])
 
@@ -733,7 +733,7 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        self.assertFalse(ledger.verdict(comparison)["accepted"])
+        self.assertFalse(ledger.verdict(comparison, invalid_samples=0)["accepted"])
 
     def test_warmups_and_invalid_samples_never_reach_the_comparison(self) -> None:
         samples = self._samples("job", "control", [1000] * 12)
@@ -762,7 +762,7 @@ class StatisticsTests(unittest.TestCase):
             samples, job="job", control="control", candidate="candidate"
         )
         self.assertIsNone(comparison["metrics"]["wall_ns"])
-        self.assertFalse(ledger.verdict(comparison)["accepted"])
+        self.assertFalse(ledger.verdict(comparison, invalid_samples=0)["accepted"])
 
     def test_the_bootstrap_is_deterministic(self) -> None:
         values = [-0.10, -0.12, -0.05, -0.20, -0.08, -0.11, -0.09, -0.15]
@@ -843,8 +843,11 @@ class InconclusiveVerdictTests(unittest.TestCase):
     def test_invalid_samples_make_the_verdict_inconclusive(self) -> None:
         document = self._document(invalid=2)
         comparison = self._comparison(document)
-        # The hazard: the ten surviving pairs alone clear the accept arithmetic.
-        self.assertTrue(ledger.verdict(comparison)["accepted"])
+        # The ten surviving pairs alone clear the accept arithmetic, so a verdict that
+        # could leave the count out would print ACCEPT here. It cannot.
+        self.assertTrue(ledger.verdict(comparison, invalid_samples=0)["accepted"])
+        with self.assertRaises(TypeError):
+            ledger.verdict(comparison)
 
         invalid = ledger.job_invalid_samples(document["statistics"][self.JOB])
         decision = ledger.verdict(comparison, invalid_samples=invalid)
