@@ -600,7 +600,8 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | Q5 H174 listing digest | `fdu-sfse` | Queued | — |
 | Q6 H169 native reader | `fdu-leja` | Fixing review findings (branch `perf/h169-noapi`) | Fable soundness review: fix `set_len` over padding and narrow the statx latch before measuring; diagnostics fields deferred (`fdu-q7hf`) |
 | Q7 H166 wake one | `fdu-i6nk` | Not run | Gated on walker starvation; the consumer backlog, not walker idling, bound the default run |
-| H180 summary walker trims | `fdu-cfbf` | Implementing (branch `perf/h180-summary-walker`) | From the side-by-side profile |
+| H180 summary walker trims | `fdu-cfbf` | Accepted, merged `c2a75fe4` | exp-183: `node-modules-dense` default summary −8.68%; exp-184: `linux-v6.12` −5.63% (blind −12.76%); tree placebos at zero |
+| H181 conditional wakes, H182 hash sort | `fdu-uk0u`, `fdu-sp4m` | Implementing (branch `perf/h181-h182`) | From the Fable mid-night sweep; one bundle cell after H169 |
 | Q8 H170 summary fold | `fdu-lz25` | Queued | — |
 | Q9 H164 tree route | `fdu-emqf` | Conditional | — |
 | Harness invalid-sample verdict | `fdu-c2c6` | Fixed, `8a58d432` | INCONCLUSIVE for any invalid sample; the recorder refuses such an accept |

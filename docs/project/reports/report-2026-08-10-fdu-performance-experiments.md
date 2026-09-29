@@ -70,7 +70,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
-| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 8 |
+| Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 10 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
@@ -263,6 +263,8 @@ dead end.
 | 180 | [Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12](#exp180--linux-h172-exact-transient-tree-tier-cuts-the-default-tree-13-on-linuxv612) | H172, H176 | `default-tree` | -13.5% | ✅ accepted |
 | 181 | [Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense](#exp181--linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-nodemodulesdense) | H172 | `default-tree` | -10.3% | ✅ accepted |
 | 182 | [Linux walker count after H172: three walkers regress, six and eight do not clear on both trees](#exp182--linux-walker-count-after-h172-three-walkers-regress-six-and-eight-do-not-clear-on-both-trees) | H165 | `default-tree` | +10.3% | ❌ rejected |
+| 183 | [Linux H180 summary walker trims cut the default summary 9% on node-modules-dense](#exp183--linux-h180-summary-walker-trims-cut-the-default-summary-9-on-nodemodulesdense) | H180 | `aggregate-summary` | -8.7% | ✅ accepted |
+| 184 | [Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12](#exp184--linux-h180-summary-walker-trims-cut-the-default-summary-6-and-the-blind-summary-13-on-linuxv612) | H180 | `aggregate-summary` | -5.6% | ✅ accepted |
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
 | 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
@@ -6024,6 +6026,63 @@ not clear on both real subjects; PORTABLE unchanged.
 Full record:
 [`exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md`](../experiments/exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md)
 
+### exp-183 — Linux H180 summary walker trims cut the default summary 9% on node-modules-dense
+
+✅ accepted · 2026-09-29 · H180 · commit `70c2725c`
+
+Control: 956659de probe: H172 head
+
+Candidate: 70c2725c probe: H180 summary walker trims
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 73.5 | 67.5 | -8.68% | [-11.49%, -4.66%] |
+| component (ms) | 70.7 | 64.7 | -8.69% | [-12.10%, -4.38%] |
+| cpu (ms) | 262.8 | 243.1 | -7.04% | [-10.84%, -4.50%] |
+| user (ms) | 77.1 | 61.3 | -15.88% | [-22.45%, -11.64%] |
+| system (ms) | 193.0 | 184.9 | -3.71% (n.s.) | [-8.82%, +2.08%] |
+
+Other jobs, wall time: `default-tree` -2.8% (n.s.).
+
+Cost to carry: 125 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair node-modules-dense aggregate-summary -8.68%
+[-11.49%, -4.66%]; --no-controls -1.12% n.s.; default-tree placebos include zero; walker
+instructions -33% (callgrind); answers identical.
+
+Full record:
+[`exp-183-linux-h180-summary-walker-trims-cut-the-default-summary-9-on.md`](../experiments/exp-183-linux-h180-summary-walker-trims-cut-the-default-summary-9-on.md)
+
+### exp-184 — Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12
+
+✅ accepted · 2026-09-29 · H180 · commit `70c2725c`
+
+Control: 956659de probe: H172 head
+
+Candidate: 70c2725c probe: H180 summary walker trims
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 90.5 | 83.1 | -5.63% | [-15.15%, -2.75%] |
+| component (ms) | 87.1 | 79.3 | -6.83% | [-15.76%, -2.71%] |
+| cpu (ms) | 309.8 | 281.7 | -8.63% | [-13.12%, -6.27%] |
+| user (ms) | 136.1 | 112.6 | -16.79% | [-24.84%, -10.37%] |
+| system (ms) | 179.8 | 175.0 | +0.81% (n.s.) | [-9.90%, +6.95%] |
+
+Other jobs, wall time: `default-tree` +3.3% (n.s.).
+
+Cost to carry: 125 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair linux-v6.12 aggregate-summary -5.63% [-15.15%, -2.75%],
+--no-controls -12.76% [-15.71%, -10.09%]; default-tree placebos include zero.
+
+Full record:
+[`exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md`](../experiments/exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md)
+
 ### exp-187 — Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore
 
 ✅ accepted · 2026-09-28 · H161 · commit `0d73ed54`
@@ -6302,6 +6361,17 @@ Baselines show one value because they measure a state rather than a change.
 | 189 | Linux H159 rejected again on linux-v6.12 after H162 and H163 | `default-tree` | 204.5 | 207.1 | +2.3% | ❌ rejected |
 | 191 | Linux H157 file fold cuts allocations but misses on the product job after H159 | `cold-scan-index` | 303.2 | 281.3 | -5.5% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
+| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
+| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
+| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
+| 182 | Linux walker count after H172: three walkers regress, six and eight do not clear on both trees | `default-tree` | 84.7 | 94.5 | +10.3% | ❌ rejected |
+| 184 | Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12 | `aggregate-summary` | 90.5 | 83.1 | -5.6% | ✅ accepted |
+
 ### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6312,16 +6382,6 @@ Baselines show one value because they measure a state rather than a change.
 | 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 175 | Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary | `default-tree` | 181.9 | — | — | 📏 baseline |
-| 178 | Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12 | `default-tree` | 188.4 | 130.2 | -29.6% | ✅ accepted |
-| 179 | Linux H175 derived control chains take another 3% off the default tree | `default-tree` | 130.2 | 126.0 | -3.3% | ✅ accepted |
-| 180 | Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12 | `default-tree` | 91.8 | 80.2 | -13.5% | ✅ accepted |
-| 182 | Linux walker count after H172: three walkers regress, six and eight do not clear on both trees | `default-tree` | 84.7 | 94.5 | +10.3% | ❌ rejected |
 
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
@@ -6411,6 +6471,14 @@ Baselines show one value because they measure a state rather than a change.
 | 159 | Share content metric resolution across views | `content-query` | 38,629.3 | 20,636.4 | -47.0% | ⏳ in progress |
 | 170 | macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout | `aggregate-summary` | 293.7 | 270.8 | -4.3% | ✅ accepted |
 
+### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
+| 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
+| 183 | Linux H180 summary walker trims cut the default summary 9% on node-modules-dense | `aggregate-summary` | 73.5 | 67.5 | -8.7% | ✅ accepted |
+
 ### rustup-toolchains (119,368 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6483,13 +6551,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 098 | Share pool orchestration through a dynamic consumer | `cold-scan-index` | 552.2 | 557.7 | +0.8% | ❌ rejected |
 | 099 | Monomorphize shared concurrent-walk consumption | `cold-scan-index` | 569.3 | 566.0 | +0.2% | ✅ accepted |
-
-### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v49, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
-| 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
 
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
