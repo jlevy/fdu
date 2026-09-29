@@ -598,8 +598,8 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | Standing after Q4 | — | Measured 11:00 | Quiet tool cells on the H172 head: `linux-v6.12` fdu 0.084 s against pdu default 0.078 s (was 0.19 against 0.079 at Q0) and diskus 0.079 s; `node-modules-dense` fdu 0.076 s against pdu default 0.077 s and diskus 0.075 s (evidence under exp-180). Tonight’s 1.25× target is met |
 | Q4 H172 tree tier, with H176 | `fdu-dp98`, `fdu-dnfs` | Accepted, merged `0228ea42` | exp-180: `linux-v6.12` default tree −13.48% (91.8 → 80.2 ms); exp-181: `node-modules-dense` −10.30%; balanced screen −3.20% wall, peak RSS −79%; placebos at zero |
 | Q5 H174 listing digest | `fdu-sfse` | Queued | — |
-| Q6 H169 native reader | `fdu-leja` | Fixing review findings (branch `perf/h169-noapi`) | Fable soundness review: fix `set_len` over padding and narrow the statx latch before measuring; diagnostics fields deferred (`fdu-q7hf`) |
-| Q7 H166 wake one | `fdu-i6nk` | Not run | Gated on walker starvation; the consumer backlog, not walker idling, bound the default run |
+| Q6 H169 native reader | `fdu-leja` | Accepted (phase 1), merged `217861c1` | exp-185/186: `--no-controls` summary −6.25% and −7.90%, default summary −9.7% and −9.4%; default tree −4.29% on `node-modules-dense`, −2.06% (not clearing) on `linux-v6.12`; four audited `unsafe` expressions; public diagnostics fields deferred (`fdu-q7hf`) |
+| Q7 H166 wake one | `fdu-i6nk` | Closed by its gate, no build | Walkers starved 2.2% (`linux-v6.12`) and 0.6% (`node-modules-dense`) of their time |
 | H180 summary walker trims | `fdu-cfbf` | Accepted, merged `c2a75fe4` | exp-183: `node-modules-dense` default summary −8.68%; exp-184: `linux-v6.12` −5.63% (blind −12.76%); tree placebos at zero |
 | H181 conditional wakes, H182 hash sort | `fdu-uk0u`, `fdu-sp4m` | Implementing (branch `perf/h181-h182`) | From the Fable mid-night sweep; one bundle cell after H169 |
 | Q8 H170 summary fold | `fdu-lz25` | Queued | — |

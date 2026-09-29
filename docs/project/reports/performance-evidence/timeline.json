@@ -44977,6 +44977,422 @@
   },
   {
    "anchored": false,
+   "candidate": "20933081 probe: H169 Linux-native reader",
+   "change_pct": -6.251,
+   "commit": "20933081",
+   "complexity": {
+    "lines_changed": 1621,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 4,
+    "notes": "four unsafe expressions (getdents64 and statx syscalls, the statx availability probe, mem::zeroed statx) behind cfg(all(target_os = linux, target_env = gnu)), each with a SAFETY argument; most lines are tests"
+   },
+   "control": "70c2725c probe: H180 head",
+   "date": "2026-09-29",
+   "decision": "accepted",
+   "entries": 79957,
+   "family": "Linux:db6d49b68990",
+   "hypotheses": [
+    "H169"
+   ],
+   "id": "exp-185",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 63532617.5,
+        "control": 67287646
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -6.909,
+        "ci95_high_pct": -1.486,
+        "ci95_low_pct": -14.473,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 234204500,
+        "control": 251647500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -4.899,
+        "ci95_high_pct": -1.499,
+        "ci95_low_pct": -12.46,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 191599000,
+        "control": 186536000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 0.971,
+        "ci95_high_pct": 7.832,
+        "ci95_low_pct": -7.55,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 46111500,
+        "control": 65341500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -30.337,
+        "ci95_high_pct": -21.379,
+        "ci95_low_pct": -36.795,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 66693264.5,
+        "control": 70326419
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -6.251,
+        "ci95_high_pct": -1.231,
+        "ci95_low_pct": -14.022,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 834.1141426016484,
+      "control": 879.5529972360143
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 70461125,
+        "control": 70726596
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.118,
+        "ci95_high_pct": 2.338,
+        "ci95_low_pct": -4.266,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 245231000,
+        "control": 250632500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -2.255,
+        "ci95_high_pct": 0.161,
+        "ci95_low_pct": -4.572,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 186588000,
+        "control": 181539000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 4.106,
+        "ci95_high_pct": 8.433,
+        "ci95_low_pct": -4.006,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 59890500,
+        "control": 73380500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -15.119,
+        "ci95_high_pct": -1.117,
+        "ci95_low_pct": -21.145,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 73999729.5,
+        "control": 74159846.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.673,
+        "ci95_high_pct": 2.057,
+        "ci95_low_pct": -3.637,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 925.4940718135998,
+      "control": 927.4966106782396
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 185,
+   "path": "exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25% [-14.02%, -1.23%], default summary -9.66%, default-tree -4.29% [-8.81%, -0.90%]; serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4; answers identical",
+   "reference_tools": [],
+   "subject": "db6d49b68990:79957:11c4122bec53",
+   "title": "Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense",
+   "trials": 20
+  },
+  {
+   "anchored": false,
+   "candidate": "20933081 probe: H169 Linux-native reader",
+   "change_pct": -7.899,
+   "commit": "20933081",
+   "complexity": {
+    "lines_changed": 1621,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 4,
+    "notes": ""
+   },
+   "control": "70c2725c probe: H180 head",
+   "date": "2026-09-29",
+   "decision": "accepted",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [
+    "H169"
+   ],
+   "id": "exp-186",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 57288554.5,
+        "control": 61006225
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -7.438,
+        "ci95_high_pct": -5.179,
+        "ci95_low_pct": -10.187,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 216114000,
+        "control": 236469500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -7.801,
+        "ci95_high_pct": -6.309,
+        "ci95_low_pct": -10.358,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 179781000,
+        "control": 175123000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -0.069,
+        "ci95_high_pct": 6.767,
+        "ci95_low_pct": -7.007,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 43922500,
+        "control": 60687000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -24.643,
+        "ci95_high_pct": -11.783,
+        "ci95_low_pct": -39.449,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 59998718.5,
+        "control": 63843342
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -7.899,
+        "ci95_high_pct": -4.741,
+        "ci95_low_pct": -9.553,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 648.8171648247074,
+      "control": 690.3923481194714
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 65124819,
+        "control": 67769388
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -1.267,
+        "ci95_high_pct": 2.656,
+        "ci95_low_pct": -6.771,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 244028000,
+        "control": 250935000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.691,
+        "ci95_high_pct": 3.128,
+        "ci95_low_pct": -3.824,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 192162500,
+        "control": 186218500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 2.783,
+        "ci95_high_pct": 12.949,
+        "ci95_low_pct": -1.092,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 54011000,
+        "control": 62876500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -10.879,
+        "ci95_high_pct": -3.97,
+        "ci95_low_pct": -35.35,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 68452385.5,
+        "control": 71095860
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -1.791,
+        "ci95_high_pct": 2.656,
+        "ci95_low_pct": -6.832,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 740.2338549213833,
+      "control": 768.8199926465818
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": "candidate",
+   "number": 186,
+   "path": "exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md",
+   "platform": "Linux",
+   "primary_job": "aggregate-summary",
+   "primary_metric": "wall_ns",
+   "reason": "quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90% [-9.55%, -4.74%], default summary -9.39%; default-tree -2.06% [-7.38%, +1.83%] does not clear (co-secondary); serial-portable placebo -0.29% includes zero",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:55a09ea65f48",
+   "title": "Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear",
+   "trials": 20
+  },
+  {
+   "anchored": false,
    "candidate": "0d73ed54 probe (main with 149): the transient summary classifies entries",
    "change_pct": -6.926,
    "commit": "0d73ed54",
@@ -46292,6 +46708,30 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-175",
+    "exp-178",
+    "exp-179",
+    "exp-180",
+    "exp-182",
+    "exp-184",
+    "exp-186"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:55a09ea65f48",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1759236097,
    "directories": 5769,
    "entries": 92474,
@@ -46307,29 +46747,6 @@
    "filesystem": "ext4",
    "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
    "key": "14549a49743a:92474:c7a4d447d9bf",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 1759293209,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-175",
-    "exp-178",
-    "exp-179",
-    "exp-180",
-    "exp-182",
-    "exp-184"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "4ffe9d749fe6:92474:55a09ea65f48",
    "labels": [
     "linux-v6.12"
    ],
@@ -46490,6 +46907,27 @@
    "synthetic": true
   },
   {
+   "apparent_bytes": 538992241,
+   "directories": 9439,
+   "entries": 79957,
+   "experiments": [
+    "exp-176",
+    "exp-181",
+    "exp-183",
+    "exp-185"
+   ],
+   "files": 70411,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "db6d49b68990:79957:11c4122bec53",
+   "labels": [
+    "node-modules-dense"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 1085083672,
    "directories": 7350,
    "entries": 60067,
@@ -46630,26 +47068,6 @@
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 538992241,
-   "directories": 9439,
-   "entries": 79957,
-   "experiments": [
-    "exp-176",
-    "exp-181",
-    "exp-183"
-   ],
-   "files": 70411,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "db6d49b68990:79957:11c4122bec53",
-   "labels": [
-    "node-modules-dense"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
    "synthetic": false
   },
   {
@@ -47150,21 +47568,21 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 25010,
+  "accepted_lines_changed": 28252,
   "decisions": {
-   "accepted": 105,
+   "accepted": 107,
    "baseline": 13,
    "blocked": 2,
    "in-progress": 4,
    "rejected": 58,
    "superseded": 5
   },
-  "experiments": 187,
+  "experiments": 189,
   "first_date": "2026-08-10",
-  "hypotheses": 126,
+  "hypotheses": 127,
   "last_date": "2026-09-29",
   "platforms": {
-   "Linux": 50,
+   "Linux": 52,
    "macOS": 137
   }
  },
