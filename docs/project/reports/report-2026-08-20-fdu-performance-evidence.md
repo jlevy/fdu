@@ -72,7 +72,7 @@ the gate for a whole cell, so every recent macOS result is uncontrolled.
   could resolve; H160 cut peak RSS 26%
   ([exp-164](../experiments/exp-164-macos-one-shot-index-release-shows-no-wall-change-and-no-reg.md),
   [exp-165](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)).
-  H159’s bounded form is wall and RSS neutral here
+  H159’s bounded form shows no wall or RSS change here
   ([exp-167](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)).
   H162 and H163 have not been measured on macOS, and neither has any change from the
   2026-09-29 Linux round.
@@ -487,14 +487,14 @@ These do not overturn a verdict; they say what a verdict rests on.
 - **H159’s deciding subject changed after two misses.** The dense tree was registered
   before exp-190 ran and fits the per-directory mechanism, but it was chosen after the
   first subject had failed.
-  exp-167, the macOS cell, is now resolved as rejected with the change kept, the
-  encoding exp-164 and exp-165 use for H156’s and H160’s macOS cells.
+  exp-167, the macOS cell, is recorded as rejected with the change kept, as exp-164 and
+  exp-165 record H156’s and H160’s macOS cells.
 - **The leftover determinations on Linux v6.12 predate the `.gitignore` finding.** H140
   (exp-139) and H146
   ([exp-147](../experiments/exp-147-linux-first-run-leftover-is-still-the-walk.md))
   attributed the default command to the walk; exp-173 shows most of it was
-  classification. Both registry rows now carry that caveat, and a new determination needs
-  a `--no-controls` arm.
+  classification. Both registry rows carry that caveat, and a new determination needs a
+  `--no-controls` arm.
 - **Every macOS accept since 0.1.0 is uncontrolled.** They stand as paired evidence on a
   busy host; none has a quiet replication.
 - **The 2026-09-29 round ran on one virtualized host.** Every cell from exp-175 to
