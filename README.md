@@ -13,11 +13,10 @@ Key features:
   [pdu](https://github.com/KSXGitHub/parallel-disk-usage), and about 9% faster than
   [dumac](https://github.com/healeycodes/dumac#readme), the next-fastest tool, which
   returns only a total.
-  On Linux, fdu’s summary mode beats pdu and
-  [diskus](https://github.com/sharkdp/diskus), the fastest peers there, but building its
-  full index takes about 20% longer than they do, and on source trees with many
-  `.gitignore` files its default command is still several times slower than pdu.
-  See [Speed](#speed) for the measurements, the limits, and the work under way.
+  On Linux, fdu’s totals match or beat pdu and
+  [diskus](https://github.com/sharkdp/diskus), the fastest peers there, when it counts
+  the same files they do (`--no-gitignore`); its tree view and `.gitignore` handling are
+  still slower. See [Speed](#speed).
 - **Text, file, and code analysis:** Rolls up content metrics, including lines, source
   code lines by language, and words, paragraphs, and pages for Markdown and text.
 - **Cached statistics:** Content metrics require reading files, so fdu caches them

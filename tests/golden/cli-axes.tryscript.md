@@ -549,7 +549,7 @@ $ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
 ```console
 $ fdu --cache off --view summary --format yaml --size apparent project
 schema: fdu.report/10
-generator: "fdu 0.2.0"
+generator: "fdu 0.2.1"
 root: [SCAN_PATH]
 age_reference_ns: [AGE_NS]
 request:

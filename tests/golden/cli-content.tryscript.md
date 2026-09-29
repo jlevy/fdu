@@ -441,7 +441,7 @@ $ fdu --cache off --analyze lines --view documents --format jsonl --size apparen
 ```console
 $ fdu --cache off --analyze words --view documents --format yaml --size apparent --words-per-page 5 content-project
 schema: fdu.report/10
-generator: "fdu 0.2.0"
+generator: "fdu 0.2.1"
 root: [SCAN_PATH]
 age_reference_ns: [AGE_NS]
 request:

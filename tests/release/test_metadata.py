@@ -34,6 +34,25 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(pyproject["project"]["scripts"]["fdu"], "fdu:_main")
         self.assertEqual(pyproject["tool"]["maturin"]["module-name"], "fdu._native")
 
+    def test_golden_generator_strings_name_the_product_version(self) -> None:
+        # A version bump must move every golden's `generator`, in JSON and YAML spellings
+        # alike; the parity artifact holds no YAML session, so nothing else catches a miss.
+        version = tomllib.loads((ROOT / "crates/fdu/Cargo.toml").read_text(encoding="utf-8"))[
+            "package"
+        ]["version"]
+        generator = re.compile(r'"?generator"?:\s*"fdu ([^"]+)"')
+        seen = 0
+        for golden in sorted((ROOT / "tests/golden").rglob("*")):
+            if not golden.is_file():
+                continue
+            for number, line in enumerate(
+                golden.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+            ):
+                for found in generator.findall(line):
+                    seen += 1
+                    self.assertEqual(found, version, f"{golden.relative_to(ROOT)}:{number}")
+        self.assertGreater(seen, 0)
+
     def test_artifact_license_copies_match_repository_license(self) -> None:
         expected = (ROOT / "LICENSE").read_bytes()
         self.assertEqual((ROOT / "crates/fdu-core/LICENSE").read_bytes(), expected)
