@@ -1982,8 +1982,7 @@ fn scan_internal(
                 }
             }
         }
-        let listing = match list_directory(&mut readers, &abs_dir, policy, diagnostics.as_deref())
-        {
+        let listing = match list_directory(&mut readers, &abs_dir, policy, diagnostics.as_deref()) {
             Ok(listing) => listing,
             Err(e) => {
                 report.errors.push(Error::io(abs_dir, e));
@@ -7379,7 +7378,9 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
     secs.saturating_mul(1_000_000_000).saturating_add(nanos)
 }
 
-#[cfg(windows)]
+// Windows observation goes through `windows_metadata::observe` on every route; only a
+// test still derives attributes from metadata alone.
+#[cfg(all(windows, test))]
 pub(crate) fn attrs_from(path: &Path, meta: &fs::Metadata) -> std::io::Result<Attrs> {
     windows_metadata::observe(path, || Ok(meta.clone())).map(|(_, attrs)| attrs)
 }
