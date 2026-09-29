@@ -1012,7 +1012,7 @@ The comparison with pdu on a real tree, which found the `.gitignore` cost, is
 [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
 exp-178–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
 
-Next free ids are **exp-200** and **H183**. exp-173–199 and H162–H179 are reserved for
+Next free ids are **exp-200** and **H184**. exp-173–199 and H162–H179 are reserved for
 Linux work: the peer-tool research (`fdu-92hp`) takes exp-173–186 and H162–H170, and the
 0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179. Of those, H171–H173 are the
 0.2.2 Linux parity hypotheses (`fdu-8a8r`). The 2026-09-29 overnight loop
