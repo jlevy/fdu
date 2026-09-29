@@ -761,8 +761,10 @@ struct SummaryControls {
     /// arrive together, so this answers nearly all of them.
     parent: Option<(std::path::PathBuf, bool)>,
     /// The controls governing the parent last classified under, resolved once for its
-    /// listing (H163) and dropped whenever the table changes.
-    chain: Option<(std::path::PathBuf, crate::control::ControlChain)>,
+    /// listing (H163) with the parent's components split once for it too (H171), and
+    /// dropped whenever the table changes.
+    chain:
+        Option<(std::path::PathBuf, crate::control::ControlChain, crate::control::SplitDirectory)>,
     /// Every entry no rule ignores, as the index's `unignored` partition.
     unignored: crate::index::RollUpScalars,
     /// The first control observation the table rejected, which fails the report as it
@@ -894,11 +896,18 @@ impl SummaryControls {
         let ignored = if parent_ignored || self.table.is_empty() {
             parent_ignored
         } else if let Some(name) = path.file_name() {
-            if !matches!(&self.chain, Some((cached, _)) if cached == parent) {
-                self.chain = Some((parent.to_path_buf(), self.table.chain_for(parent)));
+            if !matches!(&self.chain, Some((cached, ..)) if cached == parent) {
+                self.chain = Some((
+                    parent.to_path_buf(),
+                    self.table.chain_for(parent),
+                    crate::control::SplitDirectory::new(parent),
+                ));
             }
-            let (_, chain) = self.chain.as_ref().expect("the chain was just resolved");
-            chain.is_ignored(parent, name.as_encoded_bytes(), kind.is_dir())
+            let (_, chain, split) = self.chain.as_ref().expect("the chain was just resolved");
+            !chain.is_empty()
+                && split.with_components(|directory| {
+                    chain.is_ignored_within(directory, name.as_encoded_bytes(), kind.is_dir())
+                })
         } else {
             self.table.matcher_for(path).is_ignored(kind.is_dir())
         };

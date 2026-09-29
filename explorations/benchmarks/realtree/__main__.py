@@ -279,6 +279,11 @@ def _measure(arguments: argparse.Namespace) -> int:
     if document["tree_mutated_during_run"] or document["baseline_drift"]:
         return 2
     if document["invalid_samples"]:
+        print(
+            f"\n{document['invalid_samples']} timed samples were invalidated: the cell is "
+            "inconclusive and is rerun whole, never recorded as an accept (exit 3)",
+            file=sys.stderr,
+        )
         return 3
     return 0
 
@@ -515,13 +520,14 @@ def _print_headline(document: Dict[str, Any]) -> None:
                 print(
                     f"  {name:<16} wall {wall['median'] / 1e6:8.1f} ms"
                     + (f"   component {component['median'] / 1e6:8.1f} ms" if component else "")
-                    + f"   (n={entry['samples']})"
+                    + f"   (n={entry['samples']}"
+                    + (f", invalid={entry['invalid']}" if entry.get("invalid") else "")
+                    + ")"
                 )
+        invalid = ledger.job_invalid_samples(statistics)
         for key, comparison in statistics["comparisons"].items():
-            decision = ledger.verdict(comparison)
-            print(
-                f"  {key}: {'ACCEPT' if decision['accepted'] else 'REJECT'} — {decision['reason']}"
-            )
+            decision = ledger.verdict(comparison, invalid_samples=invalid)
+            print(f"  {key}: {ledger.verdict_label(decision)} — {decision['reason']}")
     for name, entry in (document.get("reference_tools") or {}).items():
         if entry["wall_ns"]:
             print(f"\nreference {name}: wall {entry['wall_ns']['median'] / 1e6:8.1f} ms")

@@ -446,6 +446,26 @@ class Experiment(Strict):
             )
         return self
 
+    @model_validator(mode="after")
+    def _an_accept_rests_on_a_cell_with_no_invalid_sample(self) -> "Experiment":
+        """Refuse ``accepted`` when the primary job recorded any invalid sample.
+
+        The accept rule requires that no sample was invalidated; a cell with one is
+        inconclusive and is rerun whole. The recorder refuses such an accept from the
+        run, where every variant of the job is visible; this is the same rule on the
+        record, so a caller of :func:`from_run` or a hand edit cannot write one either.
+        """
+        if self.verdict.decision != "accepted":
+            return self
+        for result in self.results:
+            if result.job == self.verdict.primary_job and result.invalid_samples:
+                raise ValueError(
+                    f"verdict.decision 'accepted' on {result.job!r}, which recorded "
+                    f"{result.invalid_samples} invalid samples: an accept needs a cell "
+                    "with none, and this one is inconclusive until it is rerun whole"
+                )
+        return self
+
 
 # --------------------------------------------------------------------------------
 # Building an artifact from a measurement run
