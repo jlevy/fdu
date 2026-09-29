@@ -5,14 +5,14 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: open
 priority: 1
-version: 5
+version: 6
 labels:
   - docs
   - parity
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T00:01:28.461Z
+updated_at: 2026-09-29T00:05:51.453Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 
@@ -45,3 +45,5 @@ Requirements:
 2026-09-29 maintainer: add a twelfth row, Installation: the install mechanisms per tool (cargo crate, Homebrew, uv/pip, apt and other distro packages, go install, GitHub release binaries, ...), whether each is prebuilt or builds from source, and for fdu that it runs with zero install via uvx (uvx --no-build fdu@latest). Verify each tool's mechanisms from its README and package listings.
 
 2026-09-29 maintainer: add a thirteenth row, Output formats: list each tool's formats (fdu: text, colored terminal, tree, paths, long, JSON, JSONL, YAML — verify the exact list from docs/usage.md and the CLI), and say whether terminal output is colored where supported (e.g. dust and gdu color; confirm per tool).
+
+2026-09-29 maintainer: every cell is verified from source checked out under attic/ (gitignored), not from web search alone; web pages only for packaging and distribution facts not in the repos. Research running in three parallel agents (du/ncdu/gdu; dust/dua/pdu; diskus/dumac/fdu).
