@@ -5,14 +5,15 @@ title: "H171: bucketed .gitignore matching (literal-name and *.suffix maps, high
 kind: task
 status: open
 priority: 1
-version: 3
+version: 6
+spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m3n1xqd4kg6q11yd8jcytg4c
 parent_id: is-01m3nbs9kfe7ygc6jx23j1byzt
 created_at: 2026-09-29T01:17:08.070Z
-updated_at: 2026-09-29T01:17:10.389Z
+updated_at: 2026-09-29T04:47:38.370Z
 ---
 At Gitignore::parse (gitignore.rs:104), bucket patterns: Basename with no metacharacter goes to literal_names HashMap<name, Vec<index>>; Basename *.suffix goes to suffixes, keyed by the text after the last '.' and confirmed by ends_with; everything else goes to residual. matches_components (gitignore.rs:125) probes both maps with the entry's name and extension, scans the residual, and answers patterns[max matching index].ignored, so last-match-wins, negation and directory_only are exact. Add ControlChain::is_ignored_within(dir_components, name, is_dir) and split a listing's directory once, in push_directory (index.rs:1684-1695) and per cached parent in SummaryControls::classify (execution.rs:797-801). Snapshot format unchanged. Optional: bucket anchored Fixed patterns by segment count (~80M more). Prototype (diff in notes): linux-v6.12 default-tree consumer instructions 2,067M -> 761M (-63%), summary 1,918M -> 660M, answers byte-identical over 1,629,566 JSON leaves, 93 control tests pass. Screen under load: tree -27-31%. ACCEPT (pre-register): default-tree (deciding) and aggregate-summary, controls on, linux-v6.12: wall -3% with 95% interval below zero; consumer Ir -50%; placebos (both arms --no-controls on linux-v6.12; default-tree on balanced-1M) include zero; peak RSS non-inferior; route differential identical. TESTS: keep the linear matcher under cfg(test) and property-test random rule sets (literal, suffix, anchored, negated, dir-only, escaped, [..], non-UTF-8, names ending in '.', '*.') x random names against it, plus the git check-ignore verdict table. ~150 lines.
 
@@ -301,3 +302,5 @@ index cc4e067f..4a305e67 100644
                  None => parent_ignored,
              };
              let child_path = kind.is_dir().then(|| path.join(&name));
+
+2026-09-29: .gitignore matching algorithm survey launched (read-only agent, in the 0.2.1 session). Scope: ripgrep globset+ignore, git dir.c+wildmatch.c (reverse scan with early exit, nowildcardlen, PATTERN_FLAG_*), gitoxide gix-ignore/gix-glob, Sapling pathmatcher TreeMatcher (matches_directory Yes/No/Maybe), Mercurial rust hg-core matchers, jj, libgit2, regex-automata multi-pattern lazy DFA; microbenchmark instructions/entry on linux-v6.12's 358 .gitignore files for current matcher, H171 prototype, H171+anchored grouping, H173 live set, ignore::Gitignore, gix-ignore; every engine checked against git check-ignore; git t3070-wildmatch / t0008-ignores as a conformance table. If its results are not appended here, rerun it: clone those repos into attic/ at release tags, build the bench under a scratch dir (never in the repo; crates >=14 days old, pinned), measure with callgrind. Prototype diff for H171 is in fdu-sdul notes above.

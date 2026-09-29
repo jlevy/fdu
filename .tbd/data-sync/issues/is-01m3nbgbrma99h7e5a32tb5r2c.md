@@ -5,10 +5,11 @@ title: Refresh the README Linux peer table on 0.2.1 with linux-v6.12 and default
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
+spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 labels: []
 dependencies: []
 created_at: 2026-09-29T01:12:14.356Z
-updated_at: 2026-09-29T01:12:14.356Z
+updated_at: 2026-09-29T04:47:21.685Z
 ---
 The published Linux table predates H159 and H161-H163 and uses only the generated tree with --no-gitignore for fdu's summary. Quiet host, compare_tools harness, commit results; pdu brief recommendation 5. Feeds fdu-dbn9.
