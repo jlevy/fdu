@@ -27,7 +27,7 @@ class MetadataTests(unittest.TestCase):
             (ROOT / "crates/fdu-py/pyproject.toml").read_text(encoding="utf-8")
         )
         version = crate["package"]["version"]
-        self.assertEqual(version, "0.2.0")
+        self.assertEqual(version, "0.2.1")
         self.assertEqual(python_crate["package"]["version"], version)
         self.assertEqual(workspace["workspace"]["dependencies"]["fdu"]["version"], version)
         self.assertEqual(pyproject["project"]["name"], "fdu")
@@ -213,17 +213,17 @@ class MetadataTests(unittest.TestCase):
         self.assertTrue(referenced)
         self.assertNotRegex(publish, r"\.outputs\s*\[")
         artifacts = [
-            {"filename": "fdu-core-0.2.0.crate", "kind": "crate", "sha256": "a" * 64},
-            {"filename": "fdu-0.2.0.crate", "kind": "crate", "sha256": "b" * 64},
-            {"filename": "fdu-0.2.0.tar.gz", "kind": "sdist", "sha256": "c" * 64},
-            {"filename": "fdu-0.2.0-cp312-abi3-win_amd64.whl", "kind": "wheel", "sha256": "d" * 64},
+            {"filename": "fdu-core-0.2.1.crate", "kind": "crate", "sha256": "a" * 64},
+            {"filename": "fdu-0.2.1.crate", "kind": "crate", "sha256": "b" * 64},
+            {"filename": "fdu-0.2.1.tar.gz", "kind": "sdist", "sha256": "c" * 64},
+            {"filename": "fdu-0.2.1-cp312-abi3-win_amd64.whl", "kind": "wheel", "sha256": "d" * 64},
         ]
         with tempfile.TemporaryDirectory() as temporary:
             manifest = Path(temporary) / "manifest.json"
             manifest.write_text(
-                json.dumps({"version": "0.2.0", "artifacts": artifacts}), encoding="utf-8"
+                json.dumps({"version": "0.2.1", "artifacts": artifacts}), encoding="utf-8"
             )
-            written = publish_gate.audit(manifest, "0.2.0", lambda _url: None)
+            written = publish_gate.audit(manifest, "0.2.1", lambda _url: None)
         self.assertLessEqual(referenced, written.keys())
 
     def test_the_publish_job_runs_no_dependency_code_and_uploads_only_rehearsed_bytes(

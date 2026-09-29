@@ -1,6 +1,6 @@
 [package]
 name = "fdu"
-version = "0.2.0"
+version = "0.2.1"
 # clap takes `--help`'s summary from this, so it describes the tool a user runs rather
 # than this crate's role in the layout. The golden that pins the help text caught the
 # difference the moment the binary moved, which is the corpus doing its job.

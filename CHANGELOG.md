@@ -7,6 +7,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-29
+
+fdu 0.2.1 is a patch release focused on Linux.
+The default `fdu PATH` and `--view summary` are about three times faster on source trees
+with many `.gitignore` files, the default summary reports its ignored share without
+building an index, and building the full index is faster on trees of many small
+directories. A `.gitignore` spelled in another case applies where git applies it, and a
+`--stale-ok` answer always says it is stale.
+No command-line option, schema, or Rust or Python API changed incompatibly.
+The GitHub release text is
+[docs/project/release-notes/0.2.1.md](docs/project/release-notes/0.2.1.md).
+
 ### Added
 
 - Python `Report.warnings` and Rust `report_format::report_warnings` carry what a reader

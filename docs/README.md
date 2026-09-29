@@ -13,7 +13,7 @@ live change feed, and the Rust and Python libraries.
 - [Live updates](../README.md#live-updates)
 - [Rust library examples](../README.md#as-a-rust-library)
 - [Python package examples](../README.md#as-a-python-module)
-- [0.2.0 release notes](project/release-notes/0.2.0.md) and
+- [0.2.1 release notes](project/release-notes/0.2.1.md) and
   [0.1.0 release notes](project/release-notes/0.1.0.md)
 
 ## Understand the Design

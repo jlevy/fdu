@@ -26,7 +26,7 @@ patterns:
 $ fdu --cache off --format json --size apparent --limit 10 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.0",
+  "generator": "fdu 0.2.1",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -268,7 +268,7 @@ $ fdu --cache off --format json --size apparent --limit 10 project
 $ fdu --cache off --format json --view tree --size apparent --depth 1 --limit 2 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.0",
+  "generator": "fdu 0.2.1",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -380,7 +380,7 @@ age.
 $ fdu --cache off --format json --view tree --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.0",
+  "generator": "fdu 0.2.1",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -552,7 +552,7 @@ not just legal but required to work — formats are serializations, not features
 $ fdu --cache off --view types --format json --size apparent project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.0",
+  "generator": "fdu 0.2.1",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
