@@ -510,8 +510,8 @@ REVIEWED_PUBLISH_STEPS = """
 """
 
 # The plan job's step that refuses, in release mode, a run whose ref is not the version's
-# annotated, GitHub-verified tag naming the checked-out commit on `main`: the first of the
-# two places the tag is validated.
+# annotated tag naming the checked-out commit on `main`, unsigned or GitHub-verified: the
+# first of the two places the tag is validated.
 REVIEWED_PLAN_STEPS = """
       - name: Resolve exact release identity
         id: plan

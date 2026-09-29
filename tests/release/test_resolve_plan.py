@@ -100,6 +100,13 @@ class PublishedTagTests(unittest.TestCase):
         identical[COMPARE_URL]["status"] = "identical"
         self.assertIn(f"{COMMIT} is on main (identical)", self.check(identical))
 
+    def test_an_unsigned_annotated_tag_on_main_passes(self) -> None:
+        unsigned = self.answers()
+        unsigned[TAG_URL]["verification"] = {"verified": False, "reason": "unsigned"}
+        verified = self.check(unsigned)
+        self.assertIn("v0.2.1 is unsigned (reason: unsigned); a signature is optional", verified)
+        self.assertIn(f"{COMMIT} is on main (ahead)", verified)
+
     def test_each_missing_proof_is_refused(self) -> None:
         def edited(url: str, value: Any = None, **fields: Any) -> dict[str, Any]:
             answers = self.answers()
@@ -109,12 +116,19 @@ class PublishedTagTests(unittest.TestCase):
                 answers[url] = value
             return answers
 
+        # A signature is optional, but one GitHub cannot verify claims an identity that
+        # does not hold, so it is refused rather than treated as unsigned.
         unverified = self.answers()
-        unverified[TAG_URL]["verification"] = {"verified": False, "reason": "unsigned"}
+        unverified[TAG_URL]["verification"] = {"verified": False, "reason": "unknown_key"}
         silent = self.answers()
         del silent[TAG_URL]["verification"]
         truthy = self.answers()
         truthy[TAG_URL]["verification"] = {"verified": "true", "reason": "valid"}
+        # "Unsigned" counts only beside an explicit `verified: false`.
+        unstated = self.answers()
+        unstated[TAG_URL]["verification"] = {"reason": "unsigned"}
+        stringly = self.answers()
+        stringly[TAG_URL]["verification"] = {"verified": "false", "reason": "unsigned"}
         cases = {
             "has no tag v0.2.1": edited(REF_URL),
             # A lightweight tag is a ref straight to the commit, with no signature to check.
@@ -131,10 +145,12 @@ class PublishedTagTests(unittest.TestCase):
                 TAG_URL, object={"type": "commit", "sha": "f" * 40}
             ),
             "names tree": edited(TAG_URL, object={"type": "tree", "sha": COMMIT}),
-            r"signature verified \(reason: unsigned\)": unverified,
+            r"signature verified \(reason: unknown_key\)": unverified,
             r"signature verified \(reason: None\)": silent,
             # Only the JSON boolean counts: a string that reads as true is not a verdict.
             r"signature verified \(reason: valid\)": truthy,
+            r"signature verified \(reason: unsigned\); sign it": unstated,
+            r"does not report v0\.2\.1's signature verified \(reason: unsigned\)": stringly,
             "cannot compare": edited(COMPARE_URL),
             "status 'behind'": edited(COMPARE_URL, status="behind"),
             "status 'diverged'": edited(

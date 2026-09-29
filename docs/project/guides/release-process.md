@@ -35,7 +35,7 @@ on any branch.
 export VERSION=0.2.1                   # the Cargo version being released
 export COMMIT=<release commit>         # its commit on main, full or abbreviated
 export RELEASE=~/fdu-release/$VERSION  # a directory outside any checkout
-export SIGNING_KEY=~/.ssh/<key>.pub    # the public key GitHub lists as your signing key
+export SIGNING_KEY=~/.ssh/<key>.pub    # optional: only to sign the tag
 ```
 
 `$RELEASE` belongs to one version and one commit: its `state.json` records both and the
@@ -84,19 +84,22 @@ If the release commit changes, start again with a new directory.
    make release-body
    ```
 
-6. **Tag** (maintainer).
-   Tag the commit directly, from any clean checkout; nothing needs checking out.
-   The first verification must pass before the push, because a pushed tag commits the
-   version for good; the second confirms that origin holds the same tag and GitHub shows
-   it verified.
+6. **Tag** (maintainer, or an agent with the maintainer’s go-ahead).
+   Create the annotated tag on GitHub; nothing needs checking out.
+   Read the tag object before creating the ref, because the ref commits the version for
+   good; then verify what origin holds:
 
    ```shell
-   git -c gpg.format=ssh -c user.signingkey="$SIGNING_KEY" \
-     tag -s "v$VERSION" -m "fdu $VERSION" "$COMMIT"
-   make release-verify-tag
-   git push origin "v$VERSION"
+   SHA=$(gh api "repos/jlevy/fdu/commits/$COMMIT" --jq .sha) && test -n "$SHA"
+   TAG_OBJECT=$(gh api -X POST repos/jlevy/fdu/git/tags -f tag="v$VERSION" \
+     -f message="fdu $VERSION" -f object="$SHA" -f type=commit --jq .sha)
+   gh api "repos/jlevy/fdu/git/tags/$TAG_OBJECT" --jq '[.tag, .object.sha, .message] | @tsv'
+   gh api -X POST repos/jlevy/fdu/git/refs -f ref="refs/tags/v$VERSION" -f sha="$TAG_OBJECT"
    make release-verify-tag
    ```
+
+   A signature is optional; to sign, create the tag locally instead, as
+   [Tag the Release Commit](#tag-the-release-commit) describes.
 
 7. **Publish** (maintainer).
    Dispatch on the tag, then find the run:
@@ -154,7 +157,7 @@ If the release commit changes, start again with a new directory.
 | 3. Preflight | Nothing | Agent or maintainer |
 | 4. Rehearse | The `release/v$VERSION` branch and a run that cannot publish | Agent or maintainer |
 | 5. Release body | Files in `$RELEASE` | Agent or maintainer |
-| 6. Tag | A signed tag, permanent once pushed | Maintainer, or an agent with the maintainer’s go-ahead |
+| 6. Tag | An annotated tag, permanent once pushed | Maintainer, or an agent with the maintainer’s go-ahead |
 | 7. Publish | Both registries, permanently | Maintainer, or an agent with the maintainer’s go-ahead |
 | 8. Verify the publication | Files in `$RELEASE` | Agent or maintainer |
 | 9. Announce | The GitHub release | Maintainer, or an agent with the maintainer’s go-ahead |
@@ -400,7 +403,7 @@ answer is marked stale clearly enough in plain text is an open decision (`fdu-md
 | `private vulnerability reporting` | GitHub’s private reporting form, which SECURITY.md and the notes point to, is enabled. If not, a maintainer enables it with `gh api -X PUT repos/jlevy/fdu/private-vulnerability-reporting`. |
 | `release environment` | The environment requires a reviewer, admits only `v*` tag deployments, and denies administrators a bypass. |
 | `registry secrets` | Neither the environment nor the repository holds a Cargo or PyPI token. |
-| `signing key` | `SIGNING_KEY` is a public key that GitHub lists among your signing keys. |
+| `signing key` | Unset passes: the tag goes out unsigned. When set, `SIGNING_KEY` is a public key that GitHub lists among your signing keys, since a tag signed with any other key is refused. |
 
 A registry that cannot be read fails its own line with the URL, rather than passing as
 absent, and so does a secret listing that cannot be read.
@@ -490,13 +493,31 @@ the tagged text wherever the clone points.
 
 ### Tag the Release Commit
 
-The tag is an annotated tag, SSH-signed, named `v$VERSION`, with the message
-`fdu $VERSION`. The checklist’s command configures signing for that one command, so no
-global `gpg.format`, `user.signingkey`, or allowed-signers file is needed.
+The tag is an annotated tag named `v$VERSION`, with the message `fdu $VERSION`, naming
+`COMMIT`. A signature is optional.
+The controls a release relies on are the reviewed commit on `main` and one identity
+across tag, manifests, and `--version`; nothing downstream verifies a tag signature, and
+a signature nobody verifies substitutes for none of those controls.
+A tag GitHub reports as `unsigned` is accepted; a signed tag must be one GitHub
+verifies, because a signature that fails verification claims an identity that does not
+hold, and the workflow refuses it.
+
+The checklist creates the tag through the API, unsigned.
+To sign it, create it locally for that one command and push it:
+
+```shell
+git -c gpg.format=ssh -c user.signingkey="$SIGNING_KEY" \
+  tag -s "v$VERSION" -m "fdu $VERSION" "$COMMIT"
+make release-verify-tag
+git push origin "v$VERSION"
+make release-verify-tag
+```
+
+No global `gpg.format`, `user.signingkey`, or allowed-signers file is needed.
 `SIGNING_KEY` is the public key; `ssh-keygen` signs with its private half from
 `ssh-agent`, or from the file beside it.
 
-Two things must be true once, before the first tag, for GitHub to show the tag as
+Two things must be true once, before the first signed tag, for GitHub to show it as
 verified:
 
 1. The public key is registered on GitHub as a *signing* key, which is separate from an
@@ -511,10 +532,10 @@ verified:
    GitHub account.
 
 `make release-verify-tag` checks that the tag is annotated, names `COMMIT`, and carries
-the expected message, that `COMMIT` carries `VERSION` in every Cargo manifest, and
-verifies the signature against `SIGNING_KEY` alone through a temporary allowed-signers
-file. It requires both a zero exit from `git tag -v` and git’s own
-`Good "git" signature for <email>` line.
+the expected message, and that `COMMIT` carries `VERSION` in every Cargo manifest.
+With `SIGNING_KEY` set, it also verifies the signature against that key alone through a
+temporary allowed-signers file, requiring both a zero exit from `git tag -v` and git’s
+own `Good "git" signature for <email>` line.
 By hand, the same check is:
 
 ```shell
@@ -527,9 +548,9 @@ Read its whole output and its exit status.
 Before the push it reports the tag as not yet pushed; a failure there is still local, so
 delete the tag with `git tag -d "v$VERSION"` and create it again.
 After the push it also requires origin to hold the same tag object and GitHub to report
-it verified. A pushed tag never moves: if it is wrong, the next patch version replaces
-it, as step 5 of
-[Recover From a Partial Publication](#recover-from-a-partial-publication) describes.
+it unsigned or verified.
+A pushed tag never moves: if it is wrong, the next patch version replaces it, as step 5
+of [Recover From a Partial Publication](#recover-from-a-partial-publication) describes.
 
 ### Publish Through the Workflow
 
@@ -540,12 +561,13 @@ The plan job fails at once, before anything is built, unless all of these hold:
 - the ref is `refs/tags/v$VERSION`, and the Cargo version is `$VERSION`;
 - that tag is an annotated tag object naming the checked-out commit, so a lightweight
   tag is refused;
-- origin holds the same tag object, and GitHub reports its signature verified;
+- origin holds the same tag object, and GitHub reports it unsigned or its signature
+  verified;
 - the commit is an ancestor of origin’s `main`.
 
-The workflow has no copy of the signing key, so GitHub’s verdict stands in for
-`make release-verify-tag`, and GitHub’s compare API for the preflight’s
-`COMMIT on origin/main` line.
+The workflow has no copy of any signing key, so GitHub’s verdict stands in for
+`make release-verify-tag`’s signature check, and GitHub’s compare API for the
+preflight’s `COMMIT on origin/main` line.
 The publish job checks all of it again against its own checkout, since the approval can
 come long after the plan job ran.
 When the publish job is *Waiting*, the builds, smoke tests, inspection, the `semver`
@@ -572,7 +594,7 @@ Before each upload the job proves what it is about to send:
 
 | Before | The job checks |
 | --- | --- |
-| Anything | Its own checkout is the tag and the commit the plan resolved, and GitHub still reports that tag annotated, verified, and on `main`; the environment check passed; and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
+| Anything | Its own checkout is the tag and the commit the plan resolved, and GitHub still reports that tag annotated, unsigned or verified, and on `main`; the environment check passed; and the downloaded crates, source distribution, and five wheels are exactly the files in the run’s manifest, inspected again, each with the recorded size and SHA-256, matching `SHA256SUMS` too. |
 | The first write | Both registries are audited. An `identical` version is skipped, a `missing` one is published, and any conflict on either registry stops the job, so a PyPI conflict stops crates.io from being written first. |
 | Each crate | `cargo package --locked --no-verify` reproduces it from the tag, and its digest must equal the manifest’s. `fdu` is reproduced again against the published `fdu-core`. |
 | `fdu` and PyPI | For up to ten minutes, the job waits for crates.io to serve the manifest’s digest for the crate just published, in both the API record and the sparse index Cargo resolves from. Another digest in either stops the job. |
@@ -745,8 +767,8 @@ The commands assume bash or zsh, with `gh`, `uv`, `rustup`, and `curl`: the toke
 prompts use `read -s`, which a plain POSIX `sh` such as `dash` rejects.
 Every command runs in a fresh clone of the tag, whose `rust-toolchain.toml` selects the
 pinned Rust, after confirming it names the rehearsed commit and the Cargo version, and,
-as the workflow does, that the tag is annotated, GitHub reports it verified, and the
-commit is on `main`:
+as the workflow does, that the tag is annotated, GitHub reports it unsigned or verified,
+and the commit is on `main`:
 
 ```shell
 git clone --branch "v$VERSION" https://github.com/jlevy/fdu "$RELEASE/fdu"

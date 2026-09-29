@@ -329,6 +329,14 @@ class PreflightTests(ReleaseCase):
         self.assertEqual(self.failed(checks), ["signing key"])
         self.assertIn("gh ssh-key add --type signing", checks["signing key"].detail)
 
+    def test_an_unset_signing_key_passes_because_the_tag_may_be_unsigned(self) -> None:
+        checks = {
+            check.name: check for check in maintainer.preflight(self.host, self.release, None)
+        }
+        self.assertEqual(self.failed(checks), [])
+        self.assertIn("unsigned", checks["signing key"].detail)
+        self.assertEqual(self.host.commands("gh", "api", "user"), [])
+
     def test_a_private_key_is_refused_without_being_echoed(self) -> None:
         self.key.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n", encoding="utf-8")
         detail = self.preflight()["signing key"].detail
@@ -700,11 +708,49 @@ class VerifyTagTests(ReleaseCase):
         self.assertFalse(checks["tag signature"].ok)
         self.assertIn("without a good signature", checks["tag signature"].detail)
 
-    def test_no_signing_key_fails_rather_than_skipping(self) -> None:
+    def test_a_tag_created_on_github_is_fetched_then_passes_unsigned(self) -> None:
+        # The checklist creates the tag through the API, so at first only origin holds it.
+        ref = f"refs/tags/{TAG}"
+        fetched: list[list[str]] = []
+
+        def local(_: list[str]) -> str:
+            if not fetched:
+                raise failure("")
+            return f"{TAG_OBJECT}\n"
+
+        def fetch(argv: list[str]) -> str:
+            fetched.append(argv)
+            return ""
+
+        self.host.on(["git", "rev-parse", "--verify", "--quiet", ref], local)
+        self.host.on(["git", "fetch"], fetch)
+        self.push_tag()
+        self.verified = {"verified": False, "reason": "unsigned"}
         checks = {
             check.name: check for check in maintainer.verify_tag(self.host, self.release, None)
         }
-        self.assertFalse(checks["tag signature"].ok)
+        self.assertTrue(all(check.ok for check in checks.values()), checks)
+        self.assertEqual(fetched, [["git", "fetch", "--quiet", "origin", f"{ref}:{ref}"]])
+
+    def test_no_signing_key_leaves_the_signature_to_github(self) -> None:
+        checks = {
+            check.name: check for check in maintainer.verify_tag(self.host, self.release, None)
+        }
+        self.assertTrue(all(check.ok for check in checks.values()), checks)
+        self.assertIn("SIGNING_KEY unset", checks["tag signature"].detail)
+        self.assertEqual(self.allowed, [])
+
+    def test_a_pushed_unsigned_tag_passes_and_a_mis_signed_one_fails(self) -> None:
+        self.push_tag()
+        self.verified = {"verified": False, "reason": "unsigned"}
+        checks = {
+            check.name: check for check in maintainer.verify_tag(self.host, self.release, None)
+        }
+        self.assertTrue(all(check.ok for check in checks.values()), checks)
+        self.assertEqual(checks["GitHub verified"].detail, "reason: unsigned")
+        self.verified = {"verified": False, "reason": "bad_email"}
+        failed = [name for name, check in self.verify().items() if not check.ok]
+        self.assertEqual(failed, ["GitHub verified"])
 
 
 @unittest.skipUnless(shutil.which("git") and shutil.which("ssh-keygen"), "needs git and ssh-keygen")

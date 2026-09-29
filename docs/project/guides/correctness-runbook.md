@@ -165,44 +165,57 @@ dataless files that a read can materialize — is tracked separately as `fdu-q09
 
 ### Last Recorded Run
 
-This run was on 2026-09-28, against release commit `6ec77163a` for 0.2.0. It used the
-`make build` debug binary from a clean worktree of that commit, with its own target
-directory.
+This run was on 2026-09-29, for the 0.2.1 release commit, `b10fe7b39` on `main`. It used
+the `fdu` of the candidate wheel, built from `672c2188f` and installed with
+`uv tool install` (`fdu 0.2.1-dev+g672c2188f`). The release commit has the same tree as
+`672c2188f`, so the result applies to it by tree identity, and neither the crates nor
+`tests/correctness` changed after `e889694c`, the first 0.2.1 release layer.
 
 **Regime.**
 
-- **Host.** Bare-metal Apple silicon, macOS 26.5.2 (Darwin 25.5.0).
-- **Filesystem.** Internal APFS, which is case-insensitive.
-  The trees were under a short `/private/tmp` path so the socket kind could be built.
-- **Privilege.** Built and compared as a regular user, with no root on either side.
+- **Host.** A 4-vCPU Linux x86_64 virtual machine (Firecracker, kernel 6.18).
+- **Filesystem.** ext4, which is case-sensitive.
+  The trees were under a short `/tmp` path.
+- **Privilege.** Both trees were built as root, so the device nodes exist.
+  The refusal pass ran as `nobody` (`setpriv --reuid=65534`), so its unreadable file and
+  unlistable directory refused; the complete-tree passes ran as root.
 - **Cache state.** A fresh cache directory for every case.
 
-This run says nothing about the Linux or Windows walk.
+This run says nothing about the macOS or Windows walk.
 
-**Kinds.** The refusal tree held 14 kinds, and the complete tree 13. Three kinds were
-absent:
-
-- `chardev` and `blockdev`: device nodes need root, which this run did not use.
-- `non-utf8-name`: APFS refuses names that are not valid UTF-8.
-
-The two case-colliding names became one file, as expected on a case-insensitive
-filesystem. `fdu-579b` has not yet decided how hard links are attributed.
-Their result therefore shows only that warm and cold agree, not that either is right.
+**Kinds.** Both trees held all 16 kinds the builder makes, including `chardev`,
+`blockdev`, and `non-utf8-name`, which the macOS run could not build.
+The builder reports `permission-denied-effective` as absent on a tree built as root, but
+every case of the `nobody` pass came back partial, so the refusals were effective.
+The two case-colliding names stayed two files.
+`fdu-579b` has not yet decided how hard links are attributed, so their result shows only
+that warm and cold agree, not that either is right.
 
 | Pass | Result |
 | --- | --- |
-| `--refusals-only`, refusal tree | 23 of 23 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants |
+| `--refusals-only`, refusal tree, as `nobody` | 23 of 23 cases partial and withheld; 0 answer mismatches, 0 mechanism failures, 0 stale reference instants |
 | `warm_cold.py`, complete tree | 23 of 23 served `cache_only` and labelled `stale`; each analysis case’s warm content tier `revalidated`; 0 mismatches |
 | `cross_warm.py`, complete tree | 30 of 30 pairs matched the cold answer, and `analysis.analyze` named the requested set every time; 0 violations |
 
 Each pass was checked by breaking it:
 
 - **No snapshot stored.** A wrapper turned `--cache on` into `--cache off`. Both scripts
-  exited 1. The 17 metadata cases reported `NO-SNAPSHOT`. The 6 analysis cases reported
-  `NOT-WARM(scanned)`, because under `auto` an analysis request writes its own snapshot.
-- **Partial answer stored.** A wrapper answered `--stale-ok` with the cold output
-  relabeled `cache_only`. All 23 cases reported `PARTIAL-STORED`, and `--refusals-only`
-  exited 1.
+  exited 1. The 17 metadata cases reported `NO-SNAPSHOT`, the 6 analysis cases
+  `NOT-WARM(scanned)`, and `cross_warm.py` failed its 6 same-analyzer pairs as
+  `NOT-WARM(scanned)`.
+- **Partial answer stored.** Run as `nobody`, a wrapper answered `--stale-ok` with the
+  cold output relabeled `cache_only`. All 23 cases reported `PARTIAL-STORED`, and
+  `--refusals-only` exited 1.
+
+### Previous Run: 0.2.0 on macOS
+
+On 2026-09-28, against release commit `6ec77163a` for 0.2.0, the `make build` debug
+binary ran all three passes on bare-metal Apple silicon (macOS 26.5.2, internal APFS) as
+a regular user, and each passed with the same case counts and zero failures; each was
+also checked by breaking it.
+That tree lacked device nodes, which need root, and the name that is not valid UTF-8,
+which APFS refuses, and its case-colliding names became one file.
+The full record is in this file’s history.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
