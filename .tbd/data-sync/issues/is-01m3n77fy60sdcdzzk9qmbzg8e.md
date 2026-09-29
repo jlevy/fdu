@@ -5,14 +5,14 @@ title: "README: add a Comparison to Alternatives matrix (fdu vs du, dust, pdu, d
 kind: task
 status: open
 priority: 1
-version: 6
+version: 7
 labels:
   - docs
   - parity
 dependencies: []
 parent_id: is-01m3mvdz2891yheyemx49gzm6j
 created_at: 2026-09-28T23:57:29.414Z
-updated_at: 2026-09-29T00:05:51.453Z
+updated_at: 2026-09-29T00:24:50.087Z
 ---
 Add a "Comparison to Alternatives" matrix to the main README, modeled on https://github.com/jlevy/repren#comparison-to-alternatives: tools as columns, features as rows, each cell a ✅ / ❌ or a few words ("partial: total only", "optional flag"), one intro sentence above, and a short "when to use each" note below that says plainly where a peer is the better choice.
 
@@ -47,3 +47,5 @@ Requirements:
 2026-09-29 maintainer: add a thirteenth row, Output formats: list each tool's formats (fdu: text, colored terminal, tree, paths, long, JSON, JSONL, YAML — verify the exact list from docs/usage.md and the CLI), and say whether terminal output is colored where supported (e.g. dust and gdu color; confirm per tool).
 
 2026-09-29 maintainer: every cell is verified from source checked out under attic/ (gitignored), not from web search alone; web pages only for packaging and distribution facts not in the repos. Research running in three parallel agents (du/ncdu/gdu; dust/dua/pdu; diskus/dumac/fdu).
+
+2026-09-29 maintainer: add the top 1 or 2 source-line-counting tools as extra matrix columns (covering the source-code rows; other rows n/a or as applicable), chosen by balancing speed and power; selection from the fdu-61ez survey plus a quiet speed run on linux-v6.12.

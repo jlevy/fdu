@@ -5,7 +5,7 @@ title: "Peer-tool research refresh: pdu deep dive, README currency, Linux gap to
 kind: epic
 status: in_progress
 priority: 1
-version: 19
+version: 20
 delegate: claude-code@vm
 labels:
   - performance
@@ -30,10 +30,11 @@ child_order_hints:
   - is-01m3n1xw8pn6ns13f6sv7chv36
   - is-01m3n282ey52kzkf7ctv7fyeq3
   - is-01m3n77fy60sdcdzzk9qmbzg8e
+  - is-01m3n8rt17y5kr7rr8239ky3zw
 hold: null
 hold_until: null
 created_at: 2026-09-28T20:31:18.599Z
-updated_at: 2026-09-28T23:57:29.414Z
+updated_at: 2026-09-29T00:24:25.383Z
 started_at: 2026-09-28T20:31:29.250Z
 ---
 User request 2026-09-28: review research on all previous/alternate tools; pdu (KSXGitHub/parallel-disk-usage) is under-covered and should be prominent; link dust, dumac, pdu (and diskus) directly in the README; check pdu into attic/ and verify fdu has learned all its performance techniques; understand why pdu is fast on Linux (fdu indexed tree ~23% slower on 4-vCPU ext4), make sure fdu subsumes pdu features and exceeds it in speed; revise research and README to be current with the latest benchmarks; add hypotheses to the performance-loop backlog; run quick spikes/benchmarks. Branch: claude/fdu-alternatives-research-qx0xn0.
