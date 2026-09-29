@@ -1,5 +1,5 @@
 ---
-title: "macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux"
+title: "macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux"
 softschema:
   contract: fdu.performance:Experiment/v1
   schema: experiment.schema.yaml
@@ -7,7 +7,7 @@ softschema:
   status: enforced
 experiment:
   id: exp-167
-  title: "macOS H159 bounded listing recycle is RSS and wall neutral, decided on Linux"
+  title: "macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux"
   date: "2026-09-28"
   hypotheses:
     - H159
@@ -391,6 +391,9 @@ route (158,704 builder entries) and the reuse: allocations 1,654,218 → 1,582,3
 the same number (1,580,451), so the bounds gave up almost no reuse.
 
 ## Decision
+
+Superseded by the Resolution below (2026-09-29): rejected on the accept rule, change
+kept.
 
 In progress: no macOS regression, Linux pending.
 No median on either subject is worse than +1.06%, and the peak RSS cost exp-166 found is

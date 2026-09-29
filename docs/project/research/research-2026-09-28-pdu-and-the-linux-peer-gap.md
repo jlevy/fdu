@@ -655,7 +655,10 @@ rules better, and whether to accept a dependency is the maintainer’s decision.
 - [x] Register H164–H170 in
   [the hypothesis registry](../guides/performance-loop.md#hypotheses), with beads
 - [ ] Attribute the 20 MiB the classifying summary holds on `linux-v6.12`
-- [ ] Decide how H161’s Linux result is recorded (wall met, RSS missed)
+- [x] Decide how H161’s Linux result is recorded (wall met, RSS missed):
+  [H161’s registry row](../guides/performance-loop.md#current-engine-010) records it as
+  accepted on wall, one of its two Linux bars; whether the RSS bar binds on Linux is
+  left to the maintainer
 - [ ] Put the allocator question to the maintainer
 
 ## Methodology
