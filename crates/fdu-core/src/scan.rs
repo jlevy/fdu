@@ -3715,7 +3715,7 @@ fn prepare_walk_entry_reading(
     if disposition == crate::admission::Disposition::Reject {
         return None;
     }
-    let path = rel_dir.join(name);
+    let path = join_listed_name(rel_dir, name);
     let (control, control_error) = if read_control {
         match read_named_control_op(config, root, &path, name, kind) {
             Ok(control) => (control, None),
@@ -3733,6 +3733,21 @@ fn prepare_walk_entry_reading(
         descend: should_descend(kind, attrs, depth, root_dev, config),
         control_error,
     })
+}
+
+/// `rel_dir.join(name)`, allocated once at the joined length.
+///
+/// [`Path::join`] copies `rel_dir` at its exact length and pushes onto the copy, so the
+/// separator grows it and, for a name longer than the directory, so does the name: a
+/// `realloc` for nearly every entry a streaming walk prepares. The summary route's
+/// walkers spent 760-820 instructions per entry joining, and 410-450 in `realloc`
+/// against the detached route's 85-150 (H180). The same push onto a copy that already
+/// fits both makes the same path, byte for byte, on every platform.
+fn join_listed_name(rel_dir: &Path, name: &OsStr) -> PathBuf {
+    let mut path = PathBuf::with_capacity(rel_dir.as_os_str().len() + 1 + name.len());
+    path.as_mut_os_string().push(rel_dir);
+    path.push(name);
+    path
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3794,11 +3809,16 @@ fn record_walk_entry(
         }
     }
     report.observe(kind, attrs);
-    emission.batch.push(ObservationOp::unconditional(Op::Upsert {
-        path: prepared.path.clone(),
-        kind,
-        attrs,
-    }));
+    // Only a directory the walk descends into needs its path twice, in its observation
+    // and in the queue. Every other entry's path moves into its observation, so it is
+    // allocated once and freed with its batch rather than copied and freed at once
+    // (H180).
+    let (path, descend_path) = if prepared.descend {
+        (prepared.path.clone(), Some(prepared.path))
+    } else {
+        (prepared.path, None)
+    };
+    emission.batch.push(ObservationOp::unconditional(Op::Upsert { path, kind, attrs }));
     if !emission.send_if_full(root, rel_dir, config, report, sender, chunk_send_ns, diagnostics) {
         return false;
     }
@@ -3809,12 +3829,12 @@ fn record_walk_entry(
             return false;
         }
     }
-    if prepared.descend {
+    if let Some(path) = descend_path {
         // A child of the root seeds a new region; everything deeper inherits its
         // parent's. Region membership therefore costs one integer copy and never
         // inspects a path.
         let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-        discovered.push((prepared.path, depth + 1, child_region));
+        discovered.push((path, depth + 1, child_region));
     }
     true
 }
@@ -7612,6 +7632,27 @@ mod tests {
                 .expect("read"),
                 None,
                 "{label}: nor does a read by the listed name"
+            );
+        }
+    }
+
+    /// The walker's join makes [`Path::join`]'s path byte for byte, including under the
+    /// root, whose relative directory is empty, and for a name longer than its directory
+    /// (H180).
+    #[test]
+    fn a_listed_name_joins_as_path_join_does() {
+        for (rel_dir, name) in [
+            ("", "file"),
+            ("", ".gitignore"),
+            ("a", "b"),
+            ("a/b", ".GITIGNORE"),
+            ("node_modules/x", "a-name-longer-than-twice-its-directory.js"),
+        ] {
+            let joined = join_listed_name(Path::new(rel_dir), OsStr::new(name));
+            assert_eq!(
+                joined.as_os_str(),
+                Path::new(rel_dir).join(name).as_os_str(),
+                "{rel_dir:?} and {name:?}"
             );
         }
     }
