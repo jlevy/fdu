@@ -1,10 +1,153 @@
 # fdu Live Uncached Tool Comparison on Linux
 
-**Date:** 2026-09-27, refreshed 2026-09-28 on the integrated stack
+**Date:** 2026-09-27, refreshed 2026-09-28 on the integrated stack, and run again
+2026-09-29 on the final head of the Linux parity round
 
 **Status:** Exploratory local performance evidence from a quiet virtualized host
 
-## Outcome
+The 2026-09-29 run comes first: it measures the current engine and every peer at its
+current release. The 2026-09-27 and 2026-09-28 runs follow it unchanged, from
+[Outcome, 2026-09-28](#outcome-2026-09-28) on.
+
+## Final Head of the Parity Round, 2026-09-29
+
+This run repeats the matrix below on the final head of the Linux parity round
+(`ebc06c78`, the engine of [#161](https://github.com/jlevy/fdu/pull/161)): the same
+generated 1,000,001-entry tree, the same harness and adjacent-pair schedule, and every
+Linux peer the harness has an adapter for.
+Two things changed in the method.
+fdu is measured as a user runs it, the bare `fdu PATH` (the `fdu-default-tree`
+contract), rather than with `--cache off --depth 1 --limit 10`. And pdu is measured
+twice: at its own defaults, and at `--max-depth 2`, the tree fdu’s `--depth 1` renders.
+
+- **fdu, pdu, and diskus are within 7% of each other.** fdu’s default command answered
+  in a **1.09-second median** (804k files/s). pdu’s default took 4% longer and diskus 7%
+  longer; pdu at `--max-depth 2` took 3% less.
+  Every interval excludes zero.
+- **Every other peer is slower,** from dust at +62% to dua at +234%.
+- **fdu’s default tree held 58 MiB** at peak, against 93 MiB for pdu’s default, 446 MiB
+  for dust, and 596 MiB for gdu.
+
+| Tool | Work class | Median wall-clock time | Wall time vs. fdu | Files/s | GB/s | 95% interval | Peak RSS |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **fdu** | default tree | **1.09 s** | baseline | **804k** | **2.7** | — | 58.4 MiB |
+| pdu `--max-depth 2` | rendered tree | 1.06 s | −3% | 825k | 2.8 | −4% to −1% | ≤ 54.0 MiB |
+| pdu, default | rendered tree | 1.14 s | +4% | 771k | 2.6 | +2% to +5% | 93.3 MiB |
+| diskus | total only | 1.16 s | +7% | 753k | 2.6 | +5% to +10% | ≤ 54.0 MiB |
+| dust | allocated total | 1.75 s | +62% | 499k | 1.7 | +56% to +66% | 445.7 MiB |
+| gdu | rendered tree | 2.81 s | +158% | 312k | 1.1 | +151% to +164% | 596.4 MiB |
+| GNU `du` | total only | 2.85 s | +160% | 308k | 1.0 | +157% to +165% | ≤ 54.0 MiB |
+| ncdu | indexed tree | 3.00 s | +174% | 291k | 0.99 | +168% to +179% | ≤ 54.0 MiB |
+| dua | children and total | 3.65 s | +234% | 240k | 0.82 | +222% to +241% | ≤ 54.0 MiB |
+
+Positive percentages mean the peer took more wall time than its immediately adjacent fdu
+run; each is the median of 12 paired changes, with a paired-bootstrap 95% interval.
+Files/s and GB/s divide the subject’s 875,000 regular files and 2,986,741,760 allocated
+bytes by median wall time; both are metadata-coverage rates.
+
+These are not equal-output jobs:
+
+- **fdu** renders its default tree: five levels, rows of at least 1% of the root, with
+  exact counts, apparent and allocated bytes, ignored shares, and newest file time for
+  every directory. On this engine that request builds a folded index, every directory but
+  only the files large enough to show, and frees it after answering
+  ([engine architecture](../architecture/fdu-engine-architecture.md#one-fact-model-serves-every-lifecycle)).
+  The harness’s contract text still calls it a reusable index, which it was when the
+  contract was written.
+- **pdu’s default** keeps every node within ten levels and prints those above 1% of the
+  root; **pdu at `--max-depth 2`** keeps only the root’s children.
+- **diskus, dust, and GNU `du`** return one total; dust runs at `-d 0`.
+- **dua**, given one directory, lists its children and then a total.
+  The harness’s `total-only` label for dua predates noticing this.
+- **gdu** renders a depth-one tree of its ten largest entries.
+- **ncdu** builds its complete browsable tree and exports it to `/dev/null`.
+
+### CPU and Memory, 2026-09-29
+
+fdu used 4.17 CPU-seconds per run, 0.84 of them in user space.
+pdu’s default used 5.5% more [4.4%, 7.5%] and diskus 11.0% more [9.9%, 13.3%]; pdu at
+`--max-depth 2` used the same [−0.8%, +1.4%]. Every tool spent most of its CPU in the
+kernel. fdu still makes the most voluntary context switches of the three leaders: a
+median of 14,502 per run, against pdu’s 1,620 at its default and 26 at depth 2.
+
+The harness withholds a peak RSS at or below its own floor, 54.0 MiB in this run, for
+the reason [Peak RSS on Linux](#peak-rss-on-linux) gives, and shows it as a bound.
+fdu’s 58.4 MiB is above the floor; the
+[end-to-end screen](../experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md)
+measured 62 MiB for the same tree through the probe, down from 292 MiB under 0.2.1.
+
+### Real Trees, 2026-09-29
+
+The round’s final standing, 20 quiet pairs per peer on the same host with the same
+binary and contract, is in exp-194’s evidence
+([`linux-v6.12`](../experiments/evidence/exp-194/run-tools-linux-v6.12.json.gz),
+[`node-modules-dense`](../experiments/evidence/exp-194/run-tools-node-modules-dense.json.gz)):
+
+| Subject | fdu | pdu, default | pdu `--max-depth 2` | diskus |
+| --- | ---: | ---: | ---: | ---: |
+| `linux-v6.12`, 92,474 entries, 358 `.gitignore` files | 0.122 s | +1% [−2%, +2%] | −1% [−7%, +1%] | +2% [−1%, +9%] |
+| `node-modules-dense`, 79,957 entries | 0.118 s | +1% [−2%, +4%] | −7% [−10%, −4%] | −2% [−4%, +2%] |
+
+fdu’s default command is level with pdu’s default and diskus on both, and pdu at
+`--max-depth 2` is 7% faster on the directory-dense tree.
+Against 0.2.1 in one paired cell, the default tree is 39.0% faster on `linux-v6.12`
+([exp-194](../experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md))
+and 9.8% faster on `node-modules-dense`
+([exp-195](../experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)).
+[The performance evidence report](report-2026-08-20-fdu-performance-evidence.md) traces
+the changes between.
+
+### Against the Earlier Runs
+
+The 2026-09-28 refresh measured a pre-0.2.0 build with
+`--cache off --depth 1 --limit 10` at 1.25 s, 23% longer than pdu at `--max-depth 1`.
+The runs differ in fdu’s build, fdu’s contract, pdu’s contract, and the peers’ versions,
+and the host drifts between cells: pdu’s own median on this tree moved from 1.02 to 1.14
+s. Only ratios within one run are evidence.
+
+### Protocol and Validity, 2026-09-29
+
+The protocol is the one under [Measurement Protocol](#measurement-protocol), with one
+matrix anchored on the `fdu-default-tree` contract and 12 pairs per peer:
+
+```shell
+make perf-compare-tools PERF_TREE=<corpus> PERF_LABEL=linux-balanced-1m \
+  PERF_TOOL_CONTROL=<fdu-final-ebc06c78> PERF_TOOL_CONTRACT=fdu-default-tree \
+  "TOOL_ARGS=--tool pdu-default=<pdu> --tool pdu=<pdu> --tool diskus=<diskus> \
+    --tool dust=<dust> --tool dua=<dua> --tool gdu=<gdu> --tool ncdu=<ncdu> \
+    --tool gnu-du=<du>" \
+  TRIALS=12 PERF_HOST_REGIME=quiet NAME=readme-tools-linux-balanced-1m
+```
+
+- **Subject.** The same `balanced` recipe, semantic digest `4bbd97c0d3d4e2ad`.
+- **Binary.** `fdu 0.2.1-dev+gebc06c784`, SHA-256
+  `32b4724a4ca4331751121574f7fb5860ff66bdca8da66cb513011834ad387735`, the release binary
+  of #161’s final standing, copied outside the tree.
+  #161’s later commits change no engine code.
+- **Peers.** Each is the latest release at least 14 days old, the supply-chain cool-off:
+  pdu 0.24.0 and diskus 0.9.0 as before; dust 1.2.5 and dua 2.45.0, built with
+  `cargo install --locked` on Rust 1.97.1; gdu 5.37.0, built with `go install` from the
+  checksum-verified module, which leaves its version string as `development`; and ncdu
+  1.19 and GNU coreutils `du` 9.4 from Ubuntu 24.04. Executable hashes are in the result
+  file.
+- **Schedule.** Eight peers, 3 warm-ups per tool, 12 timed adjacent pairs per peer: 240
+  tool processes, 192 of them timed, under a fixed-N stopping rule.
+- **Correctness.** Zero invalid timed samples, semantic mismatches, or summary-oracle
+  mismatches; no baseline drift and no tree mutation.
+- **Host and regime.** The host below, quiet: every sample was taken with the host under
+  25% CPU busy, measured over one second before and after it, and the highest reading
+  was 12%. Builds wait on the same lock, so none ran during measurement.
+
+The exact commands, versions, hashes, host facts, raw paired samples, and confidence
+intervals are in the compressed
+[result file](fdu-linux-tool-comparison-result-2026-09-29-default-tree.json.gz).
+The generated tree holds no `.gitignore` files, so it measures the walk and the tree,
+not rule handling; the real-tree standing covers that.
+No macOS comparison has run on this engine, and the Linux changes behind this result
+include a glibc-only directory reader that macOS does not use.
+dut still has no harness adapter, and ncdu is still the 1.x release.
+
+## Outcome, 2026-09-28
 
 This repeats the
 [2026-09-26 macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md) on Linux:
