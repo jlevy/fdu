@@ -15,13 +15,12 @@ The analysis and inventory work (#130, #133, #135, and the #136 tracking follow-
 stack 141 (#137, #138, #139, and #142) landed for 0.2.0, whose
 [release notes](docs/project/release-notes/0.2.0.md) and CHANGELOG entry are written.
 0.2.0 is tagged and published on crates.io, PyPI, and GitHub (2026-09-28). 0.2.1 is
-prepared for tagging under `fdu-k1n8`, with its
-[release notes](docs/project/release-notes/0.2.1.md) written.
+tagged and published (2026-09-29); its
+[release notes](docs/project/release-notes/0.2.1.md) say what it changed.
 
 | Workstream | Owner | Remaining work / governing document |
 | --- | --- | --- |
 | 0.2.0 release | `fdu-0gqc`, maintainer | `fdu-0gqc` owns post-merge verification of the landed work and does not tag or publish. The maintainer then runs the [installed-CLI QA playbook](tests/qa/cli-installed-e2e.qa.md) and its peer-agreement phase on the release commit, and the [release process](docs/project/guides/release-process.md): rehearse, tag, and publish. |
-| 0.2.1 release | `fdu-k1n8`, `fdu-kg22`, maintainer | Merge #150 then #155; the maintainer runs the [release checklist](docs/project/guides/release-process.md#release-checklist) from `make release-preflight` on the release commit: rehearse, tag, and publish. |
 | 0.2.2 Linux parity | `fdu-8a8r` | [Linux parity plan](docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md): the README comparison matrix, then H171 bucketed `.gitignore` matching and H172 a transient tree tier, released as 0.2.2 if APIs stay compatible. |
 | Output-design manual acceptance | `fdu-kwjc` | [Recorded candidate checks](docs/project/reports/report-2026-09-27-manual-acceptance.md): 30 of 33 passed or corrected; light/dark visual judgment, fresh-session skill discovery, and upgrade after this increment publishes remain open. |
 | Published 0.1.0 verification | `fdu-gjc2`, `fdu-yfej`, `fdu-vxvm` | Record the remaining [published-channel first-user checks](docs/project/specs/active/plan-2026-09-18-fdu-first-release-verification.md). |

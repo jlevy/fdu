@@ -19,6 +19,7 @@ way or what the evidence actually supports.
 | `fdu-vdi9` — close final phase-0 correctness gaps | Branch-wide review remediation. |
 | `fdu-jhm7` — clarify and enforce Rust module filenames | Naming convention plus its check. |
 | `fdu-p9d5` — copy-edit the performance research white paper | Editorial pass. |
+| `fdu-k1n8` — v0.2.1 patch release: Linux performance verdicts and case-variant `.gitignore` | Tagged from `c1644575` and published on crates.io, PyPI, and GitHub on 2026-09-29 ([release notes](docs/project/release-notes/0.2.1.md)); the release layer is #155 (`fdu-kg22`) and publication `fdu-nbpv`. On `linux-v6.12`, allocation-free ignore matching resolved once per listing took the default tree from 590 to 211 ms (H162, H163); the default summary reads ignore rules without building an index (H161); and each listing is freed on the walker that allocated it (H159, #150). H159 missed on the directory-sparse `linux-v6.12` and was accepted on `node-modules-dense`, because its saving is per directory. A case-variant `.gitignore` on a case-insensitive volume now applies where git applies it (`fdu-0w1b`). No incompatible change to the command line, the report schemas, or the Rust and Python APIs. |
 
 ## Completed specs
 

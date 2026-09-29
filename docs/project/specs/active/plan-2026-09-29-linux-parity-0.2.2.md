@@ -32,7 +32,7 @@ decide that. If any of them fails, the change waits for 0.3.0.
   - On `linux-v6.12`, bring the default `fdu .` from 211 ms to within the interval of
     pdu’s 70 ms and diskus’s 74.5 ms.
   - On the generated 1M tree, bring the default indexed tree from 1.25 s to level with
-    pdu’s 1.02 s.
+    pdu `--max-depth 1` (a total only), 1.02 s.
   - Change no answers.
 
 ## Non-Goals
@@ -48,8 +48,10 @@ decide that. If any of them fails, the change waits for 0.3.0.
 
 ## Background
 
-The design study measured instruction counts per thread with callgrind on `e889694c`
-(`fdu-8a8r` notes). Instruction counts do not depend on host load.
+The
+[design study](../../research/research-2026-09-29-linux-default-tree-point-solution.md)
+measured instruction counts per thread with callgrind on `e889694c`. Instruction counts
+do not depend on host load.
 
 - **The default command on a real repo is bound by matching.** On `linux-v6.12`:
   - 81% of the consumer thread’s instructions (1.68G of 2.07G) are `.gitignore`
@@ -68,8 +70,9 @@ The design study measured instruction counts per thread with callgrind on `e8896
 - **Compiling the rules is not, by itself, the win.**
   - ripgrep’s `ignore` crate compiles every source with `globset`, which uses literal,
     extension, and prefix maps in front of a regex set.
-  - On this tree it spends 160–250 ms of CPU on ignore handling (screen, load 2–3),
-    about twice fdu’s linear matcher.
+  - On this tree it spends about 160 ms of CPU on ignore handling single-threaded and
+    160–255 ms in parallel (screens, load 2–3), against about 160 ms of consumer CPU for
+    fdu’s linear matcher (81% of about 200 ms).
   - Much of that is per-directory matcher setup and per-candidate path allocation, so
     what matters is how little work each entry does, not whether the matcher is
     compiled.
@@ -130,7 +133,8 @@ sets the wall time.
   The callers are `push_directory` (`index.rs`) and the cached parent in
   `SummaryControls::classify` (`execution.rs`).
 - The prototype, without anchored grouping, cut consumer instructions from 2,067M to
-  761M (−63%). The output was byte-identical across 1.6M JSON fields.
+  761M (−63%). The output was identical apart from timing fields across 1,629,566 JSON
+  leaves.
 
 **H173: carry the live residual down the walk** (conditional, registered only if H171’s
 counters call for it).
@@ -275,7 +279,8 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
 ## References
 
 - [pdu brief](../../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md)
-- [Performance loop](../../guides/performance-loop.md), H164–H170
+- [Design study](../../research/research-2026-09-29-linux-default-tree-point-solution.md)
+- [Performance loop](../../guides/performance-loop.md), H164–H173
 - [Engine architecture](../../architecture/fdu-engine-architecture.md) and
   [design principles](../../architecture/fdu-design-principles.md)
 - Beads:
