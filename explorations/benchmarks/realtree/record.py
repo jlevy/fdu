@@ -16,7 +16,6 @@ those are the parts a measurement cannot supply.
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -34,7 +33,12 @@ SCHEMA_NAME = "experiment.schema.yaml"
 
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmarks.realtree record", description=__doc__)
-    parser.add_argument("--run", required=True, type=Path)
+    parser.add_argument(
+        "--run",
+        required=True,
+        type=Path,
+        help="the run document, plain (.json) or gzipped (.json.gz); recorded as run_artifact",
+    )
     parser.add_argument("--id", required=True, help="exp-NNN")
     parser.add_argument("--title", required=True)
     parser.add_argument("--hypothesis", action="append", default=[], dest="hypotheses")
@@ -111,7 +115,7 @@ def main(argv: Sequence[str]) -> int:
             "revision, the clone source and revision, or the reason no recipe exists"
         )
 
-    run = json.loads(arguments.run.read_text(encoding="utf-8"))
+    run = ledger.load(arguments.run)
     try:
         headline = _headline(run, arguments)
         _refuse_an_accept_from_an_inconclusive_cell(run, arguments)

@@ -57,7 +57,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: docs/project/experiments/evidence/exp-192/run.json
+    run_artifact: docs/project/experiments/evidence/exp-192/run.json.gz
   results:
     - job: aggregate-summary
       start_state: cold
@@ -270,7 +270,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: 0.2
     reason: "quiet 20-pair bundle cell: default-tree +0.20% [-2.04%, +1.91%] on linux-v6.12 and -1.40% [-7.42%, +3.42%] on node-modules-dense; queue futex wakes 1,426 -> 3-10 and consumer instructions -3% are real but below the wall bar"
-    commit: d1c667f6
+    commit: 7233dad6
     kept: control
 ---
 ## What was predicted
@@ -294,8 +294,9 @@ Pre-registered in the registry (`f05d1405`) before any timed sample:
 ## What was measured
 
 Implementation: `8ac2c61d` (H181), `d1c667f6` (H182), merged on the H169 head as
-`7233dad6`. The answer check was identical in 171 comparisons, and an Opus review passed
-both changes: a model of the queue found no lost wakeup in 116,000 interleavings.
+`7233dad6`, the measured candidate; all three are on branch `perf/h181-h182`. The answer
+check was identical in 171 comparisons, and an Opus review passed both changes: a model
+of the queue found no lost wakeup in 116,000 interleavings.
 - **H181:** `strace -c` of `perf_probe default-tree --threads 4` on `node-modules-dense`
   shows the queue’s condvar wakes falling from 1,426 to 3–10 per run, and total `futex`
   calls about 14% lower.

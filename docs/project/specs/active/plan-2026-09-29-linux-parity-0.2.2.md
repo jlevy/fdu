@@ -4,8 +4,12 @@
 
 **Author:** fdu project
 
-**Status:** Stage 1 done (0.2.1 tagged on `c1644575` and published); stages 2 and 3 not
-started. Epic `fdu-8a8r`. Stage 1 is 0.2.1, released from `c1644575`, which merges
+**Status:** Stage 1 done (0.2.1 tagged on `c1644575` and published); stage 2 not
+started. Stage 3 ran in
+[the overnight loop](plan-2026-09-29-linux-overnight-performance-loop.md#status) on
+2026-09-29, unreleased: H171 and H172 accepted (exp-178, exp-180 and exp-181), H173
+demoted, and H164 split.
+Epic `fdu-8a8r`. Stage 1 is 0.2.1, released from `c1644575`, which merges
 [#155](https://github.com/jlevy/fdu/pull/155) and
 [#156](https://github.com/jlevy/fdu/pull/156).
 
@@ -128,7 +132,9 @@ sets the wall time.
   - **literal names**: `HashMap<name, Vec<index>>`, for a basename with no
     metacharacter;
   - **suffixes**: keyed by the text after the pattern’s last `.` and confirmed with
-    `ends_with`, for a `*.suffix` basename;
+    `ends_with`, for a `*.suffix` basename (revised by the overnight plan to git’s
+    ends-with form: every `*tail` with no special character, dot-less tails in a short
+    `ends_with` list);
   - **anchored patterns**: grouped by segment count and first literal segment, for the
     `Fixed` shape;
   - **residual**: everything else.
@@ -194,7 +200,7 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
   in #156. The release commit `c1644575` adds only release tooling.
 - [x] #150, #155 and #156 merged.
 - [x] The release tag’s signature became optional (#156), so an agent can tag with `gh`.
-- [ ] Rehearse, tag, publish, announce, check and clean up 0.2.1 from `c1644575`.
+- [x] Rehearse, tag, publish, announce, check and clean up 0.2.1 from `c1644575`.
 
 ### Stage 2: Comparison Matrix (documentation only, after the tag)
 
@@ -218,9 +224,13 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
   adopts git’s wildmatch and ignore test cases as a conformance table.
   It may revise H171 and H173. A first attempt was stopped before reporting, so nothing
   from it is recorded.
+  The source half ran in the overnight loop and revised H171 and H173
+  ([brief](../../research/research-2026-09-29-linux-peers-matchers-and-hot-path.md));
+  the benchmark half is open.
 - [ ] Nominate a second real subject heavy with wildcard rules, to test the residual
-  path.
-- [ ] H171:
+  path. Still open: no checkout at hand was large enough (the overnight plan’s Open
+  Questions).
+- [x] H171:
   - pre-register against the `fdu-sdul` acceptance row;
   - implement it with anchored grouping;
   - add the property test against the linear matcher and the real-tree differential
@@ -228,15 +238,28 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
   - run the quiet cell on `linux-v6.12`, the wildcard subject, and the generated
     placebo;
   - record the results.
-- [ ] Read H171’s counters, then either register H173 or record why it is not needed.
-- [ ] H172:
+  - **Done** in the overnight plan’s revised form: accepted on `linux-v6.12` with the
+    generated tree as placebo (exp-178), and H175 on top of it (exp-179). The
+    wildcard-subject leg did not run, since no such subject was nominated.
+- [x] Read H171’s counters, then either register H173 or record why it is not needed.
+  The overnight plan’s review demoted H173 before H171’s cell (registry row H173); after
+  H171, the residual rules’ pre-checks were cut by H183 instead (exp-193).
+- [x] H172:
   - settle the carrier: a pruned index with folded tallies, or tree nodes built outside
     the index;
   - pre-register it;
   - implement it with `transient_tree_equals_the_indexed_tree_under_every_bound_case`;
   - run the quiet cell on the generated tree, with `linux-v6.12` as non-inferiority.
+  - **Done** with the pruned index and folded tallies: accepted on `linux-v6.12` and
+    `node-modules-dense` (exp-180, exp-181). The overnight plan re-pointed its deciding
+    job from the generated tree to both real trees, and the generated tree became a
+    screen.
 - [ ] H164 if the residual still sets the wall time; otherwise record it as not needed.
+  Split by the overnight plan: the tree route (Q9) stayed conditional and did not run,
+  and the summary route waits for 0.3.0.
 - [ ] Re-run the peer tables and refresh the matrix’s speed rows.
+  The real-tree tool cells were re-run on the overnight loop’s final head (exp-194’s
+  evidence); the generated-tree table and the matrix are not refreshed.
 - [ ] `cargo-semver-checks` against 0.2.1, goldens, and parity.
   If all three pass, run the release layer and checklist for 0.2.2.
 
@@ -261,7 +284,9 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
 - **H172:** the transient-versus-indexed tree differential across bounds, sort keys,
   metrics, ties at K, zero-size trees, and ignored files at the boundary.
 - **Performance** follows the loop:
-  - pre-registered, quiet host, 12 interleaved pairs, with placebos;
+  - pre-registered, quiet host, 12 interleaved pairs, with placebos (the overnight loop
+    raised this to 20 pairs for any candidate predicted below 10%, and every accept used
+    20);
   - accept at −3% with the 95% interval below zero;
   - instruction counts as the load-independent secondary.
 

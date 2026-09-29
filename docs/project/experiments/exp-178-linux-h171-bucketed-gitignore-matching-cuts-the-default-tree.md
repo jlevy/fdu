@@ -56,7 +56,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: docs/project/experiments/evidence/exp-178/run.json
+    run_artifact: docs/project/experiments/evidence/exp-178/run.json.gz
   results:
     - job: aggregate-summary
       start_state: cold
@@ -353,5 +353,5 @@ reviewable: `run-placebo-balanced.json.gz`, the `linux-balanced-1m` placebo scre
 Accepted. The default tree on the real source tree is 29.6% faster and the default
 summary 25.5% faster, with both placebos at zero and answers identical against the base
 and against git. `IGNORE_RULES_VERSION`, the snapshot format and the public API are
-unchanged; there is no new dependency and no `unsafe`. About 1,350 lines, most of them
-tests.
+unchanged; there is no new dependency and no `unsafe`. About 1,480 lines, about 1,350 of
+them tests.

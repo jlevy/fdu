@@ -265,7 +265,7 @@ dead end.
 | 182 | [Linux walker count after H172: three walkers regress, six and eight do not clear on both trees](#exp182--linux-walker-count-after-h172-three-walkers-regress-six-and-eight-do-not-clear-on-both-trees) | H165 | `default-tree` | +10.3% | ❌ rejected |
 | 183 | [Linux H180 summary walker trims cut the default summary 9% on node-modules-dense](#exp183--linux-h180-summary-walker-trims-cut-the-default-summary-9-on-nodemodulesdense) | H180 | `aggregate-summary` | -8.7% | ✅ accepted |
 | 184 | [Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12](#exp184--linux-h180-summary-walker-trims-cut-the-default-summary-6-and-the-blind-summary-13-on-linuxv612) | H180 | `aggregate-summary` | -5.6% | ✅ accepted |
-| 185 | [Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense](#exp185--linux-h169-native-directory-reader-cuts-the-summary-610-and-the-tree-4-on-nodemodulesdense) | H169 | `aggregate-summary` | -6.3% | ✅ accepted |
+| 185 | [Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense](#exp185--linux-h169-native-directory-reader-cuts-the-summary-610-and-the-controlson-tree-4-on-nodemodulesdense) | H169 | `aggregate-summary` | -6.3% | ✅ accepted |
 | 186 | [Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear](#exp186--linux-h169-native-directory-reader-cuts-the-summary-89-on-linuxv612-the-tree-does-not-clear) | H169 | `aggregate-summary` | -7.9% | ✅ accepted |
 | 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
 | 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
@@ -6089,7 +6089,7 @@ Cost to carry: 125 lines; no new dependencies.
 Full record:
 [`exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md`](../experiments/exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md)
 
-### exp-185 — Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense
+### exp-185 — Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense
 
 ✅ accepted · 2026-09-29 · H169 · commit `20933081`
 
@@ -6116,8 +6116,11 @@ mem::zeroed statx) behind cfg(all(target_os = linux, target_env = gnu)), each wi
 SAFETY argument; most lines are tests
 
 **Accepted:** quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25%
-[-14.02%, -1.23%], default summary -9.66%, default-tree -4.29% [-8.81%, -0.90%];
-serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4; answers identical.
+[-14.02%, -1.23%], short of the predicted -8% to -12% but clearing the rule; default
+summary -9.66%; default-tree with controls on -4.29% [-8.81%, -0.90%], while the
+default-tree result recorded here is the --no-controls pair, -1.67%; serial-portable
+placebo +0.10% includes zero; fstat 5,773 -> 4 in an strace of linux-v6.12; answers
+identical.
 
 Full record:
 [`exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md`](../experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md)
@@ -6145,8 +6148,10 @@ Other jobs, wall time: `default-tree` -1.8% (n.s.).
 Cost to carry: 1621 lines; no new dependencies; 4 unsafe blocks.
 
 **Accepted:** quiet 20-pair linux-v6.12 aggregate-summary --no-controls -7.90%
-[-9.55%, -4.74%], default summary -9.39%; default-tree -2.06% [-7.38%, +1.83%] does not
-clear (co-secondary); serial-portable placebo -0.29% includes zero.
+[-9.55%, -4.74%], narrowly short of the predicted -8% to -12% but clearing the rule;
+default summary -9.39%; default-tree with controls on -2.06% [-7.38%, +1.83%] does not
+clear (co-secondary), nor does the --no-controls pair recorded here, -1.79%;
+serial-portable placebo -0.29% includes zero.
 
 Full record:
 [`exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md`](../experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)
@@ -6300,7 +6305,7 @@ Full record:
 
 ### exp-192 — Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time
 
-❌ rejected · 2026-09-29 · H181, H182 · commit `d1c667f6`
+❌ rejected · 2026-09-29 · H181, H182 · commit `7233dad6`
 
 Control: 20933081 probe: H169 head
 
@@ -6584,7 +6589,7 @@ Baselines show one value because they measure a state rather than a change.
 | 176 | Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu | `default-tree` | 84.0 | — | — | 📏 baseline |
 | 181 | Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense | `default-tree` | 85.3 | 75.4 | -10.3% | ✅ accepted |
 | 183 | Linux H180 summary walker trims cut the default summary 9% on node-modules-dense | `aggregate-summary` | 73.5 | 67.5 | -8.7% | ✅ accepted |
-| 185 | Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
+| 185 | Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense | `aggregate-summary` | 70.3 | 66.7 | -6.3% | ✅ accepted |
 | 195 | Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense | `default-tree` | 126.9 | — | — | 📏 baseline |
 
 ### cargo-registry-src (11,142 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady

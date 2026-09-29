@@ -13,6 +13,7 @@ rejected anyway.
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -360,4 +361,15 @@ def write(document: Mapping[str, Any], destination: Path, *, profiles=()) -> Non
 
 
 def load(path: Path) -> Dict[str, Any]:
+    """Read a stored run document, plain (``*.json``) or gzipped (``*.json.gz``).
+
+    Committed run artifacts are stored gzipped: a run is hundreds of kilobytes of JSON
+    that nobody reviews line by line. Older records, and a run the harness has just
+    written, are plain. Every reader of a run comes through here, so each accepts both
+    forms. The suffix decides, so a ``.gz`` that is not gzip fails loudly instead of
+    being read as something else.
+    """
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as source:
+            return json.load(source)
     return json.loads(path.read_text(encoding="utf-8"))

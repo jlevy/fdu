@@ -4,7 +4,10 @@
 
 **Author:** fdu project, with Claude Code
 
-**Status:** Reviewed; queue ready to run.
+**Status:** Run complete, 2026-09-29. Six changes accepted (H171, H175, H172 with H176
+and F6e, H180, H169 phase 1, H183) and four rejected or closed (H165, H181 and H182 as
+one bundle, and H166 by its gate); the round confirmed end to end against the Q0 engine
+in exp-194 and exp-195. The [Status table](#status) is the record of the night.
 Bead `fdu-fkyf` under epic `fdu-8a8r`. This plan reviews and extends
 [the 0.2.2 Linux parity plan](plan-2026-09-29-linux-parity-0.2.2.md); where they
 disagree, this plan records why and the 0.2.2 plan’s rows are updated to match.
@@ -590,26 +593,30 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 | --- | --- | --- | --- |
 | Review and plan | `fdu-fkyf` | Done | This document; five source reviews and a Fable plan review |
 | Environment | `fdu-fkyf` | Done | Tools pinned, three subjects rebuilt with their recorded counts, one harness cell, push, `tbd sync` and `make check` (19 min, pass) all run |
-| Q0 re-baseline | `fdu-o4z5` | Cells done; side-by-side profiling running | exp-175: `linux-v6.12` default tree 181.9 ms (blind 89.9), summary 149.5 (blind 77.8), fdu 0.19 s against pdu default 0.079 s; exp-176: `node-modules-dense` default tree 84.0 ms, fdu 0.086 s against pdu default 0.077 s (−11%); exp-177: balanced 1.36 s tree, 1.23 s summary; a false A/A accept on the `linux-v6.12` summary set the noise rules |
+| Q0 re-baseline | `fdu-o4z5` | Done; the floor scoreboard not recorded | The side-by-side profile of fdu, pdu, diskus and dut is `e897031b`. `make perf-floor` ran once (09:19, on `f55d501c`), but 48 of its trials breached the quiet gate, so its scoreboard was screening-grade and was not recorded; no floor was re-derived after an accept. exp-175: `linux-v6.12` default tree 181.9 ms (blind 89.9), summary 149.5 (blind 77.8), fdu 0.19 s against pdu default 0.079 s; exp-176: `node-modules-dense` default tree 84.0 ms, fdu 0.086 s against pdu default 0.077 s (−11%); exp-177: balanced 1.36 s tree, 1.23 s summary; a false A/A accept on the `linux-v6.12` summary set the noise rules |
 | Q1 consumer counters | `fdu-hjo1` | Deferred | Walker attribution exists behind `FDU_SCAN_DIAGNOSTICS`; pattern counters ride with Q2 |
 | Q2 H171 revised, with H175 | `fdu-sdul`, `fdu-hb0u` | Accepted, merged `2379233a` | exp-178: `linux-v6.12` default tree −29.62%, summary −25.45%; exp-179: H175 another −3.31% on the tree; placebos at zero; glob evaluations 110 → 0.0019 per entry; answers identical to the base and to git |
 | Matcher survey | `fdu-p6vc` | Source half done | Findings in the bead’s notes; benchmark half queued after Q2 |
 | Q3 H165 walker count | `fdu-c11z` | Screened, rejected | exp-182: three walkers +10.25% and +21.95%; six and eight not better on both real subjects; `PORTABLE` unchanged |
 | Standing after Q4 | — | Measured 11:00 | Quiet tool cells on the H172 head: `linux-v6.12` fdu 0.084 s against pdu default 0.078 s (was 0.19 against 0.079 at Q0) and diskus 0.079 s; `node-modules-dense` fdu 0.076 s against pdu default 0.077 s and diskus 0.075 s (evidence under exp-180). Tonight’s 1.25× target is met |
 | Q4 H172 tree tier, with H176 | `fdu-dp98`, `fdu-dnfs` | Accepted, merged `0228ea42` | exp-180: `linux-v6.12` default tree −13.48% (91.8 → 80.2 ms); exp-181: `node-modules-dense` −10.30%; balanced screen −3.20% wall, peak RSS −79%; placebos at zero |
-| Q5 H174 listing digest | `fdu-sfse` | Queued | — |
+| Q5 H174 listing digest | `fdu-sfse` | Behind a profile gate; see the runbook’s Current Pickup | Not run; conditional on the consumer being busy for more than 80% of the walk |
 | Q6 H169 native reader | `fdu-leja` | Accepted (phase 1), merged `217861c1` | exp-185/186: `--no-controls` summary −6.25% and −7.90%, default summary −9.7% and −9.4%; default tree −4.29% on `node-modules-dense`, −2.06% (not clearing) on `linux-v6.12`; four audited `unsafe` expressions; public diagnostics fields deferred (`fdu-q7hf`) |
 | Q7 H166 wake one | `fdu-i6nk` | Closed by its gate, no build | Walkers starved 2.2% (`linux-v6.12`) and 0.6% (`node-modules-dense`) of their time |
 | H180 summary walker trims | `fdu-cfbf` | Accepted, merged `c2a75fe4` | exp-183: `node-modules-dense` default summary −8.68%; exp-184: `linux-v6.12` −5.63% (blind −12.76%); tree placebos at zero |
 | H181 conditional wakes, H182 hash sort | `fdu-uk0u`, `fdu-sp4m` | Rejected (exp-192), not merged | Bundle cell: +0.20% on `linux-v6.12`, −1.40% on `node-modules-dense`; the wake syscalls and consumer instructions fell, wall did not |
 | Standing after H169 | — | Measured 12:40, 20 pairs | `linux-v6.12` fdu 0.077 s against pdu default 0.072 s (−8%) and diskus 0.073 s; `node-modules-dense` fdu 0.080 s against pdu default 0.081 s (+1%) and diskus 0.082 s (+1%): parity on the dense tree (evidence under exp-185) |
 | H183 matcher pre-checks | `fdu-7ydi` | Accepted, merged `a5dbac0f` | exp-193: `linux-v6.12` default tree −7.62% [−10.41%, −5.28%]; placebos at zero; consumer instructions 436M → 238M, matching `memcmp` 101M → 0; review found no false rejection in a 576,000-pair differential |
-| Final standing | `fdu-o4z5` | Measured 15:55, 20 pairs, on the final head `ebc06c78` | `linux-v6.12`: pdu default +1% [−2%, +2%], pdu `--max-depth 2` −1% [−7%, +1%], diskus +2% [−1%, +9%]: level with all three, from 2.4 times pdu’s default at Q0. `node-modules-dense`: pdu default +1% [−2%, +4%], diskus −2% [−4%, +2%], pdu `--max-depth 2` −7% [−10%, −4%]. The host ran every tool near 0.12 s in this cell, with 85–88% of each tool’s CPU in the kernel. fdu used less CPU than pdu’s default and diskus on both trees (445 against 461 and 486 ms on `linux-v6.12`). It still makes more voluntary context switches: 608 against pdu default’s 128 (evidence under exp-194) |
-| End-to-end confirmation (exp-194, exp-195) | `fdu-o4z5` | Measured 16:15, 20 pairs; pre-registered 15:48 (`78980e4a`) | Q0 engine against the final head in one paired cell: `linux-v6.12` default tree −39.00% [−42.99%, −34.93%] (200.3 → 119.8 ms), summary −26.25%; `node-modules-dense` default tree −9.75% [−11.84%, −7.33%], summary −7.02%; `linux-balanced-1m` screen: tree −9.08%, summary −19.80%, tree peak RSS 292 → 62 MiB. Each median fell just short of its predicted range, in the host’s slower, kernel-heavy regime. `.gitignore` now costs the kernel tree 1.6% of its blind walk, from 52% |
-| Q8 H170 summary fold | `fdu-lz25` | Queued | — |
+| Final standing | `fdu-o4z5` | Measured 15:55, 20 pairs, on the final head `ebc06c78` | `linux-v6.12`: pdu default +1% [−2%, +2%], pdu `--max-depth 2` −1% [−7%, +1%], diskus +2% [−1%, +9%]: level with all three, from 2.4 times pdu’s default at Q0. `node-modules-dense`: pdu default +1% [−2%, +4%], diskus −2% [−4%, +2%], pdu `--max-depth 2` −7% [−10%, −4%]. The host ran every tool near 0.12 s in this cell, with 85–90% of each tool’s CPU in the kernel (85–88% for fdu, pdu’s default and diskus; 89–90% for pdu `--max-depth 2`). fdu used less CPU than pdu’s default and diskus on both trees (445 against 461 and 486 ms on `linux-v6.12`). It still makes more voluntary context switches: 608 against pdu default’s 128 (evidence under exp-194) |
+| End-to-end confirmation (exp-194, exp-195) | `fdu-o4z5` | Measured 16:15, 20 pairs; pre-registered 15:48 (`78980e4a`) | Q0 engine against the final head in one paired cell: `linux-v6.12` default tree −39.00% [−42.99%, −34.93%] (200.3 → 119.8 ms), summary −26.25%; `node-modules-dense` default tree −9.75% [−11.84%, −7.33%], summary −7.02%; `linux-balanced-1m` screen: tree −9.08%, summary −19.80%, tree peak RSS 292 → 62 MiB. Every median fell short of its predicted range, in the host’s slower, kernel-heavy regime: the default trees by 1 and 0.25 points, the default summaries by about 4 and 5. `.gitignore` now costs the kernel tree 1.6% of its blind walk, from 52% (ratios of medians; the paired Q0 blind arm was 31.98% faster than its controls-on arm) |
+| Q8 H170 summary fold | `fdu-lz25` | Behind a profile gate; see the runbook’s Current Pickup | Not run; it also waits on a Fable review against H62–H65 |
 | Q9 H164 tree route | `fdu-emqf` | Conditional | — |
+| Q10 micro bundle | — | Not run as a bundle | Folded into Q4 by amendment 9. The post-walk passes were fused inside H172’s tier, and H180 removed the summary route’s per-entry path clone (exp-183, exp-184); the pre-sized `.gitignore` read and the report’s per-child `PathBuf` and `String` were not measured |
+| Q11 PGO re-screen | `fdu-pdne` | Not run | The round ended at its eight-hour time box; the release profile is unchanged |
+| Q12 standing and handoff | `fdu-o4z5` | Partly done | Tool cells re-run on the final head (Final standing above); evidence report and Current Pickup refreshed (`55f5b42e`, `057453d4`, `0c8131fd`). The final Fable review of the night’s record was not run: the round ended at its time box |
+| Post-round utilization profile | `fdu-j4p7` | Filed, open | fdu keeps fewer cores busy than pdu’s default (3.65 against 3.81 on `linux-v6.12`, 3.54 against 3.72 on `node-modules-dense`) and makes more voluntary context switches (608 against 128); profile the serial tail after the walk and the handoffs before the next candidate, first in the runbook’s Current Pickup |
 | Harness invalid-sample verdict | `fdu-c2c6` | Fixed, `8a58d432` | INCONCLUSIVE for any invalid sample; the recorder refuses such an accept |
-| Automount flag | `fdu-puk7` | Filed | Folded into Q6 on Linux |
+| Automount flag | `fdu-puk7`, `fdu-d2fn` | Closed for the native reader (exp-185) | Remaining routes (musl builds, the serial walk, reconciliation): `fdu-d2fn` |
 | BOM and NUL divergence | `fdu-ifci` | Filed | Not tonight: it changes answers |
 
 ## Open Questions
@@ -631,7 +638,8 @@ Times are UTC on 2026-09-29; the run started at 08:10.
 - [Design principles](../../architecture/fdu-design-principles.md) and
   [engine architecture](../../architecture/fdu-engine-architecture.md)
 - Beads: `fdu-fkyf`, epic `fdu-8a8r`, `fdu-sdul`, `fdu-dp98`, `fdu-emqf`, `fdu-c11z`,
-  `fdu-i6nk`, `fdu-leja`, `fdu-lz25`, `fdu-p6vc`, `fdu-puk7`, `fdu-ifci`.
+  `fdu-i6nk`, `fdu-leja`, `fdu-lz25`, `fdu-p6vc`, `fdu-puk7`, `fdu-d2fn`, `fdu-ifci`,
+  `fdu-j4p7`.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

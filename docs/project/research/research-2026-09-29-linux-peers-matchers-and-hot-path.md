@@ -11,7 +11,7 @@ and its amendments, and it is the source-reading half of the matcher survey
 (`fdu-p6vc`). It makes no new timing claim: wall figures are cited from recorded cells
 or marked as screens.
 Beads: `fdu-fkyf`, `fdu-p6vc`, `fdu-sdul`, `fdu-hb0u`, `fdu-dnfs`, `fdu-sfse`,
-`fdu-leja`, `fdu-puk7`, `fdu-ifci`.
+`fdu-leja`, `fdu-puk7`, `fdu-d2fn`, `fdu-ifci`.
 
 ## Question
 
@@ -464,6 +464,7 @@ Only the merge into the parent depends on anything outside the listing.
    Folded into H172’s tier.
 4. A walker count below the core count was never measured for the consumer-bound
    default. Now the Q3 screen, and H178 as the self-adjusting form.
+   (Later on 2026-09-29: the Q3 screen ran on the H172 head and was rejected, exp-182.)
 5. `statx` without `AT_NO_AUTOMOUNT` (section 5).
 6. With counters on, each bump copies a 424-byte `Cell<Counts>` in and out, including on
    every allocation (`counters.rs:859-887`), so counter-run walls are not comparable
@@ -757,11 +758,13 @@ These are adopted in
    1.15 times the `--no-controls` arm for the revision, 1.45 for the prototype.
 2. **Demote H173** to a stateless per-listing subset, run only on a `**`-heavy subject.
 3. **Q4: H172 with H176 and the fused post-walk passes.**
-4. **Q6: H169 phase 1**, with `AT_NO_AUTOMOUNT`, closing `fdu-puk7` on Linux.
+4. **Q6: H169 phase 1**, with `AT_NO_AUTOMOUNT`, closing `fdu-puk7` on the native
+   reader’s path (glibc); musl, serial and reconciliation routes remain (`fdu-d2fn`).
    Parent-relative opens wait for an fd budget; fd-derived directory attributes are
    H179.
 5. **The next night:** H177 after H169, H178 as the self-adjusting walker count, and
-   H180, the summary route’s walker trims from section 4.
+   H180, the summary route’s walker trims from section 4. (Later on 2026-09-29: H180 ran
+   the same night and was accepted, exp-183 and exp-184.)
 6. **Fix `fdu-ifci` separately,** with recorded git verdicts: it changes answers.
 7. **The matcher benchmark half** uses published crates past the cool-off, on the clean
    tree, the tree with virtual build outputs, a many-rules synthetic, and adversarial 16

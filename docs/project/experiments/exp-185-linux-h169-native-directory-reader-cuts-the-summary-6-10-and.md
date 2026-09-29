@@ -1,5 +1,5 @@
 ---
-title: "Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense"
+title: "Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense"
 softschema:
   contract: fdu.performance:Experiment/v1
   schema: experiment.schema.yaml
@@ -7,7 +7,7 @@ softschema:
   status: enforced
 experiment:
   id: exp-185
-  title: "Linux H169 native directory reader cuts the summary 6-10% and the tree 4% on node-modules-dense"
+  title: "Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense"
   date: "2026-09-29"
   hypotheses:
     - H169
@@ -58,7 +58,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: docs/project/experiments/evidence/exp-185/run.json
+    run_artifact: docs/project/experiments/evidence/exp-185/run.json.gz
   results:
     - job: aggregate-summary
       start_state: cold
@@ -272,7 +272,7 @@ experiment:
     primary_job: aggregate-summary
     primary_metric: wall_ns
     change_pct: -6.251
-    reason: "quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25% [-14.02%, -1.23%], default summary -9.66%, default-tree -4.29% [-8.81%, -0.90%]; serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4; answers identical"
+    reason: "quiet 20-pair node-modules-dense aggregate-summary --no-controls -6.25% [-14.02%, -1.23%], short of the predicted -8% to -12% but clearing the rule; default summary -9.66%; default-tree with controls on -4.29% [-8.81%, -0.90%], while the default-tree result recorded here is the --no-controls pair, -1.67%; serial-portable placebo +0.10% includes zero; fstat 5,773 -> 4 in an strace of linux-v6.12; answers identical"
     commit: "20933081"
     kept: candidate
 ---
@@ -307,6 +307,12 @@ Pre-registered before any timed sample (`a9e963bf`):
 Quiet, 20 pairs, no invalid samples.
 Control: `70c2725c` probe (the H180 engine).
 
+This record’s frontmatter results are the `--no-controls` pair the deciding job used
+(`h169-blind_vs_control-blind`): the `aggregate-summary` result is the deciding job, and
+the `default-tree` result is `default-tree --no-controls`, −1.67%. The controls-on rows
+below, and the title’s tree 4%, come from the run’s controls-on arms (`h169_vs_control`
+in `run.json`).
+
 | Job | Control | H169 | Change |
 | --- | ---: | ---: | --- |
 | `aggregate-summary --no-controls` (deciding) | 70.3 ms | 66.7 ms | **−6.25% [−14.02%, −1.23%]** |
@@ -318,7 +324,8 @@ Control: `70c2725c` probe (the H180 engine).
 `strace -c` of the default command on `linux-v6.12`: `fstat` 5,773 → 4, `getdents64`
 11,540 → 11,538, `statx` and the opened paths unchanged.
 Every per-entry `statx` now passes `AT_NO_AUTOMOUNT`, which closes `fdu-puk7` on this
-path.
+path. musl builds, the serial walk and reconciliation still stat through std without it
+(`fdu-d2fn`).
 
 **Answers.** The product command line matched the H180 head byte for byte in 171
 comparisons over the three subjects.
@@ -332,12 +339,21 @@ check passes.
 **Supplementary runs.** Beside the primary artifact, gzipped to keep the diff
 reviewable: `run-h169-tools-linux-v6.12.json.gz`, the tool standing after H169 on
 `linux-v6.12`; `run-h169-tools-node-modules-dense.json.gz`, the tool standing after H169
-on `node-modules-dense`; `run-placebo-serial.json.gz`, the `--threads 1` serial placebo.
+on `node-modules-dense`; `run-placebo-serial.json.gz`, the `--threads 1` serial placebo;
+`run-tools-linux-balanced-1m.json.gz`, the tool standing after H169 on
+`linux-balanced-1m`. That last cell ran the `20933081` build, quiet, at 12 pairs with no
+invalid samples. fdu took 1.18 s. Against the adjacent fdu run, pdu’s default took 2.9%
+longer [+0.7%, +4.1%], diskus 6.0% longer [+4.9%, +6.6%], and pdu with `--max-depth 2`
+3.5% less time [−4.8%, −0.0%]. Peak RSS was 58.2 MiB for fdu and 93.3 MiB for pdu’s
+default; for pdu `--max-depth 2` and diskus the harness reports only a bound, at most
+39.1 MiB, its own high-water mark.
 
 ## Decision
 
 Accepted on the deciding job, with the placebo at zero.
-The default summary gains 9.7%. The default tree gains 4.3% here, below the −6% to −8%
+The deciding job’s −6.25% clears the rule but falls short of its predicted −8% to −12%
+on this subject, as the −7.90% on `linux-v6.12` does, narrowly (exp-186). The default
+summary gains 9.7%. The default tree, controls on, gains 4.3% here, below the −6% to −8%
 prediction: the tree route stats every entry, directories included, so the saving is a
 smaller share of its work.
 About 1,600 lines, most of them tests; four `unsafe` expressions behind

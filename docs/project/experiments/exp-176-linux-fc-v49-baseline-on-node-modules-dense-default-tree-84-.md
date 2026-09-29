@@ -55,7 +55,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: docs/project/experiments/evidence/exp-176/run.json
+    run_artifact: docs/project/experiments/evidence/exp-176/run.json.gz
   results:
     - job: aggregate-summary
       start_state: cold
@@ -306,8 +306,8 @@ directories.
 
 - A/A: `default-tree` +3.86% [−4.28%, +7.86%]; `aggregate-summary` −0.27%
   [−5.97%, +2.25%]. Both include zero.
-- Controls on against off: `default-tree` +0.65% [−2.61%, +5.79%], as predicted with no
-  rules to match.
+- Controls off against on (`control-blind_vs_control`): `default-tree` +0.65%
+  [−2.61%, +5.79%], as predicted with no rules to match.
 
 Quiet tool cell, `fdu-default-tree` contract, 12 pairs, no invalid samples or
 mismatches:

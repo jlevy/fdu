@@ -55,7 +55,7 @@ experiment:
     campaign_stage: exploratory
     confidence_interval: paired-bootstrap-median-95-v1
     stopping_rule: fixed-N-no-optional-stopping-v1
-    run_artifact: docs/project/experiments/evidence/exp-194/run.json
+    run_artifact: docs/project/experiments/evidence/exp-194/run.json.gz
   results:
     - job: aggregate-summary
       start_state: cold
@@ -304,6 +304,8 @@ Quiet, 20 pairs, no invalid samples.
 
 What `.gitignore` handling costs the default tree fell from 52% of the blind walk (200.3
 against 132.1 ms) to 1.6% (119.8 against 117.9 ms).
+Both are ratios of medians; paired, the Q0 engine’s blind arm was 31.98% faster than its
+controls-on arm (`q0-blind_vs_q0`).
 
 On `linux-balanced-1m`, a screen at 12 pairs, the default tree fell 9.08%
 [−9.80%, −7.86%] (1,173.8 to 1,082.8 ms) and the default summary 19.80%
@@ -311,12 +313,12 @@ On `linux-balanced-1m`, a screen at 12 pairs, the default tree fell 9.08%
 Peak RSS on the tree fell from 292 to 62 MiB.
 
 The host ran in its slower regime in this cell: the Q0 default tree took 200.3 ms here
-against 181.9 ms in exp-175, and the tool standing measured beside it put every tool
-near 0.12 s, with 85–88% of each tool’s CPU in the kernel.
-Kernel time that no change touched is a larger share of wall in this regime, which
-dilutes every relative saving.
-Both medians fell just short of their predicted ranges: the tree by one point, and the
-summary by four.
+against 181.9 ms in exp-175, and the tool standing measured just before it put every
+tool near 0.12 s, with 85–90% of each tool’s CPU in the kernel (85–88% for fdu, pdu’s
+default and diskus; 89–90% for pdu `--max-depth 2`). Kernel time that no change touched
+is a larger share of wall in this regime, which dilutes every relative saving.
+Both medians fell short of their predicted ranges: the tree by one point, and the
+summary by about four.
 
 **Answers.** The product command line at the final head matched the H183 build byte for
 byte in 54 comparisons over the three subjects.

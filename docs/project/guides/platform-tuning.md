@@ -34,7 +34,7 @@ metadata layout move as a unit.
 | Platform | Status | What is different about it |
 | --- | --- | --- |
 | macOS / APFS | Primary; most ledger experiments, counted in its regime coverage table | `getattrlistbulk` returns enumeration and complete stat-tier metadata per directory, so the per-entry metadata wait the portable path pays is largely hidden |
-| Linux / ext4 | A minority of ledger experiments, all on virtualized hosts | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor |
+| Linux / ext4 | A minority of ledger experiments, all on virtualized hosts | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor. **Amended 2026-09-29:** a native reader on those same calls still paid off above that floor. H169 phase 1 (names used in place from a reused `getdents64` buffer, no `opendir` `fstat`) was accepted on glibc, −6.25% and −7.90% on the `--no-controls` summary ([exp-185](../experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md), [exp-186](../experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md)); what it saved is user-space per-entry work and glibc’s per-directory `fstat`, not kernel time per entry |
 | Windows / NTFS | CI-tested for correctness; unmeasured for speed | — |
 
 ### Host
