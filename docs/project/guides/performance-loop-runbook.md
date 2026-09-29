@@ -960,11 +960,12 @@ indexed tree’s mean −6.9%. **H157 rejected** on its probe job (exp-161, −2
 rejected** (exp-162): consumer `futex` wakes 106k → 18k, wall flat.
 **H159 accepted** (`fdu-578e`, [#150](https://github.com/jlevy/fdu/pull/150), in 0.2.1):
 the index builder returns each drained listing to the walker that allocated it.
-No effect on the directory-sparse `linux-v6.12` (exp-188, exp-189); `default-tree`
-−8.61% [−19.47%, −5.04%] on the real directory-dense `node-modules-dense` (exp-190), as
-its per-directory mechanism predicts; a screen on `linux-balanced-1m` measured −10.63%.
-An allocator dependency still comes only after the structural fixes are measured (H74,
-H85).
+No `default-tree` effect on the directory-sparse `linux-v6.12` (exp-188, exp-189), where
+exp-189’s `cold-scan-index` read +3.22% [+1.21%, +12.87%], a regression interval;
+`default-tree` −8.61% [−19.47%, −5.04%] on the real directory-dense `node-modules-dense`
+(exp-190), as its per-directory mechanism predicts; a screen on `linux-balanced-1m`
+measured −10.63%. An allocator dependency still comes only after the structural fixes
+are measured (H74, H85).
 
 **H160 accepted** (exp-163): `--cache auto` no longer persists a one-shot metadata
 report, which no later one-shot report reads; `--cache on` keeps the write.

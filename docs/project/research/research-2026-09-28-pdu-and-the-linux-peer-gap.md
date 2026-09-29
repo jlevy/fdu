@@ -629,13 +629,15 @@ rules better, and whether to accept a dependency is the maintainer’s decision.
 
 ## Recommendations
 
-1. **H159 is decided** (updated 2026-09-29): no effect on the sparse `linux-v6.12`
-   (exp-188, exp-189), accepted on the directory-dense `node-modules-dense` (exp-190,
-   −8.61%); #150 merged into 0.2.1.
-2. **Build H171 next, then H164 if still needed** (updated 2026-09-29). The
-   [design study](research-2026-09-29-linux-default-tree-point-solution.md) found the
-   remaining default-path cost is a linear scan that bucketed matching (H171) removes;
-   H164 then targets the residual, and H165 and H170 still depend on it.
+1. **H159 is decided** (updated 2026-09-29): no `default-tree` effect on the sparse
+   `linux-v6.12` (exp-188, exp-189; exp-189’s `cold-scan-index` interval, +3.22%
+   [+1.21%, +12.87%], is a regression interval), accepted on the directory-dense
+   `node-modules-dense` (exp-190, −8.61%); #150 merged into 0.2.1.
+2. **Take the build order from the runbook** (2026-09-29). The order now lives in
+   [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27); as
+   of this brief, H171 came next, from the
+   [design study](research-2026-09-29-linux-default-tree-point-solution.md), whose
+   outcomes are registry rows [H171–H173](../guides/performance-loop.md#hypotheses).
 3. **Run H166 and H167 as the index-tier pair** for the generated tree: they address the
    scheduling part and the cross-thread-free part of the user-space gap.
 4. **Treat H169 as the Linux-native lever** after those, since it touches a native
