@@ -97,6 +97,7 @@ Prefer the doc comment: it is what the next person editing the value will read.
 | `RECONCILE_WAVE_DIRECTORIES` | 1,024 | M1 Pro; 4,096 refuted at 60k (exp-031) | **None** |
 | `DEFAULT_BATCH_SIZE` | 1,024 | M1 Pro | **None** |
 | `macos_bulk::BUFFER_BYTES` | 64 KiB | M1 Pro; 256 KiB refuted (exp-029/039) | Not applicable — macOS only |
+| `linux_dents::CHUNK_BYTES` | 64 KiB | Never measured; mirrors `macos_bulk::BUFFER_BYTES`, twice glibc’s 32 KiB `readdir` request | **None yet.** H169 phase 1 measures the reader, not this size |
 | `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees; deciding-scale metabrowser read-call mix ~2/file (exp-121) | **None.** A larger chunk cannot clear 3% wall: almost every admitted file is already one data read plus EOF |
 | Global allocator | system | Never chosen by measurement | Measured, not adopted. mimalloc wins **only the aggregate tier** (−23.0% [−28.4%, −16.7%]); the index tier and snapshot load both span zero. Costs +139% peak RSS on that tier and is unmeasured on macOS, where the system allocator differs. See H74/H85 |
 
@@ -153,6 +154,22 @@ Future sweeps must still record the bounded policy history: otherwise a threshol
 describes an unknown mixture of decisions.
 The characterization, experiments, and no-change decision are in
 [the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
+
+### The Linux native reader is invisible to backend diagnostics
+
+The Linux reader (`scan/linux_dents.rs`, glibc builds) has no fields in
+`ScanBackendDiagnostics` in the 0.2 series, because adding them changes a public struct,
+and that waits for 0.3.0. Its listings are counted in neither portable field, and
+`unavailable_reason` still describes only the macOS fields.
+On Linux, the directories it served are therefore `dirs_read` less
+`portable_directory_reads`, and a directory it declined is counted once, as a portable
+attempt.
+
+The realtree harness’s claim-grade backend check compares `dirs_read` with the portable
+reads off macOS, so it refuses a Linux `--diagnostics` job whose walk the reader served.
+No Linux job in the loop requires scan diagnostics: the only job that does,
+`adaptive-scan-index`, also requires the macOS backend counts, so it cannot pass on
+Linux in any case.
 
 ## How a divergence is expressed in code
 

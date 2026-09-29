@@ -13,7 +13,10 @@
 //! measured `getattrlistbulk` backend that returns directory entries and stat-tier
 //! metadata together. Unsupported filesystems, malformed results, mount points, and
 //! firmlinks fail closed to the portable path for the complete containing directory.
-//! Every backend produces the same [`Observation`] contract.
+//! On Linux with glibc they first try a reader that lists with raw `getdents64` and stats
+//! with `statx` against the listing's descriptor; an open or enumeration failure, a
+//! malformed record, or a kernel without `statx` falls back the same way. Every backend
+//! produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
@@ -41,6 +44,11 @@ use crate::stored_state::{ControlTierIdentity, EntryScope, EntryTierIdentity, Sn
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos_bulk;
+
+// glibc builds only: `libc` defines `struct statx` for glibc, not for default musl.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[allow(unsafe_code)]
+mod linux_dents;
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
@@ -777,6 +785,12 @@ pub struct WorkerPolicyDiagnostics {
 }
 
 /// Directory enumeration backends used by one scan.
+///
+/// The Linux native reader (`getdents64` and `statx`, glibc builds) has no fields here
+/// yet. Its listings are counted in neither portable field, so on Linux the directories
+/// it served are the report's `dirs_read` less `portable_directory_reads`; a directory it
+/// declined is counted once, as a portable attempt. `unavailable_reason` still describes
+/// only the macOS fields.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScanBackendDiagnostics {
     /// Portable `read_dir` calls attempted.
@@ -1464,14 +1478,14 @@ fn missing_as_none<T>(lookup: std::io::Result<T>) -> std::io::Result<Option<T>> 
     }
 }
 
-/// Whether a test hook observes lookups or listings under `path`, which a bulk read would
-/// not make.
-#[cfg(all(test, target_os = "macos"))]
+/// Whether a test hook observes lookups or listings under `path`, which a native read
+/// would not make.
+#[cfg(all(test, any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))))]
 fn walk_hook_covers(path: &Path) -> bool {
     walk_hook(path).is_some()
 }
 
-#[cfg(all(not(test), target_os = "macos"))]
+#[cfg(all(not(test), any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))))]
 const fn walk_hook_covers(_path: &Path) -> bool {
     false
 }
@@ -3452,6 +3466,8 @@ fn walk_worker_with<E: WalkEmission>(
     let mut consumer_gone = false;
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    let mut dents_reader = linux_dents::Reader::new();
 
     'walk: while let Some(claim) = queue.claim(&mut claimed, &mut report.attribution) {
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
@@ -3502,6 +3518,59 @@ fn walk_worker_with<E: WalkEmission>(
                 }
                 if let Some(diagnostics) = diagnostics {
                     diagnostics.macos_bulk_fell_back();
+                }
+            }
+            // Recorded in no backend diagnostic field: `ScanBackendDiagnostics` has none for
+            // this reader yet, so a native listing is neither a portable attempt nor a
+            // portable read, and `dirs_read` less the portable reads is what it served.
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            {
+                let policy = linux_dents::StatPolicy {
+                    skip_dir_symlink_stat: emission.skip_dir_symlink_stat(),
+                    one_filesystem: config.one_filesystem,
+                };
+                // Plain `if`, not `bool::then(|| …)`: the listing borrows the reader for the
+                // loop.
+                let listing = if walk_hook_covers(&abs_dir) {
+                    None
+                } else {
+                    dents_reader.read(&abs_dir, policy)
+                };
+                if let Some(listing) = listing {
+                    report.dirs_read += 1;
+                    for entry in listing {
+                        let (kind, attrs) = match entry.outcome {
+                            linux_dents::Outcome::Observed { kind, attrs } => (kind, attrs),
+                            linux_dents::Outcome::Failed(error) => {
+                                // The same path std's `DirEntry::path` builds: the listing
+                                // path joined with the name.
+                                report.errors.push(Error::io(abs_dir.join(entry.name), error));
+                                continue;
+                            }
+                        };
+                        if !emission.record_entry(
+                            root,
+                            &rel_dir,
+                            depth,
+                            region,
+                            entry.name,
+                            kind,
+                            attrs,
+                            root_dev,
+                            config,
+                            &mut directory,
+                            &mut discovered,
+                            &mut report,
+                            sender,
+                            &mut chunk_send_ns,
+                            diagnostics.map(AsRef::as_ref),
+                        ) {
+                            consumer_gone = true;
+                            break 'walk;
+                        }
+                    }
+                    emission.finish_directory(directory);
+                    continue;
                 }
             }
 
@@ -7340,15 +7409,15 @@ mod tests {
                 "every entry is stated at {threads:?}: {observed_stats} < {}",
                 report.entries
             );
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
             {
                 let observed_enum = after.dir_enumeration_calls - before.dir_enumeration_calls;
                 // The serial walker is the portable `read_dir` path, which cannot see
-                // getdents multiplicity. Enumeration calls are a bulk-backend fact.
+                // getdents multiplicity. Enumeration calls are a native-backend fact.
                 if threads != Some(1) {
                     assert!(
                         observed_enum >= report.dirs_read,
-                        "every successful bulk directory issues at least one enumeration \
+                        "every successful native directory issues at least one enumeration \
                          call at {threads:?}: {observed_enum} < {}",
                         report.dirs_read
                     );
@@ -8281,6 +8350,28 @@ mod tests {
             assert_eq!(diagnostics.backend.macos_bulk_fallbacks, None);
             assert_eq!(
                 diagnostics.backend.unavailable_reason,
+                Some("macOS bulk directory enumeration is unavailable on this platform")
+            );
+        }
+
+        // The Linux native reader has no backend fields: a parallel walk's native
+        // listings are counted in neither portable field, and every portable attempt is
+        // a directory it declined or never tried.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        {
+            let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+            let (report, diagnostics) =
+                scan_with_diagnostics(dir.path(), &config, &mut |_| {}).expect("diagnostic scan");
+            let backend = &diagnostics.backend;
+            assert!(report.is_complete(), "{:?}", report.errors);
+            assert_eq!(backend.portable_attempts, backend.portable_directory_reads);
+            assert!(
+                backend.portable_directory_reads < report.dirs_read,
+                "native listings are not portable reads: {backend:?}, {} read",
+                report.dirs_read
+            );
+            assert_eq!(
+                backend.unavailable_reason,
                 Some("macOS bulk directory enumeration is unavailable on this platform")
             );
         }
