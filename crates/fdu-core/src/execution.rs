@@ -428,7 +428,7 @@ pub fn throughput_rates(
 /// answers it like any other summary.
 ///
 /// A tree takes a folded index under the same route, policy, and analysis conditions,
-/// when [`TreeRetention::for_request`] finds the tree projection is its only reader and
+/// when `TreeRetention::for_request` finds the tree projection is its only reader and
 /// its share threshold bounds the rows it can show. Every directory is kept, since the
 /// tree shows directories by their subtree totals; only files too small to be shown are
 /// folded into their directory. The default `fdu PATH` is such a tree: at its 1% share
