@@ -641,6 +641,13 @@ pub(crate) fn execute(
     collect_scan_diagnostics: bool,
     progress: Option<&Progress>,
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave, Option<scan::ScanDiagnostics>)> {
+    // Every index this returns is one its caller may keep, persist, or mutate, which a
+    // folded index must never be: only the one-shot tree arm builds one, and it never
+    // comes here. Nothing below builds one either (`scan::scan_into_folded_index`).
+    debug_assert!(
+        !matches!(plan.retained, execution::RetainedState::Tree(_)),
+        "a folded-index plan is executed only by the one-shot report that made it"
+    );
     let scan_config =
         ScanConfig { progress: progress.cloned(), ..basis.scope.scan_config(plan.delivery()) };
     let analysis_request = content::AnalysisRequest {

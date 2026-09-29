@@ -27,6 +27,7 @@ use crate::engine_contract::{
     Attrs, Commit, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, PathState,
     Result, ScanScope,
 };
+use crate::execution::TreeRetention;
 use crate::index::{
     DetachedIndexBuilder, Index, IndexHandle, ReconcileErrors, ReconcileFinish,
     collect_child_expectations,
@@ -2665,9 +2666,9 @@ fn scan_concurrent_detached(
     pool: WorkerPool,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
     policy: WorkerPolicyExperiment,
+    retention: Option<TreeRetention>,
 ) -> Result<(ScanReport, DetachedIndexBuilder)> {
-    let mut builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-        .with_control_limits(config.control_limits);
+    let mut builder = detached_builder(root, config, retention);
     let mut build_error = None;
     let output = {
         let mut consume = |message| match message {
@@ -4739,11 +4740,27 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
     });
 }
 
+/// The private builder a detached walk consumes its listings into: a full index, or with
+/// `retention` a folded one.
+fn detached_builder(
+    root: &Path,
+    config: &ScanConfig,
+    retention: Option<TreeRetention>,
+) -> DetachedIndexBuilder {
+    let builder = DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
+        .with_control_limits(config.control_limits);
+    match retention {
+        Some(retention) => builder.folding(retention),
+        None => builder,
+    }
+}
+
 fn scan_detached_directories(
     root: &Path,
     config: &ScanConfig,
     collect_diagnostics: bool,
     policy: WorkerPolicyExperiment,
+    retention: Option<TreeRetention>,
 ) -> Result<(ScanReport, DetachedIndexBuilder, Option<ScanDiagnostics>)> {
     if let Some(progress) = &config.progress {
         progress.enter(crate::ProgressPhase::Scanning);
@@ -4773,15 +4790,21 @@ fn scan_detached_directories(
         }
         return Ok((
             ScanReport::default(),
-            DetachedIndexBuilder::new(root, config.scope(), config.types_shared())
-                .with_control_limits(config.control_limits),
+            detached_builder(root, config, retention),
             diagnostics.as_ref().map(|value| value.finish()),
         ));
     }
 
     let walk_started = crate::counters::enabled().then(std::time::Instant::now);
-    let (output, builder) =
-        scan_concurrent_detached(root, config, root_dev, pool, diagnostics.as_ref(), policy)?;
+    let (output, builder) = scan_concurrent_detached(
+        root,
+        config,
+        root_dev,
+        pool,
+        diagnostics.as_ref(),
+        policy,
+        retention,
+    )?;
     // Also reached by a walk no worker left, such as a single-threaded one, so every
     // cold index ends its walk in the same phase.
     if let Some(progress) = &config.progress {
@@ -4829,9 +4852,43 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
         )?;
         return Ok((index, report));
     }
-    let (output, builder, _diagnostics) =
-        scan_detached_directories(&root, config, false, WorkerPolicyExperiment::ShippedOneShot)?;
+    let (output, builder, _diagnostics) = scan_detached_directories(
+        &root,
+        config,
+        false,
+        WorkerPolicyExperiment::ShippedOneShot,
+        None,
+    )?;
     Ok(consolidate_detached_index(output, builder))
+}
+
+/// Walk the canonical `root` into a folded index that keeps what `retention` names
+/// ([`crate::execution::RetainedState::Tree`]), with the diagnostic trace when asked.
+///
+/// The same detached walk and builder as [`scan_into_index`], which a folded index
+/// differs from only in the files it keeps. Crate-private because a folded index answers
+/// one tree report and nothing else; its one caller reports from it and frees it.
+pub(crate) fn scan_into_folded_index(
+    root: &Path,
+    config: &ScanConfig,
+    retention: TreeRetention,
+    collect_diagnostics: bool,
+) -> Result<(Index, ScanReport, Option<ScanDiagnostics>)> {
+    config.validate()?;
+    debug_assert_eq!(
+        config.population,
+        crate::query::IgnoredEntries::Include,
+        "a folded index keeps the whole population; a narrowed one takes the scanner"
+    );
+    let (output, builder, diagnostics) = scan_detached_directories(
+        root,
+        config,
+        collect_diagnostics,
+        WorkerPolicyExperiment::ShippedOneShot,
+        Some(retention),
+    )?;
+    let (index, report) = consolidate_detached_index(output, builder);
+    Ok((index, report, diagnostics))
 }
 
 fn scan_into_index_with_scanner(
@@ -4898,7 +4955,8 @@ pub fn scan_into_index_with_policy_diagnostics(
             scan_into_index_with_scanner(&root, config, true, policy)?;
         return Ok((index, report, diagnostics.expect("diagnostic scanner creates a recorder")));
     }
-    let (output, builder, diagnostics) = scan_detached_directories(&root, config, true, policy)?;
+    let (output, builder, diagnostics) =
+        scan_detached_directories(&root, config, true, policy, None)?;
     let (index, report) = consolidate_detached_index(output, builder);
     Ok((index, report, diagnostics.expect("diagnostic detached scan creates a recorder")))
 }

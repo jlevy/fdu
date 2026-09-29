@@ -261,6 +261,7 @@ fn engine_fingerprint_under(ignore_rules_version: u64) -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
+    debug_assert!(!index.is_folded(), "a folded index omits files, so it is never persisted");
     if !crate::stored_state::entries_writable(index) {
         return Err(Error::Snapshot(
             "refusing to persist an index that is stale, reconciling, or incomplete".into(),

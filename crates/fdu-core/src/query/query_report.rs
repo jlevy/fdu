@@ -1726,6 +1726,7 @@ fn walk(
     identity: NameIdentity,
     directories: Option<&BTreeMap<EntryId, query_subtrees::SubtreeValues>>,
 ) -> Walked {
+    debug_assert!(!index.is_folded(), "a folded index keeps too few files to be filtered");
     let observed = index.observes_controls();
     let mut walked = Walked {
         observed,
@@ -2039,6 +2040,7 @@ fn extension_rows(
     query: &Query,
     walked: Option<&Walked>,
 ) -> (Vec<TypeRow>, usize, usize) {
+    debug_assert!(!index.is_folded(), "a folded index keeps no extension tallies (H176)");
     // Extension partitions cannot attribute an unknown member to one bucket from the
     // roll-up alone, so withhold their ignored subtotals until the scope is known.
     let observed = match walked {
@@ -2782,6 +2784,7 @@ fn metric_sort_values(
 
 /// Every entry in the index, for an unfiltered files view.
 fn every_entry(index: &Index) -> Vec<FileRow> {
+    debug_assert!(!index.is_folded(), "a folded index keeps too few files to list");
     let mut rows = Vec::new();
     let mut stack: Vec<(EntryId, PathBuf)> = vec![(EntryId::ROOT, PathBuf::new())];
     while let Some((id, path)) = stack.pop() {
@@ -2874,34 +2877,76 @@ fn tree_node(
     (Some(root), Vec::new())
 }
 
+/// The files a folded index counted in one directory without keeping them, as the rows
+/// of one file each that a share threshold omits there: every such file is below it.
+#[derive(Clone, Copy)]
+struct FoldedRows {
+    entries: usize,
+    files: u64,
+    bytes: u64,
+    allocated: u64,
+    /// Their ignored part, `None` exactly where a kept file's row in the same directory
+    /// would carry no classification ([`Index::children_classification_known`]).
+    ignored: Option<IgnoredSize>,
+}
+
+impl FoldedRows {
+    /// No rows at all.
+    const NONE: Self = Self {
+        entries: 0,
+        files: 0,
+        bytes: 0,
+        allocated: 0,
+        ignored: Some(IgnoredSize { bytes: 0, allocated: 0 }),
+    };
+
+    /// The folded rows of directory `id` at `path`, if its index folded any there.
+    fn of(index: &Index, id: EntryId, path: &Path) -> Option<Self> {
+        let folded = index.folded_children(id)?;
+        Some(Self {
+            entries: usize::try_from(folded.files).unwrap_or(usize::MAX),
+            files: folded.files,
+            bytes: folded.bytes,
+            allocated: folded.allocated,
+            ignored: index.children_classification_known(path).then_some(folded.ignored),
+        })
+    }
+}
+
 fn record_omission(
     node: &mut TreeNode,
     reason: TreeOmissionReason,
     rows: &[(TreeNode, EntryId)],
+    folded: Option<FoldedRows>,
     complete: bool,
 ) {
-    if rows.is_empty() {
+    if rows.is_empty() && folded.is_none() {
         return;
     }
+    // Folded rows are summed first. Every term is unsigned, so a checked sum overflows
+    // exactly when the sum of all of them does, in whatever order they are added.
+    let seed = folded.unwrap_or(FoldedRows::NONE);
     let bytes = complete
-        .then(|| rows.iter().try_fold(0u64, |sum, (row, _)| sum.checked_add(row.bytes)))
+        .then(|| rows.iter().try_fold(seed.bytes, |sum, (row, _)| sum.checked_add(row.bytes)))
         .flatten();
     let allocated = complete
-        .then(|| rows.iter().try_fold(0u64, |sum, (row, _)| sum.checked_add(row.allocated)))
+        .then(|| {
+            rows.iter().try_fold(seed.allocated, |sum, (row, _)| sum.checked_add(row.allocated))
+        })
         .flatten();
     let files = complete
-        .then(|| rows.iter().try_fold(0u64, |sum, (row, _)| sum.checked_add(row.files)))
+        .then(|| rows.iter().try_fold(seed.files, |sum, (row, _)| sum.checked_add(row.files)))
         .flatten();
     let ignored = complete
         .then(|| {
-            rows.iter().try_fold(IgnoredSize::default(), |sum, (row, _)| {
+            rows.iter().try_fold(seed.ignored?, |sum, (row, _)| {
                 sum.checked_add(IgnoredSize::from_tally(row.ignored?))
             })
         })
         .flatten();
     node.omissions.push(TreeOmission {
         reason,
-        entries: rows.len(),
+        entries: rows.len().saturating_add(seed.entries),
         files,
         bytes,
         allocated,
@@ -3041,9 +3086,23 @@ fn expand(
             }
             eligible
         });
-        record_omission(&mut built[cursor].node, TreeOmissionReason::Share, &below_share, true);
+        // A folded index kept only files that can reach the share, so the files it folded
+        // here are rows below it as well.
+        record_omission(
+            &mut built[cursor].node,
+            TreeOmissionReason::Share,
+            &below_share,
+            FoldedRows::of(index, id, &path),
+            true,
+        );
         if !query.depth_for(ViewSpec::Tree).admits(depth) {
-            record_omission(&mut built[cursor].node, TreeOmissionReason::Depth, &rows, complete);
+            record_omission(
+                &mut built[cursor].node,
+                TreeOmissionReason::Depth,
+                &rows,
+                None,
+                complete,
+            );
             cursor += 1;
             continue;
         }
@@ -3053,6 +3112,7 @@ fn expand(
                 &mut built[cursor].node,
                 TreeOmissionReason::Breadth,
                 &hidden,
+                None,
                 complete,
             );
         }
