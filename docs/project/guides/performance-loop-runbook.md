@@ -829,8 +829,10 @@ classification, which the consumer runs inside the walk-phase timer, and no
 `.gitignore`-off arm was measured.
 exp-173 later measured this job at 590 ms with `.gitignore` and 82 ms with
 `--no-controls` (Firecracker host, Linux 6.18.44, a later engine), and H162 and H163 cut
-it to 211 ms (exp-174). The floor reading holds for the `--no-controls` walk only; a
-leftover determination on a tree with ignore rules needs a `--no-controls` arm.
+it to 211 ms (exp-174). The 2026-09-29 overnight loop took it to about 75 ms on a later
+kernel build (exp-178–180, exp-186; see [Current Pickup](#current-pickup-2026-09-27)).
+The floor reading holds for the `--no-controls` walk only; a leftover determination on a
+tree with ignore rules needs a `--no-controls` arm.
 
 **H141 / exp-140** is the standing Linux content-query replication: **same**.
 Uncontrolled 12-pair `content-query` of the same #91 control versus this engine (H138
@@ -985,6 +987,102 @@ command writes none; compare `default-tree` runs across this change with that in
 
 ## Current Pickup (2026-09-27)
 
+Rewritten 2026-09-29 at the end of the Linux overnight loop.
+The heading keeps its date so the links to it hold.
+
+**Start here: the Linux overnight loop, 2026-09-29.**
+[The overnight plan](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md)
+holds the queue, the loop protocol, and the delegation and stop rules.
+Its
+[Status table](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md#status)
+is the summary of the night: read it first, then `tbd list --status in_progress`. The
+work is on branch `claude/linux-perf-improvements-review-2kqius`, in draft
+[#161](https://github.com/jlevy/fdu/pull/161), unreleased.
+It carries H171, H175, H172 with H176 and F6e, H180, and H169 phase 1, each as a change
+commit followed by its record commit; rejected work is not merged.
+[The evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md#the-linux-overnight-round-2026-09-29)
+has the night’s numbers.
+
+- **Where it stands.** In the 20-pair tool cell on the H169 head (exp-185’s evidence),
+  fdu’s default command took 1.08 times pdu’s default on `linux-v6.12`, from 2.4 times
+  at Q0, and ran level with it on `node-modules-dense`. Final standing: see the plan’s
+  Status table.
+- **What sets the time.** On `linux-v6.12` the consumer still spends about 333M
+  instructions on `.gitignore`, most of it in the residual rules’ pre-checks (H183).
+  With `.gitignore` off, and on the dense tree, wall follows the walk’s total CPU.
+
+**Host setup.** The night ran on a 4-vCPU Firecracker guest (Intel Xeon at 2.1 GHz,
+Linux 6.18.44-fc-v49, ext4), as root.
+Its helper scripts were host-local and are not checked in; rebuild them from this list
+and
+[the plan’s loop protocol](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md#loop-protocol).
+
+- **Tools.** uv 0.12.1 installed from PyPI into a virtual environment, because the
+  astral.sh installer is blocked; Python 3.12 for the harness.
+  pdu 0.24.0 and diskus 0.9.0 from `cargo install --locked`; dut from source, for
+  screens only, since the harness has no adapter for it.
+- **Subjects.** Rebuild all three and check the recorded counts before the first cell:
+  `linux-v6.12` (92,474 entries, 358 `.gitignore` files), `node-modules-dense` (79,957
+  entries, 9,439 directories), and `linux-balanced-1m` (1,000,001 entries, digest
+  `4bbd97c0`), which screens only.
+- **Root.** Run the gates with `FDU_TEST_ALLOW_NO_PERMISSION_BITS=1` and
+  `FDU_TEST_ALLOW_NO_NATIVE_WATCH=1`, and run the permission-gated tests again as a
+  non-root user after any change to the walk.
+- **Builds and cells.** Every build or test takes a shared `flock` through a guard
+  script. A cell marks the host as measuring, takes the same lock exclusively, and starts
+  the harness only after one-second CPU busy has stayed under 15% for ten seconds.
+  A retry wrapper reruns a cell the harness refused at its start gate, up to three
+  attempts; any other non-zero exit is not recordable.
+- **Answers.** Before every cell, diff the product command line’s text, JSON, and JSONL
+  output between control and candidate over all three subjects, with run-scoped timing
+  fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
+  view variants a tree-tier change reaches.
+
+**Ids.** Next free are **exp-193** and **H184**. exp-193–199 remain in the reserved
+Linux block, then exp-200 onward; H183 is registered and in flight.
+exp-173–199 and H162–H183 are Linux work.
+The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
+(`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
+(`fdu-8a8r`), came from its range.
+The 2026-09-29 overnight loop used exp-175–186 and exp-192, H174–H179 for its new
+hypotheses, and H180–H183 for what its profiles and mid-night sweep found.
+exp-170–172 record H161, the ignore-aware transient summary.
+exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159
+layer), and exp-168–169 are unused.
+exp-164–165 are the macOS stack-141 replications on the macOS rerun layer.
+This is the one statement of the next free ids for Darwin and Linux alike.
+H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
+keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
+(exp-156–157) the Darwin progress-handle cost on
+[#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
+exp-113 remains reserved unused.
+
+**Next, in order:**
+
+1. **H183** (`fdu-7ydi`), pre-checks for the residual `.gitignore` rules: pending; see
+   the plan. It is pre-registered, predicted −4% to −8% on the `linux-v6.12` default
+   tree.
+2. **H179**, each directory’s attributes from the descriptor the reader opened (H169
+   phase 2), only if `strace -c` still shows the directory `statx` as a named share of
+   at least 3%.
+3. **H177**, a per-listing name arena on top of H169.
+4. **H164**’s tree route (`fdu-emqf`) and **H178** (the consumer walks when its channel
+   is empty), each conditional on the consumer still setting the wall; H174 (`fdu-sfse`)
+   only if the consumer is busy for more than 80% of the walk.
+5. **H169 phase 3**, directories opened relative to the parent’s descriptor, once an fd
+   budget sized to the breadth-first frontier is designed.
+6. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
+   0.3.0.
+7. **`fdu-puk7`** on the remaining routes: musl builds, the serial walk, and
+   reconciliation still stat through std without `AT_NO_AUTOMOUNT`.
+8. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
+   fixed with recorded git verdicts, outside the performance loop.
+
+**Superseded by the overnight loop.** What follows is the pickup as it stood before
+2026-09-29, kept as the record.
+Its Darwin and content items (1–4) are still open, items 5 and 6 ran on 2026-09-28, and
+items 7–9 are replaced by the list above.
+
 **macOS re-measurement of stack 141, 2026-09-28 (`fdu-nr2y`):** run with the user’s
 authorization against the frozen top, `a5c0ab46` (the post-merge `main`), under the
 [macOS rerun plan](../specs/active/plan-2026-09-27-macos-performance-rerun.md).
@@ -1010,28 +1108,8 @@ sparse tree and exp-190 H159 accepted on a directory-dense one; exp-173 H162 and
 H163 accepted; exp-191 H157 rejected.
 The comparison with pdu on a real tree, which found the `.gitignore` cost, is
 [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
-exp-178–186 remain free in that block, and exp-192–199 in the 0.2.1 block.
 
-Next free ids are **exp-200** and **H184**. exp-173–199 and H162–H179 are reserved for
-Linux work: the peer-tool research (`fdu-92hp`) takes exp-173–186 and H162–H170, and the
-0.2.1 work (`fdu-k1n8`) takes exp-187–199 and H171–H179. Of those, H171–H173 are the
-0.2.2 Linux parity hypotheses (`fdu-8a8r`). The 2026-09-29 overnight loop
-([plan](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md)) took
-exp-175–177 for its fc-v49 baselines, H174–H179 for its new hypotheses, and H180 for the
-summary-route walker trims its side-by-side profile found; its cells take exp-178–186,
-then exp-192–199, then exp-200 onward.
-exp-170–172 record H161, the ignore-aware transient summary.
-exp-166–167 record H159, the bounded listing recycle (its macOS screens on the H159
-layer), and exp-168–169 are unused.
-exp-164–165 are the macOS stack-141 replications on the macOS rerun layer.
-This is the one statement of the next free ids for Darwin and Linux alike.
-H144–H146 are reserved on the Linux iteration stack, H147 is the Linux transient recycle
-keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150–H151
-(exp-156–157) the Darwin progress-handle cost on
-[#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
-exp-113 remains reserved unused.
-
-Next performance pickup:
+Next performance pickup, as it stood before 2026-09-29:
 
 The integration of [#136](https://github.com/jlevy/fdu/pull/136) at `5365e5af` brings
 Code overview, population controls, metric sorting, share filtering, and tree accounting
@@ -1070,7 +1148,9 @@ Its default single-view command is not covered by the earlier speedup.
    maintainer.
 6. **H157 rerun** (`fdu-o6um`) — **rejected** on its product-job primary on top of H159
    (exp-191); kept on its branch for a re-screen after H166/H167.
-7. **H171** (`fdu-sdul`) — bucketed `.gitignore` matching, the 0.2.2 point solution.
+7. **H171** (`fdu-sdul`) — **superseded 2026-09-29:** accepted in revised form
+   (exp-178), with H175 (exp-179). As it read before the overnight loop: bucketed
+   `.gitignore` matching, the 0.2.2 point solution.
    H161 (exp-187, Linux wall accepted), H162 (exp-173) and H163 (exp-174) cut the
    default summary on `linux-v6.12` from 505 to 167 ms, and the default tree to 211 ms
    against pdu’s 70 ms.
@@ -1080,11 +1160,15 @@ Its default single-view command is not covered by the earlier speedup.
    of them literal names or `*.suffix`; its prototype cut consumer instructions 63%. Run
    the `.gitignore` matching survey (`fdu-p6vc`) first; H171 depends on it.
    The plan is [the 0.2.2 plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md).
-8. **H172** (`fdu-dp98`) — an exact transient tree tier for the generated tree’s indexed
-   gap; settle its carrier before pre-registering.
-9. **H173** and **H164** (`fdu-emqf`) only if H171’s counters show the residual still
-   sets the wall time. Then H165 (walker count), H166 and H167 (the index-tier pair on
-   the generated tree), H169, H170; their pre-registrations are in
+8. **H172** (`fdu-dp98`) — **superseded 2026-09-29:** accepted on the two real trees
+   (exp-180, exp-181). As it read before: an exact transient tree tier for the generated
+   tree’s indexed gap; settle its carrier before pre-registering.
+9. **Superseded 2026-09-29:** H173 was demoted, H164 split, H165 rejected (exp-182),
+   H166 closed by its gate, and H169 phase 1 accepted (exp-185, exp-186); H167 and H170
+   remain open. As it read before: **H173** and **H164** (`fdu-emqf`) only if H171’s
+   counters show the residual still sets the wall time.
+   Then H165 (walker count), H166 and H167 (the index-tier pair on the generated tree),
+   H169, H170; their pre-registrations are in
    [the pdu brief](../research/research-2026-09-28-pdu-and-the-linux-peer-gap.md).
 
 ## Before the First Round

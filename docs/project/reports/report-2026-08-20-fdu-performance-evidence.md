@@ -1,7 +1,7 @@
 # fdu Performance Evidence
 
-**Revised:** 2026-09-29, covering exp-000 through exp-191: 177 artifacts, since exp-113,
-exp-168–169, and exp-175–186 are unused ids.
+**Revised:** 2026-09-29, after the Linux overnight loop, covering exp-000 through
+exp-192: 190 artifacts, since exp-113 and exp-168–169 are unused ids.
 
 **Status:** Current overview of the performance record.
 The per-experiment numbers live in the artifacts; this report says what they add up to.
@@ -41,7 +41,7 @@ a cold disk.
 
 ### macOS
 
-137 of the 177 experiments ran on one Apple M1 Pro (10 cores, 32 GiB), bare metal, APFS,
+137 of the 190 experiments ran on one Apple M1 Pro (10 cores, 32 GiB), bare metal, APFS,
 Darwin 25.5.0. No macOS cell since 0.1.0 is recorded as quiet: the desktop never held
 the gate for a whole cell, so every recent macOS result is uncontrolled.
 
@@ -74,13 +74,14 @@ the gate for a whole cell, so every recent macOS result is uncontrolled.
   [exp-165](../experiments/exp-165-macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-mi.md)).
   H159’s bounded form is wall and RSS neutral here
   ([exp-167](../experiments/exp-167-macos-h159-bounded-listing-recycle-is-rss-and-wall-neutral-l.md)).
-  H162 and H163 have not been measured on macOS.
+  H162 and H163 have not been measured on macOS, and neither has any change from the
+  2026-09-29 Linux round.
 
 ### Linux
 
 Virtualized 4-core guests, Intel Xeon and ext4 where recorded: a KVM host on Linux
 6.12.94+ for exp-138–155, and Firecracker guests on 6.18.x for the cells before and
-after. Six kernel builds, 40 experiments, counted in
+after. Seven kernel builds, 53 experiments, counted in
 [the ledger’s regime table](report-2026-08-10-fdu-performance-experiments.md#regime-coverage).
 Most Linux cells since 2026-09-20 are quiet.
 
@@ -88,18 +89,25 @@ Most Linux cells since 2026-09-20 are quiet.
   `fdu --no-gitignore --view summary` was the fastest tool measured at 0.94 s (pdu +8%,
   diskus +12%). Building the index took 1.25 s, about 23% longer than pdu and 21% longer
   than diskus ([Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md),
-  2026-09-28, quiet, measured before H159, H161, H162, and H163).
+  2026-09-28, quiet, measured before H159, H161, H162, H163, and the 2026-09-29 round).
 - **Default command, real source tree.** On Linux v6.12 (92,474 entries, 358
-  `.gitignore` files) the default tree fell from 590 to 211 ms and the default summary
-  from 505 to 167 ms
+  `.gitignore` files) the 0.2.1 work took the default tree from 590 to 211 ms and the
+  default summary from 505 to 167 ms
   ([exp-173](../experiments/exp-173-linux-h162-allocation-free-gitignore-matching-halves-the-def.md),
   [exp-174](../experiments/exp-174-linux-h163-per-listing-control-chains-cut-another-third-from.md),
-  quiet probe). With `.gitignore` off the same binary takes 81 and 71 ms; pdu takes 70 ms
-  (screen). What remains is classification on one thread.
+  quiet probe, an earlier kernel build).
+  The [2026-09-29 overnight round](#the-linux-overnight-round-2026-09-29) took the
+  default tree to about 75 ms, in paired steps of −29.6% (H171), −3.3% (H175) and −13.5%
+  (H172), and the default summary to about 76 ms.
+  In a same-cell tool comparison fdu’s default command now takes 1.08 times pdu’s
+  default there, down from 2.4 times at the start of the night.
 - **Directory-dense trees.** Returning drained listings to the walker that allocated
   them (H159) cut the default tree 8.6% on a real 80k-entry `node_modules` tree
   ([exp-190](../experiments/exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md),
   quiet) and 10.6% on the generated tree.
+  The exact transient tree tier (H172) cut it another 10.3%
+  ([exp-181](../experiments/exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md)),
+  and fdu’s default command now runs level with pdu’s default on that tree.
 - **Content.** `content-cache-hit` on Linux v6.12 is about 588 ms, 22.5% below the #91
   control
   ([exp-138](../experiments/exp-138-linux-cache-hit-stack-same-versus-91-control.md),
@@ -118,9 +126,23 @@ answer), and H160 (`--cache auto` writes no snapshot for a one-shot metadata rep
 default summary classifies ignore rules without an index), H159 (listings recycled to
 the walker that allocated them, [#150](https://github.com/jlevy/fdu/pull/150)), and H162
 and H163 (allocation-free matching and per-directory control chains,
-[#155](https://github.com/jlevy/fdu/pull/155)). The peer comparisons have not been
-re-measured on 0.2.1. 0.2.2 is planned around H171 and H172 (see
-[Open Work](#open-work)).
+[#155](https://github.com/jlevy/fdu/pull/155)). The generated-tree peer comparisons have
+not been re-measured on 0.2.1; the real-tree tool cells of 2026-09-29 start from its
+engine (exp-175, exp-176).
+
+Unreleased: the branch of draft [#161](https://github.com/jlevy/fdu/pull/161) carries
+the 2026-09-29 accepts.
+Each landed as a change commit followed by its record commit:
+
+- H171, bucketed `.gitignore` matching;
+- H175, control chains derived from the parent’s;
+- H172 with H176 and F6e, the exact transient tree tier;
+- H180, the summary route’s walker trims;
+- H169 phase 1, a Linux-native directory reader with four audited `unsafe` expressions,
+  built on glibc only.
+
+None changes an answer, `IGNORE_RULES_VERSION`, or the public API, and none adds a
+dependency. The reader’s public diagnostics fields are deferred to 0.3.0 (`fdu-q7hf`).
 
 ## Standing Results by Tier
 
@@ -132,10 +154,13 @@ Absolute values compare only within one row: each is its own subject on its own 
 | CLI indexed tree, `--cache off` | macOS | generated, 1.0M entries | 6.4 s; dumac +9% | uncontrolled | [macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md) |
 | CLI indexed tree, `--cache off` | Linux | generated, 1.0M | 1.25 s; pdu 1.02 s | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
 | CLI summary, `--no-gitignore` | Linux | generated, 1.0M | 0.94 s; fastest measured | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
-| Default tree, `.gitignore` on | Linux | `linux-v6.12`, 92k | 211 ms, from 590 | quiet | exp-173, exp-174 |
-| Default summary, `.gitignore` on | Linux | `linux-v6.12`, 92k | 167 ms, from 505 | quiet | exp-173, exp-174 |
+| CLI default, against pdu’s default | Linux | `linux-v6.12`, 92k | 1.08× (0.077 against 0.072 s), from 2.4× | quiet | exp-175, exp-185 |
+| CLI default, against pdu’s default | Linux | `node-modules-dense`, 80k | level (0.080 against 0.081 s), from 1.12× | quiet | exp-176, exp-185 |
+| Default tree, `.gitignore` on | Linux | `linux-v6.12`, 92k | 74 ms; paired −29.6%, −3.3%, −13.5% since 182 ms at Q0 | quiet | exp-175, exp-178–180, exp-192 |
+| Default summary, `.gitignore` on | Linux | `linux-v6.12`, 92k | 76 ms; paired −25.5%, −5.6%, −9.4% since 150 ms at Q0 | quiet | exp-175, exp-178, exp-184, exp-186, exp-192 |
 | Default summary, peak RSS | macOS | metabrowser, 137k | 11.0 MiB, from 35.9 | uncontrolled | exp-170 |
-| Default tree | Linux | `node-modules-dense`, 80k | 93 ms, from 106 | quiet | exp-190 |
+| Default tree | Linux | `node-modules-dense`, 80k | 81 ms; paired −10.3%, −4.3% since 84 ms at Q0 | quiet | exp-176, exp-181, exp-185, exp-192 |
+| Default tree, peak RSS | Linux | generated, 1.0M | 64 MB, from 306; screen | quiet | exp-180 |
 | `content-cache-hit` | macOS | metabrowser, ~146k | 778 ms, from 1,218 | uncontrolled | exp-108 to exp-132 |
 | `content-cache-hit` | Linux | `linux-v6.12`, 92k | ~588 ms | quiet | exp-155 |
 | `content-query`, 100 reports | macOS | metabrowser, 137k | 20.6 s, from 38.6; provisional | uncontrolled | exp-159 |
@@ -145,6 +170,12 @@ Absolute values compare only within one row: each is its own subject on its own 
 The campaign-1 row is the last time the original pre-work binary was re-measured against
 the code of the day; no later checkpoint repeats that comparison, so it does not
 describe the current engine.
+
+The 2026-09-29 default tree and summary rows give the latest control arm on the night’s
+head (exp-192’s), then the paired steps that produced it; the rows against pdu come from
+the tool cells. Absolute levels on that host drifted by up to 29% between cells, so a
+row’s two absolute values need not agree with its paired steps; the paired steps are the
+claims.
 
 ## The Loops in Order
 
@@ -172,6 +203,7 @@ history through 2026-08-23.
 | H159 listing recycle | exp-166–167, exp-188–190 | both | Neutral on macOS; per-directory saving, so absent on the sparse kernel tree and −8.6% on a dense one |
 | H161 ignore-aware summary | exp-170–172, exp-187 | both | macOS RSS −69% and −58%; Linux wall −6.9% |
 | pdu on a real tree | exp-173–174, exp-191 | Linux | `.gitignore` classification was the Linux default-command gap: H162 −47.0%, H163 −36.4%; H157 rejected again |
+| Linux overnight loop | exp-175–186, exp-192 | Linux | Two regimes of wall time; H171 −29.6% and H172 −13.5% on the default tree, H180 and H169 on the summary; walker count and H181 with H182 rejected; 2.4× pdu’s default to 1.08× |
 
 ## What the Linux Round Changed
 
@@ -211,6 +243,7 @@ counted it per thread: 81% of the consumer’s instructions are a linear scan of
 patterns per entry, most of them literal names or `*.suffix`, which bucketed matching
 (H171) replaces with lookups; a prototype cut those instructions 63% with identical
 answers. H164, moving matching onto the walkers, follows only if a residual still binds.
+The overnight round that followed landed H171 in a revised form (exp-178).
 
 **The index-tier gap on the generated tree is user space.** fdu, pdu, and diskus make
 the same system calls, and fdu spends less kernel time; it spends more user time and its
@@ -218,7 +251,7 @@ walkers park on a shared queue (14,668 voluntary context switches against pdu’
 Under a preloaded jemalloc the unchanged binary ran level with pdu (screen), which
 located the cost in allocations freed across threads.
 In the same screen H159’s structural fix recovered about half of that allocator cost;
-H166, H167, and H170 are the proposed next steps.
+H166, H167, and H170 were the proposed next steps (H166 was later closed by its gate).
 
 **Accepted and rejected in this round:**
 
@@ -251,6 +284,148 @@ H166, H167, and H170 are the proposed next steps.
 `--max-depth 1` job both comparisons ran printed only a total, not a rendered tree.
 Both reports carry the correction, and the harness now passes `--max-depth 2`.
 
+## The Linux Overnight Round (2026-09-29)
+
+One unattended night on a 4-vCPU Firecracker guest (Intel Xeon at 2.1 GHz, Linux
+6.18.44-fc-v49, ext4 on virtio, warm cache), run under
+[the overnight plan](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md).
+Its Status table is the summary of the night; this section says what the records add up
+to. The goal was fdu’s default `fdu PATH` faster than pdu’s default on two real trees,
+with `.gitignore` on and no answer changed.
+Every verdict below comes from a quiet, interleaved, paired cell, most at 20 pairs.
+Before each cell, the product command line’s text, JSON, and JSONL output was
+byte-compared between control and candidate over all three subjects, and every
+comparison matched.
+[The research brief](../research/research-2026-09-29-linux-peers-matchers-and-hot-path.md)
+has the peer, matcher, and hot-path evidence behind the queue.
+
+**The review found two regimes.** With `.gitignore` on, the default tree kept about two
+of four vCPUs busy: one consumer thread matched rules alone for the second half of the
+run, and wall followed that thread.
+With `.gitignore` off, the same command kept 3.3 busy, and wall followed total CPU
+divided by about 3.4, plus a 5–10 ms tail.
+That set the order of the queue: first take classification off the critical path (H171,
+H175), then shrink the consumer’s index build (H172). After that, only removing CPU from
+the walk moves wall; moving work between threads does not.
+
+**The baselines set the noise rules.** Quiet four-arm cells of the 0.2.1 engine, each
+with two copies of the same binary, 12 pairs:
+
+| Subject | Default tree | `--no-controls` | Default summary | `--no-controls` | Record |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `linux-v6.12` | 181.9 ms | 89.9 ms | 149.5 ms | 77.8 ms | [exp-175](../experiments/exp-175-linux-fc-v49-baseline-default-tree-182-ms-2-4x-pdu-with-a-fa.md) |
+| `node-modules-dense` | 84.0 ms | 85.5 ms | 76.6 ms | 71.5 ms | [exp-176](../experiments/exp-176-linux-fc-v49-baseline-on-node-modules-dense-default-tree-84-.md) |
+| `linux-balanced-1m` | 1,358.6 ms | 1,372.2 ms | 1,234.3 ms | 1,210.2 ms | [exp-177](../experiments/exp-177-linux-fc-v49-baseline-on-the-generated-million-entry-tree-de.md) |
+
+One same-binary comparison, the `linux-v6.12` default summary, read −3.74%
+[−12.33%, −0.59%]: an accept by the rule’s arithmetic with both arms identical.
+From then on, a candidate predicted below 10% was measured at 20 pairs or recorded as a
+screen, and a placebo that excluded zero by more than 3% blocked its verdict.
+A review finding fixed the harness as well: a cell with any invalid sample now reads
+inconclusive, and the recorder refuses such an accept (`fdu-c2c6`).
+
+**Accepted.** All at 20 pairs; every placebo in these cells included zero, and answers
+were identical.
+
+| Change | Subject and job | Paired change [95%] | Record |
+| --- | --- | --- | --- |
+| H171, bucketed `.gitignore` matching | `linux-v6.12`, default tree | −29.62% [−33.58%, −26.11%] | [exp-178](../experiments/exp-178-linux-h171-bucketed-gitignore-matching-cuts-the-default-tree.md) |
+|  | `linux-v6.12`, default summary | −25.45% [−28.15%, −21.74%] | exp-178 |
+| H175, control chains derived from the parent’s, on H171 | `linux-v6.12`, default tree | −3.31% [−7.43%, −0.84%] | [exp-179](../experiments/exp-179-linux-h175-derived-control-chains-take-another-3-off-the-def.md) |
+| H172 with H176 and F6e, the exact transient tree tier | `linux-v6.12`, default tree | −13.48% [−18.85%, −6.31%] | [exp-180](../experiments/exp-180-linux-h172-exact-transient-tree-tier-cuts-the-default-tree-1.md) |
+|  | `node-modules-dense`, default tree | −10.30% [−15.09%, −7.20%] | [exp-181](../experiments/exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md) |
+| H180, summary-route walker trims | `node-modules-dense`, default summary | −8.68% [−11.49%, −4.66%] | [exp-183](../experiments/exp-183-linux-h180-summary-walker-trims-cut-the-default-summary-9-on.md) |
+|  | `linux-v6.12`, default summary | −5.63% [−15.15%, −2.75%] | [exp-184](../experiments/exp-184-linux-h180-summary-walker-trims-cut-the-default-summary-6-an.md) |
+| H169 phase 1, a Linux-native directory reader | `node-modules-dense`, summary `--no-controls` | −6.25% [−14.02%, −1.23%] | [exp-185](../experiments/exp-185-linux-h169-native-directory-reader-cuts-the-summary-6-10-and.md) |
+|  | `linux-v6.12`, summary `--no-controls` | −7.90% [−9.55%, −4.74%] | [exp-186](../experiments/exp-186-linux-h169-native-directory-reader-cuts-the-summary-8-9-on-l.md) |
+
+- **H171** compiles each `.gitignore` into literal-name and ends-with maps, anchored
+  rules grouped by segment count, and a residual list behind cheap pre-checks, and
+  answers with the highest matching index.
+  Full glob evaluations fell from about 110 per entry to 0.0019. The controls-on tree
+  came to 1.11 times its own `--no-controls` arm, inside the predicted 1.15. fdu’s
+  ignored set agreed with `git check-ignore --no-index` on every path of `linux-v6.12`
+  and of a 324,015-path built overlay.
+- **H175** derives each listing’s control chain from its parent’s instead of probing a
+  map once per ancestor.
+  It was accepted at the margin, as predicted, and the summary did not move, also as
+  predicted.
+- **H172** applies when a one-shot tree request proves nothing reads the index.
+  It keeps every directory and only the K = ⌈100/min-share⌉ largest files, and folds the
+  rest into their directory’s totals.
+  H176 (no per-extension maps under the tier) and F6e (the fused post-walk pass) are
+  part of it and not separately claimed.
+  The kernel tree’s index holds 5,930 entries instead of 92,473; on the generated tree,
+  a screen, wall fell 3.20% and peak RSS 79%.
+- **H180** decides the control spelling from the listed name bytes and moves each path
+  into its operation instead of cloning it.
+  Walker instructions fell 28–33%. With `.gitignore` off the summary gained 12.76% on
+  `linux-v6.12`, but its −1.12% on `node-modules-dense` did not clear.
+- **H169 phase 1** reads `getdents64` into a reused buffer, uses the names in place, and
+  stats each entry with `statx` relative to the directory, passing `AT_NO_AUTOMOUNT`. It
+  sits behind four audited `unsafe` expressions on Linux glibc.
+  `fstat` calls fell from 5,773 to 4 on the kernel tree, and the per-entry `statx` no
+  longer triggers automounts (`fdu-puk7`). The default summary gained 9.7% and 9.4%. The
+  default tree gained 4.29% [−8.81%, −0.90%] on `node-modules-dense` and 2.06%
+  [−7.38%, +1.83%], not clearing, on `linux-v6.12`, against a predicted 6–8%.
+
+**Rejected and closed:**
+
+- **H165**, the walker count, screened on the H172 head at 12 pairs
+  ([exp-182](../experiments/exp-182-linux-walker-count-after-h172-three-walkers-regress-six-and-.md)):
+  three walkers regressed 10.25% on `linux-v6.12` and 21.95% on `node-modules-dense`,
+  and six and eight did not clear on both real subjects.
+  `PORTABLE` is unchanged: after H172 the walk sets the time, and more walkers on four
+  vCPUs do not shorten it.
+- **H181 and H182**, conditional queue wakes and a hash-ordered listing sort, measured
+  as one bundle
+  ([exp-192](../experiments/exp-192-linux-h181-conditional-queue-wakes-and-h182-hash-ordered-lis.md)).
+  The queue’s condvar wakes fell from 1,426 to 3–10 per run and consumer instructions
+  about 3%, but the default tree moved +0.20% [−2.04%, +1.91%] on `linux-v6.12` and
+  −1.40% [−7.42%, +3.42%] on `node-modules-dense`. Neither is merged.
+  It is H158’s lesson again: work cut from a thread the clock is not waiting on does not
+  move wall.
+- **H166**, waking one walker per new directory, was closed by its gate without a build:
+  walkers waited for work 0.6% of their time on its deciding subject,
+  `node-modules-dense`, and 2.2% on `linux-v6.12`.
+
+**The standing against the peers.** Tool-harness cells with the `fdu-default-tree`
+contract: `fdu --color never PATH` against pdu 0.24.0’s default
+(`pdu --silent-errors PATH`), pdu with `--max-depth 2`, and diskus 0.9.0, all quiet and
+interleaved.
+Each percentage is the peer’s paired change against the adjacent fdu run, so
+a negative figure means the peer took less time.
+
+| Cell | Pairs | Subject | fdu | pdu default | pdu `--max-depth 2` | diskus |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Q0, the 0.2.1 engine (exp-175) | 12 | `linux-v6.12` | 0.19 s | 0.079 s, −58% | 0.074 s, −59% | 0.085 s, −55% |
+| Q0 (exp-176) | 12 | `node-modules-dense` | 0.086 s | 0.077 s, −11% | 0.070 s, −20% | 0.075 s, −12% |
+| After H172 (exp-180 evidence) | 12 | `linux-v6.12` | 0.084 s | 0.078 s, −8% | 0.070 s, −14% | 0.079 s, −6% |
+| After H172 | 12 | `node-modules-dense` | 0.076 s | 0.077 s, +0% | 0.066 s, −12% | 0.075 s, −2% |
+| After H169 (exp-185 evidence) | 20 | `linux-v6.12` | 0.077 s | 0.072 s, −8% [−10%, −4%] | 0.067 s, −10% | 0.073 s, −4% |
+| After H169 | 20 | `node-modules-dense` | 0.080 s | 0.081 s, +1% [−3%, +7%] | 0.076 s, −4% | 0.082 s, +1% |
+
+Only these within-cell ratios are evidence.
+Across cells the host drifted: the same probe arm moved by up to 29% between cells
+(exp-178, exp-180), and pdu’s own median on `linux-v6.12` went from 0.079 s to 0.072 s
+with an unchanged binary.
+Read within cells, fdu’s default command went from 2.4 times pdu’s default to 1.08 times
+on `linux-v6.12`, and from 11% behind to level on `node-modules-dense`. The night’s
+target, at most 1.25 times on `linux-v6.12` and the dense tree’s gap closed, was met
+after H172. The destination, faster than pdu’s default on both real trees, was not, and
+pdu with `--max-depth 2` stays ahead on both.
+
+**Final standing: see the plan’s
+[Status table](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md#status).**
+A closing tool cell on the night’s head, if one runs, is recorded there and not here.
+
+**What is left.** After H169, a callgrind of the default tree on `linux-v6.12` counts
+436M consumer instructions with `.gitignore` against 103M without; `memcmp` (114M) and
+the residual rules’ pre-checks (`Checks::admit`, about 97M) are most of the difference.
+H183 targets them, predicted −4% to −8% on that tree, which would put fdu ahead of pdu’s
+default there. With `.gitignore` off, and on the dense tree, wall follows the walk’s
+total CPU, the target of H179 and H177.
+
 ## Qualifications on Current Results
 
 These do not overturn a verdict; they say what a verdict rests on.
@@ -258,8 +433,8 @@ These do not overturn a verdict; they say what a verdict rests on.
 - **H156 and H160 were accepted on a generated tree only.** The loop asks for a
   nominated real tree in any accept set, and exp-160 and exp-163 ran only on the
   generated balanced tree, as did the Linux peer tables.
-  The page’s per-platform section counts 7 of 16 Linux improvements decided on generated
-  trees.
+  The page’s per-platform section counts 7 of 24 Linux improvements decided on generated
+  trees; every 2026-09-29 accept was decided on a real tree.
 - **H161’s Linux verdict met one of its two bars.** It was accepted on wall; its 50% RSS
   bar was missed on the deciding subject, where classification holds about 20 MiB more
   than a walk without it (`fdu-nyj8`).
@@ -276,9 +451,26 @@ These do not overturn a verdict; they say what a verdict rests on.
   a `--no-controls` arm.
 - **Every macOS accept since 0.1.0 is uncontrolled.** They stand as paired evidence on a
   busy host; none has a quiet replication.
+- **The 2026-09-29 round ran on one virtualized host.** Every cell from exp-175 to
+  exp-186, and exp-192, ran on the same 4-vCPU Firecracker guest.
+  Its walker-count screen and its tree-tier effects are evidence about four vCPUs, ext4
+  on virtio, and a warm cache, not about bare metal or wider hosts.
+- **None of the 2026-09-29 changes has been measured on macOS.** H171, H175, H172, and
+  H180 are portable code and run there; H169’s reader is Linux glibc only.
+  Their macOS effect is unknown.
+- **H169’s tree-route gain is below its prediction.** It was accepted on the
+  `--no-controls` summary.
+  The default tree gained 4.29% on `node-modules-dense` and 2.06%, not clearing, on
+  `linux-v6.12`, against a predicted 6–8%. The tree route stats every entry, directories
+  included, and the rest of its time is the kernel’s `statx` and the consumer, which the
+  reader does not touch.
+- **The generated tree screens only.** `linux-balanced-1m` decided nothing on
+  2026-09-29. H172’s −3.20% wall and −79% peak RSS on it are a screen, and its base
+  moved from 1,359 to 1,748 ms between two cells of the same night.
 - **The Linux floor scoreboard is stale.** It was last derived on 2026-09-20 (exp-141).
-  H147, H72, H156, H160, H161, H159, H162, and H163 have landed or been accepted since,
-  and the loop re-derives the ×floor after an accepted change before trusting the queue.
+  H147, H72, H156, H160, H161, H159, H162, H163, H171, H175, H172, H180, and H169 have
+  landed or been accepted since, and the loop re-derives the ×floor after an accepted
+  change before trusting the queue.
 
 ## Dead Ends Worth Knowing
 
@@ -303,9 +495,11 @@ none should be retried without a new one.
   the default summary 7.1% on `/usr`
   ([exp-149](../experiments/exp-149-linux-default-usr-aggregate-threads-8-regresses-do-not-lower.md))
   and helped with `.gitignore` off.
-  H165 revisits this now that classification is cheaper.
-- **Cutting counts off the critical path.** Fewer allocations (H157, H114) and fewer
-  wakes (H158) did not move wall where the saved work was not what the clock waited on.
+  H165 re-screened the count once classification was cheap (exp-182): three walkers
+  regress 10–22%, and six and eight do not clear on both real subjects.
+- **Cutting counts off the critical path.** Fewer allocations (H157, H114), fewer wakes
+  (H158, H181), and fewer consumer instructions (H182) did not move wall where the saved
+  work was not what the clock waited on (exp-192).
 - **Restore trims on the content cache hit.** Parse-speed, file-count completeness, and
   allocation trims (H113, H114, H116, H103) were each rejected; the mix is apply and
   candidate install
@@ -333,34 +527,43 @@ recorded as closed.
 | Content cache hit | Linux | Two consecutive leftover determinations named no new 3% cut (exp-144, exp-155); closure not recorded |
 | Any tier | macOS | No floor denominator: the floor program is Linux-only (`fdu-33ri`, `fdu-9hdc`) |
 
-The `.gitignore`-on default command is not a campaign-2 tier, and it now holds the
-largest measured Linux gap: 211 ms against 81 ms with `.gitignore` off.
+The `.gitignore`-on default command is not a campaign-2 tier.
+At 0.2.1 it held the largest measured Linux gap, 211 ms against 81 ms with `.gitignore`
+off; after the 2026-09-29 round the gap is about 12%, 76.8 ms against 68.5 ms in one
+cell (exp-186), and H183 targets most of what remains.
 
 ## Open Work
 
 Grouped by topic; the order to run them in is
 [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27) and
-the pdu brief’s recommendations.
+[the overnight plan](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md)’s
+queue.
 
-- **0.2.2 Linux parity** (epic `fdu-8a8r`,
-  [the plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md)):
-  - the `.gitignore` matching survey (`fdu-p6vc`), first;
-  - **H171** (`fdu-sdul`), bucketed matching, for the default command on real trees;
-  - **H172** (`fdu-dp98`), an exact transient tree tier, for the indexed gap on the
-    generated tree;
-  - **H173**, the live residual set, only if H171’s counters call for it.
-- **H164** (`fdu-emqf`): classify `.gitignore` on the walker threads, now sequenced
-  after H171 for whatever residual remains.
+- **Next on Linux** (epic `fdu-8a8r`), in order:
+  1. **H183** (`fdu-7ydi`), pre-checks for the residual `.gitignore` rules: pending; see
+     the plan.
+  2. **H179**, each directory’s attributes from the descriptor the reader opened (H169
+     phase 2), if `strace -c` still shows the directory `statx` as a named share of at
+     least 3%.
+  3. **H177**, a per-listing name arena.
+  4. **H164**’s tree route (`fdu-emqf`), **H174** (`fdu-sfse`), and **H178**, each
+     conditional on the consumer still setting the wall.
+  5. **H169 phase 3**, directories opened relative to the parent’s descriptor, which
+     needs an fd budget sized to the breadth-first frontier.
+- **Follow-ups from the reader and the matcher:**
+  - `fdu-q7hf`: the reader’s public diagnostics fields, a public API change for 0.3.0;
+  - `fdu-puk7` on the routes the native reader does not cover: musl builds, the serial
+    walk, and reconciliation still stat through std without `AT_NO_AUTOMOUNT`;
+  - `fdu-ifci`: a UTF-8 BOM and an embedded NUL in `.gitignore`, where fdu diverges from
+    git; it changes answers, so it is fixed apart from the performance loop;
+  - the benchmark half of the matcher survey (`fdu-p6vc`).
 - **Confirm on real trees:** H156 and H160 (`fdu-b9ga`); H162 and H163 on macOS
-  (`fdu-dv07`); the Linux ×floor scoreboard (`fdu-z2h6`).
-- **H165** (`fdu-c11z`): revisit the Linux walker count once classification no longer
-  binds the consumer.
-- **H166** (`fdu-i6nk`) and **H167** (`fdu-lwsy`): a walk queue that does not park
-  walkers, and directory tokens in place of the path-keyed directory map, the index-tier
-  pair for the generated tree.
-- **H168** (`fdu-mw2s`), **H169** (`fdu-leja`), **H170** (`fdu-lz25`): no per-file
-  extension `String`; directory opens relative to the parent descriptor; a per-worker
-  summary fold.
+  (`fdu-dv07`), and the 2026-09-29 changes there; the Linux ×floor scoreboard
+  (`fdu-z2h6`).
+- **H167** (`fdu-lwsy`), **H168** (`fdu-mw2s`), **H170** (`fdu-lz25`): directory tokens
+  in place of the path-keyed directory map, re-measured after H172 as its row asks; no
+  per-file extension `String`, on the routes that still keep the full index; and a
+  per-worker summary fold, after a review reconciles it with H62–H65.
 - **`fdu-nyj8`**: attribute the 20 MiB the classifying summary holds on Linux v6.12.
 - **H153** confirmation on a quiet host (`fdu-9e9d`), its Linux replication (H154,
   `fdu-wbhe`), and a post-H153 profile (H155, `fdu-83wn`).
