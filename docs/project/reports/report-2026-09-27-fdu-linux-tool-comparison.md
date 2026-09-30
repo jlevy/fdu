@@ -21,7 +21,12 @@ host regime: the final head measured here led pdu’s default by about 6% in the
 where the [real-tree standing below](#real-trees-2026-09-29) had them level.
 The lead over `pdu --max-depth 2` is the track’s own, since the final head was level
 with it on the kernel tree and 2.4% behind on the dense tree.
-The generated million-entry tree has not been run against the peers since.
+The generated million-entry tree was run again on the 0.3.0 release engine against pdu’s
+two modes, diskus and 0.2.1, not the full matrix below
+([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md),
+2026-09-30): fdu’s default tree took 0.95 s and led `pdu --max-depth 2` by 19%
+[+15%, +20%], pdu’s default by 25% and diskus by 24%, in a session where 0.2.1 was level
+with `pdu --max-depth 2`.
 
 ## Final Head of the Parity Round, 2026-09-29
 

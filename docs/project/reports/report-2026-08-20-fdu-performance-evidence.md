@@ -1,7 +1,7 @@
 # fdu Performance Evidence
 
-**Revised:** 2026-09-30, after the pdu track, covering exp-000 through exp-201: 199
-artifacts, since exp-113 and exp-168–169 are unused ids.
+**Revised:** 2026-09-30, after the 0.3.0 release standing, covering exp-000 through
+exp-202: 200 artifacts, since exp-113 and exp-168–169 are unused ids.
 
 **Status:** Current overview of the performance record.
 The per-experiment numbers live in the artifacts; this report says what they add up to.
@@ -93,7 +93,12 @@ Most Linux cells since 2026-09-20 are quiet.
   On that round’s final head (`ebc06c78`) the default `fdu PATH` took 1.09 s: pdu with
   `--max-depth 2` took 2.5% less [−4.0%, −1.4%], and pdu’s default 4% and diskus 7% more
   (same comparison, 2026-09-29, quiet).
-  No peer has been run on that tree since.
+  On the 0.3.0 release engine it took 0.951 s and led `pdu --max-depth 2` by 18.8%
+  [+15.0%, +19.7%], pdu’s default by 25.3% and diskus by 23.9%, at 58.5 MiB peak RSS
+  ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md),
+  2026-09-30, quiet). In the same run 0.2.1 was level with `pdu --max-depth 2`, where the
+  2026-09-29 figures put pdu about 11% ahead of it, so about ten points of that lead are
+  the session’s, by an estimate across sessions.
 - **Default command, real source tree.** On Linux v6.12 (92,474 entries, 358
   `.gitignore` files) the 0.2.1 work took the default tree from 590 to 211 ms and the
   default summary from 505 to 167 ms
@@ -112,7 +117,11 @@ Most Linux cells since 2026-09-20 are quiet.
   In the same run fdu’s default command led pdu’s default by 13%, pdu `--max-depth 2` by
   3% [+1%, +8%], and diskus by 12%, from 2.4 times pdu’s default at the start of the
   overnight round; about six points of the lead over pdu’s default are that night’s host
-  regime.
+  regime. The 0.3.0 release engine, measured directly against 0.2.1’s, takes 48.00% less
+  time for the default tree (208.6 to 109.9 ms) and 34.63% less for the default summary
+  ([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md));
+  in that run, a session about 30% slower than exp-201’s for every tool, it led pdu’s
+  default by 15%, pdu `--max-depth 2` by 10% [+2%, +12%], and diskus by 17%.
 - **Directory-dense trees.** Returning drained listings to the walker that allocated
   them (H159) cut the default tree 8.6% on a real 80k-entry `node_modules` tree
   ([exp-190](../experiments/exp-190-linux-h159-listing-recycle-clears-3-percent-on-a-real-direct.md),
@@ -121,7 +130,9 @@ Most Linux cells since 2026-09-20 are quiet.
   ([exp-181](../experiments/exp-181-linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-n.md)),
   and H185 with H186 another 8.94% [−12.29%, −5.04%] (exp-201). In that run fdu’s
   default command led pdu’s default by 15%, pdu `--max-depth 2` by 10% [+4%, +13%], and
-  diskus by 11%.
+  diskus by 11%. The release engine takes 14.09% less time than 0.2.1’s for the default
+  tree there, and in exp-202’s run led pdu’s default by 18%, pdu `--max-depth 2` by 12%
+  [+2%, +19%], and diskus by 12%.
 - **Content.** `content-cache-hit` on Linux v6.12 is about 588 ms, 22.5% below the #91
   control
   ([exp-138](../experiments/exp-138-linux-cache-hit-stack-same-versus-91-control.md),
@@ -181,13 +192,14 @@ Absolute values compare only within one row: each is its own subject on its own 
 | CLI indexed tree, `--cache off` | macOS | generated, 1.0M entries | 6.4 s; dumac +9% | uncontrolled | [macOS comparison](report-2026-09-26-fdu-live-tool-comparison.md) |
 | CLI indexed tree, `--cache off` | Linux | generated, 1.0M | 1.25 s; pdu 1.02 s | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
 | CLI summary, `--no-gitignore` | Linux | generated, 1.0M | 0.94 s; fastest measured | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md) |
-| CLI default, against pdu and diskus | Linux | `linux-v6.12`, 92k | 0.084 s; pdu’s default +13% [+10%, +15%], pdu `--max-depth 2` +3% [+1%, +8%], diskus +12% [+8%, +16%]; from 2.4× pdu’s default | quiet | exp-175, exp-201 |
-| CLI default, against pdu and diskus | Linux | `node-modules-dense`, 80k | 0.079 s; pdu’s default +15% [+13%, +20%], pdu `--max-depth 2` +10% [+4%, +13%], diskus +11% [+10%, +15%]; from 1.12× pdu’s default | quiet | exp-176, exp-201 |
-| Default tree, `.gitignore` on | Linux | `linux-v6.12`, 92k | 85.2 ms; paired −29.6% (H171), −3.3% (H175), −13.5% (H172), −7.6% (H183); end to end −39.00% from 200.3 ms at Q0, then −3.05% (H185 and H186) | quiet | exp-178–180, exp-193, exp-194, exp-201 |
-| Default summary, `.gitignore` on | Linux | `linux-v6.12`, 92k | 84.6 ms; paired −25.5% (H171), −5.6% (H180), −9.4% (H169), −6.15% (H188 with H189); end to end −26.25% from 156.5 ms at Q0, then −6.14% | quiet | exp-178, exp-184, exp-186, exp-194, exp-198, exp-201 |
+| CLI default, against pdu and diskus | Linux | `linux-v6.12`, 92k | 0.110 s; pdu’s default +15% [+12%, +19%], pdu `--max-depth 2` +10% [+2%, +12%], diskus +17% [+3%, +20%]; from 2.4× pdu’s default | quiet | exp-175, exp-202 |
+| CLI default, against pdu and diskus | Linux | `node-modules-dense`, 80k | 0.106 s; pdu’s default +18% [+15%, +23%], pdu `--max-depth 2` +12% [+2%, +19%], diskus +12% [+9%, +17%]; from 1.12× pdu’s default | quiet | exp-176, exp-202 |
+| CLI default, against pdu and diskus | Linux | generated, 1.0M | 0.951 s; pdu `--max-depth 2` +19% [+15%, +20%], pdu’s default +25% [+21%, +28%], diskus +24% [+20%, +28%]; from pdu `--max-depth 2` 2.5% ahead on `ebc06c78` | quiet | [Linux comparison](report-2026-09-27-fdu-linux-tool-comparison.md), exp-202 |
+| Default tree, `.gitignore` on | Linux | `linux-v6.12`, 92k | 109.9 ms in exp-202’s slower session, 85.2 ms in exp-201’s; paired −29.6% (H171), −3.3% (H175), −13.5% (H172), −7.6% (H183); end to end −39.00% from 200.3 ms at Q0, then −3.05% (H185 and H186); the release against 0.2.1 −48.00% | quiet | exp-178–180, exp-193, exp-194, exp-201, exp-202 |
+| Default summary, `.gitignore` on | Linux | `linux-v6.12`, 92k | 128.1 ms in exp-202’s session, 84.6 ms in exp-201’s; paired −25.5% (H171), −5.6% (H180), −9.4% (H169), −6.15% (H188 with H189); end to end −26.25% from 156.5 ms at Q0, then −6.14%; the release against 0.2.1 −34.63% | quiet | exp-178, exp-184, exp-186, exp-194, exp-198, exp-201, exp-202 |
 | Default summary, peak RSS | macOS | metabrowser, 137k | 11.0 MiB, from 35.9 | uncontrolled | exp-170 |
-| Default tree | Linux | `node-modules-dense`, 80k | 79.5 ms; paired −10.3% (H172), −4.3% (H169), −3.55% (H185), −4.91% (H186); end to end −9.75% from 126.9 ms at Q0, then −8.94% (H185 and H186) | quiet | exp-181, exp-185, exp-195, exp-197, exp-199, exp-201 |
-| Default tree, peak RSS | Linux | generated, 1.0M | 64 MB, from 306; screen | quiet | exp-180 |
+| Default tree | Linux | `node-modules-dense`, 80k | 115.6 ms in exp-202’s session, 79.5 ms in exp-201’s; paired −10.3% (H172), −4.3% (H169), −3.55% (H185), −4.91% (H186); end to end −9.75% from 126.9 ms at Q0, then −8.94% (H185 and H186); the release against 0.2.1 −14.09% | quiet | exp-181, exp-185, exp-195, exp-197, exp-199, exp-201, exp-202 |
+| Default tree, peak RSS | Linux | generated, 1.0M | 57.3 MiB, from 292.7 MiB on 0.2.1 (−80%); exp-180’s screen 64 MB, from 306 | quiet | exp-180, exp-202 |
 | `content-cache-hit` | macOS | metabrowser, ~146k | 778 ms, from 1,218 | uncontrolled | exp-108 to exp-132 |
 | `content-cache-hit` | Linux | `linux-v6.12`, 92k | ~588 ms | quiet | exp-155 |
 | `content-query`, 100 reports | macOS | metabrowser, 137k | 20.6 s, from 38.6; provisional | uncontrolled | exp-159 |
@@ -198,11 +210,13 @@ The campaign-1 row is the last time the original pre-work binary was re-measured
 the code of the day; no later checkpoint repeats that comparison, so it does not
 describe the current engine.
 
-The Linux default tree and summary rows give the pdu track’s shipped arm in its
-end-to-end cell against the overnight round’s final head (exp-201), the paired steps
-that produced it, the round’s paired change against the Q0 engine (exp-194 on
-`linux-v6.12`, exp-195 on `node-modules-dense`), and exp-201’s own; the rows against the
-peers come from exp-201’s tool cells, with the Q0 ratio from exp-175 and exp-176.
+The Linux default tree and summary rows give the release engine in its end-to-end cell
+against 0.2.1 (exp-202) and the pdu track’s shipped arm in its cell against the
+overnight round’s final head (exp-201), the paired steps that produced them, the round’s
+paired change against the Q0 engine (exp-194 on `linux-v6.12`, exp-195 on
+`node-modules-dense`), and exp-201’s own; the rows against the peers come from exp-202’s
+tool cells, with the Q0 ratio from exp-175 and exp-176. exp-202 ran in a session about
+30% slower than exp-201’s for every tool on the real trees.
 exp-194 and exp-195 ran in the host’s slower, kernel-heavy regime, and exp-201 in a
 faster one that also favoured fdu against pdu’s default by about six points.
 Absolute levels on that host drifted by up to about 50–70% between cells over the night
@@ -238,6 +252,7 @@ history through 2026-08-23.
 | pdu on a real tree | exp-173–174, exp-191 | Linux | `.gitignore` classification was the Linux default-command gap: H162 −47.0%, H163 −36.4%; H157 rejected again |
 | Linux overnight loop | exp-175–186, exp-192–196 | Linux | Two regimes of wall time; H171 −29.6%, H172 −13.5% and H183 −7.6% on the default tree, H180 and H169 on the summary; walker count and H181 with H182 rejected; the default tree −39.00% end to end (exp-194); 2.4× pdu’s default to level; the automount fix screened for non-regression in the round’s review (exp-196) |
 | pdu track | exp-197–201 | Linux | H185 −3.55% and H186 −4.91% on the dense tree’s default tree, H188 with H189 −6.15% on the kernel tree’s summary; H187 rejected, the tree route’s consumer having slack; the default tree −3.05% and −8.94% end to end, ahead of both pdu modes and diskus on both real trees (exp-201) |
+| 0.3.0 release standing | exp-202 | Linux | The release engine against 0.2.1: the default tree −48.00%, −14.09% and −14.57% on the kernel, dense and generated trees; ahead of both pdu modes and diskus on all three, the narrowest lead +10% [+2%, +12%] over `pdu --max-depth 2` on the kernel tree |
 
 ## What the Linux Round Changed
 
@@ -570,7 +585,8 @@ These do not overturn a verdict; they say what a verdict rests on.
   busy host; none has a quiet replication.
 - **The 2026-09-29 round ran on one virtualized host.** Every cell from exp-175 to
   exp-186, and exp-192 to exp-195, ran on the same 4-vCPU Firecracker guest, and the pdu
-  track’s, exp-196 to exp-201, on the same kind of guest at a later kernel build.
+  track’s, exp-196 to exp-201, and the release standing, exp-202, on the same kind of
+  guest at a later kernel build.
   Its walker-count screen and its tree-tier effects are evidence about four vCPUs, ext4
   on virtio, and a warm cache, not about bare metal or wider hosts.
 - **None of the 2026-09-29 changes has been measured on macOS.** H171, H175, H172, H180,

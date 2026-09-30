@@ -1010,23 +1010,30 @@ Against 0.2.1’s engine the overnight round’s default tree is 39% faster on `
 and 10% faster on `node-modules-dense` (exp-194, exp-195); against the round’s final
 head, the pdu track’s default tree is another 3.05% [−5.81%, −1.03%] and 8.94%
 [−12.29%, −5.04%] faster, and its default summary 6.14% faster on `linux-v6.12`
-(exp-201). H171’s three public `Counts` fields are why the round ships in 0.3.0 rather
-than a patch. [The CHANGELOG](../../../CHANGELOG.md) says what a user sees.
+(exp-201). Measured directly against 0.2.1’s engine, the release engine (`b82f26e1`)
+takes 48.00% [−50.45%, −44.79%] less time for the default tree on `linux-v6.12`, 14.09%
+less on `node-modules-dense` and 14.57% less on `linux-balanced-1m`
+([exp-202](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)).
+H171’s three public `Counts` fields are why the round ships in 0.3.0 rather than a
+patch. [The CHANGELOG](../../../CHANGELOG.md) says what a user sees.
 
-- **Where it stands (exp-201).** On this 4-vCPU virtualized host, warm cache, with each
-  peer paired 20 times with the adjacent fdu run in one interleaved run per tree, the
-  shipped default command leads pdu’s default by 13% [+10%, +15%] on `linux-v6.12` and
-  15% [+13%, +20%] on `node-modules-dense`, pdu `--max-depth 2` by 3% [+1%, +8%] and 10%
-  [+4%, +13%], and diskus by 12% [+8%, +16%] and 11% [+10%, +15%]. About six points of
-  the lead over pdu’s default are that night’s regime, not the track: the round’s final
-  head alone led pdu’s default by about 6% in the same run, where exp-194 had them level
-  (anchor-normalized, +9.6% and +5.6%). The lead over pdu `--max-depth 2` is the track’s
-  own, and on the kernel tree it is at the edge of what 20 pairs resolve.
-  The generated million-entry tree has not been run against the peers since the final
-  head (`ebc06c78`), where pdu `--max-depth 2` was 2.5% faster than fdu’s default tree
-  ([the Linux comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md)).
-  Neither the overnight round nor the pdu track was measured on macOS or Windows, so
-  nothing claims a lead there.
+- **Where it stands (exp-202, the 0.3.0 release engine).** On this 4-vCPU virtualized
+  host, warm cache, with each competitor paired 20 times with the adjacent run of the
+  release’s `fdu` in one interleaved run per tree, the release’s default command leads
+  pdu’s default by 15% [+12%, +19%] on `linux-v6.12`, 18% [+15%, +23%] on
+  `node-modules-dense` and 25% [+21%, +28%] on `linux-balanced-1m`, pdu `--max-depth 2`
+  by 10% [+2%, +12%], 12% [+2%, +19%] and 19% [+15%, +20%], diskus by 17% [+3%, +20%],
+  12% [+9%, +17%] and 24% [+20%, +28%], and 0.2.1’s `fdu` by 95%, 20% and 21%. That
+  session was about 30% slower than exp-201’s for every tool on the real trees; the lead
+  over pdu’s default is about where exp-201 left it (13% and 15%), and those over pdu
+  `--max-depth 2` (3% and 10% in exp-201) and diskus are wider.
+  The run carries no exp-201 engine, so it does not separate the release’s later changes
+  from the session. On the generated tree 0.2.1 was level with pdu `--max-depth 2` in the
+  same run, where the 2026-09-29 figures put pdu about 11% ahead of it, so about ten
+  points of that 19% lead are the session’s, by an estimate across sessions.
+  The narrowest leads are over pdu `--max-depth 2` on the real trees, with lower bounds
+  of +1.8% and +1.9%. Neither the overnight round nor the pdu track was measured on
+  macOS or Windows, so nothing claims a lead there.
 - **What sets the time.** After exp-200 the walkers’ kernel time bounds the tree route:
   H187 cut the tree route’s consumer instructions 20% and 38% with no wall change,
   because on four vCPUs that consumer has slack (busy about 60% and 30% of the walk).
@@ -1039,19 +1046,21 @@ than a patch. [The CHANGELOG](../../../CHANGELOG.md) says what a user sees.
 1. **H169 phase 3** (directories opened relative to the parent’s descriptor, once an fd
    budget sized to the breadth-first frontier is designed) and **H177** (a per-listing
    name arena on top of H169): walker-side cuts, which exp-200 ranks above any consumer
-   cut. The narrowest lead is over pdu `--max-depth 2` on `linux-v6.12`, +3% [+1%, +8%],
-   at the edge of what 20 pairs resolve.
+   cut. The narrowest leads are over pdu `--max-depth 2` on the real trees, +10%
+   [+2%, +12%] and +12% [+2%, +19%] in exp-202, and +3% [+1%, +8%] on `linux-v6.12` in
+   exp-201’s session.
 2. **H178** (the consumer walks when its channel is empty), re-predicted at −1% to −3%,
    under the three-stage qualification a scheduling policy takes.
-3. **The generated-tree peer table** on the shipped engine, before any claim about that
-   tree: it is the last standing still on `ebc06c78`
+3. **The generated-tree peer table** on the shipped engine
    ([the 0.2.2 plan](../specs/active/plan-2026-09-29-linux-parity-0.2.2.md#stage-3-022)’s
-   open peer-table item).
+   open peer-table item): **ran 2026-09-30** as exp-202’s `linux-balanced-1m` tool cell,
+   against pdu’s two modes, diskus and 0.2.1, not the full peer matrix of
+   [the Linux comparison](../reports/report-2026-09-27-fdu-linux-tool-comparison.md).
 4. **Behind their gates.** H190 stays unbuilt behind exp-200’s finding: a consumer-only
    cut on the tree route has no wall to buy.
    H179 (only for the full-index route), H164’s tree route, H174 (`fdu-sfse`) and H170
    (`fdu-lz25`) stay behind theirs.
-5. **macOS**: the platform review’s cells (exp-202 onward), and the pdu track’s M11
+5. **macOS**: the platform review’s cells (exp-203 onward), and the pdu track’s M11
    (H185 is a no-op there, a placebo), M12 (H186’s serial tail on eight performance
    cores) and M14 (H188 with H189); M13 was H187’s and lapses with it.
    A macOS standing against pdu also needs the review’s M8 peer cells on the head that
@@ -1101,11 +1110,12 @@ rebuild them from this list and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-202** and **H191**. exp-196 and H184 record `fdu-d2fn`, the
-automount fix; the pdu track (`fdu-faqa`, branch `claude/pdu-uniform-lead`) used
-exp-197–201 and H185–H190. exp-173–201 and H162–H190 are Linux work.
-The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
-(`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
+**Ids.** Next free are **exp-203** and **H191**; exp-202 is the 0.3.0 release standing.
+exp-196 and H184 record `fdu-d2fn`, the automount fix; the pdu track (`fdu-faqa`, branch
+`claude/pdu-uniform-lead`) used exp-197–201 and H185–H190. exp-173–202 and H162–H190 are
+Linux work.
+The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1
+work (`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
 (`fdu-8a8r`), came from its range.
 The 2026-09-29 overnight loop used exp-175–186 and exp-192–195, H174–H179 for its new
 hypotheses, and H180–H183 for what its profiles and mid-night sweep found.

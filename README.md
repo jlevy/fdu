@@ -480,11 +480,13 @@ zero. A peak of ≤ 54 MiB is a bound, not a measurement: Linux carries a proces
 memory across `exec`, so a tool smaller than the harness reports the harness’s own peak.
 fdu’s default tree keeps an exact roll-up for every directory but only the files large
 enough to show, so it holds 58 MiB here rather than a reusable index.
-No peer has been run on this tree since.
-A 12-pair screen of one change in the current engine, which stats each directory once
-rather than twice, measured the default tree here 4.45% faster than on `ebc06c78`
-([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)):
-a screen of fdu against itself, not a standing against the peers.
+On the 0.3.0 release engine, a later run on this tree put fdu’s default tree at 0.95 s,
+ahead of `pdu --max-depth 2` by 19%, pdu’s default by 25%, and diskus by 24%, every
+interval excluding zero
+([exp-202](docs/project/experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md),
+2026-09-30). In that run 0.2.1 was itself level with `pdu --max-depth 2`, which earlier
+runs put about 11% ahead of it, so about ten points of that lead reflect the session’s
+host rather than fdu.
 See the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md#final-head-of-the-parity-round-2026-09-29)
 for versions, CPU time, and the protocol, and
