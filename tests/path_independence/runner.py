@@ -870,7 +870,9 @@ def discover_surfaces(surface_names: Iterable[str]) -> Surfaces:
     unknown = names - {"cli", "python"}
     if unknown or "cli" not in names:
         raise SystemExit(f"surfaces must include cli and name only cli and python: {sorted(names)}")
-    default_bin = REPO / "target" / "debug" / ("fdu.exe" if os.name == "nt" else "fdu")
+    # `make path-independence` names the build cargo made; CARGO_TARGET_DIR moves it.
+    target = REPO / os.environ.get("CARGO_TARGET_DIR", "target")
+    default_bin = target / "debug" / ("fdu.exe" if os.name == "nt" else "fdu")
     fdu_bin = Path(os.environ.get("FDU_BIN", default_bin))
     if not fdu_bin.is_absolute() or not fdu_bin.is_file():
         raise SystemExit(f"FDU_BIN must be an absolute path to a built fdu: {fdu_bin}")

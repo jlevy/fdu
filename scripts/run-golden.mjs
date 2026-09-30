@@ -19,12 +19,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { debugFdu } from './cargo-target.mjs';
+
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const exe = process.platform === 'win32' ? '.exe' : '';
 
 // Each surface is a full path, never a name to be searched for.
 const SURFACES = {
-  rust: join(root, 'target', 'debug', `fdu${exe}`),
+  // Where cargo put it, which is not `<checkout>/target` under CARGO_TARGET_DIR.
+  rust: debugFdu(root),
   python: join(root, 'tests', 'parity', 'py', 'fdu'),
 };
 

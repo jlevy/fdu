@@ -9,6 +9,15 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
+# Where cargo writes build output, asked of cargo rather than assumed to be `target/`:
+# CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
+# assumed path would then be tested or measured in place of the one just built
+# (fdu-bi9a, fdu-dfbu). Evaluated once, on first use, so a target that never builds never
+# asks. `$(CURDIR)/target` is only the fallback for a cargo that cannot answer, and then
+# the build before it fails first.
+CARGO_TARGET = $(eval CARGO_TARGET := $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),$(CURDIR)/target))$(CARGO_TARGET)
+DEBUG_FDU = $(CARGO_TARGET)/debug/fdu
+
 .PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
@@ -139,7 +148,7 @@ performance-probe:
 # The first suite runs without a project, so nothing else names its interpreter: uv would
 # take the host's python3, and on 3.11 the suite fails for want of 3.12 (fdu-kiuu).
 test-performance: performance-probe
-	PYTHONPATH=explorations $(UV) run --no-project --python 3.12 python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
+	CARGO_TARGET_DIR="$(CARGO_TARGET)" PYTHONPATH=explorations $(UV) run --no-project --python 3.12 python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 	$(PERF_UV) --group dev python -m unittest discover -s explorations/benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
@@ -305,7 +314,7 @@ parity-update: build parity-venv $(NODE_INSTALL_STAMP)
 # `path-independence-record` records diagnostic evidence and cannot waive a failure.
 PATH_INDEPENDENCE_PYTHON ?= $(PARITY_PYTHON)
 check: PATH_INDEPENDENCE_PYTHON = $(SMOKE_PYTHON)
-PATH_INDEPENDENCE_ENV = FDU_BIN="$(CURDIR)/target/debug/fdu" \
+PATH_INDEPENDENCE_ENV = FDU_BIN="$(DEBUG_FDU)" \
 	FDU_PYTHON="$(abspath $(PATH_INDEPENDENCE_PYTHON))"
 PATH_INDEPENDENCE_PYTHON_REQUIRED = @test -x "$(PATH_INDEPENDENCE_PYTHON)" || \
 	{ echo "error: $(PATH_INDEPENDENCE_PYTHON) is missing; build it with 'make parity-venv' (or 'make python-smoke' for .venv-smoke)"; exit 1; }
@@ -475,14 +484,15 @@ release-test:
 # cleared on Ctrl-C with death by the signal, and absent when stderr is not a terminal.
 # Unix only; Python has no pty on Windows, so the test skips itself there.
 test-terminal: build
-	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/terminal -p 'test_*.py'
+	FDU_BIN="$${FDU_BIN:-$(DEBUG_FDU)}" \
+		$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/terminal -p 'test_*.py'
 
 # Build and inspect the host artifacts without contacting either registry. The explicit
 # release tag exercises exact-version behavior even though a rehearsal runs on a branch.
 #
 # One `cargo package` naming both crates, not two invocations: `fdu` depends on `fdu-core`,
 # which is not on crates.io, so packaging `fdu` alone fails to resolve it. Packaging the
-# sibling first in a separate run does not help -- that puts a `.crate` in target/package,
+# sibling first in a separate run does not help -- that puts a `.crate` in <target>/package,
 # not in the index. Naming both in one invocation makes cargo verify each against the
 # just-packaged sibling (fdu-pj9w).
 #
@@ -495,7 +505,7 @@ release-rehearse: release-test
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
 		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
-		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		cp "$(CARGO_TARGET)/package/fdu-core-$$version.crate" "$(CARGO_TARGET)/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/smoke_crate.py "$$artifact_dir" --version "$$version" \
 			--work-dir "$$smoke_dir" --cargo "$(CARGO)" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
@@ -551,11 +561,8 @@ PERF_LABEL ?= benchmarks-self-contained
 PERF_RESULTS ?= /tmp/fdu-realtree/results
 PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
 PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
-# Where cargo writes build output, asked of cargo rather than assumed to be `target/`:
-# CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
-# assumed path would then be measured in place of the one just built. `target` is only
-# the fallback for a cargo that cannot answer, and then the build before it fails first.
-PERF_TARGET_DIR = $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),target)
+# The probe is measured where cargo wrote it: see CARGO_TARGET.
+PERF_TARGET_DIR = $(CARGO_TARGET)
 PERF_RELEASE = $(PERF_TARGET_DIR)/release/examples/perf_probe
 PERF_PROFILING = $(PERF_TARGET_DIR)/profiling/examples/perf_probe
 # Evidence qualifiers default to exploration. A held-out run must opt into a controlled

@@ -664,8 +664,12 @@ class ScoresTheProbeMakeBuilt(unittest.TestCase):
     def test_make_locates_the_probe_where_cargo_writes_it(self):
         """A literal `target/` is wrong under CARGO_TARGET_DIR or build.target-dir."""
         self.assertIsNotNone(
-            re.search(r"(?m)^PERF_TARGET_DIR = .*\$\(CARGO\) metadata", self.MAKEFILE),
-            "PERF_TARGET_DIR must ask cargo where it writes build output",
+            re.search(r"(?m)^CARGO_TARGET = .*\$\(CARGO\) metadata", self.MAKEFILE),
+            "CARGO_TARGET must ask cargo where it writes build output",
+        )
+        self.assertIsNotNone(
+            re.search(r"(?m)^PERF_TARGET_DIR = \$\(CARGO_TARGET\)$", self.MAKEFILE),
+            "PERF_TARGET_DIR must be the directory cargo named",
         )
         self.assertIsNotNone(
             re.search(r"(?m)^PERF_RELEASE = \$\(PERF_TARGET_DIR\)/release/examples/perf_probe$",

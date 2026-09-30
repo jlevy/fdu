@@ -31,7 +31,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-FDU = os.environ.get("FDU_BIN") or str(REPO / "target" / "debug" / "fdu")
+# `make test-terminal` names the build cargo made; standalone, CARGO_TARGET_DIR moves it.
+TARGET = REPO / os.environ.get("CARGO_TARGET_DIR", "target")
+FDU = os.environ.get("FDU_BIN") or str(TARGET / "debug" / "fdu")
 ERASE = b"\r\x1b[2K"
 SPINNER_LEAD = "⠋".encode()[:2]  # every braille spinner cell starts with these bytes
 INTERRUPTED = b"fdu: interrupted"
