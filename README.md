@@ -418,6 +418,14 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
+fdu is optimized by an agent-run
+[performance loop](docs/project/guides/performance-loop.md) of 200 recorded experiments
+so far.
+The loop measures each change against the previous build in interleaved pairs and
+keeps it only when it makes fdu at least 3% faster, with a 95% interval below zero.
+[The evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md)
+charts all of them.
+
 Time to report on the same generated million-file tree, with warm filesystem caches, as
 a multiple of fdu’s time (lower is faster):
 
