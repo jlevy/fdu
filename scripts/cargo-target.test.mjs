@@ -20,8 +20,8 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 // A directory that is not `<checkout>/target`, the way AGENTS.md asks worktrees to build.
 const ELSEWHERE = join(tmpdir(), "fdu-elsewhere-target");
 
-function dryRun(target, env = {}) {
-  const result = spawnSync("make", ["--no-print-directory", "-n", target], {
+function dryRun(target, env = {}, variables = []) {
+  const result = spawnSync("make", ["--no-print-directory", "-n", target, ...variables], {
     cwd: ROOT,
     encoding: "utf8",
     env: { ...process.env, ...env },
@@ -50,6 +50,22 @@ test("every gate that runs a built binary runs the one cargo built (fdu-bi9a, fd
     assert(recipe.includes(expected), `${target} does not use ${ELSEWHERE}:\n${recipe}`);
     assert(!recipe.includes(join(ROOT, "target")), `${target} still names ${ROOT}/target`);
   }
+});
+
+test("a cargo that cannot answer still leaves CARGO_TARGET_DIR in charge", () => {
+  // The same fallback order as scripts/cargo-target.mjs, so Make and the scripts cannot
+  // disagree about which binary a gate runs.
+  const moved = dryRun("path-independence", { CARGO_TARGET_DIR: ELSEWHERE }, ["CARGO=false"]);
+  assert(moved.includes(`FDU_BIN="${ELSEWHERE}/debug/fdu"`), moved);
+  const env = { ...process.env };
+  delete env.CARGO_TARGET_DIR;
+  const result = spawnSync(
+    "make",
+    ["--no-print-directory", "-n", "path-independence", "CARGO=false"],
+    { cwd: ROOT, encoding: "utf8", env },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert(result.stdout.includes(`FDU_BIN="${join(ROOT, "target")}/debug/fdu"`), result.stdout);
 });
 
 test("no gate names a literal target/ build path", () => {

@@ -13,9 +13,9 @@ NODE_INSTALL_STAMP := node_modules/.package-lock.json
 # CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
 # assumed path would then be tested or measured in place of the one just built
 # (fdu-bi9a, fdu-dfbu). Evaluated once, on first use, so a target that never builds never
-# asks. `$(CURDIR)/target` is only the fallback for a cargo that cannot answer, and then
-# the build before it fails first.
-CARGO_TARGET = $(eval CARGO_TARGET := $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),$(CURDIR)/target))$(CARGO_TARGET)
+# asks. CARGO_TARGET_DIR, then `$(CURDIR)/target`, are only the fallback for a cargo that
+# cannot answer, as in scripts/cargo-target.mjs, and then the build before it fails first.
+CARGO_TARGET = $(eval CARGO_TARGET := $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),$(if $(CARGO_TARGET_DIR),$(abspath $(CARGO_TARGET_DIR))),$(CURDIR)/target))$(CARGO_TARGET)
 DEBUG_FDU = $(CARGO_TARGET)/debug/fdu
 
 # A target directory shared by several checkouts serves one checkout's build to another.
