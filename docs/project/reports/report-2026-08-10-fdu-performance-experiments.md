@@ -72,6 +72,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -276,6 +277,11 @@ dead end.
 | 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp193--linux-h183-cheap-matcher-prechecks-cut-the-default-tree-8-on-linuxv612) | H183 | `default-tree` | -7.6% | ✅ accepted |
 | 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linuxv612) | — | `default-tree` | -39.0% | 📏 baseline |
 | 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-nodemodulesdense) | — | `default-tree` | -9.8% | 📏 baseline |
+| 197 | [Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense](#exp197--linux-h185-describes-each-directory-once-on-the-folded-tree-route-the-default-tree-4-faster-on-nodemodulesdense) | H185 | `default-tree` | -3.6% | ✅ accepted |
+| 198 | [Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12](#exp198--linux-h188-bytewise-summary-fold-and-h189-presized-control-reads-the-default-summary-6-faster-on-linuxv612) | H188, H189 | `aggregate-summary` | -6.2% | ✅ accepted |
+| 199 | [Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense](#exp199--linux-h186-admits-tree-rows-before-building-them-the-default-tree-5-faster-on-nodemodulesdense) | H186 | `default-tree` | -4.9% | ✅ accepted |
+| 200 | [Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change](#exp200--linux-h187-sorts-only-what-the-folded-tree-keeps-a-38-consumer-cut-with-no-wall-change) | H187 | `default-tree` | -0.3% | ❌ rejected |
+| 201 | [Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees](#exp201--linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-faster-and-ahead-of-every-pdu-mode-on-both-real-trees) | H185, H186, H188, H189 | `default-tree` | -3.1% | 📏 baseline |
 
 ## The experiments
 
@@ -6405,6 +6411,150 @@ against the Q0 engine; no decision rests on it.
 Full record:
 [`exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md`](../experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)
 
+### exp-197 — Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense
+
+✅ accepted · 2026-09-30 · H185 · commit `c0da65ae`
+
+Control: ebc06c78 probe (the final head of the round, the branch’s base engine)
+
+Candidate: c0da65ae probe (the H185 head)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 85.2 | 81.8 | -3.55% | [-7.85%, -2.57%] |
+| component (ms) | 82.4 | 78.8 | -4.02% | [-8.14%, -2.47%] |
+| cpu (ms) | 296.9 | 289.1 | -4.37% | [-5.63%, -2.21%] |
+| user (ms) | 45.2 | 48.3 | +3.15% (n.s.) | [-4.49%, +33.22%] |
+| system (ms) | 250.4 | 237.5 | -4.35% | [-11.25%, -2.50%] |
+
+Other jobs, wall time: `aggregate-summary` +2.1% (n.s.), `cold-scan-index` +0.9% (n.s.).
+
+Cost to carry: 136 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair node-modules-dense default-tree -3.55% [-7.85%, -2.57%], the
+--no-controls replicate -7.28% [-9.16%, -5.43%], linux-balanced-1m screen -4.45%;
+placebos include zero; linux-v6.12 +2.13% [-3.19%, +5.30%] with .gitignore on and -1.25%
+[-4.46%, +0.25%] off, not resolvable, no regression; statx 79,961 -> 70,416 and 92,836
+-> 87,006; answers identical.
+
+Full record:
+[`exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md`](../experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)
+
+### exp-198 — Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12
+
+✅ accepted · 2026-09-30 · H188, H189 · commit `7a3a7058`
+
+Control: c0da65ae probe (the H185 head)
+
+Candidate: 7a3a7058 probe (the H188 part-2 head, with H189)
+
+**`aggregate-summary`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 90.3 | 85.8 | -6.15% | [-7.94%, -1.80%] |
+| component (ms) | 87.4 | 83.0 | -6.11% | [-7.86%, -1.28%] |
+| cpu (ms) | 324.9 | 318.1 | -3.38% | [-5.30%, -0.07%] |
+| user (ms) | 88.4 | 60.6 | -32.66% | [-38.79%, -17.15%] |
+| system (ms) | 239.3 | 255.9 | +7.36% (n.s.) | [-0.42%, +13.12%] |
+
+Other jobs, wall time: `default-tree` +0.2% (n.s.).
+
+Cost to carry: 261 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair linux-v6.12 aggregate-summary -6.15% [-7.94%, -1.80%],
+within the -5% to -9% predicted; the --no-controls arms there and both jobs on
+node-modules-dense include zero; summary consumer instructions 361.7M -> 202.7M; read
+1,261 -> 729; answers identical.
+
+Full record:
+[`exp-198-linux-h188-byte-wise-summary-fold-and-h189-pre-sized-control.md`](../experiments/exp-198-linux-h188-byte-wise-summary-fold-and-h189-pre-sized-control.md)
+
+### exp-199 — Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense
+
+✅ accepted · 2026-09-30 · H186 · commit `a356d456`
+
+Control: 7a3a7058 probe (the H188 part-2 head)
+
+Candidate: a356d456 probe (the H186 head)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 82.1 | 77.2 | -4.91% | [-6.94%, -2.86%] |
+| component (ms) | 79.0 | 74.0 | -5.33% | [-7.59%, -2.56%] |
+| cpu (ms) | 284.1 | 280.5 | -2.05% | [-3.15%, -0.34%] |
+| user (ms) | 57.4 | 50.6 | -16.14% | [-34.95%, -4.04%] |
+| system (ms) | 227.0 | 231.3 | +1.67% (n.s.) | [-1.35%, +9.67%] |
+
+Other jobs, wall time: `aggregate-summary` +0.4% (n.s.).
+
+Cost to carry: 178 lines; no new dependencies.
+
+**Accepted:** quiet 20-pair node-modules-dense default-tree -4.91% [-6.94%, -2.86%], the
+--no-controls replicate -0.93% [-3.60%, +3.07%] putting the effect near the top of the
+predicted -2.5% to -4%; placebos include zero; linux-v6.12 -1.24% [-6.47%, +1.45%], in
+the predicted range, not resolvable, no regression; answers identical.
+
+Full record:
+[`exp-199-linux-h186-admits-tree-rows-before-building-them-the-default.md`](../experiments/exp-199-linux-h186-admits-tree-rows-before-building-them-the-default.md)
+
+### exp-200 — Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change
+
+❌ rejected · 2026-09-30 · H187 · commit `cfae174e`
+
+Control: a356d456 probe (the H186 head)
+
+Candidate: cfae174e probe (the H187 head)
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 84.3 | 83.0 | -0.35% (n.s.) | [-3.61%, +2.19%] |
+| component (ms) | 81.2 | 80.0 | -0.45% (n.s.) | [-3.79%, +2.65%] |
+| cpu (ms) | 309.1 | 307.2 | -0.04% (n.s.) | [-2.15%, +2.32%] |
+| user (ms) | 64.4 | 65.6 | -4.41% (n.s.) | [-16.02%, +16.81%] |
+| system (ms) | 239.2 | 239.3 | +2.49% (n.s.) | [-4.01%, +4.92%] |
+
+Other jobs, wall time: `aggregate-summary` +0.2% (n.s.), `cold-scan-index` -0.8% (n.s.).
+
+Cost to carry: 210 lines; no new dependencies.
+
+**Rejected:** quiet 20-pair default-tree -0.35% [-3.61%, +2.19%] on linux-v6.12 and
++0.64% [-2.38%, +3.46%] on node-modules-dense against -3% to -5% and -2% to -4%
+predicted; replicates agree; placebos at zero; cold-scan-index non-inferior; consumer
+instructions -20% and -38% with identical answers did not reach wall.
+
+Full record:
+[`exp-200-linux-h187-sorts-only-what-the-folded-tree-keeps-a-38-consum.md`](../experiments/exp-200-linux-h187-sorts-only-what-the-folded-tree-keeps-a-38-consum.md)
+
+### exp-201 — Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees
+
+📏 baseline · 2026-09-30 · H185, H186, H188, H189 · commit `a356d456`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 88.5 |
+| component (ms) | 85.5 |
+| cpu (ms) | 321.2 |
+| user (ms) | 65.7 |
+| system (ms) | 262.3 |
+
+Other jobs, wall time: `aggregate-summary` 92 ms.
+
+**Baseline:** Confirms the track’s accepted changes in one paired cell per tree against
+the round’s final head, with pdu default, pdu --max-depth 2 and diskus paired with the
+shipped head in the same run; no decision rests on it.
+
+Full record:
+[`exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md`](../experiments/exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6636,6 +6786,14 @@ Baselines show one value because they measure a state rather than a change.
 | 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
 | 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 198 | Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12 | `aggregate-summary` | 90.3 | 85.8 | -6.2% | ✅ accepted |
+| 200 | Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change | `default-tree` | 84.3 | 83.0 | -0.3% | ❌ rejected |
+| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | — | — | 📏 baseline |
+
 ### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6732,6 +6890,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 098 | Share pool orchestration through a dynamic consumer | `cold-scan-index` | 552.2 | 557.7 | +0.8% | ❌ rejected |
 | 099 | Monomorphize shared concurrent-walk consumption | `cold-scan-index` | 569.3 | 566.0 | +0.2% | ✅ accepted |
+
+### node-modules-dense (79,957 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 197 | Linux: H185 describes each directory once on the folded tree route, the default tree 4% faster on node-modules-dense | `default-tree` | 85.2 | 81.8 | -3.6% | ✅ accepted |
+| 199 | Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense | `default-tree` | 82.1 | 77.2 | -4.9% | ✅ accepted |
 
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
