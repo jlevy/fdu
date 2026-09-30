@@ -22,10 +22,20 @@
 // Output is one JSON line with the same tallies walkspike reports, so any variant that
 // disagrees with any other, with walkspike, or with fdu's summary is broken.
 //
+// A directory is counted where it is found, not where it is opened: one this process
+// cannot open is still a directory of the tree, as fdu and arena_spike count it, and only
+// its contents go uncounted (fdu-fmxk). A root that cannot be opened is an error, not a
+// tree of minus one directories.
+//
 //   gcc -O2 -pthread -o parfloor parfloor.c
 //   ./parfloor stat /path/to/tree 4
+//
+// -DPARFLOOR_FORCE_DT_UNKNOWN reads every d_type as DT_UNKNOWN, which is what XFS without
+// ftype, some NFS servers and some FUSE filesystems report, so the fallback below can be
+// tested on a filesystem that does fill it in.
 #define _GNU_SOURCE
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -106,6 +116,17 @@ static int64_t now_ns(void) {
   return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
 
+// Queue a subdirectory, and count it: it is a directory whether or not it opens.
+static void found_dir(struct tally *t, char *abs, size_t size, const char *dir,
+                      const char *name) {
+  t->dirs++;
+  snprintf(abs, size, "%s/%s", dir, name);
+  pthread_mutex_lock(&qlock);
+  qpush_locked(abs);
+  pthread_cond_signal(&qcond);
+  pthread_mutex_unlock(&qlock);
+}
+
 static void *worker(void *arg) {
   struct tally *t = arg;
   char *buf = malloc(BUFSZ);
@@ -115,10 +136,10 @@ static void *worker(void *arg) {
   while ((dir = qpop()) != NULL) {
     int fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (fd < 0) {
+      // Already counted where it was found; its contents are what cannot be read.
       free(dir);
       continue;
     }
-    t->dirs++;
     for (;;) {
       long n = syscall(SYS_getdents64, fd, buf, BUFSZ);
       t->getdents_calls++;
@@ -129,15 +150,21 @@ static void *worker(void *arg) {
         const char *name = e->d_name;
         if (name[0] == '.' && (!name[1] || (name[1] == '.' && !name[2]))) continue;
         // d_type resolves directories without a metadata call. `enum` stops here; that
-        // is exactly the work a search tool such as ripgrep has to do and no more.
+        // is exactly the work a search tool such as ripgrep has to do and no more -- on a
+        // filesystem that fills d_type in. One that reports DT_UNKNOWN leaves a search
+        // tool the same choice: ask for the type, or miss every directory below.
         if (!variant_stat) {
-          if (e->d_type == DT_DIR) {
-            snprintf(abs, sizeof abs, "%s/%s", dir, name);
-            pthread_mutex_lock(&qlock);
-            qpush_locked(abs);
-            pthread_cond_signal(&qcond);
-            pthread_mutex_unlock(&qlock);
+          unsigned char type = e->d_type;
+#ifdef PARFLOOR_FORCE_DT_UNKNOWN
+          type = DT_UNKNOWN;
+#endif
+          if (type == DT_UNKNOWN) {
+            struct statx sx;
+            if (statx(fd, name, AT_SYMLINK_NOFOLLOW, STATX_TYPE, &sx) != 0) continue;
+            t->stat_calls++;
+            if (S_ISDIR(sx.stx_mode)) type = DT_DIR;
           }
+          if (type == DT_DIR) found_dir(t, abs, sizeof abs, dir, name);
           continue;
         }
         struct statx sx;
@@ -151,11 +178,7 @@ static void *worker(void *arg) {
         if (!ok) continue;
         t->stat_calls++;
         if (S_ISDIR(sx.stx_mode)) {
-          snprintf(abs, sizeof abs, "%s/%s", dir, name);
-          pthread_mutex_lock(&qlock);
-          qpush_locked(abs);
-          pthread_cond_signal(&qcond);
-          pthread_mutex_unlock(&qlock);
+          found_dir(t, abs, sizeof abs, dir, name);
         } else if (S_ISREG(sx.stx_mode)) {
           t->files++;
           t->bytes += sx.stx_size;
@@ -193,6 +216,15 @@ int main(int argc, char **argv) {
   if (nthreads < 1) nthreads = 1;
   if (nthreads > MAXTHREADS) nthreads = MAXTHREADS;
 
+  // Every count below is of what lies inside the root, so a root that cannot be opened
+  // has no answer. It used to print zero opened directories minus the root: 2^64-1.
+  int root_fd = open(argv[2], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (root_fd < 0) {
+    fprintf(stderr, "parfloor: cannot open root %s: %s\n", argv[2], strerror(errno));
+    return 1;
+  }
+  close(root_fd);
+
   qpush_locked(argv[2]);
   struct tally tallies[MAXTHREADS];
   pthread_t ids[MAXTHREADS];
@@ -213,12 +245,12 @@ int main(int argc, char **argv) {
     s.stat_calls += tallies[i].stat_calls;
     s.getdents_calls += tallies[i].getdents_calls;
   }
-  // walkspike counts the root as a directory it descended but not as an entry; match it
-  // so the two instruments' tallies are directly comparable.
+  // walkspike counts the root as a directory it descended but not as an entry, and
+  // `dirs` counts subdirectories where they are found, so the root is never in it.
   printf("{\"variant\":\"%s\",\"threads\":%d,\"dirs\":%llu,\"files\":%llu,\"other\":%llu,"
          "\"bytes\":%llu,\"allocated\":%llu,\"stat_calls\":%llu,\"getdents_calls\":%llu,"
          "\"wall_ns\":%lld}\n",
-         v, nthreads, (unsigned long long)s.dirs - 1, (unsigned long long)s.files,
+         v, nthreads, (unsigned long long)s.dirs, (unsigned long long)s.files,
          (unsigned long long)s.other, (unsigned long long)s.bytes,
          (unsigned long long)s.allocated, (unsigned long long)s.stat_calls,
          (unsigned long long)s.getdents_calls, (long long)wall);

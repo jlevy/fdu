@@ -78,17 +78,17 @@ here rather than treated as drift.
 The oracle holds each of those four that any instrument reports, taken from the first trial
 that reported it, so a run opening with an instrument that reports fewer tallies still
 compares the rest. A *reference* row neither sets it nor vetoes the subject. `parfloor enum` makes
-no metadata call, so it descends only where `getdents64` reports `DT_DIR`, and on a
-filesystem that leaves `d_type` unknown it undercounts directories -- a fact about that
-instrument, not about the tree or the tiers. A reference that disagrees is dropped from
-the table, with the reason.
+no metadata call where `getdents64` reports each entry's type; on a filesystem that leaves
+`d_type` unknown it has to ask (one `statx` per entry) or miss every directory below, so
+it asks, and its time there is no longer a search tool's floor. A reference that
+disagrees is dropped from the table, with the reason.
 
-`parfloor stat` is the floor and cannot be dropped, which leaves one known gap as a
-limitation of the scoreboard: a directory it cannot open is skipped without being
-counted, while fdu and `arena_spike` count it. **A subject with any directory the
-running user cannot read is refused by the oracle**, so score subjects that are readable
-throughout. A subject root it cannot open would print a wrapped directory count, so an
-unreadable root is refused before anything runs.
+`parfloor stat` is the floor and cannot be dropped. It counts a directory it cannot open
+where it finds it, as fdu and `arena_spike` do, and refuses a root it cannot open rather
+than printing a wrapped count (fdu-fmxk); the harness also refuses an unreadable root
+before anything runs. No subject with an unreadable directory has been scored end to end
+since, so whether every instrument's tallies agree on one is unmeasured: score subjects
+that are readable throughout until one has.
 
 ## The host regime
 

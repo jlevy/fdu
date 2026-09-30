@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import warnings
@@ -412,6 +413,76 @@ class DropsAReferenceRowRatherThanVetoing(unittest.TestCase):
                 locked.chmod(0o755)
         self.assertEqual(status, 2)
         self.assertIn("not readable", stderr.getvalue())
+
+
+@unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("gcc"),
+                     "parfloor is Linux-only and built with gcc")
+class ParfloorCountsWhatTheOtherInstrumentsCount(unittest.TestCase):
+    """The C side of review FLOOR-12 (fdu-fmxk), run against the real program.
+
+    A directory `parfloor` could not open went uncounted where fdu and `arena_spike`
+    count it; `enum` had no answer for a filesystem that leaves `d_type` unknown; and an
+    unopenable root printed 2^64-1 directories.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.scratch = tempfile.TemporaryDirectory()
+        base = Path(cls.scratch.name)
+        cls.binaries = {}
+        for name, flags in (("parfloor", []), ("parfloor-unknown", ["-DPARFLOOR_FORCE_DT_UNKNOWN"])):
+            binary = base / name
+            subprocess.run(["gcc", "-O2", "-pthread", *flags, "-o", str(binary),
+                            str(floor.SPIKES / "parfloor.c")], check=True, capture_output=True)
+            cls.binaries[name] = binary
+        cls.tree = base / "tree"
+        for directory in ("a", "b/c"):
+            (cls.tree / directory).mkdir(parents=True)
+        for name in ("a/one", "a/two", "b/c/three", "top"):
+            (cls.tree / name).write_text(name)
+        (cls.tree / "link").symlink_to("a")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.scratch.cleanup()
+
+    def tallies(self, variant, root, binary="parfloor"):
+        completed = subprocess.run([str(self.binaries[binary]), variant, str(root), "2"],
+                                   capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return json.loads(completed.stdout)
+
+    def test_enum_asks_for_the_type_where_d_type_is_unknown(self):
+        stat = self.tallies("stat", self.tree)
+        blind = self.tallies("enum", self.tree, binary="parfloor-unknown")
+        self.assertEqual(stat["dirs"], 3)
+        self.assertEqual(blind["dirs"], stat["dirs"])
+        self.assertEqual(self.tallies("enum", self.tree)["stat_calls"], 0)
+
+    def test_a_root_that_cannot_be_opened_is_an_error_not_a_wrapped_count(self):
+        missing = Path(self.scratch.name) / "missing"
+        for variant in ("stat", "enum"):
+            completed = subprocess.run([str(self.binaries["parfloor"]), variant, str(missing)],
+                                       capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 1, completed.stdout)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("cannot open root", completed.stderr)
+
+    @unittest.skipIf(os.geteuid() == 0, "root can open a mode-000 directory")
+    def test_a_directory_it_cannot_open_is_still_a_directory(self):
+        locked = self.tree / "locked"
+        locked.mkdir()
+        (locked / "hidden").write_text("unread")
+        locked.chmod(0)
+        try:
+            stat = self.tallies("stat", self.tree)
+            enum = self.tallies("enum", self.tree)
+        finally:
+            locked.chmod(0o755)
+            (locked / "hidden").unlink()
+            locked.rmdir()
+        self.assertEqual((stat["dirs"], stat["files"]), (4, 4))
+        self.assertEqual(enum["dirs"], 4)
 
 
 class CountsEntriesTheWayPerfSubjectsDoes(unittest.TestCase):
