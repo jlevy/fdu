@@ -1,6 +1,15 @@
 //! Optional, versioned file-content analysis.
 //!
 //! Metadata-only scans allocate none of these structures and open no file content.
+//!
+//! An analysis pass reads each file in 64 KiB chunks, schedules its candidates in
+//! bounded batches, and never truncates or size-skips an eligible file. Two things are
+//! still retained whole per worker, because an exact answer needs them: the source of a
+//! Markdown file under the words unit, since the `CommonMark` parser resolves list
+//! tightness, headings, and references across the whole document (fdu-b2qz), and the
+//! longest logical line of a supported code file under the code unit
+//! ([`CodeAccumulator`], fdu-1zb6). A file of another type retains at most its 16 KiB
+//! classification prefix and one chunk once the prefix has settled its type.
 
 mod content_analysis;
 mod content_basic_metrics;
