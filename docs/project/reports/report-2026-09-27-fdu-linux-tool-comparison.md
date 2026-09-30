@@ -5,9 +5,23 @@
 
 **Status:** Exploratory local performance evidence from a quiet virtualized host
 
-The 2026-09-29 run comes first: it measures the current engine and every peer at its
-current release. The 2026-09-27 and 2026-09-28 runs follow it unchanged, from
+The 2026-09-29 run comes first: it measures the final head of the parity round and every
+peer at its current release.
+The 2026-09-27 and 2026-09-28 runs follow it unchanged, from
 [Outcome, 2026-09-28](#outcome-2026-09-28) on.
+
+**Since, 2026-09-30:** the pdu track’s engine (`a356d456`) was paired with pdu 0.24.0,
+at its default and at `--max-depth 2`, and diskus 0.9.0 on the two real trees, 20 pairs
+per peer in one run per tree on the same host
+([exp-201](../experiments/exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md)).
+fdu’s default command led pdu’s default by 13% and 15%, `pdu --max-depth 2` by 3%
+[+1%, +8%] and 10% [+4%, +13%], and diskus by 12% and 11% on `linux-v6.12` and
+`node-modules-dense`. About six points of the lead over pdu’s default are that night’s
+host regime: the final head measured here led pdu’s default by about 6% in the same run,
+where the [real-tree standing below](#real-trees-2026-09-29) had them level.
+The lead over `pdu --max-depth 2` is the track’s own, since the final head was level
+with it on the kernel tree and 2.4% behind on the dense tree.
+The generated million-entry tree has not been run against the peers since.
 
 ## Final Head of the Parity Round, 2026-09-29
 

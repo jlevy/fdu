@@ -14,12 +14,15 @@ Key features:
   [pdu](https://github.com/KSXGitHub/parallel-disk-usage), and about 9% faster (on an
   uncontrolled host) than [dumac](https://github.com/healeycodes/dumac#readme), the
   next-fastest tool, which returns only a total.
-  On Linux, the current engine’s default command runs level with pdu and
-  [diskus](https://github.com/sharkdp/diskus), the fastest peers there, on real source
-  and `node_modules` trees.
-  On a million-entry tree it is 4% faster than pdu’s default and 7% faster than diskus,
-  while pdu limited to two levels is 3% faster than fdu.
-  See [Speed](#speed) and [Comparison to Alternatives](#comparison-to-alternatives).
+  On Linux, in one 20-pair run per tree on a 4-vCPU virtualized host, the default
+  command led pdu’s default by 13% and 15% on real source and `node_modules` trees, pdu
+  limited to two levels by 3% and 10%, and [diskus](https://github.com/sharkdp/diskus)
+  by 12% and 11%. About six points of the lead over pdu’s default reflect that night’s
+  host rather than fdu; the lead over pdu at two levels is fdu’s own.
+  On a generated million-entry tree, measured only on an earlier engine (`ebc06c78`),
+  pdu limited to two levels was 3% faster than fdu, and pdu’s default 4% and diskus 7%
+  slower. See [Speed](#speed) and
+  [Comparison to Alternatives](#comparison-to-alternatives).
 - **Text, file, and code analysis:** Rolls up content metrics, including lines, source
   code lines by language, and words, paragraphs, and pages for Markdown and text.
 - **Cached statistics:** Content metrics require reading files, so fdu caches them
@@ -421,14 +424,46 @@ assert!(report.analysis.is_some());
 
 ## Speed
 
-On Linux, fdu’s default command is level with the fastest peers, pdu and diskus.
-On a generated million-entry tree, `fdu PATH` rendered its default tree in a **1.09
-second** median, covering **804k files/s**. Measured on a quiet 4-vCPU virtualized ext4
-host with warm filesystem caches, 2026-09-29, on the current engine (`ebc06c78`):
+On Linux, fdu’s default command is ahead of pdu, at its default and at `--max-depth 2`,
+and of diskus on two real trees: the Linux v6.12 source (92,474 entries, 358
+`.gitignore` files) and a directory-dense `node_modules` (79,957 entries).
+Each tree had one interleaved run on a quiet 4-vCPU virtualized ext4 host with warm
+filesystem caches, 2026-09-30, pairing each peer 20 times with the adjacent fdu run
+([exp-201](docs/project/experiments/exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md)):
+
+| Tool | Work returned | Linux v6.12 source | `node_modules` |
+| --- | --- | ---: | ---: |
+| **fdu** | default tree: five levels, 1% share floor | **0.084 s**, baseline | **0.079 s**, baseline |
+| fdu at `ebc06c78` | the same tree, on the earlier engine | 0.088 s, +4% [+2%, +7%] | 0.087 s, +12% [+7%, +13%] |
+| pdu `--max-depth 2` | the root and its children | 0.088 s, +3% [+1%, +8%] | 0.086 s, +10% [+4%, +13%] |
+| pdu | default tree: ten levels, 1% floor | 0.094 s, +13% [+10%, +15%] | 0.092 s, +15% [+13%, +20%] |
+| diskus | one total | 0.094 s, +12% [+8%, +16%] | 0.090 s, +11% [+10%, +15%] |
+
+Each percentage is the median of the paired changes against the adjacent fdu run, with
+its 95% interval. Positive percentages mean extra elapsed time: +60% means 1.6× as long.
+fdu’s time includes reading the kernel tree’s `.gitignore` files, which neither peer
+reads.
+
+Part of the lead over pdu’s default is the host rather than fdu.
+In this run the earlier engine (`ebc06c78`) led pdu’s default by about 6% on both trees,
+where the previous standing had them level
+([exp-194](docs/project/experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md)),
+so about six points of that lead reflect that night’s host regime.
+The lead over `pdu --max-depth 2` is fdu’s own: in the same run the earlier engine was
+level with it on the kernel tree and 2.4% behind on the dense tree.
+On the kernel tree that lead is at the edge of what 20 pairs resolve.
+The earlier engine’s default tree was itself 39% faster than 0.2.1’s on the kernel tree
+([exp-194](docs/project/experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md))
+and 10% faster on the dense tree
+([exp-195](docs/project/experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)).
+
+On a generated million-entry tree, the earlier engine (`ebc06c78`, from
+[#161](https://github.com/jlevy/fdu/pull/161)) rendered its default tree in a **1.09
+second** median, covering **804k files/s**, on the same host, 2026-09-29:
 
 | Tool | Work returned | Median wall-clock time | Wall time vs. fdu | Peak RSS |
 | --- | --- | ---: | ---: | ---: |
-| **fdu** | default tree: five levels, 1% share floor | **1.09 s** | baseline | 58 MiB |
+| **fdu** at `ebc06c78` | default tree: five levels, 1% share floor | **1.09 s** | baseline | 58 MiB |
 | pdu `--max-depth 2` | the root and its children | 1.06 s | −3% | ≤ 54 MiB |
 | pdu | default tree: ten levels, 1% floor | 1.14 s | +4% | 93 MiB |
 | diskus | one total | 1.16 s | +7% | ≤ 54 MiB |
@@ -439,22 +474,15 @@ host with warm filesystem caches, 2026-09-29, on the current engine (`ebc06c78`)
 | dua | the root’s children and a total | 3.65 s | +234% | ≤ 54 MiB |
 
 Each percentage is paired against the adjacent fdu run, and every 95% interval excludes
-zero. Positive percentages mean extra elapsed time: +60% means 1.6× as long.
-A peak of ≤ 54 MiB is a bound, not a measurement: Linux carries a process’s peak memory
-across `exec`, so a tool smaller than the harness reports the harness’s own peak.
+zero. A peak of ≤ 54 MiB is a bound, not a measurement: Linux carries a process’s peak
+memory across `exec`, so a tool smaller than the harness reports the harness’s own peak.
 fdu’s default tree keeps an exact roll-up for every directory but only the files large
 enough to show, so it holds 58 MiB here rather than a reusable index.
-
-On two real trees, the Linux v6.12 source (92,474 entries, 358 `.gitignore` files) and a
-directory-dense `node_modules` (79,957 entries), the default command is level with pdu’s
-default and diskus in 20 quiet pairs each: pdu’s default took +1% [−2%, +2%] and +1%
-[−2%, +4%], and diskus +2% [−1%, +9%] and −2% [−4%, +2%]. pdu at `--max-depth 2` was
-level on the kernel tree and 7% faster [−10%, −4%] on the dense one.
-Reading `.gitignore` files now adds 1.6% to the kernel tree’s default report, which is
-39% faster than 0.2.1’s
-([exp-194](docs/project/experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md));
-on the dense tree it is 10% faster
-([exp-195](docs/project/experiments/exp-195-linux-the-overnight-round-end-to-end-the-default-tree-10-fas.md)).
+No peer has been run on this tree since.
+A 12-pair screen of one change in the current engine, which stats each directory once
+rather than twice, measured the default tree here 4.45% faster than on `ebc06c78`
+([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)):
+a screen of fdu against itself, not a standing against the peers.
 See the
 [Linux comparison](docs/project/reports/report-2026-09-27-fdu-linux-tool-comparison.md#final-head-of-the-parity-round-2026-09-29)
 for versions, CPU time, and the protocol, and
@@ -548,9 +576,13 @@ at 55.6 s and GNU 9.9 at 68.0 s, and pdu ran at `-d 1`, a total.
 The peers measured there were dust 1.2.4, dua 2.41.1, gdu 5.36.1, pdu 0.24.0, diskus
 0.9.0, and ncdu 2.9.2.
 
-² Linux: a quiet 4-vCPU virtualized ext4 host, 2026-09-29, with the current engine’s
-default `fdu PATH`, pdu’s default, GNU `du` 9.4, and ncdu 1.19. On real source and
-`node_modules` trees, fdu is level with pdu and diskus.
+² Linux: a quiet 4-vCPU virtualized ext4 host, 2026-09-29, with the default `fdu PATH`
+on an earlier engine (`ebc06c78`), pdu’s default, GNU `du` 9.4, and ncdu 1.19; no peer
+has been run on this tree since.
+On real source and `node_modules` trees, in one 20-pair run per tree on the same host,
+2026-09-30, the current default command led pdu’s default by 13% and 15%, pdu at `-d 2`
+by 3% and 10%, and diskus by 12% and 11%; about six points of the lead over pdu’s
+default reflect that night’s host.
 
 ³ gdu’s unreleased main branch adds `--ignore-from-gitignore`, which reads patterns from
 one file.
@@ -592,10 +624,12 @@ interactively, which fdu does not; gdu can also serve a browser view, and `dua c
 finds build products to remove.
 `du` is already installed on every Unix-like system.
 diskus and dumac answer one total from a small binary, and pdu draws a compact size
-chart; on Linux, pdu and diskus are as fast as fdu, and pdu limited to two levels is
-slightly faster. For line counts alone, use scc or tokei: they count hundreds of
-languages to fdu’s 15, tokei counts embedded code, scc estimates complexity, and both
-count a large tree four to six times as fast as fdu’s first run.
+chart; on Linux, pdu and diskus are close to fdu in speed: fdu’s default command led
+them by 3% to 15% on two real trees, and pdu limited to two levels was 3% faster than an
+earlier fdu engine on a generated million-entry tree.
+For line counts alone, use scc or tokei: they count hundreds of languages to fdu’s 15,
+tokei counts embedded code, scc estimates complexity, and both count a large tree four
+to six times as fast as fdu’s first run.
 Use fdu for a tree you can prune, a `.gitignore`-aware answer, content metrics,
 versioned machine output, a live or cached view, or a Rust or Python API; for code, it
 adds counts per directory, each language’s ignored share, and a cache that makes a
