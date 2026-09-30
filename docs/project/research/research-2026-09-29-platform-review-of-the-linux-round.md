@@ -546,11 +546,12 @@ Three subject classes are needed for a set (transfer) claim.
 Record these in a plan’s Status table before any timed sample, as `78980e4a` did for
 exp-194.
 
-Proposed ids start at exp-202: exp-196 and H184 went to the autofs fix (`fdu-d2fn`) and
+Proposed ids start at exp-203: exp-196 and H184 went to the autofs fix (`fdu-d2fn`),
 exp-197–201 and H185–H190 to the pdu track
-([the uniformly-faster brief](research-2026-09-29-uniformly-faster-than-pdu.md)), so the
-cells below take exp-202–207 and the borrowed-name bulk listing, proposed as H184 when
-this was written, takes the next free hypothesis id (H191 onward) when it is registered.
+([the uniformly-faster brief](research-2026-09-29-uniformly-faster-than-pdu.md)), and
+exp-202 to the 0.3.0 release engine’s final standing, so the cells below take
+exp-203–208 and the borrowed-name bulk listing, proposed as H184 when this was written,
+takes the next free hypothesis id (H191 onward) when it is registered.
 The runbook’s Current Pickup states the next free ids.
 
 **Arms** in every end-to-end cell, as interleaved variants in this order:
@@ -583,12 +584,12 @@ effect is predicted below 10% (the Linux noise rule, from exp-175’s false A/A 
 
 | Cell | Subject | Jobs (deciding in **bold**) | Arms | Pairs | Predicted: wall; user CPU; peak RSS (`final` against `q0`) |
 | --- | --- | --- | --- | --- | --- |
-| **M1** (exp-202) | S1 `linux-v6.12-apfs` | **`default-tree`**, **`aggregate-summary`**, `default-tree --no-controls`, `aggregate-summary --no-controls` | q0, q0-copy, final | 20 | Tree: −2% to −12%; −35% to −65%; −50% to −80%. Summary: −2% to −12%; −30% to −60%; ±10%. Tree `--no-controls` (H172 alone): 0% to −5%; −15% to −35%; −50% to −80%. Summary `--no-controls` (H180 alone): −2% to +2%; −3% to −12%; ±5% |
-| **M2** (exp-203) | S2 `node-modules-dense-darwin` | **`default-tree`**, **`aggregate-summary`**, both `--no-controls` | q0, q0-copy, final | 20 | Tree: 0% to −5%; −10% to −30%; −50% to −80%. Summary (no `.gitignore`, H180 only): −2% to +2%; −3% to −12%; ±5% |
-| **M3** (exp-204) | S3 `metabrowser-clone` | **`default-tree`**, **`aggregate-summary`**, both `--no-controls` | q0, q0-copy, final | 20 | Tree: 0% to −6%; −20% to −45%; −55% to −80%. Summary: 0% to −5%; −15% to −40%; ±10% |
-| **M4** (exp-205) | S5 `system-private-frameworks` | **`default-tree`**, **`aggregate-summary`** | q0, q0-copy, final | 20 | Tree: −1% to +1% (about 20 µs of kernel time per entry sets the walk); −5% to −20%; −30% to −70% (all 55k directories are kept). Summary: −1% to +1% |
-| M5 (exp-206) | S4 `macos-balanced-1m` | `default-tree` (primary metric **peak RSS**), `aggregate-summary` | q0, q0-copy, final | 12 | Tree: wall 0% to −3%; user −5% to −25%; **RSS 281–294 → 55–80 MiB (−72% to −82%)**. Summary: 0% to −3%. This is also H66’s registered macOS rule ("decisive RSS reduction without meaningful latency regression"), which H172 now carries |
-| M6 (exp-207), attribution screen | S1 | `default-tree`, `aggregate-summary` | Stacked: q0 `e5a71c8a` → `2379233a` (H171 + H175) → `0228ea42` (+H172) → `c2a75fe4` (+H180) → `217861c1` (+H169: **the macOS placebo step**) → `a5dbac0f` (+H183) | 20 | The step predictions follow each row above. The H169 step must include zero. Run it only if M1 shows an effect worth attributing, or a regression, which it would then bisect |
+| **M1** (exp-203) | S1 `linux-v6.12-apfs` | **`default-tree`**, **`aggregate-summary`**, `default-tree --no-controls`, `aggregate-summary --no-controls` | q0, q0-copy, final | 20 | Tree: −2% to −12%; −35% to −65%; −50% to −80%. Summary: −2% to −12%; −30% to −60%; ±10%. Tree `--no-controls` (H172 alone): 0% to −5%; −15% to −35%; −50% to −80%. Summary `--no-controls` (H180 alone): −2% to +2%; −3% to −12%; ±5% |
+| **M2** (exp-204) | S2 `node-modules-dense-darwin` | **`default-tree`**, **`aggregate-summary`**, both `--no-controls` | q0, q0-copy, final | 20 | Tree: 0% to −5%; −10% to −30%; −50% to −80%. Summary (no `.gitignore`, H180 only): −2% to +2%; −3% to −12%; ±5% |
+| **M3** (exp-205) | S3 `metabrowser-clone` | **`default-tree`**, **`aggregate-summary`**, both `--no-controls` | q0, q0-copy, final | 20 | Tree: 0% to −6%; −20% to −45%; −55% to −80%. Summary: 0% to −5%; −15% to −40%; ±10% |
+| **M4** (exp-206) | S5 `system-private-frameworks` | **`default-tree`**, **`aggregate-summary`** | q0, q0-copy, final | 20 | Tree: −1% to +1% (about 20 µs of kernel time per entry sets the walk); −5% to −20%; −30% to −70% (all 55k directories are kept). Summary: −1% to +1% |
+| M5 (exp-207) | S4 `macos-balanced-1m` | `default-tree` (primary metric **peak RSS**), `aggregate-summary` | q0, q0-copy, final | 12 | Tree: wall 0% to −3%; user −5% to −25%; **RSS 281–294 → 55–80 MiB (−72% to −82%)**. Summary: 0% to −3%. This is also H66’s registered macOS rule ("decisive RSS reduction without meaningful latency regression"), which H172 now carries |
+| M6 (exp-208), attribution screen | S1 | `default-tree`, `aggregate-summary` | Stacked: q0 `e5a71c8a` → `2379233a` (H171 + H175) → `0228ea42` (+H172) → `c2a75fe4` (+H180) → `217861c1` (+H169: **the macOS placebo step**) → `a5dbac0f` (+H183) | 20 | The step predictions follow each row above. The H169 step must include zero. Run it only if M1 shows an effect worth attributing, or a regression, which it would then bisect |
 | M7 (screen, no verdict) | S1, S3 | `default-tree --diagnostics` on both arms | q0, final | 12 | The same worker-policy decision distribution on both arms. `starved_ns` gives the H166 gate on macOS. `send_ns` and `lock_wait_ns` are inputs to M9 |
 | M8 (peer standings; supplementary to M1–M5) | S1, S2, S3 (20 pairs); S4 (12) | `make perf-compare-tools` with the anchor `fdu-default-tree` at `0c8131fd`; a second run anchored at `e5a71c8a` gives before and after | Peers below | 20 / 12 | Standings, not verdicts. Predicted: fdu’s default ahead of `pdu-default`, `diskus`, `dua` and `gdu` by 20–50%, and within ±10% of `dumac`. Every peer except dumac stats each entry on macOS; on the million-entry tree pdu was +49%, diskus +42% and dumac +9% (2026-09-26 table) |
 | M9 (profile, no verdict) | S1, S2 | `make perf-profile` (`sample`), `xctrace` System Trace, `FDU_COUNTERS=1` | final only | — | The macOS half of `fdu-j4p7`: cores busy (CPU ÷ wall) against dumac and `pdu-default` from M8; voluntary switches; the serial tail after the walk ends; handoff waits. It names a hypothesis only if the target is at least 3% of wall |
@@ -702,7 +703,7 @@ each, and the serial floors are not the question.
 
 ## 8. Where to record the results
 
-- **Experiment records.** `docs/project/experiments/exp-202…exp-207-macos-….md`, written
+- **Experiment records.** `docs/project/experiments/exp-203…exp-208-macos-….md`, written
   with `make perf-record`, with artifacts in `evidence/exp-2NN/`.
   - Put the case sensitivity, the collisions and the darwin package set in
     `tree_provenance`.
@@ -728,7 +729,7 @@ each, and the serial floors are not the question.
   - fix the stale Linux row of the Platform table (line 37). It says no native reader is
     profitable, but H169 now is one, profitable in user space;
   - add a subsection saying the one-shot tree plan (H172) and the matcher are portable
-    choices measured on Linux, inherited on macOS until exp-202–206 and on Windows
+    choices measured on Linux, inherited on macOS until exp-203–207 and on Windows
     indefinitely;
   - update “What to measure next per platform” (line 300; macOS row at 309);
   - add `TreeRetention::MAX_FILES` to the constants table as a memory bound, not a
@@ -736,7 +737,8 @@ each, and the serial floors are not the question.
 - **Loop registry** (`performance-loop.md`):
   - add a macOS result to the rows for H171 (893), H172 (894), H175 (897), H180 (902)
     and H183 (905);
-  - H66 (962): note that H172 carries it, and give its macOS RSS verdict from exp-205;
+  - H66 (962): note that H172 carries it, and give its macOS RSS verdict from M5
+    (exp-207);
   - H166 (888): the macOS `starved_ns` reading;
   - H169 (891): “not compiled on macOS; `getattrlistbulk` covers everything except
     in-place names (the borrowed-name listing)”;
@@ -746,7 +748,7 @@ each, and the serial floors are not the question.
   - `## Current Pickup` (988): the macOS confirmation goes first under “Next”, as a gate
     before 0.2.2;
   - `### Darwin Subjects` (523): add S1 and S2;
-  - the Ids paragraph (1047): exp-202+ used, and H191+.
+  - the Ids paragraph (1047): exp-203+ used, and H191+.
 - **0.2.2 plan** (`plan-2026-09-29-linux-parity-0.2.2.md`):
   - Stage 3 (212): add a checklist item for the APFS differential and the macOS
     non-inferiority confirmation before release;
