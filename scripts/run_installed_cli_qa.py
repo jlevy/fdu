@@ -243,17 +243,23 @@ def run_cmd(
 
 
 def parse_time_file(path: Path) -> tuple[float | None, float | None]:
-    """Read BSD `-l` or GNU `-f` output. The two formats are not a shared dialect."""
+    """
+    Read BSD `-l` or GNU `-f` output. The two formats are not a shared dialect.
+
+    Each field is read by its label on its own line. GNU time writes `Command exited with
+    non-zero status N` first, and a pattern free to cross that newline read N as the wall
+    time (fdu-6zsp).
+    """
     text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
     real_s = None
     rss_mib = None
-    darwin = re.search(r"([0-9.]+)\s+real", text)
+    darwin = re.search(r"^[ \t]*([0-9.]+)[ \t]+real\b", text, re.M)
     if darwin:
         real_s = float(darwin.group(1))
     gnu = re.search(r"^real ([0-9.]+)", text, re.M)
     if gnu and real_s is None:
         real_s = float(gnu.group(1))
-    rss_bytes = re.search(r"([0-9]+)\s+maximum resident set size", text)
+    rss_bytes = re.search(r"^[ \t]*([0-9]+)[ \t]+maximum resident set size", text, re.M)
     if rss_bytes:
         rss_mib = int(rss_bytes.group(1)) / BYTES_PER_MIB
     rss_kb = re.search(r"^maxrss ([0-9]+)", text, re.M)
