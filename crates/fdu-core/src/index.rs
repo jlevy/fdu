@@ -295,6 +295,142 @@ impl From<&InternedRollUp> for RollUpScalars {
     }
 }
 
+impl RollUpScalars {
+    /// What one entry adds to each of its ancestors' roll-ups on its own: a file's count
+    /// and bytes, a directory's count, nothing for a symlink or other object.
+    fn leaf(kind: EntryKind, attrs: &Attrs) -> Self {
+        match kind {
+            EntryKind::File => Self {
+                files: 1,
+                bytes: attrs.size,
+                allocated: attrs.allocated,
+                ..Self::default()
+            },
+            EntryKind::Dir => Self { dirs: 1, ..Self::default() },
+            EntryKind::Symlink | EntryKind::Other => Self::default(),
+        }
+    }
+
+    /// The sum, or the name of the first counter a `u64` cannot hold it in.
+    fn checked_add(self, other: &Self) -> Result<Self, &'static str> {
+        Ok(Self {
+            files: self.files.checked_add(other.files).ok_or("files")?,
+            dirs: self.dirs.checked_add(other.dirs).ok_or("directories")?,
+            bytes: self.bytes.checked_add(other.bytes).ok_or("bytes")?,
+            allocated: self.allocated.checked_add(other.allocated).ok_or("allocated bytes")?,
+            newest_mtime_ns: self.newest_mtime_ns,
+        })
+    }
+
+    /// The difference, saturating at zero as [`InternedRollUp::unmerge`] does.
+    fn saturating_sub(self, other: &Self) -> Self {
+        Self {
+            files: self.files.saturating_sub(other.files),
+            dirs: self.dirs.saturating_sub(other.dirs),
+            bytes: self.bytes.saturating_sub(other.bytes),
+            allocated: self.allocated.saturating_sub(other.allocated),
+            newest_mtime_ns: self.newest_mtime_ns,
+        }
+    }
+}
+
+/// What a batch has done to the tree so far, for [`Index::replay_totals`]: which of the
+/// index's subtrees it has cut away and which entries it has put in their place.
+///
+/// The index is not touched; this is the projection a preflight reads instead. A cut is
+/// an index subtree the batch removed or replaced, recorded with what it contributed to
+/// every ancestor, and no cut lies beneath another. A live entry is one the batch
+/// inserted, recorded with what it contributes on its own; a directory the batch
+/// inserted has children only among the live entries beneath it.
+#[derive(Default)]
+struct TotalsOverlay {
+    cuts: BTreeMap<PathBuf, RollUpScalars>,
+    live: BTreeMap<PathBuf, (EntryKind, RollUpScalars)>,
+}
+
+impl TotalsOverlay {
+    /// The index's entry at `path`, if it still counts: it exists and no cut covers it.
+    fn index_alive(&self, index: &Index, path: &Path) -> Option<EntryId> {
+        let id = index.lookup(path)?;
+        let mut ancestor = Some(path);
+        while let Some(current) = ancestor {
+            if self.cuts.contains_key(current) {
+                return None;
+            }
+            ancestor = current.parent();
+        }
+        Some(id)
+    }
+
+    /// The kind the tree holds at `path` right now, if anything.
+    fn kind_at(&self, index: &Index, path: &Path) -> Option<EntryKind> {
+        if let Some((kind, _)) = self.live.get(path) {
+            return Some(*kind);
+        }
+        self.index_alive(index, path).map(|id| index.entry(id).kind)
+    }
+
+    /// The entries of `map` strictly beneath `path`. Paths order by component, so a
+    /// path's descendants follow it contiguously.
+    fn beneath<'a, V>(
+        map: &'a BTreeMap<PathBuf, V>,
+        path: &'a Path,
+    ) -> impl Iterator<Item = (&'a PathBuf, &'a V)> {
+        map.range::<Path, _>((std::ops::Bound::Excluded(path), std::ops::Bound::Unbounded))
+            .take_while(move |(candidate, _)| candidate.starts_with(path))
+    }
+
+    /// What the tree holds at and beneath `path` right now: the index's subtree there
+    /// less the cuts inside it, plus the batch's entries there. Every part of it is
+    /// already inside the running total, so the sum cannot leave `u64`.
+    fn subtree_at(&self, index: &Index, path: &Path) -> RollUpScalars {
+        let mut total = RollUpScalars::default();
+        if let Some(id) = self.index_alive(index, path) {
+            total = index.subtree_scalars(id);
+            for (_, cut) in Self::beneath(&self.cuts, path) {
+                total = total.saturating_sub(cut);
+            }
+        }
+        let live = self
+            .live
+            .range::<Path, _>((std::ops::Bound::Included(path), std::ops::Bound::Unbounded))
+            .take_while(|(candidate, _)| candidate.starts_with(path));
+        for (_, (_, own)) in live {
+            total = total.checked_add(own).unwrap_or_else(|_| {
+                unreachable!("a subtree the tree holds is within its representable total")
+            });
+        }
+        total
+    }
+
+    /// The batch has removed whatever the tree held at `path`, subtree and all.
+    fn cut(&mut self, index: &Index, path: &Path) {
+        if let Some(id) = self.index_alive(index, path) {
+            let covered: Vec<PathBuf> =
+                Self::beneath(&self.cuts, path).map(|(cut, _)| cut.clone()).collect();
+            for cut in covered {
+                self.cuts.remove(&cut);
+            }
+            self.cuts.insert(path.to_path_buf(), index.subtree_scalars(id));
+        }
+        let gone: Vec<PathBuf> = self
+            .live
+            .range::<Path, _>((std::ops::Bound::Included(path), std::ops::Bound::Unbounded))
+            .take_while(|(candidate, _)| candidate.starts_with(path))
+            .map(|(live, _)| live.clone())
+            .collect();
+        for live in gone {
+            self.live.remove(&live);
+        }
+    }
+
+    /// The batch has put an entry of `kind` at `path` in place of whatever was there.
+    fn replace(&mut self, index: &Index, path: &Path, kind: EntryKind, own: RollUpScalars) {
+        self.cut(index, path);
+        self.live.insert(path.to_path_buf(), (kind, own));
+    }
+}
+
 /// The regular files a folded index counted directly in one directory without keeping
 /// them as entries ([`crate::execution::RetainedState::Tree`]).
 ///
@@ -2547,6 +2683,7 @@ impl Index {
             .unwrap_or(u64::MAX);
         self.validate_known_ancestry(&prepared.ops, &accepted)?;
         let projected_controls = self.projected_controls(&prepared.ops, &accepted)?;
+        self.preflight_totals(&prepared.ops, Some(&accepted), max_files)?;
 
         for (observed, accepted) in prepared.ops.iter().zip(accepted) {
             if !accepted {
@@ -2655,6 +2792,7 @@ impl Index {
                     counts.scanner_control_projection_us.saturating_add(elapsed);
             });
         }
+        self.preflight_totals(&prepared.ops, None, max_files)?;
         let mut stats = ApplyStats::default();
         let mut applied_ids = has_batch_parents.then(|| vec![None; prepared.ops.len()]);
 
@@ -2881,6 +3019,108 @@ impl Index {
         if previous != self.state {
             effects.state(|| StateTransition::IndexState { previous, current: self.state });
         }
+    }
+
+    /// What `id` and everything beneath it contribute to each ancestor's roll-up.
+    fn subtree_scalars(&self, id: EntryId) -> RollUpScalars {
+        let entry = self.entry(id);
+        match entry.kind {
+            EntryKind::Dir => {
+                let mut scalars = RollUpScalars::from(&entry.rollup().all);
+                scalars.dirs = scalars.dirs.saturating_add(1);
+                scalars
+            }
+            EntryKind::File => RollUpScalars::leaf(EntryKind::File, &entry.attrs),
+            EntryKind::Symlink | EntryKind::Other => RollUpScalars::default(),
+        }
+    }
+
+    /// Refuse a batch that would leave a whole-tree total no `u64` can hold, before it
+    /// moves anything ([`crate::Error::UnrepresentableTotal`]).
+    ///
+    /// The root's `all` roll-up bounds every other: each directory's is a sub-sum of it,
+    /// `unignored` is a part of `all`, an extension tally is a part of its directory's,
+    /// and a folded file's tally is a part of the roll-up that counted it. So the batch is
+    /// safe when the root's four counters stay representable after each accepted
+    /// operation, applied in order, which is exactly what the reducer computes.
+    ///
+    /// Two passes, because this runs for every scanner batch. The first adds what each
+    /// accepted upsert would contribute as a new entry and subtracts nothing, so it bounds
+    /// every intermediate total from above at four checked additions per upsert; when it
+    /// fits, nothing else is computed. Only a batch that fails that bound is replayed
+    /// exactly, which is where an exact-fit replacement or a removal that makes room is
+    /// told apart from an overflow.
+    fn preflight_totals(
+        &self,
+        ops: &[ObservationOp],
+        accepted: Option<&[bool]>,
+        max_files: Option<u64>,
+    ) -> crate::Result<()> {
+        let mut bound = self.total_scalars();
+        for (index, observed) in ops.iter().enumerate() {
+            if accepted.is_some_and(|accepted| !accepted[index]) {
+                continue;
+            }
+            if let Op::Upsert { kind, attrs, .. } = &observed.op {
+                match bound.checked_add(&RollUpScalars::leaf(*kind, attrs)) {
+                    Ok(next) => bound = next,
+                    Err(_) => return self.replay_totals(ops, accepted, max_files),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The exact pass of [`Self::preflight_totals`]: the root's totals after each
+    /// accepted operation, with replacements, kind changes, and removals netted in order
+    /// against a projection of the tree ([`TotalsOverlay`]) rather than the tree itself.
+    fn replay_totals(
+        &self,
+        ops: &[ObservationOp],
+        accepted: Option<&[bool]>,
+        max_files: Option<u64>,
+    ) -> crate::Result<()> {
+        let mut total = self.total_scalars();
+        let mut overlay = TotalsOverlay::default();
+        for (index, observed) in ops.iter().enumerate() {
+            if accepted.is_some_and(|accepted| !accepted[index]) {
+                continue;
+            }
+            match &observed.op {
+                Op::Upsert { path, kind, attrs } => {
+                    // The root only ever changes its own attributes, and so does any
+                    // entry re-observed with its kind unless it is a file: only a file's
+                    // attributes reach its ancestors' roll-ups.
+                    if path.as_os_str().is_empty()
+                        || (overlay.kind_at(self, path) == Some(*kind) && *kind != EntryKind::File)
+                    {
+                        continue;
+                    }
+                    let old = overlay.subtree_at(self, path);
+                    let new = RollUpScalars::leaf(*kind, attrs);
+                    let after = total.saturating_sub(&old).checked_add(&new).map_err(|counter| {
+                        crate::Error::UnrepresentableTotal { path: path.clone(), counter }
+                    })?;
+                    if max_files.is_some_and(|max_files| after.files > max_files) {
+                        // The reducer refuses this upsert for its file budget and moves on.
+                        continue;
+                    }
+                    overlay.replace(self, path, *kind, new);
+                    total = after;
+                }
+                Op::Remove { path } => {
+                    if path.as_os_str().is_empty() {
+                        continue;
+                    }
+                    let old = overlay.subtree_at(self, path);
+                    overlay.cut(self, path);
+                    total = total.saturating_sub(&old);
+                }
+                Op::ControlUpsert { .. } | Op::ControlRemove { .. } | Op::InvalidateSubtree { .. } => {
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Exact regular-file total that would remain after one upsert at the current
@@ -10879,5 +11119,190 @@ mod tests {
         );
         assert_eq!(index.state.coverage, Coverage::Partial(CoverageReason::Inaccessible));
         assert!(index.active_reconciles.is_empty(), "closed passes retain no shadow history");
+    }
+
+    // A whole-tree total no u64 can hold is refused before any mutation (fdu-sqyk).
+
+    fn sized(size: u64) -> Attrs {
+        Attrs { size, allocated: size, mtime_ns: 1, ctime_ns: 1, inode: size ^ 7, dev: 1 }
+    }
+
+    fn assert_unrepresentable(error: &crate::Error, path: &str, counter: &str) {
+        match error {
+            crate::Error::UnrepresentableTotal { path: at, counter: which } => {
+                assert_eq!(at, Path::new(path));
+                assert_eq!(*which, counter);
+            }
+            other => panic!("expected an unrepresentable-total refusal, got {other:?}"),
+        }
+    }
+
+    /// Everything a refused batch must leave alone.
+    fn observable_state(index: &Index) -> (u64, Clock, RollUp, Vec<PathBuf>, usize) {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        let mut pending = vec![EntryId::ROOT];
+        while let Some(id) = pending.pop() {
+            paths.push(index.path_of(id).expect("live entry"));
+            if index.entry(id).kind.is_dir() {
+                pending.extend(index.child_ids(id));
+            }
+        }
+        paths.sort();
+        (index.len(), index.clock(), index.total(), paths, index.journal.len())
+    }
+
+    #[test]
+    fn a_batch_whose_byte_total_would_exceed_u64_is_refused_before_any_mutation() {
+        let mut index = Index::new("/root");
+        let before = observable_state(&index);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("a", EntryKind::File, sized(u64::MAX)),
+                upsert("b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("two files summing past u64::MAX cannot be represented");
+        assert_unrepresentable(&error, "b", "bytes");
+        assert_eq!(observable_state(&index), before, "a refused batch changes nothing");
+
+        // The first file alone fits exactly; the next byte does not, and the directory that
+        // would fit on its own is refused with it, because the batch is one commit.
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(u64::MAX))]));
+        let before = observable_state(&index);
+        assert_eq!(before.2.bytes, u64::MAX);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("one more byte is unrepresentable");
+        assert_unrepresentable(&error, "dir/b", "bytes");
+        assert_eq!(observable_state(&index), before);
+        assert!(index.lookup(Path::new("dir")).is_none(), "the batch is fault-atomic");
+
+        // Allocated bytes are checked as their own total.
+        let error = index
+            .apply(&Observation::new(vec![upsert(
+                "c",
+                EntryKind::File,
+                Attrs { size: 0, allocated: 1, ..sized(0) },
+            )]))
+            .expect_err("allocated bytes overflow on their own");
+        assert_unrepresentable(&error, "c", "allocated bytes");
+        assert_eq!(observable_state(&index), before);
+    }
+
+    #[test]
+    fn exact_fit_replacement_removal_and_kind_change_batches_are_accepted() {
+        // Replacing the largest file and adding another lands exactly on u64::MAX.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(u64::MAX))]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("a", EntryKind::File, sized(1)),
+            upsert("b", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!(index.total().files, 2);
+
+        // A removal first makes room for an insertion in the same batch; the batch is
+        // applied in order, so the reverse order is refused: the index would have to hold
+        // u64::MAX + 5 between the two operations.
+        let before = observable_state(&index);
+        let error = index
+            .apply(&Observation::new(vec![
+                upsert("c", EntryKind::File, sized(5)),
+                Op::Remove { path: PathBuf::from("b") },
+            ]))
+            .expect_err("an insertion before the removal that makes room for it");
+        assert_unrepresentable(&error, "c", "bytes");
+        assert_eq!(observable_state(&index), before);
+        index.apply_ok(&Observation::new(vec![
+            Op::Remove { path: PathBuf::from("b") },
+            upsert("c", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+
+        // A kind change drops the subtree it replaces, and that room counts.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, Attrs::default()),
+            upsert("d/f", EntryKind::File, sized(u64::MAX)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::File, sized(5)),
+            upsert("e", EntryKind::File, sized(u64::MAX - 5)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!((index.total().files, index.total().dirs), (2, 0));
+
+        // A later operation on the same path supersedes an earlier one in the batch.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("x", EntryKind::File, sized(u64::MAX)),
+            upsert("x", EntryKind::File, sized(1)),
+            upsert("y", EntryKind::File, sized(u64::MAX - 1)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+
+        // Removing a subtree that an earlier operation in the batch grew.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("d", EntryKind::Dir, Attrs::default()),
+            upsert("d/f", EntryKind::File, sized(u64::MAX - 10)),
+        ]));
+        index.apply_ok(&Observation::new(vec![
+            upsert("d/g", EntryKind::File, sized(10)),
+            Op::Remove { path: PathBuf::from("d") },
+            upsert("z", EntryKind::File, sized(u64::MAX)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        assert_eq!((index.total().files, index.total().dirs), (1, 0));
+    }
+
+    #[test]
+    fn a_stale_conditional_upsert_does_not_count_toward_the_projected_total() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a", EntryKind::File, sized(5))]));
+        let stale = index.expectation(Path::new("b"));
+        index.apply_ok(&Observation::new(vec![upsert("b", EntryKind::File, sized(1))]));
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
+            ObservationOp::if_state(upsert("b", EntryKind::File, sized(u64::MAX)), stale),
+            ObservationOp::unconditional(upsert("c", EntryKind::File, sized(u64::MAX - 6))),
+        ]));
+        assert_eq!(outcome.stats.stale, 1);
+        assert_eq!(index.total().bytes, u64::MAX);
+    }
+
+    #[test]
+    fn the_baseline_and_scanner_lanes_refuse_unrepresentable_totals() {
+        let mut index = Index::new("/root");
+        let before = observable_state(&index);
+        let error = index
+            .apply_baseline(&Observation::new(vec![
+                upsert("a", EntryKind::File, sized(u64::MAX)),
+                upsert("b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("the baseline lane refuses too");
+        assert_unrepresentable(&error, "b", "bytes");
+        assert_eq!(observable_state(&index), before);
+
+        let error = index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a", EntryKind::File, sized(u64::MAX)),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect_err("the scanner lane refuses too");
+        assert_unrepresentable(&error, "dir/b", "bytes");
+        assert_eq!(observable_state(&index), before);
+
+        // The scanner lane's exact projection accepts what fits.
+        index
+            .apply_scanner_baseline(crate::scan::ScannerBatch::from_ops(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a", EntryKind::File, sized(u64::MAX - 1)),
+                upsert("dir/b", EntryKind::File, sized(1)),
+            ]))
+            .expect("an exact fit");
+        assert_eq!(index.total().bytes, u64::MAX);
     }
 }

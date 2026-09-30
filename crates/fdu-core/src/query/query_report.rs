@@ -3419,6 +3419,33 @@ mod tests {
     }
 
     #[test]
+    fn a_selection_over_an_exactly_full_tree_sums_to_u64_max() {
+        // The index refuses any total a u64 cannot hold (fdu-sqyk), so every selected
+        // subset of it fits too; the filtered tier re-aggregates entry by entry and must
+        // reach the exact bound without saturating or wrapping.
+        let exact = |size: u64, mtime_ns: i64| Attrs { size, allocated: size, ..attrs(1, mtime_ns) };
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("big", EntryKind::Dir, Attrs::default()),
+            upsert("big/half.bin", EntryKind::File, exact(1 << 63, 1)),
+            upsert("big/rest.bin", EntryKind::File, exact((1 << 63) - 1, 2)),
+            upsert("empty.txt", EntryKind::File, exact(0, 3)),
+        ]));
+        assert_eq!(index.total().bytes, u64::MAX);
+        let selection = Selection {
+            include: vec![pattern("big")],
+            size: SizeMetric::Apparent,
+            min_size: Some(1),
+            ..Selection::default()
+        };
+        let report = run(&index, &query(&[ViewSpec::Summary, ViewSpec::Files], selection));
+        let Section::Summary(summary) = &report.sections[0] else { panic!("summary") };
+        assert_eq!((summary.files, summary.dirs, summary.bytes), (2, 1, u64::MAX));
+        let Section::Files { rows, .. } = &report.sections[1] else { panic!("files") };
+        assert_eq!(rows.iter().map(|row| row.bytes).sum::<u64>(), u64::MAX);
+    }
+
+    #[test]
     fn subtree_predicates_include_directory_and_symlink_activity_but_only_file_bytes() {
         let mut index = sample();
         index

@@ -1841,6 +1841,25 @@ pub enum Error {
     #[error("the process-local index clock is exhausted")]
     ClockExhausted,
 
+    /// A batch would leave a whole-tree total no `u64` can hold.
+    ///
+    /// Roll-ups are `u64` counts and byte totals, and a batch is applied in order, so the
+    /// index must be representable after each of its operations: a batch that removes
+    /// before it adds is accepted where the reverse order is not. The batch is refused
+    /// before any of it is applied, and the index, its clock, and its journal are as they
+    /// were. A filesystem would need a 16 EiB aggregate to reach this; the public
+    /// [`Index::apply`](crate::Index::apply) reaches it directly with synthetic sizes.
+    #[error(
+        "applying {path:?} would carry the tree's {counter} total past what a u64 can hold; \
+         the batch was not applied"
+    )]
+    UnrepresentableTotal {
+        /// The operation at which the total would leave the representable range.
+        path: PathBuf,
+        /// Which total: `files`, `directories`, `bytes`, or `allocated bytes`.
+        counter: &'static str,
+    },
+
     /// No further live-session identity can be represented in this process.
     #[error("the process-local opened-index identity space is exhausted")]
     OpenedIdentityExhausted,

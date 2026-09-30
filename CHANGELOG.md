@@ -11,7 +11,8 @@ On Linux the default `fdu PATH` tree is faster, and uses much less memory on a l
 tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
 any route.
-One Rust API change is breaking: `counters::Counts` gains three public fields.
+Two Rust API changes are breaking: `counters::Counts` gains three public fields, and
+`Error` gains a variant, `UnrepresentableTotal`.
 No command-line option, report or cache schema, or Python API changed.
 
 ### Added
@@ -29,7 +30,10 @@ No command-line option, report or cache schema, or Python API changed.
   Rust code that builds `Counts` with a struct literal must name them or end the literal
   with `..Counts::default()`, and code that destructures it exhaustively must name them
   or use `..`; code that only reads its fields is unaffected.
-  This is the only public API change.
+- **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
+  `Index::apply` returns for the batch below; code that matches `Error` exhaustively
+  must name it or use a wildcard arm.
+  These are the only public API changes.
 - The package description on crates.io and PyPI, which `fdu --help` also prints, now
   reads “Fast native du replacement …” rather than “Fastest”: on Linux fdu’s default
   tree is level with pdu’s default on real trees, and `pdu --max-depth 2` is 2.5% faster
@@ -71,6 +75,17 @@ No command-line option, report or cache schema, or Python API changed.
 
 ### Fixed
 
+- `Index::apply`, and every other route that commits a batch of observations, refuses a
+  batch that would carry a whole-tree total of files, directories, apparent bytes, or
+  allocated bytes past what a `u64` can hold, with `Error::UnrepresentableTotal`, before
+  it applies any of the batch: the index, its clock, and its journal are as they were.
+  A batch is applied in order, so the index must be representable after each of its
+  operations; a replacement, a kind change, or a removal that makes room in the same
+  batch counts. Earlier releases panicked in debug builds and wrapped the totals in
+  release builds, so `total()` could report a small exact total for a tree that held
+  more than 16 EiB. A filesystem cannot produce that; the public `Index` API can.
+  A snapshot whose recorded sizes sum past `u64` is now refused as corrupt when it is
+  loaded rather than summed.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
