@@ -837,6 +837,7 @@
    "candidate": "none; this establishes the numbers",
    "change_pct": null,
    "commit": "b565882",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -1473,6 +1474,7 @@
    "candidate": "four producer threads feeding one index consumer (--threads 4)",
    "change_pct": -50.033,
    "commit": "a0cc981",
+   "compares": true,
    "complexity": {
     "lines_changed": 210,
     "new_dependencies": [],
@@ -1829,6 +1831,7 @@
    "candidate": "revalidation sweep parallelized with the same worker pool",
    "change_pct": -2.593,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 180,
     "new_dependencies": [],
@@ -2197,6 +2200,7 @@
    "candidate": "bootstrap applies directly, with no effective-op list and no journal entry",
    "change_pct": 1.019,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 32,
     "new_dependencies": [],
@@ -2565,6 +2569,7 @@
    "candidate": "components borrowed from the caller's path; validation allocates nothing",
    "change_pct": -9.4,
    "commit": "bf7a05a",
+   "compares": true,
    "complexity": {
     "lines_changed": 38,
     "new_dependencies": [],
@@ -3047,6 +3052,7 @@
    "candidate": "parent path memoized, child id read from the parent's children, duplicate check folded into the insert",
    "change_pct": -18.597,
    "commit": "954d27b",
+   "compares": true,
    "complexity": {
     "lines_changed": 34,
     "new_dependencies": [],
@@ -3428,6 +3434,7 @@
    "candidate": "HEAD 954d27b: exp-001, exp-004 and exp-005 together",
    "change_pct": -48.909,
    "commit": "954d27b",
+   "compares": true,
    "complexity": {
     "lines_changed": 282,
     "new_dependencies": [],
@@ -4023,6 +4030,7 @@
    "candidate": "ReconcileTarget::Direct routed through collect_child_expectations; the slow twin deleted",
    "change_pct": -7.092,
    "commit": "92d6212",
+   "compares": true,
    "complexity": {
     "lines_changed": 14,
     "new_dependencies": [],
@@ -4303,6 +4311,7 @@
    "candidate": "by_ext keyed by u32 ExtId; names interned once per index at insert, resolved only at query time",
    "change_pct": -15.652,
    "commit": "bb1529d",
+   "compares": true,
    "complexity": {
     "lines_changed": 120,
     "new_dependencies": [],
@@ -4785,6 +4794,7 @@
    "candidate": "CRC folds over bytes as the parser consumes them; the verdict still gates the returned index",
    "change_pct": -12.383,
    "commit": "9f4f029",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -5065,6 +5075,7 @@
    "candidate": "sorted claim-list with binary search; the path join deferred until an op or descent needs it",
    "change_pct": -0.031,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 90,
     "new_dependencies": [],
@@ -5431,6 +5442,7 @@
    "candidate": "consecutive same-parent inserts accumulate contributions locally; one upward merge per run instead of per file",
    "change_pct": -2.531,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -5797,6 +5809,7 @@
    "candidate": "breadth-first, the new default, so partial results are monotone lower bounds",
    "change_pct": -0.58,
    "commit": "fbc28f4",
+   "compares": true,
    "complexity": {
     "lines_changed": 153,
     "new_dependencies": [],
@@ -6151,6 +6164,7 @@
    "candidate": "per-region LIFO buckets with a round-robin ready ring",
    "change_pct": -3.772,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -6416,6 +6430,7 @@
    "candidate": "--order breadth-first (the shipped default)",
    "change_pct": -3.043,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -6770,6 +6785,7 @@
    "candidate": "sixteen workers on a tree larger than the vnode cache",
    "change_pct": -11.723,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -7008,6 +7024,7 @@
    "candidate": "move non-directory relative paths into observation ops",
    "change_pct": -0.437,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 5,
     "new_dependencies": [],
@@ -7246,6 +7263,7 @@
    "candidate": "six active workers plus ten dormant reserve threads",
    "change_pct": 2.009,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 126,
     "new_dependencies": [],
@@ -7486,6 +7504,7 @@
    "candidate": "start at six and spawn up to sixteen after 100k observed entries",
    "change_pct": -4.043,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 128,
     "new_dependencies": [],
@@ -7726,6 +7745,7 @@
    "candidate": "spawn ten reserve workers after 100k observed entries",
    "change_pct": 1.23,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -7964,6 +7984,7 @@
    "candidate": "spawn reserve workers after 262144 observed entries",
    "change_pct": -1.71,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -8202,6 +8223,7 @@
    "candidate": "measure the first 16k entries and expand only above 30 microseconds of worker service per entry",
    "change_pct": -5.313,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 181,
     "new_dependencies": [],
@@ -8442,6 +8464,7 @@
    "candidate": "macOS getattrlistbulk names and complete stat-tier metadata, with portable directory fallback",
    "change_pct": -30.132,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 542,
     "new_dependencies": [
@@ -8686,6 +8709,7 @@
    "candidate": "current code through exp-022: accepted traversal, index, snapshot, BFS scheduling, adaptive-depth, and macOS bulk-metadata changes",
    "change_pct": -53.495,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -9267,6 +9291,7 @@
    "candidate": "one retained root fd per worker and root-relative openat",
    "change_pct": -0.075,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 69,
     "new_dependencies": [],
@@ -9509,6 +9534,7 @@
    "candidate": "the pre-H26 sixteen-worker large-tree target",
    "change_pct": 19.193,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -9747,6 +9773,7 @@
    "candidate": "the existing macOS bulk metadata reader reused by direct, shared, and scoped reconciliation",
    "change_pct": -34.389,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 139,
     "new_dependencies": [],
@@ -9903,6 +9930,7 @@
    "candidate": "current code through exp-026, including accepted traversal, index, snapshot, BFS scheduling, adaptive-depth, and macOS bulk cold/warm changes",
    "change_pct": -52.835,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -10485,6 +10513,7 @@
    "candidate": "one retained entry vector per bulk reader, drained after complete validation",
    "change_pct": 0.207,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 20,
     "new_dependencies": [],
@@ -10841,6 +10870,7 @@
    "candidate": "256 KiB macOS bulk metadata buffer",
    "change_pct": -1.798,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1,
     "new_dependencies": [],
@@ -11197,6 +11227,7 @@
    "candidate": "four-worker bounded immutable-baseline waves with producer-side no-op elision",
    "change_pct": -59.53,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 419,
     "new_dependencies": [],
@@ -11339,6 +11370,7 @@
    "candidate": "4096-directory immutable-baseline waves",
    "change_pct": 1.642,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1,
     "new_dependencies": [],
@@ -11478,6 +11510,7 @@
    "candidate": "final Rust-1.85-compatible code through exp-030, including accepted cold, snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes",
    "change_pct": -54.532,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -12047,6 +12080,7 @@
    "candidate": "PR #8 after merging origin/main, correctness review, and exact CLI-equivalence checks",
    "change_pct": -42.261,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1514,
     "new_dependencies": [
@@ -12625,6 +12659,7 @@
    "candidate": "PR #8 after merging origin/main and correctness review",
    "change_pct": -30.458,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -12879,6 +12914,7 @@
    "candidate": "PR #8 after merging origin/main and correctness review",
    "change_pct": -31.349,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13130,6 +13166,7 @@
    "candidate": "fixed 8, 10, 12, and 16-worker sweep",
    "change_pct": -1.302,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13267,6 +13304,7 @@
    "candidate": "depth-first traversal",
    "change_pct": 3.573,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13404,6 +13442,7 @@
    "candidate": "bounded parent-relative openat frontier",
    "change_pct": -0.694,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13544,6 +13583,7 @@
    "candidate": "256 KiB getattrlistbulk buffer",
    "change_pct": 2.217,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -13681,6 +13721,7 @@
    "candidate": "cache-off summary reduced directly from the scan through a derived execution plan",
    "change_pct": -14.559,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 273,
     "new_dependencies": [],
@@ -13814,6 +13855,7 @@
    "candidate": "worker-local summary reduction with paths retained only for directories",
    "change_pct": -1.377,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 299,
     "new_dependencies": [],
@@ -13938,6 +13980,7 @@
    "candidate": "H62 worker-local reduction plus a requirement-derived macOS bulk record",
    "change_pct": 1.857,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 547,
     "new_dependencies": [],
@@ -14063,6 +14106,7 @@
    "candidate": "H59 transient summary with a fixed eight-worker pool",
    "change_pct": 0.669,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 12,
     "new_dependencies": [],
@@ -14187,6 +14231,7 @@
    "candidate": "selected allocated total folded inside a strict requirement-derived macOS bulk reader",
    "change_pct": -1.147,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 636,
     "new_dependencies": [],
@@ -14321,6 +14366,7 @@
    "candidate": "six scan and parser workers plus two bounded directory-open helpers",
    "change_pct": -4.465,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [],
@@ -14457,6 +14503,7 @@
    "candidate": "six scan and parser workers drawing opened directories from one shared two-thread opener pool",
    "change_pct": -3.98,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 121,
     "new_dependencies": [],
@@ -14592,6 +14639,7 @@
    "candidate": "inline analysis at or below 512 files and 8 MiB",
    "change_pct": 66.338,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 54,
     "new_dependencies": [],
@@ -15049,6 +15097,7 @@
    "candidate": "skip prose-only collectors for code families",
    "change_pct": 1.501,
    "commit": "d7363a298ac58905597b2ede8c9f3240938a3129",
+   "compares": true,
    "complexity": {
     "lines_changed": 31,
     "new_dependencies": [],
@@ -15519,6 +15568,7 @@
    "candidate": "reserve up to the known bounded file size",
    "change_pct": -3.548,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 5,
     "new_dependencies": [],
@@ -15772,6 +15822,7 @@
    "candidate": "decode directly unless a UTF-8 carry is pending",
    "change_pct": -12.042,
    "commit": "2fef9bf",
+   "compares": true,
    "complexity": {
     "lines_changed": 7,
     "new_dependencies": [],
@@ -15909,6 +15960,7 @@
    "candidate": "same, with a one-slot parent memo in apply_validated",
    "change_pct": -7.348,
    "commit": "2475c82",
+   "compares": true,
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [
@@ -16149,6 +16201,7 @@
    "candidate": "same probe with perf-counters and a counting global allocator",
    "change_pct": 0.026,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 420,
     "new_dependencies": [
@@ -16387,6 +16440,7 @@
    "candidate": "probe with fdu counters compiled in and recording off",
    "change_pct": -1.257,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 690,
     "new_dependencies": [],
@@ -16522,6 +16576,7 @@
    "candidate": "PR 22 after cross-platform review fixes",
    "change_pct": -15.682,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -16770,6 +16825,7 @@
    "candidate": "PR 22 with R1-R8 addressed",
    "change_pct": -0.949,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 2796,
     "new_dependencies": [],
@@ -17018,6 +17074,7 @@
    "candidate": "bounded scan diagnostics enabled",
    "change_pct": -0.548,
    "commit": "1f7251149f9ec8147a7ebc037a31555ae1351bde",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17155,6 +17212,7 @@
    "candidate": "repeated independent windows",
    "change_pct": 58.492,
    "commit": "1d70c628cc4ed262ed2e4d04d992eb977b73c8b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17292,6 +17350,7 @@
    "candidate": "staged ready-work-gated expansion",
    "change_pct": 60.726,
    "commit": "1d70c628cc4ed262ed2e4d04d992eb977b73c8b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17429,6 +17488,7 @@
    "candidate": "fixed eight workers",
    "change_pct": 35.551,
    "commit": "1d70c628cc4ed262ed2e4d04d992eb977b73c8b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -17566,6 +17626,7 @@
    "candidate": "raw-suffix one-slot memo answering repeat extensions without derive, validate, or search",
    "change_pct": 1.589,
    "commit": "3bda5c8",
+   "compares": true,
    "complexity": {
     "lines_changed": 130,
     "new_dependencies": [],
@@ -17815,6 +17876,7 @@
    "candidate": "slicing-by-8 through eight const-derived tables, bit-identical digest",
    "change_pct": -12.202,
    "commit": "3bda5c8",
+   "compares": true,
    "complexity": {
     "lines_changed": 55,
     "new_dependencies": [],
@@ -18068,6 +18130,7 @@
    "candidate": "apply_with(journal: false) on the baseline path; arbitration identical, history capture skipped",
    "change_pct": -5.058,
    "commit": "87fd0bd",
+   "compares": true,
    "complexity": {
     "lines_changed": 40,
     "new_dependencies": [],
@@ -18306,6 +18369,7 @@
    "candidate": "open_with_pending_save returns Arc<Index>; the writer takes a reference",
    "change_pct": -10.503,
    "commit": "575db66",
+   "compares": true,
    "complexity": {
     "lines_changed": 45,
     "new_dependencies": [],
@@ -18546,6 +18610,7 @@
    "candidate": "HashMap rollups plus LazyLock-indexed name and extension tiers",
    "change_pct": -30.307,
    "commit": "9fb6a33",
+   "compares": true,
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [],
@@ -18800,6 +18865,7 @@
    "candidate": "HashMap rollups plus LazyLock-indexed name and extension tiers, as accepted in exp-064",
    "change_pct": -25.776,
    "commit": "b061f5b",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -19271,6 +19337,7 @@
    "candidate": "the same binary: a self-comparison that establishes the default-path numbers",
    "change_pct": -1.925,
    "commit": "62f82f6",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -19721,6 +19788,7 @@
    "candidate": "write_atomically compares the encoded bytes against the file and leaves an identical snapshot in place",
    "change_pct": -10.612,
    "commit": "c013f1a",
+   "compares": true,
    "complexity": {
     "lines_changed": 117,
     "new_dependencies": [],
@@ -20072,6 +20140,7 @@
    "candidate": "out.flush() before pending_save.join(): same bytes, earlier",
    "change_pct": 1.238,
    "commit": "4d29d6d",
+   "compares": true,
    "complexity": {
     "lines_changed": 9,
     "new_dependencies": [],
@@ -20322,6 +20391,7 @@
    "candidate": "ContentIndex::files keyed by a byte-ordered PathKey; prefix-range invalidation with an explicit separator",
    "change_pct": -31.003,
    "commit": "50260a5",
+   "compares": true,
    "complexity": {
     "lines_changed": 133,
     "new_dependencies": [],
@@ -21211,6 +21281,7 @@
    "candidate": "f204abb: normalized() on the content key path, for Path equality on Windows",
    "change_pct": -1.281,
    "commit": "f204abb",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -22098,6 +22169,7 @@
    "candidate": "PR #51 head at e8f1bed",
    "change_pct": -49.545,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 304,
     "new_dependencies": [],
@@ -22235,6 +22307,7 @@
    "candidate": "diagnostic PR #51 without detached publication or ancestry overlay",
    "change_pct": -66.653,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -22372,6 +22445,7 @@
    "candidate": "PR #51 head at e8f1bed",
    "change_pct": 144.455,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -22509,6 +22583,7 @@
    "candidate": "PR #51 head at e8f1bed",
    "change_pct": 7.678,
    "commit": "e8f1bed",
+   "compares": true,
    "complexity": {
     "lines_changed": 28439,
     "new_dependencies": [],
@@ -22745,6 +22820,7 @@
    "candidate": "scoped instrumentation at 1393d31",
    "change_pct": 1.929,
    "commit": "1393d31",
+   "compares": true,
    "complexity": {
     "lines_changed": 1151,
     "new_dependencies": [],
@@ -22981,6 +23057,7 @@
    "candidate": "snapshot and path correctness fixes plus scoped instrumentation",
    "change_pct": 0.294,
    "commit": "b5d9ba4",
+   "compares": true,
    "complexity": {
     "lines_changed": 2396,
     "new_dependencies": [],
@@ -23550,6 +23627,7 @@
    "candidate": "zero-sized detached consequence sink at da5b8bc",
    "change_pct": -6.568,
    "commit": "da5b8bc",
+   "compares": true,
    "complexity": {
     "lines_changed": 281,
     "new_dependencies": [],
@@ -24133,6 +24211,7 @@
    "candidate": "single exact Commit representation at db18e5e",
    "change_pct": -1.551,
    "commit": "db18e5e",
+   "compares": true,
    "complexity": {
     "lines_changed": 288,
     "new_dependencies": [],
@@ -24514,6 +24593,7 @@
    "candidate": "owned scanner batch with resolved parent proof at d9979aa",
    "change_pct": -9.5,
    "commit": "d9979aa",
+   "compares": true,
    "complexity": {
     "lines_changed": 572,
     "new_dependencies": [],
@@ -24865,6 +24945,7 @@
    "candidate": "journal capacity preflight at e2ac4f9",
    "change_pct": -3.46,
    "commit": "e2ac4f9",
+   "compares": true,
    "complexity": {
     "lines_changed": 12,
     "new_dependencies": [],
@@ -25246,6 +25327,7 @@
    "candidate": "borrowed impact-path working-tree spike",
    "change_pct": -1.071,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 10,
     "new_dependencies": [],
@@ -25627,6 +25709,7 @@
    "candidate": "journal-owned scanner commit working-tree spike",
    "change_pct": -0.013,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 53,
     "new_dependencies": [],
@@ -25776,6 +25859,7 @@
    "candidate": "optional unignored reducer working-tree spike",
    "change_pct": -1.606,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 127,
     "new_dependencies": [],
@@ -26014,6 +26098,7 @@
    "candidate": "compact optional partition working-tree composite",
    "change_pct": -2.628,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 260,
     "new_dependencies": [],
@@ -26254,6 +26339,7 @@
    "candidate": "compact scanner batches plus optional fixed-partition storage",
    "change_pct": -2.561,
    "commit": "3c0e1a2",
+   "compares": true,
    "complexity": {
     "lines_changed": 490,
     "new_dependencies": [],
@@ -26506,6 +26592,7 @@
    "candidate": "off-by-default scanner phase timing counters",
    "change_pct": -0.12,
    "commit": "c7b2120",
+   "compares": true,
    "complexity": {
     "lines_changed": 66,
     "new_dependencies": [],
@@ -26756,6 +26843,7 @@
    "candidate": "fused detached reducer plus compact optional partitions",
    "change_pct": -1.115,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 460,
     "new_dependencies": [],
@@ -27009,6 +27097,7 @@
    "candidate": "one-shot causal-fragment coalescer",
    "change_pct": 0.126,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 139,
     "new_dependencies": [],
@@ -27261,6 +27350,7 @@
    "candidate": "unordered producer-only diagnostic",
    "change_pct": 0.68,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 43,
     "new_dependencies": [],
@@ -27400,6 +27490,7 @@
    "candidate": "same immutable default-tree probe with diagnostics enabled",
    "change_pct": -3.476,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 112,
     "new_dependencies": [],
@@ -27537,6 +27628,7 @@
    "candidate": "pipelined directory-group builder",
    "change_pct": 2.477,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 846,
     "new_dependencies": [],
@@ -27678,6 +27770,7 @@
    "candidate": "shared generic walker with detached emission",
    "change_pct": 1.129,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 812,
     "new_dependencies": [],
@@ -27817,6 +27910,7 @@
    "candidate": "hashed transient parent table and unique child insertion",
    "change_pct": 0.831,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 829,
     "new_dependencies": [],
@@ -27957,6 +28051,7 @@
    "candidate": "borrowed final directory roll-up merge",
    "change_pct": 0.189,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 844,
     "new_dependencies": [],
@@ -28097,6 +28192,7 @@
    "candidate": "moved names and bounded transient directory paths",
    "change_pct": -0.307,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 857,
     "new_dependencies": [],
@@ -28238,6 +28334,7 @@
    "candidate": "controls-aware directory-group builder",
    "change_pct": -33.553,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1025,
     "new_dependencies": [],
@@ -28377,6 +28474,7 @@
    "candidate": "controls-aware detached bootstrap candidate",
    "change_pct": 0.927,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 1031,
     "new_dependencies": [],
@@ -28831,6 +28929,7 @@
    "candidate": "shared runner with dynamically dispatched message consumption",
    "change_pct": 0.816,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 140,
     "new_dependencies": [],
@@ -29083,6 +29182,7 @@
    "candidate": "shared generic runner with monomorphized message consumption",
    "change_pct": 0.159,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 7,
     "new_dependencies": [],
@@ -29234,6 +29334,7 @@
    "candidate": "out-of-line directory payload with inline arena entries",
    "change_pct": -0.829,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -29587,6 +29688,7 @@
    "candidate": "inline entries, directory payloads, sorted detached children, and per-parent promotion",
    "change_pct": -7.701,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 634,
     "new_dependencies": [],
@@ -29941,6 +30043,7 @@
    "candidate": "ad52469 standard hash-map overlay with unchanged ownership and contracts",
    "change_pct": -49.785,
    "commit": "ad52469d7d16fee3135a515fd07a43c5bab8ba11",
+   "compares": true,
    "complexity": {
     "lines_changed": 129,
     "new_dependencies": [],
@@ -30219,6 +30322,7 @@
    "candidate": "5d7b86f H86 consumer representation (codex/streaming-performance-parity)",
    "change_pct": -31.704,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -30560,6 +30664,7 @@
    "candidate": "ContentIndex::rollups keyed by byte-hashed PathKey under an in-crate FxHash-style hasher",
    "change_pct": 0.054,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 66,
     "new_dependencies": [],
@@ -30712,6 +30817,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 2.459,
    "commit": "285a41d2",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -30960,6 +31066,7 @@
    "candidate": "same probe shipped default read_controls on",
    "change_pct": 1.639,
    "commit": "285a41d2",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -31109,6 +31216,7 @@
    "candidate": "second fdu PATH sharing that cache",
    "change_pct": -0.625,
    "commit": "bd03cd6c",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -31186,6 +31294,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": -0.294,
    "commit": "a35a4cee",
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -31338,6 +31447,7 @@
    "candidate": "off-by-default sidecar restore phase timers",
    "change_pct": 0.309,
    "commit": "0ec489e7af94f2a647d1ed94ac55f214fac5e477",
+   "compares": true,
    "complexity": {
     "lines_changed": 89,
     "new_dependencies": [],
@@ -31490,6 +31600,7 @@
    "candidate": "file-count completeness instead of walking analysis_candidates",
    "change_pct": -7.594,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 20,
     "new_dependencies": [],
@@ -31642,6 +31753,7 @@
    "candidate": "get_mut before entry for ContentRollUp type-id String",
    "change_pct": -0.558,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 16,
     "new_dependencies": [],
@@ -31794,6 +31906,7 @@
    "candidate": "one bottom-up ContentRollUp rebuild after restore inserts",
    "change_pct": -9.688,
    "commit": "7798fdc1",
+   "compares": true,
    "complexity": {
     "lines_changed": 167,
     "new_dependencies": [],
@@ -31946,6 +32059,7 @@
    "candidate": "Index lookup plus restore-only classify skip",
    "change_pct": 8.701,
    "commit": "7f289d5f",
+   "compares": true,
    "complexity": {
     "lines_changed": 50,
     "new_dependencies": [],
@@ -32100,6 +32214,7 @@
    "candidate": "analyze_index apply_restored_analysis plus one rebuild",
    "change_pct": -2.604,
    "commit": "55261e6c",
+   "compares": true,
    "complexity": {
     "lines_changed": 15,
     "new_dependencies": [],
@@ -32239,6 +32354,7 @@
    "candidate": "opened-second-report second retained tree read",
    "change_pct": -2.158,
    "commit": "984e4618",
+   "compares": true,
    "complexity": {
     "lines_changed": 120,
     "new_dependencies": [],
@@ -32489,6 +32605,7 @@
    "candidate": "stream sidecar records into apply without a decoded Vec",
    "change_pct": -10.127,
    "commit": "bbfd7d1c",
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -32641,6 +32758,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 0.181,
    "commit": "018b4c86",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -32790,6 +32908,7 @@
    "candidate": "index-second-report second query::report",
    "change_pct": 1.5,
    "commit": "ee014340",
+   "compares": true,
    "complexity": {
     "lines_changed": 98,
     "new_dependencies": [],
@@ -33040,6 +33159,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 0.742,
    "commit": "ee014340",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33192,6 +33312,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": -4.221,
    "commit": "45727e1d",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33329,6 +33450,7 @@
    "candidate": "same probe plus dir_enumeration_calls counter",
    "change_pct": -1.945,
    "commit": "8dd95be8",
+   "compares": true,
    "complexity": {
     "lines_changed": 40,
     "new_dependencies": [],
@@ -33478,6 +33600,7 @@
    "candidate": "same probe self-comparison",
    "change_pct": 3.263,
    "commit": "01ccc4b8",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33630,6 +33753,7 @@
    "candidate": "restore candidate count instead of a second analysis_candidates walk",
    "change_pct": -8.031,
    "commit": "be8d4d69",
+   "compares": true,
    "complexity": {
     "lines_changed": 16,
     "new_dependencies": [],
@@ -33782,6 +33906,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.309,
    "commit": "25f423fd",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -33934,6 +34059,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": -4.966,
    "commit": "81f9e447",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34172,6 +34298,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": 1.121,
    "commit": "59fa413a",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34309,6 +34436,7 @@
    "candidate": "restore-only candidates without classify; restore apply skips the classify self-check",
    "change_pct": -13.111,
    "commit": "6887a864",
+   "compares": true,
    "complexity": {
     "lines_changed": 115,
     "new_dependencies": [],
@@ -34461,6 +34589,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.209,
    "commit": "6e101ace",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34613,6 +34742,7 @@
    "candidate": "analysis-file DFS joins parent path instead of path_of",
    "change_pct": -4.07,
    "commit": "7840ce9b",
+   "compares": true,
    "complexity": {
     "lines_changed": 20,
     "new_dependencies": [],
@@ -34765,6 +34895,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.021,
    "commit": "69704206",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -34917,6 +35048,7 @@
    "candidate": "insert_loaded_child skips path_of when serving is None",
    "change_pct": -6.366,
    "commit": "143a1c73",
+   "compares": true,
    "complexity": {
     "lines_changed": 47,
     "new_dependencies": [],
@@ -35069,6 +35201,7 @@
    "candidate": "same-source rebuild of HEAD",
    "change_pct": -0.372,
    "commit": "f1e9ef9c",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35221,6 +35354,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": -3.704,
    "commit": "6a93fc12",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35358,6 +35492,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": 0.182,
    "commit": "2aa3b7ee",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35495,6 +35630,7 @@
    "candidate": "same probe (leftover profile)",
    "change_pct": -3.267,
    "commit": "afd0c919",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35632,6 +35768,7 @@
    "candidate": "share one every_entry for unfiltered entry-row views",
    "change_pct": -18.764,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 68,
     "new_dependencies": [],
@@ -35769,6 +35906,7 @@
    "candidate": "HEAD probe with H125 H129 H131 H133 stacked",
    "change_pct": -22.483,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -35921,6 +36059,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 0.636,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36058,6 +36197,7 @@
    "candidate": "HEAD probe with H138 share-one-every-entry walk",
    "change_pct": -17.598,
    "commit": "a5c98d59",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36195,6 +36335,7 @@
    "candidate": "same probe; floor scoreboard is the verdict",
    "change_pct": 1.986,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36334,6 +36475,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 0.131,
    "commit": "937f9445",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36482,6 +36624,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 0.447,
    "commit": "937f9445",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36619,6 +36762,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": -0.085,
    "commit": "345cd8fc",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36771,6 +36915,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": -0.231,
    "commit": "eec14927",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -36919,6 +37064,7 @@
    "candidate": "same probe --threads 8",
    "change_pct": 1.754,
    "commit": "0a979786",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37157,6 +37303,7 @@
    "candidate": "same probe leftover profile",
    "change_pct": 1.484,
    "commit": "f0126084",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37294,6 +37441,7 @@
    "candidate": "same probe --no-controls --threads 8",
    "change_pct": -10.064,
    "commit": "a58f9e30",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37431,6 +37579,7 @@
    "candidate": "same probe --threads 8",
    "change_pct": 7.123,
    "commit": "06b12212",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -37568,6 +37717,7 @@
    "candidate": "same probe --no-controls, drained batches returned to producing worker",
    "change_pct": -4.981,
    "commit": "5c6e6394",
+   "compares": true,
    "complexity": {
     "lines_changed": 186,
     "new_dependencies": [],
@@ -37707,6 +37857,7 @@
    "candidate": "same probe --no-controls, drained batches returned to producing worker",
    "change_pct": -4.981,
    "commit": "5c6e6394",
+   "compares": true,
    "complexity": {
     "lines_changed": 186,
     "new_dependencies": [],
@@ -37844,6 +37995,7 @@
    "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
    "change_pct": -1.627,
    "commit": "f841662c",
+   "compares": true,
    "complexity": {
     "lines_changed": 123,
     "new_dependencies": [],
@@ -37981,6 +38133,7 @@
    "candidate": "same probe --no-controls, skip directory and symlink statx via file_type",
    "change_pct": -9.01,
    "commit": "f841662c",
+   "compares": true,
    "complexity": {
     "lines_changed": 123,
     "new_dependencies": [],
@@ -38118,6 +38271,7 @@
    "candidate": "same source rebuilt with -Cprofile-use after linux-v6.12 training",
    "change_pct": -8.347,
    "commit": "b46edf65",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -38356,6 +38510,7 @@
    "candidate": "same probe leftover restore-mix profile",
    "change_pct": 0.039,
    "commit": "065175ee",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -38508,6 +38663,7 @@
    "candidate": "progress-indicator branch at ead98807 with no handle attached",
    "change_pct": -1.777,
    "commit": "ead98807",
+   "compares": true,
    "complexity": {
     "lines_changed": 1173,
     "new_dependencies": [],
@@ -39278,6 +39434,7 @@
    "candidate": "the same probe with --progress: a handle attached and polled every 80 ms",
    "change_pct": 5.755,
    "commit": "ead98807",
+   "compares": true,
    "complexity": {
     "lines_changed": 318,
     "new_dependencies": [],
@@ -39415,6 +39572,7 @@
    "candidate": "byte-identical release probe at 1ba06b19",
    "change_pct": 1.022,
    "commit": "1ba06b19",
+   "compares": true,
    "complexity": {
     "lines_changed": 80,
     "new_dependencies": [],
@@ -39554,6 +39712,7 @@
    "candidate": "release probe at d0902cfd with one-pass shared metric resolution",
    "change_pct": -47.005,
    "commit": "d0902cfd",
+   "compares": true,
    "complexity": {
     "lines_changed": 396,
     "new_dependencies": [],
@@ -39693,6 +39852,7 @@
    "candidate": "same probe with release_index: a large last reference is released on a detached thread",
    "change_pct": -3.194,
    "commit": "71c52591",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -40032,6 +40192,7 @@
    "candidate": "H156 plus direct file fold into the parent roll-up and owned walker names",
    "change_pct": -2.222,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 95,
     "new_dependencies": [],
@@ -40270,6 +40431,7 @@
    "candidate": "same probe holding leaf-only chunks until a batch fills",
    "change_pct": 0.879,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -40508,6 +40670,7 @@
    "candidate": "93cd1bb1 probe: auto persists only where a later request reads it",
    "change_pct": -13.813,
    "commit": "93cd1bb1",
+   "compares": true,
    "complexity": {
     "lines_changed": 150,
     "new_dependencies": [],
@@ -40847,6 +41010,7 @@
    "candidate": "pr138 probe at ea786683 (layer 2): a large last index reference is released on a detached thread",
    "change_pct": -1.001,
    "commit": "71c52591",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -41186,6 +41350,7 @@
    "candidate": "pr139 probe at a5c0ab46 (layer 3): auto persists only where a later request reads it",
    "change_pct": -3.092,
    "commit": "93cd1bb1",
+   "compares": true,
    "complexity": {
     "lines_changed": 150,
     "new_dependencies": [],
@@ -41525,6 +41690,7 @@
    "candidate": "H159 first build 666b51f0: drained detached listings returned to their walker, up to 16 spare listings of up to 256 children per worker",
    "change_pct": 1.318,
    "commit": "666b51f0",
+   "compares": true,
    "complexity": {
     "lines_changed": 253,
     "new_dependencies": [],
@@ -41775,6 +41941,7 @@
    "candidate": "H159 b1f57ecd: drained detached listings returned to their walker, reuse bounded to DIR_CLAIM spare listings of up to 64 children per worker",
    "change_pct": -1.41,
    "commit": "b1f57ecd",
+   "compares": true,
    "complexity": {
     "lines_changed": 256,
     "new_dependencies": [],
@@ -42025,6 +42192,7 @@
    "candidate": "060bbfe6 probe: the transient summary classifies entries against .gitignore",
    "change_pct": -69.119,
    "commit": "060bbfe6",
+   "compares": true,
    "complexity": {
     "lines_changed": 999,
     "new_dependencies": [],
@@ -42164,6 +42332,7 @@
    "candidate": "060bbfe6 probe: the transient summary classifies entries against .gitignore",
    "change_pct": -57.86,
    "commit": "060bbfe6",
+   "compares": true,
    "complexity": {
     "lines_changed": 999,
     "new_dependencies": [],
@@ -42303,6 +42472,7 @@
    "candidate": "cbeb9e57 probe: first cut, each listing held whole until it ends",
    "change_pct": -17.072,
    "commit": "cbeb9e57",
+   "compares": true,
    "complexity": {
     "lines_changed": 900,
     "new_dependencies": [],
@@ -42440,6 +42610,7 @@
    "candidate": "892cef40 probe: stack-buffered components, fixed-length fast path, stack DP rows",
    "change_pct": -47.021,
    "commit": "892cef40",
+   "compares": true,
    "complexity": {
     "lines_changed": 150,
     "new_dependencies": [],
@@ -42678,6 +42849,7 @@
    "candidate": "a15b20f4 probe: governing controls resolved once per listing",
    "change_pct": -36.434,
    "commit": "a15b20f4",
+   "compares": true,
    "complexity": {
     "lines_changed": 104,
     "new_dependencies": [],
@@ -42901,6 +43073,7 @@
    "candidate": "e5a71c8a probe, copy B (A/A)",
    "change_pct": -1.12,
    "commit": null,
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -43122,6 +43295,7 @@
    "candidate": "e5a71c8a probe, copy B (A/A)",
    "change_pct": 3.862,
    "commit": null,
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -43343,6 +43517,7 @@
    "candidate": "e5a71c8a probe, copy B (A/A)",
    "change_pct": 1.548,
    "commit": null,
+   "compares": false,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -43564,6 +43739,7 @@
    "candidate": "7c69e88a probe: H171 bucketed matching",
    "change_pct": -29.621,
    "commit": "7c69e88a",
+   "compares": true,
    "complexity": {
     "lines_changed": 1481,
     "new_dependencies": [],
@@ -43787,6 +43963,7 @@
    "candidate": "a1a4a568 probe: H171 + H175 derived chains",
    "change_pct": -3.312,
    "commit": "a1a4a568",
+   "compares": true,
    "complexity": {
     "lines_changed": 141,
     "new_dependencies": [],
@@ -44010,6 +44187,7 @@
    "candidate": "956659de probe: H172 transient tree tier with H176 and F6e",
    "change_pct": -13.485,
    "commit": "956659de",
+   "compares": true,
    "complexity": {
     "lines_changed": 1555,
     "new_dependencies": [],
@@ -44219,6 +44397,7 @@
    "candidate": "956659de probe: H172 transient tree tier",
    "change_pct": -10.304,
    "commit": "956659de",
+   "compares": true,
    "complexity": {
     "lines_changed": 1555,
     "new_dependencies": [],
@@ -44442,6 +44621,7 @@
    "candidate": "956659de probe, --threads 3 (cores - 1)",
    "change_pct": 10.253,
    "commit": null,
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -44564,6 +44744,7 @@
    "candidate": "70c2725c probe: H180 summary walker trims",
    "change_pct": -8.678,
    "commit": "70c2725c",
+   "compares": true,
    "complexity": {
     "lines_changed": 125,
     "new_dependencies": [],
@@ -44772,6 +44953,7 @@
    "candidate": "70c2725c probe: H180 summary walker trims",
    "change_pct": -5.635,
    "commit": "70c2725c",
+   "compares": true,
    "complexity": {
     "lines_changed": 125,
     "new_dependencies": [],
@@ -44980,6 +45162,7 @@
    "candidate": "20933081 probe: H169 Linux-native reader",
    "change_pct": -6.251,
    "commit": "20933081",
+   "compares": true,
    "complexity": {
     "lines_changed": 1621,
     "new_dependencies": [],
@@ -45188,6 +45371,7 @@
    "candidate": "20933081 probe: H169 Linux-native reader",
    "change_pct": -7.899,
    "commit": "20933081",
+   "compares": true,
    "complexity": {
     "lines_changed": 1621,
     "new_dependencies": [],
@@ -45396,6 +45580,7 @@
    "candidate": "0d73ed54 probe (main with 149): the transient summary classifies entries",
    "change_pct": -6.926,
    "commit": "0d73ed54",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -45533,6 +45718,7 @@
    "candidate": "aa58a6b1 probe (150): drained listings return to their walker",
    "change_pct": -2.191,
    "commit": "aa58a6b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -45771,6 +45957,7 @@
    "candidate": "a15b20f4 probe: H159 with H162 and H163",
    "change_pct": 2.259,
    "commit": "aa58a6b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -46009,6 +46196,7 @@
    "candidate": "a15b20f4 probe: H159 with H162 and H163",
    "change_pct": -8.612,
    "commit": "aa58a6b1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -46247,6 +46435,7 @@
    "candidate": "4c283de0: direct file fold and moved walker names",
    "change_pct": -5.513,
    "commit": "4c283de0",
+   "compares": true,
    "complexity": {
     "lines_changed": 60,
     "new_dependencies": [],
@@ -46485,6 +46674,7 @@
    "candidate": "7233dad6 probe: H181 + H182 bundle",
    "change_pct": 0.2,
    "commit": "7233dad6",
+   "compares": true,
    "complexity": {
     "lines_changed": 700,
     "new_dependencies": [],
@@ -46694,6 +46884,7 @@
    "candidate": "e2ef8bcb probe: H183 matcher pre-checks",
    "change_pct": -7.622,
    "commit": "e2ef8bcb",
+   "compares": true,
    "complexity": {
     "lines_changed": 300,
     "new_dependencies": [],
@@ -46902,6 +47093,7 @@
    "candidate": "ebc06c78 probe (the final head of the round)",
    "change_pct": -39.003,
    "commit": "ebc06c78",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -47108,6 +47300,7 @@
    "candidate": "ebc06c78 probe (the final head of the round)",
    "change_pct": -9.75,
    "commit": "ebc06c78",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -47314,6 +47507,7 @@
    "candidate": "17874dd6 probe: fdu-d2fn, every route through the native reader",
    "change_pct": -2.744,
    "commit": "17874dd6",
+   "compares": true,
    "complexity": {
     "lines_changed": 777,
     "new_dependencies": [],
@@ -47638,6 +47832,7 @@
    "candidate": "c0da65ae probe (the H185 head)",
    "change_pct": -3.551,
    "commit": "c0da65ae",
+   "compares": true,
    "complexity": {
     "lines_changed": 136,
     "new_dependencies": [],
@@ -47947,6 +48142,7 @@
    "candidate": "7a3a7058 probe (the H188 part-2 head, with H189)",
    "change_pct": -6.152,
    "commit": "7a3a7058",
+   "compares": true,
    "complexity": {
     "lines_changed": 261,
     "new_dependencies": [],
@@ -48156,6 +48352,7 @@
    "candidate": "a356d456 probe (the H186 head)",
    "change_pct": -4.913,
    "commit": "a356d456",
+   "compares": true,
    "complexity": {
     "lines_changed": 178,
     "new_dependencies": [],
@@ -48364,6 +48561,7 @@
    "candidate": "cfae174e probe (the H187 head)",
    "change_pct": -0.348,
    "commit": "cfae174e",
+   "compares": true,
    "complexity": {
     "lines_changed": 210,
     "new_dependencies": [],
@@ -48673,6 +48871,7 @@
    "candidate": "a356d456 probe (the H186 head, the pdu track's shipped stack)",
    "change_pct": -3.051,
    "commit": "a356d456",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -48884,6 +49083,7 @@
    "candidate": "b82f26e1 probe (the 0.3.0 release head)",
    "change_pct": -48,
    "commit": "b82f26e1",
+   "compares": true,
    "complexity": {
     "lines_changed": 0,
     "new_dependencies": [],
@@ -49086,7 +49286,7 @@
    "trials": 20
   }
  ],
- "prepared": "2026-09-29",
+ "prepared": "2026-09-30",
  "subjects": [
   {
    "apparent_bytes": 1726062376,

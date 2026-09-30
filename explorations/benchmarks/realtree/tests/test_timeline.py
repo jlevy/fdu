@@ -14,6 +14,7 @@ from benchmarks.realtree.report_html import (
     axis_ticks,
     decision_label,
     figure_absolute,
+    figure_effects,
     figure_per_entry,
     fmt_primary,
     kept_improvements,
@@ -415,6 +416,45 @@ class RenderTests(unittest.TestCase):
         self.assertFalse(points[1]["baseline"])
         figure = figure_absolute(dataset)
         self.assertIn("exp-006", figure)
+
+    def test_a_baseline_comparing_two_builds_is_drawn_with_its_change(self) -> None:
+        # exp-202 measured the 0.3.0 engine against 0.2.1's and decided nothing, so it is
+        # a baseline; the page left its -48% blank and kept it off the effects figure, as
+        # if it were an A/A cell like exp-175. The binaries the record names tell them
+        # apart.
+        release = experiment(
+            "exp-202",
+            decision="baseline",
+            kept="neither",
+            wall=metric(208.6e6, 109.9e6, -48.0, -50.5, -44.8),
+        )
+        release["method"]["control_binary"] = {"name": "v021", "sha256": "c" * 64, "args": []}
+        release["method"]["candidate_binary"] = {"name": "release", "sha256": "d" * 64, "args": []}
+        same = experiment(
+            "exp-175", decision="baseline", wall=metric(181.9e6, 180.0e6, -1.1, -3.2, +1.4)
+        )
+        same["method"]["control_binary"] = {"name": "a", "sha256": "e" * 64, "args": []}
+        same["method"]["candidate_binary"] = {"name": "b", "sha256": "e" * 64, "args": []}
+        dataset = project([experiment("exp-101"), release, same])
+        records = {record["id"]: record for record in dataset["experiments"]}
+        self.assertTrue(records["exp-101"]["compares"])
+        self.assertTrue(records["exp-202"]["compares"])
+        self.assertFalse(records["exp-175"]["compares"])
+        figure = figure_effects(dataset)
+        self.assertIn("exp-202", figure)
+        self.assertNotIn("exp-175", figure)
+        self.assertIn("1 of them baselines that compare two builds", figure)
+        page = render(dataset)
+        self.assertIn("-48.0%", page)
+        self.assertNotIn("-1.1%", page)
+
+    def test_a_projection_without_the_field_reads_baselines_as_one_build(self) -> None:
+        # A committed projection written before `compares` existed still renders.
+        dataset = project([experiment("exp-101"), experiment("exp-000", decision="baseline")])
+        for record in dataset["experiments"]:
+            del record["compares"]
+        self.assertNotIn("exp-000", figure_effects(dataset))
+        self.assertIn("exp-101", figure_effects(dataset))
 
     def test_a_record_keeping_neither_arm_is_not_drawn_as_the_trees_current_cost(self) -> None:
         # The per-entry figure plots the arm that stayed in the product. exp-103 is

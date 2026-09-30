@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.atomic_write import write_text_atomic
-from benchmarks.realtree.experiment import kept_arm
+from benchmarks.realtree.experiment import compares_two_builds, kept_arm
 from benchmarks.realtree.summary import (
     BASELINE_COMMIT,
     EXPERIMENTS_DIR,
@@ -296,6 +296,10 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "hypotheses": experiment.get("hypotheses") or [],
                 "decision": decision,
                 "kept": kept_variant(verdict),
+                # Whether the two arms are different builds. A baseline usually measures
+                # one build against itself and has one value to show; an end-to-end or
+                # release cell is a baseline too, and its change is the point of it.
+                "compares": compares_two_builds(experiment),
                 "primary_job": verdict.get("primary_job"),
                 "primary_metric": verdict.get("primary_metric"),
                 "change_pct": verdict.get("change_pct"),

@@ -5,7 +5,7 @@ each run’s engine, date, host, intervals, and memory, and what each tool retur
 The experiment records under [project/experiments](project/experiments/) hold the raw
 evidence, and
 [the performance evidence report](project/reports/report-2026-08-20-fdu-performance-evidence.md)
-charts every measurement the project has made.
+is the full record of every experiment the project has run.
 
 ## How the Runs Are Measured
 
