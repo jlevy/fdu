@@ -11475,7 +11475,10 @@ mod tests {
                 batch_count += 1;
                 collected.extend(batch.into_iter().map(|candidate| candidate.relative_path));
             }
-            assert_eq!(collected, whole, "batches of {limit} walk the same files in the same order");
+            assert_eq!(
+                collected, whole,
+                "batches of {limit} walk the same files in the same order"
+            );
             assert_eq!(batch_count, whole.len().div_ceil(limit.min(whole.len())));
             assert!(
                 index.next_analysis_candidates(request, &mut walk, limit).is_empty(),
