@@ -1458,16 +1458,36 @@ mod tests {
         // gap beside the facts it re-verified (fdu-21ns). That diagnostic is the only
         // way the watched answer may differ from the plain one; anything else is a real
         // difference, and the facts both report are compared with it set aside.
+        //
+        // An incomplete answer is allowed only when it retains at least one issue, every
+        // one a setup-race gap, and none omitted: an incomplete answer with no issue, or
+        // with any other, is a regression. The facts it re-verified are as fresh as the
+        // plain answer's, and with no issue its coverage is the plain answer's too; both
+        // are compared before the status and provenance are set aside.
         let setup_race = format!("{:?}", crate::InvalidateReason::WatchSetupRace);
-        let setup_race_only = observed_report.status.errors.iter().all(|issue| {
-            issue.kind == crate::IssueKind::ObservationGap && issue.message.ends_with(&setup_race)
-        });
+        let errors = &observed_report.status.errors;
+        let setup_race_only = !errors.is_empty()
+            && errors.iter().all(|issue| {
+                issue.kind == crate::IssueKind::ObservationGap
+                    && issue.message.ends_with(&setup_race)
+            });
         assert!(
             observed_report.status.complete || setup_race_only,
             "the watched answer is complete or carries only setup-race gaps: {:?}",
             observed_report.status
         );
+        assert_eq!(observed_report.status.errors_omitted, 0, "{:?}", observed_report.status);
         assert!(plain_report.status.complete, "{:?}", plain_report.status);
+        assert_eq!(
+            observed_report.provenance.freshness, plain_report.provenance.freshness,
+            "the watched answer is as fresh as the plain one"
+        );
+        if errors.is_empty() {
+            assert_eq!(
+                observed_report.status.coverage, plain_report.status.coverage,
+                "with no retained issue, the coverage is the plain answer's"
+            );
+        }
         plain_report.provenance = observed_report.provenance.clone();
         plain_report.status = observed_report.status.clone();
         let json = |report: &Report| {
