@@ -2,15 +2,15 @@
 type: is
 id: is-01m32f649ymyw0htpyrs3b1rhw
 title: Measure the opened allocation slope on macOS and Windows, then assert the tightness rule
-kind: bug
+kind: task
 status: open
 priority: 1
-version: 4
+version: 5
 labels: []
 dependencies: []
 parent_id: is-01m31hvhfvefh5ka5z4fsymdta
 created_at: 2026-09-21T17:10:59.134Z
-updated_at: 2026-09-21T17:59:22.417Z
+updated_at: 2026-09-30T06:25:25.464Z
 closed_at: null
 close_reason: null
 resolution: null

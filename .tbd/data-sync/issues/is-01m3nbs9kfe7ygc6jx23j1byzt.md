@@ -5,7 +5,7 @@ title: "0.2.2: beat pdu and diskus on Linux for the default tree and .gitignore 
 kind: epic
 status: open
 priority: 1
-version: 34
+version: 35
 spec_path: docs/project/specs/active/plan-2026-09-29-linux-parity-0.2.2.md
 labels: []
 dependencies: []
@@ -40,7 +40,7 @@ child_order_hints:
   - is-01m3qdjym66ky971ft6yjdq7s8
   - is-01m3qgck5yzpd603akhhkpw7t9
 created_at: 2026-09-29T01:17:07.054Z
-updated_at: 2026-09-29T21:16:02.621Z
+updated_at: 2026-09-30T05:09:05.079Z
 ---
 Point solution from the 2026-09-29 design study (brief in this epic's notes). Gap (b), the default command on a real repo, is 81% consumer-thread .gitignore classification: a linear scan of ~111 governing patterns per entry, although 1,118 of the 1,593 linux-v6.12 rules are literal names or *.suffix. Fix: H171, bucketed matching. Gap (a), the tree view on the generated 1M tree, is the one-shot index build that no reader reuses. Fix: H172, an exact transient tree tier. H164 (fdu-emqf) follows on the ~0.5G residual. Predicted quiet ranking on linux-v6.12: default tree 211 -> ~85-95 ms (pdu 70, diskus 74.5); balanced tree 1.25 -> ~1.03-1.10 s (pdu 1.02). Ids H171/H172 come from the unused fdu-k1n8 block (H171-H179).
 
@@ -406,3 +406,5 @@ If H172 needs a public model change, it moves to 0.3.0 rather than widen 0.2.2.
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->
+
+2026-09-30: the maintainer confirmed the release scope: 0.3.0 = #157 -> #158 -> #161 -> #162, then the stability PR (claude/stability-fixes with claude/stability-tooling merged in, epic fdu-l4u1), then the pdu track (claude/pdu-uniform-lead, epic fdu-faqa) on top, as one linear stack merged bottom to top with merge commits. Still open for the maintainer before tagging: fdu-8f6k (#[non_exhaustive] Counts), fdu-q7hf (reader diagnostics fields in 0.3.0), fdu-4nue (JSON default view).

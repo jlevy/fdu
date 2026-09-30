@@ -3,16 +3,20 @@ type: is
 id: is-01m32ewmqkv1v71f5pjtc3djmx
 title: "Path-independence is one-sided: a cache that never serves passes every case"
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
-parent_id: is-01m31hvhfvefh5ka5z4fsymdta
+parent_id: is-01m3r273jb24qc4hp7ak005jfm
 created_at: 2026-09-21T17:05:48.275Z
-updated_at: 2026-09-23T02:54:06.369Z
+updated_at: 2026-09-30T03:25:50.986Z
+closed_at: 2026-09-30T03:25:50.986Z
+close_reason: "Fixed by PR #116, composed and merged through PR #117 (9989c5ad, an ancestor of this branch's base b1376507). Verified on this tree: runner.compare(must_serve=True) requires a cache_only/stale answer after an exact refresh, MatrixRun.phase_cache_contract adds 18 positive serving controls, and tests/path_independence/test_harness.py pins it (test_an_exact_seed_must_serve_instead_of_refusing_or_scanning, test_a_serving_control_fails_when_both_runs_fail_identically, test_cache_contract_phase_catches_a_cache_that_never_serves: a miss-only route fails all 18). make test-path-independence: 37 tests OK. Runtime evidence recorded in the bead notes (CI run 35810763705, all 18 controls on Linux/macOS/Windows); the coordinator's make check path-independence subset re-proves it on this head."
+resolution: null
+duplicate_of: null
 ---
 Verified by execution, 2026-09-21. The harness compares warm answers against cold ones, so a cache that simply stops serving is indistinguishable from a correct one.
 

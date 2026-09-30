@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgs0skcccfsvsej970xcp
 title: "parfloor.c: count directories it fails to open and add a DT_UNKNOWN fallback (FLOOR-12 C side)"
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 1
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - stack-followup
 dependencies: []
-parent_id: is-01m2ebb3axt3ktj0rqkj0pw7bt
+parent_id: is-01m3r273jb24qc4hp7ak005jfm
 created_at: 2026-09-14T01:46:45.144Z
-updated_at: 2026-09-14T01:46:45.144Z
+updated_at: 2026-09-30T03:01:02.113Z
+closed_at: 2026-09-30T03:01:02.113Z
+close_reason: "Fixed in ac1b1f5c. Reproduced on Linux with the old parfloor.c (gcc) run as nobody on a fixture with a mode-000 subdirectory: dirs 3 vs 4; nonexistent/unopenable root printed dirs=18446744073709551615 with exit 0. Now: directories counted where found (unopenable ones included), enum falls back to statx(STATX_TYPE) on DT_UNKNOWN (tested via -DPARFLOOR_FORCE_DT_UNKNOWN: enum dirs == stat dirs), root-open failure exits 1 with a message. New ParfloorCountsWhatTheOtherInstrumentsCount tests compile and run the real program (unreadable-subdir case skips as root; verified passing as nobody and failing on the old source). floor.py limitation text updated: whether all instruments agree on a subject with unreadable dirs is still unmeasured end to end (needs probe build + real floor run), so the 'score readable subjects' advice stays."
+resolution: null
+duplicate_of: null
 ---
 C-side remainder of PR #49 review FLOOR-12 (fdu-qcq5, closed as fixed on the harness side only). Recorded by the fixer.
 

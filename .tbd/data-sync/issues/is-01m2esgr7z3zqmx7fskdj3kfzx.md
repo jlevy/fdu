@@ -3,16 +3,20 @@ type: is
 id: is-01m2esgr7z3zqmx7fskdj3kfzx
 title: Linux quiet gate may count the benchmark's own workers in the one-minute load average
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - stack-followup
 dependencies: []
-parent_id: is-01m2ebb3axt3ktj0rqkj0pw7bt
+parent_id: is-01m3r273jb24qc4hp7ak005jfm
 created_at: 2026-09-14T01:46:44.351Z
-updated_at: 2026-09-14T04:38:28.064Z
+updated_at: 2026-09-30T02:54:20.965Z
+closed_at: 2026-09-30T02:54:20.965Z
+close_reason: "Confirmed on Linux and already fixed by fabc850d (Linux quiet gate uses a 1 s /proc/stat CPU-occupancy delta; load averages are context only; tests test_linux_quiet_cell_ignores_the_benchmarks_own_load_average and test_floor's pressure() with load 0.9/core cover the self-induced tail). Verified here with the real gate code on an idle 4-core container: 25 s of 4 busy workers pushed load/core from 0.01 to 0.35 (a load-average gate would have breached) while cpu_busy read 1.0% and _host_pressure_reasons returned []. Stale floor.py docstring/comments corrected in ae5d667a. A full 30-trial perf-floor was not run (needs probe/parfloor builds)."
+resolution: null
+duplicate_of: null
 ---
 Suspected defect in the quiet gate PR #49 now relies on, recorded by the #49 fixer. **Unverified.**
 

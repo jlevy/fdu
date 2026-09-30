@@ -5,11 +5,12 @@ title: MetaBrowser tree page assembly does not enforce the request work budget
 kind: bug
 status: open
 priority: 2
-version: 2
+version: 4
 labels: []
 dependencies: []
+parent_id: is-01m3r273jb24qc4hp7ak005jfm
 created_at: 2026-08-29T07:54:57.995Z
-updated_at: 2026-08-29T20:11:17.850Z
+updated_at: 2026-09-30T03:58:33.194Z
 ---
 The plan spec's implementation table requires `assemble_tree_pages` / `TreePageAssembly`
 to "Enforce stable provider version, positive row bound, unique advancing opaque
@@ -57,3 +58,5 @@ index strictly forward, and every page emits at least one row or ends the traver
 
 This no longer needs to wait on a strict bound in `fdu-pokc`. It needs the reported work
 surfaced somewhere a person will see it.
+
+2026-09-30 stability pass (claude/stability-fixes): the code this bead names, MetaBrowser's src/metabrowser/inventory_engine/tree_page_assembly.py, is not in the fdu repository, so it cannot be changed here. fdu's side of the decision recorded above is in place at b1376507: a tree page always makes forward progress and terminates (opened::tests::a_page_moves_even_when_the_path_walk_spends_the_budget), and each page reports the work it spent, so the consumer can record and surface an overrun as the observation the notes decided on. Left open for a MetaBrowser session.

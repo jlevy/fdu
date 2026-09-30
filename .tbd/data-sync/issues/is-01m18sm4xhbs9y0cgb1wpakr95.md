@@ -2,10 +2,10 @@
 type: is
 id: is-01m18sm4xhbs9y0cgb1wpakr95
 title: Attribute fdu peak RSS on real macOS trees through the harness
-kind: bug
+kind: task
 status: open
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-25-fdu-opened-root-inventory-engine.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m18r51dyvcp3bzw8yca45ph7
 created_at: 2026-08-30T07:37:27.215Z
-updated_at: 2026-09-17T02:10:33.145Z
+updated_at: 2026-09-30T06:25:25.867Z
 ---
 Ad-hoc warm measurements on this host, fdu from main vs dust 1.2.4:
 

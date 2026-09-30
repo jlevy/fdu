@@ -3,16 +3,20 @@ type: is
 id: is-01m32exka5myg890p63v94yenw
 title: "Harness gaps: subset detects content re-widening only via --cache only, and the registry can absorb regressions"
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-09-22-fdu-alpha-correctness-stack.md
 delegate: codex-alpha-coordinator
 labels: []
 dependencies: []
-parent_id: is-01m31hvhfvefh5ka5z4fsymdta
+parent_id: is-01m3r273jb24qc4hp7ak005jfm
 created_at: 2026-09-21T17:06:19.589Z
-updated_at: 2026-09-23T02:54:07.005Z
+updated_at: 2026-09-30T03:25:51.470Z
+closed_at: 2026-09-30T03:25:51.470Z
+close_reason: "Fixed by PR #116, merged through PR #117 (9989c5ad, in this branch's history). Verified on this tree: matrix.SUBSET.mutation_warmers = (W_default, W_all, W_code), so W_code-then-a_lines after a mutation runs in make check's subset; the production conformance judge fails while any registered exception exists (registry.py; test_the_conformance_gate_rejects_even_matching_registered_failures), which also removes the registry-gaming routes (path-set-only comparison, hand-typed classes, full-only stale-waiver checks, unverified local recordings) from the gate; known-violations.toml holds no entries. make test-path-independence: 37 tests OK. The subset's runtime run needs the coordinator's make check (built binary + wheel)."
+resolution: null
+duplicate_of: null
 ---
 Verified in an adversarial review, 2026-09-21.
 
