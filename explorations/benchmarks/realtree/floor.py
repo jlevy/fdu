@@ -866,8 +866,14 @@ FLOOR_INSTRUMENT = "parfloor-stat"
 
 
 def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
-    """Divide every instrument's median by the floor's, on one subject."""
+    """Divide every instrument's median by the floor's, on one subject.
+
+    A tier is decided only where the numbers compare and the host held still: a subject
+    the oracle vetoed, or one measured in -- or downgraded to -- the uncontrolled regime,
+    leaves every tier undecided however its ratio falls (fdu-ayzg).
+    """
     instruments = subject["instruments"]
+    decidable = subject.get("host_regime") == "quiet" and not subject.get("oracle_disagreements")
     floor = instruments.get(FLOOR_INSTRUMENT, {}).get("elapsed_ns", {}).get("median")
     if not floor:
         raise FloorError(f"{subject['label']}: no floor measurement to divide by")
@@ -897,9 +903,11 @@ def score(subject: Mapping[str, Any]) -> Dict[str, Any]:
             # floor, the ceiling and the enum reference are context, not contestants.
             # A tier whose samples spread past SPREAD_SUSPECT is left undecided: its
             # median is whichever mode or outlier it landed near, and that must not
-            # close a tier -- or keep one open -- by the luck of a run.
+            # close a tier -- or keep one open -- by the luck of a run. So is every tier
+            # of a subject that is not `decidable`.
             "meets_threshold": (
-                None if not threshold or result["spread_suspect"] else ratio <= threshold
+                None if not threshold or result["spread_suspect"] or not decidable
+                else ratio <= threshold
             ),
         })
     rows.sort(key=lambda row: row["x_floor"])
@@ -1028,6 +1036,13 @@ def run(
         subject["scored"] = score(subject)
         measured.append(subject)
     breached = sum(subject["invalid_trials"] for subject in measured)
+    if breached:
+        # The downgrade is the whole table's, so no subject's row may still claim quiet,
+        # or decide a tier on it (fdu-cvx1). Each keeps its own `invalid_trials`, which
+        # says where the breach happened.
+        for subject in measured:
+            subject["host_regime"] = "uncontrolled"
+            subject["scored"] = score(subject)
     return {
         "schema": "fdu-floor-scoreboard-v1",
         "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

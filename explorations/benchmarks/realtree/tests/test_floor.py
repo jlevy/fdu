@@ -826,10 +826,11 @@ class FlagsASpreadNoMedianCanSummarize(unittest.TestCase):
         self.assertIn("outlier", banner)
 
 
-def summarized_subject(medians, *, suspect=()):
+def summarized_subject(medians, *, suspect=(), host_regime="quiet", disagreements=()):
     """A measured subject as `score` reads it, one median per instrument."""
     return {
         "label": "usr-tree", "entries": 84_536, "dirs_and_files": 75_976,
+        "host_regime": host_regime, "oracle_disagreements": list(disagreements),
         "instruments": {
             name: {
                 "role": floor.INSTRUMENTS[name].role,
@@ -936,6 +937,72 @@ class LeavesASpreadTierUndecided(unittest.TestCase):
     def test_an_unflagged_tier_is_still_decided(self):
         rows = self._rows({"parfloor-stat": 40_000_000, "index": 50_000_000}, ())
         self.assertTrue(rows["index"]["meets_threshold"])
+
+
+
+class DecidesATierOnlyWhereTheNumbersCompare(unittest.TestCase):
+    """`meets_threshold` is the machine-readable tier-closed signal, so it may say
+    nothing where the table withdrew its claim.
+
+    Review PR49-DELTA-2 (fdu-ayzg): a subject the oracle vetoed -- its numbers do not
+    compare -- and a scoreboard downgraded to uncontrolled still printed a decided mark.
+    Review PR49-DELTA-3 (fdu-cvx1): after the downgrade, each subject's own
+    `host_regime` still said quiet.
+    """
+
+    #: 1.15x and 1.25x: both tiers inside their thresholds when anything is decided.
+    CLOSED = {"parfloor-stat": 40_000_000, "aggregate": 46_000_000, "index": 50_000_000}
+
+    def _decisions(self, subject):
+        return {row["instrument"]: row["meets_threshold"]
+                for row in floor.score(subject)["rows"] if row["threshold"]}
+
+    def test_a_quiet_subject_whose_oracle_held_is_decided(self):
+        self.assertEqual(self._decisions(summarized_subject(self.CLOSED)),
+                         {"aggregate": True, "index": True})
+
+    def test_a_vetoed_subject_decides_no_tier(self):
+        subject = summarized_subject(self.CLOSED, disagreements=["index trial 3 disagrees"])
+        self.assertEqual(self._decisions(subject), {"aggregate": None, "index": None})
+
+    def test_an_uncontrolled_subject_decides_no_tier(self):
+        subject = summarized_subject(self.CLOSED, host_regime="uncontrolled")
+        self.assertEqual(self._decisions(subject), {"aggregate": None, "index": None})
+
+    def test_the_vetoed_table_marks_its_tiers_undecided(self):
+        document = scored_document(self.CLOSED)
+        subject = summarized_subject(self.CLOSED, disagreements=["index trial 3 disagrees"])
+        document["subjects"] = [{"scored": floor.score(subject),
+                                 "oracle_disagreements": subject["oracle_disagreements"]}]
+        rows = [line for line in floor.render(document).splitlines()
+                if line.startswith(("| `aggregate`", "| `index`"))]
+        self.assertEqual(len(rows), 2)
+        for line in rows:
+            self.assertNotIn("✓", line)
+            self.assertIn("?≤", line)
+
+    def test_a_downgraded_scoreboard_decides_nothing_and_no_subject_still_says_quiet(self):
+        # Settle check and regime entry are quiet; the first measured trial is not.
+        document = run_document(snapshots=(QUIET, QUIET, BUSY, QUIET), host_regime="quiet",
+                                warmups=0,
+                                subjects=(("first", Path("/r")), ("second", Path("/s"))))
+        self.assertEqual(document["host_regime"], "uncontrolled")
+        for subject in document["subjects"]:
+            self.assertEqual(subject["host_regime"], "uncontrolled", subject["label"])
+            for row in subject["scored"]["rows"]:
+                self.assertIsNone(row["meets_threshold"], row["instrument"])
+        # Where the breach happened stays on the subject that had it.
+        self.assertEqual([subject["invalid_trials"] > 0 for subject in document["subjects"]],
+                         [True, False])
+
+    def test_a_quiet_scoreboard_still_decides(self):
+        document = run_document(snapshots=(QUIET,), host_regime="quiet")
+        subject = document["subjects"][0]
+        self.assertEqual(subject["host_regime"], "quiet")
+        decided = [row["meets_threshold"] for row in subject["scored"]["rows"]
+                   if row["threshold"]]
+        self.assertTrue(decided)
+        self.assertTrue(all(value is not None for value in decided))
 
 
 if __name__ == "__main__":
