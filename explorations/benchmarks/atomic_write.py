@@ -5,13 +5,18 @@ under the final name, even after a crash or a container restart mid-write. The d
 to a temporary beside the target, is flushed and synced, and is then renamed over the
 target; on any failure the temporary is removed and the target is untouched. This is
 "Write Every File Whole" in docs/project/architecture/fdu-design-principles.md, and
-scripts/check-atomic-writes.mjs fails on a raw write anywhere outside a helper.
+scripts/check-atomic-writes.mjs fails on a raw write outside a helper in the Rust, Python
+and Node sources.
 
 Each function mirrors the call it replaces, so converting one changes nothing but
 atomicity: text defaults to the same encoding and newline translation as ``open``, a
 new file gets the permissions ``open`` would give it, a replaced file keeps its own, and
 a symbolic link is written through rather than replaced. Mode ``"x"`` still refuses an
 existing target, and publishes with a hard link so a racing writer cannot be clobbered.
+On a filesystem without hard links (FAT, exFAT, some SMB mounts) it reserves the name
+with an exclusive create and renames the temporary over the reservation instead: a race
+is still refused, but between those two calls, or after a crash between them, the target
+is an empty file.
 
 An append-only file, such as a JSONL log, is the one exception to whole writes: it grows a
 record at a time, so a crash can cut its last record short. ``complete_lines`` is how its
@@ -35,6 +40,8 @@ StrPath = str | os.PathLike[str]
 
 _MODES = frozenset({"w", "wb", "wt", "x", "xb", "xt"})
 _CREATE_ATTEMPTS = 64
+# What ``link`` fails with on Linux and macOS where the filesystem has no hard links.
+_NO_HARD_LINKS = frozenset({errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV})
 
 
 def write_text_atomic(
@@ -78,7 +85,8 @@ def open_atomic(
 
     ``mode`` is one of ``w``, ``wb``, ``x`` and ``xb`` (``t`` allowed). The handle is a
     real file, so a child process may write to its descriptor. An exception inside the
-    block removes the temporary and leaves ``path`` as it was.
+    block removes the temporary and leaves ``path`` as it was. Mode ``x`` on a filesystem
+    without hard links leaves ``path`` empty for a moment; see ``_publish_exclusive``.
     """
     if mode not in _MODES:
         raise ValueError(f"open_atomic writes a whole new file, not mode {mode!r}")
@@ -110,16 +118,38 @@ def open_atomic(
             handle.flush()
             os.fsync(handle.fileno())
         if exclusive:
-            # A hard link fails when the name exists, so a writer that won a race keeps
-            # its file; the temporary is removed either way.
             try:
-                os.link(temporary, target)
+                _publish_exclusive(temporary, target)
             finally:
                 _discard(temporary)
         else:
             os.replace(temporary, target)
     except BaseException:
         _discard(temporary)
+        raise
+
+
+def _publish_exclusive(temporary: str, target: str) -> None:
+    """Give ``temporary``'s file the name ``target``, failing if that name exists.
+
+    A hard link fails when the name exists, so a writer that won a race keeps its file.
+    A filesystem without hard links refuses the link itself; there the name is reserved
+    with an exclusive create, which a race also fails, and the temporary is renamed over
+    the reservation. Until the rename, and after a crash before it, the target is empty.
+    The caller removes the temporary if it is still there.
+    """
+    try:
+        os.link(temporary, target)
+        return
+    except OSError as error:
+        if error.errno not in _NO_HARD_LINKS:
+            raise
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    os.close(os.open(target, flags, 0o666))
+    try:
+        os.replace(temporary, target)
+    except BaseException:
+        _discard(target)
         raise
 
 

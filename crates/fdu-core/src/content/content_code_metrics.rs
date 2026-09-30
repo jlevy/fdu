@@ -34,6 +34,9 @@ pub struct CodeAccumulator {
     /// The largest window held, for the bound's own test.
     #[cfg(test)]
     peak_window: usize,
+    /// The metrics after each line finished, for the oracle's line-by-line comparison.
+    #[cfg(test)]
+    by_line: Vec<MetricValues>,
     previous_cr: bool,
     line: LineScan,
     javascript: JavaScriptContext,
@@ -260,6 +263,8 @@ impl CodeAccumulator {
             window_bytes,
             #[cfg(test)]
             peak_window: 0,
+            #[cfg(test)]
+            by_line: Vec::new(),
             previous_cr: false,
             line: LineScan::default(),
             javascript: JavaScriptContext::default(),
@@ -295,17 +300,28 @@ impl CodeAccumulator {
 
     /// Finish an unterminated final line and return its additive metrics.
     pub fn finish(mut self) -> MetricValues {
+        self.finish_unterminated();
+        self.metrics
+    }
+
+    fn finish_unterminated(&mut self) {
         let bom_only = self.consumed == 0 && self.window == UTF8_BOM;
         if self.consumed + self.window.len() > 0 && !bom_only {
             self.finish_line();
         }
-        self.metrics
     }
 
     /// The largest window the accumulator has held, in bytes.
     #[cfg(test)]
     fn peak_window(&self) -> usize {
         self.peak_window
+    }
+
+    /// [`Self::finish`], with the metrics as they stood after each line finished.
+    #[cfg(test)]
+    fn finish_by_line(mut self) -> (MetricValues, Vec<MetricValues>) {
+        self.finish_unterminated();
+        (self.metrics, self.by_line)
     }
 
     fn finish_line(&mut self) {
@@ -337,6 +353,8 @@ impl CodeAccumulator {
         } else {
             self.metrics.code_blank_lines = self.metrics.code_blank_lines.saturating_add(1);
         }
+        #[cfg(test)]
+        self.by_line.push(self.metrics);
         self.window.clear();
         self.consumed = 0;
         self.last_dropped = None;
@@ -1742,16 +1760,6 @@ mod tests {
         }
     }
 
-    fn streaming(language: &str, window: usize, chunks: &[&[u8]]) -> (MetricValues, usize) {
-        let mut counter =
-            CodeAccumulator::with_window_bytes(language, window).expect("supported language");
-        for chunk in chunks {
-            counter.push(chunk);
-        }
-        let peak = counter.peak_window();
-        (counter.finish(), peak)
-    }
-
     fn whole(language: &str, chunks: &[&[u8]]) -> MetricValues {
         let mut counter =
             reference::WholeLineAccumulator::for_type(language).expect("supported language");
@@ -1759,6 +1767,56 @@ mod tests {
             counter.push(chunk);
         }
         counter.finish()
+    }
+
+    /// The streaming scan's metrics after each line it finished, and its peak window.
+    fn streaming_by_line(
+        language: &str,
+        window: usize,
+        chunks: &[&[u8]],
+    ) -> (Vec<MetricValues>, usize) {
+        let mut counter =
+            CodeAccumulator::with_window_bytes(language, window).expect("supported language");
+        for chunk in chunks {
+            counter.push(chunk);
+        }
+        let peak = counter.peak_window();
+        let (total, by_line) = counter.finish_by_line();
+        assert_eq!(by_line.last().copied().unwrap_or_default(), total, "{language}");
+        (by_line, peak)
+    }
+
+    /// The reference's metrics after each line it finishes. The oracle stays verbatim, so
+    /// it keeps no history: each entry is a fresh reference fed the source through that
+    /// line's terminator, where the reference finishes a line (a CR, or an LF no CR
+    /// precedes), and a last entry is its total when `finish` adds an unterminated line.
+    fn whole_by_line(language: &str, source: &[u8]) -> Vec<MetricValues> {
+        let mut by_line = Vec::new();
+        for (at, &byte) in source.iter().enumerate() {
+            if byte == b'\r' || (byte == b'\n' && (at == 0 || source[at - 1] != b'\r')) {
+                by_line.push(whole(language, &[&source[..=at]]));
+            }
+        }
+        let total = whole(language, &[source]);
+        if total.physical_lines > by_line.last().map_or(0, |last| last.physical_lines) {
+            by_line.push(total);
+        }
+        by_line
+    }
+
+    /// The streaming and the reference metrics agree after every line, not only in total:
+    /// the metrics are cumulative, so a code line counted as a comment cannot be hidden by
+    /// a comment line counted as code later. A disagreement names its first line.
+    fn assert_same_lines(actual: &[MetricValues], expected: &[MetricValues], label: &str) {
+        if let Some(line) = actual.iter().zip(expected).position(|(left, right)| left != right) {
+            panic!(
+                "{label}: line {} disagrees: streaming {:?}, whole-line {:?}",
+                line + 1,
+                actual[line],
+                expected[line]
+            );
+        }
+        assert_eq!(actual.len(), expected.len(), "{label}: lines finished");
     }
 
     const LANGUAGES: [&str; 15] = [
@@ -1893,8 +1951,10 @@ mod tests {
         source
     }
 
-    /// The streaming scan agrees with the whole-line classifier for every language,
-    /// with a piece edge at every byte, with every chunking, and at every window size.
+    /// The streaming scan agrees with the whole-line classifier for every language, line
+    /// by line: at nine window sizes, including a window of one byte, which puts a piece
+    /// edge at every byte; and at windows of one and three bytes, with the source split
+    /// in two at every seventh byte.
     #[test]
     fn piecewise_classification_agrees_with_the_whole_line_classifier_everywhere() {
         let mut both = everything();
@@ -1902,34 +1962,54 @@ mod tests {
         let sources = [everything(), long_tokens(), both];
         for language in LANGUAGES {
             for source in &sources {
-                let expected = whole(language, &[source]);
+                let expected = whole_by_line(language, source);
                 for window in [1, 2, 3, 5, 7, 16, 61, 4096, LINE_WINDOW_BYTES] {
-                    let (actual, _) = streaming(language, window, &[source]);
-                    assert_eq!(actual, expected, "{language}: window {window}");
+                    let (actual, _) = streaming_by_line(language, window, &[source]);
+                    assert_same_lines(&actual, &expected, &format!("{language}: window {window}"));
                 }
                 for split in (0..=source.len()).step_by(7) {
                     let chunks: [&[u8]; 2] = [&source[..split], &source[split..]];
-                    let (actual, _) = streaming(language, 1, &chunks);
-                    assert_eq!(actual, expected, "{language}: split {split}, window 1");
-                    let (actual, _) = streaming(language, 3, &chunks);
-                    assert_eq!(actual, expected, "{language}: split {split}, window 3");
+                    for window in [1, 3] {
+                        let (actual, _) = streaming_by_line(language, window, &chunks);
+                        let label = format!("{language}: split {split}, window {window}");
+                        assert_same_lines(&actual, &expected, &label);
+                    }
                 }
             }
         }
     }
 
-    /// Every chunk boundary of a small mixed source, at window 1, for every language.
+    /// What the line-by-line comparison is for: a code line counted as a comment and a
+    /// comment counted as code leave equal totals, and still disagree on the first line.
+    #[test]
+    #[should_panic(expected = "swapped: line 1 disagrees")]
+    fn a_swap_that_leaves_equal_totals_still_disagrees_line_by_line() {
+        let code = MetricValues { physical_lines: 1, code_lines: 1, ..MetricValues::default() };
+        let comment =
+            MetricValues { physical_lines: 1, comment_lines: 1, ..MetricValues::default() };
+        let both = MetricValues {
+            physical_lines: 2,
+            code_lines: 1,
+            comment_lines: 1,
+            ..MetricValues::default()
+        };
+        assert_same_lines(&[code, both], &[comment, both], "swapped");
+    }
+
+    /// Every two- and three-way chunking of a small mixed source, at window 1, for every
+    /// language, line by line.
     #[test]
     fn every_chunk_boundary_of_a_mixed_source_agrees() {
         let source = b"a = \"q\\\"\" /* c\n */ r#\"x\"# 'y' $t$z$t$ <<T\nT\n// d\n\xef\xbb\xbf%q{w}\r\n\xe3\x80\x80e";
         for language in LANGUAGES {
-            let expected = whole(language, &[source]);
+            let expected = whole_by_line(language, source);
             for first in 0..=source.len() {
                 for second in first..=source.len() {
                     let chunks: [&[u8]; 3] =
                         [&source[..first], &source[first..second], &source[second..]];
-                    let (actual, _) = streaming(language, 1, &chunks);
-                    assert_eq!(actual, expected, "{language}: splits {first}, {second}");
+                    let (actual, _) = streaming_by_line(language, 1, &chunks);
+                    let label = format!("{language}: splits {first}, {second}");
+                    assert_same_lines(&actual, &expected, &label);
                 }
             }
         }
@@ -1952,9 +2032,9 @@ mod tests {
         }
         line.push(b'\n');
         for language in LANGUAGES {
-            let expected = whole(language, &[&line]);
-            let (actual, peak) = streaming(language, LINE_WINDOW_BYTES, &[&line]);
-            assert_eq!(actual, expected, "{language}");
+            let expected = whole_by_line(language, &line);
+            let (actual, peak) = streaming_by_line(language, LINE_WINDOW_BYTES, &[&line]);
+            assert_same_lines(&actual, &expected, language);
             assert!(
                 peak < 2 * LINE_WINDOW_BYTES,
                 "{language}: the window held {peak} bytes of a {}-byte line",

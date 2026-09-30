@@ -90,6 +90,13 @@ std::thread_local! {
     /// made, through the index; this is how a test sees which one happened.
     pub(crate) static CONTROL_PROJECTION_CLONES: std::cell::Cell<u64> =
         const { std::cell::Cell::new(0) };
+
+    /// Children a batched analysis walk has stepped over on this thread, resumed or not.
+    ///
+    /// Every batch walks the same files either way, so only this tells a walk that
+    /// resumes where it stopped from one that steps over the listing again.
+    pub(crate) static ANALYSIS_CHILD_STEPS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
 }
 
 /// Approximate bytes the exact commit history used by [`Index::since`] may retain.
@@ -331,6 +338,44 @@ impl RollUpScalars {
     }
 }
 
+/// Add one file's sizes to a whole-tree running total, or refuse the file whose sizes no
+/// `u64` can hold the sum of ([`crate::Error::UnrepresentableTotal`]), leaving the total
+/// as it was.
+///
+/// The routes that count a tree without committing observations keep this total where
+/// the apply lane runs [`Index::preflight_totals`]: the summary fold and the detached
+/// builder, full or folded. One total at the root is enough, for the reason the preflight
+/// gives: every directory's roll-up, extension tally, `unignored` partition, and folded
+/// tally is a sub-sum of the root's, so none of them can overflow once the root's fits,
+/// and the merges that build them add plainly. Only the two byte totals are checked: a
+/// count of files or directories cannot reach `u64::MAX`, since each one is an entry a
+/// walk visited. The byte totals can: a sparse file on tmpfs claims up to 8 EiB apparent
+/// and allocates nothing, so three of them carry the sum past `u64::MAX`, and they are
+/// refused alike on every route.
+#[inline]
+pub(crate) fn add_file_sizes(
+    bytes: &mut u64,
+    allocated: &mut u64,
+    attrs: &Attrs,
+    path: impl FnOnce() -> PathBuf,
+) -> crate::Result<()> {
+    match (bytes.checked_add(attrs.size), allocated.checked_add(attrs.allocated)) {
+        (Some(next_bytes), Some(next_allocated)) => {
+            *bytes = next_bytes;
+            *allocated = next_allocated;
+            Ok(())
+        }
+        (None, _) => Err(unrepresentable_file(path(), "bytes")),
+        (Some(_), None) => Err(unrepresentable_file(path(), "allocated bytes")),
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn unrepresentable_file(path: PathBuf, counter: &'static str) -> crate::Error {
+    crate::Error::UnrepresentableTotal { path, counter }
+}
+
 /// What a batch has done to the tree so far, for [`Index::replay_totals`]: which of the
 /// index's subtrees it has cut away and which entries it has put in their place.
 ///
@@ -430,21 +475,57 @@ impl TotalsOverlay {
 
 /// Where a batched walk of the files an analysis may read has got to
 /// ([`Index::next_analysis_candidates`]): the directories still to list, each with its
-/// path, and the listing in progress with how many of its children have been visited.
+/// path, and the listing in progress with where it stopped ([`ListingResume`]).
 ///
-/// Resuming a listing by position is sound because nothing moves the tree between two
-/// batches of one walk: an analysis pass holds the index exclusively, and applying a
+/// Resuming a listing where it stopped is sound because nothing moves the tree between
+/// two batches of one walk: an analysis pass holds the index exclusively, and applying a
 /// result moves its content tier only.
 #[derive(Debug)]
 pub(crate) struct AnalysisWalk {
     pending: Vec<(EntryId, PathBuf)>,
-    listing: Option<(EntryId, PathBuf, usize)>,
+    listing: Option<(EntryId, PathBuf, ListingResume)>,
 }
 
 impl AnalysisWalk {
     /// A walk that has visited nothing.
     pub(crate) fn start() -> Self {
         Self { pending: vec![(EntryId::ROOT, PathBuf::new())], listing: None }
+    }
+}
+
+/// Where a batched walk stopped in one directory's listing: how many children it has
+/// visited, and the name of the last.
+///
+/// Sorted storage resumes at the position and map storage after the name, each without
+/// stepping over what the walk already visited (R164-6). Stepping over them cost a
+/// directory of N files about N²/(2·batch) child visits, each loading an entry, which is
+/// 10^8 for one directory of a million files.
+#[derive(Debug)]
+struct ListingResume {
+    position: usize,
+    last: OsString,
+}
+
+/// A directory's children in name order from where a batched walk stopped
+/// ([`Index::resumed_children`]).
+enum ResumedChildren<'a> {
+    Empty,
+    Sorted { index: &'a Index, ids: std::slice::Iter<'a, EntryId> },
+    Mutable(std::collections::btree_map::Range<'a, OsString, EntryId>),
+}
+
+impl<'a> Iterator for ResumedChildren<'a> {
+    type Item = (&'a OsStr, EntryId);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Sorted { index, ids } => {
+                let id = *ids.next()?;
+                Some((index.entry(id).name.as_os_str(), id))
+            }
+            Self::Mutable(children) => children.next().map(|(name, id)| (name.as_os_str(), *id)),
+        }
     }
 }
 
@@ -485,6 +566,11 @@ impl FoldedFiles {
 impl InternedRollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
+    ///
+    /// The additions are plain because every sum they form is a sub-sum of a root total
+    /// already proved representable: by [`Index::preflight_totals`] on the apply lane, by
+    /// the running total [`add_file_sizes`] keeps in the detached builder, and by the sum
+    /// check a snapshot load makes.
     fn merge(&mut self, other: &InternedRollUp) {
         let had_files = self.files > 0;
         self.files += other.files;
@@ -1782,6 +1868,10 @@ pub(crate) struct DetachedIndexBuilder {
     /// everything below it, once per observation.
     repeated_directories: Vec<PathBuf>,
     inserted: u64,
+    /// The root's apparent and allocated bytes so far, which [`add_file_sizes`] refuses
+    /// to carry past `u64::MAX` before any roll-up merges a file.
+    total_bytes: u64,
+    total_allocated: u64,
     /// What a folded index has kept and folded so far, when this builds one.
     tree: Option<TreeFold>,
 }
@@ -1882,6 +1972,8 @@ impl DetachedIndexBuilder {
             directory_ids: HashMap::from([(PathBuf::new(), (EntryId::ROOT, Arc::default()))]),
             repeated_directories: Vec::new(),
             inserted: 0,
+            total_bytes: 0,
+            total_allocated: 0,
             tree: None,
         }
     }
@@ -1918,6 +2010,10 @@ impl DetachedIndexBuilder {
     /// allocated them (H159). A listing that is not applied keeps its children, and one a
     /// folded index applied keeps the names of the files it folded, for that worker to
     /// free as well.
+    ///
+    /// A file that would carry the tree's apparent or allocated bytes past `u64::MAX` is
+    /// refused with [`crate::Error::UnrepresentableTotal`], and the build with it, as the
+    /// apply lane refuses the batch that holds it ([`add_file_sizes`]).
     pub(crate) fn push_directory(
         &mut self,
         directory: &mut crate::scan::DetachedDirectory,
@@ -2003,10 +2099,18 @@ impl DetachedIndexBuilder {
         };
         self.index.reserve_detached_children(parent, entries);
         let path: &Path = path;
-        let mut classify_children = |directory: &[&[u8]]| {
+        let mut classify_children = |directory: &[&[u8]]| -> crate::Result<()> {
             for child in children.iter_mut() {
                 let &mut crate::scan::DetachedChild { ref mut name, kind, attrs, .. } = child;
                 crate::counters::bump(|counts| counts.upserts += 1);
+                if kind == EntryKind::File {
+                    add_file_sizes(
+                        &mut self.total_bytes,
+                        &mut self.total_allocated,
+                        &attrs,
+                        || path.join(&*name),
+                    )?;
+                }
                 let ext_id = (kind == EntryKind::File && self.tree.is_none())
                     .then(|| self.index.intern_ext(&crate::classify::ext_bucket(name)));
                 let ignored = if classifying {
@@ -2051,11 +2155,12 @@ impl DetachedIndexBuilder {
                 }
                 self.inserted = self.inserted.saturating_add(1);
             }
+            Ok(())
         };
         if classifying {
-            crate::control::with_directory_components(path, classify_children);
+            crate::control::with_directory_components(path, classify_children)?;
         } else {
-            classify_children(&[]);
+            classify_children(&[])?;
         }
         // Every name an entry kept has been taken. Only a folded index leaves any behind.
         if self.tree.is_none() {
@@ -4747,16 +4852,22 @@ impl Index {
             return;
         }
         loop {
-            let (parent, parent_path, visited) = match walk.listing.take() {
-                Some(listing) => listing,
+            let (parent, parent_path, resume) = match walk.listing.take() {
+                Some((parent, parent_path, resume)) => (parent, parent_path, Some(resume)),
                 None => match walk.pending.pop() {
-                    Some((parent, parent_path)) => (parent, parent_path, 0),
+                    Some((parent, parent_path)) => (parent, parent_path, None),
                     None => return,
                 },
             };
-            let mut position = visited;
-            for (name, id) in self.children_of(parent).into_iter().flatten().skip(visited) {
-                position += 1;
+            let visited = resume.as_ref().map_or(0, |resume| resume.position);
+            let children = self.resumed_children(parent, resume.as_ref());
+            #[cfg(test)]
+            let children = children.inspect(|_| {
+                ANALYSIS_CHILD_STEPS.with(|steps| steps.set(steps.get() + 1));
+            });
+            // Each child's position counts it as visited, so a walk that stops at it
+            // resumes after it.
+            for (position, (name, id)) in (visited + 1..).zip(children) {
                 let entry = self.entry(id);
                 if entry.kind == EntryKind::Dir {
                     walk.pending.push((id, parent_path.join(name)));
@@ -4773,10 +4884,37 @@ impl Index {
                     continue;
                 }
                 if !visit(id, entry.revision, entry.attrs, relative_path) {
-                    walk.listing = Some((parent, parent_path, position));
+                    let resume = ListingResume { position, last: name.to_os_string() };
+                    walk.listing = Some((parent, parent_path, resume));
                     return;
                 }
             }
+        }
+    }
+
+    /// The children of `parent` in name order, from after where `resume` says a walk
+    /// stopped, or all of them; none for a stale handle or a non-directory, as
+    /// [`Self::children_of`] gives.
+    fn resumed_children(
+        &self,
+        parent: EntryId,
+        resume: Option<&ListingResume>,
+    ) -> ResumedChildren<'_> {
+        use std::ops::Bound::{Excluded, Unbounded};
+
+        let Some(entry) = self.try_entry(parent) else { return ResumedChildren::Empty };
+        match entry.directory.as_deref().map(|directory| &directory.children) {
+            None => ResumedChildren::Empty,
+            Some(DirectoryChildren::Sorted(ids)) => {
+                let from = resume.map_or(0, |resume| resume.position).min(ids.len());
+                ResumedChildren::Sorted { index: self, ids: ids[from..].iter() }
+            }
+            Some(DirectoryChildren::Mutable(children)) => ResumedChildren::Mutable(match resume {
+                Some(resume) => {
+                    children.range::<OsStr, _>((Excluded(resume.last.as_os_str()), Unbounded))
+                }
+                None => children.range::<OsStr, _>(..),
+            }),
         }
     }
 
@@ -11490,6 +11628,70 @@ mod tests {
             assert!(
                 index.next_analysis_candidates(request, &mut walk, limit).is_empty(),
                 "a finished walk stays finished"
+            );
+        }
+    }
+
+    /// A directory of more than two batches is walked once, in order: each batch resumes
+    /// the listing where the last one stopped rather than stepping over what it already
+    /// walked (R164-6), whether the directory keeps its children sorted, as a cold scan
+    /// builds it, or in a map, as an applied batch leaves it.
+    #[test]
+    fn a_long_listing_is_resumed_where_the_last_batch_stopped() {
+        let names: Vec<String> = (0..11).map(|file| format!("f{file:02}.rs")).collect();
+        let request = crate::content::AnalysisRequest {
+            profile: AnalysisSet::NONE.with_lines(),
+            ..crate::content::AnalysisRequest::default()
+        };
+        let sorted = {
+            let mut builder = DetachedIndexBuilder::new(
+                "/root",
+                ScanScope::default(),
+                crate::classify::TypeRegistry::compiled_shared(),
+            );
+            let mut listing = crate::scan::DetachedDirectory {
+                path: PathBuf::new(),
+                children: (0_u32..)
+                    .zip(&names)
+                    .map(|(position, name)| crate::scan::DetachedChild {
+                        name: OsString::from(name),
+                        kind: EntryKind::File,
+                        attrs: file_attrs(10, 1),
+                        position,
+                    })
+                    .collect(),
+                control: None,
+            };
+            builder.push_directory(&mut listing).expect("listing");
+            builder.finish()
+        };
+        let mut mapped = Index::new("/root");
+        mapped.apply_ok(&Observation::new(
+            names.iter().map(|name| upsert(name, EntryKind::File, file_attrs(10, 1))).collect(),
+        ));
+        for (storage, index) in [("sorted", &sorted), ("mapped", &mapped)] {
+            ANALYSIS_CHILD_STEPS.with(|steps| steps.set(0));
+            let mut walk = AnalysisWalk::start();
+            let mut walked = Vec::new();
+            let mut batches = 0;
+            loop {
+                let batch = index.next_analysis_candidates(request, &mut walk, 3);
+                if batch.is_empty() {
+                    break;
+                }
+                batches += 1;
+                walked.extend(batch.into_iter().map(|candidate| candidate.relative_path));
+            }
+            assert_eq!(batches, 4, "{storage}: eleven files in batches of three");
+            assert_eq!(
+                walked,
+                names.iter().map(PathBuf::from).collect::<Vec<_>>(),
+                "{storage}: every file once, in listing order"
+            );
+            assert_eq!(
+                ANALYSIS_CHILD_STEPS.with(std::cell::Cell::get),
+                11,
+                "{storage}: each child is stepped over once across all four batches"
             );
         }
     }

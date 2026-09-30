@@ -12,13 +12,14 @@ tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
 any route. Four Rust API changes are breaking: `counters::Counts` gains three public
 fields and is non-exhaustive, `Error` gains a variant, `UnrepresentableTotal`,
-`scan::ScanBackendDiagnostics` gains three public fields, and `content::CoverageReason`
-gains a variant, `TextOnly`. A `.gitignore` that starts with a byte-order mark, or holds
-a NUL byte inside a line, now reads as git reads it, which changes the `.gitignore`
-semantics version: a snapshot written by an earlier release is rebuilt rather than
-served. A Markdown file over 64 MiB is counted as plain text under the words unit, and
-its row and report say so; content analysis of a one-line source or a large Markdown
-file no longer holds the file in memory.
+`scan::ScanBackendDiagnostics` gains three public fields and is non-exhaustive, and
+`content::CoverageReason` gains a variant, `TextOnly`. A `.gitignore` that starts with a
+byte-order mark, or holds a NUL byte inside a line, now reads as git reads it, which
+changes the `.gitignore` semantics version: a snapshot written by an earlier release is
+rebuilt rather than served.
+A Markdown file over 64 MiB is counted as plain text under the words unit, and its row
+and report say so; content analysis of a one-line source or a large Markdown file no
+longer holds the file in memory.
 No command-line option, report or cache schema, or Python API changed; a report’s
 coverage map has one more possible key, `text_only`.
 
@@ -47,9 +48,13 @@ coverage map has one more possible key, `text_only`.
   `dirs_read` equals the native successes plus `portable_directory_reads`; no existing
   key changes meaning.
   [The platform tuning guide](docs/project/guides/platform-tuning.md) documents them.
+  It is now `#[non_exhaustive]` too, for the reason `Counts` is: Rust code outside the
+  engine crate can read its fields but can no longer build it with a struct literal or
+  destructure it exhaustively, and a later backend field is an additive change.
 - **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
-  `Index::apply` returns for the batch below; code that matches `Error` exhaustively
-  must name it or use a wildcard arm.
+  every route returns for a tree, or `Index::apply` for a batch, whose total no `u64`
+  can hold (below); code that matches `Error` exhaustively must name it or use a
+  wildcard arm.
 - **Breaking:** `fdu_core::content::CoverageReason` gains `TextOnly`, the coverage of a
   words record whose Markdown file was over the exact bound below and was counted as
   plain text; such an outcome carries a value, as `Analyzed` does, and
@@ -132,17 +137,25 @@ coverage map has one more possible key, `text_only`.
   A listing now takes directory and symlink kinds from itself only once one of its
   children’s stat has succeeded, which proves the directory searchable; the saving above
   keeps all but one stat per listing that starts with directories or symlinks.
-- `Index::apply`, and every other route that commits a batch of observations, refuses a
-  batch that would carry a whole-tree total of files, directories, apparent bytes, or
-  allocated bytes past what a `u64` can hold, with `Error::UnrepresentableTotal`, before
-  it applies any of the batch: the index, its clock, and its journal are as they were.
+- A tree whose apparent or allocated bytes sum past what a `u64` can hold now fails with
+  `Error::UnrepresentableTotal` on every route, and `fdu` exits 1 naming the file at
+  which the total left the range.
+  A filesystem can produce one: tmpfs, XFS, and btrfs let anyone create a sparse file
+  that claims 8 EiB apparent and allocates nothing, so three of them in one directory
+  are enough. Earlier releases panicked in debug builds and wrapped the total in release
+  builds, so `fdu PATH` reported 8,191 PiB for that directory.
+  A one-shot report, whether it folds a summary or builds a full or folded index, keeps
+  one checked running total at the root, which bounds every directory’s total beneath
+  it. `Index::apply`, and every other route that commits a batch of observations, refuses
+  a batch that would carry a whole-tree total of files, directories, apparent bytes, or
+  allocated bytes out of range before it applies any of the batch: the index, its clock,
+  and its journal are as they were.
   A batch is applied in order, so the index must be representable after each of its
   operations; a replacement, a kind change, or a removal that makes room in the same
-  batch counts. Earlier releases panicked in debug builds and wrapped the totals in
-  release builds, so `total()` could report a small exact total for a tree that held
-  more than 16 EiB. A filesystem cannot produce that; the public `Index` API can.
-  A snapshot whose recorded sizes sum past `u64` is now refused as corrupt when it is
-  loaded rather than summed.
+  batch counts. A snapshot whose recorded sizes sum past `u64` is now refused as corrupt
+  when it is loaded rather than summed.
+  A `ScanReport`’s `bytes_walked` and `allocated_walked`, which measure the walk rather
+  than answer it, saturate at `u64::MAX` rather than wrapping.
 - A `.gitignore` that starts with a UTF-8 byte-order mark now applies its first rule,
   and a pattern ends at the first NUL byte inside its line, as git reads both.
   Earlier releases matched the mark as part of the first rule, so it never applied, and
@@ -156,9 +169,13 @@ coverage map has one more possible key, `text_only`.
   A one-line minified or generated source therefore costs a worker the window, not the
   file. Every count is unchanged: a differential test holds the streaming scan to the
   previous whole-line classifier, kept verbatim as the oracle, for every supported
-  language with a piece edge at every byte, every two-way chunking, every window size,
-  CRLF and lone CR, splices, byte-order marks, invalid UTF-8, Unicode whitespace, no
-  trailing newline, and tokens longer than the window.
+  language, comparing the cumulative counts after every line rather than only the file’s
+  totals. It runs nine window sizes from one byte, which puts a piece edge at every byte,
+  to the full 64 KiB; two-way splits of the source at every seventh byte, at windows of
+  one and three bytes; and every two- and three-way chunking of a short mixed source, at
+  a window of one byte.
+  Its sources hold CRLF and lone CR, splices, byte-order marks, invalid UTF-8, Unicode
+  whitespace, no trailing newline, and tokens longer than the window.
 - `--analyze words` no longer holds a Markdown file of any size in memory to render it:
   a Markdown file over 64 MiB is counted as plain text instead, in the same 64 KiB
   chunks as any other text file, and its record says so.
@@ -170,7 +187,12 @@ coverage map has one more possible key, `text_only`.
   that would otherwise exhaust memory.
   Such a file counts every word as visible and each blank-line run as a paragraph; its
   row carries `counted as text`, machine output carries it under `text_only` in the
-  words coverage map, and the report notes how many files were counted that way and how.
+  words coverage map, and the report notes how many of the files its views show were
+  counted that way and how.
+  The bound is fixed: no option lifts it, which makes it the one bound without a flag.
+  [The design principles](docs/project/architecture/fdu-design-principles.md) record it
+  as a deliberate exception with that reason; lifting it needs an analyzer option in the
+  content identity, which the request model does not have yet.
   A Markdown file at or under the bound is rendered exactly, as before, and a file of
   any other type retains at most its 16 KiB classification prefix and one chunk, which a
   test now holds it to.
@@ -180,18 +202,23 @@ coverage map has one more possible key, `text_only`.
   A candidate holds two paths and a classification, so a million-file tree cost hundreds
   of megabytes of scheduling memory that the bounded worker channel then drained one at
   a time. Candidates are now walked in batches of 4,096 over one resumable walk of the
-  index; the count is taken first, without building any, so the progress denominator is
-  exact as before, and every result is still applied conditionally on the revision and
-  fingerprint its candidate carried.
+  index, which resumes a directory’s listing where the last batch stopped, and are read
+  by one set of workers for the whole pass, from a queue of at most one batch, so no
+  worker waits at a batch’s end for the slowest file in it; the count is taken first,
+  without building any, so the progress denominator is exact as before, and every result
+  is still applied conditionally on the revision and fingerprint its candidate carried.
   Answers, records, and counts are unchanged.
 - `fdu --watch` no longer repaints its aggregate views when nothing a reader sees has
   changed: a touch that leaves a file’s size alone, or a change to an entry the
   selection leaves out, moves the index but printed the same tree again under a new
   timestamp. A repaint’s identity is what the format renders of the answer with its
-  generation instant held fixed, plus its tree status and its source and freshness, so
-  machine formats still repaint when a modification time they carry moves, and a
-  retained observation gap or a coverage change repaints on every format.
-  Change records are never deduplicated.
+  generation instant held fixed, plus its tree status, its source and freshness, and the
+  notes, tips, and warnings written beside it on stderr, so machine formats still
+  repaint when a modification time they carry moves, and a retained observation gap, a
+  coverage change, or a new note, such as a `.gitignore` refused for its line limit on
+  an otherwise unchanged tree, repaints on every format.
+  A session keeps a 128-bit digest of that identity rather than a copy of the rendered
+  answer. Change records are never deduplicated.
   The rule is the engine’s, `watch_session::Session::changed_report`, which is new.
 - A C header is no longer classified as C++ because a C++ keyword appears inside an
   identifier, a comment, or a string literal: `struct pid_namespace *` holds
@@ -203,6 +230,9 @@ coverage map has one more possible key, `text_only`.
 - A modeline names a language as a whole token: `mode: conf-colon` and `mode: conf` no
   longer classify a file as C, `ft=css` is not `cs`, and `mode: gomod` is not `go`.
   Linux’s `Documentation/docutils.conf` was counted as C code.
+  Emacs’s `mode: shell-script`, its documented name for `sh-mode`, is shell, and a Vim
+  compound filetype names the language of its first component, as Vim applies it first:
+  `ft=c.doxygen` is C.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`

@@ -1224,8 +1224,9 @@ impl Cli {
     /// Only ever called for a repaint — the first answer is written by the caller before
     /// the loop — so the rule below can be unconditional. A change that leaves the answer
     /// as the reader last saw it, such as a touch that moves no size, repaints nothing:
-    /// the session decides that (`Session::changed_report`), so every surface decides it
-    /// the same way (fdu-wb5n).
+    /// the engine's session decides that (`Session::changed_report`), not this command
+    /// line (fdu-wb5n). Python's `Watch.report` does not take that rule; it always
+    /// answers.
     fn render_live(
         out: &mut dyn Write,
         diagnostic: &mut dyn Write,

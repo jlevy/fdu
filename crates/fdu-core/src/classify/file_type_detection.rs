@@ -180,12 +180,17 @@ fn modeline_rule(prefix: &[u8]) -> Option<&'static str> {
         ("c", "c"),
         ("ruby", "ruby"),
         ("shell", "shell"),
+        ("shell-script", "shell"),
         ("sh", "shell"),
         ("markdown", "markdown"),
         ("xml", "xml"),
     ] {
-        let names = |key| modeline_names(&lower, key).any(|name| name == alias);
-        if (emacs && names("mode: ")) || (vim && (names("ft=") || names("filetype="))) {
+        let mode = |key| modeline_names(&lower, key).any(|name| name == alias);
+        // A Vim compound filetype, `c.doxygen`, applies its components in order, so the
+        // first names the language.
+        let filetype =
+            |key| modeline_names(&lower, key).any(|name| name.split('.').next() == Some(alias));
+        if (emacs && mode("mode: ")) || (vim && (filetype("ft=") || filetype("filetype="))) {
             return Some(rule);
         }
     }
@@ -195,7 +200,8 @@ fn modeline_rule(prefix: &[u8]) -> Option<&'static str> {
 /// Each language a modeline names after `key`, as the whole token: `mode: conf-colon`
 /// names `conf-colon`, not `c`, and `ft=css` names `css`, not `cs` (fdu-d0gc). A token
 /// ends at whitespace, `;`, `:`, the end of the text, or the `-*-` that closes an Emacs
-/// modeline when nothing separates them.
+/// modeline when nothing separates them. A Vim compound filetype stays one token here,
+/// and [`modeline_rule`] reads its first component.
 fn modeline_names<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = &'a str> + 'a {
     text.match_indices(key).map(move |(at, _)| {
         let value = &text[at + key.len()..];
@@ -282,7 +288,9 @@ mod tests {
     }
 
     /// A modeline names a language as a whole token (fdu-d0gc): `conf-colon` is not `c`,
-    /// `css` is not `cs`, and `gomod` is not `go`.
+    /// `css` is not `cs`, and `gomod` is not `go`. Emacs's `shell-script` is its
+    /// documented name for `sh-mode`, and a Vim compound filetype such as `c.doxygen`
+    /// names its first component's language, as Vim applies that first.
     #[test]
     fn modelines_match_an_alias_as_a_whole_token() {
         let rule = |prefix: &[u8]| match probe_unresolved(prefix) {
@@ -297,7 +305,9 @@ mod tests {
         assert_eq!(rule(b"# vim: ft=cmake\n"), None);
         assert_eq!(rule(b"# vim: filetype=gomod\n"), None);
         assert_eq!(rule(b"# -*- mode: gomod -*-\n"), None);
-        assert_eq!(rule(b"# -*- mode: shell-script -*-\n"), None);
+        assert_eq!(rule(b"# vim: set ft=css.doxygen:\n"), None);
+        assert_eq!(rule(b"# vim: set ft=.c:\n"), None);
+        assert_eq!(rule(b"# -*- mode: c.doxygen -*-\n"), None, "Emacs names no compound modes");
 
         assert_eq!(rule(b"# -*- mode: c -*-\n"), Some("c"));
         assert_eq!(rule(b"// -*- mode: c++; coding: utf-8 -*-\n"), Some("cpp"));
@@ -308,6 +318,11 @@ mod tests {
         assert_eq!(rule(b"# vi: filetype=sh\n"), Some("shell"));
         assert_eq!(rule(b"# vim: set filetype=rust:\nfn main() {}\n"), Some("rust"));
         assert_eq!(rule(b"# -*- Mode: Python -*-\n"), Some("python"));
+        assert_eq!(rule(b"# -*- mode: shell-script -*-\n"), Some("shell"));
+        assert_eq!(rule(b"# -*- mode: shell-script; sh-shell: bash -*-\n"), Some("shell"));
+        assert_eq!(rule(b"/* vim: set ft=c.doxygen: */\n"), Some("c"));
+        assert_eq!(rule(b"// vim: set filetype=cpp.doxygen:\n"), Some("cpp"));
+        assert_eq!(rule(b"# vim: ft=sh.bats\n"), Some("shell"));
     }
 
     #[test]

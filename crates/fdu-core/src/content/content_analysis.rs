@@ -3,7 +3,6 @@
 use std::fs::File;
 use std::io::Read;
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use crate::Index;
@@ -19,9 +18,10 @@ use super::{
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const CLASSIFICATION_PREFIX_BYTES: usize = 16 * 1024;
 const MAX_ERROR_BYTES: usize = 512;
-/// Candidates scheduled at once ([`analyze_index_in_batches`]): enough to keep every
-/// worker reading between two walks of the index, and a few megabytes of paths and
-/// classifications at most, whatever the tree holds.
+/// Candidates walked at once, and the most queued for the workers
+/// ([`analyze_index_in_batches`]): enough to keep every worker reading while the next
+/// batch is walked, and a few megabytes of paths and classifications at most, whatever
+/// the tree holds.
 const ANALYSIS_BATCH_CANDIDATES: usize = 4096;
 /// The largest Markdown file the words unit renders exactly, in bytes.
 ///
@@ -32,6 +32,12 @@ const ANALYSIS_BATCH_CANDIDATES: usize = 4096;
 /// largest in common corpora are a few megabytes, so every real file is rendered
 /// exactly, and the bound exists for the generated or concatenated file that would
 /// otherwise exhaust memory (fdu-b2qz).
+///
+/// Fixed: no request option lifts it, which makes it the one recorded exception to the
+/// rule that every bound is liftable (the design principles' "Truncate Freely; Never
+/// Truncate Silently" says why). Lifting it needs an analyzer option in the content
+/// identity, so that a lifted bound re-analyzes what it counted as text; [`AnalysisLimits`]
+/// is the seam such an option would fill.
 pub(crate) const MARKDOWN_EXACT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Resource limits an analysis pass runs under.
@@ -176,15 +182,14 @@ pub(crate) fn analyze_index_observed(
     )
 }
 
-/// [`analyze_index_observed`], scheduling at most `batch` candidates at a time.
+/// [`analyze_index_observed`], walking `batch` candidates at a time.
 ///
 /// The candidates are walked in batches rather than materialized whole: each holds two
 /// paths and a classification, so a million-file tree cost hundreds of megabytes before
 /// the first read (fdu-xjfk). The count is taken first, without building any, so the
-/// denominator is exact before the first read. Within a batch the workers pull from a
-/// shared cursor and the caller's thread applies every result as it arrives, so one
-/// batch bounds the candidates alive at once and nothing else changes: every result is
-/// still applied conditionally on the revision and fingerprint its candidate carried.
+/// denominator is exact before the first read. Every result is still applied
+/// conditionally on the revision and fingerprint its candidate carried, and nothing else
+/// changes ([`analyze_candidates`]).
 pub(crate) fn analyze_index_in_batches(
     index: &mut Index,
     request: AnalysisRequest,
@@ -215,73 +220,134 @@ pub(crate) fn analyze_index_in_batches(
     }
 
     let started = std::time::Instant::now();
-    // Cloned out before the scopes: the workers need the index's rules while the receive
-    // loop holds the index mutably, and an `Arc` is what lets both be true.
+    // Cloned out before the scope: the workers need the index's rules while the caller's
+    // thread holds the index mutably, and an `Arc` is what lets both be true.
     let types = index.types_shared();
     let workers =
         worker_count(request.workers, usize::try_from(report.candidates).unwrap_or(usize::MAX));
-    let mut walk = crate::index::AnalysisWalk::start();
-    loop {
-        let candidates = index.next_analysis_candidates(request, &mut walk, batch.max(1));
-        if candidates.is_empty() {
-            break;
-        }
-        analyze_batch(index, &types, candidates, request, limits, workers, &mut report, progress);
-    }
+    let pass = Pass { request, limits, workers, batch: batch.max(1) };
+    analyze_candidates(index, &types, pass, &mut report, progress);
     report.elapsed_ns = elapsed_ns(started);
     finish_content_tier(index, &report, previous_state, pass_started_at_ns);
     report
 }
 
-/// Read one batch of candidates on `workers` threads and apply each result as it
-/// arrives.
-#[allow(clippy::too_many_arguments)] // One batch is one call; the limits ride with the request.
-fn analyze_batch(
-    index: &mut Index,
-    types: &Arc<TypeRegistry>,
-    candidates: Vec<AnalysisCandidate>,
+/// What one analysis pass reads under, and how it schedules the reads.
+#[derive(Clone, Copy)]
+struct Pass {
     request: AnalysisRequest,
     limits: AnalysisLimits,
     workers: usize,
+    /// Candidates walked at once, and the most queued for the workers, up to
+    /// [`ANALYSIS_BATCH_CANDIDATES`].
+    batch: usize,
+}
+
+/// Read every candidate on the pass's workers, in one scope for the whole pass, and
+/// apply each result as it arrives.
+///
+/// The caller's thread does everything that touches the index. It walks the next batch
+/// once the last is queued, queues candidates as the workers take them, and applies
+/// results in between, so at most two batches of candidates are alive at once: the one
+/// queued and the one walked. The workers pull from the queue and never see the index.
+///
+/// One scope rather than one per batch (R164-6): a scope per batch joined every worker at
+/// each batch's end, so the workers that finished first waited for the slowest file of the
+/// batch, a multi-gigabyte file near a batch's end serialized the pool, and the next batch
+/// was walked only then.
+///
+/// The caller's thread waits for a result only while the queue is full, when a worker
+/// always has a candidate to read, so the pass cannot stall on itself. A worker that
+/// panics stops taking candidates; the others finish the queue, and the scope then
+/// re-raises the panic, as it did when each batch had its own scope.
+fn analyze_candidates(
+    index: &mut Index,
+    types: &Arc<TypeRegistry>,
+    pass: Pass,
     report: &mut AnalysisReport,
     progress: Option<&crate::Progress>,
 ) {
-    let workers = workers.clamp(1, candidates.len().max(1));
-    let next = AtomicUsize::new(0);
-    let candidates = Arc::new(candidates);
-    let (sender, receiver) = mpsc::sync_channel(workers.saturating_mul(2).max(1));
+    // The channel allocates its bound up front, so a caller's larger batch is not its size.
+    let (work, queue) =
+        mpsc::sync_channel::<AnalysisCandidate>(pass.batch.min(ANALYSIS_BATCH_CANDIDATES));
+    let queue = std::sync::Mutex::new(queue);
+    let (sender, results) = mpsc::sync_channel(pass.workers.saturating_mul(2).max(1));
 
     std::thread::scope(|scope| {
-        for _ in 0..workers {
+        for _ in 0..pass.workers {
             let sender = sender.clone();
-            let candidates = Arc::clone(&candidates);
-            let next = &next;
+            let queue = &queue;
             scope.spawn(move || {
                 let _counter_guard = crate::counters::thread_flush_guard();
                 loop {
-                    let slot = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(candidate) = candidates.get(slot).cloned() else { break };
-                    if sender.send(analyze_candidate(types, candidate, request, limits)).is_err() {
+                    // The lock is released at the end of this statement, before the read.
+                    let next =
+                        queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).recv();
+                    let Ok(candidate) = next else { break };
+                    let analyzed = analyze_candidate(types, candidate, pass.request, pass.limits);
+                    if sender.send(analyzed).is_err() {
                         break;
                     }
                 }
             });
         }
         drop(sender);
-        for (observation, bytes_read) in receiver {
-            report.bytes_read = report.bytes_read.saturating_add(bytes_read);
-            count_coverage(report, &observation.analysis);
-            match index.apply_analysis(observation) {
-                AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
-                AnalysisApplyOutcome::Stale => report.stale = report.stale.saturating_add(1),
+
+        let mut walk = crate::index::AnalysisWalk::start();
+        let mut walked = std::collections::VecDeque::new();
+        loop {
+            if walked.is_empty() {
+                walked.extend(index.next_analysis_candidates(pass.request, &mut walk, pass.batch));
+                if walked.is_empty() {
+                    break;
+                }
             }
-            // Per result, on this thread, beside the index apply each result already
-            // costs: the workers never touch the handle.
-            if let Some(progress) = progress {
-                progress.add_analyzed(1);
+            while let Some(candidate) = walked.pop_front() {
+                match work.try_send(candidate) {
+                    Ok(()) => {}
+                    Err(mpsc::TrySendError::Full(candidate)) => {
+                        walked.push_front(candidate);
+                        break;
+                    }
+                    Err(mpsc::TrySendError::Disconnected(_)) => {
+                        unreachable!("the queue's receiver outlives the scope")
+                    }
+                }
+            }
+            if !walked.is_empty() {
+                // The queue is full, so a worker has a candidate: wait for a result. None
+                // arrives only once every worker has stopped, which a panic alone does.
+                let Ok(result) = results.recv() else { break };
+                apply_result(index, report, progress, result);
             }
         }
+        // Closing the queue lets the workers finish what it holds and stop, and the
+        // results end when the last of them has.
+        drop(work);
+        for result in results {
+            apply_result(index, report, progress, result);
+        }
     });
+}
+
+/// Count one worker result and apply it conditionally, on the caller's thread.
+fn apply_result(
+    index: &mut Index,
+    report: &mut AnalysisReport,
+    progress: Option<&crate::Progress>,
+    (observation, bytes_read): (AnalysisObservation, u64),
+) {
+    report.bytes_read = report.bytes_read.saturating_add(bytes_read);
+    count_coverage(report, &observation.analysis);
+    match index.apply_analysis(observation) {
+        AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
+        AnalysisApplyOutcome::Stale => report.stale = report.stale.saturating_add(1),
+    }
+    // Per result, on this thread, beside the index apply each result already costs: the
+    // workers never touch the handle.
+    if let Some(progress) = progress {
+        progress.add_analyzed(1);
+    }
 }
 
 fn finish_content_tier(
@@ -892,6 +958,42 @@ mod tests {
         let exact_report =
             crate::query::report(&exact, &exact_request, std::time::UNIX_EPOCH).expect("report");
         assert!(exact_report.notes.iter().all(|note| !note.contains("counted as plain text")));
+
+        // The note speaks for the report's selection, not for every record the index
+        // holds: a selection that leaves the Markdown file out says nothing of it, and two
+        // views of one selection count it once.
+        let notes_for = |views: Vec<crate::query::ViewSpec>, include: &[&str]| {
+            let selection = crate::query::Selection {
+                include: include
+                    .iter()
+                    .map(|source| crate::query::Pattern::parse(source).expect("pattern"))
+                    .collect(),
+                ..crate::query::Selection::default()
+            };
+            let query = crate::query::Query { selection, views, ..crate::query::Query::default() };
+            let request = crate::query::Request::new(
+                crate::query::Basis::held_by(&bounded),
+                query,
+                std::time::UNIX_EPOCH,
+            );
+            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH).expect("report").notes
+        };
+        let text_only = |notes: &[String]| -> Vec<String> {
+            notes.iter().filter(|note| note.contains("counted as plain text")).cloned().collect()
+        };
+        let documents = crate::query::ViewSpec::Documents;
+        let types = crate::query::ViewSpec::Types;
+        assert_eq!(
+            text_only(&notes_for(vec![documents], &["*.txt"])),
+            Vec::<String>::new(),
+            "no selected row was counted as text"
+        );
+        assert_eq!(
+            text_only(&notes_for(vec![documents, types], &[])),
+            ["note: 1 Markdown file over 64 MiB counted as plain text: every word counted \
+              visible, paragraphs are blank-line runs"],
+            "two views of one selection count the file once"
+        );
     }
 
     /// The other half of the bound (fdu-b2qz): a file of unknown type retains at most
@@ -968,6 +1070,27 @@ mod tests {
         assert_eq!(one_at_a_time.lines, all_at_once.lines);
         assert_eq!(one_at_a_time.code, all_at_once.code);
         assert_eq!(one_at_a_time.words, all_at_once.words);
+        // Batches that split the tree unevenly, so the queue fills and the next batch is
+        // walked while candidates are still being read.
+        for batch in [2, 3] {
+            let (split, records) = records(batch);
+            assert_eq!(records, whole, "batches of {batch}");
+            assert_eq!(
+                (split.candidates, split.applied, split.stale, split.bytes_read),
+                (
+                    all_at_once.candidates,
+                    all_at_once.applied,
+                    all_at_once.stale,
+                    all_at_once.bytes_read
+                ),
+                "batches of {batch}"
+            );
+            assert_eq!(
+                (split.lines, split.code, split.words),
+                (all_at_once.lines, all_at_once.code, all_at_once.words),
+                "batches of {batch}"
+            );
+        }
     }
 
     /// Every words-unit metric is independent of whether code was also requested.

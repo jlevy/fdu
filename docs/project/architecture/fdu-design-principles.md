@@ -235,6 +235,24 @@ Every bound is liftable by a flag named where the bound is stated — `--limit a
 `--depth all`. A truncation the caller cannot remove is a limitation wearing a default’s
 clothes.
 
+One bound is a deliberate exception, recorded here so that it reads as a decision rather
+than as a flag somebody forgot.
+Under `--analyze words`, a Markdown file over 64 MiB is counted as plain text instead of
+rendered, and no flag lifts that.
+Rendering is exact only over the whole document, because list tightness, headings, and
+link references resolve across it, so the parser holds the source and a document-wide
+parse beside it: a worker’s memory grows with the file, and one generated or
+concatenated file could exhaust it.
+No Markdown file anyone writes is near the bound, so every real document is still
+rendered exactly. The file is still read whole, every other analyzer counts it as it
+counts any file, and the bound states itself: the row says `counted as text`, machine
+output carries `text_only` in the words coverage map, and the report’s note names the
+bound for the files its selection shows.
+Lifting it would take an analyzer option in the request’s content identity, beside the
+analyzer set, so that a lifted bound re-analyzes the records counted as text; the
+request model has no such option yet.
+When it gains one, this bound gets its flag and stops being an exception.
+
 This is the cache’s honesty contract one level up: brevity, like speed, may be traded
 for completeness in the open and never in secret.
 
@@ -368,9 +386,11 @@ record at a time, so its reader must detect and drop a torn last record instead.
 
 The engine’s `snapshot::write_atomically` and the helpers in `scripts/atomic_write.py`
 and `scripts/atomic-write.mjs` do this.
-`make atomic-writes` fails on a raw write anywhere else unless it lists the site with
-its reason. A test’s own inputs are exempt, because a crash fails the test that wrote
-them.
+`make atomic-writes` is a lint over the Rust, Python and Node sources: it fails on a raw
+write in any of them, or an open whose mode or flags it cannot read, unless it lists the
+site with its reason.
+Makefile, shell and workflow writes are reviewed by hand.
+A test’s own inputs are exempt, because a crash fails the test that wrote them.
 
 ## Trust and the Cache
 
@@ -549,6 +569,9 @@ I/O failures, a file that changes while being read, and stale conditional commit
 the content operation partial and must be surfaced as errors.
 An implementation may stop reading once a file is proven binary, but it never truncates
 or size-skips an eligible text file.
+The one method that changes with size is the rendering of Markdown over 64 MiB, which
+the words analyzer counts as plain text, reading the file whole and saying so; it is the
+recorded exception under “Truncate Freely; Never Truncate Silently”.
 
 ### Views Are Readers
 
@@ -697,9 +720,10 @@ costs no filesystem work, a property asserted by test rather than described.
 `--interval` throttles only how often aggregate views repaint; it plays no part in
 detection. A repaint that would show a reader nothing new is skipped: the session
 compares what the format renders of the answer, with its generation instant held fixed,
-plus its tree status, source, and freshness, so a touch that moves no size repaints no
-size-only tree, while machine output that carries the modification time repaints, and a
-change of status or freshness repaints on every format.
+plus its tree status, source, and freshness, and the notes, tips, and warnings written
+beside it, so a touch that moves no size repaints no size-only tree, while machine
+output that carries the modification time repaints, and a change of status or freshness,
+or a new note, repaints on every format.
 Overflow and subtree invalidation appear explicitly in the stream and are never dropped,
 because they say the consumer’s own view may have gaps; change records are never
 deduplicated, only repaints.

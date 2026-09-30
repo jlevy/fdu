@@ -487,10 +487,16 @@ pub struct ScanReport {
     pub entries: u64,
     /// Regular files whose metadata was observed.
     pub files_walked: u64,
-    /// Apparent bytes represented by the regular files whose metadata was observed.
+    /// Apparent bytes represented by the regular files whose metadata was observed,
+    /// saturating at `u64::MAX`.
+    ///
+    /// A measure of the walk's work, not an answer: a tree whose total no `u64` can hold
+    /// is refused where it is counted ([`crate::Error::UnrepresentableTotal`]), and this
+    /// tally stops at the bound rather than wrapping or panicking before that refusal.
     pub bytes_walked: u64,
     /// Allocated bytes of those files: what the default size metric counts, and what a
-    /// sparse disk image or a clone makes far smaller than their apparent bytes.
+    /// sparse disk image or a clone makes far smaller than their apparent bytes. It
+    /// saturates as `bytes_walked` does.
     pub allocated_walked: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
@@ -509,8 +515,8 @@ impl ScanReport {
         self.dirs_read += other.dirs_read;
         self.entries += other.entries;
         self.files_walked += other.files_walked;
-        self.bytes_walked += other.bytes_walked;
-        self.allocated_walked += other.allocated_walked;
+        self.bytes_walked = self.bytes_walked.saturating_add(other.bytes_walked);
+        self.allocated_walked = self.allocated_walked.saturating_add(other.allocated_walked);
         self.errors.extend(other.errors);
         self.attribution.absorb(other.attribution);
     }
@@ -520,8 +526,8 @@ impl ScanReport {
         self.entries += 1;
         if kind == EntryKind::File {
             self.files_walked += 1;
-            self.bytes_walked += attrs.size;
-            self.allocated_walked += attrs.allocated;
+            self.bytes_walked = self.bytes_walked.saturating_add(attrs.size);
+            self.allocated_walked = self.allocated_walked.saturating_add(attrs.allocated);
         }
     }
 }
@@ -791,12 +797,20 @@ pub struct WorkerPolicyDiagnostics {
 
 /// Directory enumeration backends used by one scan.
 ///
-/// The Linux native reader (`getdents64` and `statx`, glibc builds) has no fields here
-/// yet. Its listings are counted in neither portable field, so on Linux the directories
-/// it served are the report's `dirs_read` less `portable_directory_reads`; a directory it
-/// declined is counted once, as a portable attempt. `unavailable_reason` still describes
-/// only the macOS fields.
+/// Each native reader's listings are counted in its own fields, and a directory it
+/// declines is counted as its fallback and then as a portable attempt. On Linux, for the
+/// native reader (`getdents64` and `statx`, glibc builds):
+///
+/// - `linux_dents_attempts` = `linux_dents_successes` + `linux_dents_fallbacks`;
+/// - the report's `dirs_read` = `linux_dents_successes` + `portable_directory_reads`.
+///
+/// `unavailable_reason` describes only the macOS fields.
+///
+/// Non-exhaustive, as [`crate::counters::Counts`] is: a diagnostics record grows with the
+/// backends it describes, so a later field is an additive change. Code outside the engine
+/// reads its fields; only the engine builds one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScanBackendDiagnostics {
     /// Portable `read_dir` calls attempted.
     pub portable_attempts: u64,
@@ -6730,8 +6744,10 @@ fn reconcile_wave_worker(
                         result.scan.entries += 1;
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
-                            result.scan.bytes_walked += attrs.size;
-                            result.scan.allocated_walked += attrs.allocated;
+                            result.scan.bytes_walked =
+                                result.scan.bytes_walked.saturating_add(attrs.size);
+                            result.scan.allocated_walked =
+                                result.scan.allocated_walked.saturating_add(attrs.allocated);
                         }
                         if baseline.state == (PathState::Present { kind, attrs }) {
                             result.unchanged += 1;
@@ -7333,8 +7349,9 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.dirs_read += addition.scan.dirs_read;
     total.scan.entries += addition.scan.entries;
     total.scan.files_walked += addition.scan.files_walked;
-    total.scan.bytes_walked += addition.scan.bytes_walked;
-    total.scan.allocated_walked += addition.scan.allocated_walked;
+    total.scan.bytes_walked = total.scan.bytes_walked.saturating_add(addition.scan.bytes_walked);
+    total.scan.allocated_walked =
+        total.scan.allocated_walked.saturating_add(addition.scan.allocated_walked);
     total.scan.errors.extend(addition.scan.errors);
     total.observations = total.observations.saturating_add(addition.observations);
     merge_apply_stats(&mut total.apply, addition.apply);

@@ -317,3 +317,73 @@ fn only_ignored_code_analysis_is_complete_across_cache_routes() {
         assert!(stdout.contains("\"complete\": true"), "{policy}: {stdout}");
     }
 }
+
+/// Three sparse files that claim more apparent bytes together than a `u64` can hold, in
+/// a directory on a filesystem that lets this process create them, or `None` with the
+/// reason printed.
+///
+/// tmpfs, XFS, and btrfs accept an 8 EiB sparse file from anyone and allocate nothing
+/// for it; ext4 refuses one with `EFBIG`, and other filesystems cap a file far lower. So
+/// the fixture is tried in the system temporary directory and then in `/dev/shm`, a
+/// tmpfs on every Linux host this is tested on, and a host with neither is said to be
+/// skipped rather than passed.
+fn unrepresentable_sparse_tree() -> Option<tempfile::TempDir> {
+    let size = u64::try_from(i64::MAX).expect("positive");
+    let mut refusals = Vec::new();
+    for base in [std::env::temp_dir(), std::path::PathBuf::from("/dev/shm")] {
+        let directory = match tempfile::tempdir_in(&base) {
+            Ok(directory) => directory,
+            Err(error) => {
+                refusals.push(format!("{}: {error}", base.display()));
+                continue;
+            }
+        };
+        let created = ["a", "b", "c"].iter().try_for_each(|name| {
+            fs::File::create(directory.path().join(name)).and_then(|file| file.set_len(size))
+        });
+        match created {
+            Ok(()) => return Some(directory),
+            Err(error) => refusals.push(format!("{}: {error}", base.display())),
+        }
+    }
+    eprintln!(
+        "skipped: no filesystem this test can write to holds three sparse files of 8 EiB \
+         apparent each ({})",
+        refusals.join("; ")
+    );
+    None
+}
+
+/// A tree whose apparent bytes no `u64` can hold fails every route alike, with exit 1
+/// and the same error, rather than wrapping the total on the routes a one-shot report
+/// takes and refusing it only where a batch is committed (fdu-sqyk).
+#[test]
+fn a_total_no_u64_can_hold_fails_every_route_alike() {
+    let Some(tree) = unrepresentable_sparse_tree() else { return };
+    let cache = tempfile::tempdir().expect("cache directory");
+    let cache_dir = cache.path().to_str().expect("UTF-8 cache path");
+    let routes: [&[&str]; 7] = [
+        &["--cache", "off"],
+        &["--cache", "off", "--size", "apparent", "--format", "json"],
+        &["--cache", "off", "--view", "summary"],
+        &["--cache", "off", "--view", "summary", "--no-gitignore"],
+        &["--cache", "off", "--view", "files"],
+        &["--cache", "off", "--ignored", "exclude"],
+        &["--cache", "on", "--cache-dir", cache_dir, "--view", "files"],
+    ];
+    for route in routes {
+        let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
+            .args(["--color", "never"])
+            .args(route)
+            .arg(tree.path())
+            .output()
+            .expect("run fdu");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{route:?}: {stderr}");
+        assert!(output.stdout.is_empty(), "{route:?} printed an answer");
+        assert!(
+            stderr.contains("would carry the tree's bytes total past what a u64 can hold"),
+            "{route:?}: {stderr}"
+        );
+    }
+}
