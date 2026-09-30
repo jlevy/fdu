@@ -158,9 +158,11 @@ coverage map has one more possible key, `text_only`.
   A candidate holds two paths and a classification, so a million-file tree cost hundreds
   of megabytes of scheduling memory that the bounded worker channel then drained one at
   a time. Candidates are now walked in batches of 4,096 over one resumable walk of the
-  index; the count is taken first, without building any, so the progress denominator is
-  exact as before, and every result is still applied conditionally on the revision and
-  fingerprint its candidate carried.
+  index, which resumes a directory’s listing where the last batch stopped, and are read
+  by one set of workers for the whole pass, from a queue of at most one batch, so no
+  worker waits at a batch’s end for the slowest file in it; the count is taken first,
+  without building any, so the progress denominator is exact as before, and every result
+  is still applied conditionally on the revision and fingerprint its candidate carried.
   Answers, records, and counts are unchanged.
 - `fdu --watch` no longer repaints its aggregate views when nothing a reader sees has
   changed: a touch that leaves a file’s size alone, or a change to an entry the
