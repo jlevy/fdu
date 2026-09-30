@@ -85,10 +85,11 @@ pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate
 /// The kernel decides when writeback runs, so a differential that walks one fixture twice
 /// and compares allocated bytes can come out a block apart whenever writeback lands inside
 /// a walk. The control-case summary differential failed that way in CI: every count and
-/// apparent byte equal, allocated bytes 4096 apart. `sync --file-system` is `syncfs`, which returns
+/// apparent byte equal, allocated bytes 4096 apart. `sync -f` is `syncfs`, which returns
 /// once the filesystem is written back, so no block is left to move. It is a command, as
 /// `mkfifo` is in these tests, because the workspace keeps unsafe code to the platform
-/// readers.
+/// readers; the short flag is the one busybox also accepts, so a musl test host can run
+/// it.
 ///
 /// Elsewhere this does nothing. Windows reads a file's length as its allocation, and the
 /// other Unix hosts have no `syncfs`, while POSIX lets `sync` return before the writes it
@@ -96,12 +97,9 @@ pub(crate) fn read_of(index: &crate::Index, query: crate::query::Query) -> crate
 pub(crate) fn settle_allocations(root: &std::path::Path) {
     #[cfg(target_os = "linux")]
     {
-        let status = std::process::Command::new("sync")
-            .arg("--file-system")
-            .arg(root)
-            .status()
-            .expect("run sync");
-        assert!(status.success(), "sync --file-system exited with {status}");
+        let status =
+            std::process::Command::new("sync").arg("-f").arg(root).status().expect("run sync");
+        assert!(status.success(), "sync -f exited with {status}");
     }
     #[cfg(not(target_os = "linux"))]
     let _ = root;
