@@ -94,6 +94,16 @@ No command-line option, report or cache schema, or Python API changed.
   releases matched the mark as part of the first rule, so it never applied, and kept the
   bytes after a NUL as part of the rule. The `.gitignore` semantics version is 4, so a
   snapshot written under 3 is rebuilt rather than served.
+- A C header is no longer classified as C++ because a C++ keyword appears inside an
+  identifier, a comment, or a string literal: `struct pid_namespace *` holds
+  `namespace `, and kernel comments discuss namespaces and templates freely. The probe
+  now counts `namespace` and `template` only where they open a line and `std::` and
+  `constexpr` only as whole tokens, outside comments and literals. On the Linux v6.12
+  source tree 168 of 25,308 headers (0.66%) were labelled C++; line counts are
+  unchanged, only the language breakdown moves.
+- A modeline names a language as a whole token: `mode: conf-colon` and `mode: conf`
+  no longer classify a file as C, `ft=css` is not `cs`, and `mode: gomod` is not `go`.
+  Linux's `Documentation/docutils.conf` was counted as C code.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
