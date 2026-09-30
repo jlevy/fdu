@@ -180,6 +180,9 @@ coverage map has one more possible key, `text_only`.
 - A modeline names a language as a whole token: `mode: conf-colon` and `mode: conf` no
   longer classify a file as C, `ft=css` is not `cs`, and `mode: gomod` is not `go`.
   Linux’s `Documentation/docutils.conf` was counted as C code.
+  Emacs’s `mode: shell-script`, its documented name for `sh-mode`, is shell, and a Vim
+  compound filetype names the language of its first component, as Vim applies it first:
+  `ft=c.doxygen` is C.
 - On Linux, no stat of a listed child triggers an automount, on any route or with any
   worker count: an unmounted autofs trigger directory (`/net`, `/misc`, a systemd
   automount unit) is reported as the trigger, as `lstat`, GNU `du`, `dut`, and `bfs`
