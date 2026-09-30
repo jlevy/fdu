@@ -42,6 +42,8 @@ MIN_RUN_S = 3.0
 def environment(cache: Path) -> dict[str, str]:
     env = dict(os.environ, TERM="xterm-256color", NO_COLOR="1", XDG_CACHE_HOME=str(cache))
     env.pop("CI", None)
+    # FDU_CACHE_DIR outranks XDG_CACHE_HOME; an exported one would reach the real cache.
+    env.pop("FDU_CACHE_DIR", None)
     return env
 
 

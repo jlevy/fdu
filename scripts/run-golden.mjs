@@ -14,7 +14,8 @@
 // implementation is a matter of naming a different file.
 
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, statSync } from 'node:fs';
+import { accessSync, constants, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,12 +68,19 @@ const corpus = process.env.FDU_CORPUS ?? 'tests/golden';
 // Forward slashes even on Windows: this is a glob for tryscript to match, not a path
 // for the OS to resolve, and join() would hand it backslashes it does not understand.
 const args = ['run', ...process.argv.slice(2), `${corpus.replace(/\\/g, '/')}/*.tryscript.md`];
+// A cache of the run's own. Sessions that name `XDG_CACHE_HOME` keep theirs; the rest
+// would otherwise read and write the invoking user's cache, and an exported
+// FDU_CACHE_DIR outranks every session's setting (fdu-n57h).
+const cacheHome = mkdtempSync(join(tmpdir(), 'fdu-golden-cache-'));
+const inherited = { ...process.env };
+delete inherited.FDU_CACHE_DIR;
 const result = spawnSync(tryscript, args, {
   cwd: root,
   stdio: 'inherit',
   shell: process.platform === 'win32',
   env: {
-    ...process.env,
+    ...inherited,
+    XDG_CACHE_HOME: cacheHome,
     // The directory, for `path:` front matter. Session command lines invoke a bare
     // `fdu`, because that is the only form /bin/sh and cmd.exe read the same way:
     // Windows does not expand `$FDU`, it wants `%FDU%`.
@@ -84,4 +92,9 @@ const result = spawnSync(tryscript, args, {
   },
 });
 
+try {
+  rmSync(cacheHome, { recursive: true, force: true });
+} catch (error) {
+  console.error(`run-golden: could not remove ${cacheHome}: ${error.message}`);
+}
 process.exit(result.status ?? 1);
