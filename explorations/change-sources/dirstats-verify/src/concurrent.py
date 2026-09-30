@@ -5,6 +5,9 @@ immediately and after sync(2).   concurrent.py ROOT OUT.json [SECS]"""
 import json, os, re, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 DS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ds")
 W = r'''
 import os, sys, time, random
@@ -38,5 +41,5 @@ def main():
         if label == "after_sync": os.sync()
         g = dsapi.get(sub); e, a = walk(sub)
         res[label] = {"fsctl": (g["gen"], g["desc"], g["phys"]), "walk": (e, a), "desc_exact": g["desc"] == e, "phys_exact": g["phys"] == a}
-    print(json.dumps(res, indent=1)); json.dump(res, open(out, "w"), indent=1)
+    print(json.dumps(res, indent=1)); write_text_atomic(out, json.dumps(res, indent=1))
 main()

@@ -23,6 +23,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 DS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ds")
 PROBE_SRC = r'''
@@ -150,8 +153,7 @@ def main():
         log["walk_after"] = walk(root)
         log["walk_after_base_only"] = walk(root, True)
     log["root_gencount_after"] = dsapi.gencount(root)
-    with open(out, "w") as fh:
-        json.dump(log, fh, indent=1, default=str)
+    write_text_atomic(out, json.dumps(log, indent=1, default=str))
     print(json.dumps(log, default=str))
 
 

@@ -32,6 +32,12 @@ from enum import StrEnum
 from pathlib import Path
 from shutil import which
 
+if __package__ in (None, ""):
+    # Run as a script: make the repository root importable, as the tests have it.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.atomic_write import write_text_atomic
+
 FOOTER_RE = re.compile(r"analysis (?P<fresh>[0-9,]+) fresh.*?(?P<cached>[0-9,]+) cached")
 SOURCE_RE = re.compile(r"(cold scan|warm revalidation|cache only)")
 
@@ -243,17 +249,23 @@ def run_cmd(
 
 
 def parse_time_file(path: Path) -> tuple[float | None, float | None]:
-    """Read BSD `-l` or GNU `-f` output. The two formats are not a shared dialect."""
+    """
+    Read BSD `-l` or GNU `-f` output. The two formats are not a shared dialect.
+
+    Each field is read by its label on its own line. GNU time writes `Command exited with
+    non-zero status N` first, and a pattern free to cross that newline read N as the wall
+    time (fdu-6zsp).
+    """
     text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
     real_s = None
     rss_mib = None
-    darwin = re.search(r"([0-9.]+)\s+real", text)
+    darwin = re.search(r"^[ \t]*([0-9.]+)[ \t]+real\b", text, re.M)
     if darwin:
         real_s = float(darwin.group(1))
     gnu = re.search(r"^real ([0-9.]+)", text, re.M)
     if gnu and real_s is None:
         real_s = float(gnu.group(1))
-    rss_bytes = re.search(r"([0-9]+)\s+maximum resident set size", text)
+    rss_bytes = re.search(r"^[ \t]*([0-9]+)[ \t]+maximum resident set size", text, re.M)
     if rss_bytes:
         rss_mib = int(rss_bytes.group(1)) / BYTES_PER_MIB
     rss_kb = re.search(r"^maxrss ([0-9]+)", text, re.M)
@@ -292,24 +304,6 @@ def cache_env(base: dict[str, str], cache_home: Path) -> dict[str, str]:
     env = dict(base)
     env["XDG_CACHE_HOME"] = str(cache_home)
     return env
-
-
-def atomic_write_text(path: Path, text: str) -> None:
-    """Install `text` at `path` only after the write succeeds.
-
-    Results files are the dated-report source. A truncate-in-place write can leave
-    an empty table if the process dies mid-write.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(tmp_path, path)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
 
 
 class Runner:
@@ -464,7 +458,7 @@ def write_outputs(out_dir: Path, suite: Suite) -> None:
                 row.argv,
             ]
         )
-    atomic_write_text(out_dir / "results.tsv", tsv_buf.getvalue())
+    write_text_atomic(out_dir / "results.tsv", tsv_buf.getvalue(), encoding="utf-8")
 
     lines = [
         "| Phase | Name | Verdict | Exit | Real s | RSS MiB | Note |",
@@ -477,7 +471,7 @@ def write_outputs(out_dir: Path, suite: Suite) -> None:
         lines.append(
             f"| {row.phase} | {row.name} | {row.verdict} | {row.exit} | {real} | {rss} | {note} |"
         )
-    atomic_write_text(out_dir / "results.md", "\n".join(lines) + "\n")
+    write_text_atomic(out_dir / "results.md", "\n".join(lines) + "\n", encoding="utf-8")
     payload = {
         "version": suite.version,
         "fdu": suite.fdu,
@@ -486,7 +480,9 @@ def write_outputs(out_dir: Path, suite: Suite) -> None:
         "stopped_reason": suite.stopped_reason,
         "rows": [asdict(row) for row in suite.rows],
     }
-    atomic_write_text(out_dir / "results.json", json.dumps(payload, indent=2) + "\n")
+    write_text_atomic(
+        out_dir / "results.json", json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def phase_sanity(runner: Runner) -> None:

@@ -17,8 +17,11 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { parse } from 'yaml';
 
+import { cargoTargetDir } from './cargo-target.mjs';
+
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const fdu = process.env.FDU_BIN ?? join(root, 'target', 'debug', 'fdu');
+const target = cargoTargetDir(root);
+const fdu = process.env.FDU_BIN ?? join(target, 'debug', 'fdu');
 
 // A tree with enough shape that every view has rows to render.
 const tree = mkdtempSync(join(tmpdir(), 'fdu-yaml-'));
@@ -222,7 +225,7 @@ for (const view of [...views, 'full']) {
 }
 
 const probe = process.env.FDU_FORMAT_PROBE
-  ?? join(root, 'target', 'debug', 'examples', 'format_conformance');
+  ?? join(target, 'debug', 'examples', 'format_conformance');
 for (const kind of [
   'cache', 'upsert', 'remove', 'invalidate', 'raw', 'ages-positive', 'ages-negative',
 ]) {

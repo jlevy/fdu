@@ -16,9 +16,14 @@ import platform
 import random
 import statistics
 import subprocess
-import tempfile
+import sys
 import time
 from pathlib import Path
+
+# The repository root, for the shared atomic writer.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from scripts.atomic_write import write_text_atomic
 
 
 def write_tree(root: Path, scenario: str) -> dict[str, int]:
@@ -132,21 +137,7 @@ def assert_seeded_analysis(cold: dict[str, int], warm: dict[str, int],
 
 def publish_json(output: Path, evidence: dict[str, object]) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=output.parent,
-            prefix=f".{output.name}.", suffix=".tmp", delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-            json.dump(evidence, handle, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, output)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    write_text_atomic(output, json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
 
 
 def interval(deltas: list[float]) -> tuple[float, float]:

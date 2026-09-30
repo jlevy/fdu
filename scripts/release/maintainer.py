@@ -42,6 +42,7 @@ if __package__ in (None, ""):
     # Run as a script: make the repository root importable, as the tests have it.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.atomic_write import write_text_atomic
 from scripts.release import (
     inspect_artifacts,
     publish_gate,
@@ -97,6 +98,15 @@ class CommandError(RuntimeError):
         super().__init__(f"{shlex.join(self.argv)}: {detail}")
 
 
+#: The shell's status for a command it cannot find.
+NOT_INSTALLED_STATUS = 127
+
+
+def not_installed(argv: Sequence[str]) -> CommandError:
+    """The failure of a command whose program is not on PATH."""
+    return CommandError(argv, NOT_INSTALLED_STATUS, f"{argv[0]}: not installed (not on PATH)")
+
+
 class Host:
     """Everything a step does outside this process, in one place a test can script."""
 
@@ -107,14 +117,25 @@ class Host:
         With `stderr`, the command's stderr follows its stdout in the result, for tools
         such as `git tag -v` that report on stderr.
         """
-        completed = subprocess.run(list(argv), cwd=cwd, capture_output=True, text=True, check=False)
+        try:
+            completed = subprocess.run(
+                list(argv), cwd=cwd, capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            # A missing tool is that command failing, not the step: every caller already
+            # turns a CommandError into its own line (fdu-wy2t).
+            raise not_installed(argv) from None
         if completed.returncode != 0:
             raise CommandError(argv, completed.returncode, completed.stderr)
         return completed.stdout + completed.stderr if stderr else completed.stdout
 
     def attach(self, argv: Sequence[str], *, cwd: Path | None = None) -> int:
         """Run a command on the maintainer's terminal and return its exit status."""
-        return subprocess.run(list(argv), cwd=cwd, check=False).returncode
+        try:
+            return subprocess.run(list(argv), cwd=cwd, check=False).returncode
+        except FileNotFoundError:
+            print(not_installed(argv), file=sys.stderr)
+            return NOT_INSTALLED_STATUS
 
     def fetch(self, url: str) -> bytes | None:
         """Read a public resource; None is an authoritative 404, anything else raises."""
@@ -241,8 +262,10 @@ def save_state(release: Release, **values: int) -> None:
     """Record run IDs for later steps."""
     state = load_state(release)
     state.update(values)
-    (release.directory / "state.json").write_text(
-        json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    write_text_atomic(
+        release.directory / "state.json",
+        json.dumps(state, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -749,7 +772,7 @@ def fetch_run(host: Host, release: Release, run_id: int, name: str, evidence_art
             )
         )
         flatten(download, target / "files", target / "evidence", evidence_artifact)
-        marker.write_text(f"{run_id}\n", encoding="utf-8")
+        write_text_atomic(marker, f"{run_id}\n", encoding="utf-8")
     verify_kept(release, target)
     return target
 
@@ -851,15 +874,15 @@ def body(
         release_body.check_release_body(notes, source, text)
     except ValueError as error:
         raise StepError(f"{release.notes_path}: {error}") from error
-    (release.directory / "notes-source.md").write_text(source, encoding="utf-8")
+    write_text_atomic(release.directory / "notes-source.md", source, encoding="utf-8")
     notes_md = release.directory / "notes.md"
-    notes_md.write_text(text, encoding="utf-8")
+    write_text_atomic(notes_md, text, encoding="utf-8")
     context = f"context={release.repository}"
     html = host.run(
         ["gh", "api", "markdown", "-f", "mode=gfm", "-f", context, "-F", f"text=@{notes_md}"]
     )
     notes_html = release.directory / "notes.html"
-    notes_html.write_text(html, encoding="utf-8")
+    write_text_atomic(notes_html, html, encoding="utf-8")
     breaks = len(re.findall(r"<br\s*/?>", html))
     if breaks:
         raise StepError(
@@ -885,7 +908,9 @@ def signature_check(host: Host, release: Release, key: Path | None) -> Check:
     # A temporary allowed-signers file, so verification needs no global git config.
     with tempfile.TemporaryDirectory() as scratch:
         allowed = Path(scratch) / "allowed_signers"
-        allowed.write_text(f'{email} namespaces="git" {algorithm} {material}\n', encoding="utf-8")
+        write_text_atomic(
+            allowed, f'{email} namespaces="git" {algorithm} {material}\n', encoding="utf-8"
+        )
         try:
             output = host.run(
                 ["git", "-c", f"gpg.ssh.allowedSignersFile={allowed}", "tag", "-v", release.tag],
@@ -1046,7 +1071,7 @@ def published(
             "follow Recover From a Partial Publication"
         )
     document = registry_state.registry_document(release.version, states)
-    (release.directory / "registry-state.json").write_text(document, encoding="utf-8")
+    write_text_atomic(release.directory / "registry-state.json", document, encoding="utf-8")
     command = announce_command(release)
     print(
         "every registry holds exactly the published files. Current workflows announce automatically."

@@ -14,6 +14,9 @@ import os
 import statistics
 import sys
 import time
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 
 def leaf(root):
@@ -59,8 +62,7 @@ def main():
                        "control_ms": {"median": round(statistics.median(cc), 1), "min": round(min(cc), 1), "p90": round(sorted(cc)[int(len(cc) * 0.9)], 1)},
                        "paired_ratio": {"median": round(statistics.median(ratios), 3), "min": round(ratios[0], 3), "max": round(ratios[-1], 3)}}
         print(f"{label:12s} {ph:7s} marked med {summary[ph]['marked_ms']['median']:7.1f} ms  control med {summary[ph]['control_ms']['median']:7.1f} ms  paired ratio med {summary[ph]['paired_ratio']['median']:.3f} [{ratios[0]:.3f}..{ratios[-1]:.3f}]")
-    with open(out, "w") as fh:
-        json.dump({"label": label, "rounds": rows, "summary": summary}, fh, indent=1)
+    write_text_atomic(out, json.dumps({"label": label, "rounds": rows, "summary": summary}, indent=1))
 
 
 if __name__ == "__main__":

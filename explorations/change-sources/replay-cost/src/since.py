@@ -14,6 +14,10 @@ from __future__ import annotations
 import csv
 import json
 import sys
+import os
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines  # noqa: E402
 
 
 def load(path: str) -> list[dict]:
@@ -57,7 +61,7 @@ def since(rows: list[dict], cursor: int) -> dict:
 def main() -> None:
     rows = load(sys.argv[1])
     if sys.argv[2] == "--jsonl":
-        for line in open(sys.argv[3]):
+        for line in complete_lines(sys.argv[3]):
             line = line.strip()
             if not line.startswith("{"):
                 continue

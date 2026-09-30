@@ -7,6 +7,10 @@ import json
 import sys
 from collections import defaultdict
 from typing import Any
+import os
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import complete_lines  # noqa: E402
 
 FLAG_NAMES = {
     0x1: "MustScanSubDirs", 0x2: "UserDropped", 0x4: "KernelDropped", 0x8: "EventIdsWrapped",
@@ -76,7 +80,7 @@ def stat_delta(before: dict[str, Any] | None, after: dict[str, Any] | None) -> s
 
 def main() -> None:
     rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for line in open(sys.argv[1]):
+    for line in complete_lines(sys.argv[1]):
         record = json.loads(line)
         rows[record["op"]].append(record)
     print("| op | rep | live events while open (after FlushSync) | events at/after close | replay while open | replay after close | stat while open (vs before) | notes |")
@@ -168,7 +172,7 @@ def agreement(path: str) -> None:
     print("| op | rep | paths live before close | replay while open agrees | paths live total | replay after close agrees | replay wall s (open/close) |")
     print("| --- | ---: | ---: | --- | ---: | --- | --- |")
     totals = {"open_agree": 0, "open_total": 0, "close_agree": 0, "close_total": 0}
-    for line in open(path):
+    for line in complete_lines(path):
         record = json.loads(line)
         if "error" in record:
             continue

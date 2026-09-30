@@ -23,6 +23,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 DS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ds")
 
@@ -200,8 +203,7 @@ while True:
     log["cp_R_of_origin"] = state(cp)
     # 6. non-APFS error handling is covered elsewhere (tmpfs/devfs) — record fsctl on the mount root itself
     log["fsctl_on_volume_root"] = state(mnt)
-    with open(out_path, "w") as fh:
-        json.dump(log, fh, indent=1, default=str)
+    write_text_atomic(out_path, json.dumps(log, indent=1, default=str))
     print("wrote", out_path)
 
 

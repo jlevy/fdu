@@ -15908,7 +15908,7 @@
    "anchored": false,
    "candidate": "same, with a one-slot parent memo in apply_validated",
    "change_pct": -7.348,
-   "commit": null,
+   "commit": "2475c82",
    "complexity": {
     "lines_changed": 78,
     "new_dependencies": [
@@ -18067,7 +18067,7 @@
    "anchored": false,
    "candidate": "apply_with(journal: false) on the baseline path; arbitration identical, history capture skipped",
    "change_pct": -5.058,
-   "commit": "8286c7e",
+   "commit": "87fd0bd",
    "complexity": {
     "lines_changed": 40,
     "new_dependencies": [],
@@ -18305,7 +18305,7 @@
    "anchored": false,
    "candidate": "open_with_pending_save returns Arc<Index>; the writer takes a reference",
    "change_pct": -10.503,
-   "commit": "bd9779d",
+   "commit": "575db66",
    "complexity": {
     "lines_changed": 45,
     "new_dependencies": [],

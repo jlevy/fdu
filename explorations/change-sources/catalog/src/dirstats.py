@@ -15,6 +15,9 @@ import re
 import subprocess
 import sys
 import time
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 APFS_UTIL = "/System/Library/Filesystems/apfs.fs/Contents/Resources/apfs.util"
 REVIEW = os.environ["REVIEW"]
@@ -194,8 +197,7 @@ def matrix(root, out_path):
         with open(os.path.join(d, "leaf.txt"), "a") as fh:
             fh.write("q" * 12288)
     step("deep_chain_121_append", deep_chain_append, "append 12 KiB at depth 121")
-    with open(out_path, "w") as fh:
-        json.dump(log, fh, indent=1)
+    write_text_atomic(out_path, json.dumps(log, indent=1))
     print(f"wrote {out_path}")
 
 

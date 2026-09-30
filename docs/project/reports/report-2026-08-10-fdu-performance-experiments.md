@@ -84,200 +84,200 @@ dead end.
 
 | # | experiment | tests | primary job | change | verdict |
 | --- | --- | --- | --- | ---: | --- |
-| 000 | [Baseline on a real 60k-entry tree](#exp000--baseline-on-a-real-60kentry-tree) | — | `cold-scan-index` | — | 📏 baseline |
-| 001 | [Bounded parallel directory producer](#exp001--bounded-parallel-directory-producer) | H1 | `cold-scan-index` | -50.0% | ✅ accepted |
-| 002 | [Parallel revalidation sweep](#exp002--parallel-revalidation-sweep) | H9 | `warm-revalidate` | -2.6% | ❌ rejected |
-| 003 | [Skip journalling on the bootstrap apply path](#exp003--skip-journalling-on-the-bootstrap-apply-path) | H8 | `cold-scan-index` | +1.0% | ❌ rejected |
-| 004 | [Borrowed path components](#exp004--borrowed-path-components) | H5 | `warm-revalidate` | -9.4% | ✅ accepted |
-| 005 | [Snapshot load resolves through the parent](#exp005--snapshot-load-resolves-through-the-parent) | H10 | `warm-snapshot-load` | -18.6% | ✅ accepted |
-| 006 | [Cumulative effect of every accepted change](#exp006--cumulative-effect-of-every-accepted-change) | H1, H5, H10 | `cold-scan-index` | -48.9% | ✅ accepted |
-| 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -7.1% | ✅ accepted |
-| 008 | [Extensions interned to integer ids](#exp008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ✅ accepted |
-| 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
-| 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
-| 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
-| 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
-| 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49 | `cold-scan-index` | -3.8% | ✅ accepted |
-| 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50 | `cold-scan-producer` | -3.0% | 📏 baseline |
-| 015 | [Post-BFS worker depth under metadata-cache pressure](#exp015--postbfs-worker-depth-under-metadatacache-pressure) | H31 | `cold-scan-index` | -11.7% | ✅ accepted |
-| 016 | [Move cold-scan producer paths instead of cloning](#exp016--move-coldscan-producer-paths-instead-of-cloning) | H51 | `cold-scan-index` | -0.4% | ❌ rejected |
-| 017 | [Pre-create dormant workers for adaptive scan depth](#exp017--precreate-dormant-workers-for-adaptive-scan-depth) | H31 | `cold-scan-producer` | +2.0% | ❌ rejected |
-| 018 | [Spawn reserve workers only after observed scan scale](#exp018--spawn-reserve-workers-only-after-observed-scan-scale) | H31 | `cold-scan-index` | -4.0% | ↩︎ superseded |
-| 019 | [Adaptive worker threshold at the first crossing scale](#exp019--adaptive-worker-threshold-at-the-first-crossing-scale) | H31 | `cold-scan-index` | +1.2% | ❌ rejected |
-| 020 | [Delay adaptive workers until metadata-cache capacity](#exp020--delay-adaptive-workers-until-metadatacache-capacity) | H31 | `cold-scan-index` | -1.7% | ❌ rejected |
-| 021 | [Calibrate adaptive workers from initial filesystem service time](#exp021--calibrate-adaptive-workers-from-initial-filesystem-service-time) | H31 | `cold-scan-index` | -5.3% | ✅ accepted |
-| 022 | [Batch macOS scan metadata with getattrlistbulk](#exp022--batch-macos-scan-metadata-with-getattrlistbulk) | H3, H26 | `cold-scan-index` | -30.1% | ✅ accepted |
-| 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
-| 024 | [Open macOS directories relative to one retained root fd](#exp024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
-| 025 | [Revisit worker depth after macOS bulk metadata](#exp025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
-| 026 | [Reuse macOS bulk metadata during full reconciliation](#exp026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
-| 027 | [Cumulative effect through bulk reconciliation](#exp027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
-| 028 | [Reuse macOS bulk directory staging allocations](#exp028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
-| 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
-| 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
-| 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp031--increase-immutablebaseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
-| 032 | [Cumulative effect through bounded parallel reconciliation](#exp032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -54.5% | ✅ accepted |
-| 033 | [Post-composable-CLI integration validation](#exp033--postcomposablecli-integration-validation) | H3, H31, H53, H12, H9 | `warm-revalidate` | -42.3% | ✅ accepted |
-| 034 | [Post-composable-CLI validation under cache pressure](#exp034--postcomposablecli-validation-under-cache-pressure) | H3, H31, H53, H12, H9 | `cold-scan-index` | -30.5% | ✅ accepted |
-| 035 | [Post-composable-CLI validation on the live 1M workspace](#exp035--postcomposablecli-validation-on-the-live-1m-workspace) | H3, H31 | `cold-scan-index` | -31.3% | ✅ accepted |
-| 036 | [Revisit worker depth on the live 1M workspace](#exp036--revisit-worker-depth-on-the-live-1m-workspace) | H57 | `cold-scan-index` | -1.3% | ❌ rejected |
-| 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
-| 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
-| 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
-| 040 | [Derive an exact rich summary without building an index](#exp040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
-| 041 | [Reduce transient summaries inside scan workers](#exp041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
-| 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
-| 043 | [Retune workers for transient summary](#exp043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
-| 044 | [Specialize a selected size total](#exp044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
-| 045 | [Pipeline macOS directory opens](#exp045--pipeline-macos-directory-opens) | H67, H69 | `rich-summary-open-pipeline` | -4.5% | ↩︎ superseded |
-| 046 | [Tune a shared macOS directory-opener pool](#exp046--tune-a-shared-macos-directoryopener-pool) | H70 | `rich-summary-shared-openers` | -4.0% | ⏳ in progress |
-| 047 | [Reject inline basic content analysis](#exp047--reject-inline-basic-content-analysis) | H79 | `content-basic` | +66.3% | ❌ rejected |
-| 048 | [Reject prose collector gating for SLOC](#exp048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
-| 049 | [Reject bounded Markdown source reserve](#exp049--reject-bounded-markdown-source-reserve) | H81 | `markdown-prose` | -3.5% | ❌ rejected |
-| 050 | [Decode complete UTF-8 chunks in place](#exp050--decode-complete-utf8-chunks-in-place) | H82 | `markdown-prose` | -12.0% | ✅ accepted |
-| 051 | [Memoize the parent resolved for the previous upsert](#exp051--memoize-the-parent-resolved-for-the-previous-upsert) | S1 | `cold-scan-index` | -7.3% | ✅ accepted |
-| 052 | [Per-layer counters cost less than the measurement can see](#exp052--perlayer-counters-cost-less-than-the-measurement-can-see) | — | `cold-scan-index` | +0.0% | ✅ accepted |
-| 053 | [Move instrumentation to a runtime toggle and measure all three of its costs](#exp053--move-instrumentation-to-a-runtime-toggle-and-measure-all-three-of-its-costs) | — | `cold-scan-index` | -1.3% | ✅ accepted |
-| 054 | [Validate the Linux campaign’s cumulative effect on macOS](#exp054--validate-the-linux-campaigns-cumulative-effect-on-macos) | — | `warm-revalidate` | -15.7% | ✅ accepted |
-| 055 | [Validate review fixes on macOS](#exp055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
-| 056 | [Bound adaptive scan diagnostics overhead](#exp056--bound-adaptive-scan-diagnostics-overhead) | H97 | `cold-scan-index` | -0.5% | ✅ accepted |
-| 057 | [Reject repeated adaptive worker windows on APFS](#exp057--reject-repeated-adaptive-worker-windows-on-apfs) | H98 | `adaptive-scan-index` | +58.5% | ❌ rejected |
-| 058 | [Reject staged adaptive worker expansion on APFS](#exp058--reject-staged-adaptive-worker-expansion-on-apfs) | H99 | `adaptive-scan-index` | +60.7% | ❌ rejected |
-| 059 | [Reject higher fixed worker counts on mixed-phase APFS](#exp059--reject-higher-fixed-worker-counts-on-mixedphase-apfs) | H96 | `adaptive-scan-index` | +35.6% | ❌ rejected |
-| 060 | [One-slot extension memo in front of derive-and-intern](#exp060--oneslot-extension-memo-in-front-of-deriveandintern) | H89 | `cold-scan-index` | +1.6% | ❌ rejected |
-| 061 | [CRC-32C slicing-by-8 on the snapshot digest](#exp061--crc32c-slicingby8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
-| 062 | [Skip unread journal capture on the bootstrap apply path](#exp062--skip-unread-journal-capture-on-the-bootstrap-apply-path) | H90 | `cold-scan-index` | -5.1% | ✅ accepted |
-| 063 | [Share the index with the snapshot writer instead of deep-cloning it](#exp063--share-the-index-with-the-snapshot-writer-instead-of-deepcloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
-| 064 | [Content roll-up lookup and indexed type-rule tiers](#exp064--content-rollup-lookup-and-indexed-typerule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
-| 065 | [Validate the content roll-up change on a dense real tree](#exp065--validate-the-content-rollup-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
-| 066 | [Baseline for the default command on a real package cache](#exp066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
-| 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp067--skip-the-identical-snapshot-rewrite-on-the-coldscan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
-| 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
-| 069 | [Order the content file map by path bytes instead of components](#exp069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
-| 070 | [Validate the separator fixes against the result they landed on](#exp070--validate-the-separator-fixes-against-the-result-they-landed-on) | — | `content-cache-hit` | -1.3% | ✅ accepted |
-| 071 | [PR #51 halves its base regression but does not restore main parity](#exp071--pr-51-halves-its-base-regression-but-does-not-restore-main-parity) | — | `cold-scan-index` | -49.5% | ✅ accepted |
-| 072 | [Attribute the PR #51 residual to path-keyed ancestry preflight](#exp072--attribute-the-pr-51-residual-to-pathkeyed-ancestry-preflight) | — | `cold-scan-index` | -66.7% | ⛔ blocked |
-| 073 | [PR #51 remains above the pre-rewrite whole-scan control](#exp073--pr-51-remains-above-the-prerewrite-wholescan-control) | — | `cold-scan-index` | +144.5% | ⛔ blocked |
-| 074 | [PR #51 residual reproduced on the current registry tree](#exp074--pr-51-residual-reproduced-on-the-current-registry-tree) | — | `default-tree` | +7.7% | 📏 baseline |
-| 075 | [Scoped counters stay below the exploratory acceptance threshold](#exp075--scoped-counters-stay-below-the-exploratory-acceptance-threshold) | — | `default-tree` | +1.9% | 📏 baseline |
-| 076 | [Correctness fixes preserve the streaming performance baseline](#exp076--correctness-fixes-preserve-the-streaming-performance-baseline) | — | `default-tree` | +0.3% | 📏 baseline |
-| 077 | [Select detached consequences once per batch](#exp077--select-detached-consequences-once-per-batch) | H91 | `default-tree` | -6.6% | ✅ accepted |
-| 078 | [Remove the eager compatibility projection](#exp078--remove-the-eager-compatibility-projection) | H92 | `delta-apply-large` | -1.6% | ✅ accepted |
-| 079 | [Resolve scanner parents before mutation](#exp079--resolve-scanner-parents-before-mutation) | H93 | `opened-discovery` | -9.5% | ✅ accepted |
-| 080 | [Skip oversized journal clones](#exp080--skip-oversized-journal-clones) | H94 | `delta-apply-large` | -3.5% | ✅ accepted |
-| 081 | [Borrow impact paths until the bounded result escapes](#exp081--borrow-impact-paths-until-the-bounded-result-escapes) | H95 | `opened-discovery` | -1.1% | ❌ rejected |
-| 082 | [Move scanner commits directly into the journal](#exp082--move-scanner-commits-directly-into-the-journal) | H96 | `opened-discovery` | -0.0% | ❌ rejected |
-| 083 | [Skip unignored roll-up maintenance in control-free scopes](#exp083--skip-unignored-rollup-maintenance-in-controlfree-scopes) | H97 | `default-tree` | -1.6% | ❌ rejected |
-| 084 | [Compact optional fixed-partition storage](#exp084--compact-optional-fixedpartition-storage) | H98 | `default-tree` | -2.6% | ❌ rejected |
-| 085 | [Compact scanner batches and optional fixed partitions](#exp085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
-| 086 | [Scanner phase counters expose preparation without observer cost](#exp086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
-| 087 | [Fuse detached control-free scanner preparation and reduction](#exp087--fuse-detached-controlfree-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
-| 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp088--coalesce-causal-scanner-fragments-in-the-oneshot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
-| 089 | [Suppress causal publication in a producer-only scan](#exp089--suppress-causal-publication-in-a-produceronly-scan) | H106 | `cold-scan-producer` | +0.7% | ❌ rejected |
-| 090 | [Bound FullIndex scan-diagnostics overhead](#exp090--bound-fullindex-scandiagnostics-overhead) | H97 | `default-tree` | -3.5% | ✅ accepted |
-| 091 | [Pipeline directory-shaped detached bootstrap](#exp091--pipeline-directoryshaped-detached-bootstrap) | H86, S1b, H60 | `cold-scan-index` | +2.5% | ↩︎ superseded |
-| 092 | [Share one filesystem walker across bootstrap modes](#exp092--share-one-filesystem-walker-across-bootstrap-modes) | H86 | `cold-scan-index` | +1.1% | ✅ accepted |
-| 093 | [Use transient hashed parents and unique child insertion](#exp093--use-transient-hashed-parents-and-unique-child-insertion) | H86, S1b | `cold-scan-index` | +0.8% | ✅ accepted |
-| 094 | [Borrow completed directory roll-ups](#exp094--borrow-completed-directory-rollups) | H86, H60 | `cold-scan-index` | +0.2% | ✅ accepted |
-| 095 | [Move incoming names and retire consumed paths](#exp095--move-incoming-names-and-retire-consumed-paths) | H86, S1b, S2 | `cold-scan-index` | -0.3% | ✅ accepted |
-| 096 | [Apply fixed controls once per detached directory](#exp096--apply-fixed-controls-once-per-detached-directory) | H86 | `cold-scan-index` | -33.6% | ✅ accepted |
-| 097 | [Audit historical lifecycle parity after detached bootstrap](#exp097--audit-historical-lifecycle-parity-after-detached-bootstrap) | H86 | `cold-scan-index` | +0.9% | ⏳ in progress |
-| 098 | [Share pool orchestration through a dynamic consumer](#exp098--share-pool-orchestration-through-a-dynamic-consumer) | H86 | `cold-scan-index` | +0.8% | ❌ rejected |
-| 099 | [Monomorphize shared concurrent-walk consumption](#exp099--monomorphize-shared-concurrentwalk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
-| 100 | [Move directory-only state out of line](#exp100--move-directoryonly-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
-| 101 | [Compact detached child topology with local promotion](#exp101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
-| 102 | [Point lookup for public mutation preflight](#exp102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
-| 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `default-tree` | -31.7% | ❌ rejected |
-| 104 | [Hash the content roll-up map by path bytes instead of components](#exp104--hash-the-content-rollup-map-by-path-bytes-instead-of-components) | H103 | `content-cache-hit` | +0.1% | ❌ rejected |
-| 105 | [Post-0.1.0 uncontrolled baseline on the rustup store](#exp105--post010-uncontrolled-baseline-on-the-rustup-store) | — | `default-tree` | +2.5% | 📏 baseline |
-| 106 | [Default gitignore observation versus no-controls on metabrowser](#exp106--default-gitignore-observation-versus-nocontrols-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
-| 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp107--installed-cli-metadata-oneshot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
-| 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp108--decidingscale-contentcachehit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
-| 109 | [Sidecar restore stage split on metabrowser](#exp109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
-| 110 | [Cache-only completeness by file count on metabrowser](#exp110--cacheonly-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
-| 111 | [Type-id get-mut on roll-up add on metabrowser](#exp111--typeid-getmut-on-rollup-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
-| 112 | [Bottom-up roll-up after sidecar restore](#exp112--bottomup-rollup-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
-| 114 | [Restore path lookup without analysis_candidates HashMap](#exp114--restore-path-lookup-without-analysiscandidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
-| 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp115--firstpass-analyze-insertthenrebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
-| 116 | [Opened-root second report versus one-shot on frameworks](#exp116--openedroot-second-report-versus-oneshot-on-frameworks) | H117 | `default-tree` | -2.2% | ✅ accepted |
-| 117 | [Stream sidecar parse-into-apply on metabrowser](#exp117--stream-sidecar-parseintoapply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
-| 118 | [Deciding-scale metadata walk profile after current engine](#exp118--decidingscale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
-| 119 | [Product Index.report versus one-shot on frameworks](#exp119--product-indexreport-versus-oneshot-on-frameworks) | H123 | `default-tree` | +1.5% | ✅ accepted |
-| 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp120--cachehit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
-| 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp121--firstpass-analyze-io-typesize-gate-or-readahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
-| 122 | [Tighter metadata walk leftover after H122](#exp122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
-| 123 | [H113 completeness leftover after H115 and H120](#exp123--h113-completeness-leftover-after-h115-and-h120) | H113 | `content-cache-hit` | +3.3% | ✅ accepted |
-| 124 | [Cache-only completeness from restore candidate count on metabrowser](#exp124--cacheonly-completeness-from-restore-candidate-count-on-metabrowser) | H125 | `content-cache-hit` | -8.0% | ✅ accepted |
-| 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp125--posth125-cachehit-leftover-after-restorecount-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
-| 126 | [First-pass walk versus opened-discovery I/O on metabrowser](#exp126--firstpass-walk-versus-openeddiscovery-io-on-metabrowser) | H127 | `opened-discovery` | -5.0% | ✅ accepted |
-| 127 | [Default-tree leftover on file-heavy metabrowser after H122](#exp127--defaulttree-leftover-on-fileheavy-metabrowser-after-h122) | H128 | `default-tree` | +1.1% | ✅ accepted |
-| 128 | [Cache-only restore omits classify on metabrowser](#exp128--cacheonly-restore-omits-classify-on-metabrowser) | H129 | `content-cache-hit` | -13.1% | ✅ accepted |
-| 129 | [Post-H129 cache-hit leftover after restore-without-classify](#exp129--posth129-cachehit-leftover-after-restorewithoutclassify) | H130 | `content-cache-hit` | -0.2% | ✅ accepted |
-| 130 | [Restore DFS joins parent path on metabrowser](#exp130--restore-dfs-joins-parent-path-on-metabrowser) | H131 | `content-cache-hit` | -4.1% | ✅ accepted |
-| 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp131--posth131-cachehit-leftover-after-restore-parentpath-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
-| 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
-| 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp133--posth133-cachehit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
-| 134 | [Post-H124 first-pass content-basic leftover](#exp134--posth124-firstpass-contentbasic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
-| 135 | [Post-H128 first-run default-tree leftover](#exp135--posth128-firstrun-defaulttree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
-| 136 | [Post-H123 content-query leftover](#exp136--posth123-contentquery-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
-| 137 | [Share one every_entry across unfiltered metric views](#exp137--share-one-everyentry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
-| 138 | [Linux cache-hit stack same versus #91 control](#exp138--linux-cachehit-stack-same-versus-91-control) | H139 | `content-cache-hit` | -22.5% | ✅ accepted |
-| 139 | [Linux walk leftover is still the getdents64 plus statx floor](#exp139--linux-walk-leftover-is-still-the-getdents64-plus-statx-floor) | H140 | `default-tree` | +0.6% | ✅ accepted |
-| 140 | [Linux content-query stack same versus #91 control](#exp140--linux-contentquery-stack-same-versus-91-control) | H141 | `content-query` | -17.6% | ✅ accepted |
-| 141 | [H111 Linux floor and RSS gates fail on current engine](#exp141--h111-linux-floor-and-rss-gates-fail-on-current-engine) | H111 | `default-tree` | +2.0% | ❌ rejected |
-| 142 | [Linux H111 leftover is still walk floor plus retained-index RSS](#exp142--linux-h111-leftover-is-still-walk-floor-plus-retainedindex-rss) | H143 | `cold-scan-index` | +0.1% | ✅ accepted |
-| 143 | [Linux first-pass content-basic leftover is still file I/O](#exp143--linux-firstpass-contentbasic-leftover-is-still-file-io) | H142 | `content-basic` | +0.4% | ✅ accepted |
-| 144 | [Linux cache-hit leftover after landed stack is already-landed restore work](#exp144--linux-cachehit-leftover-after-landed-stack-is-alreadylanded-restore-work) | H144 | `content-cache-hit` | -0.1% | ✅ accepted |
-| 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp145--linux-openeddiscovery-leftover-is-still-journal-clones-plus-live-rollups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
-| 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp146--linux-adaptive-unlock-is-silent-namedjob-threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
-| 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp147--linux-firstrun-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
-| 148 | [Linux H84 --no-controls --threads 8 sign transfers to nominated /usr](#exp148--linux-h84-nocontrols-threads-8-sign-transfers-to-nominated-usr) | H84 | `aggregate-summary` | -10.1% | ✅ accepted |
-| 149 | [Linux default /usr aggregate --threads 8 regresses; do not lower unlock](#exp149--linux-default-usr-aggregate-threads-8-regresses-do-not-lower-unlock) | H84 | `aggregate-summary` | +7.1% | ✅ accepted |
-| 150 | [Linux H85 recycle misses the 20% mimalloc bar](#exp150--linux-h85-recycle-misses-the-20-mimalloc-bar) | H85 | `aggregate-summary` | -5.0% | ❌ rejected |
-| 151 | [Linux transient batch recycle clears 3% after H85 misses 20%](#exp151--linux-transient-batch-recycle-clears-3-after-h85-misses-20) | H147 | `aggregate-summary` | -5.0% | ✅ accepted |
-| 152 | [Linux H72 d_type skip misses 3% on source-tree v6.12](#exp152--linux-h72-dtype-skip-misses-3-on-sourcetree-v612) | H72 | `aggregate-summary` | -1.6% | ❌ rejected |
-| 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp153--linux-h72-dtype-skip-clears-3-on-symlinkheavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
-| 154 | [Linux PGO screen clears 3% on cold-scan-index and warm-revalidate](#exp154--linux-pgo-screen-clears-3-on-coldscanindex-and-warmrevalidate) | H148 | `cold-scan-index` | -8.3% | ✅ accepted |
-| 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp155--linux-cachehit-restore-mix-after-leftover-applytimer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
-| 156 | [Progress indicator without a handle against main](#exp156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
-| 157 | [Progress handle attached against no handle](#exp157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
-| 158 | [Current content-query oracle and leftover](#exp158--current-contentquery-oracle-and-leftover) | H152 | `content-query` | +1.0% | ✅ accepted |
-| 159 | [Share content metric resolution across views](#exp159--share-content-metric-resolution-across-views) | H153 | `content-query` | -47.0% | ⏳ in progress |
-| 160 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp160--linux-oneshot-index-release-off-the-answer-path-clears-3-on-defaulttree) | H156 | `default-tree` | -3.2% | ✅ accepted |
-| 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp161--linux-direct-file-fold-and-owned-names-miss-3-on-coldscanindex) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
-| 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp162--linux-detached-leaflisting-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
-| 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp163--linux-auto-cache-policy-stops-oneshot-snapshot-writes-clears-3-on-defaulttree) | H160 | `default-tree` | -13.8% | ✅ accepted |
-| 164 | [macOS one-shot index release shows no wall change and no regression](#exp164--macos-oneshot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
-| 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp165--macos-auto-cache-policy-cuts-defaulttree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
-| 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp166--macos-h159-unbounded-listing-pool-costs-15-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
-| 167 | [macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux](#exp167--macos-h159-bounded-listing-recycle-shows-no-wall-or-rss-change-decided-on-linux) | H159 | `default-tree` | -1.4% | ❌ rejected |
-| 170 | [macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout](#exp170--macos-ignoreaware-transient-summary-cuts-default-summary-peak-rss-69-on-a-source-checkout) | H161 | `aggregate-summary` | -69.1% | ✅ accepted |
-| 171 | [macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore](#exp171--macos-ignoreaware-transient-summary-cuts-peak-rss-58-on-a-tree-with-no-gitignore) | H161 | `aggregate-summary` | -57.9% | ✅ accepted |
-| 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp172--macos-wholelisting-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
-| 173 | [Linux H162 allocation-free gitignore matching halves the default summary on a source tree](#exp173--linux-h162-allocationfree-gitignore-matching-halves-the-default-summary-on-a-source-tree) | H162 | `aggregate-summary` | -47.0% | ✅ accepted |
-| 174 | [Linux H163 per-listing control chains cut another third from the default summary](#exp174--linux-h163-perlisting-control-chains-cut-another-third-from-the-default-summary) | H163 | `aggregate-summary` | -36.4% | ✅ accepted |
-| 175 | [Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary](#exp175--linux-fcv49-baseline-default-tree-182-ms-24x-pdu-with-a-false-aa-accept-on-the-summary) | — | `default-tree` | -1.1% | 📏 baseline |
-| 176 | [Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu](#exp176--linux-fcv49-baseline-on-nodemodulesdense-default-tree-84-ms-11-behind-pdu) | — | `default-tree` | +3.9% | 📏 baseline |
-| 177 | [Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s](#exp177--linux-fcv49-baseline-on-the-generated-millionentry-tree-default-tree-136-s) | — | `default-tree` | +1.5% | 📏 baseline |
-| 178 | [Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12](#exp178--linux-h171-bucketed-gitignore-matching-cuts-the-default-tree-30-on-linuxv612) | H171 | `default-tree` | -29.6% | ✅ accepted |
-| 179 | [Linux H175 derived control chains take another 3% off the default tree](#exp179--linux-h175-derived-control-chains-take-another-3-off-the-default-tree) | H175 | `default-tree` | -3.3% | ✅ accepted |
-| 180 | [Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12](#exp180--linux-h172-exact-transient-tree-tier-cuts-the-default-tree-13-on-linuxv612) | H172, H176 | `default-tree` | -13.5% | ✅ accepted |
-| 181 | [Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense](#exp181--linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-nodemodulesdense) | H172 | `default-tree` | -10.3% | ✅ accepted |
-| 182 | [Linux walker count after H172: three walkers regress, six and eight do not clear on both trees](#exp182--linux-walker-count-after-h172-three-walkers-regress-six-and-eight-do-not-clear-on-both-trees) | H165 | `default-tree` | +10.3% | ❌ rejected |
-| 183 | [Linux H180 summary walker trims cut the default summary 9% on node-modules-dense](#exp183--linux-h180-summary-walker-trims-cut-the-default-summary-9-on-nodemodulesdense) | H180 | `aggregate-summary` | -8.7% | ✅ accepted |
-| 184 | [Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12](#exp184--linux-h180-summary-walker-trims-cut-the-default-summary-6-and-the-blind-summary-13-on-linuxv612) | H180 | `aggregate-summary` | -5.6% | ✅ accepted |
-| 185 | [Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense](#exp185--linux-h169-native-directory-reader-cuts-the-summary-610-and-the-controlson-tree-4-on-nodemodulesdense) | H169 | `aggregate-summary` | -6.3% | ✅ accepted |
-| 186 | [Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear](#exp186--linux-h169-native-directory-reader-cuts-the-summary-89-on-linuxv612-the-tree-does-not-clear) | H169 | `aggregate-summary` | -7.9% | ✅ accepted |
-| 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp187--linux-h161-ignoreaware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
-| 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp188--linux-h159-listing-recycle-misses-on-linuxv612-106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
-| 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp189--linux-h159-rejected-again-on-linuxv612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
-| 190 | [Linux H159 listing recycle clears 3 percent on a real directory-dense tree](#exp190--linux-h159-listing-recycle-clears-3-percent-on-a-real-directorydense-tree) | H159 | `default-tree` | -8.6% | ✅ accepted |
-| 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
-| 192 | [Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time](#exp192--linux-h181-conditional-queue-wakes-and-h182-hashordered-listings-do-not-move-wall-time) | H181, H182 | `default-tree` | +0.2% | ❌ rejected |
-| 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp193--linux-h183-cheap-matcher-prechecks-cut-the-default-tree-8-on-linuxv612) | H183 | `default-tree` | -7.6% | ✅ accepted |
-| 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linuxv612) | — | `default-tree` | -39.0% | 📏 baseline |
-| 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-nodemodulesdense) | — | `default-tree` | -9.8% | 📏 baseline |
-| 196 | [Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger](#exp196--linux-every-route-lists-through-the-native-reader-and-no-stat-of-a-child-mounts-an-autofs-trigger) | H184 | `warm-revalidate` | -2.7% | ❌ rejected |
+| 000 | [Baseline on a real 60k-entry tree](#exp-000--baseline-on-a-real-60k-entry-tree) | — | `cold-scan-index` | — | 📏 baseline |
+| 001 | [Bounded parallel directory producer](#exp-001--bounded-parallel-directory-producer) | H1 | `cold-scan-index` | -50.0% | ✅ accepted |
+| 002 | [Parallel revalidation sweep](#exp-002--parallel-revalidation-sweep) | H9 | `warm-revalidate` | -2.6% | ❌ rejected |
+| 003 | [Skip journalling on the bootstrap apply path](#exp-003--skip-journalling-on-the-bootstrap-apply-path) | H8 | `cold-scan-index` | +1.0% | ❌ rejected |
+| 004 | [Borrowed path components](#exp-004--borrowed-path-components) | H5 | `warm-revalidate` | -9.4% | ✅ accepted |
+| 005 | [Snapshot load resolves through the parent](#exp-005--snapshot-load-resolves-through-the-parent) | H10 | `warm-snapshot-load` | -18.6% | ✅ accepted |
+| 006 | [Cumulative effect of every accepted change](#exp-006--cumulative-effect-of-every-accepted-change) | H1, H5, H10 | `cold-scan-index` | -48.9% | ✅ accepted |
+| 007 | [Direct reconcile reads expectations off entry ids](#exp-007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -7.1% | ✅ accepted |
+| 008 | [Extensions interned to integer ids](#exp-008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ✅ accepted |
+| 009 | [Single-pass checksum and parse on snapshot load](#exp-009--single-pass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
+| 010 | [Claim-list join and deferred path joins in reconcile](#exp-010--claim-list-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
+| 011 | [One ancestor merge per same-parent insert run](#exp-011--one-ancestor-merge-per-same-parent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
+| 012 | [Breadth-first traversal order](#exp-012--breadth-first-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
+| 013 | [Region-scheduled breadth-first traversal](#exp-013--region-scheduled-breadth-first-traversal) | H49 | `cold-scan-index` | -3.8% | ✅ accepted |
+| 014 | [What the breadth-first default costs, on the shipped scheduler](#exp-014--what-the-breadth-first-default-costs-on-the-shipped-scheduler) | H50 | `cold-scan-producer` | -3.0% | 📏 baseline |
+| 015 | [Post-BFS worker depth under metadata-cache pressure](#exp-015--post-bfs-worker-depth-under-metadata-cache-pressure) | H31 | `cold-scan-index` | -11.7% | ✅ accepted |
+| 016 | [Move cold-scan producer paths instead of cloning](#exp-016--move-cold-scan-producer-paths-instead-of-cloning) | H51 | `cold-scan-index` | -0.4% | ❌ rejected |
+| 017 | [Pre-create dormant workers for adaptive scan depth](#exp-017--pre-create-dormant-workers-for-adaptive-scan-depth) | H31 | `cold-scan-producer` | +2.0% | ❌ rejected |
+| 018 | [Spawn reserve workers only after observed scan scale](#exp-018--spawn-reserve-workers-only-after-observed-scan-scale) | H31 | `cold-scan-index` | -4.0% | ↩︎ superseded |
+| 019 | [Adaptive worker threshold at the first crossing scale](#exp-019--adaptive-worker-threshold-at-the-first-crossing-scale) | H31 | `cold-scan-index` | +1.2% | ❌ rejected |
+| 020 | [Delay adaptive workers until metadata-cache capacity](#exp-020--delay-adaptive-workers-until-metadata-cache-capacity) | H31 | `cold-scan-index` | -1.7% | ❌ rejected |
+| 021 | [Calibrate adaptive workers from initial filesystem service time](#exp-021--calibrate-adaptive-workers-from-initial-filesystem-service-time) | H31 | `cold-scan-index` | -5.3% | ✅ accepted |
+| 022 | [Batch macOS scan metadata with getattrlistbulk](#exp-022--batch-macos-scan-metadata-with-getattrlistbulk) | H3, H26 | `cold-scan-index` | -30.1% | ✅ accepted |
+| 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp-023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
+| 024 | [Open macOS directories relative to one retained root fd](#exp-024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
+| 025 | [Revisit worker depth after macOS bulk metadata](#exp-025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
+| 026 | [Reuse macOS bulk metadata during full reconciliation](#exp-026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
+| 027 | [Cumulative effect through bulk reconciliation](#exp-027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
+| 028 | [Reuse macOS bulk directory staging allocations](#exp-028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
+| 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp-029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
+| 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp-030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
+| 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp-031--increase-immutable-baseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
+| 032 | [Cumulative effect through bounded parallel reconciliation](#exp-032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -54.5% | ✅ accepted |
+| 033 | [Post-composable-CLI integration validation](#exp-033--post-composable-cli-integration-validation) | H3, H31, H53, H12, H9 | `warm-revalidate` | -42.3% | ✅ accepted |
+| 034 | [Post-composable-CLI validation under cache pressure](#exp-034--post-composable-cli-validation-under-cache-pressure) | H3, H31, H53, H12, H9 | `cold-scan-index` | -30.5% | ✅ accepted |
+| 035 | [Post-composable-CLI validation on the live 1M workspace](#exp-035--post-composable-cli-validation-on-the-live-1m-workspace) | H3, H31 | `cold-scan-index` | -31.3% | ✅ accepted |
+| 036 | [Revisit worker depth on the live 1M workspace](#exp-036--revisit-worker-depth-on-the-live-1m-workspace) | H57 | `cold-scan-index` | -1.3% | ❌ rejected |
+| 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp-037--revisit-breadth-first-versus-depth-first-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
+| 038 | [Parent-relative openat frontier on the live 1M workspace](#exp-038--parent-relative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
+| 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp-039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
+| 040 | [Derive an exact rich summary without building an index](#exp-040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
+| 041 | [Reduce transient summaries inside scan workers](#exp-041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
+| 042 | [Derive macOS summary bulk records](#exp-042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
+| 043 | [Retune workers for transient summary](#exp-043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
+| 044 | [Specialize a selected size total](#exp-044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
+| 045 | [Pipeline macOS directory opens](#exp-045--pipeline-macos-directory-opens) | H67, H69 | `rich-summary-open-pipeline` | -4.5% | ↩︎ superseded |
+| 046 | [Tune a shared macOS directory-opener pool](#exp-046--tune-a-shared-macos-directory-opener-pool) | H70 | `rich-summary-shared-openers` | -4.0% | ⏳ in progress |
+| 047 | [Reject inline basic content analysis](#exp-047--reject-inline-basic-content-analysis) | H79 | `content-basic` | +66.3% | ❌ rejected |
+| 048 | [Reject prose collector gating for SLOC](#exp-048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
+| 049 | [Reject bounded Markdown source reserve](#exp-049--reject-bounded-markdown-source-reserve) | H81 | `markdown-prose` | -3.5% | ❌ rejected |
+| 050 | [Decode complete UTF-8 chunks in place](#exp-050--decode-complete-utf-8-chunks-in-place) | H82 | `markdown-prose` | -12.0% | ✅ accepted |
+| 051 | [Memoize the parent resolved for the previous upsert](#exp-051--memoize-the-parent-resolved-for-the-previous-upsert) | S1 | `cold-scan-index` | -7.3% | ✅ accepted |
+| 052 | [Per-layer counters cost less than the measurement can see](#exp-052--per-layer-counters-cost-less-than-the-measurement-can-see) | — | `cold-scan-index` | +0.0% | ✅ accepted |
+| 053 | [Move instrumentation to a runtime toggle and measure all three of its costs](#exp-053--move-instrumentation-to-a-runtime-toggle-and-measure-all-three-of-its-costs) | — | `cold-scan-index` | -1.3% | ✅ accepted |
+| 054 | [Validate the Linux campaign’s cumulative effect on macOS](#exp-054--validate-the-linux-campaigns-cumulative-effect-on-macos) | — | `warm-revalidate` | -15.7% | ✅ accepted |
+| 055 | [Validate review fixes on macOS](#exp-055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
+| 056 | [Bound adaptive scan diagnostics overhead](#exp-056--bound-adaptive-scan-diagnostics-overhead) | H97 | `cold-scan-index` | -0.5% | ✅ accepted |
+| 057 | [Reject repeated adaptive worker windows on APFS](#exp-057--reject-repeated-adaptive-worker-windows-on-apfs) | H98 | `adaptive-scan-index` | +58.5% | ❌ rejected |
+| 058 | [Reject staged adaptive worker expansion on APFS](#exp-058--reject-staged-adaptive-worker-expansion-on-apfs) | H99 | `adaptive-scan-index` | +60.7% | ❌ rejected |
+| 059 | [Reject higher fixed worker counts on mixed-phase APFS](#exp-059--reject-higher-fixed-worker-counts-on-mixed-phase-apfs) | H96 | `adaptive-scan-index` | +35.6% | ❌ rejected |
+| 060 | [One-slot extension memo in front of derive-and-intern](#exp-060--one-slot-extension-memo-in-front-of-derive-and-intern) | H89 | `cold-scan-index` | +1.6% | ❌ rejected |
+| 061 | [CRC-32C slicing-by-8 on the snapshot digest](#exp-061--crc-32c-slicing-by-8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
+| 062 | [Skip unread journal capture on the bootstrap apply path](#exp-062--skip-unread-journal-capture-on-the-bootstrap-apply-path) | H90 | `cold-scan-index` | -5.1% | ✅ accepted |
+| 063 | [Share the index with the snapshot writer instead of deep-cloning it](#exp-063--share-the-index-with-the-snapshot-writer-instead-of-deep-cloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
+| 064 | [Content roll-up lookup and indexed type-rule tiers](#exp-064--content-roll-up-lookup-and-indexed-type-rule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
+| 065 | [Validate the content roll-up change on a dense real tree](#exp-065--validate-the-content-roll-up-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
+| 066 | [Baseline for the default command on a real package cache](#exp-066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
+| 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp-067--skip-the-identical-snapshot-rewrite-on-the-cold-scan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
+| 068 | [Flush the rendered report before joining the snapshot writer](#exp-068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
+| 069 | [Order the content file map by path bytes instead of components](#exp-069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
+| 070 | [Validate the separator fixes against the result they landed on](#exp-070--validate-the-separator-fixes-against-the-result-they-landed-on) | — | `content-cache-hit` | -1.3% | ✅ accepted |
+| 071 | [PR #51 halves its base regression but does not restore main parity](#exp-071--pr-51-halves-its-base-regression-but-does-not-restore-main-parity) | — | `cold-scan-index` | -49.5% | ✅ accepted |
+| 072 | [Attribute the PR #51 residual to path-keyed ancestry preflight](#exp-072--attribute-the-pr-51-residual-to-path-keyed-ancestry-preflight) | — | `cold-scan-index` | -66.7% | ⛔ blocked |
+| 073 | [PR #51 remains above the pre-rewrite whole-scan control](#exp-073--pr-51-remains-above-the-pre-rewrite-whole-scan-control) | — | `cold-scan-index` | +144.5% | ⛔ blocked |
+| 074 | [PR #51 residual reproduced on the current registry tree](#exp-074--pr-51-residual-reproduced-on-the-current-registry-tree) | — | `default-tree` | +7.7% | 📏 baseline |
+| 075 | [Scoped counters stay below the exploratory acceptance threshold](#exp-075--scoped-counters-stay-below-the-exploratory-acceptance-threshold) | — | `default-tree` | +1.9% | 📏 baseline |
+| 076 | [Correctness fixes preserve the streaming performance baseline](#exp-076--correctness-fixes-preserve-the-streaming-performance-baseline) | — | `default-tree` | +0.3% | 📏 baseline |
+| 077 | [Select detached consequences once per batch](#exp-077--select-detached-consequences-once-per-batch) | H91 | `default-tree` | -6.6% | ✅ accepted |
+| 078 | [Remove the eager compatibility projection](#exp-078--remove-the-eager-compatibility-projection) | H92 | `delta-apply-large` | -1.6% | ✅ accepted |
+| 079 | [Resolve scanner parents before mutation](#exp-079--resolve-scanner-parents-before-mutation) | H93 | `opened-discovery` | -9.5% | ✅ accepted |
+| 080 | [Skip oversized journal clones](#exp-080--skip-oversized-journal-clones) | H94 | `delta-apply-large` | -3.5% | ✅ accepted |
+| 081 | [Borrow impact paths until the bounded result escapes](#exp-081--borrow-impact-paths-until-the-bounded-result-escapes) | H95 | `opened-discovery` | -1.1% | ❌ rejected |
+| 082 | [Move scanner commits directly into the journal](#exp-082--move-scanner-commits-directly-into-the-journal) | H96 | `opened-discovery` | -0.0% | ❌ rejected |
+| 083 | [Skip unignored roll-up maintenance in control-free scopes](#exp-083--skip-unignored-roll-up-maintenance-in-control-free-scopes) | H97 | `default-tree` | -1.6% | ❌ rejected |
+| 084 | [Compact optional fixed-partition storage](#exp-084--compact-optional-fixed-partition-storage) | H98 | `default-tree` | -2.6% | ❌ rejected |
+| 085 | [Compact scanner batches and optional fixed partitions](#exp-085--compact-scanner-batches-and-optional-fixed-partitions) | H99 | `default-tree` | -2.6% | ❌ rejected |
+| 086 | [Scanner phase counters expose preparation without observer cost](#exp-086--scanner-phase-counters-expose-preparation-without-observer-cost) | H103 | `default-tree` | -0.1% | 📏 baseline |
+| 087 | [Fuse detached control-free scanner preparation and reduction](#exp-087--fuse-detached-control-free-scanner-preparation-and-reduction) | H104 | `default-tree` | -1.1% | ❌ rejected |
+| 088 | [Coalesce causal scanner fragments in the one-shot builder](#exp-088--coalesce-causal-scanner-fragments-in-the-one-shot-builder) | H105 | `default-tree` | +0.1% | ❌ rejected |
+| 089 | [Suppress causal publication in a producer-only scan](#exp-089--suppress-causal-publication-in-a-producer-only-scan) | H106 | `cold-scan-producer` | +0.7% | ❌ rejected |
+| 090 | [Bound FullIndex scan-diagnostics overhead](#exp-090--bound-fullindex-scan-diagnostics-overhead) | H97 | `default-tree` | -3.5% | ✅ accepted |
+| 091 | [Pipeline directory-shaped detached bootstrap](#exp-091--pipeline-directory-shaped-detached-bootstrap) | H86, S1b, H60 | `cold-scan-index` | +2.5% | ↩︎ superseded |
+| 092 | [Share one filesystem walker across bootstrap modes](#exp-092--share-one-filesystem-walker-across-bootstrap-modes) | H86 | `cold-scan-index` | +1.1% | ✅ accepted |
+| 093 | [Use transient hashed parents and unique child insertion](#exp-093--use-transient-hashed-parents-and-unique-child-insertion) | H86, S1b | `cold-scan-index` | +0.8% | ✅ accepted |
+| 094 | [Borrow completed directory roll-ups](#exp-094--borrow-completed-directory-roll-ups) | H86, H60 | `cold-scan-index` | +0.2% | ✅ accepted |
+| 095 | [Move incoming names and retire consumed paths](#exp-095--move-incoming-names-and-retire-consumed-paths) | H86, S1b, S2 | `cold-scan-index` | -0.3% | ✅ accepted |
+| 096 | [Apply fixed controls once per detached directory](#exp-096--apply-fixed-controls-once-per-detached-directory) | H86 | `cold-scan-index` | -33.6% | ✅ accepted |
+| 097 | [Audit historical lifecycle parity after detached bootstrap](#exp-097--audit-historical-lifecycle-parity-after-detached-bootstrap) | H86 | `cold-scan-index` | +0.9% | ⏳ in progress |
+| 098 | [Share pool orchestration through a dynamic consumer](#exp-098--share-pool-orchestration-through-a-dynamic-consumer) | H86 | `cold-scan-index` | +0.8% | ❌ rejected |
+| 099 | [Monomorphize shared concurrent-walk consumption](#exp-099--monomorphize-shared-concurrent-walk-consumption) | H86 | `cold-scan-index` | +0.2% | ✅ accepted |
+| 100 | [Move directory-only state out of line](#exp-100--move-directory-only-state-out-of-line) | H86 | `default-tree` | -0.8% | ❌ rejected |
+| 101 | [Compact detached child topology with local promotion](#exp-101--compact-detached-child-topology-with-local-promotion) | H86 | `default-tree` | -7.7% | ✅ accepted |
+| 102 | [Point lookup for public mutation preflight](#exp-102--point-lookup-for-public-mutation-preflight) | — | `delta-apply-large` | -49.8% | ✅ accepted |
+| 103 | [H86 Linux evidence stage: relative gates pass, floor gates fail](#exp-103--h86-linux-evidence-stage-relative-gates-pass-floor-gates-fail) | H86 | `default-tree` | -31.7% | ❌ rejected |
+| 104 | [Hash the content roll-up map by path bytes instead of components](#exp-104--hash-the-content-roll-up-map-by-path-bytes-instead-of-components) | H103 | `content-cache-hit` | +0.1% | ❌ rejected |
+| 105 | [Post-0.1.0 uncontrolled baseline on the rustup store](#exp-105--post-010-uncontrolled-baseline-on-the-rustup-store) | — | `default-tree` | +2.5% | 📏 baseline |
+| 106 | [Default gitignore observation versus no-controls on metabrowser](#exp-106--default-gitignore-observation-versus-no-controls-on-metabrowser) | H107 | `default-tree` | +1.6% | ❌ rejected |
+| 107 | [Installed CLI metadata one-shot stays cold scan on frameworks](#exp-107--installed-cli-metadata-one-shot-stays-cold-scan-on-frameworks) | H108 | `cli-default-tree` | -0.6% | ✅ accepted |
+| 108 | [Deciding-scale content-cache-hit profile on metabrowser](#exp-108--deciding-scale-content-cache-hit-profile-on-metabrowser) | H109 | `content-cache-hit` | -0.3% | 📏 baseline |
+| 109 | [Sidecar restore stage split on metabrowser](#exp-109--sidecar-restore-stage-split-on-metabrowser) | H112 | `content-cache-hit` | +0.3% | 📏 baseline |
+| 110 | [Cache-only completeness by file count on metabrowser](#exp-110--cache-only-completeness-by-file-count-on-metabrowser) | H113 | `content-cache-hit` | -7.6% | ❌ rejected |
+| 111 | [Type-id get-mut on roll-up add on metabrowser](#exp-111--type-id-get-mut-on-roll-up-add-on-metabrowser) | H114 | `content-cache-hit` | -0.6% | ❌ rejected |
+| 112 | [Bottom-up roll-up after sidecar restore](#exp-112--bottom-up-roll-up-after-sidecar-restore) | H115 | `content-cache-hit` | -9.7% | ✅ accepted |
+| 114 | [Restore path lookup without analysis_candidates HashMap](#exp-114--restore-path-lookup-without-analysis_candidates-hashmap) | H116 | `content-cache-hit` | +8.7% | ❌ rejected |
+| 115 | [First-pass analyze insert-then-rebuild on metabrowser](#exp-115--first-pass-analyze-insert-then-rebuild-on-metabrowser) | H118 | `content-basic` | -2.6% | ❌ rejected |
+| 116 | [Opened-root second report versus one-shot on frameworks](#exp-116--opened-root-second-report-versus-one-shot-on-frameworks) | H117 | `default-tree` | -2.2% | ✅ accepted |
+| 117 | [Stream sidecar parse-into-apply on metabrowser](#exp-117--stream-sidecar-parse-into-apply-on-metabrowser) | H120 | `content-cache-hit` | -10.1% | ✅ accepted |
+| 118 | [Deciding-scale metadata walk profile after current engine](#exp-118--deciding-scale-metadata-walk-profile-after-current-engine) | H122 | `default-tree` | +0.2% | ✅ accepted |
+| 119 | [Product Index.report versus one-shot on frameworks](#exp-119--product-indexreport-versus-one-shot-on-frameworks) | H123 | `default-tree` | +1.5% | ✅ accepted |
+| 120 | [Cache-hit restore mix after H115 and H120 on metabrowser](#exp-120--cache-hit-restore-mix-after-h115-and-h120-on-metabrowser) | H121 | `content-cache-hit` | +0.7% | ✅ accepted |
+| 121 | [First-pass analyze I/O type/size gate or read-ahead on metabrowser](#exp-121--first-pass-analyze-io-typesize-gate-or-read-ahead-on-metabrowser) | H124 | `content-basic` | -4.2% | ❌ rejected |
+| 122 | [Tighter metadata walk leftover after H122](#exp-122--tighter-metadata-walk-leftover-after-h122) | H122 | `default-tree` | -1.9% | ✅ accepted |
+| 123 | [H113 completeness leftover after H115 and H120](#exp-123--h113-completeness-leftover-after-h115-and-h120) | H113 | `content-cache-hit` | +3.3% | ✅ accepted |
+| 124 | [Cache-only completeness from restore candidate count on metabrowser](#exp-124--cache-only-completeness-from-restore-candidate-count-on-metabrowser) | H125 | `content-cache-hit` | -8.0% | ✅ accepted |
+| 125 | [Post-H125 cache-hit leftover after restore-count completeness](#exp-125--post-h125-cache-hit-leftover-after-restore-count-completeness) | H126 | `content-cache-hit` | -0.3% | ✅ accepted |
+| 126 | [First-pass walk versus opened-discovery I/O on metabrowser](#exp-126--first-pass-walk-versus-opened-discovery-io-on-metabrowser) | H127 | `opened-discovery` | -5.0% | ✅ accepted |
+| 127 | [Default-tree leftover on file-heavy metabrowser after H122](#exp-127--default-tree-leftover-on-file-heavy-metabrowser-after-h122) | H128 | `default-tree` | +1.1% | ✅ accepted |
+| 128 | [Cache-only restore omits classify on metabrowser](#exp-128--cache-only-restore-omits-classify-on-metabrowser) | H129 | `content-cache-hit` | -13.1% | ✅ accepted |
+| 129 | [Post-H129 cache-hit leftover after restore-without-classify](#exp-129--post-h129-cache-hit-leftover-after-restore-without-classify) | H130 | `content-cache-hit` | -0.2% | ✅ accepted |
+| 130 | [Restore DFS joins parent path on metabrowser](#exp-130--restore-dfs-joins-parent-path-on-metabrowser) | H131 | `content-cache-hit` | -4.1% | ✅ accepted |
+| 131 | [Post-H131 cache-hit leftover after restore parent-path join](#exp-131--post-h131-cache-hit-leftover-after-restore-parent-path-join) | H132 | `content-cache-hit` | -0.0% | ✅ accepted |
+| 132 | [Skip unused snapshot path reconstruction on metabrowser](#exp-132--skip-unused-snapshot-path-reconstruction-on-metabrowser) | H133 | `content-cache-hit` | -6.4% | ✅ accepted |
+| 133 | [Post-H133 cache-hit leftover after unused snapshot path skip](#exp-133--post-h133-cache-hit-leftover-after-unused-snapshot-path-skip) | H134 | `content-cache-hit` | -0.4% | ✅ accepted |
+| 134 | [Post-H124 first-pass content-basic leftover](#exp-134--post-h124-first-pass-content-basic-leftover) | H135 | `content-basic` | -3.7% | ✅ accepted |
+| 135 | [Post-H128 first-run default-tree leftover](#exp-135--post-h128-first-run-default-tree-leftover) | H136 | `default-tree-first` | +0.2% | ✅ accepted |
+| 136 | [Post-H123 content-query leftover](#exp-136--post-h123-content-query-leftover) | H137 | `content-query` | -3.3% | ✅ accepted |
+| 137 | [Share one every_entry across unfiltered metric views](#exp-137--share-one-every_entry-across-unfiltered-metric-views) | H138 | `content-query` | -18.8% | ✅ accepted |
+| 138 | [Linux cache-hit stack same versus #91 control](#exp-138--linux-cache-hit-stack-same-versus-91-control) | H139 | `content-cache-hit` | -22.5% | ✅ accepted |
+| 139 | [Linux walk leftover is still the getdents64 plus statx floor](#exp-139--linux-walk-leftover-is-still-the-getdents64-plus-statx-floor) | H140 | `default-tree` | +0.6% | ✅ accepted |
+| 140 | [Linux content-query stack same versus #91 control](#exp-140--linux-content-query-stack-same-versus-91-control) | H141 | `content-query` | -17.6% | ✅ accepted |
+| 141 | [H111 Linux floor and RSS gates fail on current engine](#exp-141--h111-linux-floor-and-rss-gates-fail-on-current-engine) | H111 | `default-tree` | +2.0% | ❌ rejected |
+| 142 | [Linux H111 leftover is still walk floor plus retained-index RSS](#exp-142--linux-h111-leftover-is-still-walk-floor-plus-retained-index-rss) | H143 | `cold-scan-index` | +0.1% | ✅ accepted |
+| 143 | [Linux first-pass content-basic leftover is still file I/O](#exp-143--linux-first-pass-content-basic-leftover-is-still-file-io) | H142 | `content-basic` | +0.4% | ✅ accepted |
+| 144 | [Linux cache-hit leftover after landed stack is already-landed restore work](#exp-144--linux-cache-hit-leftover-after-landed-stack-is-already-landed-restore-work) | H144 | `content-cache-hit` | -0.1% | ✅ accepted |
+| 145 | [Linux opened-discovery leftover is still journal clones plus live roll-ups](#exp-145--linux-opened-discovery-leftover-is-still-journal-clones-plus-live-roll-ups) | H145 | `opened-discovery` | -0.2% | ✅ accepted |
+| 146 | [Linux adaptive unlock is silent; named-job --threads 8 is not a 3% win](#exp-146--linux-adaptive-unlock-is-silent-named-job---threads-8-is-not-a-3-win) | H84 | `aggregate-summary` | +1.8% | ✅ accepted |
+| 147 | [Linux first-run leftover is still the walk; snapshot write not skippable](#exp-147--linux-first-run-leftover-is-still-the-walk-snapshot-write-not-skippable) | H146 | `default-tree-first` | +1.5% | ✅ accepted |
+| 148 | [Linux H84 --no-controls --threads 8 sign transfers to nominated /usr](#exp-148--linux-h84---no-controls---threads-8-sign-transfers-to-nominated-usr) | H84 | `aggregate-summary` | -10.1% | ✅ accepted |
+| 149 | [Linux default /usr aggregate --threads 8 regresses; do not lower unlock](#exp-149--linux-default-usr-aggregate---threads-8-regresses-do-not-lower-unlock) | H84 | `aggregate-summary` | +7.1% | ✅ accepted |
+| 150 | [Linux H85 recycle misses the 20% mimalloc bar](#exp-150--linux-h85-recycle-misses-the-20-mimalloc-bar) | H85 | `aggregate-summary` | -5.0% | ❌ rejected |
+| 151 | [Linux transient batch recycle clears 3% after H85 misses 20%](#exp-151--linux-transient-batch-recycle-clears-3-after-h85-misses-20) | H147 | `aggregate-summary` | -5.0% | ✅ accepted |
+| 152 | [Linux H72 d_type skip misses 3% on source-tree v6.12](#exp-152--linux-h72-d_type-skip-misses-3-on-source-tree-v612) | H72 | `aggregate-summary` | -1.6% | ❌ rejected |
+| 153 | [Linux H72 d_type skip clears 3% on symlink-heavy /usr](#exp-153--linux-h72-d_type-skip-clears-3-on-symlink-heavy-usr) | H72 | `aggregate-summary` | -9.0% | ✅ accepted |
+| 154 | [Linux PGO screen clears 3% on cold-scan-index and warm-revalidate](#exp-154--linux-pgo-screen-clears-3-on-cold-scan-index-and-warm-revalidate) | H148 | `cold-scan-index` | -8.3% | ✅ accepted |
+| 155 | [Linux cache-hit restore mix after leftover apply-timer expansion](#exp-155--linux-cache-hit-restore-mix-after-leftover-apply-timer-expansion) | H149 | `content-cache-hit` | +0.0% | ✅ accepted |
+| 156 | [Progress indicator without a handle against main](#exp-156--progress-indicator-without-a-handle-against-main) | H150 | `default-tree` | -1.8% | ✅ accepted |
+| 157 | [Progress handle attached against no handle](#exp-157--progress-handle-attached-against-no-handle) | H151 | `default-tree` | +5.8% | ⏳ in progress |
+| 158 | [Current content-query oracle and leftover](#exp-158--current-content-query-oracle-and-leftover) | H152 | `content-query` | +1.0% | ✅ accepted |
+| 159 | [Share content metric resolution across views](#exp-159--share-content-metric-resolution-across-views) | H153 | `content-query` | -47.0% | ⏳ in progress |
+| 160 | [Linux one-shot index release off the answer path clears 3% on default-tree](#exp-160--linux-one-shot-index-release-off-the-answer-path-clears-3-on-default-tree) | H156 | `default-tree` | -3.2% | ✅ accepted |
+| 161 | [Linux direct file fold and owned names miss 3% on cold-scan-index](#exp-161--linux-direct-file-fold-and-owned-names-miss-3-on-cold-scan-index) | H157 | `cold-scan-index` | -2.2% | ❌ rejected |
+| 162 | [Linux detached leaf-listing hold cuts futex wakes but not wall](#exp-162--linux-detached-leaf-listing-hold-cuts-futex-wakes-but-not-wall) | H158 | `cold-scan-index` | +0.9% | ❌ rejected |
+| 163 | [Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree](#exp-163--linux-auto-cache-policy-stops-one-shot-snapshot-writes-clears-3-on-default-tree) | H160 | `default-tree` | -13.8% | ✅ accepted |
+| 164 | [macOS one-shot index release shows no wall change and no regression](#exp-164--macos-one-shot-index-release-shows-no-wall-change-and-no-regression) | H156 | `default-tree` | -1.0% | ❌ rejected |
+| 165 | [macOS auto cache policy cuts default-tree peak RSS 26% but misses 3% wall](#exp-165--macos-auto-cache-policy-cuts-default-tree-peak-rss-26-but-misses-3-wall) | H160 | `default-tree` | -3.1% | ❌ rejected |
+| 166 | [macOS H159 unbounded listing pool costs 1-5% peak RSS, wall flat](#exp-166--macos-h159-unbounded-listing-pool-costs-1-5-peak-rss-wall-flat) | H159 | `default-tree` | +1.3% | ↩︎ superseded |
+| 167 | [macOS H159 bounded listing recycle shows no wall or RSS change, decided on Linux](#exp-167--macos-h159-bounded-listing-recycle-shows-no-wall-or-rss-change-decided-on-linux) | H159 | `default-tree` | -1.4% | ❌ rejected |
+| 170 | [macOS ignore-aware transient summary cuts default summary peak RSS 69% on a source checkout](#exp-170--macos-ignore-aware-transient-summary-cuts-default-summary-peak-rss-69-on-a-source-checkout) | H161 | `aggregate-summary` | -69.1% | ✅ accepted |
+| 171 | [macOS ignore-aware transient summary cuts peak RSS 58% on a tree with no .gitignore](#exp-171--macos-ignore-aware-transient-summary-cuts-peak-rss-58-on-a-tree-with-no-gitignore) | H161 | `aggregate-summary` | -57.9% | ✅ accepted |
+| 172 | [macOS whole-listing hold keeps only 17% RSS saving on wide directories](#exp-172--macos-whole-listing-hold-keeps-only-17-rss-saving-on-wide-directories) | H161 | `aggregate-summary` | -17.1% | ↩︎ superseded |
+| 173 | [Linux H162 allocation-free gitignore matching halves the default summary on a source tree](#exp-173--linux-h162-allocation-free-gitignore-matching-halves-the-default-summary-on-a-source-tree) | H162 | `aggregate-summary` | -47.0% | ✅ accepted |
+| 174 | [Linux H163 per-listing control chains cut another third from the default summary](#exp-174--linux-h163-per-listing-control-chains-cut-another-third-from-the-default-summary) | H163 | `aggregate-summary` | -36.4% | ✅ accepted |
+| 175 | [Linux fc-v49 baseline: default tree 182 ms, 2.4x pdu, with a false A/A accept on the summary](#exp-175--linux-fc-v49-baseline-default-tree-182-ms-24x-pdu-with-a-false-aa-accept-on-the-summary) | — | `default-tree` | -1.1% | 📏 baseline |
+| 176 | [Linux fc-v49 baseline on node-modules-dense: default tree 84 ms, 11% behind pdu](#exp-176--linux-fc-v49-baseline-on-node-modules-dense-default-tree-84-ms-11-behind-pdu) | — | `default-tree` | +3.9% | 📏 baseline |
+| 177 | [Linux fc-v49 baseline on the generated million-entry tree: default tree 1.36 s](#exp-177--linux-fc-v49-baseline-on-the-generated-million-entry-tree-default-tree-136-s) | — | `default-tree` | +1.5% | 📏 baseline |
+| 178 | [Linux H171 bucketed .gitignore matching cuts the default tree 30% on linux-v6.12](#exp-178--linux-h171-bucketed-gitignore-matching-cuts-the-default-tree-30-on-linux-v612) | H171 | `default-tree` | -29.6% | ✅ accepted |
+| 179 | [Linux H175 derived control chains take another 3% off the default tree](#exp-179--linux-h175-derived-control-chains-take-another-3-off-the-default-tree) | H175 | `default-tree` | -3.3% | ✅ accepted |
+| 180 | [Linux H172 exact transient tree tier cuts the default tree 13% on linux-v6.12](#exp-180--linux-h172-exact-transient-tree-tier-cuts-the-default-tree-13-on-linux-v612) | H172, H176 | `default-tree` | -13.5% | ✅ accepted |
+| 181 | [Linux H172 transient tree tier cuts the default tree 10% on node-modules-dense](#exp-181--linux-h172-transient-tree-tier-cuts-the-default-tree-10-on-node-modules-dense) | H172 | `default-tree` | -10.3% | ✅ accepted |
+| 182 | [Linux walker count after H172: three walkers regress, six and eight do not clear on both trees](#exp-182--linux-walker-count-after-h172-three-walkers-regress-six-and-eight-do-not-clear-on-both-trees) | H165 | `default-tree` | +10.3% | ❌ rejected |
+| 183 | [Linux H180 summary walker trims cut the default summary 9% on node-modules-dense](#exp-183--linux-h180-summary-walker-trims-cut-the-default-summary-9-on-node-modules-dense) | H180 | `aggregate-summary` | -8.7% | ✅ accepted |
+| 184 | [Linux H180 summary walker trims cut the default summary 6% and the blind summary 13% on linux-v6.12](#exp-184--linux-h180-summary-walker-trims-cut-the-default-summary-6-and-the-blind-summary-13-on-linux-v612) | H180 | `aggregate-summary` | -5.6% | ✅ accepted |
+| 185 | [Linux H169 native directory reader cuts the summary 6-10% and the controls-on tree 4% on node-modules-dense](#exp-185--linux-h169-native-directory-reader-cuts-the-summary-6-10-and-the-controls-on-tree-4-on-node-modules-dense) | H169 | `aggregate-summary` | -6.3% | ✅ accepted |
+| 186 | [Linux H169 native directory reader cuts the summary 8-9% on linux-v6.12; the tree does not clear](#exp-186--linux-h169-native-directory-reader-cuts-the-summary-8-9-on-linux-v612-the-tree-does-not-clear) | H169 | `aggregate-summary` | -7.9% | ✅ accepted |
+| 187 | [Linux H161 ignore-aware transient summary clears wall; RSS bar met only without gitignore](#exp-187--linux-h161-ignore-aware-transient-summary-clears-wall-rss-bar-met-only-without-gitignore) | H161 | `aggregate-summary` | -6.9% | ✅ accepted |
+| 188 | [Linux H159 listing recycle misses on linux-v6.12, -10.6% on the generated tree](#exp-188--linux-h159-listing-recycle-misses-on-linux-v612--106-on-the-generated-tree) | H159 | `default-tree` | -2.2% | ❌ rejected |
+| 189 | [Linux H159 rejected again on linux-v6.12 after H162 and H163](#exp-189--linux-h159-rejected-again-on-linux-v612-after-h162-and-h163) | H159 | `default-tree` | +2.3% | ❌ rejected |
+| 190 | [Linux H159 listing recycle clears 3 percent on a real directory-dense tree](#exp-190--linux-h159-listing-recycle-clears-3-percent-on-a-real-directory-dense-tree) | H159 | `default-tree` | -8.6% | ✅ accepted |
+| 191 | [Linux H157 file fold cuts allocations but misses on the product job after H159](#exp-191--linux-h157-file-fold-cuts-allocations-but-misses-on-the-product-job-after-h159) | H157 | `cold-scan-index` | -5.5% | ❌ rejected |
+| 192 | [Linux H181 conditional queue wakes and H182 hash-ordered listings do not move wall time](#exp-192--linux-h181-conditional-queue-wakes-and-h182-hash-ordered-listings-do-not-move-wall-time) | H181, H182 | `default-tree` | +0.2% | ❌ rejected |
+| 193 | [Linux H183 cheap matcher pre-checks cut the default tree 8% on linux-v6.12](#exp-193--linux-h183-cheap-matcher-pre-checks-cut-the-default-tree-8-on-linux-v612) | H183 | `default-tree` | -7.6% | ✅ accepted |
+| 194 | [Linux: the overnight round end to end, the default tree 39% faster on linux-v6.12](#exp-194--linux-the-overnight-round-end-to-end-the-default-tree-39-faster-on-linux-v612) | — | `default-tree` | -39.0% | 📏 baseline |
+| 195 | [Linux: the overnight round end to end, the default tree 10% faster on node-modules-dense](#exp-195--linux-the-overnight-round-end-to-end-the-default-tree-10-faster-on-node-modules-dense) | — | `default-tree` | -9.8% | 📏 baseline |
+| 196 | [Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger](#exp-196--linux-every-route-lists-through-the-native-reader-and-no-stat-of-a-child-mounts-an-autofs-trigger) | H184 | `warm-revalidate` | -2.7% | ❌ rejected |
 
 ## The experiments
 
@@ -2028,7 +2028,7 @@ Full record:
 
 ### exp-051 — Memoize the parent resolved for the previous upsert
 
-✅ accepted · 2026-08-14 · S1
+✅ accepted · 2026-08-14 · S1 · commit `2475c82`
 
 Control: fdu at 855aa2e
 
@@ -2375,7 +2375,7 @@ Full record:
 
 ### exp-062 — Skip unread journal capture on the bootstrap apply path
 
-✅ accepted · 2026-08-15 · H90 · commit `8286c7e`
+✅ accepted · 2026-08-15 · H90 · commit `87fd0bd`
 
 Control: post-exp-061 head: bootstrap batches journalled then cleared
 
@@ -2406,7 +2406,7 @@ Full record:
 
 ### exp-063 — Share the index with the snapshot writer instead of deep-cloning it
 
-✅ accepted · 2026-08-15 · H87 · commit `bd9779d`
+✅ accepted · 2026-08-15 · H87 · commit `575db66`
 
 Control: post-exp-062 head: spawn_save deep-clones the index before rendering
 

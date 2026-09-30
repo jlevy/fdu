@@ -11,9 +11,11 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -891,6 +893,61 @@ class AbsoluteTimingTests(unittest.TestCase):
         # Candidate and change columns are empty: there was no comparison to report.
         self.assertEqual(row[0].count("| — |"), 1)
         self.assertIn("— | —", row[0])
+
+
+
+class LedgerAnchorsMatchGitHubsHeadingIds(unittest.TestCase):
+    """Every row of the ledger's index links to its experiment's section heading.
+
+    GitHub derives a heading's id by lowercasing its text, dropping every character that
+    is not a letter, mark, number, connector punctuation (`_`), space, or hyphen, and
+    turning each space into a hyphen. The ledger's anchors dropped hyphens and
+    underscores as well, so `exp-000--baseline-on-a-real-60k-entry-tree` was linked as
+    `#exp000--baseline-on-a-real-60kentry-tree` and no row jumped anywhere (fdu-tokp).
+    """
+
+    LEDGER = Path(__file__).resolve().parents[4] / (
+        "docs/project/reports/report-2026-08-10-fdu-performance-experiments.md"
+    )
+
+    @staticmethod
+    def github_id(heading: str) -> str:
+        """GitHub's id for a heading whose text is `heading` (github-slugger's rule)."""
+        kept = "".join(
+            character
+            for character in heading.lower()
+            if character in " -"
+            or unicodedata.category(character)[0] in "LMN"
+            or unicodedata.category(character) == "Pc"
+        )
+        return kept.replace(" ", "-")
+
+    def test_known_titles_link_as_github_names_them(self) -> None:
+        cases = {
+            ("exp-000", "Baseline on a real 60k-entry tree"):
+                "exp-000--baseline-on-a-real-60k-entry-tree",
+            ("exp-114", "Restore path lookup without analysis_candidates HashMap"):
+                "exp-114--restore-path-lookup-without-analysis_candidates-hashmap",
+            ("exp-054", "Validate the Linux campaign\u2019s cumulative effect on macOS"):
+                "exp-054--validate-the-linux-campaigns-cumulative-effect-on-macos",
+            ("exp-153", "Linux H72 d_type skip clears 3% on symlink-heavy /usr"):
+                "exp-153--linux-h72-d_type-skip-clears-3-on-symlink-heavy-usr",
+            ("exp-999", "Skip `fs::metadata` for 2\u00d7 fewer calls"):
+                "exp-999--skip-fsmetadata-for-2-fewer-calls",
+        }
+        for (identifier, title), expected in cases.items():
+            with self.subTest(identifier=identifier):
+                self.assertEqual(summary._anchor({"id": identifier, "title": title}), expected)
+
+    def test_every_link_in_the_committed_ledger_reaches_a_heading(self) -> None:
+        text = self.LEDGER.read_text(encoding="utf-8")
+        headings = {
+            self.github_id(match.group(1))
+            for match in re.finditer(r"(?m)^#{1,6} (.+?)\s*$", text)
+        }
+        links = re.findall(r"\]\(#([^)]+)\)", text)
+        self.assertGreater(len(links), 100)
+        self.assertEqual(sorted(set(links) - headings), [])
 
 
 if __name__ == "__main__":

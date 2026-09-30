@@ -91,14 +91,19 @@ It runs the same build-feature combinations CI does, notably `--no-default-featu
 which is how library consumers build and is otherwise never exercised locally.
 
 Give each worktree its own Cargo target directory for handoff gates.
-A shared `CARGO_TARGET_DIR` can reuse workspace artifacts from another branch based on
-source modification times, including a stale core library under a different toolchain
-(`fdu-8whh`). If reusing a target directory, invalidate the workspace artifacts or
-refresh all Rust source timestamps first, then verify that each tested toolchain
-recompiles the workspace crates.
-A fast “fresh” result after switching worktrees is not evidence of the new source.
-Keep golden and wheel consumers on that same verified build, and never let another
-worktree overwrite it during the gate.
+The gates ask cargo where it builds (`cargo metadata`), so a `CARGO_TARGET_DIR` outside
+the checkout works. A shared `CARGO_TARGET_DIR` can reuse workspace artifacts from
+another branch based on source modification times, including a stale core library under
+a different toolchain (`fdu-8whh`). Every Make target that compiles a workspace crate
+first runs `target-owner`, which records the owning checkout in the target directory and
+removes the workspace crates’ fingerprints when another checkout, or an unrecorded one,
+built there last.
+A cargo command run outside Make has no such guard: if reusing a target
+directory that way, invalidate the workspace artifacts or refresh all Rust source
+timestamps first, then verify that each tested toolchain recompiles the workspace
+crates. A fast “fresh” result after switching worktrees is not evidence of the new
+source. Keep golden and wheel consumers on that same verified build, and never let
+another worktree overwrite it during the gate.
 
 Neither covers what caching does to an answer over file kinds a fixture does not
 contain. [The correctness runbook](docs/project/guides/correctness-runbook.md) is the

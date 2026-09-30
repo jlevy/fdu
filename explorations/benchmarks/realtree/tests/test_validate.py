@@ -324,6 +324,18 @@ class CompressedRunArtifactTests(unittest.TestCase):
         self.assertEqual(ledger.load(self.plain), self.document)
         self.assertEqual(ledger.load(self.compressed), self.document)
 
+    def test_storing_a_run_compresses_it_deterministically_and_whole(self) -> None:
+        stored = self.scratch / "stored" / "run.json.gz"
+        ledger.store(self.plain, stored)
+        self.assertEqual(stored.read_bytes(), self.compressed.read_bytes())
+        self.assertEqual(ledger.load(stored), self.document)
+        ledger.store(self.plain, stored)
+        self.assertEqual(stored.read_bytes(), self.compressed.read_bytes())
+        self.assertEqual([entry.name for entry in stored.parent.iterdir()], ["run.json.gz"])
+
+        with self.assertRaisesRegex(ValueError, r"must end in \.gz"):
+            ledger.store(self.plain, self.scratch / "stored" / "run.json")
+
     def test_a_gz_suffix_on_plain_json_fails_rather_than_being_guessed(self) -> None:
         mislabelled = self.scratch / "mislabelled.json.gz"
         mislabelled.write_bytes(self.plain.read_bytes())

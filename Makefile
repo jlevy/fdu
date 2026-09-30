@@ -9,7 +9,48 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
+# Where cargo writes build output, asked of cargo rather than assumed to be `target/`:
+# CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
+# assumed path would then be tested or measured in place of the one just built
+# (fdu-bi9a, fdu-dfbu). Evaluated once, on first use, so a target that never builds never
+# asks. CARGO_TARGET_DIR, then `$(CURDIR)/target`, are only the fallback for a cargo that
+# cannot answer, as in scripts/cargo-target.mjs, and then the build before it fails first.
+CARGO_TARGET = $(eval CARGO_TARGET := $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),$(if $(CARGO_TARGET_DIR),$(abspath $(CARGO_TARGET_DIR))),$(CURDIR)/target))$(CARGO_TARGET)
+DEBUG_FDU = $(CARGO_TARGET)/debug/fdu
+
+# A target directory shared by several checkouts serves one checkout's build to another.
+# Cargo judges a workspace crate fresh when its outputs are newer than its sources, and
+# another checkout's newer outputs pass that test however different its sources are: a
+# test binary then runs without the code under test, and nothing prints `Compiling`
+# (fdu-8whh). So every target that builds a workspace crate first records which checkout
+# owns the target directory. When the owner changes, or is unrecorded -- as for any
+# directory built before this check -- it removes the workspace crates' fingerprints, and
+# cargo rebuilds them from this checkout's sources. Dependencies keep theirs: they are
+# registry releases, identical in every checkout. The `fdu-*` pattern names exactly the
+# workspace packages (fdu, fdu-core, fdu-py); no dependency's name starts with it.
+TARGET_OWNER_STAMP = $(CARGO_TARGET)/.fdu-checkout
+
+target-owner:
+	@target="$(CARGO_TARGET)"; stamp="$(TARGET_OWNER_STAMP)"; \
+	owner="$$(cat "$$stamp" 2>/dev/null)"; \
+	if [ -d "$$target" ] && [ "$$owner" != "$(CURDIR)" ]; then \
+		echo "note: $$target was last built from $${owner:-an unrecorded checkout};"; \
+		echo "      removing its fdu crate fingerprints so cargo rebuilds them from $(CURDIR)"; \
+		find "$$target" -maxdepth 3 -type d -name .fingerprint -prune \
+			-exec sh -c 'for dir; do rm -rf -- "$$dir"/fdu-*; done' sh {} + || exit 1; \
+	fi; \
+	mkdir -p "$$target" && printf '%s\n' "$(CURDIR)" > "$$stamp"
+
+# Every target whose recipe compiles a workspace crate, through cargo or maturin; the
+# recipe-coverage test in scripts/cargo-target.test.mjs keeps this list complete.
+TARGET_OWNER_TARGETS := build release rust-test reference-model opened-root-golden \
+	opened-root-golden-update yaml-selfcheck performance-probe clippy cross-lint docs \
+	lib-only msrv fix parity-venv python-check python-concurrency python-smoke \
+	release-rehearse cli perf-probe-release perf-probe-profiling
+
+$(TARGET_OWNER_TARGETS): target-owner
+
+.PHONY: help target-owner build release test rust-test reference-model test-golden opened-root-golden opened-root-golden-lint opened-root-golden-update golden-invocations golden-observability portability parity-venv test-parity parity-check parity-update test-path-independence path-independence path-independence-full path-independence-record content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version permission-bits supply-chain rust-module-names admission-sites atomic-writes fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke wheel-python release-test test-terminal release-rehearse semver-check release-preflight release-candidate release-body release-verify-tag release-published release-announced release-cleanup release-audit clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -33,6 +74,7 @@ help:
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
 	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
 	@echo "make admission-sites  Check every filesystem producer routes through admission"
+	@echo "make atomic-writes  Check every file is written whole, through the atomic helpers"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
@@ -50,6 +92,7 @@ help:
 	@echo "make perf-compare   Measure a candidate against CONTROL, interleaved and paired"
 	@echo "make perf-content-profile  Attribute basic content, cache-hit, and query time"
 	@echo "make perf-content-compare  Compare content jobs in 12 paired trials"
+	@echo "make perf-store RUN=run.json OUT=.../run.json.gz  Commit a run, gzipped deterministically"
 	@echo "make perf-test      Test the real-tree harness itself"
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 	@echo "make perf-report    Regenerate the charted performance report from the same artifacts"
@@ -136,8 +179,10 @@ performance-probe:
 	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features
 	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 
+# The first suite runs without a project, so nothing else names its interpreter: uv would
+# take the host's python3, and on 3.11 the suite fails for want of 3.12 (fdu-kiuu).
 test-performance: performance-probe
-	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
+	CARGO_TARGET_DIR="$(CARGO_TARGET)" PYTHONPATH=explorations $(UV) run --no-project --python 3.12 python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 	$(PERF_UV) --group dev python -m unittest discover -s explorations/benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
@@ -150,7 +195,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version wheel-python supply-chain rust-module-names admission-sites golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
+check: uv-version wheel-python supply-chain rust-module-names admission-sites atomic-writes golden-invocations golden-observability opened-root-golden-lint portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-evidence-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check test-path-independence path-independence release-test test-terminal
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -202,7 +247,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance test-path-independence path-independence path-independence-full path-independence-record python-check python-concurrency python-smoke python-sdist-smoke release-test test-terminal release-rehearse semver-check docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-floor perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
+	perf-compare-tools perf-floor perf-record perf-store perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -226,6 +271,12 @@ rust-module-names:
 admission-sites:
 	$(NODE) --test scripts/check-admission-sites.test.mjs
 	$(NODE) scripts/check-admission-sites.mjs
+
+# A reader sees a whole old file or a whole new one: every write goes through a helper
+# that stages, syncs, and renames, or is listed in the check with its reason.
+atomic-writes:
+	$(NODE) --test scripts/check-atomic-writes.test.mjs scripts/atomic-write.test.mjs
+	$(NODE) scripts/check-atomic-writes.mjs
 
 # The corpus selects its binary by full path. This keeps a bare `fdu` -- which PATH
 # would happily resolve to an installed build -- from creeping back in (fdu-9h2w).
@@ -303,7 +354,7 @@ parity-update: build parity-venv $(NODE_INSTALL_STAMP)
 # `path-independence-record` records diagnostic evidence and cannot waive a failure.
 PATH_INDEPENDENCE_PYTHON ?= $(PARITY_PYTHON)
 check: PATH_INDEPENDENCE_PYTHON = $(SMOKE_PYTHON)
-PATH_INDEPENDENCE_ENV = FDU_BIN="$(CURDIR)/target/debug/fdu" \
+PATH_INDEPENDENCE_ENV = FDU_BIN="$(DEBUG_FDU)" \
 	FDU_PYTHON="$(abspath $(PATH_INDEPENDENCE_PYTHON))"
 PATH_INDEPENDENCE_PYTHON_REQUIRED = @test -x "$(PATH_INDEPENDENCE_PYTHON)" || \
 	{ echo "error: $(PATH_INDEPENDENCE_PYTHON) is missing; build it with 'make parity-venv' (or 'make python-smoke' for .venv-smoke)"; exit 1; }
@@ -431,15 +482,22 @@ python-concurrency:
 
 # The explicit --config keeps one lint standard for the package, its examples, and the
 # repository-level release scripts and tests, which have no pyproject of their own.
-PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
+PYTHON_LINT_PATHS := python tests examples ../../scripts/atomic_write.py ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
+# pytest imports the editable install, whose compiled half uv rebuilds only when a cache
+# key changes -- by default Python metadata files, never the Rust. A reused .venv then
+# ran current wrappers against an extension from before the last native change
+# (fdu-35b1, fdu-ukg6). Cache keys cannot express it here: uv reads them only from
+# pyproject.toml, and warns on every run that the adjacent uv.toml overrides them. So the
+# test run always rebuilds the editable extension; cargo decides what is actually stale,
+# and target-owner keeps that decision honest in a shared target directory.
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		ruff format --check --config pyproject.toml $(PYTHON_LINT_PATHS)
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		ruff check --config pyproject.toml $(PYTHON_LINT_PATHS)
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev basedpyright
-	$(UV) run --directory crates/fdu-py --frozen --group dev pytest
+	$(UV) run --directory crates/fdu-py --frozen --group dev --reinstall-package fdu pytest
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
@@ -456,12 +514,15 @@ python-smoke:
 		wheel_path="$$(find "$$wheel_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)" && \
 		$(UV) tool run --isolated --no-index --python $(WHEEL_PYTHON) --from "$$wheel_path" fdu --version
 
+# The sdist must build from its own contents. Under an exported CARGO_TARGET_DIR -- which
+# AGENTS.md recommends -- cargo would build it into the checkout's target directory, where
+# the same crates' newer outputs can pass for fresh and install instead (fdu-8whh).
 python-sdist-smoke:
 	cd crates/fdu-py && sdist_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-sdist.XXXXXX")" && \
 		trap 'rm -r -- "$$sdist_dir"' EXIT && \
 		$(UV) build --no-sources --sdist --out-dir "$$sdist_dir" && \
 		$(UV) venv --clear --python $(WHEEL_PYTHON) .venv-sdist && \
-		$(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
+		env -u CARGO_TARGET_DIR $(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
 		$(UV) run --no-project --python .venv-sdist python tests/public_smoke.py
 
 # uv provides the interpreter so the release gates never depend on the host's system
@@ -473,14 +534,15 @@ release-test:
 # cleared on Ctrl-C with death by the signal, and absent when stderr is not a terminal.
 # Unix only; Python has no pty on Windows, so the test skips itself there.
 test-terminal: build
-	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/terminal -p 'test_*.py'
+	FDU_BIN="$${FDU_BIN:-$(DEBUG_FDU)}" \
+		$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/terminal -p 'test_*.py'
 
 # Build and inspect the host artifacts without contacting either registry. The explicit
 # release tag exercises exact-version behavior even though a rehearsal runs on a branch.
 #
 # One `cargo package` naming both crates, not two invocations: `fdu` depends on `fdu-core`,
 # which is not on crates.io, so packaging `fdu` alone fails to resolve it. Packaging the
-# sibling first in a separate run does not help -- that puts a `.crate` in target/package,
+# sibling first in a separate run does not help -- that puts a `.crate` in <target>/package,
 # not in the index. Naming both in one invocation makes cargo verify each against the
 # just-packaged sibling (fdu-pj9w).
 #
@@ -493,7 +555,7 @@ release-rehearse: release-test
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
 		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
-		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		cp "$(CARGO_TARGET)/package/fdu-core-$$version.crate" "$(CARGO_TARGET)/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/smoke_crate.py "$$artifact_dir" --version "$$version" \
 			--work-dir "$$smoke_dir" --cargo "$(CARGO)" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
@@ -549,11 +611,8 @@ PERF_LABEL ?= benchmarks-self-contained
 PERF_RESULTS ?= /tmp/fdu-realtree/results
 PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
 PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
-# Where cargo writes build output, asked of cargo rather than assumed to be `target/`:
-# CARGO_TARGET_DIR and build.target-dir both move it, and a binary left behind at the
-# assumed path would then be measured in place of the one just built. `target` is only
-# the fallback for a cargo that cannot answer, and then the build before it fails first.
-PERF_TARGET_DIR = $(or $(shell $(CARGO) metadata --format-version 1 --no-deps 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'),target)
+# The probe is measured where cargo wrote it: see CARGO_TARGET.
+PERF_TARGET_DIR = $(CARGO_TARGET)
 PERF_RELEASE = $(PERF_TARGET_DIR)/release/examples/perf_probe
 PERF_PROFILING = $(PERF_TARGET_DIR)/profiling/examples/perf_probe
 # Evidence qualifiers default to exploration. A held-out run must opt into a controlled
@@ -582,7 +641,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
+.PHONY: perf-floor perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-store perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check perf-evidence-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
@@ -730,6 +789,11 @@ perf-floor: perf-probe-release
 
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
+
+# Commit a run beside its record, gzipped with no file name and an mtime of 0 so the same
+# run always compresses to the same bytes, and written whole.
+perf-store:
+	$(PERF_RUN) store --run $(RUN) --out $(OUT)
 
 # In `check` even though the measurement loop is not, and the distinction is the point:
 # running an experiment needs a large real tree and a quiet machine, but the harness that

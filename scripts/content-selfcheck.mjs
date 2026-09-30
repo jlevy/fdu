@@ -13,8 +13,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { debugFdu } from "./cargo-target.mjs";
+
 const root = resolve(import.meta.dirname, "..");
-const fdu = resolve(process.env.CARGO_TARGET_DIR ?? join(root, "target"), "debug/fdu");
+const fdu = debugFdu(root);
 const scratch = mkdtempSync(join(tmpdir(), "fdu-content-selfcheck-"));
 const archive = join(scratch, "tracked.tar");
 const tree = join(scratch, "tree");

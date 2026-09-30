@@ -1054,4 +1054,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # A cache of the run's own: a snapshot written through the default location would
+    # otherwise land in the invoking user's cache, and FDU_CACHE_DIR outranks
+    # XDG_CACHE_HOME, so an exported one goes too (fdu-n57h). Subprocesses inherit both.
+    with tempfile.TemporaryDirectory(
+        prefix="fdu-public-smoke-cache-", ignore_cleanup_errors=True
+    ) as cache_home:
+        os.environ.pop("FDU_CACHE_DIR", None)
+        os.environ["XDG_CACHE_HOME"] = cache_home
+        main()

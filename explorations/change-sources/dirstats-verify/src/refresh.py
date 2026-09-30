@@ -24,6 +24,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi  # noqa: E402
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import open_atomic, write_text_atomic  # noqa: E402
 
 DS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ds")
 
@@ -148,7 +151,7 @@ def main():
     s, ms = walk(root, before_tsv); log["walk_before"] = {"summary": s, "ms": round(ms, 1)}
     before = load(before_tsv, root)
     origins = sorted(p for p, r in before.items() if r["kind"] == "d" and r["gencount"] > 0)
-    with open(ck, "w") as fh:
+    with open_atomic(ck) as fh:
         for p in origins:
             fh.write(f"{before[p]['gencount']}\t{p}\n")
     a = time.perf_counter()
@@ -217,8 +220,7 @@ def main():
                           "origins_with_oracle_delta_but_no_fsctl_change": unchanged_but_moved[:10], "n_silent": len(unchanged_but_moved)}
     # cleanup held handles
     os.close(held["log_fd"]); held["db"].close()
-    with open(out, "w") as fh:
-        json.dump(log, fh, indent=1, default=str)
+    write_text_atomic(out, json.dumps(log, indent=1, default=str))
     print(json.dumps({k: v for k, v in log.items() if k not in ("totals_only",)}, default=str)[:3000])
     print("totals_only:", json.dumps({"immediate": log["totals_only"]["immediate"], "after_sync_n": log["totals_only"]["after_sync"]["changed_origins"], "ms": log["totals_only"]["after_sync"]["ms"]}))
 

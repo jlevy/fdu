@@ -12,6 +12,9 @@ Each step prints (dgen, ddesc, dphys) for root and B.
 import json, os, shutil, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dsapi
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 def mk(p, n=65536):
     with open(p, "wb") as fh: fh.write(b"h" * n)
@@ -59,5 +62,5 @@ def main():
     wb = subprocess.run([ds, "walk", B, "-o", "/dev/null"], capture_output=True, text=True).stdout.strip()
     fin = {"root_fsctl": dsapi.get(root), "B_fsctl": dsapi.get(B), "walk_root": w, "walk_B": wb}
     print(fin); log.append(fin)
-    json.dump(log, open(out, "w"), indent=1, default=str)
+    write_text_atomic(out, json.dumps(log, indent=1, default=str))
 main()

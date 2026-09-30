@@ -1,6 +1,10 @@
 import json, sys, glob
 import yaml as pyyaml
 from ruamel.yaml import YAML
+import os
+# The repository root, for the shared atomic writer in scripts/atomic_write.py.
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")))
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 corpus = {c["id"]: c for c in json.load(open("corpus.json"))}
 
 def rt_load(t):
@@ -29,5 +33,5 @@ for path in sorted(glob.glob("emit-*.tsv")):
                 else: out.append([name, int(id_), p, "wrong", f"{type(got).__name__}:{got!r}"[:80]])
             except Exception as e:
                 out.append([name, int(id_), p, "error", f"{type(e).__name__}: {str(e).splitlines()[0] if str(e) else ''}"[:80]])
-json.dump(out, open("results-py.json", "w"))
+write_text_atomic("results-py.json", json.dumps(out))
 print(len(out), "python parse results")
