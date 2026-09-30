@@ -673,7 +673,7 @@ If uv selects free-threaded CPython, such as `3.14t`, retry with `--python 3.14`
 does not publish free-threaded wheels yet.
 
 **Pinned versions:** For a repeatable run, replace `latest` with a release number, such
-as `uvx --no-build fdu@0.2.1 .`.
+as `uvx --no-build fdu@0.3.0 .`.
 
 **uv cool-off policies:** If uv is configured with an `exclude-newer` cool-off, a new
 fdu release may be filtered.
@@ -705,7 +705,7 @@ cargo install --locked --path crates/fdu
   output
 - [Documentation index](docs/README.md): library, architecture, performance, release
 - [Design principles](docs/project/architecture/fdu-design-principles.md)
-- [0.2.1 release notes](docs/project/release-notes/0.2.1.md)
+- [0.3.0 release notes](docs/project/release-notes/0.3.0.md)
 - [Changelog](CHANGELOG.md)
 
 ## Development

@@ -28,7 +28,7 @@ patterns:
 $ fdu --cache off --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -113,7 +113,7 @@ one.
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -204,7 +204,7 @@ fdu: snapshot is not usable: no usable snapshot for this root and scan scope; a 
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -287,7 +287,7 @@ Under `auto` the report scans fresh and leaves the snapshot as it found it.
 $ fdu --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -370,7 +370,7 @@ fixture expanded
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -444,7 +444,7 @@ answers with the changed total rather than the one the first run recorded.
 $ fdu --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -528,7 +528,7 @@ $ fdu --watch --stale-ok project
 $ fdu --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -612,7 +612,7 @@ A run that writes replaces the corrupt file.
 $ fdu --cache on --view tree --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -696,7 +696,7 @@ it reads only the sizes a default scan also recorded; it says it read no rules.
 $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -765,7 +765,7 @@ $ fdu --cache on --view tree --format json --size apparent --depth 0 --limit 0 p
 $ fdu --no-gitignore --stale-ok --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -832,7 +832,7 @@ stronger snapshot usable by a subsequent default `--stale-ok` request.
 $ fdu --no-gitignore --format json --size apparent --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -884,7 +884,7 @@ $ fdu --no-gitignore --format json --size apparent --limit 0 project
 $ fdu --stale-ok --format json --size apparent --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
@@ -947,7 +947,7 @@ way out.
 $ fdu --no-gitignore --cache on --view tree --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/10",
-  "generator": "fdu 0.2.1",
+  "generator": "fdu 0.3.0",
   "root": "[SCAN_PATH]",
   "age_reference_ns": [AGE_NS],
   "request": {
