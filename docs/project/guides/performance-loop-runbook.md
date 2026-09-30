@@ -1046,11 +1046,9 @@ and
   fields masked: 54 comparisons, or 171 with the sort, share, depth, breadth, size, and
   view variants a tree-tier change reaches.
 
-**Ids.** Next free are **exp-197** and **H191**. exp-196 and H184 are reserved for the
-autofs fix (`fdu-d2fn`); exp-197–199 remain in the reserved Linux block, then exp-200
-onward, and the parallel pdu track (`fdu-faqa`, branch `claude/pdu-uniform-lead`) takes
-exp-197 onward and H185–H190 for its cells.
-exp-173–199 and H162–H190 are Linux work.
+**Ids.** Next free are **exp-202** and **H191**. exp-196 and H184 are reserved for the
+autofs fix (`fdu-d2fn`); the pdu track (`fdu-faqa`, branch `claude/pdu-uniform-lead`)
+used exp-197–201 and H185–H190. exp-173–201 and H162–H190 are Linux work.
 The peer-tool research (`fdu-92hp`) used exp-173–174 and H162–H170. The 0.2.1 work
 (`fdu-k1n8`) used exp-187–191, and H171–H173, the 0.2.2 Linux parity hypotheses
 (`fdu-8a8r`), came from its range.
@@ -1067,7 +1065,8 @@ keep, H148 the Linux PGO screen, H149 the leftover-timer restore mix, and H150�
 [#120](https://github.com/jlevy/fdu/pull/120); H72 reused its existing id.
 exp-113 remains reserved unused.
 
-**The pdu track (2026-09-29, `fdu-faqa`).** The profile gate above ran:
+**The pdu track (2026-09-29 to 30, `fdu-faqa`, branch `claude/pdu-uniform-lead`).** The
+profile gate above ran:
 [the uniformly-faster brief](../research/research-2026-09-29-uniformly-faster-than-pdu.md)
 attributes the standing with load-independent counts and exp-194’s and exp-195’s rusage.
 fdu spends the least CPU of the three tools on both real trees (445 against pdu’s 461 ms
@@ -1076,35 +1075,47 @@ on `linux-v6.12`) and keeps the fewest cores busy (3.65 against 3.81); the idle 
 avoidable CPU is the directory `statx` on the tree route (6–12% of all `statx`), the
 consumer’s name sort, empty extension maps and `PathBuf` map, and the summary fold’s
 component-wise path handling (180M of its 373M instructions).
-The queue is re-ranked below by expected gain per unit of risk; H179 and H174 lose their
-case on this profile (H185 removes the directory `statx` H179 would replace, and the
-consumer is busy 60% and 30% of the walk, under H174’s gate).
+**Measured 2026-09-30 on a quiet host (exp-197 to exp-201, each control the previous
+head):** H185 accepted on `node-modules-dense` (−3.55%, replicate −7.28%, screen −4.45%)
+and not resolvable on `linux-v6.12`; H188 with H189 accepted (`aggregate-summary` −6.15%
+on `linux-v6.12`); H186 accepted on `node-modules-dense` (−4.91%, replicate −0.93%) and
+not resolvable on `linux-v6.12`; H187 rejected and reverted, a 20% and 38% consumer
+instruction cut with no wall change, because the tree route’s consumer has slack on four
+vCPUs, unlike the summary consumer H188 cut.
+The branch ships H185, H188 with H189, and H186 (engine `a356d456`; H187 reverted in
+`5df306ee`). exp-201 is the stacked end-to-end cell against the round’s final head with
+pdu default, pdu `--max-depth 2` and diskus in the same run: the shipped default command
+is 3.05% [−5.81%, −1.03%] faster on `linux-v6.12` and 8.94% [−12.29%, −5.04%] faster on
+`node-modules-dense` than the final head’s, the default summary 6.14% faster on
+`linux-v6.12`, and in the same run fdu’s default leads pdu default by 13% and 15%,
+diskus by 12% and 11%, and pdu `--max-depth 2` by 3% [+1%, +8%] and 10% [+4%, +13%],
+about six points of the lead over pdu’s default mode being the night’s regime rather
+than the track.
 
 **Next, in order:**
 
-1. **H185**, the tree route skips directory and symlink stats (H72’s policy on the
-   folded index): predicted −4% to −6% on `node-modules-dense`, −2% to −4% on
-   `linux-v6.12`.
-2. **H188 with H189**, byte-wise paths in the summary fold and a pre-sized control-file
-   read: `aggregate-summary` on `linux-v6.12` predicted −5% to −9%.
-3. **H186**, the serial tail: the share threshold before rows, borrowed-name sorting, a
-   detached release of the folded index: −2.5% to −4% and −1.5% to −2.5%.
-4. **H187**, the tree tier’s consumer as one structural composite (sort only kept kinds,
-   scalar roll-up, byte-keyed directory map): −3% to −5% and −2% to −4%.
-5. **H177**, a per-listing name arena on top of H169, then **H178** (the consumer walks
-   when its channel is empty), each re-predicted at −1% to −3%.
-6. **H190**, a second pass over `decide`, only after H187 and a fresh profile.
-7. **H169 phase 3**, directories opened relative to the parent’s descriptor, once an fd
-   budget sized to the breadth-first frontier is designed.
-8. **H179** (only for the full-index route) and **H164**’s tree route and **H174**
+1. **The goal statement**, from exp-201: where the shipped default command stands
+   against pdu default, pdu `--max-depth 2` and diskus on each real tree, and what
+   remains to be ahead of the depth-2 mode by the 3% the accept rule can see.
+2. **H169 phase 3** (directories opened relative to the parent’s descriptor, once an fd
+   budget sized to the breadth-first frontier is designed) and **H177** (a per-listing
+   name arena on top of H169): after exp-200 the walkers’ kernel time is the bound on
+   the tree route, so walker-side cuts rank above any consumer cut.
+3. **H178** (the consumer walks when its channel is empty), re-predicted at −1% to −3%,
+   under the three-stage qualification a scheduling policy takes.
+4. **H190** stays unbuilt behind exp-200’s finding: a consumer-only cut on the tree
+   route has no wall to buy.
+   **H179** (only for the full-index route), **H164**’s tree route and **H174**
    (`fdu-sfse`) stay behind their gates.
-9. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
+5. **macOS**: the platform review’s cells (exp-202 onward), including M11 (H185 is a
+   no-op there, a placebo) and M12 (H186’s serial tail on eight performance cores).
+6. **`fdu-q7hf`**, the reader’s public diagnostics fields: a public API change, for
    0.3.0.
-10. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes: musl builds, the serial
-    walk, and reconciliation still stat through std without it.
-    `fdu-puk7` is closed for the native reader’s path (exp-185).
-11. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
-    fixed with recorded git verdicts, outside the performance loop.
+7. **`fdu-d2fn`**, `AT_NO_AUTOMOUNT` on the remaining routes: musl builds, the serial
+   walk, and reconciliation still stat through std without it.
+   `fdu-puk7` is closed for the native reader’s path (exp-185).
+8. **`fdu-ifci`**, BOM and NUL handling in `.gitignore`: it changes answers, so it is
+   fixed with recorded git verdicts, outside the performance loop.
 
 **Superseded by the overnight loop.** What follows is the pickup as it stood before
 2026-09-29, kept as the record.

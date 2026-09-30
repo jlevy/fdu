@@ -10,12 +10,22 @@
 Epic `fdu-faqa`. It makes no new wall claim: wall figures are cited from the quiet
 20-pair cells of exp-194 and exp-195, and everything measured here is load-independent
 (instructions, system calls, page faults, context switches) or marked as a screen taken
-under load. **Built on the branch, unmeasured on wall (2026-09-29, host busy):** H185
-(`c0da65ae`), H188 with H189 (`a0666bf0`, `7a3a7058`), H186 (`a356d456`) and H187
-(`cfae174e`), each with its answers proved identical by the differential tests, the
-goldens and the three-format answer diff, and its load-independent secondary recorded in
-[the registry](../guides/performance-loop.md#hypotheses); their cells run when the host
-is quiet, as exp-197 onward.
+under load. **Measured on wall (2026-09-30, quiet host, exp-197 to exp-201):** H185
+(`c0da65ae`) accepted on `node-modules-dense` (−3.55%, replicate −7.28%, screen −4.45%)
+and not resolvable on `linux-v6.12`; H188 with H189 (`a0666bf0`, `7a3a7058`) accepted
+(`aggregate-summary` −6.15% on `linux-v6.12`); H186 (`a356d456`) accepted on
+`node-modules-dense` (−4.91%, replicate −0.93%) and not resolvable on `linux-v6.12`;
+H187 (`cfae174e`) rejected, a 20% and 38% consumer instruction cut with no wall change,
+and reverted (`5df306ee`). Each had its answers proved identical by the differential
+tests, the goldens and the three-format answer diff, and its load-independent secondary
+recorded in [the registry](../guides/performance-loop.md#hypotheses).
+The stacked end-to-end cell against the round’s final head, with the peers in the same
+run, is exp-201: the shipped default command is 3.05% [−5.81%, −1.03%] faster on
+`linux-v6.12` and 8.94% [−12.29%, −5.04%] faster on `node-modules-dense` than the final
+head’s, the default summary 6.14% faster on `linux-v6.12`, and in the same run fdu’s
+default leads pdu default by 13% and 15%, diskus by 12% and 11%, and pdu `--max-depth 2`
+by 3% [+1%, +8%] and 10% [+4%, +13%], about six points of the lead over pdu’s default
+mode being the night’s regime rather than the track.
 
 ## Question
 
@@ -378,6 +388,16 @@ the walk on `linux-v6.12` (46 ms of a 76 ms walk) and 30% on `node-modules-dense
 H174’s own 80% gate.
 **H164**’s tree route (classification on walkers) is the same case.
 
+**Measured (exp-200).** The model’s CPU term is wrong for the tree route’s consumer.
+H187 removed 46M and 39M of its instructions (20% and 38%) with identical answers and
+moved wall by −0.35% [−3.61%, +2.19%] on `linux-v6.12` and +0.64% [−2.38%, +3.46%] on
+`node-modules-dense`, the replicates agreeing.
+The consumer is not on the critical path there (busy 60% and 30% of the walk), so its
+user-space instructions are slack, not wall/4. The term holds for the walkers’ kernel
+time (H185 on the dense tree), for serial time (H186), and for the summary route’s
+consumer (H188), which was the longest thread.
+H190 and any further consumer-only cut on the tree route are behind that finding.
+
 ## Hypotheses
 
 Registered in [the registry](../guides/performance-loop.md#hypotheses) as H185–H190,
@@ -394,21 +414,31 @@ Ranked by expected gain per unit of risk:
    diff. Deciding: `default-tree` on `node-modules-dense` and `linux-v6.12`; placebo
    `aggregate-summary --no-controls` (already skipping) and `cold-scan-index` (full
    index, unchanged); secondary `strace -c` `statx` down by the directory count.
+   **Accepted on `node-modules-dense`** (exp-197): −3.55% [−7.85%, −2.57%], replicate
+   −7.28%, screen −4.45%; not resolvable on `linux-v6.12` (+2.13% [−3.19%, +5.30%]), the
+   saving being one `statx` per directory.
 2. **H188 with H189** — control-file handling: byte-wise paths in the summary fold, and
    a pre-sized control-file read.
    Deciding: `aggregate-summary` on `linux-v6.12`; `default-tree` there as H189’s
    secondary; placebos: both jobs on `node-modules-dense`, which has no rules.
+   **Accepted** (exp-198): −6.15% [−7.94%, −1.80%]; H189 below wall resolution.
 3. **H186** — the serial tail: the share threshold before rows, borrowed names in the
    sort, a detached release of the folded index.
    Deciding: `default-tree` on both real trees; placebo
    `aggregate-summary --no-controls`; the List view’s JSON as a screen.
+   **Accepted on `node-modules-dense`** (exp-199): −4.91% [−6.94%, −2.86%], replicate
+   −0.93% [−3.60%, +3.07%], most likely −2.5% to −4%; not resolvable on `linux-v6.12`
+   (−1.24% [−6.47%, +1.45%]).
 4. **H187** — the tree tier’s consumer, as one structural composite: sort and dedup only
    what the tier keeps, a scalar roll-up for folded files, a byte-keyed directory map.
    Deciding: `default-tree` on both real trees; secondary consumer instructions −35% or
    more and `cold-scan-index` non-inferior (the full-index builder shares the map);
-   placebo `aggregate-summary --no-controls`.
+   placebo `aggregate-summary --no-controls`. **Rejected** (exp-200) and reverted: no
+   wall change on either tree from a 20% and 38% consumer cut; the consumer has slack.
 5. **H177**, then **H178**, as queued, re-predicted above.
 6. **H190** — a second pass over `decide`, only after H187 and a fresh profile.
+   Profiled on the H187 head and left unbuilt; behind exp-200’s finding, a consumer-only
+   cut on the tree route has no wall to buy.
 7. **H169 phase 3**, after its fd budget is designed.
 8. **H179** and **H174** stay behind their gates, which this profile does not open.
 
