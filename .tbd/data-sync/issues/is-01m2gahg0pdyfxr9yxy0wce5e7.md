@@ -3,15 +3,19 @@ type: is
 id: is-01m2gahg0pdyfxr9yxy0wce5e7
 title: "Flaky on ubuntu CI: a_killed_watch_still_leaves_a_warm_cache missed the second snapshot rewrite"
 kind: bug
-status: open
+status: closed
 priority: 3
-version: 4
+version: 5
 labels:
   - stack-followup
 dependencies: []
 parent_id: is-01m3r273jb24qc4hp7ak005jfm
 created_at: 2026-09-14T16:03:28.917Z
-updated_at: 2026-09-30T06:11:43.127Z
+updated_at: 2026-09-30T10:02:03.551Z
+closed_at: 2026-09-30T10:02:03.550Z
+close_reason: "Root cause found; the code that had it is gone, so no change beyond the evidence already landed. The failing run (CI run 34864857746, job 104046096716, 2026-09-14, at 50c7ec2) took 30.26 s: establish_watch returned in about 0.26 s because its baseline was read before the open's startup snapshot existed, so that snapshot passed for the warm-up rewrite, and second.txt was then written while fdu --watch stood between its joined startup save and its watcher's root listing. At that commit the CLI kept persistence itself, dirty_since_save |= batch.dirty, set only from loop batches, and Session::new's initial handoff (the full reconciliation and the capture drain) reported its discoveries to nobody. second.txt was inserted by the handoff's reconciliation (no inotify event when written before registration; a drained event that verified to no change when after), so no batch was ever dirty, no save ran, and the deadline passed: a lost-save bug, not a test race. Fixed by 430abbe3, which moved persistence into the engine: Session::finish_initial_handoff sets Persistence { pending: dirty } from the handoff's own commits and next_batch ORs every commit in, pinned by watch_session::tests::handoff_changes_are_persisted_after_the_tree_goes_quiet (a file written after the open's scan and before the handoff is in the first due save). The test itself was hardened in c29e9a85 (baseline taken once a snapshot exists; the watcher's stderr and exit status in every failure). Verified on Linux/inotify at 62e7ce6e: 120/120 runs under an ext4 writeback storm and 100/100 pinned to two CPUs under four busy loops plus the storm, on top of the earlier 100/100. Deadlines and assertions unchanged."
+resolution: null
+duplicate_of: null
 ---
 Seen on PR #57 (branch claude/contract-decisions, head 50c7ec2), CI run 34864857746, job 104046096716, Test (ubuntu-latest).
 

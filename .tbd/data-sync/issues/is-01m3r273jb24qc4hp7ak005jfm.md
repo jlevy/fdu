@@ -5,9 +5,10 @@ title: "0.3.0 stability pass: fix every open bug that is fixable and testable on
 kind: epic
 status: open
 priority: 0
-version: 42
+version: 43
 labels: []
 dependencies: []
+parent_id: is-01m3rhbj53p4j4cghcyd4d3ak0
 child_order_hints:
   - is-01m3jhrr65wen7ak684hvm351w
   - is-01m2f3tr24csc75neqfhsvg2dv
@@ -49,7 +50,7 @@ child_order_hints:
   - is-01m3rfnvx470zbrwgdc63152ct
   - is-01m3rfz36eh8m7xp52aq5c0kmz
 created_at: 2026-09-30T02:27:37.162Z
-updated_at: 2026-09-30T06:28:56.869Z
+updated_at: 2026-09-30T06:52:13.413Z
 ---
 Maintainer request 2026-09-30: top priority is that the release is stable and clearly faster, so fix all bugs. Triage of 53 open bug beads: A) 17 engine correctness/stability bugs fixable and testable on Linux (fix now, test first, one commit each); B) 20 gate/tooling/harness bugs (fix now); C) 7 macOS/Windows-only bugs that cannot be reproduced here (need a macOS/Windows session); D) 9 design or measurement tasks filed as bugs (relabel). Work lands on branch claude/stability-fixes, stacked on #162 (claude/readme-comparison-matrix).
 

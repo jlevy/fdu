@@ -3,9 +3,9 @@ type: is
 id: is-01m2pj0hxv9y019pxwhnvpgkx8
 title: "frontmatter-format: YAML 1.1 readers misread plain scalars and NEL folds to a space"
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-09-17-fdu-explicit-core-models.md
 labels:
   - output
@@ -13,7 +13,12 @@ labels:
 dependencies: []
 parent_id: is-01m2pj0f459s8ad1efzyn2qmbq
 created_at: 2026-09-17T02:09:29.017Z
-updated_at: 2026-09-17T02:57:33.423Z
+updated_at: 2026-09-30T10:10:11.438Z
+closed_at: 2026-09-30T10:10:11.437Z
+close_reason: |
+  Not fdu work; closed here, belongs in github.com/jlevy/frontmatter-format. The defect is in that package's string representer (represent_str in frontmatter_format.yaml_util), a separate first-party PyPI package. `attic/` is this repository's gitignored directory of third-party reference checkouts (.gitignore: "Third-party source checked out for reference only, never built or shipped"), so attic/frontmatter-format is a local clone of that project, not part of fdu. fdu neither ships nor imports frontmatter-format: it appears only transitively through softschema in the benchmark/docs tool environment (explorations/benchmarks/uv.lock), as a first-party exclude-newer entry, and in the explorations/yaml-conformance prototypes. The proposed fix and its passing prototype are in explorations/yaml-conformance/proto_emit.py and this bead's notes; file them upstream (sidematter-format and metabrowser inherit the fix). fdu's own YAML direction stays with fdu-omo5.
+resolution: canceled
+duplicate_of: null
 ---
 In jlevy/frontmatter-format (attic/frontmatter-format), ruamel.yaml (YAML 1.2) dumps `on` and `12:30:00`
 plain; PyYAML (YAML 1.1) reads them back as True and 45000. A string containing NEL (U+0085) is emitted
