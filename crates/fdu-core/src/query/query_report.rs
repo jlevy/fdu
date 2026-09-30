@@ -3440,9 +3440,10 @@ mod tests {
 
     #[test]
     fn a_selection_over_an_exactly_full_tree_sums_to_u64_max() {
-        // The index refuses any total a u64 cannot hold (fdu-sqyk), so every selected
-        // subset of it fits too; the filtered tier re-aggregates entry by entry and must
-        // reach the exact bound without saturating or wrapping.
+        // Every route that builds an index refuses a total a u64 cannot hold (fdu-sqyk),
+        // so every selected subset of an index's tree fits too; the filtered tier
+        // re-aggregates entry by entry and must reach the exact bound without saturating
+        // or wrapping.
         let exact =
             |size: u64, mtime_ns: i64| Attrs { size, allocated: size, ..attrs(1, mtime_ns) };
         let mut index = Index::new("/root");

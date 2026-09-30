@@ -48,8 +48,9 @@ coverage map has one more possible key, `text_only`.
   key changes meaning.
   [The platform tuning guide](docs/project/guides/platform-tuning.md) documents them.
 - **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
-  `Index::apply` returns for the batch below; code that matches `Error` exhaustively
-  must name it or use a wildcard arm.
+  every route returns for a tree, or `Index::apply` for a batch, whose total no `u64`
+  can hold (below); code that matches `Error` exhaustively must name it or use a
+  wildcard arm.
 - **Breaking:** `fdu_core::content::CoverageReason` gains `TextOnly`, the coverage of a
   words record whose Markdown file was over the exact bound below and was counted as
   plain text; such an outcome carries a value, as `Analyzed` does, and
@@ -97,17 +98,25 @@ coverage map has one more possible key, `text_only`.
 
 ### Fixed
 
-- `Index::apply`, and every other route that commits a batch of observations, refuses a
-  batch that would carry a whole-tree total of files, directories, apparent bytes, or
-  allocated bytes past what a `u64` can hold, with `Error::UnrepresentableTotal`, before
-  it applies any of the batch: the index, its clock, and its journal are as they were.
+- A tree whose apparent or allocated bytes sum past what a `u64` can hold now fails
+  with `Error::UnrepresentableTotal` on every route, and `fdu` exits 1 naming the file
+  at which the total left the range.
+  A filesystem can produce one: tmpfs, XFS, and btrfs let anyone create a sparse file
+  that claims 8 EiB apparent and allocates nothing, so three of them in one directory
+  are enough. Earlier releases panicked in debug builds and wrapped the total in release
+  builds, so `fdu PATH` reported 8,191 PiB for that directory.
+  A one-shot report, whether it folds a summary or builds a full or folded index, keeps
+  one checked running total at the root, which bounds every directory’s total beneath
+  it. `Index::apply`, and every other route that commits a batch of observations,
+  refuses a batch that would carry a whole-tree total of files, directories, apparent
+  bytes, or allocated bytes out of range before it applies any of the batch: the index,
+  its clock, and its journal are as they were.
   A batch is applied in order, so the index must be representable after each of its
   operations; a replacement, a kind change, or a removal that makes room in the same
-  batch counts. Earlier releases panicked in debug builds and wrapped the totals in
-  release builds, so `total()` could report a small exact total for a tree that held
-  more than 16 EiB. A filesystem cannot produce that; the public `Index` API can.
-  A snapshot whose recorded sizes sum past `u64` is now refused as corrupt when it is
-  loaded rather than summed.
+  batch counts. A snapshot whose recorded sizes sum past `u64` is now refused as corrupt
+  when it is loaded rather than summed.
+  A `ScanReport`’s `bytes_walked` and `allocated_walked`, which measure the walk rather
+  than answer it, saturate at `u64::MAX` rather than wrapping.
 - A `.gitignore` that starts with a UTF-8 byte-order mark now applies its first rule,
   and a pattern ends at the first NUL byte inside its line, as git reads both.
   Earlier releases matched the mark as part of the first rule, so it never applied, and

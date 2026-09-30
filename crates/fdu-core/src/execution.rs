@@ -738,11 +738,19 @@ fn prepare_report_internal(
 /// **What it withholds.** The share, where the index withholds the root's: when a control
 /// file was refused, because it may have held negations as well as ignore rules, or could
 /// not be read. The coverage it reports is the table's, refusals included.
+///
+/// **What it refuses.** A tree whose apparent or allocated bytes no `u64` can hold, as the
+/// index refuses it on every route ([`crate::index::add_file_sizes`]): the first file that
+/// would carry `all` past `u64::MAX` is not counted, and the report fails with
+/// [`Error::UnrepresentableTotal`]. The unignored tally is a part of `all`, so it cannot
+/// overflow while `all` does not.
 struct SummaryFold {
     /// Every entry the walk retained.
     all: SummaryRow,
     /// The classifier, when the scan observes `.gitignore`.
     controls: Option<SummaryControls>,
+    /// The first file the root total could not hold, which fails the report.
+    unrepresentable: Option<Error>,
 }
 
 /// What a classifying [`SummaryFold`] keeps: the control table, the heads of ignored
@@ -784,6 +792,7 @@ impl SummaryFold {
                 unignored: crate::index::RollUpScalars::default(),
                 rejected: None,
             }),
+            unrepresentable: None,
         }
     }
 
@@ -792,9 +801,16 @@ impl SummaryFold {
             crate::Op::Upsert { path, kind, attrs } => {
                 match kind {
                     EntryKind::File => {
+                        if let Err(error) = crate::index::add_file_sizes(
+                            &mut self.all.bytes,
+                            &mut self.all.allocated,
+                            attrs,
+                            || path.clone(),
+                        ) {
+                            self.unrepresentable.get_or_insert(error);
+                            return;
+                        }
                         self.all.files += 1;
-                        self.all.bytes += attrs.size;
-                        self.all.allocated += attrs.allocated;
                         self.all.newest_mtime_ns = Some(
                             self.all
                                 .newest_mtime_ns
@@ -848,6 +864,9 @@ impl SummaryFold {
         root: &std::path::Path,
         errors: &[Error],
     ) -> Result<(SummaryRow, crate::control::ControlCoverage, bool)> {
+        if let Some(error) = self.unrepresentable {
+            return Err(error);
+        }
         let Some(controls) = self.controls else {
             return Ok((
                 SummaryRow { ignored: None, ..self.all },
@@ -977,6 +996,168 @@ mod tests {
             throughput_rates(12_345, 3 * (1_u64 << 30), std::time::Duration::from_secs(2)),
             Some(("6,172".to_owned(), "1.500".to_owned()))
         );
+    }
+
+    /// Every route that counts a tree refuses a total no `u64` can hold with the same
+    /// error, and accepts one that fits exactly (fdu-sqyk).
+    ///
+    /// The one-shot routes are the summary fold and the detached builder, full or folded,
+    /// which the default `fdu PATH` takes; a narrowed population, `open`, and a watch
+    /// commit through the apply lane. Three sparse files of `u64::MAX / 2 + 1` apparent
+    /// bytes, which tmpfs lets anyone create, are what each is given here, in the shape
+    /// each takes them: as observations, as listings, and as a batch. Each file sits in a
+    /// directory of its own as well as all in one, so no directory overflows where the
+    /// root does, and the allocated total is checked on its own.
+    #[test]
+    fn every_route_refuses_a_total_no_u64_can_hold_and_accepts_an_exact_fit() {
+        use crate::index::DetachedIndexBuilder;
+        use crate::scan::{DetachedChild, DetachedDirectory};
+        use crate::{Attrs, Index, Observation, ObservationOp, Op};
+
+        #[derive(Clone, Copy, Debug)]
+        enum Layout {
+            OneDirectory,
+            DirectoryEach,
+        }
+        let attrs = |size: u64, allocated: u64, inode: u64| Attrs {
+            size,
+            allocated,
+            mtime_ns: 1,
+            ctime_ns: 1,
+            inode,
+            dev: 1,
+        };
+        // Each file's path, relative to the root, and the directories above it.
+        let files = |layout: Layout, count: usize| -> Vec<(PathBuf, Option<PathBuf>)> {
+            (0..count)
+                .map(|file| match layout {
+                    Layout::OneDirectory => (PathBuf::from(format!("f{file}")), None),
+                    Layout::DirectoryEach => {
+                        let directory = PathBuf::from(format!("d{file}"));
+                        (directory.join("f"), Some(directory))
+                    }
+                })
+                .collect()
+        };
+        let upserts = |layout: Layout, sizes: &[(u64, u64)]| -> Vec<Op> {
+            let mut ops = Vec::new();
+            for ((path, directory), (inode, &(size, allocated))) in
+                files(layout, sizes.len()).into_iter().zip((1_u64..).zip(sizes))
+            {
+                if let Some(directory) = directory {
+                    ops.push(Op::Upsert {
+                        path: directory,
+                        kind: EntryKind::Dir,
+                        attrs: Attrs::default(),
+                    });
+                }
+                ops.push(Op::Upsert {
+                    path,
+                    kind: EntryKind::File,
+                    attrs: attrs(size, allocated, inode),
+                });
+            }
+            ops
+        };
+        let summary_fold = |layout: Layout, sizes: &[(u64, u64)], read_controls: bool| {
+            let config = ScanConfig { read_controls, ..ScanConfig::default() };
+            let mut fold = SummaryFold::new(&config);
+            for op in upserts(layout, sizes) {
+                fold.observe(&ObservationOp::unconditional(op));
+            }
+            fold.finish(Path::new("/root"), &[]).map(|(row, ..)| (row.bytes, row.allocated))
+        };
+        let builder = |layout: Layout, sizes: &[(u64, u64)], folding: bool| -> Result<(u64, u64)> {
+            let mut builder = DetachedIndexBuilder::new(
+                "/root",
+                crate::ScanScope::default(),
+                crate::classify::TypeRegistry::compiled_shared(),
+            );
+            if folding {
+                builder =
+                    builder.folding(TreeRetention { largest_files: 1, size: SizeMetric::Apparent });
+            }
+            let child = |name: &Path, kind, attrs, position| DetachedChild {
+                name: name.as_os_str().to_owned(),
+                kind,
+                attrs,
+                position,
+            };
+            let mut root =
+                DetachedDirectory { path: PathBuf::new(), children: Vec::new(), control: None };
+            let mut nested = Vec::new();
+            for (position, ((path, directory), (inode, &(size, allocated)))) in
+                (0_u32..).zip(files(layout, sizes.len()).into_iter().zip((1_u64..).zip(sizes)))
+            {
+                let file = attrs(size, allocated, inode);
+                match directory {
+                    None => root.children.push(child(&path, EntryKind::File, file, position)),
+                    Some(directory) => {
+                        root.children.push(child(
+                            &directory,
+                            EntryKind::Dir,
+                            Attrs::default(),
+                            position,
+                        ));
+                        let name = path.file_name().expect("a file name");
+                        nested.push(DetachedDirectory {
+                            path: directory,
+                            children: vec![child(Path::new(name), EntryKind::File, file, 0)],
+                            control: None,
+                        });
+                    }
+                }
+            }
+            builder.push_directory(&mut root)?;
+            for listing in &mut nested {
+                builder.push_directory(listing)?;
+            }
+            let total = builder.finish().total();
+            Ok((total.bytes, total.allocated))
+        };
+        let apply_lane = |layout: Layout, sizes: &[(u64, u64)]| -> Result<(u64, u64)> {
+            let mut index = Index::new("/root");
+            index.apply(&Observation::new(upserts(layout, sizes)))?;
+            let total = index.total();
+            Ok((total.bytes, total.allocated))
+        };
+        let routes =
+            |layout: Layout, sizes: &[(u64, u64)]| -> Vec<(&'static str, Result<(u64, u64)>)> {
+                vec![
+                    ("the summary fold", summary_fold(layout, sizes, false)),
+                    ("the classifying summary fold", summary_fold(layout, sizes, true)),
+                    ("the detached builder", builder(layout, sizes, false)),
+                    ("the folding builder", builder(layout, sizes, true)),
+                    ("the apply lane", apply_lane(layout, sizes)),
+                ]
+            };
+
+        let half = u64::MAX / 2 + 1;
+        for layout in [Layout::OneDirectory, Layout::DirectoryEach] {
+            for (sizes, counter) in [
+                (&[(half, 0), (half, 0), (half, 0)][..], "bytes"),
+                (&[(0, half), (0, half)][..], "allocated bytes"),
+            ] {
+                for (route, outcome) in routes(layout, sizes) {
+                    match outcome {
+                        Err(Error::UnrepresentableTotal { counter: refused, .. }) => {
+                            assert_eq!(refused, counter, "{route}, {layout:?}");
+                        }
+                        other => panic!(
+                            "{route}, {layout:?}: expected the {counter} total refused, got {other:?}"
+                        ),
+                    }
+                }
+            }
+            let exact = [(half, half), (half - 1, half - 1)];
+            for (route, outcome) in routes(layout, &exact) {
+                assert_eq!(
+                    outcome.expect("an exact fit is representable"),
+                    (u64::MAX, u64::MAX),
+                    "{route}, {layout:?}"
+                );
+            }
+        }
     }
 
     #[test]

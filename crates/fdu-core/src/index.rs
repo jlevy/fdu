@@ -331,6 +331,44 @@ impl RollUpScalars {
     }
 }
 
+/// Add one file's sizes to a whole-tree running total, or refuse the file whose sizes no
+/// `u64` can hold the sum of ([`crate::Error::UnrepresentableTotal`]), leaving the total
+/// as it was.
+///
+/// The routes that count a tree without committing observations keep this total where
+/// the apply lane runs [`Index::preflight_totals`]: the summary fold and the detached
+/// builder, full or folded. One total at the root is enough, for the reason the preflight
+/// gives: every directory's roll-up, extension tally, `unignored` partition, and folded
+/// tally is a sub-sum of the root's, so none of them can overflow once the root's fits,
+/// and the merges that build them add plainly. Only the two byte totals are checked: a
+/// count of files or directories cannot reach `u64::MAX`, since each one is an entry a
+/// walk visited. The byte totals can: a sparse file on tmpfs claims up to 8 EiB apparent
+/// and allocates nothing, so three of them carry the sum past `u64::MAX`, and they are
+/// refused alike on every route.
+#[inline]
+pub(crate) fn add_file_sizes(
+    bytes: &mut u64,
+    allocated: &mut u64,
+    attrs: &Attrs,
+    path: impl FnOnce() -> PathBuf,
+) -> crate::Result<()> {
+    match (bytes.checked_add(attrs.size), allocated.checked_add(attrs.allocated)) {
+        (Some(next_bytes), Some(next_allocated)) => {
+            *bytes = next_bytes;
+            *allocated = next_allocated;
+            Ok(())
+        }
+        (None, _) => Err(unrepresentable_file(path(), "bytes")),
+        (Some(_), None) => Err(unrepresentable_file(path(), "allocated bytes")),
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn unrepresentable_file(path: PathBuf, counter: &'static str) -> crate::Error {
+    crate::Error::UnrepresentableTotal { path, counter }
+}
+
 /// What a batch has done to the tree so far, for [`Index::replay_totals`]: which of the
 /// index's subtrees it has cut away and which entries it has put in their place.
 ///
@@ -485,6 +523,11 @@ impl FoldedFiles {
 impl InternedRollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
+    ///
+    /// The additions are plain because every sum they form is a sub-sum of a root total
+    /// already proved representable: by [`Index::preflight_totals`] on the apply lane, by
+    /// the running total [`add_file_sizes`] keeps in the detached builder, and by the sum
+    /// check a snapshot load makes.
     fn merge(&mut self, other: &InternedRollUp) {
         let had_files = self.files > 0;
         self.files += other.files;
@@ -1782,6 +1825,10 @@ pub(crate) struct DetachedIndexBuilder {
     /// everything below it, once per observation.
     repeated_directories: Vec<PathBuf>,
     inserted: u64,
+    /// The root's apparent and allocated bytes so far, which [`add_file_sizes`] refuses
+    /// to carry past `u64::MAX` before any roll-up merges a file.
+    total_bytes: u64,
+    total_allocated: u64,
     /// What a folded index has kept and folded so far, when this builds one.
     tree: Option<TreeFold>,
 }
@@ -1882,6 +1929,8 @@ impl DetachedIndexBuilder {
             directory_ids: HashMap::from([(PathBuf::new(), (EntryId::ROOT, Arc::default()))]),
             repeated_directories: Vec::new(),
             inserted: 0,
+            total_bytes: 0,
+            total_allocated: 0,
             tree: None,
         }
     }
@@ -1918,6 +1967,10 @@ impl DetachedIndexBuilder {
     /// allocated them (H159). A listing that is not applied keeps its children, and one a
     /// folded index applied keeps the names of the files it folded, for that worker to
     /// free as well.
+    ///
+    /// A file that would carry the tree's apparent or allocated bytes past `u64::MAX` is
+    /// refused with [`crate::Error::UnrepresentableTotal`], and the build with it, as the
+    /// apply lane refuses the batch that holds it ([`add_file_sizes`]).
     pub(crate) fn push_directory(
         &mut self,
         directory: &mut crate::scan::DetachedDirectory,
@@ -2003,10 +2056,18 @@ impl DetachedIndexBuilder {
         };
         self.index.reserve_detached_children(parent, entries);
         let path: &Path = path;
-        let mut classify_children = |directory: &[&[u8]]| {
+        let mut classify_children = |directory: &[&[u8]]| -> crate::Result<()> {
             for child in children.iter_mut() {
                 let &mut crate::scan::DetachedChild { ref mut name, kind, attrs, .. } = child;
                 crate::counters::bump(|counts| counts.upserts += 1);
+                if kind == EntryKind::File {
+                    add_file_sizes(
+                        &mut self.total_bytes,
+                        &mut self.total_allocated,
+                        &attrs,
+                        || path.join(&*name),
+                    )?;
+                }
                 let ext_id = (kind == EntryKind::File && self.tree.is_none())
                     .then(|| self.index.intern_ext(&crate::classify::ext_bucket(name)));
                 let ignored = if classifying {
@@ -2051,11 +2112,12 @@ impl DetachedIndexBuilder {
                 }
                 self.inserted = self.inserted.saturating_add(1);
             }
+            Ok(())
         };
         if classifying {
-            crate::control::with_directory_components(path, classify_children);
+            crate::control::with_directory_components(path, classify_children)?;
         } else {
-            classify_children(&[]);
+            classify_children(&[])?;
         }
         // Every name an entry kept has been taken. Only a folded index leaves any behind.
         if self.tree.is_none() {
