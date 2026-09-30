@@ -97,6 +97,15 @@ class CommandError(RuntimeError):
         super().__init__(f"{shlex.join(self.argv)}: {detail}")
 
 
+#: The shell's status for a command it cannot find.
+NOT_INSTALLED_STATUS = 127
+
+
+def not_installed(argv: Sequence[str]) -> CommandError:
+    """The failure of a command whose program is not on PATH."""
+    return CommandError(argv, NOT_INSTALLED_STATUS, f"{argv[0]}: not installed (not on PATH)")
+
+
 class Host:
     """Everything a step does outside this process, in one place a test can script."""
 
@@ -107,14 +116,25 @@ class Host:
         With `stderr`, the command's stderr follows its stdout in the result, for tools
         such as `git tag -v` that report on stderr.
         """
-        completed = subprocess.run(list(argv), cwd=cwd, capture_output=True, text=True, check=False)
+        try:
+            completed = subprocess.run(
+                list(argv), cwd=cwd, capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError:
+            # A missing tool is that command failing, not the step: every caller already
+            # turns a CommandError into its own line (fdu-wy2t).
+            raise not_installed(argv) from None
         if completed.returncode != 0:
             raise CommandError(argv, completed.returncode, completed.stderr)
         return completed.stdout + completed.stderr if stderr else completed.stdout
 
     def attach(self, argv: Sequence[str], *, cwd: Path | None = None) -> int:
         """Run a command on the maintainer's terminal and return its exit status."""
-        return subprocess.run(list(argv), cwd=cwd, check=False).returncode
+        try:
+            return subprocess.run(list(argv), cwd=cwd, check=False).returncode
+        except FileNotFoundError:
+            print(not_installed(argv), file=sys.stderr)
+            return NOT_INSTALLED_STATUS
 
     def fetch(self, url: str) -> bytes | None:
         """Read a public resource; None is an authoritative 404, anything else raises."""
