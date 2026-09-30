@@ -13,12 +13,13 @@ On Linux a stat of a directory’s child no longer mounts an unmounted autofs tr
 any route. Four Rust API changes are breaking: `counters::Counts` gains three public
 fields and is non-exhaustive, `Error` gains a variant, `UnrepresentableTotal`,
 `scan::ScanBackendDiagnostics` gains three public fields and is non-exhaustive, and
-`content::CoverageReason` gains a variant, `TextOnly`. A `.gitignore` that starts with a byte-order mark, or holds
-a NUL byte inside a line, now reads as git reads it, which changes the `.gitignore`
-semantics version: a snapshot written by an earlier release is rebuilt rather than
-served. A Markdown file over 64 MiB is counted as plain text under the words unit, and
-its row and report say so; content analysis of a one-line source or a large Markdown
-file no longer holds the file in memory.
+`content::CoverageReason` gains a variant, `TextOnly`. A `.gitignore` that starts with a
+byte-order mark, or holds a NUL byte inside a line, now reads as git reads it, which
+changes the `.gitignore` semantics version: a snapshot written by an earlier release is
+rebuilt rather than served.
+A Markdown file over 64 MiB is counted as plain text under the words unit, and its row
+and report say so; content analysis of a one-line source or a large Markdown file no
+longer holds the file in memory.
 No command-line option, report or cache schema, or Python API changed; a report’s
 coverage map has one more possible key, `text_only`.
 
@@ -101,19 +102,19 @@ coverage map has one more possible key, `text_only`.
 
 ### Fixed
 
-- A tree whose apparent or allocated bytes sum past what a `u64` can hold now fails
-  with `Error::UnrepresentableTotal` on every route, and `fdu` exits 1 naming the file
-  at which the total left the range.
+- A tree whose apparent or allocated bytes sum past what a `u64` can hold now fails with
+  `Error::UnrepresentableTotal` on every route, and `fdu` exits 1 naming the file at
+  which the total left the range.
   A filesystem can produce one: tmpfs, XFS, and btrfs let anyone create a sparse file
   that claims 8 EiB apparent and allocates nothing, so three of them in one directory
   are enough. Earlier releases panicked in debug builds and wrapped the total in release
   builds, so `fdu PATH` reported 8,191 PiB for that directory.
   A one-shot report, whether it folds a summary or builds a full or folded index, keeps
   one checked running total at the root, which bounds every directory’s total beneath
-  it. `Index::apply`, and every other route that commits a batch of observations,
-  refuses a batch that would carry a whole-tree total of files, directories, apparent
-  bytes, or allocated bytes out of range before it applies any of the batch: the index,
-  its clock, and its journal are as they were.
+  it. `Index::apply`, and every other route that commits a batch of observations, refuses
+  a batch that would carry a whole-tree total of files, directories, apparent bytes, or
+  allocated bytes out of range before it applies any of the batch: the index, its clock,
+  and its journal are as they were.
   A batch is applied in order, so the index must be representable after each of its
   operations; a replacement, a kind change, or a removal that makes room in the same
   batch counts. A snapshot whose recorded sizes sum past `u64` is now refused as corrupt
