@@ -152,7 +152,12 @@ coverage map has one more possible key, `text_only`.
   that would otherwise exhaust memory.
   Such a file counts every word as visible and each blank-line run as a paragraph; its
   row carries `counted as text`, machine output carries it under `text_only` in the
-  words coverage map, and the report notes how many files were counted that way and how.
+  words coverage map, and the report notes how many of the files its views show were
+  counted that way and how.
+  The bound is fixed: no option lifts it, which makes it the one bound without a flag.
+  [The design principles](docs/project/architecture/fdu-design-principles.md) record it
+  as a deliberate exception with that reason; lifting it needs an analyzer option in the
+  content identity, which the request model does not have yet.
   A Markdown file at or under the bound is rendered exactly, as before, and a file of
   any other type retains at most its 16 KiB classification prefix and one chunk, which a
   test now holds it to.

@@ -32,6 +32,12 @@ const ANALYSIS_BATCH_CANDIDATES: usize = 4096;
 /// largest in common corpora are a few megabytes, so every real file is rendered
 /// exactly, and the bound exists for the generated or concatenated file that would
 /// otherwise exhaust memory (fdu-b2qz).
+///
+/// Fixed: no request option lifts it, which makes it the one recorded exception to the
+/// rule that every bound is liftable (the design principles' "Truncate Freely; Never
+/// Truncate Silently" says why). Lifting it needs an analyzer option in the content
+/// identity, so that a lifted bound re-analyzes what it counted as text; [`AnalysisLimits`]
+/// is the seam such an option would fill.
 pub(crate) const MARKDOWN_EXACT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Resource limits an analysis pass runs under.
@@ -952,6 +958,42 @@ mod tests {
         let exact_report =
             crate::query::report(&exact, &exact_request, std::time::UNIX_EPOCH).expect("report");
         assert!(exact_report.notes.iter().all(|note| !note.contains("counted as plain text")));
+
+        // The note speaks for the report's selection, not for every record the index
+        // holds: a selection that leaves the Markdown file out says nothing of it, and two
+        // views of one selection count it once.
+        let notes_for = |views: Vec<crate::query::ViewSpec>, include: &[&str]| {
+            let selection = crate::query::Selection {
+                include: include
+                    .iter()
+                    .map(|source| crate::query::Pattern::parse(source).expect("pattern"))
+                    .collect(),
+                ..crate::query::Selection::default()
+            };
+            let query = crate::query::Query { selection, views, ..crate::query::Query::default() };
+            let request = crate::query::Request::new(
+                crate::query::Basis::held_by(&bounded),
+                query,
+                std::time::UNIX_EPOCH,
+            );
+            crate::query::report(&bounded, &request, std::time::UNIX_EPOCH).expect("report").notes
+        };
+        let text_only = |notes: &[String]| -> Vec<String> {
+            notes.iter().filter(|note| note.contains("counted as plain text")).cloned().collect()
+        };
+        let documents = crate::query::ViewSpec::Documents;
+        let types = crate::query::ViewSpec::Types;
+        assert_eq!(
+            text_only(&notes_for(vec![documents], &["*.txt"])),
+            Vec::<String>::new(),
+            "no selected row was counted as text"
+        );
+        assert_eq!(
+            text_only(&notes_for(vec![documents, types], &[])),
+            ["note: 1 Markdown file over 64 MiB counted as plain text: every word counted \
+              visible, paragraphs are blank-line runs"],
+            "two views of one selection count the file once"
+        );
     }
 
     /// The other half of the bound (fdu-b2qz): a file of unknown type retains at most

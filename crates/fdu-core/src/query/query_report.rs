@@ -1563,16 +1563,24 @@ pub(crate) fn report_in(
         tips.push(format!("tip: show analysis: {} families, languages, or full", query.axes.view));
     }
     if content.includes_words() {
-        let wanted = index.content_identity(content);
-        let text_only = index.content().and_then(|held| held.admit(&wanted)).map_or(0, |held| {
-            held.records()
-                .filter(|(_, analysis)| {
-                    analysis.words.is_some_and(|words| {
-                        words.coverage() == crate::content::CoverageReason::TextOnly
-                    })
-                })
-                .count()
-        });
+        // Of the files the report's views show, not of every record the index holds: a
+        // selection that leaves a Markdown file out says nothing of it. Each metric view's
+        // total counts the selection before its rows are bounded, and every view that
+        // groups Markdown counts all of it, so the largest total is the count; a sum would
+        // count one file once per view.
+        let text_only = sections
+            .iter()
+            .filter_map(|section| match section {
+                Section::Metrics { summary, .. } => summary
+                    .total
+                    .words_coverage
+                    .as_ref()?
+                    .get(&crate::content::CoverageReason::TextOnly)
+                    .copied(),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
         if text_only > 0 {
             let files = if text_only == 1 { "file" } else { "files" };
             notes.push(format!(

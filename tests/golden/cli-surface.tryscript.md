@@ -381,6 +381,8 @@ analysis. `--view full` includes Code only with code analysis and Documents with
 analyzer, naming inapplicable views as skipped.
 Use `--workers` to bound concurrent reads and `--words-per-page` to control page
 derivation. Analysis never truncates a file or excludes it because of size.
+One fixed bound changes a method: `words` counts a Markdown file over 64 MiB as plain
+text, read whole but not rendered, and says so (`counted as text`, `text_only`, a note).
 Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.
