@@ -8,7 +8,7 @@ It exists so that any contributor — human or agent — can pick the loop up mo
 re-run it, and get numbers comparable to the ones already recorded.
 
 New here? To run the next iteration, start at
-[the runbook’s Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
+[the runbook’s Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30).
 [The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
 is the history through 2026-08-23. This document is the protocol.
 
@@ -288,7 +288,7 @@ source-checkout is the live metabrowser clone (the 2026-08 corpus path is gone).
 Current sizes are in
 [the runbook standing](performance-loop-runbook.md#current-standing-2026-09-18); the
 action order is in
-[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30).
 
 ### Say where the tree came from
 
@@ -768,7 +768,7 @@ enforce this along with the standalone document shape.
 ## Hypotheses
 
 Kept as a live list; the *ordering* — which of these to run next and why — is in
-[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30).
 [The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
 records the earlier Darwin queue, not current priorities.
 [The campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) is
@@ -794,7 +794,7 @@ design study’s; H174–H180 come from
 [the overnight plan of 2026-09-29](../specs/active/plan-2026-09-29-linux-overnight-performance-loop.md))
 so no id ever means two things.
 The next free ids, and any blocks reserved for parallel work, are in
-[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27). Each hypothesis
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30). Each hypothesis
 is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -825,7 +825,7 @@ record of what that later experiment actually tested.
 
 The post-0.1.0 registry began at **H107**. Do not mint another meaning for H91–H106; the
 current next-free id is in
-[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30).
 
 ### Current engine (0.1.0)
 
@@ -1056,7 +1056,7 @@ module any other way does not resolve the package.
 subjects, start to finish, including the record and the handoff.
 Its [current standing](performance-loop-runbook.md#current-standing-2026-09-18) records
 standing best, regime, and subjects;
-[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-27) owns the next-up
+[Current Pickup](performance-loop-runbook.md#current-pickup-2026-09-30) owns the next-up
 order. Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
 `PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
 directly to the harness contracts.

@@ -5,7 +5,7 @@
 **Author:** fdu project, with Claude Code assistance
 
 **Status:** Orientation through 2026-08-23. Current work starts at
-[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 
 The [current work map](../../../TODO.md#performance-and-evidence) records remaining
 owners after the 2026-09-27 tracking review.
@@ -302,7 +302,7 @@ untested on macOS.
 ## 6. What remains
 
 The current action order is in
-[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 [The post-H115 headroom block](../specs/active/plan-2026-09-19-post-h115-remaining-headroom.md)
 preserves the earlier Darwin queue, not the live next-up.
 H86’s remaining gap is still the Linux floor after H111 failed on

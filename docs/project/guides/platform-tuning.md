@@ -114,7 +114,7 @@ The Linux scouting measured a warm single-threaded floor of about **1.5 µs per 
 some twenty times below the threshold.
 If warm Linux service time never approaches 30 µs, the trigger never fires, and an
 automatic scan stays at its six-worker cap in every regime the threshold was meant to
-distinguish. That is a concrete mechanism for the one place Linux measurement found fdu
+distinguish. That is a concrete mechanism for the one place the Linux scouting found fdu
 behind: `diskus`, which runs three times the core count, led the cold scalar class by
 22.8%.
 

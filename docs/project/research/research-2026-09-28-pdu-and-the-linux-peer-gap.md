@@ -634,7 +634,7 @@ rules better, and whether to accept a dependency is the maintainer’s decision.
    [+1.21%, +12.87%], is a regression interval), accepted on the directory-dense
    `node-modules-dense` (exp-190, −8.61%); #150 merged into 0.2.1.
 2. **Take the build order from the runbook** (2026-09-29). The order now lives in
-   [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-27); as
+   [Current Pickup](../guides/performance-loop-runbook.md#current-pickup-2026-09-30); as
    of this brief, H171 came next, from the
    [design study](research-2026-09-29-linux-default-tree-point-solution.md), whose
    outcomes are registry rows [H171–H173](../guides/performance-loop.md#hypotheses).

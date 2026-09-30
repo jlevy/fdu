@@ -194,7 +194,7 @@ launch; this plan reserves none.
 
 ## References
 
-- [Current pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-27)
+- [Current pickup](../../guides/performance-loop-runbook.md#current-pickup-2026-09-30)
 - [Performance loop and gates](../../guides/performance-loop.md)
 - [Benchmark storage and command contracts](../../../../explorations/benchmarks/README.md)
 - [H153 experiment](../../experiments/exp-159-share-content-metric-resolution-across-views.md)

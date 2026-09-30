@@ -207,7 +207,7 @@ is a lost event and fails regardless.
 ## Performance Work
 
 To run one more iteration, start at
-[the runbook’s Current Pickup](docs/project/guides/performance-loop-runbook.md#current-pickup-2026-09-27).
+[the runbook’s Current Pickup](docs/project/guides/performance-loop-runbook.md#current-pickup-2026-09-30).
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
 current strategy — what to work on next, with floor-anchored priorities and per-tier
