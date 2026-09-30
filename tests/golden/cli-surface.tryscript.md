@@ -661,7 +661,7 @@ dropped section fails here rather than in somebody’s terminal.
 $ fdu --docs
 fdu — the fastest du replacement, with file tree analysis.
 
-  fdu reports, for every directory in a tree at once, its size, file count,
+  For every directory in a tree at once, fdu reports its size, file count,
   recency, and file kinds, and on request its lines of code and prose volume.
   It walks the tree on several threads through each platform's native
   directory interface; on a million-file tree it runs about 9x as fast as du
