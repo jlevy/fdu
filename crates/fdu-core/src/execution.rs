@@ -965,17 +965,21 @@ mod tests {
     #[test]
     fn byte_wise_path_splits_match_the_parsed_ones() {
         use std::ffi::{OsStr, OsString};
-        let mut paths: Vec<OsString> =
-            ["", "a", "a/b", "a/b/c.txt", ".gitignore", "d.d/.h", "x/..y"]
-                .into_iter()
-                .map(OsString::from)
-                .collect();
+        let named = ["", "a", "a/b", "a/b/c.txt", ".gitignore", "d.d/.h", "x/..y"]
+            .into_iter()
+            .map(OsString::from);
         #[cfg(unix)]
-        {
+        let paths: Vec<OsString> = {
             use std::os::unix::ffi::OsStringExt as _;
-            paths.push(OsString::from_vec(b"d\xff/f\xfe".to_vec()));
-            paths.push(OsString::from_vec(b"\xfe".to_vec()));
-        }
+            named
+                .chain([
+                    OsString::from_vec(b"d\xff/f\xfe".to_vec()),
+                    OsString::from_vec(b"\xfe".to_vec()),
+                ])
+                .collect()
+        };
+        #[cfg(not(unix))]
+        let paths: Vec<OsString> = named.collect();
         for path in &paths {
             let path = Path::new(path);
             let (parent, name) = crate::control::split_parent(path);
