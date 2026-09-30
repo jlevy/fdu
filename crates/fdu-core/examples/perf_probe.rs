@@ -2986,10 +2986,17 @@ mod tests {
     fn component_counters_exclude_validation_but_retain_late_worker_counts() {
         use fdu_core::counters::Counts;
 
-        let before = Counts { allocs: 10, ..Counts::default() };
-        let validation_before = Counts { allocs: 5, ..Counts::default() };
-        let validation_after = Counts { allocs: 35, ..Counts::default() };
-        let after = Counts { allocs: 140, opened_accepted_ops: 7, ..Counts::default() };
+        // `Counts` is non-exhaustive, so a literal cannot build it from outside the crate.
+        let with_allocs = |allocs: u64| {
+            let mut counts = Counts::default();
+            counts.allocs = allocs;
+            counts
+        };
+        let before = with_allocs(10);
+        let validation_before = with_allocs(5);
+        let validation_after = with_allocs(35);
+        let mut after = with_allocs(140);
+        after.opened_accepted_ops = 7;
 
         let counts =
             CounterSummary::between(&before, &after, Some((&validation_before, &validation_after)));

@@ -22,7 +22,12 @@ pub mod process;
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Per-layer tallies for a walk, index build, and content pass.
+///
+/// Non-exhaustive, so a later counter is an additive change: outside this crate, build
+/// one with [`Counts::default`] and read or assign its fields, rather than with a struct
+/// literal or an exhaustive destructure (fdu-8f6k).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Counts {
     /// Logical directory-open operations.
     pub dir_opens: u64,

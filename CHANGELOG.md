@@ -28,10 +28,11 @@ No command-line option, report or cache schema, or Python API changed.
 
 - **Breaking:** `fdu_core::counters::Counts` gains three public fields,
   `ignore_patterns_tested`, `ignore_bucket_probes`, and `ignore_bucket_hits`, which
-  carry the rows above.
-  Rust code that builds `Counts` with a struct literal must name them or end the literal
-  with `..Counts::default()`, and code that destructures it exhaustively must name them
-  or use `..`; code that only reads its fields is unaffected.
+  carry the rows above, and is now `#[non_exhaustive]`, so a later counter is an
+  additive change rather than another breaking one.
+  Rust code outside the engine crate that built `Counts` with a struct literal, or
+  destructured it exhaustively, must build it with `Counts::default()` and read or
+  assign its fields instead; code that only reads its fields is unaffected.
 - **Breaking:** `fdu_core::Error` gains `UnrepresentableTotal { path, counter }`, which
   `Index::apply` returns for the batch below; code that matches `Error` exhaustively
   must name it or use a wildcard arm.
