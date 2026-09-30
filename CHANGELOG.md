@@ -7,7 +7,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-01
+## [0.3.0] - 2026-09-30
 
 fdu 0.3.0 is a breaking release focused on Linux speed and stability.
 On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
