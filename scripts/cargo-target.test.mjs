@@ -138,7 +138,7 @@ test("a target directory another checkout built is rebuilt from this one (fdu-8w
 test("every target that compiles a workspace crate first checks who owns the target directory", () => {
   const makefile = readFileSync(join(ROOT, "Makefile"), "utf8");
   const compiles =
-    /\$\(CARGO\)(?:\s+\+\$\(MSRV\))?\s+(?:build|test|clippy|doc|check|package|run)\b|maturin build|--group dev pytest|run_concurrency\.py/;
+    /\$\(CARGO\)(?:\s+\+\$\(MSRV\))?\s+(?:build|test|clippy|doc|check|package|run)\b|maturin build|\s--group dev\b.*\bpytest\b|run_concurrency\.py/;
   const builders = new Set();
   let currentTargets = [];
   for (const line of makefile.split("\n")) {
@@ -162,4 +162,15 @@ test("the sdist smoke builds the sdist in a target directory of its own", () => 
   const recipe = dryRun("python-sdist-smoke", { CARGO_TARGET_DIR: ELSEWHERE });
   const install = recipe.split("\n").find((line) => /\bpip install\b/.test(line));
   assert.match(install ?? "", /env -u CARGO_TARGET_DIR \S*uv pip install/, recipe);
+});
+
+test("python-check rebuilds the editable native extension before pytest (fdu-35b1, fdu-ukg6)", () => {
+  // uv reinstalls a local project only when its cache keys change, and by default those
+  // are Python metadata files, so a Rust change left the old _native.abi3.so in place and
+  // pytest ran the current wrappers against it. Keys cannot fix it here: uv reads them
+  // only from pyproject.toml and warns that the adjacent uv.toml overrides them.
+  const recipe = dryRun("python-check");
+  const pytest = recipe.split("\n").filter((line) => /\bpytest\b/.test(line));
+  assert.equal(pytest.length, 1, recipe);
+  assert.match(pytest[0], /\s--reinstall-package fdu\s/, pytest[0]);
 });

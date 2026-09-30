@@ -476,13 +476,20 @@ python-concurrency:
 # repository-level release scripts and tests, which have no pyproject of their own.
 PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../scripts/run_installed_cli_qa.py ../../scripts/qa_peer_agreement.py ../../tests/release ../../tests/parity ../../tests/path_independence ../../tests/correctness ../../tests/terminal ../../explorations/benchmarks/realtree/validate.py ../../explorations/benchmarks/realtree/tests/test_validate.py
 
+# pytest imports the editable install, whose compiled half uv rebuilds only when a cache
+# key changes -- by default Python metadata files, never the Rust. A reused .venv then
+# ran current wrappers against an extension from before the last native change
+# (fdu-35b1, fdu-ukg6). Cache keys cannot express it here: uv reads them only from
+# pyproject.toml, and warns on every run that the adjacent uv.toml overrides them. So the
+# test run always rebuilds the editable extension; cargo decides what is actually stale,
+# and target-owner keeps that decision honest in a shared target directory.
 python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		ruff format --check --config pyproject.toml $(PYTHON_LINT_PATHS)
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		ruff check --config pyproject.toml $(PYTHON_LINT_PATHS)
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev basedpyright
-	$(UV) run --directory crates/fdu-py --frozen --group dev pytest
+	$(UV) run --directory crates/fdu-py --frozen --group dev --reinstall-package fdu pytest
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
