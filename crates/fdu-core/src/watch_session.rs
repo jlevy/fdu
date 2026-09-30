@@ -1359,9 +1359,29 @@ mod tests {
         let plain = Session::start(request(), delivery).expect("plain start");
         let generated_at = std::time::SystemTime::now();
         let observed_report = session.report(generated_at).expect("observed report");
-        let plain_report = plain.report(generated_at).expect("plain report");
-        assert!(observed_report.status.complete);
-        assert!(plain_report.status.complete);
+        let mut plain_report = plain.report(generated_at).expect("plain report");
+        // A native watcher registered a moment after a directory was created may still
+        // report it, and the engine records that truthfully as a setup-race observation
+        // gap beside the facts it re-verified (fdu-21ns). That diagnostic is the only
+        // way the watched answer may differ from the plain one; anything else is a real
+        // difference, and the facts both report are compared with it set aside.
+        let setup_race = format!("{:?}", crate::InvalidateReason::WatchSetupRace);
+        let setup_race_only = observed_report.status.errors.iter().all(|issue| {
+            issue.kind == crate::IssueKind::ObservationGap && issue.message.ends_with(&setup_race)
+        });
+        assert!(
+            observed_report.status.complete || setup_race_only,
+            "the watched answer is complete or carries only setup-race gaps: {:?}",
+            observed_report.status
+        );
+        assert!(plain_report.status.complete, "{:?}", plain_report.status);
+        plain_report.provenance = observed_report.provenance.clone();
+        plain_report.status = observed_report.status.clone();
+        let json = |report: &Report| {
+            crate::report_format::render(report, crate::report_format::Format::Json, false)
+                .expect("render")
+        };
+        assert_eq!(json(&plain_report), json(&observed_report), "the same facts either way");
         assert_eq!(progress.snapshot(), after_start, "the second start was not observed");
     }
 
