@@ -353,6 +353,36 @@ export function validateWorkflowSecurity(workflows) {
   }
 }
 
+/**
+ * Require every workflow step that runs the supply-chain tests to run exactly the files
+ * `npm run test:supply-chain` runs, which is what `make supply-chain` runs.
+ *
+ * Each provenance job repeats that list as its own `node --test` line, and a file added
+ * to package.json alone is then tested on every developer machine and in no workflow, as
+ * scripts/cargo-target.test.mjs was. Order does not matter; membership does.
+ */
+export function validateSupplyChainTestLists(packageText, workflows) {
+  const script = JSON.parse(packageText).scripts?.["test:supply-chain"];
+  if (typeof script !== "string" || !/^node --test(?:\s+[\w./-]+)+$/.test(script)) {
+    fail('package.json: "test:supply-chain" must be a single node --test command');
+  }
+  const files = (command) => command.trim().split(/\s+/).slice(2).sort().join(" ");
+  const expected = files(script);
+  for (const workflow of workflows) {
+    const steps = workflow.text.matchAll(
+      /^\s*-?\s*run:\s*(node --test scripts\/check-supply-chain\.test\.mjs\b.*)$/gm,
+    );
+    for (const [, command] of steps) {
+      if (files(command) !== expected) {
+        fail(
+          `${workflow.path}: the supply-chain tests must be the files npm run test:supply-chain runs: ` +
+            script.replace(/^node --test\s+/, ""),
+        );
+      }
+    }
+  }
+}
+
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function fetchWithRetry(url, headers, fetchImpl = fetch, wait = delay) {
@@ -947,9 +977,10 @@ async function main() {
     exceptions: policy.exceptions,
     firstParty: policy.firstParty ?? [],
   };
-  const [cargoText, npmText, uvTexts, workflows] = await Promise.all([
+  const [cargoText, npmText, packageText, uvTexts, workflows] = await Promise.all([
     readFile(path.join(ROOT, "Cargo.lock"), "utf8"),
     readFile(path.join(ROOT, "package-lock.json"), "utf8"),
+    readFile(path.join(ROOT, "package.json"), "utf8"),
     Promise.all(UV_LOCKS.map((lock) => readFile(path.join(ROOT, ...lock), "utf8"))),
     workflowFiles(ROOT),
   ]);
@@ -958,6 +989,7 @@ async function main() {
   const python = uvTexts.flatMap((text) => parseUvLock(text));
   const actions = parseActionUses(workflows);
   validateWorkflowSecurity(workflows);
+  validateSupplyChainTestLists(packageText, workflows);
 
   await Promise.all([
     verifyCargo(cargo, context),

@@ -395,17 +395,19 @@ clippy:
 #
 # The Linux `getdents64` reader is gated on glibc as well as Linux, so a 64-bit glibc host
 # sees only one shape of it: i686 glibc checks it at 32-bit widths (`c_long`, `time_t`,
-# the `statx` size assertion), and x86_64 musl checks that the gate leaves the portable
-# path compiling cleanly without it.
+# the `statx` size assertion), x86_64 musl checks that the gate leaves the portable
+# path compiling cleanly without it, and aarch64 glibc checks the shape the arm64 wheel
+# ships: its own syscall numbers and open flags, and an unsigned `c_char`. CI's arm64 job
+# also runs that shape's tests.
 #
 # Checking, not building: no linker for the other platforms is needed, so this runs
 # anywhere. Add the targets once with
 #   rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc \
-#     i686-unknown-linux-gnu x86_64-unknown-linux-musl
+#     i686-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-gnu
 # and this target skips any that are missing rather than failing, so it stays usable on
 # a machine that has not installed them.
 CROSS_TARGETS := x86_64-apple-darwin x86_64-pc-windows-msvc i686-unknown-linux-gnu \
-	x86_64-unknown-linux-musl
+	x86_64-unknown-linux-musl aarch64-unknown-linux-gnu
 
 cross-lint:
 	@installed="$$(rustup target list --installed 2>/dev/null)"; \
