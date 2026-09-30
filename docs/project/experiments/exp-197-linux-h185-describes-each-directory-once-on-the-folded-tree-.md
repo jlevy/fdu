@@ -487,3 +487,16 @@ wide to bound; the end-to-end cell measures it again.
 Linux only in effect: the macOS listing carries every child’s attributes, so the change
 is a no-op there (M11 in the platform review).
 About 120 lines in `c0da65ae`, half of them the policy test.
+
+**Amended after review** (R163-1). A stat is also an observation of failure: on a
+directory that lists but refuses search (mode `0400`), the measured build admitted a
+subdirectory and a symlink from `d_type` where the full index reports each child as an
+error, so “answers identical” held on the three subjects, none of which has such a
+directory, and not on every tree.
+The shipped policy (`0e59c387`) stats each listing’s children until one stat succeeds,
+which proves the directory searchable, and only then takes kinds from `d_type`; the
+transient-versus-indexed differentials now hold such a directory, and fail without the
+latch when run as an unprivileged user.
+`statx` is 72,075 on `node-modules-dense` and 87,656 on `linux-v6.12` with the proof,
+against the 70,416 and 87,006 above, so 83% and 89% of the saving is kept; the
+difference is below what a 20-pair cell resolves and was not re-measured on wall.
