@@ -136,8 +136,10 @@ performance-probe:
 	$(CARGO) test --locked -p fdu-core --example perf_probe --no-default-features
 	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 
+# The first suite runs without a project, so nothing else names its interpreter: uv would
+# take the host's python3, and on 3.11 the suite fails for want of 3.12 (fdu-kiuu).
 test-performance: performance-probe
-	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
+	PYTHONPATH=explorations $(UV) run --no-project --python 3.12 python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 	$(PERF_UV) --group dev python -m unittest discover -s explorations/benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate

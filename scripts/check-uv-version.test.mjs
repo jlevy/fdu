@@ -94,6 +94,20 @@ test("every directly uv-backed Make target depends on the version guard", () => 
   }
 });
 
+test("every projectless uv run names its interpreter", () => {
+  // Without a project there is no requires-python to satisfy, so uv takes the host's
+  // default python3 -- 3.11 on some hosts, where the benchmark tests cannot run
+  // (fdu-kiuu). Every such recipe names the interpreter the way release-test does.
+  const makefile = readFileSync(join(ROOT, "Makefile"), "utf8");
+  const projectless = makefile
+    .split("\n")
+    .filter((line) => /\$\(UV\) run\b[^\n]*--no-project\b/.test(line));
+  assert(projectless.length > 0);
+  for (const line of projectless) {
+    assert.match(line, /--no-project --python \S+ python\b/, line.trim());
+  }
+});
+
 test("every environment a wheel smoke creates names a GIL-enabled interpreter", () => {
   // uv picks a free-threaded CPython when it manages one, and the cp312-abi3 wheel cannot
   // install there, so an environment created without --python fails the gate on such a
