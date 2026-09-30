@@ -16,7 +16,10 @@ without writing a filesystem walker.
   [pdu](https://github.com/KSXGitHub/parallel-disk-usage),
   [diskus](https://github.com/sharkdp/diskus), and
   [dust](https://github.com/bootandy/dust).
-  See [Speed](#speed).
+  That is roughly 900,000 files (3 GB) a second on Linux and 140,000 files (0.5 GB) a
+  second on macOS. Counting source lines reads every file, at roughly 10,000 files (0.18
+  GB) a second on a first run and 160,000 files a second when a repeated run answers
+  from its cache. See [Speed](#speed).
 - **Text, file, and code analysis:** Rolls up content metrics, including lines, source
   code lines by language, and words, paragraphs, and pages for Markdown and text.
 - **Cached statistics:** Content metrics require reading files, so fdu caches them
@@ -443,9 +446,20 @@ a multiple of fdu’s time (lower is faster):
 | [dumac](https://github.com/healeycodes/dumac#readme) | — | 1.09× |
 | BSD `du` | — | 9.0× |
 
-Linux is a 4-vCPU virtual machine on ext4; macOS is an M1 Pro on APFS.
-[Speed](docs/speed.md) gives each run’s date, engine, intervals, and memory, and the
-results on real source trees.
+Linux is a 4-vCPU virtual machine on ext4; macOS is an M1 Pro on APFS. On that tree’s
+875,000 files and 2.99 GB of allocated space, fdu’s default report covers about 920,000
+files and 3.1 GB a second on Linux, and 137,000 files and 0.47 GB a second on macOS.
+Sizing a file reads its metadata, not its contents.
+
+Counting source lines reads every byte.
+On the Linux v6.12 source, 86,618 files and 1.48 GB, `fdu --analyze=code` took 8.2 s on
+a first run, about 10,600 files and 0.18 GB a second;
+[scc](https://github.com/boyter/scc) took 1.4 s and
+[tokei](https://github.com/XAMPPRocky/tokei) 2.2 s. Run again, fdu answered from its
+content cache in 0.55 s, about 158,000 files a second and 2.5 times as fast as scc.
+
+[Performance Measurements](docs/performance-measurements.md) gives each run’s date,
+engine, intervals, and memory, and the results on real source trees.
 
 ## Comparison to Alternatives
 
