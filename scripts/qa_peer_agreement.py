@@ -55,6 +55,12 @@ from functools import partial
 from itertools import pairwise
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # Run as a script: make the repository root importable, as the tests have it.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.atomic_write import write_text_atomic
+
 METRICS = ("allocated", "apparent")
 
 
@@ -826,7 +832,7 @@ def main() -> int:
         record = measure(root.expanduser().resolve(), args.fdu, args.timeout, du)
         data.append(record)
         if args.json:
-            args.json.write_text(json.dumps(data, indent=1), encoding="utf-8")
+            write_text_atomic(args.json, json.dumps(data, indent=1), encoding="utf-8")
         text, failed, unchecked = judge(record, args.full_paths)
         failures += failed
         unverified += unchecked

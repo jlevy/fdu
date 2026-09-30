@@ -32,6 +32,12 @@ from enum import StrEnum
 from pathlib import Path
 from shutil import which
 
+if __package__ in (None, ""):
+    # Run as a script: make the repository root importable, as the tests have it.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.atomic_write import write_text_atomic
+
 FOOTER_RE = re.compile(r"analysis (?P<fresh>[0-9,]+) fresh.*?(?P<cached>[0-9,]+) cached")
 SOURCE_RE = re.compile(r"(cold scan|warm revalidation|cache only)")
 
@@ -300,24 +306,6 @@ def cache_env(base: dict[str, str], cache_home: Path) -> dict[str, str]:
     return env
 
 
-def atomic_write_text(path: Path, text: str) -> None:
-    """Install `text` at `path` only after the write succeeds.
-
-    Results files are the dated-report source. A truncate-in-place write can leave
-    an empty table if the process dies mid-write.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(tmp_path, path)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
-
-
 class Runner:
     def __init__(self, args: Args, out_dir: Path, fdu: Path) -> None:
         self.args = args
@@ -470,7 +458,7 @@ def write_outputs(out_dir: Path, suite: Suite) -> None:
                 row.argv,
             ]
         )
-    atomic_write_text(out_dir / "results.tsv", tsv_buf.getvalue())
+    write_text_atomic(out_dir / "results.tsv", tsv_buf.getvalue(), encoding="utf-8")
 
     lines = [
         "| Phase | Name | Verdict | Exit | Real s | RSS MiB | Note |",
@@ -483,7 +471,7 @@ def write_outputs(out_dir: Path, suite: Suite) -> None:
         lines.append(
             f"| {row.phase} | {row.name} | {row.verdict} | {row.exit} | {real} | {rss} | {note} |"
         )
-    atomic_write_text(out_dir / "results.md", "\n".join(lines) + "\n")
+    write_text_atomic(out_dir / "results.md", "\n".join(lines) + "\n", encoding="utf-8")
     payload = {
         "version": suite.version,
         "fdu": suite.fdu,
@@ -492,7 +480,9 @@ def write_outputs(out_dir: Path, suite: Suite) -> None:
         "stopped_reason": suite.stopped_reason,
         "rows": [asdict(row) for row in suite.rows],
     }
-    atomic_write_text(out_dir / "results.json", json.dumps(payload, indent=2) + "\n")
+    write_text_atomic(
+        out_dir / "results.json", json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def phase_sanity(runner: Runner) -> None:

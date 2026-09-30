@@ -23,10 +23,10 @@ import {
   rmSync,
   statSync,
   symlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { writeFileAtomicSync } from './atomic-write.mjs';
 import { CLASSES, classify, normalisePortableValues, parseSessions } from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
@@ -97,7 +97,7 @@ for (const entry of readdirSync(golden)) {
       .split('\n')
       .filter((line) => !line.startsWith('! perf: '))
       .join('\n');
-    writeFileSync(join(corpus, entry), text);
+    writeFileAtomicSync(join(corpus, entry), text);
   } else if (statSync(from).isDirectory()) {
     // fixtures/ and bin/ are resolved relative to the session file.
     symlinkSync(from, join(corpus, entry), 'dir');
@@ -221,7 +221,7 @@ if (observed.slice(HEADER.length).trim().length === 0) {
 }
 
 if (update) {
-  writeFileSync(artifact, observed);
+  writeFileAtomicSync(artifact, observed);
   console.log(`run-parity: wrote ${artifact}`);
   process.exit(0);
 }

@@ -56,8 +56,10 @@ const TEST_DIRECTORIES = [
 
 // Test support outside those names: every write in these files builds a test's input.
 export const FIXTURE_BUILDERS = new Map([
+  ["scripts/check-yaml.mjs", "builds the tree the YAML self-check scans"],
   ["tests/correctness/build_tree.py", "builds the correctness runbook's scan tree"],
   ["tests/path_independence/fixture.py", "builds and copies the matrix's scan tree"],
+  ["tests/path_independence/matrix.py", "mutates the scan tree; an in-place rewrite is the change"],
   ["tests/golden/bin/cache-plant.mjs", "plants damaged cache files for a golden to reject"],
   ["tests/golden/bin/directory-builds.cjs", "builds the tree a golden scans"],
   ["tests/golden/bin/watch-capture.mjs", "each write is a change the watch golden observes"],
@@ -87,6 +89,29 @@ export const EXCEPTIONS = new Map([
     ],
   ],
   [
+    "scripts/qa_peer_agreement.py",
+    [{ site: "(probe / ", reason: "builds the self-test's scan tree" }],
+  ],
+  [
+    "scripts/run_installed_cli_qa.py",
+    [
+      {
+        site: "(watch_root / ",
+        reason: "the watched tree; each write is a change the watch run must report",
+      },
+      {
+        site: 'with out_path.open("wb") as out, err_path.open("wb") as err:',
+        reason:
+          "a child's live stdout and stderr, incremental on purpose so a long run can be " +
+          "followed; only this run reads them, after the child exits",
+      },
+    ],
+  ],
+  [
+    "tests/path_independence/runner.py",
+    [{ site: "shutil.copytree(warmed, xdg)", reason: "copies a warmed cache in as a case's input" }],
+  ],
+  [
     "scripts/release/publish_gate.py",
     [{ site: 'with path.open("a", encoding="utf-8") as output:', reason: GITHUB_OUTPUT }],
   ],
@@ -103,11 +128,6 @@ export const MIRRORS = new Map([]);
 // Paths not yet converted, with the bead that converts them. Temporary: each conversion
 // removes its entries, and the list is gone once the last lands.
 export const PENDING = new Map([
-  ["scripts/run_installed_cli_qa.py", "fdu-h18s"],
-  ["scripts/qa_peer_agreement.py", "fdu-h18s"],
-  ["scripts/check-yaml.mjs", "fdu-h18s"],
-  ["scripts/run-parity.mjs", "fdu-h18s"],
-  ["tests/path_independence/", "fdu-h18s"],
   ["explorations/benchmarks/", "fdu-jf2n"],
   ["explorations/fsevents-replay/", "fdu-lxuv"],
   ["explorations/change-sources/", "fdu-lxuv"],

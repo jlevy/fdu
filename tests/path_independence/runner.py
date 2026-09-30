@@ -36,10 +36,13 @@ from typing import Any, Literal
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
+if str(REPO) not in sys.path:
+    sys.path.append(str(REPO))
 
 import matrix  # noqa: E402
 import registry  # noqa: E402
 from fixture import FixtureFacts, build_fixture, copy_fixture  # noqa: E402
+from scripts.atomic_write import write_text_atomic  # noqa: E402
 
 Outcome = Literal["complete", "partial", "failure"]
 
@@ -854,7 +857,7 @@ def write_diffs(result: RunResult, keys: set[str], out: Path) -> None:
             right = _render(case.measured)
             lines += difflib.unified_diff(left, right, "cold", "measured", lineterm="")
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", case.key) + ".diff"
-        (out / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        write_text_atomic(out / name, "\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _render(invocation: Invocation) -> list[str]:
@@ -946,7 +949,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.record is not None:
         recorded = registry.record(known, judged_cases(result), platform=sys.platform)
         args.record.parent.mkdir(parents=True, exist_ok=True)
-        args.record.write_text(registry.dump(recorded), encoding="utf-8")
+        write_text_atomic(args.record, registry.dump(recorded), encoding="utf-8")
         print(f"recorded {len(recorded.all_entries())} known violations to {args.record}")
         if args.record.resolve() == registry.DEFAULT_PATH:
             known = recorded
