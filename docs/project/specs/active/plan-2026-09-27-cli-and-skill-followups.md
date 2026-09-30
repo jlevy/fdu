@@ -45,10 +45,11 @@ ownership.
 `fdu-qut8` is repository tracking work rather than a CLI behavior change.
 It remains listed with its existing epic for continuity; it should not block completion
 of the product surface.
-`fdu-f7cf` is an independent prerequisite: the verifier currently reports mismatches
-from YAML escaping, empty versus null `spec_path`, and a notes heading.
-Determine whether the notes case is parser ambiguity or genuine data loss before
-trusting a scheduled result.
+`fdu-f7cf`, an independent prerequisite, is resolved: the verifier reads the synced YAML
+as tbd writes it and splits the body as tbd reads it, so YAML escapes, empty versus null
+`spec_path`, and notes that open with their own `## Notes` heading no longer report
+mismatches. The notes case was the verifier’s split, not data loss: tbd splits at the
+first such heading and keeps the rest.
 
 `fdu-cw36` separately tracks managed tbd skill drift after repository Markdown
 formatting. Current generated content is present, but `tbd doctor` compares its
