@@ -17,6 +17,12 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+if __package__ in (None, ""):
+    # Run as a script: make the repository root importable, as the tests have it.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.atomic_write import write_text_atomic
+
 # Release notes keep one HTML comment: the common-doc-guidelines footer. A second
 # comment is an unfilled draft placeholder the one-liner used to strip silently.
 EXPECTED_HTML_COMMENTS = 1
@@ -157,7 +163,7 @@ def unwrap_with_flowmark(source: str, *, root: Path) -> str:
     with tempfile.TemporaryDirectory() as directory:
         incoming = Path(directory) / "notes-source.md"
         outgoing = Path(directory) / "notes.md"
-        incoming.write_text(source, encoding="utf-8")
+        write_text_atomic(incoming, source, encoding="utf-8")
         subprocess.run(
             [
                 "uv",
@@ -225,8 +231,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     args.source.parent.mkdir(parents=True, exist_ok=True)
     args.body.parent.mkdir(parents=True, exist_ok=True)
-    args.source.write_text(source, encoding="utf-8")
-    args.body.write_text(body, encoding="utf-8")
+    write_text_atomic(args.source, source, encoding="utf-8")
+    write_text_atomic(args.body, body, encoding="utf-8")
     return 0
 
 

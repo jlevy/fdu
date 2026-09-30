@@ -16,6 +16,12 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+if __package__ in (None, ""):
+    # Run as a script: make the repository root importable, as the tests have it.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.atomic_write import write_text_atomic
+
 USER_AGENT = "fdu-release-audit/0.1 (+https://github.com/jlevy/fdu)"
 
 # Every published crate, in publication order. Each is its own crates.io record, so each
@@ -338,7 +344,7 @@ def main(
     rendered = registry_document(args.version, states)
     print(rendered, end="")
     if args.output is not None:
-        args.output.write_text(rendered, encoding="utf-8")
+        write_text_atomic(args.output, rendered, encoding="utf-8")
     raise SystemExit(exit_status(states, require_identical=args.require_identical))
 
 

@@ -69,6 +69,11 @@ export const FIXTURE_BUILDERS = new Map([
 
 // Individual writes that need no helper, each matched by the text of its line. An entry
 // that no longer matches a write fails, so the list cannot outlive the code it excuses.
+// The Actions runner creates $GITHUB_OUTPUT, and reads it once the step ends.
+const GITHUB_OUTPUT =
+  "appends to $GITHUB_OUTPUT, the runner's file; a torn write fails its step, and no " +
+  "release.yml step runs after a failure to read it";
+
 export const EXCEPTIONS = new Map([
   [
     "crates/fdu-core/build.rs",
@@ -81,6 +86,14 @@ export const EXCEPTIONS = new Map([
       },
     ],
   ],
+  [
+    "scripts/release/publish_gate.py",
+    [{ site: 'with path.open("a", encoding="utf-8") as output:', reason: GITHUB_OUTPUT }],
+  ],
+  [
+    "scripts/release/resolve_plan.py",
+    [{ site: 'with args.github_output.open("a", encoding="utf-8")', reason: GITHUB_OUTPUT }],
+  ],
 ]);
 
 // Copies of a helper for a project that cannot import the original, each required to
@@ -90,7 +103,6 @@ export const MIRRORS = new Map([]);
 // Paths not yet converted, with the bead that converts them. Temporary: each conversion
 // removes its entries, and the list is gone once the last lands.
 export const PENDING = new Map([
-  ["scripts/release/", "fdu-j3hx"],
   ["scripts/run_installed_cli_qa.py", "fdu-h18s"],
   ["scripts/qa_peer_agreement.py", "fdu-h18s"],
   ["scripts/check-yaml.mjs", "fdu-h18s"],
