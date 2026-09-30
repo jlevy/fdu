@@ -7559,6 +7559,7 @@ mod tests {
         write_file(&dir.path().join("a.txt"), b"hello");
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9048,6 +9049,7 @@ mod tests {
             &dir.path().join("a-guard/.gitignore"),
             &vec![b'x'; crate::control::DEFAULT_CONTROL_LINE_LIMIT + 1],
         );
+        crate::test_support::settle_allocations(dir.path());
         let observing =
             ScanConfig { read_controls: true, threads: Some(4), ..ScanConfig::default() };
         let blind = ScanConfig { read_controls: false, ..observing.clone() };
@@ -9118,6 +9120,7 @@ mod tests {
             // exercised by the same walk.
             write_file(&dir.path().join(format!("t{top}/a/b/c/d/e/deep.txt")), b"deep");
         }
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9129,6 +9132,7 @@ mod tests {
         write_file(&dir.path().join("t7/.gitignore"), b"!m0/leaf-1.dat\n");
         fs::create_dir_all(dir.path().join("t5/.gitignore")).expect("non-file control directory");
         write_file(&dir.path().join("t5/.gitignore/ordinary.txt"), b"ordinary child");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9208,6 +9212,7 @@ mod tests {
         write_file(&dir.path().join("file-to-directory"), b"old file");
         write_file(&dir.path().join("removed-tree/nested/gone.md"), b"gone");
         write_file(&dir.path().join("stable/deep/kept.rs"), b"kept");
+        crate::test_support::settle_allocations(dir.path());
         dir
     }
 
@@ -9223,6 +9228,7 @@ mod tests {
 
         fs::remove_dir_all(root.join("removed-tree")).expect("remove nested tree");
         write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
+        crate::test_support::settle_allocations(root);
     }
 
     fn effective_ops(commits: &[Commit]) -> Vec<Op> {
@@ -10682,6 +10688,7 @@ mod tests {
         let socket_path = dir.path().join("service.sock");
         let _listener = UnixListener::bind(&socket_path).expect("bind socket");
         write_file(&dir.path().join("replacement"), b"ordinary");
+        crate::test_support::settle_allocations(dir.path());
         let (kept, kept_report) =
             scan_into_index(dir.path(), &ScanConfig::default()).expect("default scan");
         assert!(kept_report.is_complete());
@@ -11214,6 +11221,7 @@ mod tests {
         fs::remove_file(dir.path().join("a.txt")).expect("remove file");
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
         write_file(&dir.path().join("src/added.md"), b"new file");
+        crate::test_support::settle_allocations(dir.path());
 
         let portable_report = reconcile(&mut portable, &portable_config, &mut |_| {})
             .expect("portable reconciliation");
@@ -11479,6 +11487,7 @@ mod tests {
             let dir = tempfile::tempdir().expect("tempdir");
             write_file(&dir.path().join("blocked/old.txt"), b"old");
             write_file(&dir.path().join("verified.txt"), b"verified");
+            crate::test_support::settle_allocations(dir.path());
             let config = ScanConfig { threads: Some(workers), ..ScanConfig::default() };
             let (mut warm, baseline) = scan_into_index(dir.path(), &config).expect("baseline");
             assert!(baseline.is_complete());
@@ -11511,6 +11520,7 @@ mod tests {
         fs::remove_file(dir.path().join("a.txt")).expect("remove file");
         write_file(&dir.path().join("added.md"), b"new file");
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
+        crate::test_support::settle_allocations(dir.path());
 
         let root = index.root_path().to_path_buf();
         let root_meta = {
@@ -11571,6 +11581,7 @@ mod tests {
                 b"changed after the first wave",
             );
         }
+        crate::test_support::settle_allocations(dir.path());
 
         let candidate_report = reconcile_target_inner(
             &mut ReconcileTarget::Direct(&mut candidate),
@@ -11706,6 +11717,7 @@ mod tests {
         for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
             write_file(&dir.path().join(format!("d{directory:04}/file.txt")), changed);
         }
+        crate::test_support::settle_allocations(dir.path());
 
         let progress = crate::Progress::new();
         let observed = ScanConfig { progress: Some(progress.clone()), ..parallel };

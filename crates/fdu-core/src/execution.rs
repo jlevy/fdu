@@ -2083,6 +2083,7 @@ mod tests {
         fs::write(root.path().join("README.md"), b"read me").expect("file");
         #[cfg(unix)]
         std::os::unix::fs::symlink("README.md", root.path().join("readme-link")).expect("symlink");
+        crate::test_support::settle_allocations(root.path());
 
         let query = summary_query();
         // Two workers so the compact fold exercises StreamingEmission recycle even on
@@ -2395,6 +2396,9 @@ mod tests {
                 denied.errors = true;
                 cases.push(denied);
             }
+        }
+        for case in &cases {
+            crate::test_support::settle_allocations(case.root.path());
         }
         cases
     }
@@ -2811,6 +2815,7 @@ mod tests {
             )
             .expect("symlink");
         }
+        crate::test_support::settle_allocations(root.path());
         root
     }
 
@@ -2917,6 +2922,9 @@ mod tests {
                 sized_file(&lossy.path().join(format!("n/small{index:02}")), 3, false, 15);
             }
             trees.push(("names equal once made readable", lossy));
+        }
+        for (_, tree) in &trees {
+            crate::test_support::settle_allocations(tree.path());
         }
         trees
     }
@@ -3183,6 +3191,7 @@ mod tests {
             for index in 0..60 {
                 sized_file(&tree.path().join(format!("beside/b{index:02}")), 7, false, 17);
             }
+            crate::test_support::settle_allocations(tree.path());
             fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("lock");
             let _unlocked = Unlocked(locked);
             let (index, _) = crate::scan::scan_into_index(tree.path(), &ScanConfig::default())
