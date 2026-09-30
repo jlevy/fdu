@@ -18,7 +18,8 @@ Key features:
   command led pdu’s default by 13% and 15% on real source and `node_modules` trees, pdu
   limited to two levels by 3% and 10%, and [diskus](https://github.com/sharkdp/diskus)
   by 12% and 11%. About six points of the lead over pdu’s default reflect that night’s
-  host rather than fdu; the lead over pdu at two levels is fdu’s own.
+  host rather than fdu (six by the samples as paired; normalized by each sample’s
+  adjacent fdu run, about ten and six); the lead over pdu at two levels is fdu’s own.
   On a generated million-entry tree, measured only on an earlier engine (`ebc06c78`),
   pdu limited to two levels was 3% faster than fdu, and pdu’s default 4% and diskus 7%
   slower. See [Speed](#speed) and
@@ -448,9 +449,10 @@ Part of the lead over pdu’s default is the host rather than fdu.
 In this run the earlier engine (`ebc06c78`) led pdu’s default by about 6% on both trees,
 where the previous standing had them level
 ([exp-194](docs/project/experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md)),
-so about six points of that lead reflect that night’s host regime.
-The lead over `pdu --max-depth 2` is fdu’s own: in the same run the earlier engine was
-level with it on the kernel tree and 2.4% behind on the dense tree.
+so about six points of that lead reflect that night’s host regime; that is the
+un-normalized figure, and normalizing each sample by its adjacent fdu run gives +9.6%
+and +5.6%. The lead over `pdu --max-depth 2` is fdu’s own: in the same run the earlier
+engine was level with it on the kernel tree and 2.4% behind on the dense tree.
 On the kernel tree that lead is at the edge of what 20 pairs resolve.
 The earlier engine’s default tree was itself 39% faster than 0.2.1’s on the kernel tree
 ([exp-194](docs/project/experiments/exp-194-linux-the-overnight-round-end-to-end-the-default-tree-39-fas.md))
@@ -582,7 +584,7 @@ has been run on this tree since.
 On real source and `node_modules` trees, in one 20-pair run per tree on the same host,
 2026-09-30, the current default command led pdu’s default by 13% and 15%, pdu at `-d 2`
 by 3% and 10%, and diskus by 12% and 11%; about six points of the lead over pdu’s
-default reflect that night’s host.
+default reflect that night’s host (un-normalized; anchor-normalized, +9.6% and +5.6%).
 
 ³ gdu’s unreleased main branch adds `--ignore-from-gitignore`, which reads patterns from
 one file.

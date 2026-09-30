@@ -374,9 +374,10 @@ with diskus (+1.2% [−0.8%, +5.8%], as in exp-194), and was 2.4% behind pdu
 `--max-depth 2` (−2.4% [−4.7%, −0.0%]) where exp-194 had it 7% behind; the track adds
 +12% [+7%, +13%] and the rest is the regime.
 Anchor-normalized: +5.6% [+0.8%, +12.0%], −1.0% [−6.5%, +4.0%] and +1.0% [−1.9%, +2.9%].
-The regime’s part is specific to pdu’s default mode, about six points on both trees,
-while diskus is where exp-194 left it; the method and its output are kept beside the
-evidence as `derived-pairs.txt`.
+The regime’s part is specific to pdu’s default mode, about six points on both trees by
+the un-normalized pairing (+9.6% and +5.6% anchor-normalized), while diskus is where
+exp-194 left it; the method and its output are kept beside the evidence as
+`derived-pairs.txt`.
 
 **Answers.** The shipped head’s product command line matched the final head’s byte for
 byte in the 54-comparison answer diff at each layer (exp-197 to exp-199), and the tool
@@ -391,8 +392,8 @@ The shipped default command is 3.1% faster on `linux-v6.12` and 8.9% faster on
 `linux-v6.12`. In this run fdu’s default leads pdu default by 13% and 15%, diskus by 12%
 and 11%, and pdu `--max-depth 2` by 3% [+1%, +8%] and 10% [+4%, +13%], on the kernel and
 the dense tree; about six points of the lead over pdu’s default mode are tonight’s
-regime (the release head alone led it by 6% where exp-194 had them level), and the
-track’s own contribution is the release-head row, +4% [+2%, +7%] and +12% [+7%, +13%].
-On this host, fdu’s default command is ahead of every pdu mode measured on both real
-trees; on the kernel tree the lead over the depth-2 mode is at the edge of what 20 pairs
-resolve.
+regime (the release head alone led it by 6% where exp-194 had them level, the
+un-normalized figure; anchor-normalized, +9.6% and +5.6%), and the track’s own
+contribution is the release-head row, +4% [+2%, +7%] and +12% [+7%, +13%]. On this host,
+fdu’s default command is ahead of every pdu mode measured on both real trees; on the
+kernel tree the lead over the depth-2 mode is at the edge of what 20 pairs resolve.
