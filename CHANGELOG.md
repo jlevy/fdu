@@ -7,6 +7,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-01
+
+fdu 0.3.0 is a breaking release focused on Linux speed and stability.
 On Linux the default `fdu PATH` tree is faster, and uses much less memory on a large
 tree, and classifying entries against `.gitignore` is faster again.
 On Linux a stat of a directory’s child no longer mounts an unmounted autofs trigger, on
@@ -21,7 +24,8 @@ A Markdown file over 64 MiB is counted as plain text under the words unit, and i
 and report say so; content analysis of a one-line source or a large Markdown file no
 longer holds the file in memory.
 No command-line option, report or cache schema, or Python API changed; a report’s
-coverage map has one more possible key, `text_only`.
+coverage map has one more possible key, `text_only`. The GitHub release text is
+[docs/project/release-notes/0.3.0.md](docs/project/release-notes/0.3.0.md).
 
 ### Added
 
