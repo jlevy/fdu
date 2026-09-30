@@ -48878,6 +48878,212 @@
    "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
    "title": "Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees",
    "trials": 20
+  },
+  {
+   "anchored": false,
+   "candidate": "b82f26e1 probe (the 0.3.0 release head)",
+   "change_pct": -48,
+   "commit": "b82f26e1",
+   "complexity": {
+    "lines_changed": 0,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "c1644575 probe (v0.2.1)",
+   "date": "2026-09-30",
+   "decision": "baseline",
+   "entries": 92474,
+   "family": "Linux:4ffe9d749fe6",
+   "hypotheses": [],
+   "id": "exp-202",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "aggregate-summary",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 125252577.5,
+        "control": 180954409
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -35.171,
+        "ci95_high_pct": -27.495,
+        "ci95_low_pct": -40.606,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 471867500,
+        "control": 626401500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -27.626,
+        "ci95_high_pct": -23.891,
+        "ci95_low_pct": -30.434,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 390801500,
+        "control": 365694500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 1.708,
+        "ci95_high_pct": 9.135,
+        "ci95_low_pct": -4.274,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 83458000,
+        "control": 266899000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -68.526,
+        "ci95_high_pct": -65.374,
+        "ci95_low_pct": -73.474,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 128134218.5,
+        "control": 184632480
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -34.635,
+        "ci95_high_pct": -27.19,
+        "ci95_low_pct": -40.366,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1385.6242673616368,
+      "control": 1996.5880139282392
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 106792550.5,
+        "control": 203674777
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -48.134,
+        "ci95_high_pct": -45.149,
+        "ci95_low_pct": -50.84,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 406522000,
+        "control": 585250500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -29.108,
+        "ci95_high_pct": -27.748,
+        "ci95_low_pct": -33.358,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 343703500,
+        "control": 352470000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.561,
+        "ci95_high_pct": 3.26,
+        "ci95_low_pct": -5.537,
+        "evidence": "unclear",
+        "pairs": 20,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 57670500,
+        "control": 232650000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -75.148,
+        "ci95_high_pct": -72.483,
+        "ci95_low_pct": -79.12,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 109873005.5,
+        "control": 208639416.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -48,
+        "ci95_high_pct": -44.794,
+        "ci95_low_pct": -50.453,
+        "evidence": "improved",
+        "pairs": 20,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 1188.1502422302485,
+      "control": 2256.1954333109848
+     },
+     "start_state": "warm"
+    }
+   ],
+   "kept": null,
+   "number": 202,
+   "path": "exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md",
+   "platform": "Linux",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "The release engine end to end on every subject this host has: against 0.2.1 in one paired probe cell per tree, and against pdu default, pdu --max-depth 2, diskus and the 0.2.1 CLI in one interleaved tool cell per tree with the release CLI as anchor; no decision rests on it.",
+   "reference_tools": [],
+   "subject": "4ffe9d749fe6:92474:e9ca9ca97136",
+   "title": "Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees",
+   "trials": 20
   }
  ],
  "prepared": "2026-09-29",
@@ -49226,6 +49432,28 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 1759293209,
+   "directories": 5769,
+   "entries": 92474,
+   "experiments": [
+    "exp-196",
+    "exp-198",
+    "exp-200",
+    "exp-201",
+    "exp-202"
+   ],
+   "files": 86643,
+   "filesystem": "ext4",
+   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "key": "4ffe9d749fe6:92474:e9ca9ca97136",
+   "labels": [
+    "linux-v6.12"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "Linux",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 35888409,
    "directories": 60314,
    "entries": 100001,
@@ -49331,27 +49559,6 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": true
-  },
-  {
-   "apparent_bytes": 1759293209,
-   "directories": 5769,
-   "entries": 92474,
-   "experiments": [
-    "exp-196",
-    "exp-198",
-    "exp-200",
-    "exp-201"
-   ],
-   "files": 86643,
-   "filesystem": "ext4",
-   "host_cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
-   "key": "4ffe9d749fe6:92474:e9ca9ca97136",
-   "labels": [
-    "linux-v6.12"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "Linux",
-   "synthetic": false
   },
   {
    "apparent_bytes": 1085083672,
@@ -49997,18 +50204,18 @@
   "accepted_lines_changed": 29127,
   "decisions": {
    "accepted": 111,
-   "baseline": 16,
+   "baseline": 17,
    "blocked": 2,
    "in-progress": 4,
    "rejected": 61,
    "superseded": 5
   },
-  "experiments": 199,
+  "experiments": 200,
   "first_date": "2026-08-10",
   "hypotheses": 136,
   "last_date": "2026-09-30",
   "platforms": {
-   "Linux": 62,
+   "Linux": 63,
    "macOS": 137
   }
  },

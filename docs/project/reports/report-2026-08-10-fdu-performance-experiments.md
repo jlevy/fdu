@@ -71,8 +71,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Linux 6.12.94+, ext4 | virtualized | warm-steady | 18 |
 | Linux 6.18.44-fc-v49, ext4 | virtualized | warm-steady | 16 |
 | Linux 6.18.44-fc-v37, ext4 | virtualized | warm-steady | 11 |
+| Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 7 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v50, ext4 | virtualized | warm-steady | 6 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 | Linux 6.18.44-fc-v22, ext4 | virtualized | warm-steady | 1 |
 | Linux 6.18.44-fc-v24, ext4 | virtualized | warm-steady | 1 |
@@ -283,6 +283,7 @@ dead end.
 | 199 | [Linux: H186 admits tree rows before building them, the default tree 5% faster on node-modules-dense](#exp-199--linux-h186-admits-tree-rows-before-building-them-the-default-tree-5-faster-on-node-modules-dense) | H186 | `default-tree` | -4.9% | ✅ accepted |
 | 200 | [Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change](#exp-200--linux-h187-sorts-only-what-the-folded-tree-keeps-a-38-consumer-cut-with-no-wall-change) | H187 | `default-tree` | -0.3% | ❌ rejected |
 | 201 | [Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees](#exp-201--linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-faster-and-ahead-of-every-pdu-mode-on-both-real-trees) | H185, H186, H188, H189 | `default-tree` | -3.1% | 📏 baseline |
+| 202 | [Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees](#exp-202--linux-the-030-release-end-to-end-the-default-tree-48-faster-than-021-and-ahead-of-pdu-and-diskus-on-all-three-trees) | — | `default-tree` | -48.0% | 📏 baseline |
 
 ## The experiments
 
@@ -6596,6 +6597,30 @@ shipped head in the same run; no decision rests on it.
 Full record:
 [`exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md`](../experiments/exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md)
 
+### exp-202 — Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees
+
+📏 baseline · 2026-09-30 · no hypothesis id · commit `b82f26e1`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 208.6 |
+| component (ms) | 203.7 |
+| cpu (ms) | 585.3 |
+| user (ms) | 232.7 |
+| system (ms) | 352.5 |
+
+Other jobs, wall time: `aggregate-summary` 185 ms.
+
+**Baseline:** The release engine end to end on every subject this host has: against
+0.2.1 in one paired probe cell per tree, and against pdu default, pdu --max-depth 2,
+diskus and the 0.2.1 CLI in one interleaved tool cell per tree with the release CLI as
+anchor; no decision rests on it.
+
+Full record:
+[`exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md`](../experiments/exp-202-linux-the-0-3-0-release-end-to-end-the-default-tree-48-faste.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -6753,6 +6778,16 @@ Baselines show one value because they measure a state rather than a change.
 | 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
 | 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
 
+### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 196 | Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger | `warm-revalidate` | 554.2 | 542.4 | -2.7% | ❌ rejected |
+| 198 | Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12 | `aggregate-summary` | 90.3 | 85.8 | -6.2% | ✅ accepted |
+| 200 | Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change | `default-tree` | 84.3 | 83.0 | -0.3% | ❌ rejected |
+| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | — | — | 📏 baseline |
+| 202 | Linux: the 0.3.0 release end to end, the default tree 48% faster than 0.2.1 and ahead of pdu and diskus on all three trees | `default-tree` | 208.6 | — | — | 📏 baseline |
+
 ### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -6809,15 +6844,6 @@ Baselines show one value because they measure a state rather than a change.
 | 161 | Linux direct file fold and owned names miss 3% on cold-scan-index | `cold-scan-index` | 3,195.3 | 3,119.3 | -2.2% | ❌ rejected |
 | 162 | Linux detached leaf-listing hold cuts futex wakes but not wall | `cold-scan-index` | 3,135.3 | 3,163.6 | +0.9% | ❌ rejected |
 | 163 | Linux auto cache policy stops one-shot snapshot writes, clears 3% on default-tree | `default-tree` | 1,507.0 | 1,304.8 | -13.8% | ✅ accepted |
-
-### linux-v6.12 (92,474 entries) — Linux 6.18.44-fc-v50, ext4, virtualized, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 196 | Linux: every route lists through the native reader, and no stat of a child mounts an autofs trigger | `warm-revalidate` | 554.2 | 542.4 | -2.7% | ❌ rejected |
-| 198 | Linux: H188 byte-wise summary fold and H189 pre-sized control reads, the default summary 6% faster on linux-v6.12 | `aggregate-summary` | 90.3 | 85.8 | -6.2% | ✅ accepted |
-| 200 | Linux: H187 sorts only what the folded tree keeps, a 38% consumer cut with no wall change | `default-tree` | 84.3 | 83.0 | -0.3% | ❌ rejected |
-| 201 | Linux: the pdu track end to end, the default tree 3% and 9% faster and ahead of every pdu mode on both real trees | `default-tree` | 88.5 | — | — | 📏 baseline |
 
 ### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
 
