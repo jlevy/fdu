@@ -105,6 +105,16 @@ No command-line option, report or cache schema, or Python API changed.
   kept the bytes after a NUL as part of the rule.
   The `.gitignore` semantics version is 4, so a snapshot written under 3 is rebuilt
   rather than served.
+- `--analyze code` no longer holds a whole logical line in memory: the line classifier
+  now runs in pieces over a 64 KiB window as a line arrives, carrying its lexer state and
+  the facts the whole-line classifier read from the line, and a site whose lookahead the
+  window's edge cuts waits for more bytes rather than deciding on a cut token. A one-line
+  minified or generated source therefore costs a worker the window, not the file. Every
+  count is unchanged: a differential test holds the streaming scan to the previous
+  whole-line classifier, kept verbatim as the oracle, for every supported language with
+  a piece edge at every byte, every two-way chunking, every window size, CRLF and lone
+  CR, splices, byte-order marks, invalid UTF-8, Unicode whitespace, no trailing newline,
+  and tokens longer than the window.
 - `--analyze` no longer materializes every candidate file before its first read.
   A candidate holds two paths and a classification, so a million-file tree cost hundreds
   of megabytes of scheduling memory that the bounded worker channel then drained one at
