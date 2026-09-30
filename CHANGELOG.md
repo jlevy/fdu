@@ -31,9 +31,33 @@ No command-line option, report or cache schema, or Python API changed.
   or use `..`; code that only reads its fields is unaffected.
   This is the only public API change.
 - The package description on crates.io and PyPI, which `fdu --help` also prints, now
-  reads “Fast native du replacement …” rather than “Fastest”: on Linux fdu’s default
-  tree is level with pdu’s default on real trees, and `pdu --max-depth 2` is 2.5% faster
-  on a generated million-entry tree.
+  reads “Fast native du replacement …” rather than “Fastest”: on a generated
+  million-entry Linux tree, `pdu --max-depth 2` was 2.5% faster than fdu’s default tree
+  before the two changes that follow, and no peer has been run on that tree since.
+- On Linux the default tree is faster again on directory-dense trees: 8.9% faster on a
+  `node_modules` tree and 3.1% faster on the Linux v6.12 source tree, on top of the
+  gains below, in one paired cell of 20 pairs per tree
+  ([exp-201](docs/project/experiments/exp-201-linux-the-pdu-track-end-to-end-the-default-tree-3-and-9-fast.md)).
+  A one-shot tree report takes each directory’s and symlink’s kind from its parent’s
+  listing and no longer stats it a second time, since the tree reads none of their own
+  attributes; `--one-filesystem` keeps the stat for the device number.
+  That removes one `statx` per directory: 9,545 of the 79,961 on the `node_modules` tree
+  ([exp-197](docs/project/experiments/exp-197-linux-h185-describes-each-directory-once-on-the-folded-tree-.md)).
+  The tree also decides from each child’s totals whether the child will show before
+  building a row for it, and frees its index on a separate thread rather than the one
+  that prints the answer
+  ([exp-199](docs/project/experiments/exp-199-linux-h186-admits-tree-rows-before-building-them-the-default.md)).
+  No answer and no public API changed.
+- The default summary is faster on trees with many `.gitignore` files: on Linux, 6.1%
+  faster on the Linux v6.12 source tree, which has 358 of them, in one paired cell of 20
+  pairs
+  ([exp-198](docs/project/experiments/exp-198-linux-h188-byte-wise-summary-fold-and-h189-pre-sized-control.md),
+  and again stacked in exp-201), and unchanged on a tree with none.
+  The summary compares each entry’s parent directory by its bytes rather than by path
+  components, and finds the ignore files that apply to a directory through an index
+  keyed by the directory’s bytes; each `.gitignore` is read into a buffer sized from its
+  length rather than grown from 32 bytes.
+  No answer and no public API changed.
 - On Linux the default tree is 39% faster on the Linux v6.12 source tree (200 to 120 ms)
   and 10% faster on a `node_modules` tree (127 to 114 ms) than on 0.2.1’s engine, and
   the default summary 26% and 7% faster, each in one paired cell of 20 pairs
